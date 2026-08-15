@@ -1,0 +1,13 @@
+{
+  "schema": "assistant-messages-v1",
+  "cite": {
+    "empty": "No information found in knowledge.",
+    "empty_topic": "No information found for «{topic}».",
+    "ingest_down": "Knowledge service is unavailable. Try again later.",
+    "list_header": "Matches «{topic}» — {shown}/{total}:",
+    "rest": "{n} more."
+  },
+  "secret_probe": {
+    "refuse": "Cannot provide secrets or confidential documents."
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schema": "assistant-learn-notify-v1",
+  "from_format": "{id}|{name}",
+  "pending": {
+    "title": "Knowledge — pending approval",
+    "body": "id={id}\nfrom={from}\nname={name}\n{preview}\nApprove: !zalo learn approve {id}\nor: !zalo learn approve {name}\nall: !zalo learn approve *"
+  },
+  "approved": {
+    "title": "Knowledge — learned",
+    "body": "{lines}"
+  },
+  "rejected": {
+    "title": "Knowledge — rejected",
+    "body": "{lines}"
+  },
+  "deleted": {
+    "title": "Knowledge — deleted",
+    "body": "{lines}"
+  },
+  "scan": {
+    "title": "Knowledge — scan docs",
+    "body": "{lines}"
+  }
+}

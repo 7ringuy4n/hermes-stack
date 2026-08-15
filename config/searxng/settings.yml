@@ -1,0 +1,21 @@
+# SearXNG — Medium+ web search fallback (mounted read-only into searxng container)
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "assistant-searxng"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  formats:
+    - html
+    - json
+
+server:
+  # Override in production via env if needed; local-only bind in compose
+  secret_key: "assistant-searxng-change-me"
+  limiter: false
+  image_proxy: false
+  bind_address: "0.0.0.0"
+  base_url: "http://searxng:8080/"
