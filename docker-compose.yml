@@ -1,0 +1,300 @@
+# assistant — Must stack (Low default). Plain container names (hermes, redis, …).
+# Medium/High: run.sh merges docker-compose.medium.yml (OCR, Jobs, SearXNG).
+name: assistant
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  valkey_data:
+  qdrant_data:
+  nine_router_data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${MEMORY_DB_USER:-hermes}
+      POSTGRES_PASSWORD: ${MEMORY_DB_PASSWORD:?set MEMORY_DB_PASSWORD in .env}
+      POSTGRES_DB: ${MEMORY_DB_NAME:-hermes_memory}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MEMORY_DB_USER:-hermes}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: valkey/valkey:8-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - valkey_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "PING"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    container_name: qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks: [internal]
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+
+  memory:
+    build: ./architect/memory/memory-manager
+    container_name: memory
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${MEMORY_PORT:-8095}:8095"
+    networks: [internal]
+
+  mem0:
+    build: ./architect/memory/mem0
+    container_name: mem0
+    restart: unless-stopped
+    environment:
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      - qdrant
+      - redis
+    ports:
+      - "127.0.0.1:${MEM0_PORT:-8096}:8096"
+    networks: [internal]
+
+  session:
+    build: ./architect/memory/session
+    container_name: session
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${SESSION_PORT:-8107}:8107"
+    networks: [internal]
+
+  embedding:
+    build: ./architect/tools/embedding
+    container_name: embedding
+    restart: unless-stopped
+    environment:
+      - EMBED_UPSTREAM=${EMBED_UPSTREAM:-http://9router:20128/v1}
+      - EMBED_API_KEY=${EMBED_API_KEY:-${N9ROUTER_API_KEY:-}}
+      - OPENAI_API_KEY=${N9ROUTER_API_KEY:-}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      - 9router
+    ports:
+      - "127.0.0.1:${EMBED_PORT:-8094}:8094"
+    networks: [internal]
+
+  ingest:
+    build: ./architect/tools/ingest
+    container_name: ingest
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - OCR_URL=${OCR_URL:-http://ocr:8091}
+      - EMBED_URL=${EMBED_URL:-http://embedding:8094}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - NOTIFY_URL=${NOTIFY_URL:-http://notify:8092}
+      - INGEST_MEDIA_ROOT=/data/media
+      - LEARN_DOCS_ROOT=${LEARN_DOCS_ROOT:-/data/assistant/docs}
+      - LEARN_LIST_LIMIT=${LEARN_LIST_LIMIT:-5}
+      - LEARN_REQUIRE_APPROVE=${LEARN_REQUIRE_APPROVE:-0}
+      - LEARN_NOTIFY_PATH=/app/learn-notify.json
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}/media:/data/media
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}:/data/assistant
+      - ./hermes/main/messages/learn-notify.json:/app/learn-notify.json:ro
+    depends_on:
+      - redis
+      - embedding
+      - qdrant
+    ports:
+      - "127.0.0.1:${INGEST_PORT:-8099}:8099"
+    networks: [internal]
+
+  dispatcher:
+    build: ./architect/models/dispatcher
+    container_name: dispatcher
+    restart: unless-stopped
+    environment:
+      # Low: leave empty. Medium+: profile.sh sets WEB_BACKENDS=tavily,firecrawl
+      - WEB_BACKENDS=${WEB_BACKENDS:-}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
+      - SEARXNG_MAX_RESULTS=${SEARXNG_MAX_RESULTS:-5}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://9router:20128/v1}
+      - OPENAI_API_KEY=${N9ROUTER_API_KEY:-}
+      - WHISPER_ENABLED=${WHISPER_ENABLED:-0}
+      - WHISPER_MODEL=${WHISPER_MODEL:-tiny}
+      - OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-0}
+      - MEDIA_CACHE_DIR=/data/media
+      # Image gen (Low: empty). Medium+: profile sets llm,vendor,comfy-cpu,comfy-gpu
+      - IMAGE_BACKENDS=${IMAGE_BACKENDS:-}
+      - IMAGE_LLM_PROVIDER=${IMAGE_LLM_PROVIDER:-openai}
+      - IMAGE_LLM_API_KEY=${IMAGE_LLM_API_KEY:-${IMAGE_PAID1_API_KEY:-}}
+      - IMAGE_LLM_BASE_URL=${IMAGE_LLM_BASE_URL:-${IMAGE_PAID1_BASE_URL:-}}
+      - IMAGE_LLM_MODEL=${IMAGE_LLM_MODEL:-${IMAGE_PAID1_MODEL:-dall-e-3}}
+      - IMAGE_LLM_SIZE=${IMAGE_LLM_SIZE:-1024x1024}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - IMAGE_VENDOR_PROVIDER=${IMAGE_VENDOR_PROVIDER:-${IMAGE_PAID2_PROVIDER:-fal}}
+      - IMAGE_VENDOR_API_KEY=${IMAGE_VENDOR_API_KEY:-${IMAGE_PAID2_API_KEY:-}}
+      - IMAGE_VENDOR_URL=${IMAGE_VENDOR_URL:-${IMAGE_PAID2_URL:-}}
+      - IMAGE_VENDOR_MODEL=${IMAGE_VENDOR_MODEL:-${IMAGE_PAID2_MODEL:-fal-ai/flux/schnell}}
+      - FAL_KEY=${FAL_KEY:-}
+      - FLUXAI_API_KEY=${FLUXAI_API_KEY:-}
+      - POLLINATIONS_API_KEY=${POLLINATIONS_API_KEY:-}
+      - POLLINATIONS_URL=${POLLINATIONS_URL:-https://image.pollinations.ai/prompt}
+      - COMFYUI_CPU_URL=${COMFYUI_CPU_URL:-http://comfyui-cpu:8188}
+      - COMFYUI_GPU_URL=${COMFYUI_GPU_URL:-http://comfyui-gpu:8188}
+      - COMFYUI_HAS_GPU=${COMFYUI_HAS_GPU:-0}
+      - COMFYUI_CPU_WORKFLOW=${COMFYUI_CPU_WORKFLOW:-sdxl}
+      - COMFYUI_GPU_WORKFLOW=${COMFYUI_GPU_WORKFLOW:-flux2_klein_4b.json}
+      - IMAGE_REFINE=${IMAGE_REFINE:-1}
+      - IMAGE_ALLOW_PILLOW=${IMAGE_ALLOW_PILLOW:-0}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}/media:/data/media
+    depends_on:
+      - 9router
+    ports:
+      - "127.0.0.1:${DISPATCHER_PORT:-8090}:8090"
+    networks: [internal]
+
+  # Low Must: LLM gateway + Hermes agent (console / IDE). Social apps attach separately.
+  9router:
+    image: ${N9ROUTER_IMAGE:-decolua/9router:latest}
+    container_name: 9router
+    restart: unless-stopped
+    environment:
+      - DATA_DIR=/app/data
+      - PORT=20128
+      - HOSTNAME=0.0.0.0
+      - REQUIRE_API_KEY=true
+      - INITIAL_PASSWORD=${N9ROUTER_INITIAL_PASSWORD:?set N9ROUTER_INITIAL_PASSWORD in .env}
+    volumes:
+      - nine_router_data:/app/data
+    ports:
+      - "127.0.0.1:${N9ROUTER_HOST_PORT:-20128}:20128"
+    networks: [internal]
+
+  hermes:
+    image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
+    container_name: hermes
+    restart: unless-stopped
+    pull_policy: missing
+    command: ["gateway", "run"]
+    ports:
+      - "127.0.0.1:${HERMES_GATEWAY_PORT:-28642}:8642"
+      - "127.0.0.1:${HERMES_DASHBOARD_PORT:-29119}:9119"
+    environment:
+      - HERMES_UID=${HERMES_UID:-1000}
+      - HERMES_GID=${HERMES_GID:-1000}
+      - HERMES_HOME=/opt/data
+      - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_USER:-admin}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_PASSWORD:?set HERMES_DASHBOARD_PASSWORD in .env}
+      - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_SECRET:?set HERMES_DASHBOARD_SECRET in .env}
+      - HERMES_DISABLE_LAZY_INSTALLS=0
+      - HERMES_LAZY_INSTALL_TARGET=/opt/data/lazy-packages
+      - PYTHONPATH=/opt/data/lazy-packages
+      - OPENAI_API_KEY=${N9ROUTER_API_KEY:-}
+      - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://dispatcher:8090/openai/v1}
+      - DISPATCHER_URL=http://dispatcher:8090
+      - MEMORY_URL=http://memory:8095
+      - MEM0_URL=${MEM0_URL:-http://mem0:8096}
+      - EMBED_URL=${EMBED_URL:-http://embedding:8094}
+      - INGEST_URL=${INGEST_URL:-http://ingest:8099}
+      - SESSION_URL=${SESSION_URL:-http://session:8107}
+      - HERMES_SESSION_BACKEND=redis
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_COLLECTION_KNOWLEDGE=${QDRANT_COLLECTION_KNOWLEDGE:-knowledge_chunks}
+      - QDRANT_COLLECTION_MEMORY=${QDRANT_COLLECTION_MEMORY:-conversational_memory}
+      - HERMES_QUIET_EXCEPTIONS=${HERMES_QUIET_EXCEPTIONS:-1}
+      - HERMES_QUIET_BACKGROUND=${HERMES_QUIET_BACKGROUND:-1}
+      - LEARN_LIST_LIMIT=${LEARN_LIST_LIMIT:-5}
+      - HERMES_MAX_ANSWERING=${HERMES_MAX_ANSWERING:-3}
+      - HERMES_MAX_INFLIGHT=${HERMES_MAX_INFLIGHT:-3}
+      - HERMES_CONTEXT_BUDGET=${HERMES_CONTEXT_BUDGET:-24000}
+      # Medium+ URLs (services only up when overlay is loaded)
+      - OCR_URL=${OCR_URL:-http://ocr:8091}
+      - JOBS_URL=${JOBS_URL:-http://jobs:8104}
+      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+      # Zalo (used when ENABLE_ZALO=1 + host bridge + zalo-proxy profile)
+      - ZALO_PLUGIN_URL=${ZALO_PLUGIN_URL:-http://zalo-proxy:8787}
+      - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
+      - ZALO_GROUP_MODE=${ZALO_GROUP_MODE:-mention}
+      - ZALO_ALLOWED_THREADS=${ZALO_ALLOWED_THREADS:-}
+      - ZALO_HOME_CHANNEL=${ZALO_HOME_CHANNEL:-}
+      - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
+      - ZALO_ADMIN_USERS_FILE=/opt/data/zalo_admin_users.txt
+      - ZALO_HOST_DATA_DIR=${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}
+      - ZALO_ALLOWED_THREADS_FILE=/opt/data/zalo_allowed_threads.txt
+      - ZALO_DENIED_THREADS_FILE=/opt/data/zalo_denied_threads.txt
+      - ZALO_ALLOWED_USERS_FILE=/opt/data/zalo_allowed_users.txt
+      - ZALO_USERS_MODE_FILE=/opt/data/zalo_users_mode.txt
+      - ADMIN_API_URL=${ADMIN_API_URL:-http://admin-api:8100}
+      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
+      - GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-true}
+    volumes:
+      - ${HERMES_DATA_DIR:-/data/assistant}:/opt/data
+      # Repo SoT for Low; durable runtime state stays on HERMES_DATA_DIR
+      - ./hermes/main/skills:/opt/data/skills:ro
+      - ./hermes/main/messages:/opt/data/messages:ro
+    depends_on:
+      - 9router
+      - dispatcher
+      - memory
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [internal]
+
+  # Optional — ENABLE_ZALO=1 (run.sh --profile zalo). Proxies host bridge :8787 into Docker network.
+  zalo-proxy:
+    profiles: ["zalo"]
+    image: ${SOCAT_IMAGE:-alpine/socat:1.8.0.3}
+    container_name: zalo-proxy
+    restart: unless-stopped
+    command: TCP-LISTEN:8787,fork,reuseaddr TCP:host.docker.internal:8787
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [internal]

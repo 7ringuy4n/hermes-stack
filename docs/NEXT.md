@@ -1,0 +1,7 @@
+# Next / backlog
+
+- Keep docs and skills in **English** for the public tree.
+- Prefer `scripts/main/` for supported ops; keep host-specific probes under
+  `scripts/temp/` (gitignored).
+- Zalo: claim / admin transfer + SSE self-heal timers are in place; extend
+  notify hooks when `ENABLE_NOTIFY=1`.
