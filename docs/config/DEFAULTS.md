@@ -87,8 +87,8 @@ ENABLE_WHATSAPP=0
 | Profile | Optional on |
 |---|---|
 | low | none by default; **Traefik/API Gateway forced off** |
-| medium | OCR, SearXNG, Jobs, office file-gen, web backends + compact; **Traefik + API Gateway default ON** (set `0` in `.env` to disable); OpenVPN opt-in |
-| high | Medium + OpenBao UI, AV, security, SIEM, authz, policy, admin-api, monitor; notify opt-in; CloudDrive; **Traefik + API Gateway default ON**; OpenVPN opt-in |
+| medium | OCR, SearXNG, Jobs, office file-gen, web backends + compact; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=2**; OpenVPN opt-in |
+| high | Medium + OpenBao UI, AV, security, SIEM, authz, policy, admin-api, monitor; notify opt-in; CloudDrive; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=2**; OpenVPN opt-in |
 
 High overlay: `docker-compose.high.yml`. Edge overlay: `docker-compose.edge.yml` when `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` is `1`. Smoke: `bash run.sh check-high`. Seed keys: `bash run.sh first-setup-openbao`.
 
@@ -104,3 +104,12 @@ High overlay: `docker-compose.high.yml`. Edge overlay: `docker-compose.edge.yml`
 Details: [docs/05-edge-networking.md](../05-edge-networking.md). Snippet: [edge.env.snippet](./edge.env.snippet).
 
 **Zalo** never goes through the API Gateway (local bridge only).
+
+## Hermes replicas
+
+```env
+# Low: forced 1. Medium/High: default 2 (override in .env).
+# HERMES_REPLICAS=2
+```
+
+When `HERMES_REPLICAS>1`, host ports `:28642`/`:29119` are **not** published (avoid bind clash). Reach Hermes via Traefik (`:8080`) or API Gateway (`:8088`). Low (`replicas=1`) still publishes localhost gateway/dashboard ports.

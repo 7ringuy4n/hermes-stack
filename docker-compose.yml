@@ -201,13 +201,11 @@ services:
 
   hermes:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
-    container_name: hermes
+    # No container_name — required for HERMES_REPLICAS > 1 (Medium/High default 2)
     restart: unless-stopped
     pull_policy: missing
     command: ["gateway", "run"]
-    ports:
-      - "127.0.0.1:${HERMES_GATEWAY_PORT:-28642}:8642"
-      - "127.0.0.1:${HERMES_DASHBOARD_PORT:-29119}:9119"
+    # Host ports: see docker-compose.hermes-hostports.yml when HERMES_REPLICAS=1
     environment:
       - HERMES_UID=${HERMES_UID:-1000}
       - HERMES_GID=${HERMES_GID:-1000}
