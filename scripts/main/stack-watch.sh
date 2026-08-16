@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Self-heal Docker stack: restart exited/unhealthy project containers and
 # re-check core HTTP health endpoints. Silent recovery for operators/users.
+#
+# Hardening (2026-08-16):
+#   - BOOT_GRACE_S: skip heals shortly after host boot (avoids false downs)
+#   - Do NOT restart Hermes on failed probes (only 9router/dispatcher + bad ctrs)
+#   - COMPOSE_PROJECT_NAME defaults can be overridden (lab: nighthawk-lab)
 set -euo pipefail
 
 ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -9,11 +14,32 @@ ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 PROJECT="${COMPOSE_PROJECT_NAME:-assistant}"
 PROFILE="${ASSISTANT_PROFILE:-low}"
-STATE_DIR="${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}/watch"
+if [[ -n "${ASSISTANT_DATA_DIR:-}" ]]; then
+  _data_root="$ASSISTANT_DATA_DIR"
+elif [[ -n "${HERMES_DATA_DIR:-}" ]]; then
+  _data_root="$HERMES_DATA_DIR"
+elif [[ -d /data/hermes ]]; then
+  _data_root="/data/hermes"
+else
+  _data_root="/data/assistant"
+fi
+STATE_DIR="${_data_root}/watch"
 COOLDOWN_FILE="${STATE_DIR}/stack-watch.cooldown"
+BOOT_GRACE_S="${STACK_WATCH_BOOT_GRACE:-600}"
+RESTART_HERMES_ON_PROBE="${STACK_WATCH_RESTART_HERMES:-0}"
+HERMES_CTR="${HERMES_CONTAINER:-hermes}"
 if [[ "$(id -u)" -ne 0 ]]; then SUDO=sudo; else SUDO=; fi
 
-mkdir -p "$STATE_DIR"
+if ! mkdir -p "$STATE_DIR" 2>/dev/null; then
+  $SUDO mkdir -p "$STATE_DIR"
+  $SUDO chown "$(id -u):$(id -g)" "$STATE_DIR" 2>/dev/null || true
+fi
+if [[ ! -w "$STATE_DIR" ]]; then
+  $SUDO mkdir -p "$STATE_DIR"
+  $SUDO chown -R "$(id -u):$(id -g)" "$STATE_DIR" 2>/dev/null \
+    || $SUDO chmod 777 "$STATE_DIR" 2>/dev/null \
+    || true
+fi
 log() { echo "$(date -Is) stack-watch: $*"; }
 
 in_cooldown() {
@@ -24,7 +50,20 @@ in_cooldown() {
   now="$(date +%s)"
   [[ $((now - then)) -lt "$sec" ]]
 }
-mark_cooldown() { date +%s >"$COOLDOWN_FILE"; }
+mark_cooldown() {
+  if [[ -w "$STATE_DIR" ]]; then
+    date +%s >"$COOLDOWN_FILE"
+  else
+    date +%s | $SUDO tee "$COOLDOWN_FILE" >/dev/null
+    $SUDO chown "$(id -u):$(id -g)" "$COOLDOWN_FILE" 2>/dev/null || true
+  fi
+}
+
+boot_grace_active() {
+  local up
+  up="$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 999999)"
+  [[ "$up" -lt "$BOOT_GRACE_S" ]]
+}
 
 compose() {
   local files=(-f "${ROOT}/docker-compose.yml")
@@ -32,23 +71,42 @@ compose() {
     medium) files+=(-f "${ROOT}/docker-compose.medium.yml") ;;
     high) files+=(-f "${ROOT}/docker-compose.medium.yml" -f "${ROOT}/docker-compose.high.yml") ;;
   esac
+  # Lab monolith compose often has no medium/high overlays — ignore missing files
+  local existing=()
+  local f
+  for f in "${files[@]}"; do
+    [[ "$f" == "-f" ]] && continue
+    [[ -f "$f" ]] && existing+=(-f "$f")
+  done
+  [[ ${#existing[@]} -eq 0 ]] && existing=(-f "${ROOT}/docker-compose.yml")
   local profiles=()
   [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
   [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles+=(--profile antivirus)
-  $SUDO docker compose -p "$PROJECT" "${files[@]}" "${profiles[@]}" "$@"
+  $SUDO docker compose -p "$PROJECT" "${existing[@]}" "${profiles[@]}" "$@"
 }
 
 restart_bad_containers() {
   local names
   names="$($SUDO docker ps -a --filter "label=com.docker.compose.project=${PROJECT}" \
     --format '{{.Names}} {{.Status}}' 2>/dev/null || true)"
+  # Lab often uses project nighthawk-lab while timer may set COMPOSE_PROJECT_NAME=nighthawk
+  if [[ -z "$names" && "$PROJECT" != "nighthawk-lab" ]]; then
+    names="$($SUDO docker ps -a --filter "label=com.docker.compose.project=nighthawk-lab" \
+      --format '{{.Names}} {{.Status}}' 2>/dev/null || true)"
+  fi
   [[ -n "$names" ]] || return 0
   local line name status
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     name="${line%% *}"
     status="${line#* }"
-    if echo "$status" | grep -qiE 'Exited|Dead|unhealthy|Restarting \('; then
+    # Never thrash Hermes from "Restarting" flicker — only Exited/Dead/unhealthy
+    if echo "$status" | grep -qiE 'Exited|Dead|unhealthy'; then
+      # Skip hermes unless explicitly allowed
+      if [[ "$name" == *"hermes"* && "$RESTART_HERMES_ON_PROBE" != "1" ]]; then
+        log "skip hermes bad-state (${status}) — STACK_WATCH_RESTART_HERMES!=1"
+        continue
+      fi
       log "restart ${name} (${status})"
       $SUDO docker restart "$name" >/dev/null 2>&1 || true
     fi
@@ -56,7 +114,6 @@ restart_bad_containers() {
 }
 
 ensure_core_up() {
-  # Bring missing/stopped services back without full rebuild
   log "compose up -d (ensure running)"
   compose up -d --remove-orphans >/dev/null 2>&1 || true
 }
@@ -93,12 +150,19 @@ heal_by_health() {
     if in_cooldown 90; then
       log "heal skipped (cooldown)"
     else
-      log "healing after failed probes"
+      log "healing after failed probes (hermes restart=${RESTART_HERMES_ON_PROBE})"
       ensure_core_up
       restart_bad_containers
-      $SUDO docker restart 9router 2>/dev/null || true
-      $SUDO docker restart dispatcher 2>/dev/null || true
-      $SUDO docker restart "${HERMES_CONTAINER:-hermes}" 2>/dev/null || true
+      $SUDO docker restart 9router 2>/dev/null || $SUDO docker restart nh-9router 2>/dev/null || true
+      $SUDO docker restart dispatcher 2>/dev/null || $SUDO docker restart nh-dispatcher 2>/dev/null || true
+      if [[ "$RESTART_HERMES_ON_PROBE" == "1" ]]; then
+        $SUDO docker restart "$HERMES_CTR" 2>/dev/null \
+          || $SUDO docker restart nh-hermes 2>/dev/null \
+          || $SUDO docker restart hermes 2>/dev/null \
+          || true
+      else
+        log "not restarting hermes on probe fail (set STACK_WATCH_RESTART_HERMES=1 to enable)"
+      fi
       mark_cooldown
     fi
   fi
@@ -106,9 +170,13 @@ heal_by_health() {
 
 main() {
   cd "$ROOT"
+  if boot_grace_active; then
+    log "boot grace (${BOOT_GRACE_S}s) — skip heals (uptime still warming)"
+    exit 0
+  fi
   restart_bad_containers
   heal_by_health
-  log "done profile=${PROFILE}"
+  log "done profile=${PROFILE} project=${PROJECT}"
 }
 
 main "$@"

@@ -40,7 +40,8 @@ Durable file: `zalo_admin_users.txt` under Hermes data (exactly one uid).
 ## Self-heal
 
 - Adapter: on SSE reconnect loop, drop `Last-Event-ID` and recreate session (no manual restart).
-- Host timers: `assistant-stack-watch` (2m) + `assistant-zalo-watch` (1m when `ENABLE_ZALO=1`) restart down containers / hermes when `sseClients==0`.
+- Host timers: `assistant-stack-watch` (2m) + `assistant-zalo-watch` (1m when `ENABLE_ZALO=1`).
+- Default: on `sseClients==0`, restart **bridge only** (`ZALO_WATCH_RESTART_HERMES=0`). Stack-watch does **not** restart Hermes on probe fail (`STACK_WATCH_RESTART_HERMES=0`). Set those env vars to `1` only if you explicitly want the old restart behavior.
 
 ## Related
 

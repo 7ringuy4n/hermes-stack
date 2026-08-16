@@ -1,0 +1,40 @@
+# Dynamic routes — Hermes with Let's Encrypt (Host + TLS)
+# Copied/activated when TRAEFIK_ACME_ENABLED=1 (see compose / Apply script).
+# Host rule must match TRAEFIK_ACME_DOMAIN.
+
+http:
+  routers:
+    hermes-gw-http:
+      rule: "Host(`CHANGE_ME_DOMAIN`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-https
+      service: hermes-gw
+      priority: 1
+
+    hermes-gw:
+      rule: "Host(`CHANGE_ME_DOMAIN`)"
+      entryPoints:
+        - websecure
+      service: hermes-gw
+      tls:
+        certResolver: letsencrypt
+      priority: 1
+
+  middlewares:
+    redirect-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    hermes-gw:
+      loadBalancer:
+        servers:
+          - url: "http://hermes:8642"
+        healthCheck:
+          path: "/"
+          interval: "15s"
+          timeout: "5s"
+        passHostHeader: true
