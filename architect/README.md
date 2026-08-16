@@ -17,5 +17,7 @@ Platform layers around Hermes. Each subfolder has a detailed README.
 | admin-api | [admin-api/README.md](./admin-api/README.md) | High / channel |
 | backup-restore | [backup-restore/README.md](./backup-restore/README.md) | Must |
 | monitor | [monitor/README.md](./monitor/README.md) | High |
+| edge | [edge/README.md](./edge/README.md) | Optional (`ENABLE_TRAEFIK` / `ENABLE_OPENVPN`) |
+| gateway | [gateway/README.md](./gateway/README.md) | Optional (`ENABLE_API_GATEWAY`) |
 
 Hermes product surface (skills, messages, plugins): [../hermes/README.md](../hermes/README.md).
