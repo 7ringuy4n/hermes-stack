@@ -1,0 +1,31 @@
+---
+description: Git branch, commit, and PR title rules for hermes-stack
+alwaysApply: true
+---
+
+# Git workflow (hermes-stack)
+
+Follow **[docs/GIT.md](../../docs/GIT.md)** as the source of truth.
+
+## Branches
+
+- `main` → `develop` → `feature/<layer>/<slug>`
+- Branch features from **develop**, never commit feature work on `main`
+- Layer path examples: `zalo`, `memory`, `session`, `worker`, `gateway`, `arch`, `hermes`, `docs`
+
+## PR / commit title (required)
+
+```text
+[<BRANCH_KIND>][<LAYER>][<CHANGE_TYPE>] <Imperative summary>
+```
+
+Example: `[FEATURE][ZALO][FIX] Prevent Hermes restart storm from watch timers`
+
+## Must
+
+- Update `docs/CHANGELOG.md` (top entry + timestamp) for ops/product changes
+- PR base = `develop`
+- Push only when GitHub auth is the repo owner (`7ringuy4n` for this repo)
+- No VPS/remote apply without explicit permission
+- Force-push / amend only when the operator explicitly asks (`--force-with-lease`)
+- Do not commit `.env`, secrets, or `scripts/temp/**` / `hermes/temp/**` drafts
