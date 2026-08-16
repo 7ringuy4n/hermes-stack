@@ -1,0 +1,93 @@
+# assistant — Edge overlay (optional Traefik / API Gateway / OpenVPN)
+# Merged when ENABLE_TRAEFIK, ENABLE_API_GATEWAY, or ENABLE_OPENVPN is 1.
+# Default Traefik binds 127.0.0.1 (VPN/LAN). Let's Encrypt profile publishes 80/443.
+
+volumes:
+  traefik_letsencrypt:
+
+services:
+  # HTTP-only LB (VPN/LAN). Profile: traefik
+  traefik:
+    profiles: ["traefik"]
+    image: ${TRAEFIK_IMAGE:-traefik:v3.3}
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - --configFile=/etc/traefik/traefik.yml
+    volumes:
+      - ./architect/edge/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./architect/edge/traefik/dynamic:/etc/traefik/dynamic:ro
+    ports:
+      - "${TRAEFIK_BIND:-127.0.0.1}:${TRAEFIK_HOST_PORT:-8080}:80"
+    depends_on:
+      - hermes
+    networks: [internal]
+
+  # Traefik + Let's Encrypt (HTTP-01). Profile: traefik-acme
+  # Requires TRAEFIK_ACME_EMAIL + TRAEFIK_ACME_DOMAIN; ports 80/443 must be reachable for HTTP-01.
+  traefik-acme:
+    profiles: ["traefik-acme"]
+    image: ${TRAEFIK_IMAGE:-traefik:v3.3}
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - --configFile=/etc/traefik/traefik.acme.yml
+      - --certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_ACME_EMAIL:-change-me@example.com}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.letsencrypt.acme.caserver=${TRAEFIK_ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+    volumes:
+      - ./architect/edge/traefik/traefik.acme.yml:/etc/traefik/traefik.acme.yml:ro
+      - ./architect/edge/traefik/dynamic-acme:/etc/traefik/dynamic:ro
+      - traefik_letsencrypt:/letsencrypt
+    ports:
+      - "${TRAEFIK_BIND:-0.0.0.0}:${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_BIND:-0.0.0.0}:${TRAEFIK_HTTPS_PORT:-443}:443"
+    depends_on:
+      - hermes
+    networks: [internal]
+
+  api-gateway:
+    profiles: ["gateway"]
+    build: ./architect/gateway/api-gateway
+    container_name: api-gateway
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      # Prefer https://traefik:443 or http://traefik:80 when Traefik is on
+      - GATEWAY_UPSTREAM_URL=${GATEWAY_UPSTREAM_URL:-http://hermes:8642}
+      - GATEWAY_PORT=8088
+      - GATEWAY_RATE_LIMIT_REQUESTS=${GATEWAY_RATE_LIMIT_REQUESTS:-60}
+      - GATEWAY_RATE_LIMIT_WINDOW_S=${GATEWAY_RATE_LIMIT_WINDOW_S:-60}
+      - GATEWAY_RATE_KEY_PREFIX=${GATEWAY_RATE_KEY_PREFIX:-rate:gw}
+      - GATEWAY_SKIP_RL_PATHS=${GATEWAY_SKIP_RL_PATHS:-/coding,/v1/coding,/skills/coding}
+      - GATEWAY_SKIP_RL_HEADER=${GATEWAY_SKIP_RL_HEADER:-x-assistant-skill}
+      - GATEWAY_SKIP_RL_HEADER_VALUES=${GATEWAY_SKIP_RL_HEADER_VALUES:-coding}
+      - GATEWAY_PROXY_TIMEOUT_S=${GATEWAY_PROXY_TIMEOUT_S:-120}
+      - GATEWAY_MESSAGES_FILE=/app/messages/en.json
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+    ports:
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-8088}:8088"
+    depends_on:
+      redis:
+        condition: service_healthy
+      hermes:
+        condition: service_started
+    networks: [internal]
+
+  # Stub — initialize PKI/config before relying on this in production.
+  openvpn:
+    profiles: ["openvpn"]
+    image: ${OPENVPN_IMAGE:-kylemanna/openvpn:latest}
+    container_name: openvpn
+    restart: unless-stopped
+    cap_add: ["NET_ADMIN"]
+    devices:
+      - /dev/net/tun
+    volumes:
+      - ${OPENVPN_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}/openvpn}:/etc/openvpn
+    ports:
+      - "127.0.0.1:${OPENVPN_HOST_PORT:-1194}:1194/udp"
+    networks: [internal]

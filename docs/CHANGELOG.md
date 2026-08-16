@@ -6,6 +6,20 @@
 - Release from `main`, cherry-pick only production-ready features; MR titles `[TYPE][LAYER]` / `[RELEASE]`.
 - Updated `.cursor/rules/git.mdc`.
 
+## 2026-08-16 09:15 +07 — edge: Traefik Let's Encrypt (optional ACME)
+
+- `TRAEFIK_ACME_ENABLED=1` selects compose profile `traefik-acme` (HTTP-01, `:443`, redirect).
+- Requires `TRAEFIK_ACME_EMAIL` + `TRAEFIK_ACME_DOMAIN`; render via `scripts/main/render-traefik-acme.sh`.
+- Default remains LAN/`127.0.0.1` without ACME (no public inbound). Staging CA supported.
+
+## 2026-08-16 09:05 +07 — edge: Traefik, API Gateway, OpenVPN stubs
+
+- Optional `docker-compose.edge.yml` via `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` (default **0**; VPN/LAN bind `127.0.0.1` only).
+- API Gateway: Valkey global rate limit; coding paths/header skip RL; admin messages in `messages/en.json`.
+- Traefik file provider LB → `hermes:8642` (ready for Hermes × N server list).
+- OpenVPN compose stub + PKI docs; Zalo still bypasses Gateway.
+- Docs: `docs/05-edge-networking.md`; reference copy under `referrence/`; `Apply-EdgeUpdate.ps1`.
+
 ## 2026-08-16 08:25 +07 — docs: git workflow rules
 
 - Added `docs/GIT.md`: branch layout (`main` → `develop` → `feature/<layer>/<slug>`), PR title `[KIND][LAYER][TYPE]`, commit/changelog/push rules.
