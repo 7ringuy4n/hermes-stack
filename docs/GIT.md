@@ -22,6 +22,25 @@ feature/* ──MR──> develop ──> release/* ──MR──> main
                      └── Feature E 🧪
 ```
 
+### Merging to `main` — mandatory merge request
+
+**Always create a GitHub Pull Request (merge request) into `main`. Never land production commits by direct push or local-only merge to `main`.**
+
+| Allowed | Forbidden |
+|---------|-----------|
+| `gh pr create --base main …` then review / `gh pr merge` | `git push origin main` with new commits (no PR) |
+| MR from `release/vX.Y.Z` → `main` (`[RELEASE] …`) | Merging `develop` straight into `main` without an MR |
+| MR from `hotfix/*` → `main` (`[HOTFIX][…] …`) | `git merge` on a local `main` checkout and force-push |
+| Agent / operator merges **only via the open PR** | Closing the PR and pushing the same commits to `main` by hand |
+
+Release path reminder:
+
+1. Create `release/vX.Y.Z` from `main` (or update it with selected commits).  
+2. Push the release branch.  
+3. **Open MR** `release/vX.Y.Z` → `main` with title `[RELEASE] Release vX.Y.Z`.  
+4. Merge **through that MR** after checks/review.  
+5. Optionally sync `main` back into `develop` (also via MR preferred).
+
 ---
 
 ## 1. Branch types
@@ -198,9 +217,10 @@ git push -u origin release/v1.5.0
 gh pr create --base develop --head feature/<layer>/<slug> \
   --title "[FEATURE][<LAYER>] <Summary>" --body "..."
 
-# release → main
+# release → main (REQUIRED — never push commits to main without this PR)
 gh pr create --base main --head release/v1.5.0 \
   --title "[RELEASE] Release v1.5.0" --body "..."
+# After review: gh pr merge <number>   (do not git push to main instead)
 ```
 
 ---
@@ -222,6 +242,7 @@ See root `.gitignore`.
 - [ ] Features/fixes from `develop`; hotfixes from `main`; releases from `main` + selected commits
 - [ ] MR title `[TYPE][LAYER] …` or `[RELEASE] Release vX.Y.Z`
 - [ ] Feature/fix MR base = `develop`; release/hotfix to `main` as appropriate
+- [ ] **Any change to `main` goes through an open MR — no direct push to `main`**
 - [ ] CHANGELOG updated when needed
 - [ ] Auth account correct before push
 - [ ] No VPS deploy without explicit permission
