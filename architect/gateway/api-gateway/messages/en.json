@@ -1,0 +1,5 @@
+{
+  "rate_limited": "Too many requests. Please try again later.",
+  "upstream_unavailable": "Upstream service unavailable. Check Traefik/Hermes.",
+  "health_ok": "ok"
+}
