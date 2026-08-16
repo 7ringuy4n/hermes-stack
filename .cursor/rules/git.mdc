@@ -17,6 +17,14 @@ Follow **[docs/GIT.md](../../docs/GIT.md)** as the source of truth.
 feature/* ──MR──> develop ──> release/* ──MR──> main
 ```
 
+## Merging to `main` (mandatory)
+
+- **Always open a Pull Request / merge request into `main`.**
+- **Never** `git push` new commits directly to `main`.
+- **Never** merge locally to `main` and force-push.
+- Production path: create/push `release/vX.Y.Z` → `gh pr create --base main` → merge **via that PR** (`[RELEASE] Release vX.Y.Z`).
+- Hotfixes: `hotfix/*` → MR → `main` (then sync `develop`).
+
 ## Branches
 
 | Branch | From | MR into |
@@ -24,7 +32,7 @@ feature/* ──MR──> develop ──> release/* ──MR──> main
 | `feature/*` | `develop` | `develop` |
 | `fix/*` | `develop` | `develop` |
 | `hotfix/*` | `main` | `main` (+ sync `develop`) |
-| `release/vX.Y.Z` | `main`, then cherry-pick ready features | `main` |
+| `release/vX.Y.Z` | `main`, then cherry-pick ready features | `main` (**via MR only**) |
 
 ## MR title (required)
 
