@@ -26,19 +26,40 @@ link_shared messages
 link_shared plugins
 link_shared lazy-packages
 
-# Zalo allowlists stay on shared paths (compose already sets absolute /opt/data/...)
+# Compose scale uses container id as hostname; resolve service name from /etc/hosts.
+resolve_cname() {
+  ip="$(hostname -i 2>/dev/null | awk '{print $1}')"
+  if [ -n "$ip" ]; then
+    getent hosts "$ip" 2>/dev/null | awk '{print $2}' | head -n1
+  fi
+}
+CNAME="$(resolve_cname || true)"
+CNAME="${CNAME:-$RID}"
+
 # Only replica 1 should attach to the Zalo bridge (avoid double SSE / duplicate replies).
-case "${RID}" in
+case "${CNAME}" in
   *hermes-1|*hermes_1|*-1)
     : # keep ZALO_* from compose
     ;;
   *)
-    export ZALO_PLUGIN_URL=""
-    export ZALO_PLUGIN_TOKEN=""
+    case "${RID}" in
+      *hermes-1|*hermes_1|*-1)
+        :
+        ;;
+      *)
+        export ZALO_PLUGIN_URL=""
+        export ZALO_PLUGIN_TOKEN=""
+        ;;
+    esac
     ;;
 esac
 
-echo "==> hermes replica home=${HERMES_HOME} (shared=${SHARED}) hostname=${RID} zalo_url=${ZALO_PLUGIN_URL:-<disabled>}"
+echo "==> hermes replica home=${HERMES_HOME} (shared=${SHARED}) host=${RID} cname=${CNAME} zalo_url=${ZALO_PLUGIN_URL:-<disabled>}"
 
-# s6-overlay image entrypoint
-exec /init "$@"
+# Image SoT: entrypoint-dispatch → /init → main-wrapper.sh <args>
+# Must pass "gateway run" into main-wrapper (raw `/init gateway run` exits 127).
+# Empty args → interactive CLI → immediate exit when stdin is not a TTY.
+if [ "$#" -eq 0 ]; then
+  set -- gateway run
+fi
+exec /opt/hermes/docker/entrypoint-dispatch.sh "$@"
