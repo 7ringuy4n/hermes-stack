@@ -215,7 +215,7 @@ assistant_backup_valkey() {
 assistant_restore_valkey() {
   local dir="$1" rdb="${dir}/valkey/dump.rdb" vol img
   [[ -f "$rdb" ]] || { assistant_backup_fail "missing valkey dump.rdb"; return 1; }
-  docker stop session jobs jobs-worker mem0 ingest hermes 2>/dev/null || true
+  docker stop session jobs jobs-worker ingest hermes 2>/dev/null || true
   docker stop redis
   vol="$(as_volume valkey_data)"
   [[ -n "$vol" ]] || { assistant_backup_fail "valkey_data volume missing"; return 1; }
