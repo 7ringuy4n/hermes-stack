@@ -106,12 +106,19 @@ restart_bridge() {
 }
 
 restart_hermes() {
-  log "restart ${HERMES_CTR} (+ ${PROXY_CTR} if present) [ZALO_WATCH_RESTART_HERMES=1]"
+  log "restart hermes replicas (+ ${PROXY_CTR} if present) [ZALO_WATCH_RESTART_HERMES=1]"
   $SUDO docker restart "$PROXY_CTR" 2>/dev/null || true
-  $SUDO docker restart "$HERMES_CTR" 2>/dev/null \
-    || $SUDO docker restart nh-hermes 2>/dev/null \
-    || $SUDO docker restart hermes 2>/dev/null \
-    || true
+  # Scale-safe: restart all compose hermes containers (assistant-hermes-1, …)
+  local ids
+  ids="$($SUDO docker ps -aq --filter "name=hermes" 2>/dev/null || true)"
+  if [[ -n "$ids" ]]; then
+    # shellcheck disable=SC2086
+    $SUDO docker restart $ids >/dev/null 2>&1 || true
+  else
+    $SUDO docker restart "${HERMES_CONTAINER:-hermes}" 2>/dev/null \
+      || $SUDO docker restart nh-hermes 2>/dev/null \
+      || true
+  fi
   sleep 5
 }
 

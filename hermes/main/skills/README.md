@@ -9,6 +9,7 @@
 | Documents | `documents`, `markdown`, `pdf`, `docx`, `xlsx`, `file-gen`, `official/{pdf,docx,xlsx}` |
 | Image | `image-gen`, `comfyui`, `official/comfyui` |
 | Web | `tavily`, `firecrawl`, `searxng`, `searxng-search`, `vendor/tavily`, `vendor/firecrawl` |
+| Coding / UI | `coding` (router), `vendor/mattpocock/*`, `vendor/ui-ux-pro-max/*` |
 | Template | `_example` |
 
 These are **new downloads** and/or the doc/web/comfy set you asked to keep in `main`.
