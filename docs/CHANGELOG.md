@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-16 09:20 +07 — docs: git workflow release model
+
+- `docs/GIT.md`: `feature/*` → `develop` → `release/*` → `main`; `fix/*` / `hotfix/*`.
+- Release from `main`, cherry-pick only production-ready features; MR titles `[TYPE][LAYER]` / `[RELEASE]`.
+- Updated `.cursor/rules/git.mdc`.
+
 ## 2026-08-16 08:25 +07 — docs: git workflow rules
 
 - Added `docs/GIT.md`: branch layout (`main` → `develop` → `feature/<layer>/<slug>`), PR title `[KIND][LAYER][TYPE]`, commit/changelog/push rules.

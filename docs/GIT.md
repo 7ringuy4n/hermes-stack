@@ -1,161 +1,216 @@
-# Git workflow rules
+# Recommended Git workflow (hermes-stack)
 
-English rules for branches, commits, and pull requests on **hermes-stack**.
-Follow this document for every change. Agents must follow the same rules (see `.cursor/rules/git.mdc`).
+English rules for branches and merge requests (GitHub PRs). Agents follow the same rules via `.cursor/rules/git.mdc`.
 
 ---
 
-## 1. Branch layout
+## Core rule
+
+| Branch | Meaning |
+|--------|---------|
+| **`develop`** | Everything currently being integrated / tested |
+| **`main`** | Production-ready / stable **only** |
+| **`release/*`** | The **specific set** of features selected for the next production release |
 
 ```text
-main
-  └── develop                          # integration branch
-        └── feature/<layer>/<slug>     # work branch (one concern)
+feature/* ──MR──> develop ──> release/* ──MR──> main
+                     │
+                     ├── Feature A ✅
+                     ├── Feature B ✅
+                     ├── Feature C ✅
+                     ├── Feature D 🧪
+                     └── Feature E 🧪
 ```
+
+---
+
+## 1. Branch types
 
 | Branch | Purpose |
 |--------|---------|
-| `main` | Stable / release line |
-| `develop` | Default integration; merge feature PRs here first |
-| `feature/<layer>/<slug>` | One task under a product layer |
+| `main` | Production / stable only |
+| `develop` | Integration branch; may contain features still under testing |
+| `feature/*` | New feature development |
+| `fix/*` | Normal bug fixes |
+| `hotfix/*` | Urgent production fixes (usually from `main`) |
+| `release/*` | Selected features being prepared for production |
 
-### Layer names (second path segment)
+### Feature / fix naming (layer in path)
 
-Use the architecture layer (uppercase in PR titles, lowercase in branch paths):
+Prefer `feature/<layer>/<slug>` or `fix/<layer>/<slug>`:
 
-| Layer (branch) | Layer (title tag) | Examples |
-|----------------|-------------------|----------|
-| `memory` | `MEMORY` | Memory Manager, Mem0, Postgres memories |
+| Layer (path) | Title tag | Examples |
+|--------------|-----------|----------|
+| `memory` | `MEMORY` | Memory Manager, Postgres memories |
 | `session` | `SESSION` | Valkey session, thread state |
-| `worker` | `WORKER` | OCR, jobs, image, coding workers |
-| `zalo` | `ZALO` | Bridge, proxy, zalo-watch, adapter |
+| `worker` | `WORKER` | OCR, jobs, image workers |
+| `zalo` | `ZALO` | Bridge, proxy, zalo-watch |
 | `gateway` | `GATEWAY` | API gateway, rate limit |
-| `arch` | `ARCH` | Cross-cutting architecture / Traefik |
+| `arch` | `ARCH` | Traefik, OpenVPN, edge |
 | `hermes` | `HERMES` | Hermes runtime / health |
 | `docs` | `DOCS` | Documentation only |
 | `security` | `SECURITY` | Authz, secret probe, AV |
 | `monitor` | `MONITOR` | Grafana, Loki, metrics |
 
-### Branch name examples
+Examples:
 
 ```text
-feature/zalo/fix-cause-restart-hermes
-feature/memory/concurrent-session-support
-feature/worker/external-file-processing
-feature/gateway/api-rate-limiting
-feature/docs/add-git-rules
+feature/memory/add-memory-manager
+feature/session/concurrent-session-handling
+fix/session/session-isolation
+feature/arch/traefik-openvpn-gateway-stubs
+hotfix/gateway/rate-limit-outage
+release/v1.5.0
 ```
 
 Rules:
 
-- Create `develop` from `main` if missing; do not commit feature work directly on `main`.
-- Branch features from **`develop`**, not from `main`.
-- One PR = one concern. Do not mix unrelated layers in one branch.
+- Branch **`feature/*`** and **`fix/*`** from **`develop`** (unless hotfix).
+- Branch **`hotfix/*`** from **`main`**; merge back to `main` and cherry-pick / MR into `develop`.
+- One MR = one concern. Do not mix unrelated layers.
 - Do not push to a VPS / production host unless the operator explicitly allows it.
 
 ---
 
-## 2. Pull request title format
+## 2. Your exact release scenario
 
-**Required:** three bracket tags, then a short imperative summary.
+A, B, C are production-ready; D/E are still testing on `develop`:
 
 ```text
-[<BRANCH_KIND>][<LAYER>][<CHANGE_TYPE>] <Summary>
+develop
+ ├── A ✅
+ ├── B ✅
+ ├── C ✅
+ ├── D 🧪
+ └── E 🧪
 ```
 
-| Tag position | Values | Meaning |
-|--------------|--------|---------|
-| 1 — Branch kind | `FEATURE` `REFACTOR` `SECURITY` `DOCS` `HOTFIX` | Family of work (usually matches `feature/…`) |
-| 2 — Layer | `ZALO` `MEMORY` `SESSION` `WORKER` `GATEWAY` `ARCH` `HERMES` `DOCS` … | Same as §1 |
-| 3 — Change type | `FIX` `FEATURE` `REFACTOR` `SECURITY` `DOCS` `PERF` | What this PR mainly does |
+### Create the release branch
+
+1. Create **`release/v1.5.0` from `main`** (clean production baseline).
+2. Bring **only A / B / C** into `release/v1.5.0` (cherry-pick or MR the selected commits/MRs — **not** the whole `develop` tip if D/E must stay out).
+
+```text
+main ────────────────────────┐
+                             │
+                             ↓
+                       release/v1.5.0
+                         ↑   ↑   ↑
+                         A   B   C
+                             │
+                             ↓
+                            main
+```
+
+```text
+develop
+ ├── A
+ ├── B
+ ├── C
+ ├── D 🧪
+ └── E 🧪
+```
+
+3. After A/B/C pass final release testing: **MR `release/v1.5.0` → `main`**.
+4. D/E stay on **`develop`** and ship in a later release.
+
+Optional: after release, merge `main` back into `develop` (or cherry-pick release fixes) so develop stays aligned with production.
+
+---
+
+## 3. MR (pull request) naming
+
+**Format:** `[TYPE][LAYER] Short imperative summary`  
+**Release:** `[RELEASE] Release vX.Y.Z`
 
 ### Examples
 
 ```text
-[FEATURE][MEMORY][FEATURE] Add concurrent session support
-[FEATURE][WORKER][FEATURE] Add external file processing worker
-[FEATURE][SESSION][FIX] Prevent cross-session context leakage
-[FEATURE][ARCH][REFACTOR] Separate heavy workers from Hermes
-[FEATURE][GATEWAY][SECURITY] Add API rate limiting
-[FEATURE][ZALO][FIX] Prevent Hermes restart storm from watch timers
-[FEATURE][DOCS][DOCS] Add git workflow rules
+[FEATURE][MEMORY] Add memory manager
+[FEATURE][SESSION] Add concurrent session handling
+[FIX][SESSION] Fix session isolation
+[REFACTOR][WORKER] Separate heavy workers from Hermes
+[FEATURE][ARCH] Add Traefik, OpenVPN, and API Gateway stubs
+[FIX][ZALO] Prevent Hermes restart storm from watch timers
+[DOCS][DOCS] Add git workflow rules
+[RELEASE] Release v1.5.0
 ```
 
-Base branch for feature PRs: **`develop`**.
+| TYPE | Use for |
+|------|---------|
+| `FEATURE` | New capability |
+| `FIX` | Bug fix (`fix/*` or corrective MR) |
+| `REFACTOR` | Structure / no intended behavior change |
+| `SECURITY` | Auth, secrets, hardening |
+| `DOCS` | Documentation only |
+| `HOTFIX` | Urgent production fix |
+| `RELEASE` | Release branch → `main` |
+
+| Default MR base | From branch |
+|-----------------|-------------|
+| `develop` | `feature/*`, `fix/*` |
+| `main` | `release/*`, `hotfix/*` (also sync `develop`) |
 
 ---
 
-## 3. Commit messages
+## 4. Commit messages
 
-Prefer the **same title line** as the PR when the commit is the whole change:
+Prefer the **same title line** as the MR when the commit is the whole change:
 
 ```text
-[FEATURE][ZALO][FIX] Prevent Hermes restart storm from watch timers
+[FEATURE][MEMORY] Add memory manager
 
-Optional body: cause, what changed, opt-in flags, follow-ups.
+Optional body: why, flags, follow-ups.
 ```
 
-- Use UTF-8; keep Vietnamese or other Unicode in messages/docs when needed.
-- Do not put secrets in commits.
-- Do not amend or force-push unless the operator explicitly asks (then prefer `--force-with-lease`).
-- Do not skip hooks (`--no-verify`) unless explicitly requested.
+- UTF-8 OK (Vietnamese in docs/messages).
+- No secrets in commits.
+- Amend / force-push only when the operator explicitly asks (`--force-with-lease`).
+- Do not skip hooks unless explicitly requested.
 
 ---
 
-## 4. Changelog
+## 5. Changelog
 
-Every user-facing or ops-facing change updates `docs/CHANGELOG.md` **at the top**, with timestamp:
+Every ops/product change updates `docs/CHANGELOG.md` at the top with a timestamp:
 
 ```markdown
 ## YYYY-MM-DD HH:MM +07 — short title
 
-- Bullet: why / what / how to opt in or verify
+- Bullet: why / what / verify
 ```
-
-Commit message may mirror the latest CHANGELOG entry title when that is the agreed style for the task.
-
----
-
-## 5. Pull request body
-
-Include at least:
-
-1. **Summary** — problem and fix in plain English  
-2. **Cause** (for fixes) — root cause in one short list  
-3. **Changes** — files / flags / defaults  
-4. **Test plan** — checkboxes an operator can run  
-
-Do not deploy or SSH-apply scripts to remote hosts from a PR unless permission is given in the request.
 
 ---
 
 ## 6. Auth and push
 
-- Push only when GitHub CLI / git is authenticated as the repo owner account for this project (`7ringuy4n` for `github.com/7ringuy4n/hermes-stack`).
-- If the active account is wrong, stop and ask; do not push as another user.
-- After creating branches locally, push with upstream tracking:
+- Push only when GitHub auth is the repo owner for this project (`7ringuy4n` for `github.com/7ringuy4n/hermes-stack`).
+- If the active account is wrong, stop and ask.
 
 ```bash
 git push -u origin develop
 git push -u origin feature/<layer>/<slug>
+git push -u origin release/v1.5.0
 ```
 
-Open PR:
-
 ```bash
+# feature → develop
 gh pr create --base develop --head feature/<layer>/<slug> \
-  --title "[FEATURE][<LAYER>][<TYPE>] <Summary>" \
-  --body "..."
+  --title "[FEATURE][<LAYER>] <Summary>" --body "..."
+
+# release → main
+gh pr create --base main --head release/v1.5.0 \
+  --title "[RELEASE] Release v1.5.0" --body "..."
 ```
 
 ---
 
 ## 7. What not to commit
 
-- `.env`, secrets, keys, credentials  
-- `scripts/temp/**` (except README) — gitignored hotfixes  
-- `hermes/temp/**` — local drafts  
-- Editor folders (`.idea/`, `.vscode/`) unless the team agrees  
+- `.env`, secrets, keys  
+- `scripts/temp/**` (except README)  
+- `hermes/temp/**`  
+- Editor folders (`.idea/`) unless agreed  
 
 See root `.gitignore`.
 
@@ -163,9 +218,11 @@ See root `.gitignore`.
 
 ## 8. Quick checklist
 
-- [ ] Branched from `develop` as `feature/<layer>/<slug>`
-- [ ] CHANGELOG entry with timestamp
-- [ ] Commit / PR title: `[KIND][LAYER][TYPE] Summary`
-- [ ] PR base = `develop`
-- [ ] Auth account is correct before push
+- [ ] Right branch type (`feature` / `fix` / `hotfix` / `release`)
+- [ ] Features/fixes from `develop`; hotfixes from `main`; releases from `main` + selected commits
+- [ ] MR title `[TYPE][LAYER] …` or `[RELEASE] Release vX.Y.Z`
+- [ ] Feature/fix MR base = `develop`; release/hotfix to `main` as appropriate
+- [ ] CHANGELOG updated when needed
+- [ ] Auth account correct before push
 - [ ] No VPS deploy without explicit permission
+- [ ] Release MR includes **only** production-ready items (leave 🧪 work on `develop`)
