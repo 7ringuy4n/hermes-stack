@@ -1,5 +1,54 @@
 # Change history
 
+## 2026-08-16 20:15 +07 — release: v0.4.0
+
+- Cut 
+elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo singleton, hardware docs, Deploy-High, agent-ops).
+
+## 2026-08-16 20:15 +07 — docs: hardware specs + backup/restore test notes (MR-ready)
+
+- Added docs/HARDWARE.md: lab-tested High (Ubuntu 24.04, 4 vCPU / 16 GiB / ~200 GB) and recommended minimum/comfortable sizes per profile.
+- architect/backup-restore/README.md: restore behavior + successful round-trip matrix (stamp 20260816_195940).
+- Linked from root README, docs/README.md, docs/00-profiles.md, docs/02-commands.md, docs/04-component-flows.md, docker/README.md.
+
+## 2026-08-16 20:10 +07 — backup-restore: VPS round-trip + High path fixes
+
+- Restored corrupted backup.sh; defaults BACKUP_DIR=/data/assistant/backups, HERMES_DATA_DIR=/data/assistant.
+- Restore uses compose (not missing generate/deploy); Postgres skips DROP/CREATE ROLE for session user; Qdrant per-collection snaps.
+- Hermes scale-aware; exclude backups/ + replicas/ from hermes tar; schedules enable only existing timers.
+- VPS test stamp 20260816_195940: backup + verify + restore OK; Hermes x2 up.
+
+## 2026-08-16 20:05 +07 — docs: recommend fail2ban on clean Ubuntu
+
+- README: host-hardening note + install snippet for fail2ban (SSH jail) on fresh Ubuntu VPS.
+
+## 2026-08-16 20:00 +07 — zalo: stale owner reclaim (entry + adapter)
+
+- If the Zalo-owner Hermes replica dies, leftover zalo_owner blocked SSE (sseClients=0).
+- Entrypoint scrubs unreachable owners before election; adapter can reclaim the lock when owner DNS is gone.
+
+## 2026-08-16 19:58 +07 — zalo: owner lock enforced in adapter (survive s6 env)
+
+- Compose/s6 can restore ZALO_PLUGIN_URL on every replica after entrypoint clears it.
+- Adapter connects only when hostname matches HERMES_SHARED_DATA/zalo_owner.
+
+## 2026-08-16 19:55 +07 — zalo: empty ZALO_PLUGIN_URL disables adapter (no default bridge)
+
+- Explicit empty env no longer falls back to a default bridge URL (prevents dual SSE on Hermes x2).
+
+## 2026-08-16 19:50 +07 — hermes: Zalo singleton lock (no bare hermes DNS)
+
+- Do not treat bare Compose DNS alias hermes as Zalo owner when scaled.
+
+## 2026-08-16 19:45 +07 — ops: High VPS redeploy (no monitor; Hermes x2)
+
+- Destroyed prior medium stack; deployed High with monitor flags off; Traefik + API Gateway; image smoke + gateway concurrency.
+
+## 2026-08-16 19:40 +07 — arch: compose under docker/; High without monitor; Deploy-High
+
+- Moved all docker-compose*.yml into docker/ (run.sh uses --project-directory).
+- Observability gated by compose profile monitor; Deploy-High.ps1 + deploy_high_vps.py for phased SSH.
+
 ## 2026-08-16 11:58 +07 — release: v0.3.0
 
 - Cut `release/v0.3.0` from `main` + current `develop` (Mem0 removal, edge defaults, Hermes scale 2, per-replica home + Zalo singleton, MR-to-main workflow).

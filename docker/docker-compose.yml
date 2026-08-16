@@ -174,10 +174,18 @@ services:
       - IMAGE_REFINE=${IMAGE_REFINE:-1}
       - IMAGE_ALLOW_PILLOW=${IMAGE_ALLOW_PILLOW:-0}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
+      # Zalo outbound (send-file / send_zalo on /v1/image) via host bridge proxy
+      - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://zalo-proxy:8787}
+      - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
+      - ZALO_HOST_MEDIA_DIR=${ASSISTANT_DATA_DIR:-/data/assistant}/media
+      - ZALO_HOST_DATA_DIR=${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}
+      - AV_SCAN=${AV_SCAN:-0}
     volumes:
       - ${ASSISTANT_DATA_DIR:-/data/assistant}/media:/data/media
     depends_on:
       - 9router
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${DISPATCHER_PORT:-8090}:8090"
     networks: [internal]
@@ -267,11 +275,14 @@ services:
       - ADMIN_API_URL=${ADMIN_API_URL:-http://admin-api:8100}
       - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
       - GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-true}
+      - HERMES_REPLICAS=${HERMES_REPLICAS:-1}
     volumes:
       - ${HERMES_DATA_DIR:-/data/assistant}:/opt/data
       # Repo SoT for Low; durable runtime state stays on HERMES_DATA_DIR
       - ./hermes/main/skills:/opt/data/skills:ro
+      - ./hermes/main/plugins:/opt/data/plugins:ro
       - ./hermes/main/messages:/opt/data/messages:ro
+      - ./hermes/main/SOUL.md:/opt/data/SOUL.md:ro
       - ./hermes/main/docker/hermes-replica-entry.sh:/opt/stack/hermes-replica-entry.sh:ro
     depends_on:
       - 9router

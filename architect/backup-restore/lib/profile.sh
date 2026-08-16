@@ -74,10 +74,11 @@ assistant_profile_apply() {
       export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-1}"
       [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,firecrawl
       [[ -n "${IMAGE_BACKENDS:-}" ]] || export IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
-      export ENABLE_GRAFANA=1
-      export ENABLE_LOKI=1
-      export ENABLE_PROMETHEUS=1
-      export ENABLE_ALLOY=1
+      # Observability defaults ON for High; set ENABLE_GRAFANA=0 (etc.) in .env to skip
+      export ENABLE_GRAFANA="${ENABLE_GRAFANA:-1}"
+      export ENABLE_LOKI="${ENABLE_LOKI:-1}"
+      export ENABLE_PROMETHEUS="${ENABLE_PROMETHEUS:-1}"
+      export ENABLE_ALLOY="${ENABLE_ALLOY:-1}"
       export ENABLE_CLOUDDRIVE="${ENABLE_CLOUDDRIVE:-0}"
       export ENABLE_OPENBAO=1
       export ENABLE_OPENBAO_AGENT="${ENABLE_OPENBAO_AGENT:-0}"

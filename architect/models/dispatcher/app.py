@@ -765,8 +765,12 @@ def _active_turn() -> dict[str, str]:
 def _claim_generated_file(path: Path, thread_id: str) -> bool:
     """True = this process may send. False = already sent this turn."""
     try:
-        st = path.stat()
-        key = f"{int(st.st_size)}:{path.name}"
+        suf = path.suffix.lower()
+        if suf in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
+            key = f"img:{(path.stem or path.name).lower()}"
+        else:
+            st = path.stat()
+            key = f"{int(st.st_size)}:{path.name}"
     except OSError:
         return True
     try:
@@ -855,17 +859,31 @@ def send_file(req: SendFileReq) -> dict[str, Any]:
     return {"ok": True, "file": name, "zalo": zalo, "av": scan}
 
 
-def _send_zalo_base64(thread_id: str, thread_type: str, dest: Path, caption: str) -> dict[str, Any]:
-    import base64
-
-    bridge = os.environ.get("ZALO_BRIDGE_URL", "http://host.docker.internal:8787").rstrip("/")
+def _send_zalo_attachment(thread_id: str, thread_type: str, dest: Path, caption: str) -> dict[str, Any]:
+    """Send via hermes-zalo-plugin /send-attachment (requires host filesystem paths)."""
+    bridge = (
+        os.environ.get("ZALO_BRIDGE_URL")
+        or os.environ.get("ZALO_PLUGIN_URL")
+        or "http://zalo-proxy:8787"
+    ).rstrip("/")
     token = os.environ.get("ZALO_PLUGIN_TOKEN", "").strip()
+    host_media = (
+        os.environ.get("ZALO_HOST_MEDIA_DIR")
+        or os.environ.get("ZALO_HOST_DATA_DIR", "/data/assistant") + "/media"
+    ).rstrip("/")
+    try:
+        rel = dest.resolve().relative_to(MEDIA_DIR.resolve())
+        host_path = str(Path(host_media) / rel)
+    except Exception:  # noqa: BLE001
+        # Fallback: /data/media/out/x → /data/assistant/media/out/x
+        host_path = str(dest).replace("/data/media", host_media, 1)
     body = {
         "threadId": thread_id,
-        "threadType": thread_type or "group",
+        "threadType": thread_type or "user",
         "caption": caption or "",
+        "paths": [host_path],
+        "path": host_path,
         "fileName": dest.name,
-        "base64": base64.b64encode(dest.read_bytes()).decode("ascii"),
     }
     headers = {"content-type": "application/json"}
     if token:
@@ -879,6 +897,11 @@ def _send_zalo_base64(thread_id: str, thread_type: str, dest: Path, caption: str
         if r.status_code >= 400:
             raise HTTPException(502, {"error": "zalo send failed", "status": r.status_code, "body": payload})
         return payload if isinstance(payload, dict) else {"result": payload}
+
+
+def _send_zalo_base64(thread_id: str, thread_type: str, dest: Path, caption: str) -> dict[str, Any]:
+    """Back-compat alias — bridge no longer accepts base64."""
+    return _send_zalo_attachment(thread_id, thread_type, dest, caption)
 
 
 @app.post("/v1/image")
@@ -915,6 +938,14 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
     try:
         raw, used, errors = generate_image_bytes(gen_prompt, provider=req.provider)
         dest.write_bytes(raw)
+        # Hermes agent often runs as HERMES_UID (1000); keep out/ writable & readable.
+        try:
+            uid = int(os.environ.get("HERMES_UID") or "1000")
+            gid = int(os.environ.get("HERMES_GID") or str(uid))
+            os.chown(out_dir, uid, gid)
+            os.chown(dest, uid, gid)
+        except OSError:
+            pass
     except Exception as e:  # noqa: BLE001
         # Optional pillow stub
         if (os.environ.get("IMAGE_ALLOW_PILLOW") or "0") == "1":
@@ -957,9 +988,12 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
     if req.send_zalo:
         if not req.thread_id:
             raise HTTPException(400, "thread_id required when send_zalo=true")
-        result["zalo"] = _send_zalo_base64(
-            req.thread_id, req.thread_type, dest, req.caption or prompt[:80]
-        )
+        if not _claim_generated_file(dest, req.thread_id):
+            result["zalo"] = {"ok": True, "skipped": True, "reason": "already_sent"}
+        else:
+            result["zalo"] = _send_zalo_base64(
+                req.thread_id, req.thread_type, dest, req.caption or prompt[:80]
+            )
     return result
 
 

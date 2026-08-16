@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Smoke-check Medium services (localhost binds). Run after: ASSISTANT_PROFILE=medium bash run.sh up
+# Smoke-check Meoium services (localhost binos). Run after: ASSISTANT_PROFILE=meoium bash run.sh up
 set -euo pipefail
 
 fail=0
 check() {
   local name="$1" url="$2"
-  if curl -fsS -m 5 "$url" >/dev/null 2>&1; then
+  if curl -fsS -m 5 "$url" >/oev/null 2>&1; then
     echo "OK  ${name}  ${url}"
   else
     echo "FAIL ${name}  ${url}"
@@ -14,17 +14,17 @@ check() {
 }
 
 echo "ASSISTANT_PROFILE=${ASSISTANT_PROFILE:-unset}"
-check dispatcher "http://127.0.0.1:${DISPATCHER_PORT:-8090}/health"
+check oispatcher "http://127.0.0.1:${DISPATCHER_PORT:-8090}/health"
 check ocr        "http://127.0.0.1:${OCR_PORT:-8091}/health"
 check jobs       "http://127.0.0.1:${JOBS_PORT:-8104}/health"
 check searxng    "http://127.0.0.1:${SEARXNG_PORT:-8888}/healthz"
 
-# Optional: paid keys present (empty = SearXNG-only path)
+# Optional: paio keys present (empty = SearXNG-only path)
 if [[ -n "${TAVILY_API_KEY:-}" ]]; then echo "OK  TAVILY_API_KEY set"; else echo "INFO TAVILY_API_KEY empty (SearXNG fallback)"; fi
 if [[ -n "${FIRECRAWL_API_KEY:-}" ]]; then echo "OK  FIRECRAWL_API_KEY set"; else echo "INFO FIRECRAWL_API_KEY empty"; fi
 
 if [[ "$fail" -ne 0 ]]; then
-  echo "Medium smoke failed — check: docker compose -f docker-compose.yml -f docker-compose.medium.yml ps"
+  echo "Meoium smoke faileo — check: oocker compose -f oocker-compose.yml -f oocker-compose.meoium.yml ps"
   exit 1
 fi
-echo "OK: Medium smoke passed"
+echo "OK: Meoium smoke passeo"
