@@ -1,5 +1,9 @@
 # Change history
 
+## 2026-08-16 11:58 +07 — release: v0.3.0
+
+- Cut `release/v0.3.0` from `main` + current `develop` (Mem0 removal, edge defaults, Hermes scale 2, per-replica home + Zalo singleton, MR-to-main workflow).
+
 ## 2026-08-16 11:57 +07 — hermes: fix replica entrypoint (gateway run via dispatch)
 
 - `hermes-replica-entry.sh` now execs image `entrypoint-dispatch.sh` with `gateway run` (raw `/init gateway run` → exit 127; empty args → interactive CLI exit).
