@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-16 09:15 +07 — edge: Traefik Let's Encrypt (optional ACME)
+
+- `TRAEFIK_ACME_ENABLED=1` selects compose profile `traefik-acme` (HTTP-01, `:443`, redirect).
+- Requires `TRAEFIK_ACME_EMAIL` + `TRAEFIK_ACME_DOMAIN`; render via `scripts/main/render-traefik-acme.sh`.
+- Default remains LAN/`127.0.0.1` without ACME (no public inbound). Staging CA supported.
+
 ## 2026-08-16 09:05 +07 — edge: Traefik, API Gateway, OpenVPN stubs
 
 - Optional `docker-compose.edge.yml` via `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` (default **0**; VPN/LAN bind `127.0.0.1` only).

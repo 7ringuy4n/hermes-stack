@@ -68,7 +68,15 @@ compose() {
       ;;
   esac
   if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
-    profiles+=(--profile traefik)
+    case "${TRAEFIK_ACME_ENABLED:-0}" in
+      1)
+        bash "${SCRIPTS_DIR}/render-traefik-acme.sh"
+        profiles+=(--profile traefik-acme)
+        ;;
+      *)
+        profiles+=(--profile traefik)
+        ;;
+    esac
   fi
   if [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]]; then
     profiles+=(--profile gateway)
