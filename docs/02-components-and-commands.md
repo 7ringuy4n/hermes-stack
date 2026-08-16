@@ -470,10 +470,14 @@ bash run.sh backup</pre></td>
     <tr>
       <td style="padding:14px 12px;vertical-align:top;background:#f8e8e8;"><b>High</b></td>
       <td style="padding:14px 12px;"><pre style="margin:0;white-space:pre-wrap;">export ASSISTANT_PROFILE=high
-bash run.sh up                # timers auto (incl. compact)
-bash run.sh backup &amp;&amp; bash run.sh backup-sync-clouddrive
+# optional: ENABLE_GRAFANA=0 ENABLE_LOKI=0 ENABLE_PROMETHEUS=0 ENABLE_ALLOY=0
+bash run.sh up
+bash run.sh backup &amp;&amp; bash run.sh verify
+# bash run.sh restore   # DR — see architect/backup-restore/README.md (lab-tested)
+bash run.sh backup-sync-clouddrive   # when ENABLE_CLOUDDRIVE=1
 bash run.sh auto-learn
-bash run.sh channel-status</pre></td>
+bash run.sh channel-status
+# sizing: docs/HARDWARE.md</pre></td>
     </tr>
   </tbody>
 </table>

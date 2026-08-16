@@ -53,7 +53,7 @@ compose() {
     # shellcheck disable=SC1090
     set -a; source "$profiles_file"; set +a
   fi
-  docker compose --project-directory "$ROOT" -f "$ROOT/docker-compose.yml" "$@"
+  docker compose --project-directory "$ROOT" -f "$ROOT/docker/docker-compose.yml" "$@"
 }
 
 log() { echo "==> $*"; }
