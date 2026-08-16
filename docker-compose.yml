@@ -205,6 +205,8 @@ services:
     restart: unless-stopped
     pull_policy: missing
     # Per-replica HERMES_HOME under /opt/data/replicas/<hostname> (avoids gateway.lock race).
+    # entrypoint chains to image entrypoint-dispatch.sh; default args = gateway run
+    # (see hermes-replica-entry.sh — do NOT exec raw /init with these args).
     entrypoint: ["/bin/sh", "/opt/stack/hermes-replica-entry.sh"]
     command: ["gateway", "run"]
     # Host ports: see docker-compose.hermes-hostports.yml when HERMES_REPLICAS=1
