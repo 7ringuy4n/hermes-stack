@@ -25,6 +25,7 @@ shift || true
 
 compose() {
   # Low: base. Medium: + medium. High: + medium + high (+ optional notify/clouddrive/comfy-gpu).
+  # Edge: + docker-compose.edge.yml when Traefik / API Gateway / OpenVPN enabled.
   local -a files=(--project-directory "$ROOT" -f "$ROOT/docker-compose.yml")
   local -a profiles=()
   case "$ASSISTANT_PROFILE" in
@@ -61,6 +62,20 @@ compose() {
       fi
       ;;
   esac
+  case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
+    *1*)
+      files+=(-f "$ROOT/docker-compose.edge.yml")
+      ;;
+  esac
+  if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
+    profiles+=(--profile traefik)
+  fi
+  if [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]]; then
+    profiles+=(--profile gateway)
+  fi
+  if [[ "${ENABLE_OPENVPN:-0}" == "1" ]]; then
+    profiles+=(--profile openvpn)
+  fi
   docker compose "${files[@]}" "${profiles[@]}" "$@"
 }
 

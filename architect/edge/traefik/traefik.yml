@@ -1,0 +1,19 @@
+# Traefik static config — hermes-stack edge (VPN/LAN only)
+# Do not expose entryPoints on 0.0.0.0 to the public Internet.
+
+api:
+  dashboard: false
+
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic/hermes.yml
+    watch: true
+
+log:
+  level: INFO
+
+accessLog: {}

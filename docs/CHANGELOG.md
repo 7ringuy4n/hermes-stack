@@ -1,5 +1,13 @@
 # Change history
 
+## 2026-08-16 09:05 +07 — edge: Traefik, API Gateway, OpenVPN stubs
+
+- Optional `docker-compose.edge.yml` via `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` (default **0**; VPN/LAN bind `127.0.0.1` only).
+- API Gateway: Valkey global rate limit; coding paths/header skip RL; admin messages in `messages/en.json`.
+- Traefik file provider LB → `hermes:8642` (ready for Hermes × N server list).
+- OpenVPN compose stub + PKI docs; Zalo still bypasses Gateway.
+- Docs: `docs/05-edge-networking.md`; reference copy under `referrence/`; `Apply-EdgeUpdate.ps1`.
+
 ## 2026-08-16 08:15 +07 — zalo/stack-watch: stop Hermes restart storm
 
 - **Cause:** `assistant-zalo-watch` restarted Hermes when `sseClients==0` (miss limit too low); `stack-watch` also bounced Hermes on probe fail / post-boot flicker → multi-hour restart loops.

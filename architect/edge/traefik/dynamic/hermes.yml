@@ -1,0 +1,20 @@
+# Dynamic routes — Hermes chat LB (extend servers list for Hermes × N)
+http:
+  routers:
+    hermes-gw:
+      rule: "PathPrefix(`/`)"
+      entryPoints:
+        - web
+      service: hermes-gw
+      priority: 1
+
+  services:
+    hermes-gw:
+      loadBalancer:
+        servers:
+          - url: "http://hermes:8642"
+        healthCheck:
+          path: "/"
+          interval: "15s"
+          timeout: "5s"
+        passHostHeader: true
