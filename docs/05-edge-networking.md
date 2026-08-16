@@ -24,12 +24,14 @@ Heavy OCR/image work stays on **dispatcher workers** (async + timeouts) so Herme
 In `.env` (copy from `.env.example` or `docs/config/edge.env.snippet`):
 
 ```env
-ENABLE_TRAEFIK=0
-ENABLE_API_GATEWAY=0
+# Medium/High: leave unset → profile.sh defaults Traefik + API Gateway ON
+# Low: forced OFF in profile.sh
+# ENABLE_TRAEFIK=0
+# ENABLE_API_GATEWAY=0
 ENABLE_OPENVPN=0
 ```
 
-Set a flag to `1`, then:
+Set a flag to `0` on Medium/High only when you want to disable edge. Then:
 
 ```bash
 bash run.sh up
