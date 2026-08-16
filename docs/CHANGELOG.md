@@ -1,5 +1,21 @@
 # Change history
 
+## 2026-08-16 11:57 +07 — hermes: fix replica entrypoint (gateway run via dispatch)
+
+- `hermes-replica-entry.sh` now execs image `entrypoint-dispatch.sh` with `gateway run` (raw `/init gateway run` → exit 127; empty args → interactive CLI exit).
+- Resolve Compose service name from `/etc/hosts` so Zalo SSE stays on `*-hermes-1` when hostname is the container id.
+
+## 2026-08-16 11:35 +07 — hermes: per-replica home for scale 2 + Zalo singleton
+
+- `hermes-replica-entry.sh`: each scaled container uses `/opt/data/replicas/<hostname>` (avoids `gateway.lock` race).
+- Zalo adapter only on `*-hermes-1` (other replicas clear `ZALO_PLUGIN_URL`).
+- Includes API bind fix (`API_SERVER_HOST=0.0.0.0`) for Traefik after scale.
+
+## 2026-08-16 11:25 +07 — edge: Hermes API bind for Traefik after scale
+
+- Hermes `API_SERVER_HOST=0.0.0.0` + `API_SERVER_KEY` so Traefik can reach `hermes:8642` (upstream default was loopback-only).
+- Traefik health check path `/health`.
+
 ## 2026-08-16 09:35 +07 — hermes: default scale 2 on medium|high
 
 - `HERMES_REPLICAS` default **2** on medium/high, **1** on low (`profile.sh` + `run.sh --scale`).
