@@ -1,0 +1,39 @@
+# Traefik + Let's Encrypt (ACME)
+# Requires: TRAEFIK_ACME_EMAIL, TRAEFIK_ACME_DOMAIN
+# HTTP-01 needs ports 80/443 reachable by Let's Encrypt (set TRAEFIK_BIND=0.0.0.0).
+# For VPN-only hosts prefer DNS-01 (see docs/05-edge-networking.md).
+
+api:
+  dashboard: false
+
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    address: ":443"
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      # Overridden at runtime via compose command flags when email is set in .env
+      email: change-me@example.com
+      storage: /letsencrypt/acme.json
+      caServer: https://acme-v02.api.letsencrypt.org/directory
+      httpChallenge:
+        entryPoint: web
+
+providers:
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+
+log:
+  level: INFO
+
+accessLog: {}

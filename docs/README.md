@@ -10,8 +10,10 @@ English operations docs for the **assistant** stack.
 | [02-commands.md](./02-commands.md) | `run.sh` command reference |
 | [03-architecture.md](./03-architecture.md) | Architecture |
 | [04-component-flows.md](./04-component-flows.md) | Per-component flows |
+| [05-edge-networking.md](./05-edge-networking.md) | Traefik / API Gateway / OpenVPN (optional) |
 | [config/DEFAULTS.md](./config/DEFAULTS.md) | Non-secret defaults |
 | [CHANGELOG.md](./CHANGELOG.md) | Change log |
+| [GIT.md](./GIT.md) | Git workflow: feature → develop → release → main |
 | [NEXT.md](./NEXT.md) | Backlog |
 
 ## Related indexes

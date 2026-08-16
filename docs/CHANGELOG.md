@@ -1,5 +1,37 @@
 # Change history
 
+## 2026-08-16 09:20 +07 — docs: git workflow release model
+
+- `docs/GIT.md`: `feature/*` → `develop` → `release/*` → `main`; `fix/*` / `hotfix/*`.
+- Release from `main`, cherry-pick only production-ready features; MR titles `[TYPE][LAYER]` / `[RELEASE]`.
+- Updated `.cursor/rules/git.mdc`.
+
+## 2026-08-16 09:15 +07 — edge: Traefik Let's Encrypt (optional ACME)
+
+- `TRAEFIK_ACME_ENABLED=1` selects compose profile `traefik-acme` (HTTP-01, `:443`, redirect).
+- Requires `TRAEFIK_ACME_EMAIL` + `TRAEFIK_ACME_DOMAIN`; render via `scripts/main/render-traefik-acme.sh`.
+- Default remains LAN/`127.0.0.1` without ACME (no public inbound). Staging CA supported.
+
+## 2026-08-16 09:05 +07 — edge: Traefik, API Gateway, OpenVPN stubs
+
+- Optional `docker-compose.edge.yml` via `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` (default **0**; VPN/LAN bind `127.0.0.1` only).
+- API Gateway: Valkey global rate limit; coding paths/header skip RL; admin messages in `messages/en.json`.
+- Traefik file provider LB → `hermes:8642` (ready for Hermes × N server list).
+- OpenVPN compose stub + PKI docs; Zalo still bypasses Gateway.
+- Docs: `docs/05-edge-networking.md`; reference copy under `referrence/`; `Apply-EdgeUpdate.ps1`.
+
+## 2026-08-16 08:25 +07 — docs: git workflow rules
+
+- Added `docs/GIT.md`: branch layout (`main` → `develop` → `feature/<layer>/<slug>`), PR title `[KIND][LAYER][TYPE]`, commit/changelog/push rules.
+- Added `.cursor/rules/git.mdc` (always apply) pointing at `docs/GIT.md`.
+
+## 2026-08-16 08:15 +07 — zalo/stack-watch: stop Hermes restart storm
+
+- **Cause:** `assistant-zalo-watch` restarted Hermes when `sseClients==0` (miss limit too low); `stack-watch` also bounced Hermes on probe fail / post-boot flicker → multi-hour restart loops.
+- **zalo-watch.sh:** default `ZALO_WATCH_RESTART_HERMES=0` (bridge-only on sse=0); SSE miss≥15; cooldown 1800s; writable `/watch` state (sudo/chown fallback).
+- **stack-watch.sh:** default `STACK_WATCH_RESTART_HERMES=0`; boot grace 600s; heal 9router/dispatcher without thrashing Hermes; project/label fallbacks for lab compose names.
+- Opt-in old behavior: set `ZALO_WATCH_RESTART_HERMES=1` / `STACK_WATCH_RESTART_HERMES=1`.
+
 ## 2026-08-15 17:25 +07 — skills: new+docs/web/comfy in main; live-matched in temp
 
 - Compared to ighthawk-lab/hermes_backup/skills\.
