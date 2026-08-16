@@ -34,10 +34,8 @@ assistant_profile_apply() {
   export ENABLE_ADMIN_API="${ENABLE_ADMIN_API:-0}"
   export ENABLE_ZALO="${ENABLE_ZALO:-0}"
   export ENABLE_TELEGRAM="${ENABLE_TELEGRAM:-0}"
-  # Edge (VPN/LAN) — default off on all profiles; set in .env to enable
-  export ENABLE_TRAEFIK="${ENABLE_TRAEFIK:-0}"
+  # OpenVPN stays opt-in everywhere; Traefik/Gateway set per profile below
   export ENABLE_OPENVPN="${ENABLE_OPENVPN:-0}"
-  export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-0}"
   export TRAEFIK_ACME_ENABLED="${TRAEFIK_ACME_ENABLED:-0}"
   export ENABLE_WHATSAPP=0
   export ENABLE_VAULT=0
@@ -48,6 +46,9 @@ assistant_profile_apply() {
       export WEB_BACKENDS=
       export OFFICE_FILE_GEN=0
       export IMAGE_BACKENDS=
+      export ENABLE_TRAEFIK=0
+      export ENABLE_API_GATEWAY=0
+      export TRAEFIK_ACME_ENABLED=0
       ;;
     medium)
       export ENABLE_OCR=1
@@ -57,6 +58,12 @@ assistant_profile_apply() {
       [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,firecrawl
       # Image: llm (OpenAI/Gemini/DeepSeek) → vendor (fal/…) → ComfyUI CPU → GPU
       [[ -n "${IMAGE_BACKENDS:-}" ]] || export IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
+      # Edge on by default for Medium (set ENABLE_TRAEFIK=0 in .env to disable)
+      export ENABLE_TRAEFIK="${ENABLE_TRAEFIK:-1}"
+      export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-1}"
+      if [[ "${ENABLE_TRAEFIK}" == "1" && "${ENABLE_API_GATEWAY}" == "1" ]]; then
+        export GATEWAY_UPSTREAM_URL="${GATEWAY_UPSTREAM_URL:-http://traefik:80}"
+      fi
       ;;
     high)
       export ENABLE_OCR=1
@@ -81,8 +88,16 @@ assistant_profile_apply() {
       export ENABLE_POLICY=1
       export ENABLE_AUTHZ=1
       export ENABLE_ADMIN_API=1
+      export ENABLE_TRAEFIK="${ENABLE_TRAEFIK:-1}"
+      export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-1}"
+      if [[ "${ENABLE_TRAEFIK}" == "1" && "${ENABLE_API_GATEWAY}" == "1" ]]; then
+        export GATEWAY_UPSTREAM_URL="${GATEWAY_UPSTREAM_URL:-http://traefik:80}"
+      fi
       ;;
   esac
+  # Defaults if profile did not set (unknown → low already remapped)
+  export ENABLE_TRAEFIK="${ENABLE_TRAEFIK:-0}"
+  export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-0}"
 }
 
 assistant_profile_summary() {

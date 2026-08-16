@@ -1,22 +1,7 @@
-# memory / mem0
+# memory / mem0 — REMOVED from stack
 
-## Purpose
+This service is **no longer started** by `docker-compose.yml` (decision 2026-08-16).
 
-Long-term **conversational** memory service (Mem0-compatible). Stores user facts in a Qdrant collection such as `conversational_memory`, separate from document `knowledge_chunks`.
+Long-term conversational memory is owned by **Memory Manager** + **Postgres** (optional Qdrant index). Short-term session stays on **Valkey** (`session` service).
 
-## Profile
-
-Must — container `mem0`.
-
-## Main functions
-
-| Function | Detail |
-|---|---|
-| Add memory | After a turn, store durable facts |
-| Search | Retrieve facts relevant to the current question |
-| Compact | Optional High/Medium maintenance |
-
-## Related
-
-- [../README.md](../README.md)  
-- [tools/ingest](../../tools/ingest/README.md) — do not mix with RAG docs
+Source files here are retained only for reference / migration archaeology. Do not re-enable without an explicit product decision and MR.

@@ -1,5 +1,12 @@
 # Change history
 
+## 2026-08-16 09:30 +07 — memory: remove Mem0; edge on Med/High; coding skills
+
+- **Removed Mem0** from Must compose; LTM = Memory Manager + Postgres (+ optional Qdrant). Compact no longer calls mem0.
+- **Traefik + API Gateway** default **ON** for `medium`/`high`, forced **OFF** on `low` (set `ENABLE_*=0` in `.env` to disable on Med/High).
+- **Coding skills** vendored (skills-only, no coding worker): `hermes/main/skills/coding` + `vendor/mattpocock/*` + `vendor/ui-ux-pro-max/*` with LICENSE/ATTRIBUTION.
+- No VPS auto-deploy from this change.
+
 ## 2026-08-16 09:20 +07 — docs: git workflow release model
 
 - `docs/GIT.md`: `feature/*` → `develop` → `release/*` → `main`; `fix/*` / `hotfix/*`.
