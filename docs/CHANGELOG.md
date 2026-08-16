@@ -1,5 +1,10 @@
 # Change history
 
+## 2026-08-16 08:25 +07 — docs: git workflow rules
+
+- Added `docs/GIT.md`: branch layout (`main` → `develop` → `feature/<layer>/<slug>`), PR title `[KIND][LAYER][TYPE]`, commit/changelog/push rules.
+- Added `.cursor/rules/git.mdc` (always apply) pointing at `docs/GIT.md`.
+
 ## 2026-08-16 08:15 +07 — zalo/stack-watch: stop Hermes restart storm
 
 - **Cause:** `assistant-zalo-watch` restarted Hermes when `sseClients==0` (miss limit too low); `stack-watch` also bounced Hermes on probe fail / post-boot flicker → multi-hour restart loops.
