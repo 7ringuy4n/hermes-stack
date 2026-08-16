@@ -27,13 +27,13 @@ compose() {
   # Low: base. Medium: + medium. High: + medium + high (+ optional notify/clouddrive/comfy-gpu).
   # Edge: + docker-compose.edge.yml when Traefik / API Gateway / OpenVPN enabled.
   # Hermes scale: HERMES_REPLICAS (Low=1, Medium/High default 2). Host ports only when replicas=1.
-  local -a files=(--project-directory "$ROOT" -f "$ROOT/docker-compose.yml")
+  local -a files=(--project-directory "$ROOT" -f "$ROOT/docker/docker-compose.yml")
   local -a profiles=()
   local -a scale_args=()
   local replicas="${HERMES_REPLICAS:-1}"
   case "$ASSISTANT_PROFILE" in
     medium)
-      files+=(-f "$ROOT/docker-compose.medium.yml")
+      files+=(-f "$ROOT/docker/docker-compose.medium.yml")
       if [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]]; then
         profiles+=(--profile comfy-gpu)
       fi
@@ -42,7 +42,7 @@ compose() {
       fi
       ;;
     high)
-      files+=(-f "$ROOT/docker-compose.medium.yml" -f "$ROOT/docker-compose.high.yml")
+      files+=(-f "$ROOT/docker/docker-compose.medium.yml" -f "$ROOT/docker/docker-compose.high.yml")
       if [[ "${ENABLE_NOTIFY:-0}" == "1" ]]; then
         profiles+=(--profile notify)
       fi
@@ -67,7 +67,7 @@ compose() {
   esac
   case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
     *1*)
-      files+=(-f "$ROOT/docker-compose.edge.yml")
+      files+=(-f "$ROOT/docker/docker-compose.edge.yml")
       ;;
   esac
   if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
@@ -87,8 +87,14 @@ compose() {
   if [[ "${ENABLE_OPENVPN:-0}" == "1" ]]; then
     profiles+=(--profile openvpn)
   fi
+  # Observability (Grafana/Loki/Prometheus/Alloy/exporters) — opt-in via ENABLE_* / profile monitor
+  case "${ENABLE_GRAFANA:-0}${ENABLE_LOKI:-0}${ENABLE_PROMETHEUS:-0}${ENABLE_ALLOY:-0}" in
+    *1*)
+      profiles+=(--profile monitor)
+      ;;
+  esac
   if [[ "$replicas" == "1" ]]; then
-    files+=(-f "$ROOT/docker-compose.hermes-hostports.yml")
+    files+=(-f "$ROOT/docker/docker-compose.hermes-hostports.yml")
   fi
   case "${1:-}" in
     up|create|run)
