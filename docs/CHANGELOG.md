@@ -1,5 +1,42 @@
 # Change history
 
+## 2026-08-16 11:58 +07 — release: v0.3.0
+
+- Cut `release/v0.3.0` from `main` + current `develop` (Mem0 removal, edge defaults, Hermes scale 2, per-replica home + Zalo singleton, MR-to-main workflow).
+
+## 2026-08-16 11:57 +07 — hermes: fix replica entrypoint (gateway run via dispatch)
+
+- `hermes-replica-entry.sh` now execs image `entrypoint-dispatch.sh` with `gateway run` (raw `/init gateway run` → exit 127; empty args → interactive CLI exit).
+- Resolve Compose service name from `/etc/hosts` so Zalo SSE stays on `*-hermes-1` when hostname is the container id.
+
+## 2026-08-16 11:35 +07 — hermes: per-replica home for scale 2 + Zalo singleton
+
+- `hermes-replica-entry.sh`: each scaled container uses `/opt/data/replicas/<hostname>` (avoids `gateway.lock` race).
+- Zalo adapter only on `*-hermes-1` (other replicas clear `ZALO_PLUGIN_URL`).
+- Includes API bind fix (`API_SERVER_HOST=0.0.0.0`) for Traefik after scale.
+
+## 2026-08-16 11:25 +07 — edge: Hermes API bind for Traefik after scale
+
+- Hermes `API_SERVER_HOST=0.0.0.0` + `API_SERVER_KEY` so Traefik can reach `hermes:8642` (upstream default was loopback-only).
+- Traefik health check path `/health`.
+
+## 2026-08-16 09:35 +07 — hermes: default scale 2 on medium|high
+
+- `HERMES_REPLICAS` default **2** on medium/high, **1** on low (`profile.sh` + `run.sh --scale`).
+- Removed fixed `container_name: hermes`; host ports only when replicas=1 (`docker-compose.hermes-hostports.yml`).
+- Traefik continues to use service DNS `http://hermes:8642` (LB across replicas). Watch scripts restart all matching hermes containers.
+
+## 2026-08-16 09:30 +07 — memory: remove Mem0; edge on Med/High; coding skills
+
+- **Removed Mem0** from Must compose; LTM = Memory Manager + Postgres (+ optional Qdrant). Compact no longer calls mem0.
+- **Traefik + API Gateway** default **ON** for `medium`/`high`, forced **OFF** on `low` (set `ENABLE_*=0` in `.env` to disable on Med/High).
+- **Coding skills** vendored (skills-only, no coding worker): `hermes/main/skills/coding` + `vendor/mattpocock/*` + `vendor/ui-ux-pro-max/*` with LICENSE/ATTRIBUTION.
+- No VPS auto-deploy from this change.
+
+## 2026-08-16 09:25 +07 — docs: require MR for all merges to main
+
+- `docs/GIT.md` + `.cursor/rules/git.mdc`: never push/merge directly to `main`; always open a PR (`release/*` or `hotfix/*` → `main`).
+
 ## 2026-08-16 09:20 +07 — docs: git workflow release model
 
 - `docs/GIT.md`: `feature/*` → `develop` → `release/*` → `main`; `fix/*` / `hotfix/*`.

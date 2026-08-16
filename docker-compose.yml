@@ -75,21 +75,6 @@ services:
       - "127.0.0.1:${MEMORY_PORT:-8095}:8095"
     networks: [internal]
 
-  mem0:
-    build: ./architect/memory/mem0
-    container_name: mem0
-    restart: unless-stopped
-    environment:
-      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - TZ=${TZ:-Asia/Ho_Chi_Minh}
-    depends_on:
-      - qdrant
-      - redis
-    ports:
-      - "127.0.0.1:${MEM0_PORT:-8096}:8096"
-    networks: [internal]
-
   session:
     build: ./architect/memory/session
     container_name: session
@@ -216,21 +201,29 @@ services:
 
   hermes:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
-    container_name: hermes
+    # No container_name — required for HERMES_REPLICAS > 1 (Medium/High default 2)
     restart: unless-stopped
     pull_policy: missing
+    # Per-replica HERMES_HOME under /opt/data/replicas/<hostname> (avoids gateway.lock race).
+    # entrypoint chains to image entrypoint-dispatch.sh; default args = gateway run
+    # (see hermes-replica-entry.sh — do NOT exec raw /init with these args).
+    entrypoint: ["/bin/sh", "/opt/stack/hermes-replica-entry.sh"]
     command: ["gateway", "run"]
-    ports:
-      - "127.0.0.1:${HERMES_GATEWAY_PORT:-28642}:8642"
-      - "127.0.0.1:${HERMES_DASHBOARD_PORT:-29119}:9119"
+    # Host ports: see docker-compose.hermes-hostports.yml when HERMES_REPLICAS=1
     environment:
       - HERMES_UID=${HERMES_UID:-1000}
       - HERMES_GID=${HERMES_GID:-1000}
       - HERMES_HOME=/opt/data
+      - HERMES_SHARED_DATA=/opt/data
       - HERMES_DASHBOARD=1
       - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_USER:-admin}
       - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_PASSWORD:?set HERMES_DASHBOARD_PASSWORD in .env}
       - HERMES_DASHBOARD_BASIC_AUTH_SECRET=${HERMES_DASHBOARD_SECRET:?set HERMES_DASHBOARD_SECRET in .env}
+      # OpenAI-compatible API on :8642 — must bind 0.0.0.0 for Traefik / Docker LB (default is 127.0.0.1).
+      - API_SERVER_ENABLED=${API_SERVER_ENABLED:-true}
+      - API_SERVER_HOST=${API_SERVER_HOST:-0.0.0.0}
+      - API_SERVER_PORT=${API_SERVER_PORT:-8642}
+      - API_SERVER_KEY=${API_SERVER_KEY:?set API_SERVER_KEY in .env}
       - HERMES_DISABLE_LAZY_INSTALLS=0
       - HERMES_LAZY_INSTALL_TARGET=/opt/data/lazy-packages
       - PYTHONPATH=/opt/data/lazy-packages
@@ -238,7 +231,6 @@ services:
       - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://dispatcher:8090/openai/v1}
       - DISPATCHER_URL=http://dispatcher:8090
       - MEMORY_URL=http://memory:8095
-      - MEM0_URL=${MEM0_URL:-http://mem0:8096}
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - INGEST_URL=${INGEST_URL:-http://ingest:8099}
       - SESSION_URL=${SESSION_URL:-http://session:8107}
@@ -259,6 +251,7 @@ services:
       - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       # Zalo (used when ENABLE_ZALO=1 + host bridge + zalo-proxy profile)
+      # Only replica hermes-1 keeps ZALO_PLUGIN_URL (see hermes-replica-entry.sh).
       - ZALO_PLUGIN_URL=${ZALO_PLUGIN_URL:-http://zalo-proxy:8787}
       - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
       - ZALO_GROUP_MODE=${ZALO_GROUP_MODE:-mention}
@@ -279,6 +272,7 @@ services:
       # Repo SoT for Low; durable runtime state stays on HERMES_DATA_DIR
       - ./hermes/main/skills:/opt/data/skills:ro
       - ./hermes/main/messages:/opt/data/messages:ro
+      - ./hermes/main/docker/hermes-replica-entry.sh:/opt/stack/hermes-replica-entry.sh:ro
     depends_on:
       - 9router
       - dispatcher

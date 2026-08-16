@@ -1,0 +1,7 @@
+# Publish Hermes ports on host only when HERMES_REPLICAS=1 (Low / single instance).
+# Scaled Medium/High reach Hermes via Traefik / API Gateway (no host port clash).
+services:
+  hermes:
+    ports:
+      - "127.0.0.1:${HERMES_GATEWAY_PORT:-28642}:8642"
+      - "127.0.0.1:${HERMES_DASHBOARD_PORT:-29119}:9119"

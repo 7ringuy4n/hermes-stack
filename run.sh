@@ -26,8 +26,11 @@ shift || true
 compose() {
   # Low: base. Medium: + medium. High: + medium + high (+ optional notify/clouddrive/comfy-gpu).
   # Edge: + docker-compose.edge.yml when Traefik / API Gateway / OpenVPN enabled.
+  # Hermes scale: HERMES_REPLICAS (Low=1, Medium/High default 2). Host ports only when replicas=1.
   local -a files=(--project-directory "$ROOT" -f "$ROOT/docker-compose.yml")
   local -a profiles=()
+  local -a scale_args=()
+  local replicas="${HERMES_REPLICAS:-1}"
   case "$ASSISTANT_PROFILE" in
     medium)
       files+=(-f "$ROOT/docker-compose.medium.yml")
@@ -84,7 +87,15 @@ compose() {
   if [[ "${ENABLE_OPENVPN:-0}" == "1" ]]; then
     profiles+=(--profile openvpn)
   fi
-  docker compose "${files[@]}" "${profiles[@]}" "$@"
+  if [[ "$replicas" == "1" ]]; then
+    files+=(-f "$ROOT/docker-compose.hermes-hostports.yml")
+  fi
+  case "${1:-}" in
+    up|create|run)
+      scale_args=(--scale "hermes=${replicas}")
+      ;;
+  esac
+  docker compose "${files[@]}" "${profiles[@]}" "$@" "${scale_args[@]}"
 }
 
 need_med() {
@@ -137,9 +148,7 @@ do_compact() {
   need_med compact || return 1
   echo "==> compact (skills drafts / memory hooks) — silent"
   local mem="${MEMORY_URL:-http://127.0.0.1:8095}"
-  local mem0="${MEM0_URL:-http://127.0.0.1:8096}"
   curl -fsS -m 30 -X POST "${mem}/v1/compact" >/dev/null 2>&1 || true
-  curl -fsS -m 30 -X POST "${mem0}/v1/compact" >/dev/null 2>&1 || true
   if [[ -d "${ASSISTANT_DATA_DIR:-/data/assistant}/workspace/.skill-drafts" ]]; then
     find "${ASSISTANT_DATA_DIR}/workspace/.skill-drafts" -type f -mtime +7 -delete 2>/dev/null || true
   fi

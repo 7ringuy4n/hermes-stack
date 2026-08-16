@@ -21,8 +21,9 @@ LEARN_LIST_LIMIT=5
 
 ## Must (always on — no ENABLE_* on Low)
 
-postgres, redis (Valkey), qdrant, memory, mem0, session, embedding, ingest, dispatcher, 9router, hermes, backup/restore.
+postgres, redis (Valkey), qdrant, memory, session, embedding, ingest, dispatcher, 9router, hermes, backup/restore.
 
+> **Mem0 removed:** LTM is Memory Manager + Postgres only.
 ## First setup (host)
 
 1. `sudo bash scripts/main/install-docker.sh` if Docker is missing (uses the SSH login user via `SUDO_USER`; or `bash run.sh install-docker`).
@@ -85,9 +86,9 @@ ENABLE_WHATSAPP=0
 
 | Profile | Optional on |
 |---|---|
-| low | none by default; edge flags stay **0** unless set in `.env` |
-| medium | OCR, SearXNG, Jobs, office file-gen, web backends + compact timer; edge opt-in |
-| high | Medium + OpenBao UI, AV, security, SIEM, authz, policy, admin-api, monitor; notify opt-in; CloudDrive; edge opt-in |
+| low | none by default; **Traefik/API Gateway forced off** |
+| medium | OCR, SearXNG, Jobs, office file-gen, web backends + compact; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=2**; OpenVPN opt-in |
+| high | Medium + OpenBao UI, AV, security, SIEM, authz, policy, admin-api, monitor; notify opt-in; CloudDrive; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=2**; OpenVPN opt-in |
 
 High overlay: `docker-compose.high.yml`. Edge overlay: `docker-compose.edge.yml` when `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` is `1`. Smoke: `bash run.sh check-high`. Seed keys: `bash run.sh first-setup-openbao`.
 
@@ -95,11 +96,20 @@ High overlay: `docker-compose.high.yml`. Edge overlay: `docker-compose.edge.yml`
 
 | Flag | Role |
 |------|------|
-| `ENABLE_TRAEFIK` | Traefik LB → Hermes (localhost bind by default) |
+| `ENABLE_TRAEFIK` | Traefik LB → Hermes (**default 1 on medium/high**, forced 0 on low) |
 | `TRAEFIK_ACME_ENABLED` | Let's Encrypt TLS on Traefik (needs public 80/443 for HTTP-01; default **0**) |
-| `ENABLE_API_GATEWAY` | HTTP entry + Valkey global rate limit (coding paths skip RL) |
-| `ENABLE_OPENVPN` | Private admin VPN stub (init PKI before use) |
+| `ENABLE_API_GATEWAY` | HTTP entry + Valkey global rate limit (**default 1 on medium/high**, forced 0 on low; coding paths skip RL) |
+| `ENABLE_OPENVPN` | Private admin VPN stub (init PKI before use; default **0**) |
 
 Details: [docs/05-edge-networking.md](../05-edge-networking.md). Snippet: [edge.env.snippet](./edge.env.snippet).
 
 **Zalo** never goes through the API Gateway (local bridge only).
+
+## Hermes replicas
+
+```env
+# Low: forced 1. Medium/High: default 2 (override in .env).
+# HERMES_REPLICAS=2
+```
+
+When `HERMES_REPLICAS>1`, host ports `:28642`/`:29119` are **not** published (avoid bind clash). Reach Hermes via Traefik (`:8080`) or API Gateway (`:8088`). Low (`replicas=1`) still publishes localhost gateway/dashboard ports.
