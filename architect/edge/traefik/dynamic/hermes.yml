@@ -15,7 +15,7 @@ http:
         servers:
           - url: "http://hermes:8642"
         healthCheck:
-          path: "/"
+          path: "/health"
           interval: "15s"
           timeout: "5s"
         passHostHeader: true
