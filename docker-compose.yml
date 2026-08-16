@@ -75,21 +75,6 @@ services:
       - "127.0.0.1:${MEMORY_PORT:-8095}:8095"
     networks: [internal]
 
-  mem0:
-    build: ./architect/memory/mem0
-    container_name: mem0
-    restart: unless-stopped
-    environment:
-      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - TZ=${TZ:-Asia/Ho_Chi_Minh}
-    depends_on:
-      - qdrant
-      - redis
-    ports:
-      - "127.0.0.1:${MEM0_PORT:-8096}:8096"
-    networks: [internal]
-
   session:
     build: ./architect/memory/session
     container_name: session
@@ -216,13 +201,11 @@ services:
 
   hermes:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
-    container_name: hermes
+    # No container_name — required for HERMES_REPLICAS > 1 (Medium/High default 2)
     restart: unless-stopped
     pull_policy: missing
     command: ["gateway", "run"]
-    ports:
-      - "127.0.0.1:${HERMES_GATEWAY_PORT:-28642}:8642"
-      - "127.0.0.1:${HERMES_DASHBOARD_PORT:-29119}:9119"
+    # Host ports: see docker-compose.hermes-hostports.yml when HERMES_REPLICAS=1
     environment:
       - HERMES_UID=${HERMES_UID:-1000}
       - HERMES_GID=${HERMES_GID:-1000}
@@ -238,7 +221,6 @@ services:
       - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://dispatcher:8090/openai/v1}
       - DISPATCHER_URL=http://dispatcher:8090
       - MEMORY_URL=http://memory:8095
-      - MEM0_URL=${MEM0_URL:-http://mem0:8096}
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - INGEST_URL=${INGEST_URL:-http://ingest:8099}
       - SESSION_URL=${SESSION_URL:-http://session:8107}

@@ -156,10 +156,17 @@ heal_by_health() {
       $SUDO docker restart 9router 2>/dev/null || $SUDO docker restart nh-9router 2>/dev/null || true
       $SUDO docker restart dispatcher 2>/dev/null || $SUDO docker restart nh-dispatcher 2>/dev/null || true
       if [[ "$RESTART_HERMES_ON_PROBE" == "1" ]]; then
-        $SUDO docker restart "$HERMES_CTR" 2>/dev/null \
-          || $SUDO docker restart nh-hermes 2>/dev/null \
-          || $SUDO docker restart hermes 2>/dev/null \
-          || true
+        local ids
+        ids="$($SUDO docker ps -aq --filter "name=hermes" 2>/dev/null || true)"
+        if [[ -n "$ids" ]]; then
+          # shellcheck disable=SC2086
+          $SUDO docker restart $ids >/dev/null 2>&1 || true
+        else
+          $SUDO docker restart "$HERMES_CTR" 2>/dev/null \
+            || $SUDO docker restart nh-hermes 2>/dev/null \
+            || $SUDO docker restart hermes 2>/dev/null \
+            || true
+        fi
       else
         log "not restarting hermes on probe fail (set STACK_WATCH_RESTART_HERMES=1 to enable)"
       fi
