@@ -78,16 +78,27 @@ ENABLE_ADMIN_API=0
 ENABLE_ZALO=0
 ENABLE_TELEGRAM=0
 ENABLE_TRAEFIK=0
+ENABLE_API_GATEWAY=0
 ENABLE_OPENVPN=0
 ENABLE_WHATSAPP=0
 ```
 
 | Profile | Optional on |
 |---|---|
-| low | none (web / OCR / Jobs / file-gen forced off) |
-| medium | OCR, SearXNG, Jobs, office file-gen, web backends + compact timer |
-| high | Medium + OpenBao UI, AV, security, SIEM, authz, policy, admin-api, monitor; notify opt-in; CloudDrive sync if rclone configured |
+| low | none by default; edge flags stay **0** unless set in `.env` |
+| medium | OCR, SearXNG, Jobs, office file-gen, web backends + compact timer; edge opt-in |
+| high | Medium + OpenBao UI, AV, security, SIEM, authz, policy, admin-api, monitor; notify opt-in; CloudDrive; edge opt-in |
 
-High overlay: `docker-compose.high.yml`. Smoke: `bash run.sh check-high`. Seed keys: `bash run.sh first-setup-openbao`.
+High overlay: `docker-compose.high.yml`. Edge overlay: `docker-compose.edge.yml` when `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` is `1`. Smoke: `bash run.sh check-high`. Seed keys: `bash run.sh first-setup-openbao`.
 
-Traefik and OpenVPN are removed from the product.
+## Edge (VPN/LAN — optional)
+
+| Flag | Role |
+|------|------|
+| `ENABLE_TRAEFIK` | Traefik LB → Hermes (localhost bind) |
+| `ENABLE_API_GATEWAY` | HTTP entry + Valkey global rate limit (coding paths skip RL) |
+| `ENABLE_OPENVPN` | Private admin VPN stub (init PKI before use) |
+
+Details: [docs/05-edge-networking.md](../05-edge-networking.md). Snippet: [edge.env.snippet](./edge.env.snippet).
+
+**Zalo** never goes through the API Gateway (local bridge only).
