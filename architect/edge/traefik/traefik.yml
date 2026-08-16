@@ -1,5 +1,5 @@
-# Traefik static config — hermes-stack edge (VPN/LAN only)
-# Do not expose entryPoints on 0.0.0.0 to the public Internet.
+# Traefik static config — hermes-stack edge (VPN/LAN default, no ACME)
+# For Let's Encrypt use traefik.acme.yml (TRAEFIK_ACME_ENABLED=1).
 
 api:
   dashboard: false
@@ -10,7 +10,7 @@ entryPoints:
 
 providers:
   file:
-    filename: /etc/traefik/dynamic/hermes.yml
+    directory: /etc/traefik/dynamic
     watch: true
 
 log:

@@ -52,13 +52,45 @@ bash run.sh up
 
 | Function | Detail |
 |----------|--------|
-| Listen | Container `:80`, host `127.0.0.1:${TRAEFIK_HOST_PORT:-8080}` |
+| Listen | Container `:80`, host `${TRAEFIK_BIND:-127.0.0.1}:${TRAEFIK_HOST_PORT:-8080}` (LAN mode) |
 | Route | All paths → service `hermes-gw` |
 | Upstream | `http://hermes:8642` (Hermes gateway inside Docker) |
 | Health | Periodic check; unhealthy instances drop from LB |
 | Scale later | Add more `servers` in `architect/edge/traefik/dynamic/hermes.yml` for Hermes × N |
 
 Config files: `architect/edge/traefik/traefik.yml` + `dynamic/hermes.yml`.
+
+### Let's Encrypt (optional)
+
+```env
+ENABLE_TRAEFIK=1
+TRAEFIK_ACME_ENABLED=1
+TRAEFIK_ACME_EMAIL=admin@example.com
+TRAEFIK_ACME_DOMAIN=assistant.example.com
+# Optional staging:
+# TRAEFIK_ACME_CA_SERVER=https://acme-staging-v02.api.letsencrypt.org/directory
+TRAEFIK_BIND=0.0.0.0
+TRAEFIK_HTTP_PORT=80
+TRAEFIK_HTTPS_PORT=443
+```
+
+| Function | Detail |
+|----------|--------|
+| Profile | `traefik-acme` (chosen by `run.sh` when ACME enabled) |
+| HTTP→HTTPS | EntryPoint redirect + middleware |
+| Cert resolver | `letsencrypt` → `/letsencrypt/acme.json` volume |
+| Host rule | Rendered from `hermes.tls.yml.template` via `scripts/main/render-traefik-acme.sh` |
+| Challenge | **HTTP-01** on entryPoint `web` (default) |
+
+**Conflict with “no public inbound”:** HTTP-01 needs Let's Encrypt to reach ports **80/443**. Keep `TRAEFIK_ACME_ENABLED=0` for VPN/LAN-only. Enable ACME only when you intentionally expose those ports (or terminate TLS elsewhere).
+
+When ACME is on and Gateway is on, prefer:
+
+```env
+GATEWAY_UPSTREAM_URL=http://traefik:80
+```
+
+(or reach Hermes on the internal Docker network; TLS is for external clients).
 
 ---
 

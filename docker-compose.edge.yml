@@ -1,8 +1,12 @@
 # assistant — Edge overlay (optional Traefik / API Gateway / OpenVPN)
 # Merged when ENABLE_TRAEFIK, ENABLE_API_GATEWAY, or ENABLE_OPENVPN is 1.
-# Host publishes bind to 127.0.0.1 only (VPN/LAN). Zalo bypasses this path.
+# Default Traefik binds 127.0.0.1 (VPN/LAN). Let's Encrypt profile publishes 80/443.
+
+volumes:
+  traefik_letsencrypt:
 
 services:
+  # HTTP-only LB (VPN/LAN). Profile: traefik
   traefik:
     profiles: ["traefik"]
     image: ${TRAEFIK_IMAGE:-traefik:v3.3}
@@ -14,7 +18,31 @@ services:
       - ./architect/edge/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./architect/edge/traefik/dynamic:/etc/traefik/dynamic:ro
     ports:
-      - "127.0.0.1:${TRAEFIK_HOST_PORT:-8080}:80"
+      - "${TRAEFIK_BIND:-127.0.0.1}:${TRAEFIK_HOST_PORT:-8080}:80"
+    depends_on:
+      - hermes
+    networks: [internal]
+
+  # Traefik + Let's Encrypt (HTTP-01). Profile: traefik-acme
+  # Requires TRAEFIK_ACME_EMAIL + TRAEFIK_ACME_DOMAIN; ports 80/443 must be reachable for HTTP-01.
+  traefik-acme:
+    profiles: ["traefik-acme"]
+    image: ${TRAEFIK_IMAGE:-traefik:v3.3}
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - --configFile=/etc/traefik/traefik.acme.yml
+      - --certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_ACME_EMAIL:-change-me@example.com}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.letsencrypt.acme.caserver=${TRAEFIK_ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}
+    volumes:
+      - ./architect/edge/traefik/traefik.acme.yml:/etc/traefik/traefik.acme.yml:ro
+      - ./architect/edge/traefik/dynamic-acme:/etc/traefik/dynamic:ro
+      - traefik_letsencrypt:/letsencrypt
+    ports:
+      - "${TRAEFIK_BIND:-0.0.0.0}:${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_BIND:-0.0.0.0}:${TRAEFIK_HTTPS_PORT:-443}:443"
     depends_on:
       - hermes
     networks: [internal]
@@ -26,7 +54,7 @@ services:
     restart: unless-stopped
     environment:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      # Default direct Hermes; set http://traefik:80 when ENABLE_TRAEFIK=1
+      # Prefer https://traefik:443 or http://traefik:80 when Traefik is on
       - GATEWAY_UPSTREAM_URL=${GATEWAY_UPSTREAM_URL:-http://hermes:8642}
       - GATEWAY_PORT=8088
       - GATEWAY_RATE_LIMIT_REQUESTS=${GATEWAY_RATE_LIMIT_REQUESTS:-60}

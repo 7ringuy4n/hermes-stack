@@ -95,7 +95,8 @@ High overlay: `docker-compose.high.yml`. Edge overlay: `docker-compose.edge.yml`
 
 | Flag | Role |
 |------|------|
-| `ENABLE_TRAEFIK` | Traefik LB → Hermes (localhost bind) |
+| `ENABLE_TRAEFIK` | Traefik LB → Hermes (localhost bind by default) |
+| `TRAEFIK_ACME_ENABLED` | Let's Encrypt TLS on Traefik (needs public 80/443 for HTTP-01; default **0**) |
 | `ENABLE_API_GATEWAY` | HTTP entry + Valkey global rate limit (coding paths skip RL) |
 | `ENABLE_OPENVPN` | Private admin VPN stub (init PKI before use) |
 

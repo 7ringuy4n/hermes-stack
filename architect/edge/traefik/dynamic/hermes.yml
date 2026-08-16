@@ -1,4 +1,5 @@
-# Dynamic routes — Hermes chat LB (extend servers list for Hermes × N)
+# Dynamic routes — Hermes chat LB (HTTP, no TLS)
+# Used when TRAEFIK_ACME_ENABLED=0
 http:
   routers:
     hermes-gw:
