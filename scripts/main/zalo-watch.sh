@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Self-heal Zalo channel: bridge + hermes SSE.
+# Self-heal Zalo channel (bridge-focused).
 # Intended as systemd timer (every ~1–2 min) when ENABLE_ZALO=1.
 #
 # Signals:
-#   - bridge /health unreachable or sessionDead → restart user Zalo unit
-#   - loggedIn but sseClients==0 for N polls → docker restart hermes (+ zalo-proxy)
-# Users never see backend; we only recover so DMs work again.
+#   - bridge /health unreachable → restart user Zalo unit
+#   - loggedIn but sseClients==0 → restart BRIDGE only (default)
+#     Hermes is NOT restarted (restart storms when SSE is slow to reconnect).
+#   - Optional: ZALO_WATCH_RESTART_HERMES=1 restores old hermes restart behavior
 set -euo pipefail
 
 ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -14,16 +15,43 @@ ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 PORT="${ZALO_PLUGIN_PORT:-8787}"
 HEALTH_URL="${ZALO_WATCH_HEALTH_URL:-http://127.0.0.1:${PORT}/health}"
-STATE_DIR="${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}/watch"
+# Prefer explicit env; else lab /data/hermes; else assistant default
+if [[ -n "${ASSISTANT_DATA_DIR:-}" ]]; then
+  _data_root="$ASSISTANT_DATA_DIR"
+elif [[ -n "${HERMES_DATA_DIR:-}" ]]; then
+  _data_root="$HERMES_DATA_DIR"
+elif [[ -d /data/hermes ]]; then
+  _data_root="/data/hermes"
+else
+  _data_root="/data/assistant"
+fi
+STATE_DIR="${_data_root}/watch"
 STATE_FILE="${STATE_DIR}/zalo-watch.state"
 COOLDOWN_FILE="${STATE_DIR}/zalo-watch.cooldown"
-SSE_MISS_LIMIT="${ZALO_WATCH_SSE_MISS:-2}"
+# Higher defaults: Hermes needs minutes after boot before SSE attaches
+SSE_MISS_LIMIT="${ZALO_WATCH_SSE_MISS:-15}"
+SSE_COOLDOWN_S="${ZALO_WATCH_SSE_COOLDOWN:-1800}"
+BRIDGE_COOLDOWN_S="${ZALO_WATCH_BRIDGE_COOLDOWN:-90}"
+RESTART_HERMES="${ZALO_WATCH_RESTART_HERMES:-0}"
 HERMES_CTR="${HERMES_CONTAINER:-hermes}"
 PROXY_CTR="${ZALO_PROXY_CONTAINER:-zalo-proxy}"
 if [[ "$(id -u)" -ne 0 ]]; then SUDO=sudo; else SUDO=; fi
 
-mkdir -p "$STATE_DIR"
-touch "$STATE_FILE"
+if ! mkdir -p "$STATE_DIR" 2>/dev/null; then
+  $SUDO mkdir -p "$STATE_DIR"
+  $SUDO chown "$(id -u):$(id -g)" "$STATE_DIR" 2>/dev/null || true
+fi
+# Ensure state file is writable (lab /data/hermes is often root-owned)
+if [[ ! -w "$STATE_DIR" ]]; then
+  $SUDO mkdir -p "$STATE_DIR"
+  $SUDO chown -R "$(id -u):$(id -g)" "$STATE_DIR" 2>/dev/null \
+    || $SUDO chmod 777 "$STATE_DIR" 2>/dev/null \
+    || true
+fi
+touch "$STATE_FILE" 2>/dev/null || {
+  $SUDO touch "$STATE_FILE"
+  $SUDO chown "$(id -u):$(id -g)" "$STATE_FILE" 2>/dev/null || true
+}
 
 log() { echo "$(date -Is) zalo-watch: $*"; }
 
@@ -36,11 +64,19 @@ read_state() {
 }
 
 write_state() {
-  cat >"$STATE_FILE" <<EOF
+  local body
+  body=$(cat <<EOF
 SSE_MISS=${SSE_MISS:-0}
 LAST_ACTION=$(printf '%q' "${LAST_ACTION:-}")
 LAST_TS=$(date +%s)
 EOF
+)
+  if [[ -w "$STATE_DIR" ]] || [[ -w "$STATE_FILE" ]]; then
+    printf '%s\n' "$body" >"$STATE_FILE"
+  else
+    printf '%s\n' "$body" | $SUDO tee "$STATE_FILE" >/dev/null
+    $SUDO chown "$(id -u):$(id -g)" "$STATE_FILE" 2>/dev/null || true
+  fi
 }
 
 in_cooldown() {
@@ -52,7 +88,14 @@ in_cooldown() {
   [[ $((now - then)) -lt "$sec" ]]
 }
 
-mark_cooldown() { date +%s >"$COOLDOWN_FILE"; }
+mark_cooldown() {
+  if [[ -w "$STATE_DIR" ]]; then
+    date +%s >"$COOLDOWN_FILE"
+  else
+    date +%s | $SUDO tee "$COOLDOWN_FILE" >/dev/null
+    $SUDO chown "$(id -u):$(id -g)" "$COOLDOWN_FILE" 2>/dev/null || true
+  fi
+}
 
 restart_bridge() {
   log "restart host Zalo bridge unit"
@@ -63,9 +106,10 @@ restart_bridge() {
 }
 
 restart_hermes() {
-  log "restart ${HERMES_CTR} (+ ${PROXY_CTR} if present)"
+  log "restart ${HERMES_CTR} (+ ${PROXY_CTR} if present) [ZALO_WATCH_RESTART_HERMES=1]"
   $SUDO docker restart "$PROXY_CTR" 2>/dev/null || true
   $SUDO docker restart "$HERMES_CTR" 2>/dev/null \
+    || $SUDO docker restart nh-hermes 2>/dev/null \
     || $SUDO docker restart hermes 2>/dev/null \
     || true
   sleep 5
@@ -81,7 +125,7 @@ main() {
   raw="$(health_json)"
   if [[ -z "$raw" ]]; then
     log "bridge health unreachable → restart bridge"
-    if ! in_cooldown 90; then
+    if ! in_cooldown "$BRIDGE_COOLDOWN_S"; then
       restart_bridge
       mark_cooldown
       LAST_ACTION="restart_bridge"
@@ -112,16 +156,23 @@ main() {
 
   if [[ "$sse" -lt 1 ]]; then
     SSE_MISS=$((SSE_MISS + 1))
-    log "loggedIn but sseClients=${sse} (miss ${SSE_MISS}/${SSE_MISS_LIMIT})"
+    log "loggedIn but sseClients=${sse} (miss ${SSE_MISS}/${SSE_MISS_LIMIT}) restart_hermes=${RESTART_HERMES}"
     if [[ "$SSE_MISS" -ge "$SSE_MISS_LIMIT" ]]; then
-      if ! in_cooldown 120; then
-        # Bridge first, then hermes (lab order)
+      if ! in_cooldown "$SSE_COOLDOWN_S"; then
         restart_bridge
-        sleep 2
-        restart_hermes
+        if [[ "$RESTART_HERMES" == "1" ]]; then
+          sleep 2
+          restart_hermes
+          LAST_ACTION="restart_hermes_sse0"
+        else
+          # Default: never bounce Hermes — wait for adapter SSE reconnect
+          log "sse=0: bridge restarted only (set ZALO_WATCH_RESTART_HERMES=1 to also restart hermes)"
+          LAST_ACTION="restart_bridge_sse0"
+        fi
         mark_cooldown
-        LAST_ACTION="restart_hermes_sse0"
         SSE_MISS=0
+      else
+        log "sse=0 heal skipped (cooldown ${SSE_COOLDOWN_S}s)"
       fi
     fi
     write_state
