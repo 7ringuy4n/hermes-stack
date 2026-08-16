@@ -13,6 +13,10 @@
 - **Coding skills** vendored (skills-only, no coding worker): `hermes/main/skills/coding` + `vendor/mattpocock/*` + `vendor/ui-ux-pro-max/*` with LICENSE/ATTRIBUTION.
 - No VPS auto-deploy from this change.
 
+## 2026-08-16 09:25 +07 — docs: require MR for all merges to main
+
+- `docs/GIT.md` + `.cursor/rules/git.mdc`: never push/merge directly to `main`; always open a PR (`release/*` or `hotfix/*` → `main`).
+
 ## 2026-08-16 09:20 +07 — docs: git workflow release model
 
 - `docs/GIT.md`: `feature/*` → `develop` → `release/*` → `main`; `fix/*` / `hotfix/*`.
