@@ -137,9 +137,7 @@ do_compact() {
   need_med compact || return 1
   echo "==> compact (skills drafts / memory hooks) — silent"
   local mem="${MEMORY_URL:-http://127.0.0.1:8095}"
-  local mem0="${MEM0_URL:-http://127.0.0.1:8096}"
   curl -fsS -m 30 -X POST "${mem}/v1/compact" >/dev/null 2>&1 || true
-  curl -fsS -m 30 -X POST "${mem0}/v1/compact" >/dev/null 2>&1 || true
   if [[ -d "${ASSISTANT_DATA_DIR:-/data/assistant}/workspace/.skill-drafts" ]]; then
     find "${ASSISTANT_DATA_DIR}/workspace/.skill-drafts" -type f -mtime +7 -delete 2>/dev/null || true
   fi
