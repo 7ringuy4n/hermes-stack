@@ -11,7 +11,7 @@ Must (all profiles).
 ## What lives here
 
 | Path | Function |
-|---|---|
+|------|----------|
 | `ops.sh` | `backup` / `restore` / `verify` entry |
 | `lib/profile.sh` | `ASSISTANT_PROFILE` → optional `ENABLE_*` |
 | `lib/load-defaults.sh` | Load `docs/config/DEFAULTS.md` then `.env` |
@@ -22,21 +22,56 @@ Must (all profiles).
 ## Backup locations
 
 | Profile | Where |
-|---|---|
+|---------|-------|
 | Low / Medium | `/data/assistant/backups` |
 | High | Same + optional CloudDrive sync |
+
+Defaults: `BACKUP_DIR=/data/assistant/backups`, `HERMES_DATA_DIR=/data/assistant` (see [docs/config/DEFAULTS.md](../../docs/config/DEFAULTS.md)). Hermes tarball excludes `./backups`, `./replicas`, and (unless opted in) `./lazy-packages` / `./media`.
 
 ## Timers (target)
 
 | Job | Time | Layer | Profiles |
-|---|---|---|---|
+|-----|------|-------|----------|
 | auto-learn | 00:00 | tools/ingest | all |
 | compact | 00:00 | memory hooks | medium+ |
 | backup | 00:30 | this layer | all |
 
-Operator commands: [docs/02-commands.md](../../docs/02-commands.md) — `bash run.sh backup|restore|verify|migrate|auto-learn|compact|optimize-memory|install-timers|…`.
+## Operator commands
+
+```bash
+bash run.sh backup              # stamp → $BACKUP_DIR (default /data/assistant/backups)
+bash run.sh verify [stamp]      # manifest + live postgres/redis/qdrant probes
+bash run.sh restore [stamp]     # restore stores then compose up (uses HERMES_REPLICAS)
+bash run.sh migrate             # pack LATEST stamp for moving hosts
+```
+
+### Restore behavior (important)
+
+- Bring-up uses **Docker Compose** overlays under `docker/` (not `run.sh up` / first-setup), so restore does not re-run LLM bootstrap or wipe unrelated state unexpectedly.
+- **Postgres:** `pg_dumpall --clean` restore skips `DROP`/`CREATE`/`ALTER ROLE` for the session DB user (`MEMORY_DB_USER`, default `hermes`) so the connected role is not dropped mid-restore. App containers that hold DB sessions are stopped first.
+- **Qdrant (1.13+):** restores **per-collection** snapshots from the backup manifest. Full **storage** snapshot recover via HTTP is not supported (CLI/startup only); if the stamp has no collection snapshots (empty knowledge), recover is a clean skip.
+- **Hermes×2:** stops/starts all containers matching `hermes`; compose `--scale hermes=$HERMES_REPLICAS`.
+- **Schedules:** enables only timer units that exist on the host (missing units are skipped).
+
+Full command index: [docs/02-commands.md](../../docs/02-commands.md).
+
+## Tested successfully (lab)
+
+Date: **2026-08-16** · Host: Ubuntu **24.04.4 LTS** · Profile: **High** · `HERMES_REPLICAS=2` · monitor off (`ENABLE_GRAFANA/LOKI/PROMETHEUS/ALLOY=0`) · Zalo logged in.
+
+| Step | Result | Notes |
+|------|--------|-------|
+| `bash run.sh backup` | **Pass** | Stamp `20260816_195940` under `/data/assistant/backups` |
+| `bash run.sh verify <stamp>` | **Pass** | Manifest OK; live Postgres / Valkey / timers probed |
+| Canary file in `HERMES_DATA_DIR` | **Pass** | Written before backup, removed, present again after restore |
+| `bash run.sh restore <stamp>` | **Pass** | Postgres, Valkey, Hermes data, OpenBao env, volumes (when present), Zalo unit files |
+| Qdrant collection recover | **Pass (N/A data)** | Manifest had no per-collection snaps (empty/storage-only); skip is expected |
+| Post-restore health | **Pass** | api-gateway `/health` OK; Zalo bridge logged in `sseClients=1`; Hermes×2 up; `pg_isready`; Redis `PONG` |
+
+Hardware used for that run: **4 vCPU / 16 GiB RAM / ~200 GB disk** (see [docs/HARDWARE.md](../../docs/HARDWARE.md)).
 
 ## Related
 
-- [host](../host/README.md)  
+- [host](../host/README.md)
 - [docs/00-profiles.md](../../docs/00-profiles.md)
+- [docs/HARDWARE.md](../../docs/HARDWARE.md)
