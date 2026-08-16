@@ -1,5 +1,5 @@
 ---
-description: Git branch, commit, and PR title rules for hermes-stack
+description: Git branch, release, and MR title rules for hermes-stack
 alwaysApply: true
 ---
 
@@ -7,24 +7,38 @@ alwaysApply: true
 
 Follow **[docs/GIT.md](../../docs/GIT.md)** as the source of truth.
 
-## Branches
+## Core rule
 
-- `main` → `develop` → `feature/<layer>/<slug>`
-- Branch features from **develop**, never commit feature work on `main`
-- Layer path examples: `zalo`, `memory`, `session`, `worker`, `gateway`, `arch`, `hermes`, `docs`
-
-## PR / commit title (required)
+- `develop` = everything integrating / testing
+- `main` = production-ready only
+- `release/*` = selected features for the next production cut
 
 ```text
-[<BRANCH_KIND>][<LAYER>][<CHANGE_TYPE>] <Imperative summary>
+feature/* ──MR──> develop ──> release/* ──MR──> main
 ```
 
-Example: `[FEATURE][ZALO][FIX] Prevent Hermes restart storm from watch timers`
+## Branches
+
+| Branch | From | MR into |
+|--------|------|---------|
+| `feature/*` | `develop` | `develop` |
+| `fix/*` | `develop` | `develop` |
+| `hotfix/*` | `main` | `main` (+ sync `develop`) |
+| `release/vX.Y.Z` | `main`, then cherry-pick ready features | `main` |
+
+## MR title (required)
+
+```text
+[TYPE][LAYER] Imperative summary
+[RELEASE] Release vX.Y.Z
+```
+
+Examples: `[FEATURE][MEMORY] Add memory manager` · `[FIX][SESSION] Fix session isolation` · `[RELEASE] Release v1.5.0`
 
 ## Must
 
-- Update `docs/CHANGELOG.md` (top entry + timestamp) for ops/product changes
-- PR base = `develop`
+- Update `docs/CHANGELOG.md` (top + timestamp) for ops/product changes
+- Do not merge untested 🧪 features into `release/*` / `main`
 - Push only when GitHub auth is the repo owner (`7ringuy4n` for this repo)
 - No VPS/remote apply without explicit permission
 - Force-push / amend only when the operator explicitly asks (`--force-with-lease`)

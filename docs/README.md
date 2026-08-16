@@ -12,7 +12,7 @@ English operations docs for the **assistant** stack.
 | [04-component-flows.md](./04-component-flows.md) | Per-component flows |
 | [config/DEFAULTS.md](./config/DEFAULTS.md) | Non-secret defaults |
 | [CHANGELOG.md](./CHANGELOG.md) | Change log |
-| [GIT.md](./GIT.md) | Branch / commit / PR title rules |
+| [GIT.md](./GIT.md) | Git workflow: feature → develop → release → main |
 | [NEXT.md](./NEXT.md) | Backlog |
 
 ## Related indexes
