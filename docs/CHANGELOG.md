@@ -1,5 +1,10 @@
 # Change history
 
+## 2026-08-16 20:15 +07 — release: v0.4.0
+
+- Cut 
+elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo singleton, hardware docs, Deploy-High, agent-ops).
+
 ## 2026-08-16 20:15 +07 — docs: hardware specs + backup/restore test notes (MR-ready)
 
 - Added docs/HARDWARE.md: lab-tested High (Ubuntu 24.04, 4 vCPU / 16 GiB / ~200 GB) and recommended minimum/comfortable sizes per profile.
