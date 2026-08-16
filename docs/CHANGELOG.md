@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-16 09:20 +07 — docs: git workflow release model
+
+- `docs/GIT.md`: `feature/*` → `develop` → `release/*` → `main`; `fix/*` / `hotfix/*`.
+- Release from `main`, cherry-pick only production-ready features; MR titles `[TYPE][LAYER]` / `[RELEASE]`.
+- Updated `.cursor/rules/git.mdc`.
+
 ## 2026-08-16 09:15 +07 — edge: Traefik Let's Encrypt (optional ACME)
 
 - `TRAEFIK_ACME_ENABLED=1` selects compose profile `traefik-acme` (HTTP-01, `:443`, redirect).
@@ -13,6 +19,11 @@
 - Traefik file provider LB → `hermes:8642` (ready for Hermes × N server list).
 - OpenVPN compose stub + PKI docs; Zalo still bypasses Gateway.
 - Docs: `docs/05-edge-networking.md`; reference copy under `referrence/`; `Apply-EdgeUpdate.ps1`.
+
+## 2026-08-16 08:25 +07 — docs: git workflow rules
+
+- Added `docs/GIT.md`: branch layout (`main` → `develop` → `feature/<layer>/<slug>`), PR title `[KIND][LAYER][TYPE]`, commit/changelog/push rules.
+- Added `.cursor/rules/git.mdc` (always apply) pointing at `docs/GIT.md`.
 
 ## 2026-08-16 08:15 +07 — zalo/stack-watch: stop Hermes restart storm
 
