@@ -1,5 +1,10 @@
 # Change history
 
+## 2026-08-16 11:25 +07 — edge: Hermes API bind for Traefik after scale
+
+- Hermes `API_SERVER_HOST=0.0.0.0` + `API_SERVER_KEY` so Traefik can reach `hermes:8642` (upstream default was loopback-only).
+- Traefik health check path `/health`.
+
 ## 2026-08-16 09:35 +07 — hermes: default scale 2 on medium|high
 
 - `HERMES_REPLICAS` default **2** on medium/high, **1** on low (`profile.sh` + `run.sh --scale`).
