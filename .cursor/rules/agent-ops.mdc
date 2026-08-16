@@ -1,0 +1,27 @@
+---
+description: Production agent/ops rules — permission gates, skills-first, no hardcoded messages
+alwaysApply: true
+---
+
+# Agent ops (hermes-stack)
+
+Follow **[docs/AGENT_RULES.md](../../docs/AGENT_RULES.md)** as the editable source of truth (role + numbered rules). Git details: **[docs/GIT.md](../../docs/GIT.md)**.
+
+## Hard gates (every turn)
+
+- Switch to **`develop`**, then `feature/*`, before new work.
+- **No** VPS deploy / remote test scripts without explicit permission.
+- **No** push or MR without explicit permission.
+- Update **`docs/CHANGELOG.md`** (top entry + timestamp) for product/ops changes.
+- Prefer **skills + editable config/messages** over hardcoded keywords or chat strings.
+- SSH/remote bash: **LF only**, prefer single-line SSH, fail on non-zero exit.
+- Features must be **enable/disable components**; reuse Valkey/queues/etc. instead of inventing caches.
+- Knowledge cite/list: **top 5** + count of the rest.
+
+## Remote sync helper
+
+When the operator allows remote update, prefer:
+
+`pwsh -File scripts/main/Update-StackRemote.ps1 ...`
+
+(Do not invent one-off Paramiko/SSH test payloads without permission.)

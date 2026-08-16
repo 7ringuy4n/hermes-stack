@@ -30,8 +30,84 @@ import asyncio
 import json
 import logging
 import os
+import socket
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
+def _replica_id() -> str:
+    return (os.getenv("HOSTNAME") or socket.gethostname() or "").strip()
+
+
+def _try_claim_zalo_owner(shared: str, rid: str) -> bool:
+    """Atomic mkdir lock + owner file (same contract as hermes-replica-entry.sh)."""
+    lockdir = Path(shared) / "zalo_owner.lock"
+    owner_path = Path(shared) / "zalo_owner"
+    try:
+        lockdir.mkdir()
+        owner_path.write_text(rid + "\n", encoding="utf-8")
+        return True
+    except FileExistsError:
+        try:
+            current = owner_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return False
+        if current == rid:
+            return True
+        # Stale: previous owner hostname no longer resolves on the Docker network.
+        try:
+            socket.getaddrinfo(current, None)
+            return False
+        except OSError:
+            try:
+                if lockdir.exists():
+                    # Best-effort steal (race-safe enough for 2 replicas).
+                    for child in lockdir.iterdir():
+                        child.unlink(missing_ok=True)
+                    lockdir.rmdir()
+                owner_path.unlink(missing_ok=True)
+            except OSError:
+                return False
+            try:
+                lockdir.mkdir()
+                owner_path.write_text(rid + "\n", encoding="utf-8")
+                return True
+            except FileExistsError:
+                return False
+
+
+def _is_zalo_owner_replica() -> bool:
+    """When Hermes is scaled, only the elected owner may attach to the bridge.
+
+    Compose injects ZALO_PLUGIN_URL into every replica; s6 may restore that env
+    after entrypoint clears it. Ownership is recorded by hermes-replica-entry.sh
+    at HERMES_SHARED_DATA/zalo_owner (hostname of the winner).
+    """
+    try:
+        replicas = int(os.getenv("HERMES_REPLICAS") or "1")
+    except ValueError:
+        replicas = 1
+    if replicas <= 1:
+        return True
+    shared = (os.getenv("HERMES_SHARED_DATA") or "/opt/data").rstrip("/")
+    rid = _replica_id()
+    if not rid:
+        return False
+    owner_path = Path(shared) / "zalo_owner"
+    try:
+        owner = owner_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        owner = ""
+    if owner == rid:
+        return True
+    if owner:
+        try:
+            socket.getaddrinfo(owner, None)
+            return False
+        except OSError:
+            return _try_claim_zalo_owner(shared, rid)
+    return _try_claim_zalo_owner(shared, rid)
 
 logger = logging.getLogger(__name__)
 
@@ -229,9 +305,18 @@ class ZaloAdapter(BasePlatformAdapter):
 
         extra = getattr(config, "extra", {}) or {}
 
-        self.bridge_url = (
-            os.getenv("ZALO_PLUGIN_URL") or extra.get("bridge_url", "http://127.0.0.1:8787")
-        ).rstrip("/")
+        # Empty ZALO_PLUGIN_URL means explicitly disabled (scaled non-owner replicas).
+        # Do not fall back to a default bridge URL — that caused dual SSE on Hermes×2.
+        if "ZALO_PLUGIN_URL" in os.environ:
+            self.bridge_url = (os.environ.get("ZALO_PLUGIN_URL") or "").strip().rstrip("/")
+        else:
+            self.bridge_url = str(extra.get("bridge_url") or "").strip().rstrip("/")
+        if self.bridge_url and not _is_zalo_owner_replica():
+            logger.info(
+                "Zalo: skipping bridge on non-owner replica host=%s",
+                _replica_id(),
+            )
+            self.bridge_url = ""
         self.bridge_token = os.getenv("ZALO_PLUGIN_TOKEN") or extra.get("bridge_token", "")
 
         # ── Access control (Telegram-style: empty list = allow everyone) ──────
@@ -755,8 +840,16 @@ class ZaloAdapter(BasePlatformAdapter):
         raw = self._zalo_admin_extract_cmd(text or "")
         if not raw:
             return False
-        admin_url = (os.getenv("ADMIN_API_URL") or "http://admin-api:8100").rstrip("/")
-        token = (os.getenv("ADMIN_API_TOKEN") or "").strip()
+        admin_url = (
+            os.getenv("ZALO_API_URL")
+            or os.getenv("ADMIN_API_URL")  # legacy alias
+            or "http://zalo-api:8100"
+        ).rstrip("/")
+        token = (
+            os.getenv("ZALO_API_TOKEN")
+            or os.getenv("ADMIN_API_TOKEN")  # legacy alias
+            or ""
+        ).strip()
         headers = {"Content-Type": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -787,7 +880,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 data = {}
             if status >= 400 or not data.get("handled"):
                 detail = data.get("detail") or data.get("reply") or f"HTTP {status}"
-                logger.warning("Zalo admin API rejected !zalo: %s", detail)
+                logger.warning("Zalo API rejected !zalo: %s", detail)
                 reply = f"admin: {detail}"
             else:
                 reply = (data.get("reply") or "").strip()
@@ -795,7 +888,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 group_ack = (data.get("group_ack") or "").strip()
         except Exception as e:
             logger.warning("Zalo admin command failed: %s: %s", type(e).__name__, e)
-            reply = "admin API unavailable"
+            reply = "zalo-api unavailable"
         # Group !zalo who → DM admin; other cmds stay in-thread unless API asks for DM.
         if reply_dm and sender_id:
             try:
@@ -1988,11 +2081,37 @@ class ZaloAdapter(BasePlatformAdapter):
 
 
 
-    def _is_gateway_noise(self, content: str) -> bool:  # ASSISTANT_QUIET_SEND_v3
-        """Drop Hermes progress / approval / execute_code spam from chat."""
+    def _rewrite_gateway_user_notice(self, content: str) -> Optional[str]:  # ASSISTANT_QUIET_SEND_v6
+        """Suppress approval / resume / process chatter on Zalo."""
         t = (content or "").strip()
         if not t:
-            return False
+            return None
+        low = t.lower()
+        if any(
+            n in low
+            for n in (
+                "dangerous command",
+                "requires approval",
+                "approval is required",
+                "terminal command approval",
+                "command approved",
+                "agent is resuming",
+                "bot cần duyệt lệnh",
+                "mở hermes dashboard",
+                "approve lệnh",
+                "trả lời: approve",
+            )
+        ) or ("approval" in low and ("command" in low or "execute" in low)):
+            return ""
+        return None
+
+    def _is_gateway_noise(self, content: str) -> bool:  # ASSISTANT_QUIET_SEND_v6
+        """Drop Hermes progress / PII / process-narration spam from chat."""
+        import re as _re
+
+        t = (content or "").strip()
+        if not t:
+            return True
         low = t.lower()
         needles = (
             "⏳ working",
@@ -2007,24 +2126,74 @@ class ZaloAdapter(BasePlatformAdapter):
             "provider may be overloaded",
             "the agent is back",
             "send any message after restart",
-            "dangerous command",
-            "requires approval",
             "execute_code",
             "eexecute_code",
             "script execution",
-            "approval is required",
             "spawn subprocesses",
             "mutate files",
-            "terminal command approval",
+            "dangerous command",
+            "requires approval",
+            "command approved",
+            "agent is resuming",
+            "bot cần duyệt lệnh",
+            "theo quy trình image-gen",
+            "theo quy trình",
+            "gửi qua dispatcher",
+            "gửi file này cho bạn",
+            "để mình tạo",
+            "để mình kiểm tra",
+            "để mình dùng",
+            "để mình gửi",
+            "để mình cài",
+            "pip không có",
+            "dùng uv để cài",
+            "file cũ bị root",
+            "i'll generate",
+            "i will generate",
+            "let me first locate",
+            "locate the zalo thread",
+            "thread info",
+            "generating the image",
+            "generating that image",
+            "this is a dm with",
+            "chat_id=",
+            "thread_id=",
+            "chat id=",
+            "thread id=",
             '"title":',
         )
         if any(n in low for n in needles):
             return True
-        if "approval" in low and ("command" in low or "execute" in low):
+        if "approval" in low and ("command" in low or "execute" in low or "dashboard" in low):
             return True
-        if "⚠️" in t and ("approval" in low or "execute" in low):
+        # Leak: chat_id=233… / (chat_id=…)
+        if _re.search(r"(?i)\bchat[_\s-]?id\b\s*[=:]", t):
             return True
-        if t.startswith("{") and ("approval" in low or "execute_code" in low):
+        if _re.search(r"(?i)\bthread[_\s-]?id\b\s*[=:]", t):
+            return True
+        if _re.search(r"(?i)\b(dm|direct message)\s+with\b", t) and _re.search(r"\d{10,}", t):
+            return True
+        # Short process-only updates while generating/sending media
+        if len(t) < 280 and any(
+            n in low
+            for n in (
+                "để mình tạo",
+                "để mình kiểm",
+                "để mình dùng",
+                "để mình gửi",
+                "để mình cài",
+                "let me create",
+                "let me generate",
+                "let me send",
+                "let me install",
+                "let me check",
+                "let me first",
+                "generating",
+                "i'll generate",
+            )
+        ):
+            return True
+        if t.startswith("{") and ("execute_code" in low):
             return True
         if "base64" in low and ("placeholder" in low or "png" in low or "jpeg" in low):
             if len(t) > 400:
@@ -2204,20 +2373,24 @@ class ZaloAdapter(BasePlatformAdapter):
         return t + "\n" + line
 
 
-    def _as_autosend_roots(self):  # ASSISTANT_AUTOSEND_v3
+    def _as_autosend_roots(self):  # ASSISTANT_AUTOSEND_v4
         import os
         from pathlib import Path
         home = Path(os.getenv("HERMES_HOME") or "/opt/data")
+        shared = Path(os.getenv("HERMES_SHARED_DATA") or "/opt/data")
+        # Images land on shared /opt/data/media/out (not replica HERMES_HOME).
         return (
+            shared / "media" / "out",
             home / "media" / "out",
             home / "workspace",
         )
 
-    def _as_autosend_ok_ext(self) -> tuple:  # ASSISTANT_AUTOSEND_v3
+    def _as_autosend_ok_ext(self) -> tuple:  # ASSISTANT_AUTOSEND_v4
         return (
             ".txt", ".csv", ".md", ".pdf",
             ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
             ".rtf", ".odt", ".ods",
+            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp",
         )
 
     def _as_autosend_remember_turn(self, thread_id, thread_type=None) -> None:  # ASSISTANT_AUTOSEND_v3
@@ -2291,13 +2464,18 @@ class ZaloAdapter(BasePlatformAdapter):
             return False
         return str(chat_id or "") != str(dest["thread_id"])
 
-    def _as_autosend_file_fp(self, file_path) -> str:  # ASSISTANT_AUTOSEND_v3
+    def _as_autosend_file_fp(self, file_path) -> str:  # ASSISTANT_AUTOSEND_v5
+        """Dedupe key: image stem so foo.png + foo.jpg count as one send."""
         from pathlib import Path
+
         p = Path(str(file_path or ""))
+        stem = (p.stem or p.name or "").lower()
         try:
+            if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
+                return f"img:{stem}"
             return f"{p.stat().st_size}:{p.name}"
         except OSError:
-            return p.name or ""
+            return f"img:{stem}" if stem else (p.name or "")
 
     def _as_autosend_file_claim(self, file_path, thread_id) -> bool:  # ASSISTANT_AUTOSEND_v3
         """True = we may send this file. False = already sent this turn."""
@@ -2348,12 +2526,15 @@ class ZaloAdapter(BasePlatformAdapter):
             "đã được tạo",
             "da duoc tao",
             "file của bạn",
+            "đây là file của bạn",
             "here is your file",
+            "đã xong",
+            "done.",
         )
         return any(n in low for n in needles)
 
-    async def _as_autosend_turn_files(self, chat_id, content, metadata=None):  # ASSISTANT_AUTOSEND_v3
-        """Send new office files from this turn; return caption to use for text."""
+    async def _as_autosend_turn_files(self, chat_id, content, metadata=None):  # ASSISTANT_AUTOSEND_v5
+        """Send at most one new file this turn; return result-only caption."""
         import os
         import shutil
         import time
@@ -2401,6 +2582,18 @@ class ZaloAdapter(BasePlatformAdapter):
         if not found:
             return content
         found.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        img_ext = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+        picked = []
+        seen_stem = set()
+        for p in found:
+            if p.suffix.lower() in img_ext:
+                stem = p.stem.lower()
+                if stem in seen_stem:
+                    continue
+                seen_stem.add(stem)
+            picked.append(p)
+            if len(picked) >= 1:
+                break
         sent = 0
         blocked_n = 0
         out_dir = self._as_autosend_roots()[0]
@@ -2408,8 +2601,8 @@ class ZaloAdapter(BasePlatformAdapter):
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
             pass
-        caption = (os.getenv("ZALO_FILE_CAPTION") or "").strip() or "Đây là file của bạn."
-        for src in found[:3]:
+        caption = (os.getenv("ZALO_FILE_CAPTION") or "").strip() or "Đã xong."
+        for src in picked:
             dest = src
             try:
                 if src.parent.resolve() != out_dir.resolve():
@@ -2418,17 +2611,30 @@ class ZaloAdapter(BasePlatformAdapter):
             except OSError:
                 dest = src
             try:
-                res = await self.send_document(
-                    tid,
-                    str(dest),
-                    caption="",
-                    file_name=dest.name,
-                    metadata={
-                        **meta,
-                        "as_skip_autosend": True,
-                        "as_skip_timing": True,
-                    },
-                )
+                if not self._as_autosend_file_claim(dest, tid):
+                    logger.info("Zalo: autosend skip already-claimed %s", dest.name)
+                    continue
+                meta_send = {
+                    **meta,
+                    "as_skip_autosend": True,
+                    "as_skip_timing": True,
+                    "as_claimed": True,
+                }
+                if dest.suffix.lower() in img_ext:
+                    res = await self.send_image_file(
+                        tid,
+                        str(dest),
+                        caption="",
+                        metadata=meta_send,
+                    )
+                else:
+                    res = await self.send_document(
+                        tid,
+                        str(dest),
+                        caption="",
+                        file_name=dest.name,
+                        metadata=meta_send,
+                    )
                 err = ""
                 if isinstance(res, dict):
                     err = str(res.get("error") or "")
@@ -2451,6 +2657,8 @@ class ZaloAdapter(BasePlatformAdapter):
         if sent <= 0:
             if blocked_n:
                 return "File contains risks so it cannot be sent."
+            if self._as_autosend_looks_like_ack(content) or not (content or "").strip():
+                return caption
             return content
         return caption
 
@@ -2479,6 +2687,10 @@ class ZaloAdapter(BasePlatformAdapter):
             r"\1=…",
             t,
         )
+        # Never leak chat/thread identifiers to the user
+        t = _re.sub(r"(?i)\b(chat|thread)[_\s-]?id\b\s*[=:]\s*\S+", "", t)
+        t = _re.sub(r"(?i)\(\s*(chat|thread)[_\s-]?id\s*=\s*\d+\s*\)", "", t)
+        t = _re.sub(r"(?i)\bthis is a dm with\b[^.!\n]*[.!]?", "", t)
         t = _re.sub(r"(?i)\s*trong\s+thư\s+mục\s*[`'\"]?\s*[`'\"]?", " ", t)
         t = _re.sub(r"[ \t]{2,}", " ", t)
         t = _re.sub(r"\n{3,}", "\n\n", t)
@@ -2828,25 +3040,23 @@ class ZaloAdapter(BasePlatformAdapter):
         _trim = getattr(self, "_as_knowledge_trim", None)
         if callable(_trim):
             content = _trim(content)  # ASSISTANT_KNOWLEDGE_CITE_v7
-        _trim = getattr(self, "_as_knowledge_trim", None)
-        if callable(_trim):
-            content = _trim(content)  # ASSISTANT_KNOWLEDGE_CITE_v6
-        _trim = getattr(self, "_as_knowledge_trim", None)
-        if callable(_trim):
-            content = _trim(content)  # ASSISTANT_KNOWLEDGE_CITE_v5
-        if not (isinstance(metadata, dict) and metadata.get("as_skip_autosend")):
-            content = await self._as_autosend_turn_files(chat_id, content, metadata)  # ASSISTANT_AUTOSEND_v3
-        content = self._apply_timing_footer(content, chat_id, metadata)  # ASSISTANT_TIMING_FOOTER_v6
-        if self._is_gateway_noise(content):  # ASSISTANT_QUIET_SEND_v3
+        # Drop process/PII chatter BEFORE autosend (avoid mid-turn spam + duplicate attaches)
+        notice = self._rewrite_gateway_user_notice(content)  # ASSISTANT_QUIET_SEND_v6
+        if notice is not None:
+            if notice == "":
+                logger.info("Zalo: drop approval/resume chatter")
+                return SendResult(success=True, message_id=None)
+            content = notice
+        if self._is_gateway_noise(content):  # ASSISTANT_QUIET_SEND_v6
             logger.info("Zalo: drop gateway noise: %s", (content or "")[:100].replace("\n", " "))
             return SendResult(success=True, message_id=None)
-        if self._is_gateway_noise(content):  # ASSISTANT_QUIET_SEND_v2
-            logger.info("Zalo: drop gateway noise: %s", (content or "")[:100].replace("\n", " "))
+        if not (isinstance(metadata, dict) and metadata.get("as_skip_autosend")):
+            content = await self._as_autosend_turn_files(chat_id, content, metadata)  # ASSISTANT_AUTOSEND_v5
+        content = self._apply_timing_footer(content, chat_id, metadata)  # ASSISTANT_TIMING_FOOTER_v6
+        # Re-check after autosend caption swap
+        if self._is_gateway_noise(content):
             return SendResult(success=True, message_id=None)
         self._as_inflight_done(chat_id, metadata)  # ASSISTANT_INFLIGHT_v5
-        if self._is_gateway_noise(content):  # ASSISTANT_QUIET_SEND
-            logger.info("Zalo: drop gateway noise: %s", (content or "")[:100].replace("\n", " "))
-            return SendResult(success=True, message_id=None)
         thread_type = self._thread_type_from_chat_id(chat_id, metadata)
         # Split long messages.
         _cap = 1800  # ASSISTANT_SEND_RETRY_v2
@@ -2917,7 +3127,16 @@ class ZaloAdapter(BasePlatformAdapter):
         await self._post("/typing", {"threadId": chat_id, "threadType": thread_type})
 
 
-    def _bridge_local_path(self, path: str) -> str:  # ASSISTANT_HOST_PATH_v2
+    def _bridge_shared_root(self) -> str:
+        """Shared data root inside the container (/opt/data), not per-replica HERMES_HOME."""
+        import os
+
+        return (
+            os.getenv("HERMES_SHARED_DATA")
+            or "/opt/data"
+        ).rstrip("/")
+
+    def _bridge_local_path(self, path: str) -> str:  # ASSISTANT_HOST_PATH_v3
         """Map container paths → host paths; chmod so host bridge can read."""
         import os
         import shutil
@@ -2928,9 +3147,10 @@ class ZaloAdapter(BasePlatformAdapter):
         host_root = (
             os.getenv("ZALO_HOST_DATA_DIR")
             or os.getenv("HERMES_HOST_DATA_DIR")
-            or "/data/hermes"
+            or "/data/assistant"
         ).rstrip("/")
-        cont_root = (os.getenv("HERMES_HOME") or "/opt/data").rstrip("/")
+        # Prefer shared volume root — media/out lives on /opt/data, not replica home.
+        cont_root = self._bridge_shared_root()
         try:
             out_dir = os.path.join(cont_root, "media", "out")
             os.makedirs(out_dir, mode=0o755, exist_ok=True)
@@ -2949,14 +3169,13 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception as e:
             logger.warning("Zalo: could not stage/chmod file for bridge: %s", e)
         if p == cont_root or p.startswith(cont_root + "/"):
-            mapped = host_root + p[len(cont_root):]
+            mapped = host_root + p[len(cont_root) :]
             logger.info("Zalo: bridge path %s → %s", path, mapped)
             return mapped
         return p
 
-    def _bridge_attachment_payload(self, chat_id, thread_type, file_path, caption=""):  # ASSISTANT_BASE64_SEND_v3
-        """Prefer base64 so host bridge never needs shared filesystem paths."""
-        import base64
+    def _bridge_attachment_payload(self, chat_id, thread_type, file_path, caption=""):  # ASSISTANT_PATH_SEND_v4
+        """hermes-zalo-plugin requires local host paths (not base64)."""
         import os
         import shutil
 
@@ -2966,7 +3185,7 @@ class ZaloAdapter(BasePlatformAdapter):
             "caption": caption or "",
         }
         p = str(file_path or "")
-        cont_root = (os.getenv("HERMES_HOME") or "/opt/data").rstrip("/")
+        cont_root = self._bridge_shared_root()
         out_dir = os.path.join(cont_root, "media", "out")
         # Resolve missing/relative paths under workspace → stage into media/out
         if p and not os.path.isfile(p):
@@ -2982,20 +3201,17 @@ class ZaloAdapter(BasePlatformAdapter):
         if p and os.path.isfile(p):
             try:
                 os.makedirs(out_dir, mode=0o755, exist_ok=True)
-                if not p.startswith(out_dir + os.sep):
+                if not p.startswith(out_dir + os.sep) and not p.startswith(out_dir + "/"):
                     staged = os.path.join(out_dir, os.path.basename(p) or "attach.bin")
                     shutil.copy2(p, staged)
                     p = staged
             except Exception as e:
                 logger.warning("Zalo: stage to media/out failed: %s", e)
-            raw = open(p, "rb").read()
-            payload["base64"] = base64.b64encode(raw).decode("ascii")
+            host_path = self._bridge_local_path(p)
+            payload["paths"] = [host_path]
+            payload["path"] = host_path
             payload["fileName"] = os.path.basename(p) or "attach.bin"
-            logger.info(
-                "Zalo: send-attachment base64 %s (%d bytes)",
-                payload["fileName"],
-                len(raw),
-            )
+            logger.info("Zalo: send-attachment path %s", host_path)
             return payload
         logger.error("Zalo: local file missing for send: %s", file_path)
         payload["_missing"] = True
@@ -3007,6 +3223,12 @@ class ZaloAdapter(BasePlatformAdapter):
 
     async def send_image_file(self, chat_id, image_path, caption=None, reply_to=None, metadata=None, **kwargs):
         thread_type = self._thread_type_from_chat_id(chat_id, metadata)
+        meta = metadata if isinstance(metadata, dict) else {}
+        if not meta.get("as_claimed"):
+            _claim = getattr(self, "_as_autosend_file_claim", None)
+            if callable(_claim) and not _claim(image_path, chat_id):
+                logger.info("Zalo: skip duplicate image %s", image_path)
+                return SendResult(success=True)  # ASSISTANT_AUTOSEND_v5
         payload = self._bridge_attachment_payload(chat_id, thread_type, image_path, caption or "")
         if payload.pop("_missing", False):
             return SendResult(
@@ -3027,7 +3249,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 success=False,
                 error=f"local file missing: {file_path} — write under /opt/data/media/out first",
             )
-        if file_name and "base64" in payload:
+        if file_name and ("paths" in payload or "path" in payload):
             payload["fileName"] = file_name
         _dest = getattr(self, "_as_autosend_turn_dest", lambda: {})()
         if isinstance(_dest, dict) and _dest.get("thread_id") and str(chat_id) != str(_dest["thread_id"]):
@@ -3211,12 +3433,18 @@ def check_requirements() -> bool:
         import aiohttp  # noqa
     except ImportError:
         return False
-    return bool(os.getenv("ZALO_PLUGIN_URL"))
+    if not _is_zalo_owner_replica():
+        return False
+    return bool((os.getenv("ZALO_PLUGIN_URL") or "").strip())
 
 
 def validate_config(config) -> bool:
     extra = getattr(config, "extra", {}) or {}
-    return bool(os.getenv("ZALO_PLUGIN_URL") or extra.get("bridge_url"))
+    if not _is_zalo_owner_replica():
+        return False
+    if "ZALO_PLUGIN_URL" in os.environ:
+        return bool((os.environ.get("ZALO_PLUGIN_URL") or "").strip())
+    return bool(extra.get("bridge_url"))
 
 
 def _env_enablement() -> Optional[dict]:

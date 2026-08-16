@@ -6,10 +6,10 @@ set -euo pipefail
 export LC_ALL="${LC_ALL:-C.UTF-8}"
 export LANG="${LANG:-C.UTF-8}"
 
-: "${BACKUP_DIR:=/data/backups/assistant}"
+: "${BACKUP_DIR:=/data/assistant/backups}"
 : "${BACKUP_RETENTION_DAYS:=14}"
 : "${BACKUP_FAIL_FAST:=1}"
-: "${HERMES_DATA_DIR:=/data/hermes}"
+: "${HERMES_DATA_DIR:=/data/assistant}"
 : "${ROOT:=/opt/assistant}"
 : "${SUDO:=}"
 
@@ -55,8 +55,45 @@ assistant_backup_fail() {
 }
 
 assistant_container() {
-  local want="$1"
-  docker ps --format '{{.Names}}' 2>/dev/null | awk -v w="$want" '$0==w {print; exit}'
+  local want="$1" name
+  # Exact name first (postgres, redis, …); then Compose scale aliases (assistant-hermes-1).
+  name="$(docker ps --format '{{.Names}}' 2>/dev/null | awk -v w="$want" '$0==w {print; exit}')"
+  if [[ -n "$name" ]]; then
+    echo "$name"
+    return 0
+  fi
+  if [[ "$want" == "hermes" ]]; then
+    docker ps --format '{{.Names}}' 2>/dev/null | awk '/hermes/ {print; exit}'
+  fi
+}
+
+assistant_stop_hermes() {
+  docker ps -q --filter name=hermes 2>/dev/null | while read -r id; do
+    [[ -n "$id" ]] && docker stop "$id" >/dev/null 2>&1 || true
+  done
+}
+
+assistant_compose() {
+  local envf="${HERMES_DATA_DIR}/.env"
+  [[ -f "$envf" ]] || envf="${ROOT}/.env"
+  local files=(--project-directory "${ROOT}" -f "${ROOT}/docker/docker-compose.yml")
+  [[ -f "${ROOT}/docker/docker-compose.medium.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.medium.yml")
+  [[ -f "${ROOT}/docker/docker-compose.high.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.high.yml")
+  [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.edge.yml")
+  if [[ "${HERMES_REPLICAS:-1}" == "1" && -f "${ROOT}/docker/docker-compose.hermes-hostports.yml" ]]; then
+    files+=(-f "${ROOT}/docker/docker-compose.hermes-hostports.yml")
+  fi
+  docker compose "${files[@]}" --env-file "$envf" "$@"
+}
+
+assistant_stack_up_datastore() {
+  # Lightweight bring-up for restore (avoid run.sh first-setup / timers).
+  assistant_compose up -d postgres redis qdrant
+}
+
+assistant_stack_up() {
+  local scale="${HERMES_REPLICAS:-1}"
+  assistant_compose up -d --scale "hermes=${scale}"
 }
 
 as_volume() {
@@ -133,6 +170,10 @@ assistant_backup_config() {
   [[ -d "${ROOT}/generated" ]] && $SUDO tar -C "${ROOT}" --format=posix -czf "${dir}/config/generated.tgz" generated
   [[ -d "${ROOT}/vendor" ]] && $SUDO tar -C "${ROOT}" --format=posix -czf "${dir}/config/vendor.tgz" vendor
   [[ -f "${ROOT}/docker-compose.yml" ]] && $SUDO cp -a "${ROOT}/docker-compose.yml" "${dir}/config/"
+  if [[ -d "${ROOT}/docker" ]]; then
+    $SUDO mkdir -p "${dir}/config/docker"
+    $SUDO cp -a "${ROOT}/docker/"docker-compose*.yml "${dir}/config/docker/" 2>/dev/null || true
+  fi
 }
 
 assistant_backup_postgres() {
@@ -151,24 +192,40 @@ assistant_backup_postgres() {
 }
 
 assistant_restore_postgres() {
-  local dir="$1" pg gz="${dir}/postgres/pg_dumpall.sql.gz" i
+  local dir="$1" pg gz="${dir}/postgres/pg_dumpall.sql.gz" i dbuser
+  dbuser="${MEMORY_DB_USER:-hermes}"
   pg="$(assistant_container postgres)"
   [[ -n "$pg" ]] || { assistant_backup_fail "postgres not running for restore"; return 1; }
+  # Drop app connections so DROP DATABASE / --clean can proceed.
+  docker stop memory session ingest embedding jobs jobs-worker 2>/dev/null || true
+  assistant_stop_hermes
   for i in $(seq 1 30); do
-    docker exec "$pg" pg_isready -U "${MEMORY_DB_USER:-hermes}" >/dev/null 2>&1 && break
+    docker exec "$pg" pg_isready -U "$dbuser" >/dev/null 2>&1 && break
     sleep 2
   done
+  docker exec -e PAGER=cat "$pg" psql -U "$dbuser" -d postgres -v ON_ERROR_STOP=on \
+    -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND datname IS NOT NULL;" \
+    >/dev/null 2>&1 || true
   [[ -f "$gz" ]] || {
     if [[ -f "${dir}/hermes_memory.sql" ]]; then
       $SUDO cat "${dir}/hermes_memory.sql" | docker exec -i -e PAGER=cat "$pg" \
-        psql -U "${MEMORY_DB_USER:-hermes}" -d "${MEMORY_DB_NAME:-hermes_memory}" -v ON_ERROR_STOP=on
+        psql -U "$dbuser" -d "${MEMORY_DB_NAME:-hermes_memory}" -v ON_ERROR_STOP=on
       return 0
     fi
     assistant_backup_fail "missing ${gz}"
     return 1
   }
-  $SUDO gzip -dc "$gz" | docker exec -i -e PAGER=cat -e LC_ALL=C.UTF-8 "$pg" \
-    psql -U "${MEMORY_DB_USER:-hermes}" -d postgres -v ON_ERROR_STOP=on
+  # pg_dumpall --clean emits DROP/CREATE/ALTER ROLE for the dump user; skip those.
+  $SUDO gzip -dc "$gz" \
+    | sed -E \
+      -e "/^DROP ROLE( IF EXISTS)? ${dbuser}\\b/Id" \
+      -e "/^CREATE ROLE ${dbuser}\\b/Id" \
+      -e "/^ALTER ROLE ${dbuser}\\b/Id" \
+      -e "/^DROP ROLE( IF EXISTS)? postgres\\b/Id" \
+      -e "/^CREATE ROLE postgres\\b/Id" \
+      -e "/^ALTER ROLE postgres\\b/Id" \
+    | docker exec -i -e PAGER=cat -e LC_ALL=C.UTF-8 "$pg" \
+      psql -U "$dbuser" -d postgres -v ON_ERROR_STOP=on
 }
 
 assistant_backup_qdrant() {
@@ -181,25 +238,38 @@ assistant_backup_qdrant() {
 }
 
 assistant_restore_qdrant() {
-  local dir="$1" snap="${dir}/qdrant/storage.snapshot" vol i
-  [[ -f "$snap" ]] || { assistant_backup_fail "missing qdrant storage.snapshot"; return 1; }
-  vol="$(as_volume qdrant_data)"
-  [[ -n "$vol" ]] || { assistant_backup_fail "qdrant_data volume missing"; return 1; }
-  docker stop qdrant
-  docker run --rm \
-    -v "${vol}:/data" \
-    --entrypoint /bin/sh \
-    postgres:16-alpine \
-    -c 'find /data -mindepth 1 -delete'
-  docker start qdrant
+  local dir="$1" meta="${dir}/qdrant/manifest.json" base i snap_host snap_ctr col
+  base="http://127.0.0.1:${QDRANT_PORT:-6333}"
+  [[ -f "$meta" ]] || { assistant_backup_fail "missing qdrant/manifest.json"; return 1; }
+  # Qdrant 1.13+: full storage snapshot restore is CLI/startup only.
+  # Use per-collection snapshots from the backup manifest.
+  docker start qdrant 2>/dev/null || true
   for i in $(seq 1 40); do
-    python3 "$QDRANT_PY" list --base "http://127.0.0.1:${QDRANT_PORT:-6333}" >/dev/null 2>&1 && break
+    python3 "$QDRANT_PY" list --base "$base" >/dev/null 2>&1 && break
     sleep 2
   done
   docker exec qdrant mkdir -p /qdrant/snapshots
-  docker cp "$snap" qdrant:/qdrant/snapshots/assistant-restore.snapshot
-  python3 "$QDRANT_PY" recover-storage --base "http://127.0.0.1:${QDRANT_PORT:-6333}" \
-    --location "file:///qdrant/snapshots/assistant-restore.snapshot"
+  python3 - "$QDRANT_PY" "$base" "$dir/qdrant" "$meta" <<'PY'
+import json, os, subprocess, sys
+py, base, qdir, meta_path = sys.argv[1:5]
+meta = json.load(open(meta_path, encoding="utf-8"))
+snaps = meta.get("snapshots") or []
+if not snaps:
+    print("qdrant: no collection snapshots in manifest — skip recover (empty or storage-only)")
+    raise SystemExit(0)
+for s in snaps:
+    col = s["collection"]
+    host = os.path.join(qdir, f"col_{col}.snapshot")
+    if not os.path.isfile(host):
+        raise SystemExit(f"missing collection snapshot: {host}")
+    ctr = f"/qdrant/snapshots/restore-{col}.snapshot"
+    subprocess.check_call(["docker", "cp", host, f"qdrant:{ctr}"])
+    loc = f"file://{ctr}"
+    subprocess.check_call(
+        ["python3", py, "recover-collection", "--base", base, "--collection", col, "--location", loc]
+    )
+print(f"qdrant: recovered {len(snaps)} collection(s)")
+PY
 }
 
 assistant_backup_valkey() {
@@ -215,9 +285,11 @@ assistant_backup_valkey() {
 assistant_restore_valkey() {
   local dir="$1" rdb="${dir}/valkey/dump.rdb" vol img
   [[ -f "$rdb" ]] || { assistant_backup_fail "missing valkey dump.rdb"; return 1; }
-  docker stop session jobs jobs-worker ingest hermes 2>/dev/null || true
+  docker stop session jobs jobs-worker ingest 2>/dev/null || true
+  assistant_stop_hermes
   docker stop redis
   vol="$(as_volume valkey_data)"
+  [[ -n "$vol" ]] || vol="$(as_volume redis_data)"
   [[ -n "$vol" ]] || { assistant_backup_fail "valkey_data volume missing"; return 1; }
   img="valkey/valkey:8-alpine"
   docker image inspect "$img" >/dev/null 2>&1 || img="postgres:16-alpine"
@@ -237,6 +309,7 @@ assistant_backup_hermes() {
   local dir="$1" extra=()
   [[ -d "${HERMES_DATA_DIR}" ]] || { assistant_backup_fail "HERMES_DATA_DIR missing"; return 1; }
   $SUDO mkdir -p "${dir}/hermes"
+  extra+=(--exclude='./backups')
   extra+=(--exclude='./workspace/docs')
   if [[ "${BACKUP_HERMES_INCLUDE_LAZY:-0}" != "1" ]]; then
     extra+=(--exclude='./lazy-packages')
@@ -244,6 +317,8 @@ assistant_backup_hermes() {
   if [[ "${BACKUP_ENABLE_MEDIA:-1}" != "1" ]]; then
     extra+=(--exclude='./media')
   fi
+  # Replica scratch dirs are large / ephemeral; shared config/env/skills stay in tree root.
+  extra+=(--exclude='./replicas')
   $SUDO tar -C "${HERMES_DATA_DIR}" --format=posix "${extra[@]}" \
     -czf "${dir}/hermes/data.tgz" .
   [[ -s "${dir}/hermes/data.tgz" ]] || { assistant_backup_fail "hermes tar empty"; return 1; }
@@ -252,7 +327,7 @@ assistant_backup_hermes() {
 assistant_restore_hermes() {
   local dir="$1" tgz="${dir}/hermes/data.tgz"
   [[ -f "$tgz" ]] || { assistant_backup_fail "missing hermes/data.tgz"; return 1; }
-  docker stop hermes 2>/dev/null || true
+  assistant_stop_hermes
   $SUDO mkdir -p "${HERMES_DATA_DIR}"
   $SUDO tar -C "${HERMES_DATA_DIR}" --format=posix -xzf "$tgz"
   $SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "${HERMES_DATA_DIR}" 2>/dev/null || true
@@ -318,7 +393,7 @@ assistant_backup_schedules() {
     tar -C "${HOME}/.config/systemd/user" --format=posix -czf "${dir}/schedules/systemd-user.tgz" \
       --wildcards 'assistant-*' --wildcards 'com.hermes.*' 2>/dev/null || true
   fi
-  docker exec hermes hermes cron list > "${dir}/schedules/hermes-cron.txt" 2>/dev/null \
+  docker exec "$(assistant_container hermes)" hermes cron list > "${dir}/schedules/hermes-cron.txt" 2>/dev/null \
     || echo "(no hermes cron CLI)" > "${dir}/schedules/hermes-cron.txt"
   printf '%s\n' \
     "assistant-compact.timer 00:00 compact" \
@@ -333,9 +408,20 @@ assistant_restore_schedules() {
   if [[ -f "${dir}/schedules/systemd-assistant.tgz" ]]; then
     $SUDO tar -C /etc/systemd/system -xzf "${dir}/schedules/systemd-assistant.tgz"
     $SUDO systemctl daemon-reload
-    $SUDO systemctl enable --now assistant-compact.timer assistant-backup.timer assistant-weekly-summary.timer
+    # Enable only units that exist on this host (profile may omit some timers).
+    local u
+    for u in assistant-compact.timer assistant-backup.timer assistant-auto-learn.timer \
+             assistant-stack-watch.timer assistant-zalo-watch.timer assistant-weekly-summary.timer; do
+      if [[ -f "/etc/systemd/system/${u}" ]]; then
+        $SUDO systemctl enable --now "$u" 2>/dev/null || true
+      fi
+    done
   else
-    bash "${BACKUP_LIB_DIR}/../ops.sh" install-timers
+    if [[ -f "${ROOT}/run.sh" ]]; then
+      (cd "${ROOT}" && bash run.sh install-timers) || log "WARN: install-timers skipped"
+    else
+      log "WARN: no timers tarball and no run.sh install-timers"
+    fi
   fi
   if [[ -f "${dir}/schedules/systemd-user.tgz" ]]; then
     mkdir -p "${HOME}/.config/systemd/user"
@@ -445,18 +531,20 @@ assistant_restore_all() {
     [[ -f "${dir}/config/generated.tgz" ]] && $SUDO tar -C "${ROOT}" -xzf "${dir}/config/generated.tgz"
     [[ -f "${dir}/config/vendor.tgz" ]] && $SUDO tar -C "${ROOT}" -xzf "${dir}/config/vendor.tgz"
   fi
-  log "bring stack up (empty volumes) so vendor restore APIs work"
-  bash "${BACKUP_LIB_DIR}/../generate.sh"
-  bash "${BACKUP_LIB_DIR}/../deploy.sh"
+  log "bring datastore up (postgres/redis/qdrant) for restore"
+  assistant_stack_up_datastore || log "WARN: datastore up returned non-zero — continuing restore"
   for name in postgres qdrant valkey volumes hermes openbao zalo clouddrive openvpn; do
     if ! assistant_backup_wanted "$name"; then
       log "skip restore ${name}"
       continue
     fi
     log "component restore ${name}"
-    "assistant_restore_${name}" "$dir"
+    if ! "assistant_restore_${name}" "$dir"; then
+      assistant_backup_fail "restore ${name} failed"
+    fi
   done
-  bash "${BACKUP_LIB_DIR}/../deploy.sh"
+  log "bring full stack up after restore"
+  assistant_stack_up || log "WARN: post-restore stack up returned non-zero"
   if assistant_backup_wanted schedules; then
     assistant_restore_schedules "$dir"
   fi

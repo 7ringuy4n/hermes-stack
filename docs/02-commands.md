@@ -84,9 +84,13 @@ bash run.sh migrate                   # tarball of LATEST for a new server
 ```
 
 | Profile | Extra |
-|---|---|
+|---------|-------|
 | Low / Medium | Local disk only |
 | High | After backup: `bash run.sh backup-sync-clouddrive` (needs `ENABLE_CLOUDDRIVE=1`) |
+
+**Restore** uses Compose under `docker/` (not full `run.sh up` / first-setup). Postgres skips DROP/CREATE ROLE for the session user; Qdrant restores per-collection snapshots (storage HTTP recover N/A on Qdrant 1.13+).
+
+**Lab-tested (2026-08-16):** High · Hermes×2 · monitor off · stamp `20260816_195940` — backup, verify, restore + canary, gateway/Zalo/DB healthy. Details: [architect/backup-restore/README.md](../architect/backup-restore/README.md). Hardware: [HARDWARE.md](./HARDWARE.md).
 
 ---
 
