@@ -1,5 +1,12 @@
 # Change history
 
+## 2026-08-16 08:15 +07 — zalo/stack-watch: stop Hermes restart storm
+
+- **Cause:** `assistant-zalo-watch` restarted Hermes when `sseClients==0` (miss limit too low); `stack-watch` also bounced Hermes on probe fail / post-boot flicker → multi-hour restart loops.
+- **zalo-watch.sh:** default `ZALO_WATCH_RESTART_HERMES=0` (bridge-only on sse=0); SSE miss≥15; cooldown 1800s; writable `/watch` state (sudo/chown fallback).
+- **stack-watch.sh:** default `STACK_WATCH_RESTART_HERMES=0`; boot grace 600s; heal 9router/dispatcher without thrashing Hermes; project/label fallbacks for lab compose names.
+- Opt-in old behavior: set `ZALO_WATCH_RESTART_HERMES=1` / `STACK_WATCH_RESTART_HERMES=1`.
+
 ## 2026-08-15 17:25 +07 — skills: new+docs/web/comfy in main; live-matched in temp
 
 - Compared to ighthawk-lab/hermes_backup/skills\.
