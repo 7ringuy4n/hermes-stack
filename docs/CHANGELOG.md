@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-16 09:35 +07 — hermes: default scale 2 on medium|high
+
+- `HERMES_REPLICAS` default **2** on medium/high, **1** on low (`profile.sh` + `run.sh --scale`).
+- Removed fixed `container_name: hermes`; host ports only when replicas=1 (`docker-compose.hermes-hostports.yml`).
+- Traefik continues to use service DNS `http://hermes:8642` (LB across replicas). Watch scripts restart all matching hermes containers.
+
 ## 2026-08-16 09:30 +07 — memory: remove Mem0; edge on Med/High; coding skills
 
 - **Removed Mem0** from Must compose; LTM = Memory Manager + Postgres (+ optional Qdrant). Compact no longer calls mem0.

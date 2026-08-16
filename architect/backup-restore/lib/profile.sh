@@ -49,6 +49,7 @@ assistant_profile_apply() {
       export ENABLE_TRAEFIK=0
       export ENABLE_API_GATEWAY=0
       export TRAEFIK_ACME_ENABLED=0
+      export HERMES_REPLICAS=1
       ;;
     medium)
       export ENABLE_OCR=1
@@ -61,6 +62,7 @@ assistant_profile_apply() {
       # Edge on by default for Medium (set ENABLE_TRAEFIK=0 in .env to disable)
       export ENABLE_TRAEFIK="${ENABLE_TRAEFIK:-1}"
       export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-1}"
+      export HERMES_REPLICAS="${HERMES_REPLICAS:-2}"
       if [[ "${ENABLE_TRAEFIK}" == "1" && "${ENABLE_API_GATEWAY}" == "1" ]]; then
         export GATEWAY_UPSTREAM_URL="${GATEWAY_UPSTREAM_URL:-http://traefik:80}"
       fi
@@ -90,6 +92,7 @@ assistant_profile_apply() {
       export ENABLE_ADMIN_API=1
       export ENABLE_TRAEFIK="${ENABLE_TRAEFIK:-1}"
       export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-1}"
+      export HERMES_REPLICAS="${HERMES_REPLICAS:-2}"
       if [[ "${ENABLE_TRAEFIK}" == "1" && "${ENABLE_API_GATEWAY}" == "1" ]]; then
         export GATEWAY_UPSTREAM_URL="${GATEWAY_UPSTREAM_URL:-http://traefik:80}"
       fi
@@ -98,11 +101,12 @@ assistant_profile_apply() {
   # Defaults if profile did not set (unknown → low already remapped)
   export ENABLE_TRAEFIK="${ENABLE_TRAEFIK:-0}"
   export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-0}"
+  export HERMES_REPLICAS="${HERMES_REPLICAS:-1}"
 }
 
 assistant_profile_summary() {
   echo "ASSISTANT_PROFILE=${ASSISTANT_PROFILE}"
   echo "ASSISTANT_DATA_DIR=${ASSISTANT_DATA_DIR:-/data/assistant}"
   echo "BACKUP_DIR=${BACKUP_DIR:-/data/assistant/backups}"
-  echo "optional OCR=${ENABLE_OCR:-0} SEARXNG=${ENABLE_SEARXNG:-0} JOBS=${ENABLE_JOBS:-0} OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-0} WEB_BACKENDS=${WEB_BACKENDS:-} OPENBAO=${ENABLE_OPENBAO:-0} CLOUDDRIVE=${ENABLE_CLOUDDRIVE:-0} ANTIVIRUS=${ENABLE_ANTIVIRUS:-0} NOTIFY=${ENABLE_NOTIFY:-0} ZALO=${ENABLE_ZALO:-0} TRAEFIK=${ENABLE_TRAEFIK:-0} API_GATEWAY=${ENABLE_API_GATEWAY:-0} OPENVPN=${ENABLE_OPENVPN:-0}"
+  echo "optional OCR=${ENABLE_OCR:-0} SEARXNG=${ENABLE_SEARXNG:-0} JOBS=${ENABLE_JOBS:-0} OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-0} WEB_BACKENDS=${WEB_BACKENDS:-} OPENBAO=${ENABLE_OPENBAO:-0} CLOUDDRIVE=${ENABLE_CLOUDDRIVE:-0} ANTIVIRUS=${ENABLE_ANTIVIRUS:-0} NOTIFY=${ENABLE_NOTIFY:-0} ZALO=${ENABLE_ZALO:-0} TRAEFIK=${ENABLE_TRAEFIK:-0} API_GATEWAY=${ENABLE_API_GATEWAY:-0} OPENVPN=${ENABLE_OPENVPN:-0} HERMES_REPLICAS=${HERMES_REPLICAS:-1}"
 }
