@@ -33,9 +33,11 @@ Generate images, video, audio, and 3D content through ComfyUI using the
 official `comfy-cli` for setup/lifecycle and direct REST/WebSocket API
 for workflow execution.
 
-## Assistant stack — output path (must)
+## Assistant stack — output path + result-only (must)
 
-On this product, **never** write finished images to `/opt/data/*.png` or `./outputs`.
+Follow skill **`media-out`**: no step chatter, no approve prompts; user reply = `Đã xong.` / `Done.` (or short failure) after the file is delivered.
+
+On this product, **never** write finished media to `/opt/data/*.png` or `./outputs`.
 
 Always download / save under:
 

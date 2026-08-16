@@ -66,22 +66,33 @@ boot_grace_active() {
 }
 
 compose() {
-  local files=(-f "${ROOT}/docker-compose.yml")
+  # Keep overlays aligned with run.sh so heal does not strip edge/hostports.
+  local existing=(--project-directory "${ROOT}" -f "${ROOT}/docker/docker-compose.yml")
   case "$PROFILE" in
-    medium) files+=(-f "${ROOT}/docker-compose.medium.yml") ;;
-    high) files+=(-f "${ROOT}/docker-compose.medium.yml" -f "${ROOT}/docker-compose.high.yml") ;;
+    medium)
+      [[ -f "${ROOT}/docker/docker-compose.medium.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.medium.yml")
+      ;;
+    high)
+      [[ -f "${ROOT}/docker/docker-compose.medium.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.medium.yml")
+      [[ -f "${ROOT}/docker/docker-compose.high.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.high.yml")
+      ;;
   esac
-  # Lab monolith compose often has no medium/high overlays — ignore missing files
-  local existing=()
-  local f
-  for f in "${files[@]}"; do
-    [[ "$f" == "-f" ]] && continue
-    [[ -f "$f" ]] && existing+=(-f "$f")
-  done
-  [[ ${#existing[@]} -eq 0 ]] && existing=(-f "${ROOT}/docker-compose.yml")
+  case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
+    *1*)
+      [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.edge.yml")
+      ;;
+  esac
+  if [[ "${HERMES_REPLICAS:-1}" == "1" ]]; then
+    [[ -f "${ROOT}/docker/docker-compose.hermes-hostports.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.hermes-hostports.yml")
+  fi
   local profiles=()
   [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
   [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles+=(--profile antivirus)
+  case "${ENABLE_GRAFANA:-0}${ENABLE_LOKI:-0}${ENABLE_PROMETHEUS:-0}${ENABLE_ALLOY:-0}" in
+    *1*) profiles+=(--profile monitor) ;;
+  esac
+  [[ "${ENABLE_TRAEFIK:-0}" == "1" ]] && profiles+=(--profile traefik)
+  [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]] && profiles+=(--profile gateway)
   $SUDO docker compose -p "$PROJECT" "${existing[@]}" "${profiles[@]}" "$@"
 }
 

@@ -110,8 +110,6 @@ services:
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     ports:
       - "127.0.0.1:${SIEM_PORT:-8105}:8105"
-    depends_on:
-      - loki
     networks: [internal]
 
   authz:
@@ -178,6 +176,7 @@ services:
     networks: [internal]
 
   loki:
+    profiles: ["monitor"]
     image: ${LOKI_IMAGE:-grafana/loki:3.4.2}
     container_name: loki
     restart: unless-stopped
@@ -189,6 +188,7 @@ services:
     networks: [internal]
 
   alloy:
+    profiles: ["monitor"]
     image: ${ALLOY_IMAGE:-grafana/alloy:v1.9.1}
     container_name: alloy
     restart: unless-stopped
@@ -207,6 +207,7 @@ services:
     networks: [internal]
 
   prometheus:
+    profiles: ["monitor"]
     image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.2.1}
     container_name: prometheus
     restart: unless-stopped
@@ -221,6 +222,7 @@ services:
     networks: [internal]
 
   grafana:
+    profiles: ["monitor"]
     image: ${GRAFANA_IMAGE:-grafana/grafana:11.6.0}
     container_name: grafana
     restart: unless-stopped
@@ -228,7 +230,7 @@ services:
       - "127.0.0.1:${GRAFANA_HOST_PORT:-23000}:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme-set-in-env}
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://127.0.0.1:23000}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_AUTH_DISABLE_LOGIN_FORM=false
@@ -241,6 +243,7 @@ services:
     networks: [internal]
 
   nine-exporter:
+    profiles: ["monitor"]
     build: ./architect/monitor/nine-exporter
     container_name: nine-exporter
     restart: unless-stopped
@@ -252,6 +255,7 @@ services:
     networks: [internal]
 
   stack-exporter:
+    profiles: ["monitor"]
     build: ./architect/monitor/stack-exporter
     container_name: stack-exporter
     restart: unless-stopped

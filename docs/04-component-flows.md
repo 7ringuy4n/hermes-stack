@@ -418,6 +418,8 @@ Valkey = today. Mem0/Postgres = next month.
   </tr>
 </table>
 
+**Tested (2026-08-16):** High profile round-trip `backup` → `verify` → `restore` with canary file and post-restore health (gateway, Zalo SSE, Postgres, Valkey, Hermes×2). Details: [architect/backup-restore/README.md](../architect/backup-restore/README.md) · sizing: [HARDWARE.md](./HARDWARE.md).
+
 ---
 
 ## architect / monitor (High)

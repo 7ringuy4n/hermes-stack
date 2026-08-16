@@ -203,16 +203,21 @@ def recreate_services() -> None:
     """Recreate LLM-facing services using the same compose files as run.sh."""
     print("==> recreate embedding dispatcher hermes")
     profile = os.environ.get("ASSISTANT_PROFILE", "low")
-    files = [f"-f {ROOT}/docker-compose.yml"]
+    replicas = os.environ.get("HERMES_REPLICAS", "1")
+    files = [
+        f"--project-directory {ROOT}",
+        f"-f {ROOT}/docker/docker-compose.yml",
+    ]
     if profile in {"medium", "high"}:
-        files.append(f"-f {ROOT}/docker-compose.medium.yml")
+        files.append(f"-f {ROOT}/docker/docker-compose.medium.yml")
     if profile == "high":
-        files.append(f"-f {ROOT}/docker-compose.high.yml")
+        files.append(f"-f {ROOT}/docker/docker-compose.high.yml")
     files_s = " ".join(files)
     cmd = (
         f"cd {ROOT} && set -a && . ./.env && set +a && "
         f"export ASSISTANT_PROFILE={profile} COMPOSE_PROGRESS=plain && "
-        f"docker compose {files_s} up -d --force-recreate embedding dispatcher hermes"
+        f"docker compose {files_s} up -d --force-recreate --scale hermes={replicas} "
+        f"embedding dispatcher hermes"
     )
     subprocess.check_call(["bash", "-lc", cmd])
 
