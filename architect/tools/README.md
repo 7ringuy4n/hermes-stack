@@ -25,7 +25,7 @@ Document and media **tooling** around Hermes: embed text, ingest into Qdrant kno
 | Store | Collection / service | Use |
 |---|---|---|
 | Document RAG | Qdrant `knowledge_chunks` | Manuals, PDFs, specs |
-| Chat LTM | Mem0 / conversational collection | User preferences |
+| Chat LTM | Memory Manager / Postgres | User preferences / facts |
 
 **List/find/cite:** top **5** results + count of the rest. If empty: say no information — **no guessing, no internet** on Low.
 

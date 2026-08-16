@@ -262,7 +262,7 @@ services:
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_COLLECTION_KNOWLEDGE=${QDRANT_COLLECTION_KNOWLEDGE:-knowledge_chunks}
       - QDRANT_COLLECTION_MEMORY=${QDRANT_COLLECTION_MEMORY:-conversational_memory}
-      - HEALTH_TARGETS=${STACK_HEALTH_TARGETS:-qdrant=qdrant:6333/readyz,security-manager=security-manager:8093/health,ocr=ocr:8091/health,ingest=ingest:8099/health,mem0=mem0:8096/health,authz=authz:8097/health,embedding=embedding:8094/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,admin-api=admin-api:8100/health,openbao=openbao:8200/v1/sys/health}
+      - HEALTH_TARGETS=${STACK_HEALTH_TARGETS:-qdrant=qdrant:6333/readyz,security-manager=security-manager:8093/health,ocr=ocr:8091/health,ingest=ingest:8099/health,authz=authz:8097/health,embedding=embedding:8094/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,admin-api=admin-api:8100/health,openbao=openbao:8200/v1/sys/health}
     networks: [internal]
 
   # Optional — only when run.sh passes --profile notify (ENABLE_NOTIFY=1)

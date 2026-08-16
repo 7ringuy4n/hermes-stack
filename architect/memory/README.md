@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Everything that makes the agent **remember** across a turn and across days: short-term chat session, long-term conversational facts, and typed memories Memory Manager injects into the prompt under a token budget.
+Everything that makes the agent **remember** across a turn and across days: short-term chat session and long-term typed memories. Memory Manager injects into the prompt under a token budget.
 
 ## Profile
 
@@ -12,9 +12,10 @@ Everything that makes the agent **remember** across a turn and across days: shor
 
 | Package | Store | Function |
 |---|---|---|
-| [memory-manager/](./memory-manager/README.md) | Postgres (+ optional Qdrant index) | `/v1/context`, `/v1/remember` — assemble mode/skills/memories |
+| [memory-manager/](./memory-manager/README.md) | Postgres (+ optional Qdrant index) | `/v1/context`, `/v1/remember` — assemble mode/skills/memories; **canonical LTM** |
 | [session/](./session/README.md) | Valkey | Active conversation, dest thread, timing helpers |
-| [mem0/](./mem0/README.md) | Mem0 + Qdrant `conversational_memory` | Long-term user facts |
+
+**Mem0 removed** (2026-08-16): conversational LTM lives in Memory Manager + Postgres. The old `architect/memory/mem0` tree is not started by compose.
 
 ## How short-term and long-term work together
 
@@ -23,18 +24,17 @@ Turn N
   1. session (Valkey) loads last messages for this thread (TTL, e.g. ~1 day)
   2. memory-manager builds context within CONTEXT_BUDGET_TOKENS
        - skills pointers
-       - typed Postgres memories
-       - optional Mem0 hits
+       - typed Postgres memories (+ optional Qdrant retrieval)
   3. Hermes answers
-  4. Async: remember durable facts → Mem0 / Postgres
+  4. Async: remember durable facts → Postgres via /v1/remember
        (never spam the user with “saved memory” bubbles)
 
 Later day
   Valkey session may be empty (TTL expired)
-  Mem0 + Postgres still supply “user prefers …” facts
+  Postgres still supplies “user prefers …” facts via Memory Manager
 ```
 
-**Not** the same as document RAG (`knowledge_chunks` in tools/ingest). Do not put PDF bodies into Mem0 as “preferences”.
+**Not** the same as document RAG (`knowledge_chunks` in tools/ingest). Do not put PDF bodies into conversational memory as “preferences”.
 
 ## Related
 

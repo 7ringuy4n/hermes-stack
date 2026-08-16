@@ -1,5 +1,5 @@
 # Dynamic routes — Hermes chat LB (HTTP, no TLS)
-# Used when TRAEFIK_ACME_ENABLED=0
+# Upstream `hermes` service DNS load-balances across HERMES_REPLICAS (Medium/High default 2).
 http:
   routers:
     hermes-gw:
@@ -15,7 +15,7 @@ http:
         servers:
           - url: "http://hermes:8642"
         healthCheck:
-          path: "/"
+          path: "/health"
           interval: "15s"
           timeout: "5s"
         passHostHeader: true
