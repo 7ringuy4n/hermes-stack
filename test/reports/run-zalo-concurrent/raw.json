@@ -1,5 +1,5 @@
 {
-  "ts": "2026-08-17 11:50:48 +0700",
+  "ts": "2026-08-17 15:09:59 +0700",
   "bursts": [
     {
       "status": "DONE",
@@ -7,7 +7,7 @@
       "ok": 4,
       "fail": 0,
       "tag": "zalo-c-a",
-      "elapsed_s": 0.38
+      "elapsed_s": 0.32
     },
     {
       "status": "DONE",
@@ -15,7 +15,7 @@
       "ok": 8,
       "fail": 0,
       "tag": "zalo-c-a",
-      "elapsed_s": 0.33
+      "elapsed_s": 0.32
     },
     {
       "status": "DONE",
@@ -23,7 +23,7 @@
       "ok": 16,
       "fail": 0,
       "tag": "zalo-c-a",
-      "elapsed_s": 0.33
+      "elapsed_s": 0.32
     },
     {
       "status": "DONE",

@@ -1,6 +1,6 @@
 # 05 — Edge networking (Traefik, API Gateway, OpenVPN)
 
-Human-readable guide for the optional **edge** layer. Default is **off** on Low. All host ports bind to **127.0.0.1** (VPN/LAN). There is **no public inbound** Internet path in this design.
+Human-readable guide for the optional **edge** layer. Default is **off** on Low. All host ports bind to **127.0.0.1**. Production is **VPN-only** (`TRAEFIK_MODE=local`, `TRAEFIK_ACME_ENABLED=0`). There is **no public inbound** unless you opt into ACME.
 
 Related code: `docker-compose.edge.yml`, `architect/edge/`, `architect/gateway/`.
 
@@ -24,10 +24,11 @@ Heavy OCR/image work stays on **dispatcher workers** (async + timeouts) so Herme
 In `.env` (copy from `.env.example` or `docs/config/edge.env.snippet`):
 
 ```env
-# Medium/High: leave unset → profile.sh defaults Traefik + API Gateway ON
+# Medium/High: leave unset → profile.sh defaults Traefik + API Gateway ON, TRAEFIK_MODE=local
 # Low: forced OFF in profile.sh
 # ENABLE_TRAEFIK=0
 # ENABLE_API_GATEWAY=0
+TRAEFIK_MODE=local
 ENABLE_OPENVPN=0
 ```
 
@@ -142,7 +143,7 @@ Initialize PKI before expecting a healthy VPN. Steps: `architect/edge/openvpn/RE
 ## 7. Operator checklist
 
 - [ ] `.env` flags set intentionally (default all `0`)  
-- [ ] Ports only on localhost / VPN  
+- [ ] Ports only on localhost / VPN (`TRAEFIK_MODE=local`, ACME off)  
 - [ ] If Gateway + Traefik: `GATEWAY_UPSTREAM_URL=http://traefik:80`  
 - [ ] Edit rate-limit / 503 messages in `messages/en.json` if needed  
 - [ ] Zalo still uses bridge path  

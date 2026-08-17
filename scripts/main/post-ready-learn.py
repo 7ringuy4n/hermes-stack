@@ -150,14 +150,15 @@ def main() -> int:
 
     if not wait_ready("9router", f"http://127.0.0.1:{N9_PORT}/"):
         return 1
-    # Hermes×2 (High) does not publish :29119 — probe Traefik / API Gateway instead.
+    # Hermes×2 (High) does not publish :29119 — probe Gateway /health then Traefik /health
+    # (Traefik `/` is a 404 by design; Hermes API health is `/health`).
     hermes_urls = []
     if HERMES_REPLICAS <= 1:
         hermes_urls.append(f"http://127.0.0.1:{HERMES_PORT}/")
     hermes_urls.extend(
         [
-            f"http://127.0.0.1:{TRAEFIK_PORT}/",
             f"http://127.0.0.1:{GATEWAY_PORT}/health",
+            f"http://127.0.0.1:{TRAEFIK_PORT}/health",
         ]
     )
     hermes_ok = False

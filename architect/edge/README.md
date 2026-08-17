@@ -29,7 +29,7 @@
 | `ENABLE_TRAEFIK=1` | `traefik` | **1** (all profiles) |
 | `ENABLE_API_GATEWAY=1` | `gateway` | **1** (all profiles) |
 | `ENABLE_OPENVPN=1` | `openvpn` | 0 |
-| `TRAEFIK_MODE` | — | `public` (fail-soft to `local` without ACME) |
+| `TRAEFIK_MODE` | — | **`local`** (VPN/localhost). `public` + ACME is opt-in |
 
 Merged via `docker-compose.edge.yml` when any flag is on (`run.sh up`). Set `ENABLE_TRAEFIK=0` / `ENABLE_API_GATEWAY=0` to disable.
 

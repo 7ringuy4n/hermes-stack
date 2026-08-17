@@ -23,7 +23,7 @@ Must (all profiles).
 
 ```text
 File or text
-  → (High: AV/security)
+  → (High: security-manager isolation — YARA/static/limits; AV if ENABLE_ANTIVIRUS=1)
   → extract text (OCR on Medium+ if needed)
   → chunk → embedding → Qdrant knowledge_chunks
   → later: list/search → Hermes skill answers
