@@ -2,14 +2,19 @@
 API Gateway — VPN/LAN HTTP entry with shared Valkey rate limiting.
 
 Zalo bridge/proxy must NOT hairpin through this service.
-Coding skill paths skip rate-limit (product MUST).
+Auth is required when GATEWAY_API_KEYS is set (default when gateway is used).
+Client headers must never grant RL bypass or spoof identity.
 Admin-editable messages: messages/en.json
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import time
+from collections import defaultdict
 from pathlib import Path
+from threading import Lock
 
 import httpx
 import redis
@@ -25,7 +30,8 @@ LISTEN_PORT = int(os.environ.get("GATEWAY_PORT", "8088"))
 RATE_LIMIT_REQUESTS = int(os.environ.get("GATEWAY_RATE_LIMIT_REQUESTS", "60"))
 RATE_LIMIT_WINDOW_S = int(os.environ.get("GATEWAY_RATE_LIMIT_WINDOW_S", "60"))
 RATE_KEY_PREFIX = os.environ.get("GATEWAY_RATE_KEY_PREFIX", "rate:gw")
-# Comma-separated path prefixes that skip RL (coding skills — no rate-limit)
+# Path prefixes that skip RL *after* auth (server-side coding routes only).
+# Header-based bypass is disabled (GATEWAY_SKIP_RL_HEADER ignored).
 SKIP_RL_PATH_PREFIXES = tuple(
     p.strip()
     for p in os.environ.get(
@@ -33,12 +39,6 @@ SKIP_RL_PATH_PREFIXES = tuple(
     ).split(",")
     if p.strip()
 )
-SKIP_RL_HEADER = os.environ.get("GATEWAY_SKIP_RL_HEADER", "x-assistant-skill")
-SKIP_RL_HEADER_VALUES = {
-    v.strip().lower()
-    for v in os.environ.get("GATEWAY_SKIP_RL_HEADER_VALUES", "coding").split(",")
-    if v.strip()
-}
 MESSAGES_PATH = Path(
     os.environ.get(
         "GATEWAY_MESSAGES_FILE",
@@ -46,24 +46,41 @@ MESSAGES_PATH = Path(
     )
 )
 PROXY_TIMEOUT_S = float(os.environ.get("GATEWAY_PROXY_TIMEOUT_S", "120"))
-# Real edge auth (v0.5.0): require Bearer/API key when GATEWAY_API_KEYS is non-empty
 GATEWAY_API_KEYS = {
     k.strip()
     for k in os.environ.get("GATEWAY_API_KEYS", "").split(",")
     if k.strip()
 }
-GATEWAY_AUTH_ENABLED = os.environ.get("GATEWAY_AUTH_ENABLED", "1" if GATEWAY_API_KEYS else "0").strip().lower() in {
+# Require keys whenever gateway runs unless explicitly set to 0 (lab escape hatch).
+GATEWAY_REQUIRE_AUTH = os.environ.get("GATEWAY_REQUIRE_AUTH", "1").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
-GATEWAY_MAX_BODY_BYTES = int(os.environ.get("GATEWAY_MAX_BODY_BYTES", str(32 * 1024 * 1024)))
+GATEWAY_AUTH_ENABLED = os.environ.get(
+    "GATEWAY_AUTH_ENABLED",
+    "1" if (GATEWAY_API_KEYS or GATEWAY_REQUIRE_AUTH) else "0",
+).strip().lower() in {"1", "true", "yes", "on"}
+GATEWAY_MAX_BODY_BYTES = int(
+    os.environ.get("GATEWAY_MAX_BODY_BYTES", str(32 * 1024 * 1024))
+)
 AUTH_HEADER = os.environ.get("GATEWAY_AUTH_HEADER", "authorization")
+# Only trust X-Forwarded-For when behind a trusted proxy (Traefik). Default: off.
+GATEWAY_TRUST_FORWARDED = os.environ.get(
+    "GATEWAY_TRUST_FORWARDED", "0"
+).strip().lower() in {"1", "true", "yes", "on"}
+# Valkey blip: fail closed (deny) by default; local emergency limiter softens outage.
+GATEWAY_RL_FAIL_CLOSED = os.environ.get(
+    "GATEWAY_RL_FAIL_CLOSED", "1"
+).strip().lower() in {"1", "true", "yes", "on"}
+LOCAL_RL_MAX = int(os.environ.get("GATEWAY_LOCAL_RL_MAX", str(RATE_LIMIT_REQUESTS)))
 
-app = FastAPI(title="hermes-stack-api-gateway", version="0.5.0")
+app = FastAPI(title="hermes-stack-api-gateway", version="0.5.2")
 _redis = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 _http: httpx.AsyncClient | None = None
+_local_rl: dict[str, list[float]] = defaultdict(list)
+_local_lock = Lock()
 
 
 def _load_messages() -> dict:
@@ -74,6 +91,7 @@ def _load_messages() -> dict:
             "rate_limited": "Too many requests. Please try again later.",
             "upstream_unavailable": "Upstream service unavailable.",
             "unauthorized": "Unauthorized. Provide a valid API key.",
+            "misconfigured": "Gateway misconfigured: set GATEWAY_API_KEYS.",
             "body_too_large": "Request body too large.",
             "health_ok": "ok",
         }
@@ -82,14 +100,18 @@ def _load_messages() -> dict:
 MESSAGES = _load_messages()
 
 
-def _client_identity(request: Request) -> str:
-    user = request.headers.get("x-user-id") or request.headers.get("x-identity-id")
-    if user:
-        return f"user:{user}"
-    forwarded = request.headers.get("x-forwarded-for", "")
-    ip = forwarded.split(",")[0].strip() if forwarded else (
-        request.client.host if request.client else "unknown"
-    )
+def _client_identity(request: Request, api_key: str) -> str:
+    """Prefer authenticated key; never trust client-supplied user ids for RL."""
+    if api_key:
+        digest = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+        return f"key:{digest}"
+    if GATEWAY_TRUST_FORWARDED:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            ip = forwarded.split(",")[0].strip()
+            if ip:
+                return f"ip:{ip}"
+    ip = request.client.host if request.client else "unknown"
     return f"ip:{ip}"
 
 
@@ -102,11 +124,6 @@ def _path_skips_rate_limit(path: str) -> bool:
     return False
 
 
-def _header_skips_rate_limit(request: Request) -> bool:
-    raw = request.headers.get(SKIP_RL_HEADER, "")
-    return raw.strip().lower() in SKIP_RL_HEADER_VALUES
-
-
 def _extract_api_key(request: Request) -> str:
     auth = request.headers.get(AUTH_HEADER, "") or ""
     if auth.lower().startswith("bearer "):
@@ -115,10 +132,27 @@ def _extract_api_key(request: Request) -> str:
 
 
 def _auth_ok(request: Request) -> bool:
-    if not GATEWAY_AUTH_ENABLED or not GATEWAY_API_KEYS:
+    if GATEWAY_REQUIRE_AUTH or GATEWAY_AUTH_ENABLED:
+        if not GATEWAY_API_KEYS:
+            return False
+        key = _extract_api_key(request)
+        return bool(key) and key in GATEWAY_API_KEYS
+    if not GATEWAY_API_KEYS:
         return True
     key = _extract_api_key(request)
     return bool(key) and key in GATEWAY_API_KEYS
+
+
+def _local_rate_limit_allow(identity: str) -> bool:
+    now = time.time()
+    window = float(RATE_LIMIT_WINDOW_S)
+    with _local_lock:
+        bucket = _local_rl[identity]
+        _local_rl[identity] = [t for t in bucket if now - t < window]
+        if len(_local_rl[identity]) >= LOCAL_RL_MAX:
+            return False
+        _local_rl[identity].append(now)
+        return True
 
 
 def _rate_limit_allow(identity: str) -> bool:
@@ -129,7 +163,8 @@ def _rate_limit_allow(identity: str) -> bool:
             _redis.expire(key, RATE_LIMIT_WINDOW_S)
         return int(count) <= RATE_LIMIT_REQUESTS
     except redis.RedisError:
-        # Fail open on Valkey blip so chat is not bricked; log via response header
+        if GATEWAY_RL_FAIL_CLOSED:
+            return _local_rate_limit_allow(identity)
         return True
 
 
@@ -137,6 +172,11 @@ def _rate_limit_allow(identity: str) -> bool:
 async def _startup() -> None:
     global _http, MESSAGES
     MESSAGES = _load_messages()
+    if (GATEWAY_REQUIRE_AUTH or GATEWAY_AUTH_ENABLED) and not GATEWAY_API_KEYS:
+        raise RuntimeError(
+            "GATEWAY_API_KEYS is required when API Gateway auth is enabled "
+            "(set GATEWAY_REQUIRE_AUTH=0 only for isolated lab)"
+        )
     _http = httpx.AsyncClient(
         timeout=httpx.Timeout(PROXY_TIMEOUT_S),
         follow_redirects=True,
@@ -153,7 +193,12 @@ async def _shutdown() -> None:
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": MESSAGES.get("health_ok", "ok"), "service": "api-gateway"}
+    return {
+        "status": MESSAGES.get("health_ok", "ok"),
+        "service": "api-gateway",
+        "auth_required": bool(GATEWAY_REQUIRE_AUTH or GATEWAY_AUTH_ENABLED),
+        "keys_configured": bool(GATEWAY_API_KEYS),
+    }
 
 
 @app.api_route(
@@ -163,16 +208,19 @@ async def health() -> dict:
 async def proxy(full_path: str, request: Request) -> Response:
     path = "/" + full_path if full_path else "/"
     if path != "/health" and not _auth_ok(request):
+        msg = (
+            MESSAGES.get("misconfigured", "Gateway misconfigured: set GATEWAY_API_KEYS.")
+            if (GATEWAY_REQUIRE_AUTH or GATEWAY_AUTH_ENABLED) and not GATEWAY_API_KEYS
+            else MESSAGES.get("unauthorized", "Unauthorized. Provide a valid API key.")
+        )
         return JSONResponse(
             status_code=401,
-            content={
-                "error": "unauthorized",
-                "message": MESSAGES.get("unauthorized", "Unauthorized. Provide a valid API key."),
-            },
+            content={"error": "unauthorized", "message": msg},
         )
-    skip_rl = _path_skips_rate_limit(path) or _header_skips_rate_limit(request)
+    api_key = _extract_api_key(request)
+    skip_rl = _path_skips_rate_limit(path)
     if not skip_rl:
-        identity = _client_identity(request)
+        identity = _client_identity(request, api_key)
         if not _rate_limit_allow(identity):
             return JSONResponse(
                 status_code=429,
@@ -237,7 +285,7 @@ async def proxy(full_path: str, request: Request) -> Response:
         k: v for k, v in upstream.headers.items() if k.lower() not in excluded
     }
     if skip_rl:
-        out_headers["x-gateway-rate-limit"] = "skipped-coding"
+        out_headers["x-gateway-rate-limit"] = "skipped-coding-path"
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,
