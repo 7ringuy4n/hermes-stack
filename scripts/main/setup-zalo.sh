@@ -121,8 +121,10 @@ install_bridge() {
 Environment=ZALO_PLUGIN_HOST=${HOST_BIND}
 Environment=ZALO_PLUGIN_PORT=${PORT}
 Environment=ZALO_DISPATCHER_URL=http://127.0.0.1:8090
-Environment=ADMIN_API_URL=http://127.0.0.1:${ADMIN_API_PORT:-8100}
-Environment=ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
+Environment=ZALO_API_URL=http://127.0.0.1:${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}
+Environment=ZALO_API_TOKEN=${ZALO_API_TOKEN:-${ADMIN_API_TOKEN:-}}
+Environment=ADMIN_API_URL=http://127.0.0.1:${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}
+Environment=ADMIN_API_TOKEN=${ZALO_API_TOKEN:-${ADMIN_API_TOKEN:-}}
 EOF
 
   local bin
