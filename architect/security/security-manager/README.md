@@ -2,11 +2,13 @@
 
 ## Purpose
 
-Decides whether code/files are safe enough to process: extension/size limits, rule packs under `rules/`, optional semantic checks. Emits a user-safe refusal string on block.
+Decides whether files are safe enough to process. **Isolation layers** (size, archive limits, static, YARA, optional AV/sandbox) can allow or block. The optional **LLM judge is a heuristic**: it may add RISK only. `CLEAN` never allows a file.
+
+Emits a user-safe refusal string on block.
 
 ## Profile
 
-High (`ENABLE_SECURITY=1`).
+High (`ENABLE_SECURITY=1`). Defaults: YARA on; AV, sandbox, and LLM judge **off**.
 
 ## Main functions
 
@@ -14,8 +16,11 @@ High (`ENABLE_SECURITY=1`).
 |---|---|
 | Static checks | Extension, archive bombs, path tricks |
 | Rules | `rules/` YARA or custom |
-| Verdict | clean / risk → pipeline continue or stop |
+| Optional AV | ClamAV via av-gateway when `ENABLE_ANTIVIRUS=1` |
+| Optional LLM | `SECURITY_LLM_JUDGE=1` — RISK-only, not a security boundary |
+| Verdict | isolation must pass; heuristic may only add RISK |
 
 ## Related
 
 - [av-gateway](../av-gateway/README.md)
+- [docs/SECURITY.md](../../../docs/SECURITY.md)

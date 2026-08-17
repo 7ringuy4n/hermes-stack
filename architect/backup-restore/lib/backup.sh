@@ -15,6 +15,10 @@ export LANG="${LANG:-C.UTF-8}"
 
 BACKUP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QDRANT_PY="${BACKUP_LIB_DIR}/backup_qdrant.py"
+if ! declare -F assistant_options_dump >/dev/null 2>&1 && [[ -f "${BACKUP_LIB_DIR}/profile.sh" ]]; then
+  # shellcheck source=profile.sh
+  source "${BACKUP_LIB_DIR}/profile.sh"
+fi
 
 assistant_backup_flag() {
   local name="$1"
@@ -230,6 +234,12 @@ assistant_backup_config() {
   local dir="$1"
   $SUDO mkdir -p "${dir}/config"
   [[ -f "${ROOT}/.env" ]] && $SUDO cp -a "${ROOT}/.env" "${dir}/config/env.sealed" && $SUDO chmod 600 "${dir}/config/env.sealed"
+  if declare -F assistant_options_dump >/dev/null 2>&1; then
+    assistant_options_dump | $SUDO tee "${dir}/config/profile-options.env" >/dev/null
+  fi
+  if [[ -n "${BACKUP_CHANGE_REASON:-}" ]]; then
+    printf '%s\n' "${BACKUP_CHANGE_REASON}" | $SUDO tee "${dir}/config/change-intent.txt" >/dev/null
+  fi
   [[ -f "${ROOT}/docs/config/DEFAULTS.md" ]] && $SUDO cp -a "${ROOT}/docs/config/DEFAULTS.md" "${dir}/config/"
   [[ -d "${ROOT}/generated" ]] && $SUDO tar -C "${ROOT}" --format=posix -czf "${dir}/config/generated.tgz" generated
   [[ -d "${ROOT}/vendor" ]] && $SUDO tar -C "${ROOT}" --format=posix -czf "${dir}/config/vendor.tgz" vendor

@@ -94,6 +94,14 @@ Record:
 
 Repeat with different files/data on Run 2.
 
+**Zalo concurrent (High, required when Zalo is on):**
+
+- Text-only ramp: `cases/08-zalo-concurrent.md` (do not open a second SSE client).
+- **Mixed text + media generation** in the same burst: `cases/09-zalo-concurrent-media.md`.
+  Half the workers send short chat text (**Traefik `:8080/v1/chat/completions`** + `API_SERVER_KEY`); half call dispatcher `POST /v1/image` (`refine=false`).
+  Record **delay** per kind (min / p50 / p95 / max ms), last all-success N, first-fail N, SSE still `1`, Hermes replicas still up.
+  Lab run-05: last all-success **N=4**, first-fail **N=8** (text HTTP 503 / one image 502); image ~0.3–6s; text ~4–16s when 200.
+
 **Ramp until fail (required):** after the 10-type burst, increase concurrent load (text or mixed) in steps (for example 8 → 16 → 32 → 48) until the **first** failure, timeout, drop, or crash. Record:
 
 - Last batch size that was **all success**
@@ -128,9 +136,12 @@ Test:
 - Malicious/blocked file handling.
 - Unsupported/oversized file handling.
 - Unauthorized tool access.
-- Public endpoint restrictions.
+- Public endpoint restrictions (VPN/localhost only — `TRAEFIK_MODE=local`; ACME off unless explicitly testing public).
 - OpenVPN access.
 - No policy bypass through fallback/error paths.
+- **Isolation vs LLM judge** (`cases/10-security-isolation-risks.md`): judge default off; `CLEAN` must not allow; prompt-injection excerpt must not become the security boundary.
+- **Container socket:** `docker.sock` must not be mounted on security-manager or zalo-api; `docker-socket-proxy` must not run unless `SECURITY_SANDBOX=1`.
+- OpenBao / 9router / Postgres host publishes stay on loopback (not Traefik).
 
 For blocked operations, verify the user receives a **short, safe alert**, not internal logs or security details.
 
@@ -351,6 +362,37 @@ Every capability must include at least one **fail event**, not only success.
 | Concurrency | Ramp until first fail | Record last-all-success N and first-fail N |
 | Hermes crash | Stop/kill a Hermes replica | `stack-watch` (or equivalent) restores the replica without a crash loop |
 | Zalo lost connection | Stop proxy or SSE=0 | `zalo-watch` restores proxy/SSE; QR only if `sessionDead` |
+| Zalo mixed media+text | Ramp interleaved chat + `/v1/image` until first fail | Last-all-success N, first-fail N, **delay p50/p95/max per kind**, SSE=1; text auth via Traefik+`API_SERVER_KEY` |
+| Isolation / LLM judge | Judge off; EICAR via YARA; injection file cannot LLM-allow | Sock absent on AI services; sandbox/proxy off; VPN-only edge |
+| Profile switch | Unknown tier / unknown `ENABLE_*`; notify add then remove | Usage error; High↔Medium overlays; existing Zalo flag kept |
 | Media / search / VPN / policy | Disabled or deny | Short user-facing alert; no stack dump |
 
 **Auto-heal:** if Hermes or Zalo dies from an error/exception/lost connection, health must return without a manual QR (unless the Zalo session is actually dead). Record timestamps: fault injected → watch tick → healthy.
+
+## 14. Two-pass lab (source then Quick start)
+
+When re-testing a live High/Zalo lab:
+
+1. **Pass 1 — source allowed.** Sync tree, destroy leftovers, `bash run.sh up` (High + Zalo + edge). If deploy hits a **source** defect, fix the repo, changelog, rebuild, rerun the failed step. Then run cases 08–11 and fail-events.
+2. **Pass 2 — script only.** No source edits. Follow README **Quick start** on the already-synced tree: `bash run.sh down` then `bash run.sh up`, `bash run.sh first-setup-llm`, `bash run.sh ps`. Re-probe health (Traefik **`/health`**, not `/`), Zalo SSE, isolation risks (`security_risks.py`), a **smaller** mixed media burst (e.g. N≤4 via `ZALO_MEDIA_MAX=4`), and profile-switch **dry-run** (`switch-profile --dry-run` / `profile`).
+3. Leave High running. Do not put hostnames, IPs, or account names in reports.
+4. After the run, add any new cases to this file (this section and the case index under `test/cases/`).
+5. Record summary in `test/reports/run-NN-two-pass/SUMMARY.md` with an **HTML** profile×mode table (see §11).
+
+**Latest lab (run-05):** pass 1 sync+deploy PASS; case 11 High↔Medium + add/remove notify (source fix: drop disabled-profile containers); text concurrent N≤24 PASS; mixed media last-ok **N=4** first-fail **N=8** (text 503); isolation PASS; pass 2 Quick start PASS; see `reports/run-05-two-pass/SUMMARY.md`.
+
+## 15. Case index
+
+| Case | File |
+|------|------|
+| Basic health (all profiles) | `cases/01-basic-health.md` |
+| Media disabled | `cases/02-media-disabled.md` |
+| High 10-type concurrency | `cases/03-high-concurrency.md` |
+| Web search | `cases/04-web-search.md` |
+| Security / policy | `cases/05-security-policy.md` |
+| Backup / restore | `cases/06-backup-restore.md` |
+| Fail events + auto-heal | `cases/07-fail-events.md` |
+| Zalo concurrent text | `cases/08-zalo-concurrent.md` |
+| Zalo concurrent text + media gen + delay | `cases/09-zalo-concurrent-media.md` |
+| Isolation risks (sock, judge, VPN-only) | `cases/10-security-isolation-risks.md` |
+| Profile upgrade/downgrade + add/remove options | `cases/11-profile-switch.md` |
