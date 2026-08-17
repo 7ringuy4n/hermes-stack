@@ -46,8 +46,22 @@ MESSAGES_PATH = Path(
     )
 )
 PROXY_TIMEOUT_S = float(os.environ.get("GATEWAY_PROXY_TIMEOUT_S", "120"))
+# Real edge auth (v0.5.0): require Bearer/API key when GATEWAY_API_KEYS is non-empty
+GATEWAY_API_KEYS = {
+    k.strip()
+    for k in os.environ.get("GATEWAY_API_KEYS", "").split(",")
+    if k.strip()
+}
+GATEWAY_AUTH_ENABLED = os.environ.get("GATEWAY_AUTH_ENABLED", "1" if GATEWAY_API_KEYS else "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+GATEWAY_MAX_BODY_BYTES = int(os.environ.get("GATEWAY_MAX_BODY_BYTES", str(32 * 1024 * 1024)))
+AUTH_HEADER = os.environ.get("GATEWAY_AUTH_HEADER", "authorization")
 
-app = FastAPI(title="hermes-stack-api-gateway", version="0.1.0")
+app = FastAPI(title="hermes-stack-api-gateway", version="0.5.0")
 _redis = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 _http: httpx.AsyncClient | None = None
 
@@ -59,6 +73,8 @@ def _load_messages() -> dict:
         return {
             "rate_limited": "Too many requests. Please try again later.",
             "upstream_unavailable": "Upstream service unavailable.",
+            "unauthorized": "Unauthorized. Provide a valid API key.",
+            "body_too_large": "Request body too large.",
             "health_ok": "ok",
         }
 
@@ -89,6 +105,20 @@ def _path_skips_rate_limit(path: str) -> bool:
 def _header_skips_rate_limit(request: Request) -> bool:
     raw = request.headers.get(SKIP_RL_HEADER, "")
     return raw.strip().lower() in SKIP_RL_HEADER_VALUES
+
+
+def _extract_api_key(request: Request) -> str:
+    auth = request.headers.get(AUTH_HEADER, "") or ""
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return (request.headers.get("x-api-key") or "").strip()
+
+
+def _auth_ok(request: Request) -> bool:
+    if not GATEWAY_AUTH_ENABLED or not GATEWAY_API_KEYS:
+        return True
+    key = _extract_api_key(request)
+    return bool(key) and key in GATEWAY_API_KEYS
 
 
 def _rate_limit_allow(identity: str) -> bool:
@@ -132,6 +162,14 @@ async def health() -> dict:
 )
 async def proxy(full_path: str, request: Request) -> Response:
     path = "/" + full_path if full_path else "/"
+    if path != "/health" and not _auth_ok(request):
+        return JSONResponse(
+            status_code=401,
+            content={
+                "error": "unauthorized",
+                "message": MESSAGES.get("unauthorized", "Unauthorized. Provide a valid API key."),
+            },
+        )
     skip_rl = _path_skips_rate_limit(path) or _header_skips_rate_limit(request)
     if not skip_rl:
         identity = _client_identity(request)
@@ -167,6 +205,15 @@ async def proxy(full_path: str, request: Request) -> Response:
         if k.lower() not in {"host", "content-length"}
     }
     body = await request.body()
+    if len(body) > GATEWAY_MAX_BODY_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={
+                "error": "body_too_large",
+                "message": MESSAGES.get("body_too_large", "Request body too large."),
+                "limit": GATEWAY_MAX_BODY_BYTES,
+            },
+        )
     try:
         upstream = await _http.request(
             request.method,

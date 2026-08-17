@@ -1,0 +1,74 @@
+{
+  "rows": [
+    {
+      "ts": "2026-08-17 09:39:39 +0700",
+      "section": "lab",
+      "name": "start",
+      "status": "pass",
+      "detail": "fail-events on running High"
+    },
+    {
+      "ts": "2026-08-17 09:39:40 +0700",
+      "section": "sync",
+      "name": "stack-watch",
+      "status": "pass",
+      "detail": "crash-recovery restart for exited Hermes"
+    },
+    {
+      "ts": "2026-08-17 09:40:28 +0700",
+      "section": "av",
+      "name": "clamd",
+      "status": "pass",
+      "detail": "clamd ping true"
+    },
+    {
+      "ts": "2026-08-17 09:40:28 +0700",
+      "section": "av",
+      "name": "eicar_infected",
+      "status": "pass",
+      "detail": "EICAR blocked/infected"
+    },
+    {
+      "ts": "2026-08-17 09:40:28 +0700",
+      "section": "av",
+      "name": "clean_file",
+      "status": "pass",
+      "detail": "clean file not blocked"
+    },
+    {
+      "ts": "2026-08-17 09:40:28 +0700",
+      "section": "av",
+      "name": "short_alert",
+      "status": "pass",
+      "detail": "short user-facing risk/infected path"
+    },
+    {
+      "ts": "2026-08-17 09:41:13 +0700",
+      "section": "concurrency",
+      "name": "ramp_until_fail",
+      "status": "pass",
+      "detail": "last_all_success=24 first_fail=32"
+    },
+    {
+      "ts": "2026-08-17 09:42:05 +0700",
+      "section": "heal",
+      "name": "hermes_crash",
+      "status": "pass",
+      "detail": "stopped replica restored by stack-watch"
+    },
+    {
+      "ts": "2026-08-17 09:42:05 +0700",
+      "section": "heal",
+      "name": "zalo_proxy",
+      "status": "fail",
+      "detail": "proxy not running after zalo-watch"
+    },
+    {
+      "ts": "2026-08-17 09:42:05 +0700",
+      "section": "heal",
+      "name": "zalo_sse",
+      "status": "fail",
+      "detail": "sseClients=0"
+    }
+  ]
+}

@@ -23,10 +23,39 @@ from pydantic import BaseModel, Field
 
 from video_summary import health_fields, register_video_summary
 
-app = FastAPI(title="assistant dispatcher", version="1.0.0")
+app = FastAPI(title="assistant dispatcher", version="1.1.0")
 
 SESSION_URL = os.environ.get("SESSION_URL", "http://session:8107").rstrip("/")
 N9_UPSTREAM = os.environ.get("OPENAI_BASE_URL", "http://9router:20128/v1").rstrip("/")
+_MSG_PATH = Path(
+    os.environ.get(
+        "DISPATCHER_MESSAGES_FILE",
+        str(Path(__file__).resolve().parent / "messages" / "en.json"),
+    )
+)
+
+
+def _load_messages() -> dict[str, str]:
+    try:
+        import json as _json
+
+        return _json.loads(_MSG_PATH.read_text(encoding="utf-8"))
+    except OSError:
+        return {
+            "image_gen_disabled": "Image generation is unavailable (no media backends configured).",
+            "office_gen_disabled": "Office file generation is unavailable.",
+            "web_search_disabled": "Web search is unavailable (no search backends configured).",
+            "web_extract_disabled": "Web extract is unavailable (no search backends configured).",
+            "prompt_required": "A prompt is required.",
+            "media_gen_failed": "Could not generate media. Try a simpler request or try again later.",
+        }
+
+
+MESSAGES = _load_messages()
+
+
+def _msg(key: str, fallback: str) -> str:
+    return str(MESSAGES.get(key) or fallback)
 
 
 def _timing_enabled() -> bool:
@@ -128,7 +157,7 @@ _cycle = itertools.cycle(BACKENDS) if BACKENDS else None
 
 def next_backend() -> str:
     if not _cycle:
-        raise HTTPException(503, "web search disabled (WEB_BACKENDS empty)")
+        raise HTTPException(503, _msg("web_search_disabled", "Web search is unavailable (no search backends configured)."))
     with _lock:
         return next(_cycle)
 
@@ -324,7 +353,7 @@ async def search(req: SearchReq) -> dict[str, Any]:
     order = [req.backend.lower()] if req.backend else []
     if not order:
         if not BACKENDS:
-            raise HTTPException(503, "web search disabled (WEB_BACKENDS empty)")
+            raise HTTPException(503, _msg("web_search_disabled", "Web search is unavailable (no search backends configured)."))
         first = next_backend()
         order = [first] + [b for b in BACKENDS if b != first]
     # Medium+: after paid vendors, fall back to local SearXNG (top 5).
@@ -916,9 +945,9 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
 
     prompt = (req.prompt or "").strip()
     if not prompt:
-        raise HTTPException(400, "prompt required")
+        raise HTTPException(400, _msg("prompt_required", "A prompt is required."))
     if not image_backends() and not (req.provider or "").strip():
-        raise HTTPException(503, "image gen disabled (IMAGE_BACKENDS empty)")
+        raise HTTPException(503, _msg("image_gen_disabled", "Image generation is unavailable (no media backends configured)."))
 
     refine_meta: dict[str, Any] = {"refined": False}
     gen_prompt = prompt

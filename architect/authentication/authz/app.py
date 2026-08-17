@@ -211,7 +211,13 @@ def _seed(conn) -> None:
 @app.on_event("startup")
 def startup() -> None:
     global pool
-    pool = ConnectionPool(DSN, min_size=1, max_size=8, kwargs={"row_factory": dict_row})
+    pool = ConnectionPool(
+        DSN,
+        min_size=1,
+        max_size=8,
+        check=ConnectionPool.check_connection,
+        kwargs={"row_factory": dict_row},
+    )
     with _conn() as conn:
         conn.execute(SCHEMA)
         _seed(conn)

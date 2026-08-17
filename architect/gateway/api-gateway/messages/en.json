@@ -1,5 +1,7 @@
 {
   "rate_limited": "Too many requests. Please try again later.",
   "upstream_unavailable": "Upstream service unavailable. Check Traefik/Hermes.",
+  "unauthorized": "Unauthorized. Provide a valid API key (Authorization: Bearer … or x-api-key).",
+  "body_too_large": "Request body too large.",
   "health_ok": "ok"
 }
