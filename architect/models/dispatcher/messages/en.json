@@ -1,0 +1,9 @@
+{
+  "schema": "assistant-dispatcher-messages-v1",
+  "image_gen_disabled": "Image generation is unavailable (no media backends configured).",
+  "office_gen_disabled": "Office file generation is unavailable.",
+  "web_search_disabled": "Web search is unavailable (no search backends configured).",
+  "web_extract_disabled": "Web extract is unavailable (no search backends configured).",
+  "prompt_required": "A prompt is required.",
+  "media_gen_failed": "Could not generate media. Try a simpler request or try again later."
+}

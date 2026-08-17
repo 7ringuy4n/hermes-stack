@@ -1,0 +1,5 @@
+{
+  "no_model_available": "No model available. Configure 9router, OmniRouter, Ollama, or a fallback provider API key.",
+  "upstream_error": "Upstream model provider error.",
+  "health_ok": "ok"
+}
