@@ -1,5 +1,57 @@
 # Change history
 
+## 2026-08-17 15:25 +07 — release: v0.5.3
+
+- Isolation boundary: sandbox/LLM judge/AV off by default; judge CLEAN cannot allow; VPN-only Traefik; socket-proxy only with sandbox profile.
+- Ops: `switch-profile` / `add-components` (archive first); drop disabled-profile containers on up.
+- Tests: run-05 two-pass; cases 09–11 (Zalo mixed media delay, isolation risks, profile upgrade/downgrade).
+
+## 2026-08-17 15:20 +07 — test: run-05 two-pass (profile switch + mixed media)
+
+- Pass 1: High/Zalo deploy; case 11 upgrade/downgrade + add/remove notify; mixed media fail-event N=8 (text 503).
+- Pass 2: Quick start only; isolation PASS; profile dry-run; mixed media N=2 ok / N=4 one text timeout.
+- Reports: `test/reports/run-05-two-pass/SUMMARY.md`. `RULES.md` §5/§14–15.
+
+## 2026-08-17 15:05 +07 — fix: drop disabled-profile containers on up
+
+- `run.sh up`/`update` now `docker rm` notify/alert-watch (and other off profiles). Compose `--remove-orphans` does not stop services that were started with `--profile` and later disabled.
+- first-setup-llm recreate: remove leftover `hexprefix_*hermes*` names that collide on `--force-recreate`. Do **not** pass `--remove-orphans` here (that compose set omits edge YAML and would drop Traefik/Gateway).
+
+## 2026-08-17 14:55 +07 — test: profile switch case 11
+
+- Case `11-profile-switch`: existing options, add/remove `ENABLE_NOTIFY`, High↔Medium, bogus-tier fail event; script `test/scripts/profile_switch.py`.
+- `test/RULES.md` §13–15.
+
+## 2026-08-17 14:50 +07 — ops: switch-profile / add-components archive first
+
+- All tiers can upgrade or downgrade. `bash run.sh switch-profile <low|medium|high>` dumps current options, stamps a DR backup, writes `ASSISTANT_PROFILE`, then `up --remove-orphans`.
+- `bash run.sh add-components KEY=VAL` same archive-then-apply for optional flags (Zalo, OCR, …).
+- Stamp includes `config/profile-options.env` + `change-intent.txt`; undo via `restore` of `BACKUP_DIR/PRE_CHANGE`.
+- Docs: `docs/00-profiles.md`, `docs/02-commands.md`.
+
+## 2026-08-17 14:45 +07 — test: run-04 two-pass lab complete
+
+- Pass 1: sync+deploy High/Zalo; fixes post-ready-learn/stack-watch Traefik `/health`, mixed-media auth (Traefik+`API_SERVER_KEY`), AV/sandbox env precedence.
+- Pass 2: README Quick start only (no source edits); isolation risks PASS; mixed media N≤4 all-success with delay tables.
+- Reports: `test/reports/run-04-two-pass/SUMMARY.md`; `cases/09` + `RULES.md` §5/§13/§14 updated for Traefik text path and run-04 findings.
+- `lab_two_pass.py`: Traefik probe uses `/health` (root `/` is 404).
+
+## 2026-08-17 14:20 +07 — test: Zalo mixed media concurrent + isolation risks
+
+- New cases `09-zalo-concurrent-media` (text+image gen, delay p50/p95/max) and `10-security-isolation-risks` (no sock, judge/sandbox off, VPN-only, EICAR via YARA).
+- `test/RULES.md` §5/§7/§13–15; lab two-pass defaults sandbox/judge off; README Traefik `local`.
+
+## 2026-08-17 14:15 +07 — security: isolation boundary (sandbox/judge off, VPN-only)
+
+- High defaults: `SECURITY_SANDBOX=0`, `SECURITY_LLM_JUDGE=0`, `ENABLE_ANTIVIRUS=0`; YARA + size/static remain isolation.
+- LLM judge (if enabled) may only add RISK; CLEAN / skip / errors never allow and never fail-closed.
+- docker-socket-proxy only with compose profile `sandbox` (`SECURITY_SANDBOX=1`); security-manager has no Docker API by default.
+- Edge default `TRAEFIK_MODE=local` (VPN/localhost). Public/ACME remains explicit opt-in.
+- Docs: `docs/SECURITY.md`.
+- README Traefik default wording: `local` (VPN-only), matching `profile.sh`.
+- post-ready-learn / stack-watch probe Traefik `/health` (root `/` is 404 by design).
+- stack-watch: product `.env` wins over leftover `/data/assistant/.env` (stops AV/sandbox flags resurrecting).
+
 ## 2026-08-17 12:00 +07 — release: v0.5.2
 
 - Security P0 hardening (gateway auth, SSRF, docker.sock/proxy, fail-closed).

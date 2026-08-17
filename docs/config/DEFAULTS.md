@@ -81,7 +81,10 @@ GATEWAY_API_KEYS=
 GATEWAY_REQUIRE_AUTH=1
 GATEWAY_TRUST_FORWARDED=0
 GATEWAY_RL_FAIL_CLOSED=1
+SECURITY_YARA=1
 SECURITY_SANDBOX=0
+SECURITY_LLM_JUDGE=0
+ENABLE_LLM_JUDGE=0
 SECURITY_FAIL_CLOSED=0
 ENABLE_TELEGRAM=0
 ENABLE_TRAEFIK=0
@@ -103,15 +106,16 @@ ZALO_AUTO_SETHOME_DM_ONLY=1
 |---|---|
 | low | none by default; **Traefik/API Gateway forced off** |
 | medium | OCR, SearXNG, Jobs, office file-gen, web backends + compact; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=2**; OpenVPN opt-in |
-| high | Medium + OpenBao UI, AV, security, SIEM, authz, policy, monitor; zalo-api with Zalo; notify opt-in; CloudDrive; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=2**; OpenVPN opt-in |
+| high | Medium + OpenBao UI, security-manager (YARA), SIEM, authz, policy, monitor; AV/sandbox/LLM judge **off** unless opted in; zalo-api with Zalo; notify opt-in; CloudDrive; **Traefik + API Gateway default ON** (`TRAEFIK_MODE=local`); **HERMES_REPLICAS=2**; OpenVPN opt-in |
 
 High overlay: `docker-compose.high.yml`. Edge overlay: `docker-compose.edge.yml` when `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` is `1`. Smoke: `bash run.sh check-high`. Seed keys: `bash run.sh first-setup-openbao`.
 
-## Edge (VPN/LAN — optional)
+## Edge (VPN/LAN — default)
 
 | Flag | Role |
 |------|------|
 | `ENABLE_TRAEFIK` | Traefik LB → Hermes (**default 1 on medium/high**, forced 0 on low) |
+| `TRAEFIK_MODE` | **`local`** (VPN/localhost). `public` is opt-in and still fail-softs without ACME email/domain |
 | `TRAEFIK_ACME_ENABLED` | Let's Encrypt TLS on Traefik (needs public 80/443 for HTTP-01; default **0**) |
 | `ENABLE_API_GATEWAY` | HTTP entry + Valkey global rate limit (**default 1 on medium/high**, forced 0 on low; coding paths skip RL) |
 | `ENABLE_OPENVPN` | Private admin VPN stub (init PKI before use; default **0**) |

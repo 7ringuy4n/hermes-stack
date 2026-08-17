@@ -1,0 +1,6 @@
+ASSISTANT_PROFILE=high
+TRAEFIK_MODE=local TRAEFIK_ACME=0
+optional NOTIFY=0 ZALO=1 TRAEFIK=1 API_GATEWAY=1 HERMES_REPLICAS=2
+DRY_RUN: would archive, set ASSISTANT_PROFILE=high, then run.sh up --remove-orphans
+DRY_RUN: would archive then set: ENABLE_NOTIFY=1
+DRYRUN_OK

@@ -18,7 +18,7 @@ Compose YAML lives here so the repo root stays clean. **`run.sh` always passes
 |---------|------------|
 | `zalo` | `ENABLE_ZALO=1` |
 | `monitor` | any of `ENABLE_GRAFANA` / `ENABLE_LOKI` / `ENABLE_PROMETHEUS` / `ENABLE_ALLOY` = `1` |
-| `notify` / `antivirus` / `clouddrive` / `comfy-gpu` | matching `ENABLE_*` / `COMFYUI_HAS_GPU` |
+| `notify` / `antivirus` / `sandbox` / `clouddrive` / `comfy-gpu` | matching `ENABLE_*` / `SECURITY_SANDBOX` / `COMFYUI_HAS_GPU` |
 | `traefik` / `gateway` / `openvpn` | `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` |
 
 High without Loki/Prometheus/Grafana:

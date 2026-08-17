@@ -24,6 +24,8 @@ Set secrets in `.env` **before** `up`. Use `sudo` on the VPS when writing under 
 | `destroy` | ✅ | ✅ | ✅ | Remove this project's containers + networks (volumes/data kept) |
 | `update` | ✅ | ✅ | ✅ | After `git pull`: rebuild stack, refresh LLM wiring, prune disk |
 | `profile` | ✅ | ✅ | ✅ | Show `ASSISTANT_PROFILE` + optional flags |
+| `switch-profile <tier>` | ✅ | ✅ | ✅ | Archive stamp, set `ASSISTANT_PROFILE`, `up` (upgrade/downgrade) |
+| `add-components KEY=VAL` | ✅ | ✅ | ✅ | Archive stamp, set option flags, `up` |
 | `backup` | ✅ | ✅ | ✅ | DR stamp → `/data/assistant/backups` |
 | `restore [stamp]` | ✅ | ✅ | ✅ | Restore LATEST or stamp |
 | `verify [stamp]` | ✅ | ✅ | ✅ | Check backup manifest + live pings |
@@ -50,6 +52,8 @@ bash run.sh destroy         # remove project containers + networks (volumes/data
 bash run.sh ps
 bash run.sh logs [service]  # e.g. bash run.sh logs ingest
 bash run.sh profile         # ASSISTANT_PROFILE=low|medium|high
+bash run.sh switch-profile medium   # archive → set tier → up (--dry-run / --no-up)
+bash run.sh add-components ENABLE_ZALO=1   # archive → flags → up
 bash run.sh update          # after git pull: rebuild + LLM refresh + disk prune
 ```
 
@@ -88,7 +92,16 @@ bash run.sh migrate                   # tarball of LATEST for a new server
 | Low / Medium | Local disk only |
 | High | After backup: `bash run.sh backup-sync-clouddrive` (needs `ENABLE_CLOUDDRIVE=1`) |
 
-**Restore** uses Compose under `docker/` (not full `run.sh up` / first-setup). Postgres skips DROP/CREATE ROLE for the session user; Qdrant restores per-collection snapshots (storage HTTP recover N/A on Qdrant 1.13+).
+**Change profile / add components (all tiers):** archive current options + stores, then apply.
+
+```bash
+bash run.sh switch-profile high            # Low/Medium → High
+bash run.sh switch-profile low             # High → Low (orphans removed; data kept)
+bash run.sh add-components ENABLE_ZALO=1
+bash run.sh restore "$(cat /data/assistant/backups/PRE_CHANGE)"
+```
+
+Details: [00-profiles.md](./00-profiles.md). Stamps include `config/profile-options.env` (non-secret flags) and `config/env.sealed`.
 
 **Lab-tested (2026-08-16):** High · Hermes×2 · monitor off · stamp `20260816_195940` — backup, verify, restore + canary, gateway/Zalo/DB healthy. Details: [architect/backup-restore/README.md](../architect/backup-restore/README.md). Hardware: [HARDWARE.md](./HARDWARE.md).
 

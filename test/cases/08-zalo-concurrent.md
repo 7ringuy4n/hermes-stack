@@ -23,7 +23,7 @@ gateway when probing HTTP paths).
 3. Record per-request: start, end, HTTP/app status, latency
 4. Ramp N = 4 → 8 → 16 → 24 until first failure (timeout / 5xx / drop)
 5. After burst: re-check `sseClients=1`, Hermes replicas healthy, no crash loop
-6. Optional: one media attachment in parallel with text (if Medium+)
+6. **Required:** mixed burst with **text and media generation in the same window** (see `cases/09-zalo-concurrent-media.md`). Record per-kind latency (p50/p95/max). Ramp until first fail.
 
 ## Pass criteria
 
