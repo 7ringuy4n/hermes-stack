@@ -1,5 +1,29 @@
 # Change history
 
+## 2026-08-17 07:30 +07 — release: v0.4.1
+
+- Ship Mem0 purge leftovers, Zalo SSE heal after restore, stack-watch Hermes scale preserve, Zalo silent auto-sethome.
+
+## 2026-08-17 07:25 +07 — zalo: silent auto-sethome (stop /sethome spam)
+
+- First chat no longer gets Hermes “📬 No home channel… /sethome” when home is unset.
+- Zalo adapter silently claims `ZALO_HOME_CHANNEL` from the first allowed DM (`ZALO_AUTO_SETHOME=1` default; DM-only by default).
+- Set `ZALO_AUTO_SETHOME=0` to require manual `/sethome` or a pre-set `ZALO_HOME_CHANNEL`.
+
+## 2026-08-17 07:15 +07 — backup-restore: lab retest + compose profiles on restore
+
+- VPS lab stamp `20260817_070637`: backup → verify → restore + canary OK.
+- Pre-restore Zalo had `sseClients=0`; post-restore `heal-zalo-sse` restored `sseClients=1` / loggedIn.
+- Volume restore stops Traefik; restore compose now passes the same `--profile` flags as `run.sh` so Traefik/gateway/Zalo come back.
+- **stack-watch:** `compose up` now keeps `--scale hermes=$HERMES_REPLICAS` (was collapsing Hermes×2 →×1 every 2 min and killing Zalo SSE). Skip Grafana probe when monitor off; skip host `:29119` probe when replicas≠1.
+
+## 2026-08-17 07:05 +07 — memory: purge Mem0 leftovers; Zalo SSE heal after restore
+
+- Deleted architect/memory/mem0; scrubbed Mem0 from docs, monitor health targets, and Grafana queries.
+- Session metrics now scan conversation_active:* (Valkey session store).
+- Backup excludes zalo_owner*; restore clears lock and runs scripts/main/heal-zalo-sse.sh.
+- zalo-watch: on sseClients=0, clear owner lock and restart proxy/Hermes (fixes silent bot after DR).
+
 ## 2026-08-16 20:15 +07 — release: v0.4.0
 
 - Cut 

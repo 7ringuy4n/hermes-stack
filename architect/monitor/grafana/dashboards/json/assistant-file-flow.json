@@ -149,7 +149,7 @@
       },
       "targets": [
         {
-          "expr": "{job=\"docker\", container=~\"qdrant|mem0|redis|ingest\"} |= `[flow]` or `knowledge_chunks` or `conversational_memory` or `collection`",
+          "expr": "{job=\"docker\", container=~\"qdrant|memory|redis|ingest\"} |= `[flow]` or `knowledge_chunks` or `conversational_memory` or `collection`",
           "refId": "A"
         }
       ],
@@ -211,7 +211,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (container) (count_over_time({job=\"docker\", container=~\"security-manager|ocr|ingest|embedding|mem0|hermes|9router\"} [$__interval]))",
+          "expr": "sum by (container) (count_over_time({job=\"docker\", container=~\"security-manager|ocr|ingest|embedding|memory|hermes|9router\"} [$__interval]))",
           "legendFormat": "{{container}}",
           "refId": "A"
         }

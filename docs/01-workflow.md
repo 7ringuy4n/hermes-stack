@@ -17,7 +17,7 @@ Console / IDE / optional social-app
     Hermes Agent
         ├─ Memory Manager
         │     • Valkey — short-term session (TTL), rate-limit, small queues
-        │     • Mem0 + Qdrant — long-term conversational facts
+        │     • Postgres (Memory Manager) — long-term conversational facts
         │     • Postgres — typed metadata Memory Manager budgets into context
         ├─ Knowledge — Ingest + Embedding → Qdrant knowledge_chunks
         │     auto-learn 00:00 (no approve); list/find top 5 + rest count
@@ -32,7 +32,7 @@ Console / IDE / optional social-app
 ### Memory in plain language
 
 1. **While you chat**, recent messages live in **Valkey** (fast, expires).
-2. **Important facts** are written asynchronously into **Mem0 / Qdrant** (and Postgres typed rows) so later sessions can recall them — not every joke or "ok".
+2. **Important facts** are written asynchronously into **Postgres** via Memory Manager (optional Qdrant index) so later sessions can recall them — not every joke or "ok".
 3. **Documents** go through **ingest** into **`knowledge_chunks`**. At midnight **auto-learn** indexes eligible files from `/data/assistant` media (and inbound when a social app is attached). Empty search → say there is no information; **do not guess**; **do not use the internet** in Low.
 
 ### Off in Low
