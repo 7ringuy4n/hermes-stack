@@ -33,11 +33,11 @@ When `HERMES_REPLICAS>1`, host ports `:29119` / `:28642` are not published — u
 
 ## Change profile (upgrade / downgrade / add components)
 
-All three profiles can move **up or down**. Runtime data stays on the host (`ASSISTANT_DATA_DIR`); named volumes are not wiped. Change **archives first** so you can restore the previous tier.
+All three profiles can move **up or down**. Runtime data stays on the host (`ASSISTANT_DATA_DIR`); named volumes are not wiped. Change **backs up and verifies** first so you can restore the previous tier. If backup or verify fails, the change is aborted.
 
 ```bash
 bash run.sh profile                              # current options
-bash run.sh switch-profile medium                # archive + set ASSISTANT_PROFILE + up
+bash run.sh switch-profile medium                # backup+verify + set ASSISTANT_PROFILE + up
 bash run.sh switch-profile high --dry-run        # show plan only
 bash run.sh add-components ENABLE_ZALO=1         # archive + set flags + up
 bash run.sh restore "$(cat /data/assistant/backups/PRE_CHANGE)"   # undo last change

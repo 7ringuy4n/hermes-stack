@@ -40,6 +40,7 @@ HERMES_REPLICAS = int(os.environ.get("HERMES_REPLICAS", "1") or "1")
 INGEST_URL = (os.environ.get("INGEST_URL") or "http://127.0.0.1:8099").rstrip("/")
 
 SKIP_SKILL_DIRS = {"_example", "__pycache__", ".git", "official", "vendor"}
+CATEGORY_DIRS = {"core", "knowledge", "coding", "communication"}
 
 
 def http_ok(url: str, timeout: float = 3.0) -> bool:
@@ -73,6 +74,10 @@ def list_skill_dirs(skills: Path) -> list[Path]:
             continue
         if (p / "SKILL.md").is_file():
             out.append(p)
+        if p.name in CATEGORY_DIRS:
+            for sub in sorted(p.iterdir()):
+                if sub.is_dir() and (sub / "SKILL.md").is_file():
+                    out.append(sub)
     return out
 
 
@@ -109,7 +114,11 @@ def sync_skills_and_docs(skill_dirs: list[Path]) -> int:
         # Refresh mirror of current skill set
         shutil.rmtree(skills_out, ignore_errors=True)
     for d in skill_dirs:
-        total += copy_md_tree(d, skills_out / d.name)
+        try:
+            dest_name = d.relative_to(SKILLS_DIR).as_posix()
+        except ValueError:
+            dest_name = d.name
+        total += copy_md_tree(d, skills_out / dest_name)
     if HERMES_DOCS.is_dir():
         total += copy_md_tree(HERMES_DOCS, DOCS_ROOT / "hermes-docs")
     if HERMES_SETUP.is_dir():

@@ -291,7 +291,7 @@ bash run.sh <command>
       <td style="padding:10px;text-align:center;">Yes</td>
       <td style="padding:10px;text-align:center;">Yes</td>
       <td style="padding:10px;text-align:center;">Yes</td>
-      <td style="padding:10px 12px;">Remove project containers + networks (volumes/data kept)</td>
+      <td style="padding:10px 12px;">Backup+verify, then remove project containers + networks (volumes/data kept)</td>
     </tr>
     <tr>
       <td style="padding:10px 12px;"><code>profile</code></td>
@@ -305,14 +305,14 @@ bash run.sh <command>
       <td style="padding:10px;text-align:center;">Yes</td>
       <td style="padding:10px;text-align:center;">Yes</td>
       <td style="padding:10px;text-align:center;">Yes</td>
-      <td style="padding:10px 12px;">Archive stamp, change tier, <code>up</code> (or <code>--dry-run</code> / <code>--no-up</code>)</td>
+      <td style="padding:10px 12px;">Backup+verify, change tier, <code>up</code> (or <code>--dry-run</code> / <code>--no-up</code>)</td>
     </tr>
     <tr style="background:#fafafa;">
       <td style="padding:10px 12px;"><code>add-components KEY=VAL</code></td>
       <td style="padding:10px;text-align:center;">Yes</td>
       <td style="padding:10px;text-align:center;">Yes</td>
       <td style="padding:10px;text-align:center;">Yes</td>
-      <td style="padding:10px 12px;">Archive stamp, set <code>ENABLE_*</code>, <code>up</code></td>
+      <td style="padding:10px 12px;">Backup+verify, set <code>ENABLE_*</code>, <code>up</code></td>
     </tr>
     <tr style="background:#e8f4ea;">
       <td colspan="5" style="padding:10px 12px;"><b>Backup / restore</b></td>

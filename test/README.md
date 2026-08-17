@@ -33,5 +33,11 @@ Two-pass lab summary (latest): [reports/run-05-two-pass/SUMMARY.md](./reports/ru
 Profile upgrade/downgrade (existing / add / remove options): [cases/11-profile-switch.md](./cases/11-profile-switch.md) ·
 [scripts/profile_switch.py](./scripts/profile_switch.py).
 
+Skills lab (Medium destroy/redeploy + auto-learn + text-poster): [cases/12-skills-auto-learn.md](./cases/12-skills-auto-learn.md) ·
+[cases/13-image-text-poster.md](./cases/13-image-text-poster.md) ·
+[cases/14-knowledge-internal-rag.md](./cases/14-knowledge-internal-rag.md) ·
+[scripts/skills_lab.py](./scripts/skills_lab.py) ·
+[reports/run-skills-lab/SUMMARY.md](./reports/run-skills-lab/SUMMARY.md).
+
 Zalo: install bridge/proxy first. If the session is dead, stop and ask an operator to run `bash scripts/main/login-zalo.sh` (QR) before Zalo↔Hermes checks.
 

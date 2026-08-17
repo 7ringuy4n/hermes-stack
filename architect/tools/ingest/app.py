@@ -382,6 +382,7 @@ def _ingest_pending_item(item: dict[str, Any]) -> dict[str, Any]:
         "path": item.get("path"),
         "document_id": uuid.uuid4().hex,
         "document_name": item.get("document_name") or "zalo-learn",
+        "rel_path": item.get("rel_path"),
         "source": item.get("source") or "zalo",
         "workspace_id": item.get("workspace_id"),
         "thread_id": item.get("thread_id"),
@@ -446,7 +447,7 @@ def _extract_text_from_path(path: str) -> str:
             return "\n".join(parts)
         except Exception:
             return ""
-    if ext in {".csv", ".tsv"}:
+    if ext in {".csv", ".tsv", ".md", ".txt", ".json", ".rst", ".html", ".xml"}:
         try:
             return p.read_text(encoding="utf-8", errors="replace")[:500000]
         except Exception:
@@ -466,11 +467,24 @@ def _chunk(text: str, size: int = 1200, overlap: int = 150) -> list[str]:
     return out
 
 
+def _collection_vector_size(info: dict[str, Any]) -> Optional[int]:
+    params = ((info.get("result") or {}).get("config") or {}).get("params") or {}
+    vectors = params.get("vectors")
+    if isinstance(vectors, dict) and isinstance(vectors.get("size"), int):
+        return int(vectors["size"])
+    return None
+
+
 def _ensure_collection(dim: int = 1536) -> None:
     try:
         with httpx.Client(timeout=15) as c:
-            if c.get(f"{QDRANT_URL}/collections/{COLLECTION}").status_code == 200:
-                return
+            resp = c.get(f"{QDRANT_URL}/collections/{COLLECTION}")
+            if resp.status_code == 200:
+                size = _collection_vector_size(resp.json() or {})
+                if size == dim:
+                    return
+                if size is not None and size != dim:
+                    c.delete(f"{QDRANT_URL}/collections/{COLLECTION}")
             c.put(
                 f"{QDRANT_URL}/collections/{COLLECTION}",
                 json={"vectors": {"size": dim, "distance": "Cosine"}},
@@ -982,6 +996,11 @@ def process_job(job: dict[str, Any]) -> dict[str, Any]:
                 "source": job.get("source", "upload"),
                 "text": ch,
             }
+            rel = str(job.get("rel_path") or "").replace("\\", "/").strip()
+            if rel:
+                payload["rel_path"] = rel
+            if job.get("path"):
+                payload["path"] = str(job.get("path"))
             if ws:
                 payload["workspace_id"] = ws
             if job.get("thread_id"):
@@ -1380,16 +1399,19 @@ def learn_delete(req: LearnId) -> dict[str, Any]:
 _SCAN_SKIP_DIRS = {".git", ".trash", ".ds_store", "__pycache__", "node_modules"}
 
 
-def _indexed_document_names() -> set[str]:
-    names: set[str] = set()
+def _indexed_document_keys() -> set[str]:
+    """Paths and names already in knowledge_chunks (lowercase)."""
+    keys: set[str] = set()
     try:
         for pt in _scroll_knowledge():
-            name = str((pt.get("payload") or {}).get("document_name") or "").strip().lower()
-            if name:
-                names.add(name)
+            payload = pt.get("payload") or {}
+            for field in ("rel_path", "document_name", "path"):
+                val = str(payload.get(field) or "").strip().replace("\\", "/").lower()
+                if val:
+                    keys.add(val)
     except Exception:
         pass
-    return names
+    return keys
 
 
 def _iter_docs_files(root: Path) -> list[Path]:
@@ -1449,9 +1471,9 @@ def learn_scan(req: LearnScan) -> dict[str, Any]:
             "skipped": [],
         }
     pending_now = _pending_list()
-    pending_names = {str(it.get("document_name") or "").strip().lower() for it in pending_now}
     pending_paths = {str(it.get("path") or "").replace("\\", "/").lower() for it in pending_now}
-    indexed = _indexed_document_names()
+    pending_rels = {str(it.get("rel_path") or "").replace("\\", "/").lower() for it in pending_now}
+    indexed = _indexed_document_keys()
     submitted: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
     for f in files:
@@ -1460,12 +1482,13 @@ def learn_scan(req: LearnScan) -> dict[str, Any]:
             continue
         rel = f.resolve().relative_to(root.resolve()).as_posix()
         abs_path = str(f.resolve())
-        name = f.name
-        low = name.lower()
-        if low in pending_names or abs_path.replace("\\", "/").lower() in pending_paths:
+        name = rel  # unique per file; many skills share SKILL.md basename
+        low_rel = rel.lower()
+        low_abs = abs_path.replace("\\", "/").lower()
+        if low_abs in pending_paths or low_rel in pending_rels:
             skipped.append({"name": name, "reason": "pending"})
             continue
-        if low in indexed:
+        if low_rel in indexed or low_abs in indexed:
             skipped.append({"name": name, "reason": "indexed"})
             continue
         pid = uuid.uuid4().hex[:8]
@@ -1484,8 +1507,8 @@ def learn_scan(req: LearnScan) -> dict[str, Any]:
             "rel_path": rel,
         }
         _pending_put(item)
-        pending_names.add(low)
         pending_paths.add(abs_path.replace("\\", "/").lower())
+        pending_rels.add(low_rel)
         if not LEARN_REQUIRE_APPROVE:
             # Product default: auto-learn with no admin approve
             row = _ingest_pending_item(item)

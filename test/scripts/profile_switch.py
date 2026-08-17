@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Upgrade/downgrade + existing/add/remove options. Archives config stamps.
+"""Upgrade/downgrade + existing/add/remove options. Backup+verify first.
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
-Optional: PROFILE_SWITCH_FULL=1 to run full backup (default: BACKUP_COMPONENTS=config)
 Reports: test/reports/run-profile-switch/ (no host/account)
 """
 from __future__ import annotations
@@ -25,7 +24,6 @@ USER = os.environ["ASSISTANT_SSH_USER"]
 PW = os.environ["ASSISTANT_SSH_PASSWORD"]
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-profile-switch"
-FULL = os.environ.get("PROFILE_SWITCH_FULL", "0").strip() in {"1", "true", "yes"}
 esc = PW.replace("'", "'\\''")
 ROWS: list[dict] = []
 
@@ -76,7 +74,6 @@ def sudo_bash(c, script: str, timeout: int = 1800) -> str:
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    comps = "" if FULL else "export BACKUP_COMPONENTS=config"
     c = connect()
     out = sudo_bash(
         c,
@@ -84,7 +81,6 @@ def main() -> None:
 set -euo pipefail
 cd /opt/assistant
 set -a; . ./.env; set +a
-{comps}
 export COMPOSE_PROGRESS=plain
 export ASSISTANT_PROFILE="${{ASSISTANT_PROFILE:-high}}"
 export ENABLE_ZALO="${{ENABLE_ZALO:-1}}"

@@ -98,6 +98,10 @@ services:
       - EMBED_UPSTREAM=${EMBED_UPSTREAM:-http://9router:20128/v1}
       - EMBED_API_KEY=${EMBED_API_KEY:-${N9ROUTER_API_KEY:-}}
       - OPENAI_API_KEY=${N9ROUTER_API_KEY:-}
+      - EMBED_MODEL=${EMBED_MODEL:-openai/text-embedding-3-small}
+      - EMBED_BACKEND=${EMBED_BACKEND:-auto}
+      - EMBED_LOCAL_FALLBACK=${EMBED_LOCAL_FALLBACK:-1}
+      - EMBED_LOCAL_MODEL=${EMBED_LOCAL_MODEL:-BAAI/bge-small-en-v1.5}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     depends_on:
       - 9router

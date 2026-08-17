@@ -6,15 +6,18 @@ Run the complete test suite **2 times**, using different test cases/data each ru
 
 For every run and every profile:
 
-1. Clear previous test files/data.
-2. Destroy the current profile/environment.
-3. Recreate from source.
-4. Deploy the profile.
-5. Test both modes:
+1. **Backup first:** `bash run.sh backup` then `bash run.sh verify <stamp>` must succeed.
+2. Clear previous test files/data.
+3. Destroy the current profile/environment (`bash run.sh destroy` also backup+verifies).
+4. Recreate from source.
+5. Deploy the profile.
+6. Test both modes:
    - `local`
    - `public`
-6. Record all results with timestamps.
-7. Do not reuse artifacts from a previous profile unless the test explicitly requires persistence.
+7. Record all results with timestamps.
+8. Do not reuse artifacts from a previous profile unless the test explicitly requires persistence.
+
+Destroy, upgrade, and downgrade (`destroy`, `switch-profile`, `add-components`, `update`) **abort** if backup or verify fails.
 
 ## 2. Zalo Installation
 
@@ -218,7 +221,7 @@ At the final test round:
 1. Create known test data.
 2. Run backup.
 3. Verify backup completed successfully.
-4. Destroy/reset the relevant data/environment.
+4. Destroy/reset the relevant data/environment (`destroy` also backup+verifies first).
 5. Restore the backup.
 6. Verify the restored data.
 7. Verify memory/knowledge/session data where applicable.
@@ -364,7 +367,10 @@ Every capability must include at least one **fail event**, not only success.
 | Zalo lost connection | Stop proxy or SSE=0 | `zalo-watch` restores proxy/SSE; QR only if `sessionDead` |
 | Zalo mixed media+text | Ramp interleaved chat + `/v1/image` until first fail | Last-all-success N, first-fail N, **delay p50/p95/max per kind**, SSE=1; text auth via Traefik+`API_SERVER_KEY` |
 | Isolation / LLM judge | Judge off; EICAR via YARA; injection file cannot LLM-allow | Sock absent on AI services; sandbox/proxy off; VPN-only edge |
-| Profile switch | Unknown tier / unknown `ENABLE_*`; notify add then remove | Usage error; High↔Medium overlays; existing Zalo flag kept |
+| Profile switch | Unknown tier / unknown `ENABLE_*`; notify add then remove | Usage error; High↔Medium overlays; existing Zalo flag kept; backup+verify before apply |
+| Skills auto-learn | Ingest down or empty skills dir | post-ready-learn skip/fail without Hermes crash-loop; rebuild dispatcher for text-poster |
+| Text poster | Empty prompt | HTTP 400; no PNG written |
+| Internal knowledge | learn/list empty after successful learn | FAIL — pipeline broken |
 | Media / search / VPN / policy | Disabled or deny | Short user-facing alert; no stack dump |
 
 **Auto-heal:** if Hermes or Zalo dies from an error/exception/lost connection, health must return without a manual QR (unless the Zalo session is actually dead). Record timestamps: fault injected → watch tick → healthy.
@@ -379,7 +385,9 @@ When re-testing a live High/Zalo lab:
 4. After the run, add any new cases to this file (this section and the case index under `test/cases/`).
 5. Record summary in `test/reports/run-NN-two-pass/SUMMARY.md` with an **HTML** profile×mode table (see §11).
 
-**Latest lab (run-05):** pass 1 sync+deploy PASS; case 11 High↔Medium + add/remove notify (source fix: drop disabled-profile containers); text concurrent N≤24 PASS; mixed media last-ok **N=4** first-fail **N=8** (text 503); isolation PASS; pass 2 Quick start PASS; see `reports/run-05-two-pass/SUMMARY.md`.
+**Latest lab (run-skills-lab):** Medium + skills copy + post-ready-learn PASS; 52 docs indexed (approve 52/52); cases 12–14 PASS (mount, learn/list, text-poster HTTP 400 fail-event, knowledge mount). Local ONNX embedding fallback. See `reports/run-skills-lab/SUMMARY.md`.
+
+**Latest two-pass lab (run-05):** pass 1 sync+deploy PASS; case 11 High↔Medium + add/remove notify (source fix: drop disabled-profile containers); text concurrent N≤24 PASS; mixed media last-ok **N=4** first-fail **N=8** (text 503); isolation PASS; pass 2 Quick start PASS; see `reports/run-05-two-pass/SUMMARY.md`.
 
 ## 15. Case index
 
@@ -396,3 +404,6 @@ When re-testing a live High/Zalo lab:
 | Zalo concurrent text + media gen + delay | `cases/09-zalo-concurrent-media.md` |
 | Isolation risks (sock, judge, VPN-only) | `cases/10-security-isolation-risks.md` |
 | Profile upgrade/downgrade + add/remove options | `cases/11-profile-switch.md` |
+| Skills mount + auto-learn (Medium+) | `cases/12-skills-auto-learn.md` |
+| Exact text poster (text-poster backend) | `cases/13-image-text-poster.md` |
+| Internal docs knowledge-first | `cases/14-knowledge-internal-rag.md` |

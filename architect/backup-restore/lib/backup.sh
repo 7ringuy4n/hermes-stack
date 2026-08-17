@@ -657,7 +657,7 @@ assistant_restore_all() {
 }
 
 assistant_verify_backup() {
-  local stamp="${1:-}" dir
+  local stamp="${1:-}" dir pg redis
   [[ -n "$stamp" ]] || stamp="$($SUDO cat "${BACKUP_DIR}/LATEST" 2>/dev/null || true)"
   dir="${BACKUP_DIR}/${stamp}"
   [[ -f "${dir}/manifest.json" ]] || { echo "missing manifest ${dir}"; exit 1; }
@@ -670,8 +670,17 @@ if bad:
     raise SystemExit("failed components: " + ",".join(bad))
 PY
   echo "==> live checks"
-  docker exec postgres pg_isready -U "${MEMORY_DB_USER:-hermes}" || true
-  docker exec redis valkey-cli PING || true
-  python3 "$QDRANT_PY" list --base "http://127.0.0.1:${QDRANT_PORT:-6333}" || true
+  pg="$(assistant_container postgres || true)"
+  if [[ -n "$pg" ]]; then
+    docker exec "$pg" pg_isready -U "${MEMORY_DB_USER:-hermes}" || exit 1
+  fi
+  redis="$(assistant_container redis || true)"
+  if [[ -n "$redis" ]]; then
+    docker exec "$redis" valkey-cli PING || docker exec "$redis" redis-cli PING || exit 1
+  fi
+  if curl -fsS -m 5 "http://127.0.0.1:${QDRANT_PORT:-6333}/collections" >/dev/null 2>&1; then
+    python3 "$QDRANT_PY" list --base "http://127.0.0.1:${QDRANT_PORT:-6333}" || exit 1
+  fi
   systemctl list-timers 'assistant-*' --no-pager || true
+  echo "verify OK stamp=${stamp}"
 }
