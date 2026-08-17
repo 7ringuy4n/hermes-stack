@@ -513,7 +513,7 @@ def main():
     c = connect()
     note("lab", "start", "pass", "connected")
     sync_key_files(c)
-    sudo_bash(c, f"cd {REMOTE}; bash run.sh destroy || true; docker ps -aq | xargs -r docker rm -f || true; echo DESTROY_OK", timeout=300)
+    sudo_bash(c, f"cd {REMOTE}; bash run.sh destroy; docker ps -aq --filter label=com.docker.compose.project=assistant | xargs -r docker rm -f || true; echo DESTROY_OK", timeout=900)
     note("lab", "destroy", "pass", "DESTROY_OK")
 
     # Traefik modes × profiles (leave High+local as base then also exercise public fail-soft on High)
@@ -523,7 +523,7 @@ def main():
             try:
                 if not (mode == "local" and profile == "low"):
                     # destroy between cycles except we already destroyed
-                    sudo_bash(c, f"cd {REMOTE}; bash run.sh destroy || true", timeout=300)
+                    sudo_bash(c, f"cd {REMOTE}; bash run.sh destroy", timeout=900)
                 patch_and_up(c, profile, mode)
                 health_matrix(c, f"health/{label}")
                 if profile in ("medium", "high"):

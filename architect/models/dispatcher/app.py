@@ -194,7 +194,8 @@ class ImageReq(BaseModel):
     """Generate an image; optionally refine via LLM then push to Zalo."""
     prompt: str
     filename: Optional[str] = None
-    provider: Optional[str] = None  # llm|vendor|comfy-cpu|comfy-gpu|pollinations (paid1/paid2 aliases ok)
+    provider: Optional[str] = None  # llm|vendor|comfy-cpu|comfy-gpu|pollinations|text (paid1/paid2 aliases ok)
+    mode: Optional[str] = None  # text|poster → exact glyph poster, skip diffusion
     thread_id: Optional[str] = None
     thread_type: str = "group"
     send_zalo: bool = False
@@ -942,10 +943,40 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
     Low: IMAGE_BACKENDS empty → 503.
     """
     from image_backends import generate_image_bytes, image_backends
+    from text_poster import parse_text_poster, render_text_poster_bytes
 
     prompt = (req.prompt or "").strip()
     if not prompt:
         raise HTTPException(400, _msg("prompt_required", "A prompt is required."))
+
+    mode = (req.mode or req.provider or "").strip().lower()
+    poster = parse_text_poster(prompt)
+    if mode in {"text", "poster", "text-poster"} or poster:
+        if not poster:
+            poster = {"phrase": prompt[:80], "n": 1, "bw": True, "raw": prompt}
+        name = req.filename or f"text-{uuid.uuid4().hex[:10]}.png"
+        if not name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+            name += ".png"
+        out_dir = MEDIA_DIR / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dest = out_dir / name
+        dest.write_bytes(render_text_poster_bytes(poster))
+        try:
+            uid = int(os.environ.get("HERMES_UID") or "1000")
+            gid = int(os.environ.get("HERMES_GID") or str(uid))
+            os.chown(out_dir, uid, gid)
+            os.chown(dest, uid, gid)
+        except OSError:
+            pass
+        return {
+            "ok": True,
+            "file": name,
+            "path": str(dest),
+            "backend": "text-poster",
+            "n": poster["n"],
+            "phrase": poster["phrase"],
+        }
+
     if not image_backends() and not (req.provider or "").strip():
         raise HTTPException(503, _msg("image_gen_disabled", "Image generation is unavailable (no media backends configured)."))
 
