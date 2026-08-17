@@ -213,11 +213,19 @@ def recreate_services() -> None:
     if profile == "high":
         files.append(f"-f {ROOT}/docker/docker-compose.high.yml")
     files_s = " ".join(files)
+    # Drop leftover force-recreate aliases (hexprefix_assistant-hermes-N) that collide.
+    subprocess.call(
+        [
+            "bash",
+            "-lc",
+            "docker ps -a --format '{{.Names}}' | awk '/^[0-9a-f]+_.*hermes/ {print}' | xargs -r docker rm -f",
+        ]
+    )
     cmd = (
         f"cd {ROOT} && set -a && . ./.env && set +a && "
         f"export ASSISTANT_PROFILE={profile} COMPOSE_PROGRESS=plain && "
-        f"docker compose {files_s} up -d --force-recreate --scale hermes={replicas} "
-        f"embedding dispatcher hermes"
+        f"docker compose {files_s} up -d --force-recreate "
+        f"--scale hermes={replicas} embedding dispatcher hermes"
     )
     subprocess.check_call(["bash", "-lc", cmd])
 
