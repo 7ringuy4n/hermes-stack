@@ -34,6 +34,9 @@ DOCS_ROOT = Path(os.environ.get("LEARN_DOCS_HOST") or (DATA_DIR / "docs"))
 
 N9_PORT = int(os.environ.get("N9ROUTER_HOST_PORT", "20128"))
 HERMES_PORT = int(os.environ.get("HERMES_DASHBOARD_PORT", "29119"))
+TRAEFIK_PORT = int(os.environ.get("TRAEFIK_HOST_PORT", "8080"))
+GATEWAY_PORT = int(os.environ.get("GATEWAY_HOST_PORT", "8088"))
+HERMES_REPLICAS = int(os.environ.get("HERMES_REPLICAS", "1") or "1")
 INGEST_URL = (os.environ.get("INGEST_URL") or "http://127.0.0.1:8099").rstrip("/")
 
 SKIP_SKILL_DIRS = {"_example", "__pycache__", ".git", "official", "vendor"}
@@ -147,8 +150,27 @@ def main() -> int:
 
     if not wait_ready("9router", f"http://127.0.0.1:{N9_PORT}/"):
         return 1
-    # Hermes dashboard often 302 with basic auth — treat any HTTP response as up
-    if not wait_ready("hermes", f"http://127.0.0.1:{HERMES_PORT}/"):
+    # Hermes×2 (High) does not publish :29119 — probe Traefik / API Gateway instead.
+    hermes_urls = []
+    if HERMES_REPLICAS <= 1:
+        hermes_urls.append(f"http://127.0.0.1:{HERMES_PORT}/")
+    hermes_urls.extend(
+        [
+            f"http://127.0.0.1:{TRAEFIK_PORT}/",
+            f"http://127.0.0.1:{GATEWAY_PORT}/health",
+        ]
+    )
+    hermes_ok = False
+    for url in hermes_urls:
+        if wait_ready("hermes", url, tries=15):
+            hermes_ok = True
+            break
+    if not hermes_ok:
+        print(
+            "FAIL hermes edge not ready "
+            f"(tried dashboard/Traefik/gateway; replicas={HERMES_REPLICAS})",
+            file=sys.stderr,
+        )
         return 1
     if not wait_ready("ingest", f"{INGEST_URL}/health"):
         return 1
