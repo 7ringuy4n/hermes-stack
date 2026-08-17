@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-17 18:00 +07 — release: v0.5.4
+
+- P0 skills + exact text-poster; local ONNX embedding fallback; learn unique by path.
+- Backup+verify required before destroy / switch-profile / add-components / update.
+- Skills lab cases 12–14; High Notify + OmniRouter + monitor.
+
 ## 2026-08-17 17:55 +07 — ops: backup+verify before destroy / upgrade / downgrade
 
 - `run.sh destroy`, `switch-profile`, `add-components`, and `update` run `backup` then `verify` and abort if either fails.
