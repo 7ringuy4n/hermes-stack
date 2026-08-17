@@ -22,6 +22,10 @@
 
 VPN/LAN **HTTP entry** in front of Traefik (or Hermes). Enforces **global rate limits** in **Valkey** so limits do not multiply with Hermes replicas. Default **on** in v0.5.0 with Traefik (`ENABLE_API_GATEWAY=1`).
 
+**Auth:** `GATEWAY_REQUIRE_AUTH=1` (default) — set `GATEWAY_API_KEYS` or the gateway process refuses to start. See [docs/SECURITY.md](../../docs/SECURITY.md).
+
+**Rate limit:** keyed by API-key hash (preferred) or peer IP. Client `X-Forwarded-For` / `x-user-id` are **not** trusted unless `GATEWAY_TRUST_FORWARDED=1`. Header `x-assistant-skill` no longer bypasses RL.
+
 ## Enable
 
 ```env
@@ -38,9 +42,9 @@ GATEWAY_UPSTREAM_URL=http://traefik:80
 |----------|--------|
 | `GET /health` | Liveness for compose/ops |
 | Proxy `/*` | Forwards method/path/query/body to upstream |
-| Valkey RL | Key `rate:gw:user:{id}` or `rate:gw:ip:{ip}`; window + max from env |
-| Skip RL | Path prefixes in `GATEWAY_SKIP_RL_PATHS` **or** header `X-Assistant-Skill: coding` (coding skills — no rate-limit) |
-| Messages | Admin-editable UTF-8 JSON: `messages/en.json` (429 / 503 text) |
+| Valkey RL | Key `rate:gw:key:{sha256[:16]}` or `rate:gw:ip:{peer}`; window + max from env |
+| Skip RL | Path prefixes in `GATEWAY_SKIP_RL_PATHS` only (after auth). **No** client header bypass |
+| Messages | Admin-editable UTF-8 JSON: `messages/en.json` (401 / 429 / 503 text) |
 
 ## What this does **not** do
 

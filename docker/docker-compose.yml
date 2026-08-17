@@ -382,7 +382,7 @@ services:
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     volumes:
       - ${ASSISTANT_DATA_DIR:-/data/assistant}:/data/assistant
-      - /var/run/docker.sock:/var/run/docker.sock
+      # No docker.sock — host timers (stack-watch / zalo-watch) restart Hermes.
     ports:
       - "127.0.0.1:${ZALO_API_PORT:-8100}:8100"
     extra_hosts:

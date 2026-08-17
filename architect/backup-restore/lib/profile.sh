@@ -86,6 +86,9 @@ assistant_profile_apply() {
       export ENABLE_SIEM="${ENABLE_SIEM:-1}"
       export ENABLE_POLICY="${ENABLE_POLICY:-1}"
       export ENABLE_AUTHZ="${ENABLE_AUTHZ:-1}"
+      # Security defaults (v0.5.2 hardening)
+      export SECURITY_SANDBOX="${SECURITY_SANDBOX:-1}"
+      export SECURITY_FAIL_CLOSED="${SECURITY_FAIL_CLOSED:-1}"
       # OmniRouter optional; High enables model-router layer by default
       # zalo-api follows ENABLE_ZALO (compose profile zalo), not High alone
       export ENABLE_OMNIROUTER="${ENABLE_OMNIROUTER:-0}"
@@ -101,6 +104,14 @@ assistant_profile_apply() {
   export ENABLE_TRAEFIK="${ENABLE_TRAEFIK:-1}"
   export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-1}"
   export HERMES_REPLICAS="${HERMES_REPLICAS:-1}"
+  export GATEWAY_REQUIRE_AUTH="${GATEWAY_REQUIRE_AUTH:-1}"
+  export GATEWAY_TRUST_FORWARDED="${GATEWAY_TRUST_FORWARDED:-0}"
+  export GATEWAY_RL_FAIL_CLOSED="${GATEWAY_RL_FAIL_CLOSED:-1}"
+  if [[ "${ENABLE_API_GATEWAY}" == "1" && "${GATEWAY_REQUIRE_AUTH}" == "1" ]]; then
+    if [[ -z "${GATEWAY_API_KEYS:-}" ]]; then
+      echo "WARN: ENABLE_API_GATEWAY=1 but GATEWAY_API_KEYS is empty — gateway will refuse to start until keys are set (or GATEWAY_REQUIRE_AUTH=0 for isolated lab)." >&2
+    fi
+  fi
 }
 
 assistant_profile_summary() {

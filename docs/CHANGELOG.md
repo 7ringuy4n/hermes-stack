@@ -1,5 +1,25 @@
 # Change history
 
+## 2026-08-17 12:00 +07 — release: v0.5.2
+
+- Security P0 hardening (gateway auth, SSRF, docker.sock/proxy, fail-closed).
+- Ops: Hermes×2 Traefik/Gateway probes; check-medium restore; Zalo concurrent lab tests.
+
+## 2026-08-17 12:15 +07 — fix: restore check-medium.sh corruption
+
+- `scripts/main/check-medium.sh` had systematic `d`→`o` corruption (`/dev/null` → `/oev/null`, dispatcher → oispatcher); restored. Blocks Medium smoke / Zalo setup gate.
+
+## 2026-08-17 12:05 +07 — fix: post-ready-learn probes Traefik when Hermes×2
+
+- High (HERMES_REPLICAS≠1) has no host `:29119`; post-ready-learn and stack-watch now probe Traefik/API Gateway instead of the missing dashboard port.
+
+## 2026-08-17 11:50 +07 — security: P0 hardening (gateway, SSRF, docker.sock)
+
+- Gateway: require GATEWAY_API_KEYS; drop client header RL bypass; do not trust XFF by default; RL fail-closed with local limiter.
+- security-manager: SSRF-safe scan-url; SECURITY_FAIL_CLOSED on High; sandbox via docker-socket-proxy (no raw sock on security-manager).
+- zalo-api: remove docker.sock mount (host watches restart Hermes).
+- Docs: docs/SECURITY.md.
+
 ## 2026-08-17 11:40 +07 — release: v0.5.1
 
 - Docs/ops patch: zalo-api cutover, HTML architecture panels, Valkey/SPOF docs.
