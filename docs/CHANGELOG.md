@@ -1,5 +1,9 @@
 # Change history
 
+## 2026-08-17 07:30 +07 — release: v0.4.1
+
+- Ship Mem0 purge leftovers, Zalo SSE heal after restore, stack-watch Hermes scale preserve, Zalo silent auto-sethome.
+
 ## 2026-08-17 07:25 +07 — zalo: silent auto-sethome (stop /sethome spam)
 
 - First chat no longer gets Hermes “📬 No home channel… /sethome” when home is unset.
