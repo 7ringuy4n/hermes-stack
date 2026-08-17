@@ -95,6 +95,7 @@ compose() {
   esac
   [[ "${ENABLE_TRAEFIK:-0}" == "1" ]] && profiles+=(--profile traefik)
   [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]] && profiles+=(--profile gateway)
+  [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]] && profiles+=(--profile omnirouter)
   $SUDO docker compose -p "$PROJECT" "${existing[@]}" "${profiles[@]}" "$@"
 }
 
@@ -115,11 +116,8 @@ restart_bad_containers() {
     status="${line#* }"
     # Never thrash Hermes from "Restarting" flicker — only Exited/Dead/unhealthy
     if echo "$status" | grep -qiE 'Exited|Dead|unhealthy'; then
-      # Skip hermes unless explicitly allowed
-      if [[ "$name" == *"hermes"* && "$RESTART_HERMES_ON_PROBE" != "1" ]]; then
-        log "skip hermes bad-state (${status}) — STACK_WATCH_RESTART_HERMES!=1"
-        continue
-      fi
+      # Crash recovery: restart exited Hermes replicas. Probe-fail path still
+      # does not bounce healthy Hermes unless STACK_WATCH_RESTART_HERMES=1.
       log "restart ${name} (${status})"
       $SUDO docker restart "$name" >/dev/null 2>&1 || true
     fi

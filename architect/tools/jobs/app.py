@@ -15,17 +15,28 @@ import httpx
 import redis
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from rq import Queue
+from rq import Queue, Retry
 from rq.job import Job
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
-LISTEN_QUEUES = [q.strip() for q in os.environ.get("RQ_QUEUES", "default,ingest,memory,learn,security").split(",") if q.strip()]
+LISTEN_QUEUES = [
+    q.strip()
+    for q in os.environ.get(
+        "RQ_QUEUES", "default,ingest,memory,learn,security,ocr,embed,filegen,dlq"
+    ).split(",")
+    if q.strip()
+]
 INGEST_URL = os.environ.get("INGEST_URL", "http://ingest:8099").rstrip("/")
+OCR_URL = os.environ.get("OCR_URL", "http://ocr:8091").rstrip("/")
 MEMORY_URL = os.environ.get("MEMORY_URL", "http://memory:8095").rstrip("/")
 SECURITY_URL = os.environ.get("SECURITY_URL", "http://security-manager:8093").rstrip("/")
 SIEM_URL = os.environ.get("SIEM_URL", "http://siem:8105").rstrip("/")
+JOB_DEFAULT_TIMEOUT = int(os.environ.get("JOB_DEFAULT_TIMEOUT_S", "300"))
+JOB_OCR_TIMEOUT = int(os.environ.get("JOB_OCR_TIMEOUT_S", "180"))
+IDEMPOTENCY_TTL = int(os.environ.get("JOB_IDEMPOTENCY_TTL_S", "86400"))
+IDEMPOTENCY_PREFIX = os.environ.get("JOB_IDEMPOTENCY_PREFIX", "job:idemp")
 
-app = FastAPI(title="assistant-jobs", version="1.0.0")
+app = FastAPI(title="assistant-jobs", version="1.1.0")
 _conn = redis.Redis.from_url(REDIS_URL)
 _queues = {name: Queue(name, connection=_conn) for name in LISTEN_QUEUES}
 
@@ -96,11 +107,38 @@ def job_security_scan_meta(payload: dict) -> dict:
     return {"ok": True, "queued_note": "scan via security-manager upload path"}
 
 
+def job_ocr(payload: dict) -> dict:
+    r = httpx.post(f"{OCR_URL}/v1/ocr", json=payload, timeout=JOB_OCR_TIMEOUT)
+    r.raise_for_status()
+    out = r.json()
+    _siem("job.ocr", ok=out.get("ok"))
+    return out
+
+
+def job_embed(payload: dict) -> dict:
+    # Embed path goes through ingest reindex / embedding service via ingest contract
+    r = httpx.post(f"{INGEST_URL}/v1/embed", json=payload, timeout=JOB_DEFAULT_TIMEOUT)
+    if r.status_code == 404:
+        return {"ok": False, "error": "embed_endpoint_missing", "hint": "use ingest job"}
+    r.raise_for_status()
+    out = r.json()
+    _siem("job.embed", ok=out.get("ok"))
+    return out
+
+
+def job_filegen(payload: dict) -> dict:
+    # File-gen is dispatcher-mediated; workers record intent for async completion.
+    _siem("job.filegen", kind=payload.get("kind"))
+    return {"ok": True, "queued": True, "payload_keys": list(payload.keys())}
+
+
 class EnqueueReq(BaseModel):
     queue: str = "default"
-    job: str  # ingest | self_learn | remember_index | security
+    job: str  # ingest | ocr | embed | filegen | self_learn | remember_index | security
     payload: dict[str, Any] = Field(default_factory=dict)
-    job_timeout: int = 300
+    job_timeout: int = JOB_DEFAULT_TIMEOUT
+    idempotency_key: Optional[str] = None
+    retry: int = 1
 
 
 @app.get("/health")
@@ -110,7 +148,7 @@ def health() -> dict[str, Any]:
         depths = {n: q.count for n, q in _queues.items()}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "queues": depths, "backend": "rq"}
+    return {"ok": True, "queues": depths, "backend": "rq", "contract": "v0.5"}
 
 
 @app.post("/v1/enqueue")
@@ -120,15 +158,38 @@ def enqueue(req: EnqueueReq) -> dict[str, Any]:
         raise HTTPException(400, "unknown queue")
     fn = {
         "ingest": job_ingest,
+        "ocr": job_ocr,
+        "embed": job_embed,
+        "filegen": job_filegen,
         "self_learn": job_self_learn,
         "remember_index": job_remember_index,
         "security": job_security_scan_meta,
     }.get(req.job)
     if not fn:
         raise HTTPException(400, f"unknown job {req.job}")
-    job: Job = q.enqueue(fn, req.payload, job_timeout=req.job_timeout)
+
+    if req.idempotency_key:
+        idemp_key = f"{IDEMPOTENCY_PREFIX}:{req.job}:{req.idempotency_key}"
+        existing = _conn.get(idemp_key)
+        if existing:
+            jid = existing.decode() if isinstance(existing, bytes) else str(existing)
+            return {"ok": True, "job_id": jid, "queue": q.name, "idempotent_replay": True}
+
+    timeout = req.job_timeout or JOB_DEFAULT_TIMEOUT
+    if req.job == "ocr":
+        timeout = max(timeout, JOB_OCR_TIMEOUT)
+    job: Job = q.enqueue(
+        fn,
+        req.payload,
+        job_timeout=timeout,
+        failure_ttl=IDEMPOTENCY_TTL,
+        result_ttl=IDEMPOTENCY_TTL,
+        retry=Retry(max=req.retry) if req.retry >= 1 else None,
+    )
+    if req.idempotency_key:
+        _conn.setex(idemp_key, IDEMPOTENCY_TTL, job.id)
     _siem("job.enqueue", queue=req.queue, job=req.job, id=job.id)
-    return {"ok": True, "job_id": job.id, "queue": q.name}
+    return {"ok": True, "job_id": job.id, "queue": q.name, "timeout": timeout}
 
 
 @app.get("/v1/jobs/{job_id}")
@@ -137,10 +198,18 @@ def job_status(job_id: str) -> dict[str, Any]:
         job = Job.fetch(job_id, connection=_conn)
     except Exception:
         raise HTTPException(404, "not found") from None
+    status = job.get_status()
+    if status == "failed":
+        # Move marker to DLQ list for operators (shared across workers/nodes)
+        try:
+            _conn.lpush("rq:dlq", json.dumps({"id": job.id, "exc": str(job.exc_info)[:500]}))
+            _conn.ltrim("rq:dlq", 0, 999)
+        except Exception:
+            pass
     return {
         "ok": True,
         "id": job.id,
-        "status": job.get_status(),
+        "status": status,
         "result": job.result if job.is_finished else None,
         "exc": str(job.exc_info) if job.is_failed else None,
     }

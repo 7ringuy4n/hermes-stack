@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 TTL = int(os.environ.get("REDIS_CONVERSATION_TTL_SECONDS", "86400"))
 PREFIX = os.environ.get("SESSION_KEY_PREFIX", "conversation_active")
+LOCK_PREFIX = os.environ.get("SESSION_LOCK_PREFIX", "session_lock")
+LOCK_TTL_S = int(os.environ.get("SESSION_LOCK_TTL_SECONDS", "30"))
 MEMORY_URL = os.environ.get("MEMORY_URL", "http://memory-manager:8095").rstrip("/")
 # Comma-separated Redis key prefixes to wipe on reset-all (no trailing colon).
 RESET_PREFIXES = [
@@ -26,7 +28,7 @@ RESET_PREFIXES = [
     if p.strip()
 ]
 
-app = FastAPI(title="assistant-session", version="1.2.0")
+app = FastAPI(title="assistant-session", version="1.3.0")
 r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
 
@@ -85,6 +87,40 @@ def put_session(session_id: str, body: SessionPut) -> dict[str, Any]:
     }
     r.setex(key, TTL, json.dumps(data, ensure_ascii=False))
     return {"ok": True, "session_id": session_id, "messages": len(messages), "ttl": TTL}
+
+
+class SessionLockBody(BaseModel):
+    owner: str = Field(..., min_length=1, max_length=128)
+    ttl_seconds: Optional[int] = None
+
+
+@app.post("/v1/sessions/{session_id}/lock")
+def acquire_lock(session_id: str, body: SessionLockBody) -> dict[str, Any]:
+    """Per-session lock (Valkey) so Hermes×2 does not race the same chat."""
+    ttl = int(body.ttl_seconds or LOCK_TTL_S)
+    if ttl < 1:
+        ttl = LOCK_TTL_S
+    key = f"{LOCK_PREFIX}:{session_id}"
+    ok = r.set(key, body.owner, nx=True, ex=ttl)
+    if ok:
+        return {"ok": True, "acquired": True, "owner": body.owner, "ttl": ttl}
+    cur = r.get(key)
+    if cur == body.owner:
+        r.expire(key, ttl)
+        return {"ok": True, "acquired": True, "owner": body.owner, "ttl": ttl, "renewed": True}
+    raise HTTPException(status_code=409, detail={"acquired": False, "owner": cur})
+
+
+@app.delete("/v1/sessions/{session_id}/lock")
+def release_lock(session_id: str, owner: str) -> dict[str, Any]:
+    key = f"{LOCK_PREFIX}:{session_id}"
+    cur = r.get(key)
+    if cur is None:
+        return {"ok": True, "released": False, "reason": "absent"}
+    if cur != owner:
+        raise HTTPException(status_code=403, detail={"released": False, "owner": cur})
+    r.delete(key)
+    return {"ok": True, "released": True}
 
 
 @app.delete("/v1/sessions/{session_id}")

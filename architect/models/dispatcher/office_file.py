@@ -167,7 +167,13 @@ def register_office_file(
     @app.post("/v1/office-file")
     def office_file(req: OfficeFileReq) -> dict[str, Any]:
         if not _enabled():
-            raise HTTPException(503, "office file gen disabled")
+            raise HTTPException(
+                503,
+                os.environ.get(
+                    "OFFICE_DISABLED_MESSAGE",
+                    "Office file generation is unavailable.",
+                ),
+            )
         prompt = (req.prompt or "").strip()
         if not prompt:
             raise HTTPException(400, "prompt required")
