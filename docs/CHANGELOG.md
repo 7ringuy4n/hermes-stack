@@ -1,5 +1,10 @@
 # Change history
 
+## 2026-08-17 18:05 +07 — docs: fetch + rebase before implement or promote
+
+- `docs/GIT.md` and `.cursor/rules/git.mdc`: always `git fetch` then rebase onto `origin/develop` (feature/fix) or `origin/main` (hotfix/release) before implementing or promoting.
+- Production path unchanged: `feature/*` → `develop` → `release/*` → `main` (MR only; never merge `develop` straight into `main`).
+
 ## 2026-08-17 18:00 +07 — release: v0.5.4
 
 - P0 skills + exact text-poster; local ONNX embedding fallback; learn unique by path.
