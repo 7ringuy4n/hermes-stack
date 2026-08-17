@@ -33,7 +33,6 @@ assistant_profile_apply() {
   export ENABLE_SIEM="${ENABLE_SIEM:-0}"
   export ENABLE_POLICY="${ENABLE_POLICY:-0}"
   export ENABLE_AUTHZ="${ENABLE_AUTHZ:-0}"
-  export ENABLE_ADMIN_API="${ENABLE_ADMIN_API:-0}"
   export ENABLE_ZALO="${ENABLE_ZALO:-0}"
   export ENABLE_TELEGRAM="${ENABLE_TELEGRAM:-0}"
   export ENABLE_OPENVPN="${ENABLE_OPENVPN:-0}"
@@ -87,8 +86,8 @@ assistant_profile_apply() {
       export ENABLE_SIEM="${ENABLE_SIEM:-1}"
       export ENABLE_POLICY="${ENABLE_POLICY:-1}"
       export ENABLE_AUTHZ="${ENABLE_AUTHZ:-1}"
-      export ENABLE_ADMIN_API="${ENABLE_ADMIN_API:-1}"
       # OmniRouter optional; High enables model-router layer by default
+      # zalo-api follows ENABLE_ZALO (compose profile zalo), not High alone
       export ENABLE_OMNIROUTER="${ENABLE_OMNIROUTER:-0}"
       export ENABLE_MODEL_ROUTER="${ENABLE_MODEL_ROUTER:-1}"
       export HERMES_REPLICAS="${HERMES_REPLICAS:-2}"

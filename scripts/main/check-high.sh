@@ -18,7 +18,11 @@ check openbao   "http://127.0.0.1:${OPENBAO_PORT:-8200}/v1/sys/health"
 check grafana   "http://127.0.0.1:${GRAFANA_HOST_PORT:-23000}/api/health"
 check security  "http://127.0.0.1:${SECURITY_PORT:-8093}/health"
 check authz     "http://127.0.0.1:${AUTHZ_PORT:-8097}/health"
-check admin-api "http://127.0.0.1:${ADMIN_API_PORT:-8100}/health"
+if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
+  check zalo-api "http://127.0.0.1:${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}/health"
+else
+  echo "INFO zalo-api skipped (ENABLE_ZALO=0)"
+fi
 check siem      "http://127.0.0.1:${SIEM_PORT:-8105}/health"
 check policy    "http://127.0.0.1:${POLICY_PORT:-8106}/health"
 
