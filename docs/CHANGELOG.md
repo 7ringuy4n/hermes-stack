@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-17 15:25 +07 — release: v0.5.3
+
+- Isolation boundary: sandbox/LLM judge/AV off by default; judge CLEAN cannot allow; VPN-only Traefik; socket-proxy only with sandbox profile.
+- Ops: `switch-profile` / `add-components` (archive first); drop disabled-profile containers on up.
+- Tests: run-05 two-pass; cases 09–11 (Zalo mixed media delay, isolation risks, profile upgrade/downgrade).
+
 ## 2026-08-17 15:20 +07 — test: run-05 two-pass (profile switch + mixed media)
 
 - Pass 1: High/Zalo deploy; case 11 upgrade/downgrade + add/remove notify; mixed media fail-event N=8 (text 503).
