@@ -147,6 +147,9 @@ heal_by_health() {
   # Host-published Hermes dashboard only exists when replicas=1
   if [[ "${HERMES_REPLICAS}" == "1" ]]; then
     probe hermes_dash "http://127.0.0.1:${HERMES_DASHBOARD_PORT:-29119}/" || true
+  else
+    probe traefik "http://127.0.0.1:${TRAEFIK_HOST_PORT:-8080}/" || true
+    probe gateway "http://127.0.0.1:${GATEWAY_HOST_PORT:-8088}/health" || failed=1
   fi
 
   case "$PROFILE" in
