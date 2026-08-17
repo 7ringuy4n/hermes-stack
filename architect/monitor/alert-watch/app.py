@@ -47,7 +47,7 @@ HEALTH_TARGETS = os.environ.get(
     "dispatcher=dispatcher:8090/health,"
     "notify=notify:8092/health,"
     "memory-manager=memory-manager:8095/health,"
-    "admin-api=admin-api:8100/health,"
+    "zalo-api=zalo-api:8100/health,"
     "clamav=clamav:3310,"
     "9router_via_tcp=9router:20128,"
     # Hermes gateway often binds 8642 on loopback only; dashboard 9119 is on the docker network.

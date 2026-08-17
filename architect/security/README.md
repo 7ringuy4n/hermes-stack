@@ -1,5 +1,23 @@
 # security
 
+## System architecture
+
+| | |
+|--|--|
+| **Sits between** | Uploads / risky text ↔ OCR / ingest / Hermes |
+| **Owns** | AV gateway, security-manager, optional SIEM |
+| **Does not own** | Document storage (ingest/Qdrant) |
+
+<table style="width:100%;border-collapse:collapse;font-size:13px;">
+  <tr>
+    <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">File / text</td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:14px;background:#2563eb;color:#fff;text-align:center;border:3px solid #fbbf24;width:36%;"><b>AV → security-manager</b></td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">OCR / ingest · or block</td>
+  </tr>
+</table>
+
 ## Purpose
 
 Protect the stack from risky files and confidential probes: antivirus, static/LLM security judgment, SIEM-style event collection, and editable secret-probe keyword lists.

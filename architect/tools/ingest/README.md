@@ -35,7 +35,7 @@ Public list/cite uses short **titles** (content/product label), never `inbound/â
 
 ## Env
 
-`REDIS_URL`, `QDRANT_URL`, `EMBED_URL`, `LEARN_LIST_LIMIT`, `LEARN_REQUIRE_APPROVE`, `LEARN_NOTIFY_PATH`, media roots under `/data/assistant`.
+`REDIS_URL` (Valkey; env name kept for RQ compatibility), `QDRANT_URL`, `EMBED_URL`, `LEARN_LIST_LIMIT`, `LEARN_REQUIRE_APPROVE`, `LEARN_NOTIFY_PATH`, media roots under `/data/assistant`.
 
 ## Related
 
