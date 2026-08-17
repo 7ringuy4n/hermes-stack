@@ -141,7 +141,7 @@ Defaults (non-secret): [docs/config/DEFAULTS.md](./docs/config/DEFAULTS.md) · C
 ```bash
 export ASSISTANT_PROFILE=medium   # or high
 bash run.sh up
-# or, from a running stack (archives first):
+# or, from a running stack (backup+verify first):
 bash run.sh switch-profile medium
 bash run.sh add-components ENABLE_ZALO=1
 ```

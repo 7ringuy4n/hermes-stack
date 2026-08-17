@@ -2,27 +2,32 @@
 
 **Default** mount (`./hermes/main/skills` → `/opt/data/skills`).
 
-## What’s here (product)
+## Layout
 
-| Group | Folders |
-|---|---|
-| Documents | `documents`, `markdown`, `pdf`, `docx`, `xlsx`, `file-gen`, `official/{pdf,docx,xlsx}` |
-| Image | `image-gen`, `comfyui`, `official/comfyui` |
-| Web | `tavily`, `firecrawl`, `searxng`, `searxng-search`, `vendor/tavily`, `vendor/firecrawl` |
-| Coding / UI | `coding` (router), `vendor/mattpocock/*`, `vendor/ui-ux-pro-max/*` |
-| Template | `_example` |
+| Area | Path | Notes |
+|---|---|---|
+| **Core** | `core/*` | Answering, reasoning, verification, safety, … |
+| **Knowledge** | `knowledge/*` | Research, web strategy, RAG, documents |
+| **Coding** | `coding/*` + `coding/SKILL.md` router | Debug, review, security, git, testing |
+| **Communication** | `communication/*` | Email, chat tone, translation |
+| **Media** | `image-gen`, `media-out`, `comfyui`, `file-gen` | Exact text → `image-gen` text-poster path |
+| **Documents** | `pdf`, `docx`, `xlsx`, `documents`, … | |
+| **Web** | `tavily`, `firecrawl`, `searxng*` | |
+| **Vendor** | `vendor/*` | Upstream packs + `ATTRIBUTION.md` / licenses |
 
-These are **new downloads** and/or the doc/web/comfy set you asked to keep in `main`.
+Sources and priority: plan doc `hermes plan/docs/hermes_skill_sources.txt` (P0 fetched: Anthropic skill-creator, obra superpowers, Trail of Bits audit plugins).
 
-## Live-matched skills → `hermes/temp/skills`
+## Promote from temp
 
-Old stack skills that also exist under `assistant/hermes_backup/skills` (chat, research, mode-router, …) stay in **temp** (gitignored) until you promote them.
+Old stack skills under `hermes/temp/skills` (gitignored):
 
 ```bash
 cp -a hermes/temp/skills/<name> hermes/main/skills/<name>
 ```
 
+Skill fetch clones: `hermes/temp/skill-fetch/` (gitignored).
+
 ## Related
 
-- [temp/skills](../../temp/skills/README.md)  
 - [vendor/CATALOG.md](./vendor/CATALOG.md)
+- [temp/skills](../../temp/skills/README.md)

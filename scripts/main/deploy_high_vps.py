@@ -78,12 +78,12 @@ def phase_destroy(c: paramiko.SSHClient) -> None:
         c,
         f"cd {REMOTE} && set -a && . ./.env 2>/dev/null; set +a; "
         f"export ASSISTANT_PROFILE=high; "
-        f"if [ -f run.sh ]; then bash run.sh destroy || true; fi; "
-        f"docker ps -aq | xargs -r docker rm -f || true; "
+        f"if [ -f run.sh ]; then bash run.sh destroy; fi; "
+        f"docker ps -aq --filter label=com.docker.compose.project=assistant | xargs -r docker rm -f || true; "
         f"docker network prune -f || true; "
         f"rm -rf {DATA}/config.yaml {DATA}/.env {DATA}/replicas {DATA}/sessions || true; "
         f"mkdir -p {DATA}/media/out; chown -R 1000:1000 {DATA} || true",
-        timeout=300,
+        timeout=900,
     )
 
 
