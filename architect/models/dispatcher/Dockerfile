@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py ocr_stub.py video_summary.py office_file.py image_backends.py ./
+COPY app.py ocr_stub.py video_summary.py office_file.py image_backends.py text_poster.py ./
 COPY comfy_workflows ./comfy_workflows
 ENV MEDIA_CACHE_DIR=/data/media
 EXPOSE 8090

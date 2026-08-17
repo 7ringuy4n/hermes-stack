@@ -584,13 +584,13 @@ def main() -> None:
     c = connect()
     note("lab", "start", "pass", "run 02 connected")
     sync_key_files(c)
-    sudo_bash(c, f"cd {REMOTE}; bash run.sh destroy || true; echo DESTROY_OK", timeout=300)
+    sudo_bash(c, f"cd {REMOTE}; bash run.sh destroy; echo DESTROY_OK", timeout=900)
     note("lab", "destroy", "pass", "DESTROY_OK")
     first = True
     for mode in ("local", "public"):
         for profile in ("low", "medium", "high"):
             if not first:
-                sudo_bash(c, f"cd {REMOTE}; bash run.sh destroy || true", timeout=300)
+                sudo_bash(c, f"cd {REMOTE}; bash run.sh destroy", timeout=900)
             first = False
             patch_and_up(c, profile, mode)
             cycle_probes(c, f"health/{mode}/{profile}", profile)

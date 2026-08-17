@@ -181,11 +181,11 @@ def main():
         f"""
 set -euo pipefail
 cd {REMOTE_ROOT}
-bash run.sh destroy || true
-docker ps -aq | xargs -r docker rm -f || true
+bash run.sh destroy
+docker ps -aq --filter label=com.docker.compose.project=assistant | xargs -r docker rm -f || true
 echo DESTROY_OK
 """,
-        timeout=300,
+        timeout=900,
     )
 
     notes = []
@@ -217,9 +217,9 @@ grep -E '^IMAGE_BACKENDS=' /data/assistant/.env || true
                 f"""
 set -euo pipefail
 cd {REMOTE_ROOT}
-bash run.sh destroy || true
+bash run.sh destroy
 """,
-                timeout=300,
+                timeout=900,
             )
 
     # Zalo bridge (no QR)
