@@ -32,5 +32,4 @@ Must — container `memory`.
 ## Related
 
 - [../README.md](../README.md)  
-- [session](../session/README.md)  
-- [mem0](../mem0/README.md)
+- [session](../session/README.md)

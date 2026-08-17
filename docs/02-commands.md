@@ -31,7 +31,7 @@ Set secrets in `.env` **before** `up`. Use `sudo` on the VPS when writing under 
 | `auto-learn` | ✅ | ✅ | ✅ | Index eligible docs → Qdrant (**no approve**) |
 | `learn-status` | ✅ | ✅ | ✅ | Health + document count hint from ingest |
 | `compact` | ⬜ | ✅ | ✅ | Slim skills / memory drafts (silent) |
-| `optimize-memory` | ⬜ | ✅ | ✅ | Alias: Mem0/memory compact hooks + Valkey ping |
+| `optimize-memory` | ⬜ | ✅ | ✅ | Alias: memory compact hooks + Valkey ping |
 | `install-timers` | ✅* | ✅† | ✅† | Systemd: auto-learn 00:00; +compact 00:00 on Med+; backup 00:30 |
 | `backup-sync-clouddrive` | ⬜ | ⬜ | ✅ | Copy latest stamp to CloudDrive mirror |
 | `channel-status` | ◐ | ◐ | ◐ | Show attached social-app flags (Zalo/Telegram) |
@@ -120,7 +120,7 @@ Cite/list from chat still uses skills → ingest `list`/`search` (top 5 + rest c
 
 ```bash
 bash run.sh compact              # slim skill drafts / memory housekeeping (silent)
-bash run.sh optimize-memory      # Mem0/memory compact endpoints + Valkey ping
+bash run.sh optimize-memory      # memory compact endpoints + Valkey ping
 ```
 
 On **Low**, these print: `compact/optimize-memory require ASSISTANT_PROFILE=medium|high`.

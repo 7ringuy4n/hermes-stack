@@ -73,17 +73,69 @@ assistant_stop_hermes() {
   done
 }
 
+assistant_compose_profiles() {
+  # Mirror run.sh compose profiles so restore does not leave edge/Zalo services exited.
+  local -a profiles=()
+  case "${ENABLE_ZALO:-0}" in
+    1) profiles+=(--profile zalo) ;;
+  esac
+  case "${ENABLE_TRAEFIK:-0}" in
+    1)
+      case "${TRAEFIK_ACME_ENABLED:-0}" in
+        1) profiles+=(--profile traefik-acme) ;;
+        *) profiles+=(--profile traefik) ;;
+      esac
+      ;;
+  esac
+  case "${ENABLE_API_GATEWAY:-0}" in
+    1) profiles+=(--profile gateway) ;;
+  esac
+  case "${ENABLE_OPENVPN:-0}" in
+    1) profiles+=(--profile openvpn) ;;
+  esac
+  case "${ENABLE_ANTIVIRUS:-0}" in
+    1) profiles+=(--profile antivirus) ;;
+  esac
+  case "${ENABLE_NOTIFY:-0}" in
+    1) profiles+=(--profile notify) ;;
+  esac
+  case "${ENABLE_CLOUDDRIVE:-0}" in
+    1) profiles+=(--profile clouddrive) ;;
+  esac
+  case "${ENABLE_GRAFANA:-0}${ENABLE_LOKI:-0}${ENABLE_PROMETHEUS:-0}${ENABLE_ALLOY:-0}" in
+    *1*) profiles+=(--profile monitor) ;;
+  esac
+  printf '%s\n' "${profiles[@]}"
+}
+
 assistant_compose() {
   local envf="${HERMES_DATA_DIR}/.env"
   [[ -f "$envf" ]] || envf="${ROOT}/.env"
-  local files=(--project-directory "${ROOT}" -f "${ROOT}/docker/docker-compose.yml")
-  [[ -f "${ROOT}/docker/docker-compose.medium.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.medium.yml")
-  [[ -f "${ROOT}/docker/docker-compose.high.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.high.yml")
-  [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.edge.yml")
+  local -a files=(--project-directory "${ROOT}" -f "${ROOT}/docker/docker-compose.yml")
+  local -a profiles=()
+  local profile
+  case "${ASSISTANT_PROFILE:-high}" in
+    medium|high)
+      [[ -f "${ROOT}/docker/docker-compose.medium.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.medium.yml")
+      ;;
+  esac
+  case "${ASSISTANT_PROFILE:-high}" in
+    high)
+      [[ -f "${ROOT}/docker/docker-compose.high.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.high.yml")
+      ;;
+  esac
+  case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
+    *1*)
+      [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.edge.yml")
+      ;;
+  esac
   if [[ "${HERMES_REPLICAS:-1}" == "1" && -f "${ROOT}/docker/docker-compose.hermes-hostports.yml" ]]; then
     files+=(-f "${ROOT}/docker/docker-compose.hermes-hostports.yml")
   fi
-  docker compose "${files[@]}" --env-file "$envf" "$@"
+  while IFS= read -r profile; do
+    [[ -n "$profile" ]] && profiles+=("$profile")
+  done < <(assistant_compose_profiles)
+  docker compose "${files[@]}" "${profiles[@]}" --env-file "$envf" "$@"
 }
 
 assistant_stack_up_datastore() {
@@ -319,9 +371,34 @@ assistant_backup_hermes() {
   fi
   # Replica scratch dirs are large / ephemeral; shared config/env/skills stay in tree root.
   extra+=(--exclude='./replicas')
+  # Zalo owner election is runtime-only (container ids); restoring it leaves SSE dead.
+  extra+=(--exclude='./zalo_owner')
+  extra+=(--exclude='./zalo_owner.lock')
   $SUDO tar -C "${HERMES_DATA_DIR}" --format=posix "${extra[@]}" \
     -czf "${dir}/hermes/data.tgz" .
   [[ -s "${dir}/hermes/data.tgz" ]] || { assistant_backup_fail "hermes tar empty"; return 1; }
+}
+
+assistant_zalo_clear_owner_lock() {
+  local base="${HERMES_DATA_DIR:-/data/assistant}"
+  $SUDO rm -rf "${base}/zalo_owner" "${base}/zalo_owner.lock" 2>/dev/null || true
+}
+
+assistant_zalo_post_restore_heal() {
+  # After restore, Hermes container ids change — force a fresh Zalo SSE owner election.
+  case "${ENABLE_ZALO:-0}" in
+    1) ;;
+    *) return 0 ;;
+  esac
+  log "Zalo post-restore heal (clear owner lock + restart proxy/hermes)"
+  assistant_zalo_clear_owner_lock
+  if [[ -f "${ROOT}/scripts/main/heal-zalo-sse.sh" ]]; then
+    bash "${ROOT}/scripts/main/heal-zalo-sse.sh" || log "WARN: heal-zalo-sse returned non-zero"
+  else
+    docker restart "${ZALO_PROXY_CONTAINER:-zalo-proxy}" 2>/dev/null || true
+    assistant_stop_hermes
+    assistant_stack_up || true
+  fi
 }
 
 assistant_restore_hermes() {
@@ -331,6 +408,8 @@ assistant_restore_hermes() {
   $SUDO mkdir -p "${HERMES_DATA_DIR}"
   $SUDO tar -C "${HERMES_DATA_DIR}" --format=posix -xzf "$tgz"
   $SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "${HERMES_DATA_DIR}" 2>/dev/null || true
+  # Never keep a restored owner file (even from older stamps that still archived it).
+  assistant_zalo_clear_owner_lock
 }
 
 assistant_backup_openbao() {
@@ -445,6 +524,7 @@ assistant_backup_volumes() {
 
 assistant_restore_volumes() {
   local dir="$1" v
+  # Stop edge/monitor containers that hold named volumes; stack_up (with profiles) brings them back.
   docker stop grafana loki prometheus alloy traefik 9router 2>/dev/null || true
   for v in grafana_data loki_data prometheus_data alloy_data traefik_letsencrypt nine_router_data; do
     if [[ -f "${dir}/volumes/${v}.tgz" ]]; then
@@ -544,10 +624,12 @@ assistant_restore_all() {
     fi
   done
   log "bring full stack up after restore"
+  assistant_zalo_clear_owner_lock
   assistant_stack_up || log "WARN: post-restore stack up returned non-zero"
   if assistant_backup_wanted schedules; then
     assistant_restore_schedules "$dir"
   fi
+  assistant_zalo_post_restore_heal
   log "restore done ${stamp}"
 }
 
