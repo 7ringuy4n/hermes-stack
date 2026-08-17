@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Heal Zalo SSE after restore / owner-lock drift (component: ENABLE_ZALO=1).
+# Clears stale zalo_owner election files, restarts zalo-proxy + Hermes replicas
+# so exactly one replica can re-attach SSE.
+set -euo pipefail
+export LC_ALL="${LC_ALL:-C.UTF-8}"
+export LANG="${LANG:-C.UTF-8}"
+
+ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# shellcheck disable=SC1091
+[[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
+[[ -f /data/assistant/.env ]] && set -a && source <(tr -d '\r' < /data/assistant/.env) && set +a
+
+DATA="${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}"
+PROXY_CTR="${ZALO_PROXY_CONTAINER:-zalo-proxy}"
+if [[ "$(id -u)" -ne 0 ]]; then SUDO=sudo; else SUDO=; fi
+
+log() { echo "$(date -Is) heal-zalo-sse: $*"; }
+
+case "${ENABLE_ZALO:-0}" in
+  1) ;;
+  *)
+    log "ENABLE_ZALO!=1 — skip"
+    exit 0
+    ;;
+esac
+
+log "clear stale Zalo owner lock under ${DATA}"
+$SUDO rm -rf "${DATA}/zalo_owner" "${DATA}/zalo_owner.lock" 2>/dev/null || true
+
+# Compose proxy (High) — preferred over host systemd bridge units
+if $SUDO docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$PROXY_CTR"; then
+  log "restart ${PROXY_CTR}"
+  $SUDO docker restart "$PROXY_CTR" >/dev/null 2>&1 || true
+fi
+
+ids="$($SUDO docker ps -aq --filter "name=hermes" 2>/dev/null || true)"
+if [[ -n "$ids" ]]; then
+  log "restart Hermes replicas for fresh Zalo owner election"
+  # shellcheck disable=SC2086
+  $SUDO docker restart $ids >/dev/null 2>&1 || true
+else
+  log "WARN: no hermes containers found"
+fi
+
+sleep 5
+port="${ZALO_PLUGIN_PORT:-8787}"
+health="$(curl -sf -m 5 "http://127.0.0.1:${port}/health" 2>/dev/null || true)"
+if [[ -n "$health" ]]; then
+  log "bridge health: ${health}"
+else
+  log "WARN: bridge health unreachable on :${port} (tunnel or publish may be required)"
+fi
+log "done"
