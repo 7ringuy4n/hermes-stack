@@ -1,5 +1,9 @@
 # Change history
 
+## 2026-08-17 11:40 +07 — release: v0.5.1
+
+- Docs/ops patch: zalo-api cutover, HTML architecture panels, Valkey/SPOF docs.
+
 ## 2026-08-17 11:35 +07 — docs/ops: zalo-api rename + HTML architecture panels
 
 - Product rename: admin-api to zalo-api (compose profile zalo with ENABLE_ZALO). Legacy ADMIN_API_* env aliases kept in Hermes/plugin/zalo-api.
