@@ -1,5 +1,13 @@
 # Change history
 
+## 2026-08-17 12:15 +07 — fix: restore check-medium.sh corruption
+
+- `scripts/main/check-medium.sh` had systematic `d`→`o` corruption (`/dev/null` → `/oev/null`, dispatcher → oispatcher); restored. Blocks Medium smoke / Zalo setup gate.
+
+## 2026-08-17 12:05 +07 — fix: post-ready-learn probes Traefik when Hermes×2
+
+- High (HERMES_REPLICAS≠1) has no host `:29119`; post-ready-learn and stack-watch now probe Traefik/API Gateway instead of the missing dashboard port.
+
 ## 2026-08-17 11:50 +07 — security: P0 hardening (gateway, SSRF, docker.sock)
 
 - Gateway: require GATEWAY_API_KEYS; drop client header RL bypass; do not trust XFF by default; RL fail-closed with local limiter.
