@@ -20,14 +20,14 @@
 
 ## Purpose
 
-Protect the stack from risky files and confidential probes: antivirus, static/LLM security judgment, SIEM-style event collection, and editable secret-probe keyword lists.
+Protect the stack from risky files: antivirus (opt-in), YARA/static limits, optional SIEM. The LLM judge is **not** a security boundary (default off; RISK-only if enabled).
 
 ## Profile
 
 | Profile | State |
 |---|---|
 | Low / Medium | Off |
-| High | AV + security-manager + optional SIEM / secret-probe |
+| High | security-manager (YARA) + optional SIEM; AV / sandbox / LLM judge off unless opted in |
 
 ## Sub-packages
 
@@ -41,11 +41,15 @@ Protect the stack from risky files and confidential probes: antivirus, static/LL
 
 ```text
 File from social-app or upload
-    → av-gateway (malware)
-    → security-manager (policy / YARA / optional LLM judge)
-    → CLEAN → OCR / ingest / Hermes read
+    → size / MIME / archive limits
+    → YARA + static
+    → optional av-gateway (ENABLE_ANTIVIRUS=1)
+    → optional LLM heuristic (SECURITY_LLM_JUDGE=1) — may add RISK only
+    → CLEAN (isolation passed) → OCR / ingest / Hermes read
     → BLOCK → user-safe one-liner (from hermes/main/messages), no stack trace
 ```
+
+LLM `CLEAN` is ignored. Isolation layers decide allow.
 
 **Secret-probe:** if the *message text* asks for secrets/confidential docs, refuse early (skill + editable lists preferred over huge hardcoded regex). Notify admin via notification layer when configured.
 

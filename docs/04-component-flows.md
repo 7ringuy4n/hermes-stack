@@ -204,7 +204,8 @@ Packs: `zalo/` · `telegram/` · `http/` — attach with flags, not profiles.
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:12px;background:#fde8e8;border:1px solid #f0c0c0;text-align:left;width:50%;">
       <b>text</b> → secret-probe → hit? Refuse + notify<br/>
-      <b>file</b> → av-gateway → security-manager → clean Continue · risk Refuse + notify
+      <b>file</b> → security-manager (YARA/static/limits; AV opt-in) → clean Continue · risk Refuse + notify<br/>
+      LLM judge (if on) may add RISK only — CLEAN never allows
     </td>
   </tr>
 </table>
