@@ -12,6 +12,8 @@ English operations docs for the **assistant** stack.
 | [03-architecture.md](./03-architecture.md) | Architecture |
 | [04-component-flows.md](./04-component-flows.md) | Per-component flows |
 | [05-edge-networking.md](./05-edge-networking.md) | Traefik / API Gateway / OpenVPN (optional) |
+| [06-model-routing.md](./06-model-routing.md) | Model Router / 9router / OmniRouter |
+| [MULTI_NODE.md](./MULTI_NODE.md) | Hermes×2 vs true HA; store SPOFs |
 | [AGENT_RULES.md](./AGENT_RULES.md) | Operator / agent hard rules (SoT) |
 | [config/DEFAULTS.md](./config/DEFAULTS.md) | Non-secret defaults |
 | [CHANGELOG.md](./CHANGELOG.md) | Change log |

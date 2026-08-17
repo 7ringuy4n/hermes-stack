@@ -180,7 +180,6 @@ if '{profile}' == 'high':
     vals['ENABLE_SECURITY'] = '1'
     vals['ENABLE_POLICY'] = '1'
     vals['ENABLE_AUTHZ'] = '1'
-    vals['ENABLE_ADMIN_API'] = '1'
     vals['ENABLE_SIEM'] = '1'
     vals['ENABLE_OPENBAO'] = '1'
 else:

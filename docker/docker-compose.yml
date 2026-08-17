@@ -320,7 +320,9 @@ services:
       - ZALO_DENIED_THREADS_FILE=/opt/data/zalo_denied_threads.txt
       - ZALO_ALLOWED_USERS_FILE=/opt/data/zalo_allowed_users.txt
       - ZALO_USERS_MODE_FILE=/opt/data/zalo_users_mode.txt
-      - ADMIN_API_URL=${ADMIN_API_URL:-http://admin-api:8100}
+      - ZALO_API_URL=${ZALO_API_URL:-http://zalo-api:8100}
+      - ZALO_API_TOKEN=${ZALO_API_TOKEN:-}
+      - ADMIN_API_URL=${ADMIN_API_URL:-http://zalo-api:8100}
       - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
       - GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-true}
       - HERMES_REPLICAS=${HERMES_REPLICAS:-1}
@@ -349,6 +351,40 @@ services:
     container_name: zalo-proxy
     restart: unless-stopped
     command: TCP-LISTEN:8787,fork,reuseaddr TCP:host.docker.internal:8787
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [internal]
+
+  # Zalo channel admin API (!zalo claim / allowlists). Replaces legacy admin-api.
+  zalo-api:
+    profiles: ["zalo"]
+    build: ./architect/zalo-api
+    container_name: zalo-api
+    restart: unless-stopped
+    environment:
+      - ZALO_API_TOKEN=${ZALO_API_TOKEN:-}
+      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
+      - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
+      - ZALO_ADMIN_USERS_FILE=/data/assistant/zalo_admin_users.txt
+      - ZALO_ALLOWED_THREADS_FILE=/data/assistant/zalo_allowed_threads.txt
+      - ZALO_DENIED_THREADS_FILE=/data/assistant/zalo_denied_threads.txt
+      - ZALO_ALLOWED_USERS_FILE=/data/assistant/zalo_allowed_users.txt
+      - ZALO_USERS_MODE_FILE=/data/assistant/zalo_users_mode.txt
+      - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://host.docker.internal:8787}
+      - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
+      - AUTHZ_URL=${AUTHZ_URL:-http://authz:8097}
+      - NOTIFY_URL=${NOTIFY_URL:-http://notify:8092}
+      - NOTIFY_ON_APPROVE=${NOTIFY_ON_APPROVE:-0}
+      - SESSION_URL=${SESSION_URL:-http://session:8107}
+      - INGEST_URL=${INGEST_URL:-http://ingest:8099}
+      - HERMES_DATA_DIR=/data/assistant
+      - HERMES_CONTAINER=${HERMES_CONTAINER:-hermes}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}:/data/assistant
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:${ZALO_API_PORT:-8100}:8100"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks: [internal]

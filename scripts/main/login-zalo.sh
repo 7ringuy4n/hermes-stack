@@ -80,7 +80,7 @@ print(f"     file: {path}")
 PY
 
 echo
-echo "When loggedIn=true: docker restart hermes admin-api 2>/dev/null || docker restart hermes"
+  echo "When loggedIn=true: docker restart hermes zalo-api 2>/dev/null || docker restart hermes"
 echo "Pairing (if prompted): docker exec -it hermes hermes pairing approve zalo <CODE>"
 echo
 echo "Admin (sole, 1 user):"
