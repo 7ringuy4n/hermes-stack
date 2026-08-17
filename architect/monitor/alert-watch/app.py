@@ -42,7 +42,6 @@ HEALTH_TARGETS = os.environ.get(
     "security-manager=security-manager:8093/health,"
     "ocr=ocr:8091/health,"
     "ingest=ingest:8099/health,"
-    "mem0=mem0:8096/health,"
     "authz=authz:8097/health,"
     "embedding=embedding:8094/health,"
     "dispatcher=dispatcher:8090/health,"

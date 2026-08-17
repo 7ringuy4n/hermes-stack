@@ -9,7 +9,7 @@ Hermes orchestrates coding with **skills** — there is **no** coding-worker con
 
 ## Must follow
 
-1. Use **Memory Manager** (`MEMORY_URL`, `/v1/context`, `/v1/remember`) for durable facts — Postgres SoT (Mem0 removed).
+1. Use **Memory Manager** (`MEMORY_URL`, `/v1/context`, `/v1/remember`) for durable facts — Postgres SoT.
 2. Use **knowledge ingest** (`INGEST_URL`, collection `knowledge_chunks`) for docs/specs: **top 5** + count of rest; empty/down → refuse, no invent, no internet on Low.
 3. Prefer vendored skills under:
    - `vendor/mattpocock/` — implement, codebase-design, diagnosing-bugs, tdd, code-review, improve-codebase-architecture

@@ -23,7 +23,7 @@ LEARN_LIST_LIMIT=5
 
 postgres, redis (Valkey), qdrant, memory, session, embedding, ingest, dispatcher, 9router, hermes, backup/restore.
 
-> **Mem0 removed:** LTM is Memory Manager + Postgres only.
+> **LTM:** Memory Manager + Postgres only.
 ## First setup (host)
 
 1. `sudo bash scripts/main/install-docker.sh` if Docker is missing (uses the SSH login user via `SUDO_USER`; or `bash run.sh install-docker`).
@@ -82,6 +82,15 @@ ENABLE_TRAEFIK=0
 ENABLE_API_GATEWAY=0
 ENABLE_OPENVPN=0
 ENABLE_WHATSAPP=0
+```
+
+Zalo home channel (when `ENABLE_ZALO=1`):
+
+```bash
+# Empty = silent auto-sethome from first allowed DM (stops Hermes /sethome spam)
+ZALO_HOME_CHANNEL=
+ZALO_AUTO_SETHOME=1
+ZALO_AUTO_SETHOME_DM_ONLY=1
 ```
 
 | Profile | Optional on |

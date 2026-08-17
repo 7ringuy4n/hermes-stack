@@ -11,11 +11,11 @@ Everything that makes the agent **remember** across a turn and across days: shor
 ## Sub-packages
 
 | Package | Store | Function |
-|---|---|---|
+|---------|-------|----------|
 | [memory-manager/](./memory-manager/README.md) | Postgres (+ optional Qdrant index) | `/v1/context`, `/v1/remember` — assemble mode/skills/memories; **canonical LTM** |
 | [session/](./session/README.md) | Valkey | Active conversation, dest thread, timing helpers |
 
-**Mem0 removed** (2026-08-16): conversational LTM lives in Memory Manager + Postgres. The old `architect/memory/mem0` tree is not started by compose.
+Conversational long-term memory is **Memory Manager + Postgres** only.
 
 ## How short-term and long-term work together
 
