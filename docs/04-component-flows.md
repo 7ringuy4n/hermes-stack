@@ -329,7 +329,7 @@ Valkey = short-term. Postgres = durable facts.
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
-    <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">ingest · security<br/>admin-api · ops</td>
+    <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">ingest · security<br/>zalo-api · ops</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:14px;background:#fde8e8;border:3px solid #fbbf24;text-align:center;width:36%;"><b>THIS — notification</b></td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
@@ -351,7 +351,7 @@ Valkey = short-term. Postgres = durable facts.
 
 ---
 
-## architect / admin-api (High / channel)
+## architect / zalo-api (with Zalo)
 
 ### Brief view
 
@@ -359,7 +359,7 @@ Valkey = short-term. Postgres = durable facts.
   <tr>
     <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">Operator /<br/>social admin cmd</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:14px;background:#fde8e8;border:3px solid #fbbf24;text-align:center;width:36%;"><b>THIS — admin-api</b></td>
+    <td style="padding:14px;background:#fde8e8;border:3px solid #fbbf24;text-align:center;width:36%;"><b>THIS — zalo-api</b></td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">allowlists · learn<br/>± notification</td>
   </tr>
@@ -371,7 +371,7 @@ Valkey = short-term. Postgres = durable facts.
   <tr>
     <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:20%;">Operator</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:12px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;width:24%;">admin-api</td>
+    <td style="padding:12px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;width:24%;">zalo-api</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:40%;">Allowlists · Learn helpers · notify optional</td>
   </tr>

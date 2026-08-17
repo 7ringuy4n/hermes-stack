@@ -1,8 +1,26 @@
 # monitor
 
+## System architecture
+
+| | |
+|--|--|
+| **Sits beside** | All stack services (scrape / log ship) |
+| **Owns** | Grafana, Prometheus, Loki/Alloy, alert-watch |
+| **Does not own** | Chat path — Low/Medium run without monitor |
+
+<table style="width:100%;border-collapse:collapse;font-size:13px;">
+  <tr>
+    <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">Stack services</td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:14px;background:#2563eb;color:#fff;text-align:center;border:3px solid #fbbf24;width:36%;"><b>Prometheus · Loki · Grafana</b></td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">alert-watch</td>
+  </tr>
+</table>
+
 ## Purpose
 
-Observability for High: metrics, logs, dashboards. Access via **localhost or SSH tunnel** (Traefik/OpenVPN removed from product).
+Observability for High: metrics, logs, dashboards. Access via **localhost or SSH tunnel** (or edge when Traefik/OpenVPN is enabled).
 
 ## Profile
 

@@ -157,12 +157,14 @@ heal_by_health() {
   esac
   case "$PROFILE" in
     high)
-      probe admin-api "http://127.0.0.1:${ADMIN_API_PORT:-8100}/health" || failed=1
       case "${ENABLE_GRAFANA:-0}" in
         1) probe grafana "http://127.0.0.1:${GRAFANA_HOST_PORT:-23000}/api/health" || failed=1 ;;
       esac
       ;;
   esac
+  if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
+    probe zalo-api "http://127.0.0.1:${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}/health" || failed=1
+  fi
 
   if [[ "$failed" -ne 0 ]]; then
     if in_cooldown 90; then

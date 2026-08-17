@@ -9,6 +9,19 @@
 | Zalo SSE | **Exactly one** SSE owner via `zalo_owner` lock — never 2 clients |
 | Valkey / Postgres / Qdrant / Traefik | **Single-node SPOFs** — HA later |
 
+## Single points of failure (be explicit)
+
+| Store / hop | Role | If it dies |
+|-------------|------|------------|
+| **Valkey** | Short-term session, gateway rate-limit, RQ jobs, Zalo owner helpers | Sessions drop; queues pause; RL/gateway may 503 |
+| **Postgres** | Durable facts + authz ACL | Memory/authz unhealthy until reconnect |
+| **Qdrant** | Knowledge chunks (rebuildable) | Cite/search empty until restore/re-ingest |
+| **Traefik / Gateway** | HTTP edge | Dashboard/API via edge down; Zalo path can still work on host bridge |
+| **Zalo bridge (host)** | Upstream plugin | Needs manual QR if `sessionDead` — watches cannot invent a login |
+| **zalo-proxy** | Docker hop to Hermes | Auto-started by `zalo-watch` when exited |
+
+Self-heal covers **container exit / SSE miss** (`stack-watch`, `zalo-watch`). It does **not** replicate Valkey/Postgres/Qdrant.
+
 ## Multi-node (docs / runbook only)
 
 When you place Hermes on two VMs later:
@@ -19,3 +32,9 @@ When you place Hermes on two VMs later:
 4. Keep Model Router + 9router / OmniRouter reachable from both Hermes instances.
 
 Do **not** call this HA until stores are replicated.
+
+## Related
+
+- [00-profiles.md](./00-profiles.md)
+- [03-architecture.md](./03-architecture.md)
+- [06-model-routing.md](./06-model-routing.md)
