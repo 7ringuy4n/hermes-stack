@@ -160,6 +160,13 @@ health_json() {
 
 main() {
   read_state
+  # Crash recovery: a stopped proxy still leaves host bridge /health up, so
+  # SSE/Hermes look "fine" while the Docker hop is dead. Start it first.
+  if $SUDO docker inspect -f '{{.State.Running}}' "$PROXY_CTR" 2>/dev/null | grep -qx false; then
+    log "proxy not running → start ${PROXY_CTR}"
+    $SUDO docker start "$PROXY_CTR" >/dev/null 2>&1 || true
+    sleep 2
+  fi
   local raw logged sse dead
   raw="$(health_json)"
   if [[ -z "$raw" ]]; then

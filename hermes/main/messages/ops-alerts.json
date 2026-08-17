@@ -1,0 +1,14 @@
+{
+  "schema": "assistant-ops-alerts-v1",
+  "image_gen_disabled": "Image generation is unavailable (no media backends configured).",
+  "office_gen_disabled": "Office file generation is unavailable.",
+  "web_search_disabled": "Web search is unavailable (no search backends configured).",
+  "antivirus_disabled": "Antivirus scanning is off. Enable ENABLE_ANTIVIRUS=1 when needed.",
+  "antivirus_unavailable": "Antivirus service did not respond. Try again later.",
+  "policy_disabled": "Policy checks are off. Enable ENABLE_POLICY=1 on High when needed.",
+  "policy_unavailable": "Policy center did not respond. Try again later.",
+  "openvpn_disabled": "OpenVPN is off. Set ENABLE_OPENVPN=1, then export a client profile.",
+  "openvpn_not_ready": "OpenVPN container is not ready. Initialize PKI before client export.",
+  "media_gen_failed": "Could not generate media. Try a simpler request or try again later.",
+  "no_model_available": "No model available. Check 9router / OmniRouter / fallback providers."
+}

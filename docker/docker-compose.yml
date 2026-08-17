@@ -11,6 +11,7 @@ volumes:
   valkey_data:
   qdrant_data:
   nine_router_data:
+  omni_router_data:
 
 services:
   postgres:
@@ -207,6 +208,51 @@ services:
       - "127.0.0.1:${N9ROUTER_HOST_PORT:-20128}:20128"
     networks: [internal]
 
+  # v0.5.0 — task-aware LLM proxy (coding → 9router, general → OmniRouter when enabled)
+  model-router:
+    build: ./architect/models/model-router
+    container_name: model-router
+    restart: unless-stopped
+    environment:
+      - N9ROUTER_BASE_URL=${N9ROUTER_BASE_URL:-http://9router:20128/v1}
+      - OMNIROUTER_BASE_URL=${OMNIROUTER_BASE_URL:-http://omni-router:20129/v1}
+      - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-0}
+      - N9ROUTER_API_KEY=${N9ROUTER_API_KEY:-}
+      - OMNIROUTER_API_KEY=${OMNIROUTER_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - FALLBACK_OPENAI_BASE_URL=${FALLBACK_OPENAI_BASE_URL:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - FALLBACK_OPENAI_MODEL=${FALLBACK_OPENAI_MODEL:-gpt-4o-mini}
+      - MODEL_ROUTER_TIMEOUT_S=${MODEL_ROUTER_TIMEOUT_S:-90}
+      - MODEL_ROUTER_PORT=8096
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    ports:
+      - "127.0.0.1:${MODEL_ROUTER_HOST_PORT:-8096}:8096"
+    depends_on:
+      - 9router
+    networks: [internal]
+
+  # Optional OmniRouter — ENABLE_OMNIROUTER=1 (compose profile omnirouter)
+  # Set OMNIROUTER_IMAGE to your OmniRouter image (separate repo). Default falls back to
+  # 9router image for lab smoke only — production should set a dedicated OmniRouter image.
+  omni-router:
+    profiles: ["omnirouter"]
+    image: ${OMNIROUTER_IMAGE:-decolua/9router:latest}
+    container_name: omni-router
+    restart: unless-stopped
+    environment:
+      - DATA_DIR=/app/data
+      - PORT=20129
+      - HOSTNAME=0.0.0.0
+      - REQUIRE_API_KEY=true
+      - INITIAL_PASSWORD=${OMNIROUTER_INITIAL_PASSWORD:-${N9ROUTER_INITIAL_PASSWORD}}
+    volumes:
+      - omni_router_data:/app/data
+    ports:
+      - "127.0.0.1:${OMNIROUTER_HOST_PORT:-20129}:20129"
+    networks: [internal]
+
   hermes:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
     # No container_name — required for HERMES_REPLICAS > 1 (Medium/High default 2)
@@ -236,8 +282,10 @@ services:
       - HERMES_LAZY_INSTALL_TARGET=/opt/data/lazy-packages
       - PYTHONPATH=/opt/data/lazy-packages
       - OPENAI_API_KEY=${N9ROUTER_API_KEY:-}
-      - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://dispatcher:8090/openai/v1}
+      # v0.5.0: prefer model-router; set HERMES_OPENAI_BASE_URL to override (e.g. dispatcher)
+      - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://model-router:8096/v1}
       - DISPATCHER_URL=http://dispatcher:8090
+      - MODEL_ROUTER_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
       - MEMORY_URL=http://memory:8095
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - INGEST_URL=${INGEST_URL:-http://ingest:8099}
@@ -286,6 +334,7 @@ services:
       - ./hermes/main/docker/hermes-replica-entry.sh:/opt/stack/hermes-replica-entry.sh:ro
     depends_on:
       - 9router
+      - model-router
       - dispatcher
       - memory
       - redis

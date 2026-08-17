@@ -1,0 +1,17 @@
+{
+  "coding_substrings": [
+    "```",
+    "def ",
+    "function ",
+    "import ",
+    "class ",
+    "error:",
+    "traceback",
+    "stack trace",
+    "compile",
+    "typescript",
+    "python",
+    "docker-compose",
+    "git "
+  ]
+}
