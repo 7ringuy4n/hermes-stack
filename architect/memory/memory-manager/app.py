@@ -123,6 +123,7 @@ def _connect() -> ConnectionPool:
         conninfo=DSN,
         min_size=1,
         max_size=8,
+        check=ConnectionPool.check_connection,
         kwargs={"row_factory": dict_row, "autocommit": True},
     )
 

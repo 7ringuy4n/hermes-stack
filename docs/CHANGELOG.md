@@ -1,5 +1,41 @@
 # Change history
 
+## 2026-08-17 10:20 +07 — release: v0.5.0
+
+- Bundle Model Router / optional OmniRouter, Traefik default all profiles, jobs contract, session locks, fail-event tests, log-archive 30d, Zalo/Hermes crash auto-heal.
+
+## 2026-08-17 09:45 +07 — zalo: auto-start stopped proxy
+
+- `zalo-watch` starts `zalo-proxy` when the container is exited. Host bridge `/health` can stay up while the proxy hop is down, which previously skipped heal.
+
+## 2026-08-17 09:40 +07 — test: HTML summaries + fail-event rules
+
+- Profile×mode SUMMARY tables are HTML. RULES.md §13: infected AV (EICAR), concurrency ramp until first fail, Hermes/Zalo auto-heal.
+- stack-watch now restarts **exited/dead/unhealthy** Hermes replicas (crash recovery). Probe-fail still does not bounce healthy Hermes.
+
+## 2026-08-17 09:20 +07 — test: profile matrix reports (no host/account)
+
+- `test/` layout: cases, fixtures, scripts, reports/run-01 and run-02 per RULES.md.
+- Reports omit hostnames, IPs, and account names. High profile is the stack left running after the matrix.
+
+## 2026-08-17 09:10 +07 — ops: post-restore memory reconnect + log-archive timer
+
+- Restore now restarts Postgres clients (memory/ingest/embedding) after stack up so pooled connections survive `pg_terminate_backend`.
+- Memory pool uses `ConnectionPool.check_connection`. Daily `assistant-log-archive.timer` (01:15, retention `LOG_RETENTION_DAYS=30`).
+
+## 2026-08-17 08:45 +07 — ops: short alerts for disabled media/policy/AV/VPN
+
+- hermes/main/messages/ops-alerts.json + dispatcher messages/en.json for admin-editable short errors.
+- Image gen empty backends returns editable 503 text (not hardcoded only).
+
+## 2026-08-17 08:20 +07 — arch: v0.5.0 router layer (OmniRouter optional, profiles, jobs)
+
+- Model Router: hybrid coding/general routing → 9router / OmniRouter / fallback pool; clear `no_model_available`.
+- OmniRouter optional (`ENABLE_OMNIROUTER`, compose profile `omnirouter`); Traefik default all profiles with `TRAEFIK_MODE` public→fail-soft local.
+- Hermes replicas: default 1, High=2 (one node); Medium=1. Session Valkey locks; jobs OCR/embed/filegen + idempotency/DLQ marker.
+- Gateway API key auth + body limit when `GATEWAY_API_KEYS` set. Log archive 30d; OpenVPN client `.ovpn` export to home.
+- Docs: `docs/06-model-routing.md`, `docs/MULTI_NODE.md`.
+
 ## 2026-08-17 07:30 +07 — release: v0.4.1
 
 - Ship Mem0 purge leftovers, Zalo SSE heal after restore, stack-watch Hermes scale preserve, Zalo silent auto-sethome.
