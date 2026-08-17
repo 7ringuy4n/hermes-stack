@@ -26,11 +26,43 @@ shift || true
 compose() {
   # Low: base. Medium: + medium. High: + medium + high (+ optional notify/clouddrive/comfy-gpu).
   # Edge: + docker-compose.edge.yml when Traefik / API Gateway / OpenVPN enabled.
-  # Hermes scale: HERMES_REPLICAS (Low=1, Medium/High default 2). Host ports only when replicas=1.
+  # Hermes scale: HERMES_REPLICAS (default 1; High default 2). Host ports only when replicas=1.
+  # Traefik mode: public prefers ACME; fail-soft to local when email/domain missing.
   local -a files=(--project-directory "$ROOT" -f "$ROOT/docker/docker-compose.yml")
   local -a profiles=()
   local -a scale_args=()
   local replicas="${HERMES_REPLICAS:-1}"
+  local traefik_mode="${TRAEFIK_MODE:-public}"
+  local acme="${TRAEFIK_ACME_ENABLED:-0}"
+
+  # Fail-soft: public/ACME without email+domain → local HTTP Traefik
+  if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
+    case "${traefik_mode}" in
+      public)
+        if [[ "$acme" == "1" && -n "${TRAEFIK_ACME_EMAIL:-}" && -n "${TRAEFIK_ACME_DOMAIN:-}" ]]; then
+          acme=1
+        else
+          if [[ "$acme" == "1" ]]; then
+            echo "WARN: TRAEFIK_MODE=public/ACME missing TRAEFIK_ACME_EMAIL or TRAEFIK_ACME_DOMAIN — fail-soft to local" >&2
+          fi
+          acme=0
+          export TRAEFIK_MODE=local
+          traefik_mode=local
+        fi
+        ;;
+      local)
+        acme=0
+        ;;
+      *)
+        echo "WARN: unknown TRAEFIK_MODE=${traefik_mode}; using local" >&2
+        acme=0
+        traefik_mode=local
+        export TRAEFIK_MODE=local
+        ;;
+    esac
+    export TRAEFIK_ACME_ENABLED="$acme"
+  fi
+
   case "$ASSISTANT_PROFILE" in
     medium)
       files+=(-f "$ROOT/docker/docker-compose.medium.yml")
@@ -65,11 +97,22 @@ compose() {
       fi
       ;;
   esac
+  # Optionals usable on any profile when enabled (OCR/jobs via medium overlay)
+  case "${ENABLE_OCR:-0}${ENABLE_JOBS:-0}${ENABLE_SEARXNG:-0}" in
+    *1*)
+      if [[ "$ASSISTANT_PROFILE" == "low" ]]; then
+        files+=(-f "$ROOT/docker/docker-compose.medium.yml")
+      fi
+      ;;
+  esac
   case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
     *1*)
       files+=(-f "$ROOT/docker/docker-compose.edge.yml")
       ;;
   esac
+  if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+    profiles+=(--profile omnirouter)
+  fi
   if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
     case "${TRAEFIK_ACME_ENABLED:-0}" in
       1)
@@ -87,7 +130,7 @@ compose() {
   if [[ "${ENABLE_OPENVPN:-0}" == "1" ]]; then
     profiles+=(--profile openvpn)
   fi
-  # Observability (Grafana/Loki/Prometheus/Alloy/exporters) — opt-in via ENABLE_* / profile monitor
+  # Observability — opt-in via ENABLE_* / profile monitor (any profile)
   case "${ENABLE_GRAFANA:-0}${ENABLE_LOKI:-0}${ENABLE_PROMETHEUS:-0}${ENABLE_ALLOY:-0}" in
     *1*)
       profiles+=(--profile monitor)
@@ -236,6 +279,40 @@ EOF
   $sudo systemctl daemon-reload
   $sudo systemctl enable --now assistant-auto-learn.timer assistant-backup.timer
 
+  # Host/container log archive (default 30d). Any profile when ENABLE_LOG_ARCHIVE=1.
+  case "${ENABLE_LOG_ARCHIVE:-1}" in
+    1|true|yes|on)
+      $sudo tee "${unit_dir}/assistant-log-archive.service" >/dev/null <<EOF
+[Unit]
+Description=Assistant log archive (host journal + containers + Hermes)
+After=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=${STACK_ROOT}
+Environment=ASSISTANT_PROFILE=${ASSISTANT_PROFILE}
+Environment=STACK_ROOT=${STACK_ROOT}
+Environment=ENABLE_LOG_ARCHIVE=1
+Environment=LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-30}
+EnvironmentFile=-${STACK_ROOT}/.env
+ExecStart=/usr/bin/env bash ${STACK_ROOT}/scripts/main/log-archive.sh
+EOF
+      $sudo tee "${unit_dir}/assistant-log-archive.timer" >/dev/null <<EOF
+[Unit]
+Description=Assistant log archive daily 01:15
+[Timer]
+OnCalendar=*-*-* 01:15:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+      $sudo systemctl daemon-reload
+      $sudo systemctl enable --now assistant-log-archive.timer
+      ;;
+    *)
+      $sudo systemctl disable --now assistant-log-archive.timer >/dev/null 2>&1 || true
+      ;;
+  esac
+
   # Stack self-heal every 2 minutes (all profiles that install timers)
   $sudo tee "${unit_dir}/assistant-stack-watch.service" >/dev/null <<EOF
 [Unit]
@@ -329,7 +406,7 @@ EOF
   echo "timers installed for profile=${ASSISTANT_PROFILE}"
 }
 
-# Timers (backup/learn/stack-watch; compact Medium+; zalo-watch when ENABLE_ZALO=1)
+# Timers (backup/learn/stack-watch; log-archive 30d; compact Medium+; zalo-watch when ENABLE_ZALO=1)
 ensure_profile_timers() {
   echo "==> install timers (profile=${ASSISTANT_PROFILE}, ENABLE_ZALO=${ENABLE_ZALO:-0})"
   do_install_timers || true

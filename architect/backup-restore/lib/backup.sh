@@ -148,6 +148,18 @@ assistant_stack_up() {
   assistant_compose up -d --scale "hermes=${scale}"
 }
 
+assistant_restart_postgres_clients() {
+  # pg_dumpall --clean / pg_terminate_backend leaves pooled clients (memory) 503 until recycle.
+  local i
+  docker start postgres >/dev/null 2>&1 || true
+  for i in $(seq 1 30); do
+    docker exec postgres pg_isready -U "${MEMORY_DB_USER:-hermes}" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  docker restart memory ingest embedding authz 2>/dev/null || true
+  sleep 2
+}
+
 as_volume() {
   local short="$1"
   docker volume ls --format '{{.Name}}' 2>/dev/null \
@@ -626,6 +638,7 @@ assistant_restore_all() {
   log "bring full stack up after restore"
   assistant_zalo_clear_owner_lock
   assistant_stack_up || log "WARN: post-restore stack up returned non-zero"
+  assistant_restart_postgres_clients
   if assistant_backup_wanted schedules; then
     assistant_restore_schedules "$dir"
   fi
