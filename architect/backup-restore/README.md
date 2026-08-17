@@ -1,5 +1,23 @@
 # backup-restore
 
+## System architecture
+
+| | |
+|--|--|
+| **Sits between** | Operator / timers ↔ Must stores + Hermes data |
+| **Owns** | Stamp backup/restore/verify, `profile.sh` defaults, post-restore heals |
+| **Does not own** | Live app services (compose brings them back after restore) |
+
+<table style="width:100%;border-collapse:collapse;font-size:13px;">
+  <tr>
+    <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">Timers / run.sh</td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:14px;background:#2563eb;color:#fff;text-align:center;border:3px solid #fbbf24;width:36%;"><b>backup-restore</b></td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">Postgres · Valkey · Qdrant · data</td>
+  </tr>
+</table>
+
 ## Purpose
 
 Disaster recovery and profile helpers: stamp backups of Must stores, restore, verify, and expand `ASSISTANT_PROFILE` into optional flags. Local stamps always; High may sync to CloudDrive.
@@ -40,7 +58,7 @@ Defaults: `BACKUP_DIR=/data/assistant/backups`, `HERMES_DATA_DIR=/data/assistant
 
 ```bash
 bash run.sh backup              # stamp → $BACKUP_DIR (default /data/assistant/backups)
-bash run.sh verify [stamp]      # manifest + live postgres/redis/qdrant probes
+bash run.sh verify [stamp]      # manifest + live postgres/Valkey/qdrant probes
 bash run.sh restore [stamp]     # restore stores then compose up (uses HERMES_REPLICAS)
 bash run.sh migrate             # pack LATEST stamp for moving hosts
 ```
@@ -69,7 +87,7 @@ Date: **2026-08-17** · Host: Ubuntu **24.04.4 LTS** · Profile: **High** · `HE
 | `bash run.sh restore <stamp>` | **Pass** | Datastore + Hermes data + post-restore `heal-zalo-sse.sh` |
 | Pre-restore Zalo | `sseClients=0` | Confirmed silent-bot condition before heal |
 | Post-restore Zalo | **Pass** | `loggedIn=true`, `sseClients=1` after heal; owner lock re-elected |
-| Post-restore health | **Pass** | api-gateway OK; Hermes×2 up; `pg_isready`; Redis `PONG`; Qdrant ready |
+| Post-restore health | **Pass** | api-gateway OK; Hermes×2 up; `pg_isready`; Valkey `PONG`; Qdrant ready |
 | Traefik after volume restore | **Fixed** | Volume restore stops Traefik; compose restore now includes `--profile traefik` (and peers) so edge returns |
 | stack-watch vs Hermes×2 | **Fixed** | Watch previously ran `compose up` without `--scale`, collapsing replicas and dropping Zalo SSE; now preserves `HERMES_REPLICAS` |
 

@@ -1,5 +1,17 @@
 # Change history
 
+## 2026-08-17 11:35 +07 — docs/ops: zalo-api rename + HTML architecture panels
+
+- Product rename: admin-api to zalo-api (compose profile zalo with ENABLE_ZALO). Legacy ADMIN_API_* env aliases kept in Hermes/plugin/zalo-api.
+- Removed architect/admin-api; High no longer starts a separate admin-api. Docs/scripts/health probes updated.
+- Architecture diagrams: mermaid replaced with HTML table panels (README + architect layer READMEs).
+
+## 2026-08-17 11:20 +07 — docs: README navigability + architect system design
+
+- Root README: New here?, Use cases, architecture panels, profile why, resilience/SPOF pointers, clickable doc links; Valkey (not Redis) wording.
+- Each architect/*/README.md: System architecture (sits between / owns / HTML flow). Edge defaults corrected for v0.5.0 (Traefik + Gateway on).
+- docs/03-architecture.md brief view: edge + model-router. docs/MULTI_NODE.md SPOF table. Env REDIS_URL documented as Valkey-compatible name.
+
 ## 2026-08-17 10:20 +07 — release: v0.5.0
 
 - Bundle Model Router / optional OmniRouter, Traefik default all profiles, jobs contract, session locks, fail-event tests, log-archive 30d, Zalo/Hermes crash auto-heal.

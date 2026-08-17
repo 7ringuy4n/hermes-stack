@@ -181,7 +181,7 @@ bash run.sh backup
 
 ```bash
 export ASSISTANT_PROFILE=high
-# .env: OPENBAO_DEV_ROOT_TOKEN, GRAFANA_ADMIN_PASSWORD, ADMIN_API_TOKEN
+# .env: OPENBAO_DEV_ROOT_TOKEN, GRAFANA_ADMIN_PASSWORD, ZALO_API_TOKEN
 bash run.sh up                # medium+high overlays, timers, seed OpenBao
 bash run.sh first-setup-llm   # if needed
 bash run.sh check-high
