@@ -76,7 +76,7 @@ Legend: **Yes** = included · **No** = not in this profile · **Opt** = attach /
       <td style="padding:10px 12px;">Short-term chat (TTL)</td>
     </tr>
     <tr style="background:#fafafa;">
-      <td style="padding:10px 12px;">Mem0 + Qdrant LTM</td>
+      <td style="padding:10px 12px;">Memory Manager + Postgres LTM</td>
       <td style="padding:10px;text-align:center;">Yes</td>
       <td style="padding:10px;text-align:center;">Yes</td>
       <td style="padding:10px;text-align:center;">Yes</td>
@@ -367,7 +367,7 @@ bash run.sh <command>
       <td style="padding:10px;text-align:center;">No</td>
       <td style="padding:10px;text-align:center;">Yes</td>
       <td style="padding:10px;text-align:center;">Yes</td>
-      <td style="padding:10px 12px;">Compact + Mem0 / Valkey hooks</td>
+      <td style="padding:10px 12px;">Compact + Memory Manager / Valkey hooks</td>
     </tr>
     <tr style="background:#e8eef8;">
       <td colspan="5" style="padding:10px 12px;"><b>Timers &amp; channels</b></td>

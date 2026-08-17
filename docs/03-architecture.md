@@ -109,7 +109,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
   <tr><td colspan="5" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">session<br/><small>Valkey</small></td>
-    <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">memory-manager<br/><small>Postgres · mem0</small></td>
+    <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">memory-manager<br/><small>Postgres</small></td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">ingest<br/><small>cite opt</small></td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">9Router<br/><small>LLM</small></td>
     <td style="padding:10px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:20%;">Qdrant<br/><small>knowledge</small></td>
@@ -290,7 +290,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:32%;"><b>00:00</b><br/>auto-learn → Qdrant</td>
-    <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:32%;"><b>00:00 Med+</b><br/>compact → memory-manager / mem0</td>
+    <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:32%;"><b>00:00 Med+</b><br/>compact → memory-manager</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:32%;"><b>00:30</b><br/>backup → <code>/data/assistant/backups</code></td>
   </tr>
 </table>
@@ -308,7 +308,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
   <tr>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;"><b>Valkey</b><br/>short-term TTL</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;"><b>Postgres</b><br/>typed LTM</td>
-    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;"><b>mem0</b><br/>facts</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;"><b>Postgres</b><br/>facts</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;"><b>Qdrant</b><br/>conversational</td>
   </tr>
 </table>
@@ -322,7 +322,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:26%;">Valkey TTL<br/><small>expires → short-term gone</small></td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">+</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:40%;">
-      Hermes reply → async remember → Postgres · Mem0/Qdrant → <b>next-day context</b>
+      Hermes reply → async remember → Postgres (+ optional Qdrant) → <b>next-day context</b>
     </td>
   </tr>
 </table>
@@ -337,7 +337,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
   </thead>
   <tbody>
     <tr><td style="padding:10px 12px;">Valkey session</td><td style="padding:10px 12px;">Hours–~1 day</td><td style="padding:10px 12px;">Recent messages</td></tr>
-    <tr style="background:#fafafa;"><td style="padding:10px 12px;">Mem0 / conversational Qdrant</td><td style="padding:10px 12px;">Long-term</td><td style="padding:10px 12px;">User facts</td></tr>
+    <tr style="background:#fafafa;"><td style="padding:10px 12px;">Postgres / conversational Qdrant (optional)</td><td style="padding:10px 12px;">Long-term</td><td style="padding:10px 12px;">User facts</td></tr>
     <tr><td style="padding:10px 12px;">Postgres</td><td style="padding:10px 12px;">Long-term</td><td style="padding:10px 12px;">Typed Memory Manager rows</td></tr>
     <tr style="background:#fafafa;"><td style="padding:10px 12px;">Qdrant knowledge_chunks</td><td style="padding:10px 12px;">Long-term</td><td style="padding:10px 12px;">Document RAG</td></tr>
   </tbody>

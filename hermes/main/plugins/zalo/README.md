@@ -27,6 +27,18 @@ This tree **reuses** that work (via assistant) and **optimizes** it for assistan
 2. `ENABLE_ZALO=1 bash scripts/main/setup-zalo.sh` — install only (no QR)
 3. **You:** `bash scripts/main/login-zalo.sh` — QR / re-login
 
+## Home channel (cron / cross-platform)
+
+Hermes delivers cron results and cross-platform notices to a **home channel**. If none is set, upstream gateway would prompt every new session with `/sethome`.
+
+| Env | Default | Function |
+|-----|---------|----------|
+| `ZALO_HOME_CHANNEL` | empty | Manual home: `threadId` or `user:threadId` / `group:threadId` |
+| `ZALO_AUTO_SETHOME` | `1` | Silently claim home from the first allowed **DM** (no user-facing prompt) |
+| `ZALO_AUTO_SETHOME_DM_ONLY` | `1` | Never auto-claim a group as home |
+
+Disable auto-sethome with `ZALO_AUTO_SETHOME=0` and run `/sethome` once in the desired chat (or set `ZALO_HOME_CHANNEL`).
+
 ## Admin commands
 
 | Command | Who | Effect |

@@ -32,8 +32,16 @@ optional_env:
     prompt: "Allowed thread/group IDs (comma-separated, blank = everywhere)"
     password: false
   - name: ZALO_HOME_CHANNEL
-    description: "Default thread for cron / notification delivery. Format: <threadId> or <threadType>:<threadId> (threadType=user|group)"
+    description: "Default thread for cron / notification delivery. Format: <threadId> or <threadType>:<threadId> (threadType=user|group). If empty, silent auto-sethome claims the first allowed DM."
     prompt: "Home channel (threadId or type:threadId)"
+    password: false
+  - name: ZALO_AUTO_SETHOME
+    description: "When 1 (default), silently set ZALO_HOME_CHANNEL from the first allowed DM so Hermes does not spam the /sethome notice on every new chat. Set 0 to require manual /sethome."
+    prompt: "Auto-sethome on first DM? (1/0)"
+    password: false
+  - name: ZALO_AUTO_SETHOME_DM_ONLY
+    description: "When 1 (default), auto-sethome only from 1-1 DMs (never claim a group as home)."
+    prompt: "Auto-sethome DM-only? (1/0)"
     password: false
   - name: ZALO_GROUP_MODE
     description: "In groups, when the bot responds: 'mention' (only when @mentioned or replied-to, default), 'all' (every message in allowed groups), or 'off' (DM only)."

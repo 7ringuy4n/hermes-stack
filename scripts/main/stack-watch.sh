@@ -11,9 +11,11 @@ set -euo pipefail
 ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 # shellcheck disable=SC1091
 [[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
+[[ -f /data/assistant/.env ]] && set -a && source <(tr -d '\r' < /data/assistant/.env) && set +a
 
 PROJECT="${COMPOSE_PROJECT_NAME:-assistant}"
 PROFILE="${ASSISTANT_PROFILE:-low}"
+HERMES_REPLICAS="${HERMES_REPLICAS:-1}"
 if [[ -n "${ASSISTANT_DATA_DIR:-}" ]]; then
   _data_root="$ASSISTANT_DATA_DIR"
 elif [[ -n "${HERMES_DATA_DIR:-}" ]]; then
@@ -82,7 +84,7 @@ compose() {
       [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.edge.yml")
       ;;
   esac
-  if [[ "${HERMES_REPLICAS:-1}" == "1" ]]; then
+  if [[ "${HERMES_REPLICAS}" == "1" ]]; then
     [[ -f "${ROOT}/docker/docker-compose.hermes-hostports.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.hermes-hostports.yml")
   fi
   local profiles=()
@@ -125,8 +127,10 @@ restart_bad_containers() {
 }
 
 ensure_core_up() {
-  log "compose up -d (ensure running)"
-  compose up -d --remove-orphans >/dev/null 2>&1 || true
+  # Always pass --scale so heal does not collapse Hermes×N back to 1 (destroys SSE owner).
+  local scale="${HERMES_REPLICAS}"
+  log "compose up -d --scale hermes=${scale} (ensure running)"
+  compose up -d --remove-orphans --scale "hermes=${scale}" >/dev/null 2>&1 || true
 }
 
 probe() {
@@ -142,7 +146,10 @@ heal_by_health() {
   local failed=0
   probe 9router "http://127.0.0.1:${N9ROUTER_HOST_PORT:-20128}/v1/models" || failed=1
   probe dispatcher "http://127.0.0.1:${DISPATCHER_PORT:-8090}/health" || failed=1
-  probe hermes_dash "http://127.0.0.1:${HERMES_DASHBOARD_PORT:-29119}/" || true
+  # Host-published Hermes dashboard only exists when replicas=1
+  if [[ "${HERMES_REPLICAS}" == "1" ]]; then
+    probe hermes_dash "http://127.0.0.1:${HERMES_DASHBOARD_PORT:-29119}/" || true
+  fi
 
   case "$PROFILE" in
     medium|high)
@@ -153,7 +160,9 @@ heal_by_health() {
   case "$PROFILE" in
     high)
       probe admin-api "http://127.0.0.1:${ADMIN_API_PORT:-8100}/health" || failed=1
-      probe grafana "http://127.0.0.1:${GRAFANA_HOST_PORT:-23000}/api/health" || failed=1
+      case "${ENABLE_GRAFANA:-0}" in
+        1) probe grafana "http://127.0.0.1:${GRAFANA_HOST_PORT:-23000}/api/health" || failed=1 ;;
+      esac
       ;;
   esac
 
