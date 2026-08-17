@@ -1,0 +1,59 @@
+{
+  "ts": "2026-08-17 11:50:48 +0700",
+  "bursts": [
+    {
+      "status": "DONE",
+      "n": 4,
+      "ok": 4,
+      "fail": 0,
+      "tag": "zalo-c-a",
+      "elapsed_s": 0.38
+    },
+    {
+      "status": "DONE",
+      "n": 8,
+      "ok": 8,
+      "fail": 0,
+      "tag": "zalo-c-a",
+      "elapsed_s": 0.33
+    },
+    {
+      "status": "DONE",
+      "n": 16,
+      "ok": 16,
+      "fail": 0,
+      "tag": "zalo-c-a",
+      "elapsed_s": 0.33
+    },
+    {
+      "status": "DONE",
+      "n": 24,
+      "ok": 24,
+      "fail": 0,
+      "tag": "zalo-c-a",
+      "elapsed_s": 0.43
+    }
+  ],
+  "bridge_before": {
+    "ok": true,
+    "loggedIn": true,
+    "sessionDead": false,
+    "sessionDeadReason": null,
+    "ownId": "[redacted]",
+    "qr": null,
+    "sseClients": 1
+  },
+  "bridge_after": {
+    "ok": true,
+    "loggedIn": true,
+    "sessionDead": false,
+    "sessionDeadReason": null,
+    "ownId": "[redacted]",
+    "qr": null,
+    "sseClients": 1
+  },
+  "hermes_up": true,
+  "last_all_success_n": 24,
+  "first_fail_n": null,
+  "sse_ok": true
+}
