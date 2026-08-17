@@ -27,7 +27,7 @@ Must — container `memory`.
 
 ## Env (typical)
 
-`DATABASE_URL`, `REDIS_URL`, `QDRANT_URL`, `CONTEXT_BUDGET_TOKENS`, `TZ`
+`DATABASE_URL`, `REDIS_URL` (Valkey; env name kept for clients), `QDRANT_URL`, `CONTEXT_BUDGET_TOKENS`, `TZ`
 
 ## Related
 

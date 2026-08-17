@@ -18,7 +18,19 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
     <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
   </tr>
   <tr>
-    <td colspan="3" style="padding:14px;background:#2563eb;color:#fff;text-align:center;font-weight:700;">hermes — Agent · skills · plugins · messages</td>
+    <td colspan="3" style="padding:12px;background:#0f766e;color:#fff;text-align:center;font-weight:700;">edge (v0.5.0 default) — API Gateway · Traefik &nbsp;|&nbsp; Zalo bypasses edge</td>
+  </tr>
+  <tr>
+    <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
+  </tr>
+  <tr>
+    <td colspan="3" style="padding:14px;background:#2563eb;color:#fff;text-align:center;font-weight:700;">hermes — Agent · skills · plugins · messages (×1 or ×2 on one node)</td>
+  </tr>
+  <tr>
+    <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
+  </tr>
+  <tr>
+    <td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">model-router — coding → 9router · general → OmniRouter (optional) / fallback</td>
   </tr>
   <tr>
     <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
@@ -26,15 +38,15 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
   <tr>
     <td style="width:34%;padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;vertical-align:top;">
       <div style="font-weight:700;margin-bottom:6px;">Must (all profiles)</div>
-      memory · session · ingest · embed<br/>dispatcher · 9Router · backup
+      memory · session · ingest · embed<br/>dispatcher · 9Router · model-router · backup
     </td>
     <td style="width:33%;padding:12px;background:#fff8e6;border:1px solid #f0e0b0;vertical-align:top;">
       <div style="font-weight:700;margin-bottom:6px;">Medium+</div>
-      OCR · Jobs · web search<br/>file-gen · compact
+      OCR · Jobs · web search<br/>file-gen · compact · OmniRouter opt.
     </td>
     <td style="width:33%;padding:12px;background:#fde8e8;border:1px solid #f0c0c0;vertical-align:top;">
       <div style="font-weight:700;margin-bottom:6px;">High only</div>
-      authz · security · notify<br/>admin-api · monitor · OpenBao · CloudDrive
+      authz · security · notify<br/>monitor · OpenBao · CloudDrive
     </td>
   </tr>
   <tr>
@@ -89,7 +101,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
 
 - **Low:** Must only + text chat. Dispatcher on; web backends empty.
 - **Medium:** + OCR, Jobs, web, file-gen, compact @ 00:00.
-- **High:** + secret-probe, AV, authz, notify, admin-api, monitor, OpenBao, CloudDrive.
+- **High:** + secret-probe, AV, authz, notify, monitor, OpenBao, CloudDrive. zalo-api with ENABLE_ZALO.
 - **Social apps:** attach anytime — not a profile.
 
 ---

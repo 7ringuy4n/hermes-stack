@@ -1,5 +1,23 @@
 # host
 
+## System architecture
+
+| | |
+|--|--|
+| **Sits between** | Operator ↔ Docker / OS |
+| **Owns** | Paths (`/opt/assistant`, `/data/assistant`), install scripts, timers that call `run.sh` |
+| **Does not own** | Container app logic (that is other `architect/*` layers) |
+
+<table style="width:100%;border-collapse:collapse;font-size:13px;">
+  <tr>
+    <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">Operator</td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:14px;background:#2563eb;color:#fff;text-align:center;border:3px solid #fbbf24;width:36%;"><b>host scripts</b></td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">Docker Compose · /data · /opt</td>
+  </tr>
+</table>
+
 ## Purpose
 
 Host-level setup for the assistant stack: OS prep, Docker, directories under `/data/assistant` and `/opt/assistant`, timezone, and systemd timers that call `bash run.sh` / backup-restore. This layer does **not** run inside Docker as an app service; it documents and holds scripts that prepare the machine.
