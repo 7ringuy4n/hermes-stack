@@ -222,14 +222,14 @@ Packs: `zalo/` · `telegram/` · `http/` — attach with flags, not profiles.
   <tr><td colspan="4" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr>
     <td colspan="4" style="padding:14px;background:#2563eb;color:#fff;text-align:center;border:3px solid #fbbf24;">
-      <b>THIS — memory</b> · memory-manager · session · mem0
+      <b>THIS — memory</b> · memory-manager · session
     </td>
   </tr>
   <tr><td colspan="4" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;">Valkey</td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;">Postgres</td>
-    <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;">mem0</td>
+    <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;">Postgres LTM</td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;">Qdrant conversational</td>
   </tr>
 </table>
@@ -243,13 +243,13 @@ Packs: `zalo/` · `telegram/` · `http/` — attach with flags, not profiles.
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:26%;">session → Valkey</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">+</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:40%;">
-      memory-manager → Postgres · mem0 → Qdrant<br/>
+      memory-manager → Postgres · optional Qdrant index<br/>
       budgeted context · async remember
     </td>
   </tr>
 </table>
 
-Valkey = today. Mem0/Postgres = next month.
+Valkey = short-term. Postgres = durable facts.
 
 ---
 
