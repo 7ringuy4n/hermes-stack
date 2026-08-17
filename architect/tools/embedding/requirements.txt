@@ -3,3 +3,4 @@ uvicorn[standard]==0.34.2
 httpx==0.28.1
 pydantic==2.11.3
 numpy==2.2.4
+fastembed==0.8.0

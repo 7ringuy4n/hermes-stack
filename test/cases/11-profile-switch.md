@@ -23,7 +23,7 @@ This is not a second Zalo SSE client. Keep `ENABLE_ZALO=1` as an **existing** fl
 
 1. **Existing:** `bash run.sh profile` and `assistant_options_dump` (via `run.sh profile`). Record `ASSISTANT_PROFILE`, `ENABLE_ZALO`, sandbox/judge/AV, Traefik mode.
 2. **Dry-run:** `bash run.sh switch-profile high --dry-run` and `bash run.sh add-components ENABLE_NOTIFY=1 --dry-run` — no stamp, no `.env` write.
-3. **Archive (config at least):** set `BACKUP_COMPONENTS=config` for fast option stamps **or** full `bash run.sh backup`. Stamp must contain `config/profile-options.env` and `config/env.sealed`. `PRE_CHANGE` written on switch/add.
+3. **Backup + verify:** `bash run.sh backup` then `bash run.sh verify` must succeed before add/switch (product `switch-profile` / `add-components` already gate this). Stamp must contain `config/profile-options.env` and `config/env.sealed`. `PRE_CHANGE` written on switch/add.
 4. **Add:** `bash run.sh add-components ENABLE_NOTIFY=1 --no-up` then `bash run.sh up`. `ENABLE_NOTIFY=1` in `.env`; notify container up (High overlay).
 5. **Remove:** `bash run.sh add-components ENABLE_NOTIFY=0 --no-up` then `bash run.sh up`. Notify absent; Zalo still on.
 6. **Downgrade:** `bash run.sh switch-profile medium --no-up` then `bash run.sh up`. OpenBao/authz/SIEM gone; OCR/jobs/SearXNG and Zalo still present; `ENABLE_ZALO=1` still in `.env`.
