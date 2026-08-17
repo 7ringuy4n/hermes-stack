@@ -146,12 +146,12 @@ upsert() {{
   fi
 }}
 # Preserve existing secrets; only fill empty/missing gateway key
-if ! grep -q '^GATEWAY_API_KEYS=.\+' .env; then
+if ! grep -qE '^GATEWAY_API_KEYS=.+' .env; then
   KEY=$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')
   upsert GATEWAY_API_KEYS "$KEY"
   echo "SET_GATEWAY_API_KEYS=1"
 fi
-if ! grep -q '^ZALO_API_TOKEN=.\+' .env && ! grep -q '^ADMIN_API_TOKEN=.\+' .env; then
+if ! grep -qE '^ZALO_API_TOKEN=.+' .env && ! grep -qE '^ADMIN_API_TOKEN=.+' .env; then
   TOK=$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')
   upsert ZALO_API_TOKEN "$TOK"
   upsert ADMIN_API_TOKEN "$TOK"
@@ -173,7 +173,9 @@ upsert ENABLE_PROMETHEUS 0
 upsert ENABLE_ALLOY 0
 upsert ENABLE_ANTIVIRUS 0
 upsert SECURITY_FAIL_CLOSED 1
-upsert SECURITY_SANDBOX 1
+upsert SECURITY_SANDBOX 0
+upsert SECURITY_LLM_JUDGE 0
+upsert ENABLE_LLM_JUDGE 0
 # data dir
 grep -q '^ASSISTANT_DATA_DIR=' .env || upsert ASSISTANT_DATA_DIR /data/assistant
 grep -q '^HERMES_DATA_DIR=' .env || upsert HERMES_DATA_DIR /data/assistant
@@ -224,9 +226,11 @@ bash run.sh install-timers || true
 echo "==> wait health"
 sleep 20
 bash run.sh ps || true
+echo "==> first-setup-llm (Quick start)"
+bash run.sh first-setup-llm || true
 curl -fsS -m 8 http://127.0.0.1:20128/health || curl -fsS -m 8 http://127.0.0.1:20128/ || true
 echo
-curl -fsS -m 8 http://127.0.0.1:8080/ || true
+curl -fsS -m 8 http://127.0.0.1:8080/health || true
 echo
 curl -fsS -m 8 http://127.0.0.1:8088/health || true
 echo
@@ -235,7 +239,7 @@ echo
 docker ps --format '{{{{.Names}}}} {{{{.Status}}}}' | head -40
 echo DEPLOY_OK
 ''',
-        timeout=2400,
+        timeout=3600,
     )
 
 
@@ -252,12 +256,14 @@ export ENABLE_ZALO=1
 echo "==> Quick start style: down + up"
 bash run.sh down || true
 bash run.sh up
+echo "==> first-setup-llm (Quick start)"
+bash run.sh first-setup-llm || true
 bash run.sh install-timers || true
 sleep 25
 bash run.sh ps || true
 # edge + zalo probes
 curl -fsS -m 8 http://127.0.0.1:8088/health && echo GW_OK || echo GW_FAIL
-curl -fsS -m 8 http://127.0.0.1:8080/ >/dev/null && echo TRAEFIK_OK || echo TRAEFIK_FAIL
+curl -fsS -m 8 http://127.0.0.1:8080/health >/dev/null && echo TRAEFIK_OK || echo TRAEFIK_FAIL
 curl -fsS -m 8 http://127.0.0.1:8787/health || true
 echo
 docker ps --filter name=hermes --format '{{{{.Names}}}} {{{{.Status}}}} {{{{.Ports}}}}'
@@ -266,7 +272,7 @@ docker ps --filter name=api-gateway --format '{{{{.Names}}}} {{{{.Status}}}} {{{
 docker ps --filter name=zalo --format '{{{{.Names}}}} {{{{.Status}}}}'
 echo QUICKSTART_OK
 ''',
-        timeout=2400,
+        timeout=3600,
     )
 
 

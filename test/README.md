@@ -22,7 +22,16 @@ Summary grids in `reports/*/SUMMARY.md` use **HTML tables**. Every capability mu
 Zalo concurrent: [cases/08-zalo-concurrent.md](./cases/08-zalo-concurrent.md) ·
 [scripts/zalo_concurrent.py](./scripts/zalo_concurrent.py).
 
-Zalo: install bridge/proxy first. If the session is dead, stop and ask an operator to run `bash scripts/main/login-zalo.sh` (QR) before Zalo↔Hermes checks.
+Zalo concurrent **text + media generation** (delay): [cases/09-zalo-concurrent-media.md](./cases/09-zalo-concurrent-media.md) ·
+[scripts/zalo_concurrent_media.py](./scripts/zalo_concurrent_media.py).
 
-- Zalo concurrent: [cases/08-zalo-concurrent.md](./cases/08-zalo-concurrent.md) / [scripts/zalo_concurrent.py](./scripts/zalo_concurrent.py)
+Isolation risks: [cases/10-security-isolation-risks.md](./cases/10-security-isolation-risks.md) ·
+[scripts/security_risks.py](./scripts/security_risks.py).
+
+Two-pass lab summary (latest): [reports/run-05-two-pass/SUMMARY.md](./reports/run-05-two-pass/SUMMARY.md).
+
+Profile upgrade/downgrade (existing / add / remove options): [cases/11-profile-switch.md](./cases/11-profile-switch.md) ·
+[scripts/profile_switch.py](./scripts/profile_switch.py).
+
+Zalo: install bridge/proxy first. If the session is dead, stop and ask an operator to run `bash scripts/main/login-zalo.sh` (QR) before Zalo↔Hermes checks.
 

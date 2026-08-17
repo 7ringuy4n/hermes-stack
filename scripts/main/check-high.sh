@@ -31,6 +31,7 @@ if [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]]; then
 else
   echo "INFO antivirus disabled (ENABLE_ANTIVIRUS=0)"
 fi
+echo "INFO sandbox=${SECURITY_SANDBOX:-0} llm_judge=${SECURITY_LLM_JUDGE:-0} (defaults off; not a security boundary)"
 
 if [[ "${ENABLE_NOTIFY:-0}" == "1" ]]; then
   check notify "http://127.0.0.1:${NOTIFY_PORT:-8092}/health"

@@ -27,12 +27,12 @@ compose() {
   # Low: base. Medium: + medium. High: + medium + high (+ optional notify/clouddrive/comfy-gpu).
   # Edge: + docker-compose.edge.yml when Traefik / API Gateway / OpenVPN enabled.
   # Hermes scale: HERMES_REPLICAS (default 1; High default 2). Host ports only when replicas=1.
-  # Traefik mode: public prefers ACME; fail-soft to local when email/domain missing.
+  # Traefik mode: local = VPN/localhost (default). public = ACME when email+domain set.
   local -a files=(--project-directory "$ROOT" -f "$ROOT/docker/docker-compose.yml")
   local -a profiles=()
   local -a scale_args=()
   local replicas="${HERMES_REPLICAS:-1}"
-  local traefik_mode="${TRAEFIK_MODE:-public}"
+  local traefik_mode="${TRAEFIK_MODE:-local}"
   local acme="${TRAEFIK_ACME_ENABLED:-0}"
 
   # Fail-soft: public/ACME without email+domain → local HTTP Traefik
@@ -80,6 +80,10 @@ compose() {
       fi
       if [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]]; then
         profiles+=(--profile antivirus)
+      fi
+      if [[ "${SECURITY_SANDBOX:-0}" == "1" ]]; then
+        echo "WARN: SECURITY_SANDBOX=1 starts docker-socket-proxy — not a production isolation boundary" >&2
+        profiles+=(--profile sandbox)
       fi
       if [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
         profiles+=(--profile clouddrive)
@@ -169,6 +173,31 @@ need_high() {
 
 ops() {
   bash "${ROOT}/architect/backup-restore/ops.sh" "$@"
+}
+
+do_stop_disabled_optionals() {
+  # Compose --remove-orphans does not drop containers started under a --profile that is now off.
+  local -a extra=()
+  if [[ "${ENABLE_NOTIFY:-0}" != "1" ]]; then
+    extra+=(notify alert-watch)
+  fi
+  if [[ "${ENABLE_ANTIVIRUS:-0}" != "1" ]]; then
+    extra+=(clamav av-gateway)
+  fi
+  if [[ "${SECURITY_SANDBOX:-0}" != "1" ]]; then
+    extra+=(docker-socket-proxy)
+  fi
+  if [[ "${ENABLE_CLOUDDRIVE:-0}" != "1" ]]; then
+    extra+=(clouddrive-sync)
+  fi
+  case "${ENABLE_GRAFANA:-0}${ENABLE_LOKI:-0}${ENABLE_PROMETHEUS:-0}${ENABLE_ALLOY:-0}" in
+    *1*) ;;
+    *) extra+=(grafana loki prometheus alloy nine-exporter stack-exporter) ;;
+  esac
+  local n
+  for n in "${extra[@]}"; do
+    docker rm -f "$n" >/dev/null 2>&1 || true
+  done
 }
 
 do_auto_learn() {
@@ -464,6 +493,7 @@ do_update() {
 
   echo "==> rebuild + recreate"
   compose up -d --build --remove-orphans
+  do_stop_disabled_optionals
 
   if [[ -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
     echo "==> refresh 9Router Default Key + hermes combo"
@@ -525,6 +555,128 @@ do_post_ready_learn() {
     || echo "WARN: post-ready-learn failed — re-run: bash run.sh post-ready-learn"
 }
 
+env_upsert() {
+  local k="$1" v="$2" f="${ROOT}/.env"
+  touch "$f"
+  chmod 600 "$f" 2>/dev/null || true
+  if grep -q "^${k}=" "$f"; then
+    sed -i "s|^${k}=.*|${k}=${v}|" "$f"
+  else
+    echo "${k}=${v}" >> "$f"
+  fi
+}
+
+do_archive_before_change() {
+  # Snapshot live options, stamp DR backup (includes .env + profile-options.env).
+  local reason="${1:-manual}"
+  local stamp=""
+  echo "==> current options (before change)"
+  assistant_profile_summary
+  echo "==> option dump"
+  assistant_options_dump
+  echo "==> archive stamp (restore later with: bash run.sh restore <stamp>)"
+  export BACKUP_CHANGE_REASON="$reason"
+  stamp="$(ops backup | tee /dev/stderr | tail -n 1)"
+  unset BACKUP_CHANGE_REASON
+  if [[ -z "$stamp" || ! -d "${BACKUP_DIR:-/data/assistant/backups}/${stamp}" ]]; then
+    echo "ERROR: backup stamp missing — abort change" >&2
+    return 1
+  fi
+  echo "$stamp" > "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null \
+    || echo "$stamp" | sudo tee "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" >/dev/null
+  echo "ARCHIVE_STAMP=${stamp}"
+  echo "Restore this point: bash run.sh restore ${stamp}"
+}
+
+do_switch_profile() {
+  local target="" dry=0 noup=0 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry=1 ;;
+      --no-up) noup=1 ;;
+      low|medium|high) target="$arg" ;;
+      *)
+        echo "usage: bash run.sh switch-profile <low|medium|high> [--dry-run] [--no-up]" >&2
+        return 2
+        ;;
+    esac
+  done
+  [[ -n "$target" ]] || { echo "usage: bash run.sh switch-profile <low|medium|high> [--dry-run] [--no-up]" >&2; return 2; }
+  echo "==> switch-profile ${ASSISTANT_PROFILE} → ${target}"
+  if [[ "$dry" == "1" ]]; then
+    assistant_profile_summary
+    echo "DRY_RUN: would archive, set ASSISTANT_PROFILE=${target}, then $([[ "$noup" == "1" ]] && echo 'skip up' || echo 'run.sh up --remove-orphans')"
+    return 0
+  fi
+  do_archive_before_change "switch-profile:${ASSISTANT_PROFILE}->${target}" || return 1
+  local stamp
+  stamp="$(cat "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null || true)"
+  env_upsert ASSISTANT_PROFILE "$target"
+  echo "OK: wrote ASSISTANT_PROFILE=${target} to .env (stamp=${stamp})"
+  if [[ "$noup" == "1" ]]; then
+    echo "NEXT: bash run.sh up     # apply overlays; --remove-orphans drops leftover tier services"
+    echo "UNDO: bash run.sh restore ${stamp}"
+    return 0
+  fi
+  echo "==> apply new profile"
+  exec bash "${ROOT}/run.sh" up
+}
+
+do_add_components() {
+  local dry=0 noup=0
+  local -a pairs=()
+  local arg k v
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry=1 ;;
+      --no-up) noup=1 ;;
+      *=*)
+        k="${arg%%=*}"
+        v="${arg#*=}"
+        if ! assistant_option_key_ok "$k"; then
+          echo "ERROR: unknown option ${k} (not in profile option list)" >&2
+          return 2
+        fi
+        pairs+=("${k}=${v}")
+        ;;
+      *)
+        echo "usage: bash run.sh add-components KEY=VAL [KEY=VAL…] [--dry-run] [--no-up]" >&2
+        return 2
+        ;;
+    esac
+  done
+  [[ ${#pairs[@]} -gt 0 ]] || { echo "usage: bash run.sh add-components KEY=VAL [KEY=VAL…] [--dry-run] [--no-up]" >&2; return 2; }
+  echo "==> add-components ${pairs[*]}"
+  assistant_profile_summary
+  for arg in "${pairs[@]}"; do
+    k="${arg%%=*}"
+    case "$k" in
+      ENABLE_OPENBAO|ENABLE_AUTHZ|ENABLE_SIEM|ENABLE_POLICY|ENABLE_SECURITY|ENABLE_NOTIFY)
+        if [[ "$ASSISTANT_PROFILE" != "high" ]]; then
+          echo "WARN: ${k} needs High overlay — run: bash run.sh switch-profile high" >&2
+        fi
+        ;;
+    esac
+  done
+  if [[ "$dry" == "1" ]]; then
+    echo "DRY_RUN: would archive then set: ${pairs[*]}"
+    return 0
+  fi
+  do_archive_before_change "add-components:${pairs[*]}" || return 1
+  local stamp
+  stamp="$(cat "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null || true)"
+  for arg in "${pairs[@]}"; do
+    env_upsert "${arg%%=*}" "${arg#*=}"
+  done
+  echo "OK: wrote ${pairs[*]} (stamp=${stamp})"
+  if [[ "$noup" == "1" ]]; then
+    echo "NEXT: bash run.sh up"
+    echo "UNDO: bash run.sh restore ${stamp}"
+    return 0
+  fi
+  exec bash "${ROOT}/run.sh" up
+}
+
 do_help() {
   cat <<EOF
 assistant — ASSISTANT_PROFILE=${ASSISTANT_PROFILE}
@@ -536,6 +688,11 @@ Stack (all):
   update   # after git pull: rebuild stack, refresh LLM wiring, prune disk
   destroy  # remove this project's containers + networks (volumes/data kept)
            # then rebuild with: bash run.sh up
+
+Change tier / add components (all — archives first):
+  switch-profile <low|medium|high> [--dry-run] [--no-up]
+  add-components KEY=VAL […] [--dry-run] [--no-up]
+  profile                 # show current options
 
 DR (all):
   backup | restore [stamp] | verify [stamp] | migrate
@@ -573,6 +730,7 @@ case "$cmd" in
   up)
     assistant_profile_summary
     compose up -d --remove-orphans
+    do_stop_disabled_optionals
     ensure_profile_timers
     # Wire 9Router Default Key + hermes combo before OpenBao seed so N9ROUTER_API_KEY is present
     if [[ -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
@@ -605,6 +763,8 @@ case "$cmd" in
   ps) compose ps ;;
   logs) compose logs -f --tail=100 "$@" ;;
   profile) assistant_profile_summary ;;
+  switch-profile|change-profile) do_switch_profile "$@" ;;
+  add-components|enable-components) do_add_components "$@" ;;
   update) do_update ;;
   backup) ops backup "$@" ;;
   restore) ops restore "$@" ;;

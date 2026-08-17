@@ -61,7 +61,11 @@ bash run.sh backup              # stamp → $BACKUP_DIR (default /data/assistant
 bash run.sh verify [stamp]      # manifest + live postgres/Valkey/qdrant probes
 bash run.sh restore [stamp]     # restore stores then compose up (uses HERMES_REPLICAS)
 bash run.sh migrate             # pack LATEST stamp for moving hosts
+bash run.sh switch-profile high # archive current options+stores, then change tier + up
+bash run.sh add-components ENABLE_ZALO=1
 ```
+
+Stamps include `config/env.sealed` (full `.env`) and `config/profile-options.env` (non-secret `ENABLE_*`). A tier change writes `PRE_CHANGE` in `BACKUP_DIR` for undo: `bash run.sh restore "$(cat /data/assistant/backups/PRE_CHANGE)"`.
 
 ### Restore behavior (important)
 

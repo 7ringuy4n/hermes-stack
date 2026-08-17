@@ -9,9 +9,10 @@
 set -euo pipefail
 
 ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# Data-dir .env first (lab leftovers); product ${ROOT}/.env wins.
 # shellcheck disable=SC1091
-[[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
 [[ -f /data/assistant/.env ]] && set -a && source <(tr -d '\r' < /data/assistant/.env) && set +a
+[[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
 
 PROJECT="${COMPOSE_PROJECT_NAME:-assistant}"
 PROFILE="${ASSISTANT_PROFILE:-low}"
@@ -148,7 +149,7 @@ heal_by_health() {
   if [[ "${HERMES_REPLICAS}" == "1" ]]; then
     probe hermes_dash "http://127.0.0.1:${HERMES_DASHBOARD_PORT:-29119}/" || true
   else
-    probe traefik "http://127.0.0.1:${TRAEFIK_HOST_PORT:-8080}/" || true
+    probe traefik "http://127.0.0.1:${TRAEFIK_HOST_PORT:-8080}/health" || true
     probe gateway "http://127.0.0.1:${GATEWAY_HOST_PORT:-8088}/health" || failed=1
   fi
 
