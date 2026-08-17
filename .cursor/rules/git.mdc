@@ -17,6 +17,27 @@ Follow **[docs/GIT.md](../../docs/GIT.md)** as the source of truth.
 feature/* ──MR──> develop ──> release/* ──MR──> main
 ```
 
+## Fetch and rebase first (mandatory)
+
+**Before implementing or promoting any change, fetch the latest remotes and rebase the current branch.** Do not start work, open an MR, or merge onto a stale base.
+
+| When | Onto | Command |
+|------|------|---------|
+| Start / continue `feature/*` or `fix/*` | `origin/develop` | `git fetch origin && git rebase origin/develop` |
+| Start / continue `hotfix/*` or `release/*` | `origin/main` | `git fetch origin && git rebase origin/main` |
+| Promote feature → `develop` | `origin/develop` | fetch + rebase, then MR `feature/*` → `develop` |
+| Promote toward production | `origin/main` | fetch + rebase `release/*` onto `origin/main`, then MR `release/*` → `main` |
+
+```bash
+git fetch origin
+git rebase origin/develop   # feature/fix
+git rebase origin/main      # hotfix/release
+```
+
+- Non-interactive rebase only (no `git rebase -i`).
+- On conflict: resolve then `git rebase --continue`, or `--abort` and ask. Force-push only when the operator explicitly asks (`--force-with-lease`).
+- **Never** merge `develop` straight into `main`.
+
 ## Merging to `main` (mandatory)
 
 - **Always open a Pull Request / merge request into `main`.**
@@ -45,8 +66,10 @@ Examples: `[FEATURE][MEMORY] Add memory manager` · `[FIX][SESSION] Fix session 
 
 ## Must
 
+- **Fetch + rebase first** before implementing or promoting (`origin/develop` for feature/fix, `origin/main` for hotfix/release)
 - Update `docs/CHANGELOG.md` (top + timestamp) for ops/product changes
 - Do not merge untested 🧪 features into `release/*` / `main`
+- Do not merge `develop` straight into `main` (use `release/*` MR)
 - Push only when GitHub auth is the repo owner (`7ringuy4n` for this repo)
 - No VPS/remote apply without explicit permission
 - Force-push / amend only when the operator explicitly asks (`--force-with-lease`)
