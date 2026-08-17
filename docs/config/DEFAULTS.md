@@ -21,7 +21,7 @@ LEARN_LIST_LIMIT=5
 
 ## Must (always on — no ENABLE_* on Low)
 
-postgres, redis (Valkey), qdrant, memory, session, embedding, ingest, dispatcher, 9router, hermes, backup/restore.
+postgres, Valkey (container service name often still `redis`), qdrant, memory, session, embedding, ingest, dispatcher, 9router, hermes, backup/restore.
 
 > **LTM:** Memory Manager + Postgres only.
 ## First setup (host)
@@ -59,7 +59,8 @@ OPENBAO_PORT=8200
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=
 GRAFANA_HOST_PORT=23000
-ADMIN_API_TOKEN=
+ZALO_API_TOKEN=
+# ADMIN_API_TOKEN=   # legacy alias for zalo-api
 ENABLE_NOTIFY=0                # High default off; set 1 for notify + alert-watch
 ENABLE_CLOUDDRIVE=0
 CLOUDDRIVE_MIRROR_DIR=/data/clouddrive
@@ -75,7 +76,6 @@ ENABLE_SECURITY=0
 ENABLE_SIEM=0
 ENABLE_POLICY=0
 ENABLE_AUTHZ=0
-ENABLE_ADMIN_API=0
 ENABLE_ZALO=0
 ENABLE_TELEGRAM=0
 ENABLE_TRAEFIK=0
@@ -97,7 +97,7 @@ ZALO_AUTO_SETHOME_DM_ONLY=1
 |---|---|
 | low | none by default; **Traefik/API Gateway forced off** |
 | medium | OCR, SearXNG, Jobs, office file-gen, web backends + compact; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=2**; OpenVPN opt-in |
-| high | Medium + OpenBao UI, AV, security, SIEM, authz, policy, admin-api, monitor; notify opt-in; CloudDrive; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=2**; OpenVPN opt-in |
+| high | Medium + OpenBao UI, AV, security, SIEM, authz, policy, monitor; zalo-api with Zalo; notify opt-in; CloudDrive; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=2**; OpenVPN opt-in |
 
 High overlay: `docker-compose.high.yml`. Edge overlay: `docker-compose.edge.yml` when `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` is `1`. Smoke: `bash run.sh check-high`. Seed keys: `bash run.sh first-setup-openbao`.
 

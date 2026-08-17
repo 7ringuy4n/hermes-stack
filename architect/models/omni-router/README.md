@@ -1,5 +1,23 @@
 # OmniRouter (optional, v0.5.0)
 
+## System architecture
+
+| | |
+|--|--|
+| **Sits between** | Model Router ↔ general LLM providers |
+| **Owns** | Optional general-task OpenAI-compatible gateway |
+| **Does not own** | Coding-preferred path (9router) |
+
+<table style="width:100%;border-collapse:collapse;font-size:13px;">
+  <tr>
+    <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">model-router</td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:14px;background:#2563eb;color:#fff;text-align:center;border:3px solid #fbbf24;width:36%;"><b>OmniRouter</b></td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">LLM providers</td>
+  </tr>
+</table>
+
 ## Purpose
 
 Separate OpenAI-compatible LLM gateway for **general / non-coding** tasks. Used by the Model Router when `ENABLE_OMNIROUTER=1`.

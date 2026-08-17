@@ -33,7 +33,7 @@ HEALTH_TARGETS = os.environ.get(
     "embedding=embedding:8094/health,"
     "dispatcher=dispatcher:8090/health,"
     "memory=memory:8095/health,"
-    "admin-api=admin-api:8100/health,"
+    "zalo-api=zalo-api:8100/health,"
     "openbao=openbao:8200/v1/sys/health",
 )
 

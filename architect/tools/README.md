@@ -1,5 +1,23 @@
 # tools
 
+## System architecture
+
+| | |
+|--|--|
+| **Sits between** | Hermes / timers ↔ Qdrant (+ OCR/jobs workers) |
+| **Owns** | Document ingest, embeddings, OCR (Med+), RQ jobs (Med+) |
+| **Does not own** | Conversational LTM (that is [memory](../memory/README.md)) |
+
+<table style="width:100%;border-collapse:collapse;font-size:13px;">
+  <tr>
+    <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">Files / Hermes / jobs</td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:14px;background:#2563eb;color:#fff;text-align:center;border:3px solid #fbbf24;width:36%;"><b>ingest · OCR · embedding</b></td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">Qdrant knowledge_chunks</td>
+  </tr>
+</table>
+
 ## Purpose
 
 Document and media **tooling** around Hermes: embed text, ingest into Qdrant knowledge, OCR (Medium+), and async Jobs workers (Medium+).
@@ -34,4 +52,5 @@ Document and media **tooling** around Hermes: embed text, ingest into Qdrant kno
 ## Related
 
 - [memory](../memory/README.md)  
-- [models/dispatcher](../models/dispatcher/README.md)
+- [models/dispatcher](../models/dispatcher/README.md)  
+- [docs/03-architecture.md](../../docs/03-architecture.md)
