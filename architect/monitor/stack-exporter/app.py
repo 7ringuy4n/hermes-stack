@@ -29,7 +29,6 @@ HEALTH_TARGETS = os.environ.get(
     "security-manager=security-manager:8093/health,"
     "ocr=ocr:8091/health,"
     "ingest=ingest:8099/health,"
-    "mem0=mem0:8096/health,"
     "authz=authz:8097/health,"
     "embedding=embedding:8094/health,"
     "dispatcher=dispatcher:8090/health,"
@@ -241,10 +240,8 @@ def render_metrics() -> str:
         "# TYPE assistant_redis_used_memory_bytes gauge",
         "# HELP assistant_redis_keys Redis dbsize / keyspace keys",
         "# TYPE assistant_redis_keys gauge",
-        "# HELP assistant_redis_session_keys Conversation session keys (mem0:conv:*)",
+        "# HELP assistant_redis_session_keys Conversation session keys (conversation_active:*)",
         "# TYPE assistant_redis_session_keys gauge",
-        "# HELP assistant_redis_memory_index_keys mem0 memory index keys (mem0:idx:*)",
-        "# TYPE assistant_redis_memory_index_keys gauge",
         "# HELP assistant_redis_ingest_queue_len Length of ingest:jobs list",
         "# TYPE assistant_redis_ingest_queue_len gauge",
         "# HELP assistant_qdrant_up 1 if collection reachable",
@@ -273,15 +270,10 @@ def render_metrics() -> str:
             keys = float(m.group(1))
         lines.append(_line("assistant_redis_keys", keys))
         try:
-            sess = float(_redis_scan_count(host, port, "mem0:conv:*", db))
+            sess = float(_redis_scan_count(host, port, "conversation_active:*", db))
         except Exception:
             sess = 0.0
-        try:
-            idx = float(_redis_scan_count(host, port, "mem0:idx:*", db))
-        except Exception:
-            idx = 0.0
         lines.append(_line("assistant_redis_session_keys", sess))
-        lines.append(_line("assistant_redis_memory_index_keys", idx))
         # LLEN ingest:jobs
         try:
             raw = _redis_cmd(host, port, "LLEN", "ingest:jobs")

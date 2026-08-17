@@ -274,9 +274,21 @@ from gateway.platforms.base import (
 )
 from gateway.config import Platform
 
+# Component toggles (admin-editable via env; no hardcoded user-facing copy).
+ZALO_AUTO_SETHOME_ENV = "ZALO_AUTO_SETHOME"
+ZALO_AUTO_SETHOME_DM_ONLY_ENV = "ZALO_AUTO_SETHOME_DM_ONLY"
+ZALO_HOME_CHANNEL_ENV = "ZALO_HOME_CHANNEL"
+
 
 def _truthy(v) -> bool:
     return str(v if v is not None else "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_flag(name: str, default: bool = True) -> bool:
+    raw = os.getenv(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    return _truthy(raw)
 
 
 def _parse_home_channel(raw: str) -> tuple[str, str]:
@@ -375,6 +387,9 @@ class ZaloAdapter(BasePlatformAdapter):
         self._sse_task: Optional[asyncio.Task] = None
         self._stop = False
         self._last_event_id = 0
+        # Silent auto-sethome (mirrors Yuanbao): stop gateway "📬 No home channel" spam.
+        _existing_home = (os.getenv(ZALO_HOME_CHANNEL_ENV) or "").strip()
+        self._auto_sethome_done: bool = bool(_existing_home)
 
     @property
     def name(self) -> str:
@@ -385,6 +400,75 @@ class ZaloAdapter(BasePlatformAdapter):
         if self.bridge_token:
             h["x-bridge-token"] = self.bridge_token
         return h
+
+    def _sender_may_designate_home(self, sender_id: str, chat_type: str) -> bool:
+        """Who may claim ZALO_HOME_CHANNEL via silent auto-sethome."""
+        if not _env_flag(ZALO_AUTO_SETHOME_ENV, True):
+            return False
+        if self._auto_sethome_done:
+            return False
+        if _env_flag(ZALO_AUTO_SETHOME_DM_ONLY_ENV, True) and chat_type != "dm":
+            return False
+        # Empty allowlist = everyone (Telegram-style); otherwise only listed uids.
+        if self._allowed_users and str(sender_id) not in self._allowed_users:
+            return False
+        return True
+
+    def _maybe_auto_set_home(self, *, thread_id: str, chat_type: str, sender_id: str, sender_name: str) -> None:
+        """Silently designate home before gateway sees the first empty-history turn.
+
+        Hermes gateway emits a /sethome notice on every new session when
+        ZALO_HOME_CHANNEL / config home is unset. Setting env + config here
+        (before handle_message) makes that check pass for the same turn.
+        """
+        if not self._sender_may_designate_home(sender_id, chat_type):
+            return
+        cur = (os.getenv(ZALO_HOME_CHANNEL_ENV) or "").strip()
+        # Prefer a DM over a previously empty/group placeholder when DM arrives.
+        should_set = (not cur) or (cur.startswith("group:") and chat_type == "dm")
+        if chat_type == "dm":
+            self._auto_sethome_done = True
+        if not should_set:
+            return
+
+        home_raw = str(thread_id)
+        if chat_type == "group":
+            home_raw = f"group:{thread_id}"
+
+        try:
+            os.environ[ZALO_HOME_CHANNEL_ENV] = home_raw
+            try:
+                from hermes_cli.config import save_env_value
+
+                save_env_value(ZALO_HOME_CHANNEL_ENV, home_raw)
+            except Exception as e:
+                logger.warning("Zalo auto-sethome: save_env_value failed: %s", e)
+
+            try:
+                from gateway.config import HomeChannel, persist_home_channel
+
+                persist_home_channel(
+                    HomeChannel(
+                        platform=self.platform,
+                        chat_id=str(thread_id),
+                        name=sender_name or str(thread_id),
+                        thread_id=None,
+                        user_id=str(sender_id) if sender_id else None,
+                        scope_id=None,
+                    ),
+                    enabled_if_new=True,
+                )
+            except Exception as e:
+                logger.warning("Zalo auto-sethome: persist_home_channel failed: %s", e)
+
+            logger.info(
+                "Zalo auto-sethome: designated %s (%s) as home channel (silent)",
+                home_raw,
+                chat_type,
+            )
+            self._auto_sethome_done = True
+        except Exception as e:
+            logger.warning("Zalo auto-sethome failed: %s", e)
 
     # ── Connection lifecycle ──────────────────────────────────────────────
 
@@ -1769,6 +1853,13 @@ class ZaloAdapter(BasePlatformAdapter):
             media_urls=media_urls,
             media_types=media_types,
             timestamp=datetime.now(),
+        )
+        # Before gateway turn: claim home so first-chat /sethome notice is skipped.
+        self._maybe_auto_set_home(
+            thread_id=str(thread_id),
+            chat_type=str(chat_type),
+            sender_id=str(sender_id or ""),
+            sender_name=str(sender_name or ""),
         )
         await self.handle_message(event)
 

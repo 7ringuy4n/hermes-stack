@@ -146,7 +146,7 @@
           "refId": "A"
         }
       ],
-      "title": "Redis conversation sessions (mem0:conv:*)",
+      "title": "Redis conversation sessions (conversation_active:*)",
       "type": "stat"
     },
     {
