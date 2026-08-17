@@ -1,5 +1,10 @@
 # Change history
 
+## 2026-08-17 12:00 +07 — release: v0.5.2
+
+- Security P0 hardening (gateway auth, SSRF, docker.sock/proxy, fail-closed).
+- Ops: Hermes×2 Traefik/Gateway probes; check-medium restore; Zalo concurrent lab tests.
+
 ## 2026-08-17 12:15 +07 — fix: restore check-medium.sh corruption
 
 - `scripts/main/check-medium.sh` had systematic `d`→`o` corruption (`/dev/null` → `/oev/null`, dispatcher → oispatcher); restored. Blocks Medium smoke / Zalo setup gate.
