@@ -1,5 +1,54 @@
 # Change history
 
+## 2026-08-17 18:00 +07 — release: v0.5.4
+
+- P0 skills + exact text-poster; local ONNX embedding fallback; learn unique by path.
+- Backup+verify required before destroy / switch-profile / add-components / update.
+- Skills lab cases 12–14; High Notify + OmniRouter + monitor.
+
+## 2026-08-17 17:55 +07 — ops: backup+verify before destroy / upgrade / downgrade
+
+- `run.sh destroy`, `switch-profile`, `add-components`, and `update` run `backup` then `verify` and abort if either fails.
+- Lab deploy scripts no longer swallow `destroy` failure (`|| true`).
+- `verify` live-checks Postgres/Valkey when those containers are running.
+
+## 2026-08-17 17:48 +07 — ops: High deploy with Notify + OmniRouter + monitor
+
+- Lab helper `test/scripts/deploy_high.py`: destroy current profile, High up with Notify, OmniRouter, Grafana/Loki/Prometheus/Alloy.
+- Isolation stays default off (AV / sandbox / LLM judge). Zalo off unless requested.
+- Prune stale `created`/`dead` containers before `up` (compose missing-container race).
+
+## 2026-08-17 17:35 +07 — test: skills lab PASS (cases 12–14)
+
+- Medium lab: 52 skill docs learned into Qdrant; local ONNX embedding fallback.
+- Case 13 text-poster: `backend=text-poster`, n=10, empty prompt HTTP 400.
+- `test/scripts/skills_lab.py`: Windows console UTF-8 safe output.
+
+## 2026-08-17 16:50 +07 — embedding: local ONNX fallback for skill learn
+
+- Embedding service uses local `BAAI/bge-small-en-v1.5` (fastembed) when 9Router has no embedding credentials/models.
+- Ingest recreates `knowledge_chunks` if vector size changes.
+- Skills lab rebuilds embedding on Medium destroy/redeploy.
+
+## 2026-08-17 16:20 +07 — ingest: learn unique docs by path
+
+- `learn/scan` no longer treats every `SKILL.md` as the same document; skip/index keys use relative path.
+- Markdown/text files are read as UTF-8 during learn (not OCR-only).
+- post-ready-learn mirrors skills under `docs/skills/<relative-folder>/`.
+
+## 2026-08-17 16:10 +07 — test: skills lab (Medium auto-learn + text-poster)
+
+- Cases `12-skills-auto-learn`, `13-image-text-poster`, `14-knowledge-internal-rag`.
+- Script `test/scripts/skills_lab.py`: destroy Medium, sync skills, post-ready-learn, mount/catalog/poster probes.
+- `test/RULES.md` §13 fail events + §15 case index updated.
+
+## 2026-08-17 16:00 +07 — skills: P0 sources + exact text posters
+
+- **Image:** dispatcher `text-poster` path (Pillow) for quoted text / N lines — skips LLM refine and diffusion; `image-gen` skill updated.
+- **Skills:** vendored Anthropic skill-creator, obra superpowers (debug/TDD/git/verify), Trail of Bits audit plugins; Hermes wrappers under `core/`, `knowledge/`, `coding/`, `communication/`.
+- **Not vendored:** `canvas-design` (art-first; breaks exact text). Kodus/VoltAgent remain catalogs.
+- `post-ready-learn` ingests category subfolders; `vendor/CATALOG.md` updated.
+
 ## 2026-08-17 15:25 +07 — release: v0.5.3
 
 - Isolation boundary: sandbox/LLM judge/AV off by default; judge CLEAN cannot allow; VPN-only Traefik; socket-proxy only with sandbox profile.

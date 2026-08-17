@@ -21,11 +21,11 @@ Set secrets in `.env` **before** `up`. Use `sudo` on the VPS when writing under 
 | Command | Low | Medium | High | What it does |
 |---|---|---|---|---|
 | `up` / `down` / `ps` / `logs` | ✅ | ✅ | ✅ | Compose lifecycle |
-| `destroy` | ✅ | ✅ | ✅ | Remove this project's containers + networks (volumes/data kept) |
-| `update` | ✅ | ✅ | ✅ | After `git pull`: rebuild stack, refresh LLM wiring, prune disk |
+| `destroy` | ✅ | ✅ | ✅ | Backup+verify, then remove this project's containers + networks (volumes/data kept) |
+| `update` | ✅ | ✅ | ✅ | Backup+verify, then after `git pull`: rebuild stack, refresh LLM wiring, prune disk |
 | `profile` | ✅ | ✅ | ✅ | Show `ASSISTANT_PROFILE` + optional flags |
-| `switch-profile <tier>` | ✅ | ✅ | ✅ | Archive stamp, set `ASSISTANT_PROFILE`, `up` (upgrade/downgrade) |
-| `add-components KEY=VAL` | ✅ | ✅ | ✅ | Archive stamp, set option flags, `up` |
+| `switch-profile <tier>` | ✅ | ✅ | ✅ | Backup+verify, set `ASSISTANT_PROFILE`, `up` (upgrade/downgrade) |
+| `add-components KEY=VAL` | ✅ | ✅ | ✅ | Backup+verify, set option flags, `up` |
 | `backup` | ✅ | ✅ | ✅ | DR stamp → `/data/assistant/backups` |
 | `restore [stamp]` | ✅ | ✅ | ✅ | Restore LATEST or stamp |
 | `verify [stamp]` | ✅ | ✅ | ✅ | Check backup manifest + live pings |
@@ -48,16 +48,16 @@ Set secrets in `.env` **before** `up`. Use `sudo` on the VPS when writing under 
 ```bash
 bash run.sh up              # start Must (+ profile optionals when compose overlays exist)
 bash run.sh down
-bash run.sh destroy         # remove project containers + networks (volumes/data kept)
+bash run.sh destroy         # backup+verify, then remove project containers + networks
 bash run.sh ps
 bash run.sh logs [service]  # e.g. bash run.sh logs ingest
 bash run.sh profile         # ASSISTANT_PROFILE=low|medium|high
-bash run.sh switch-profile medium   # archive → set tier → up (--dry-run / --no-up)
-bash run.sh add-components ENABLE_ZALO=1   # archive → flags → up
-bash run.sh update          # after git pull: rebuild + LLM refresh + disk prune
+bash run.sh switch-profile medium   # backup+verify → set tier → up (--dry-run / --no-up)
+bash run.sh add-components ENABLE_ZALO=1   # backup+verify → flags → up
+bash run.sh update          # backup+verify, then after git pull: rebuild + LLM refresh + disk prune
 ```
 
-Full recreate (containers/networks only; keeps `/data/assistant` and named volumes):
+Full recreate (backup+verify first; containers/networks only; keeps `/data/assistant` and named volumes):
 
 ```bash
 bash run.sh destroy
@@ -92,7 +92,7 @@ bash run.sh migrate                   # tarball of LATEST for a new server
 | Low / Medium | Local disk only |
 | High | After backup: `bash run.sh backup-sync-clouddrive` (needs `ENABLE_CLOUDDRIVE=1`) |
 
-**Change profile / add components (all tiers):** archive current options + stores, then apply.
+**Change profile / add components (all tiers):** backup + verify current options + stores, then apply. Aborts if verify fails.
 
 ```bash
 bash run.sh switch-profile high            # Low/Medium → High

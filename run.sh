@@ -175,6 +175,30 @@ ops() {
   bash "${ROOT}/architect/backup-restore/ops.sh" "$@"
 }
 
+do_backup_first() {
+  # Must succeed (backup + verify) before destroy, upgrade, or downgrade.
+  local reason="${1:-pre-change}"
+  local stamp="" bdir="${BACKUP_DIR:-/data/assistant/backups}"
+  echo "==> backup first (${reason}) — verify must pass before proceeding"
+  assistant_profile_summary
+  export BACKUP_CHANGE_REASON="$reason"
+  stamp="$(ops backup | tee /dev/stderr | tail -n 1 | tr -d '\r' | awk 'NF { line=$0 } END { print line }')"
+  unset BACKUP_CHANGE_REASON
+  if [[ -z "$stamp" || ! -d "${bdir}/${stamp}" ]]; then
+    echo "ERROR: backup failed or stamp missing — abort ${reason}" >&2
+    return 1
+  fi
+  echo "==> verify backup stamp=${stamp}"
+  if ! ops verify "$stamp"; then
+    echo "ERROR: backup verify failed for ${stamp} — abort ${reason}" >&2
+    return 1
+  fi
+  echo "$stamp" > "${bdir}/PRE_CHANGE" 2>/dev/null \
+    || echo "$stamp" | sudo tee "${bdir}/PRE_CHANGE" >/dev/null
+  echo "BACKUP_FIRST_OK stamp=${stamp}"
+  echo "Restore this point: bash run.sh restore ${stamp}"
+}
+
 do_stop_disabled_optionals() {
   # Compose --remove-orphans does not drop containers started under a --profile that is now off.
   local -a extra=()
@@ -450,6 +474,7 @@ do_channel_status() {
 
 do_destroy() {
   # Tear down this compose project: containers + networks. Named volumes /data kept.
+  do_backup_first "destroy" || return 1
   local project="${COMPOSE_PROJECT_NAME:-assistant}"
   echo "==> destroy stack project=${project} (containers + networks; volumes kept)"
   compose down --remove-orphans || true
@@ -480,6 +505,7 @@ do_destroy() {
 do_update() {
   # After: git pull  →  bash run.sh update
   # Rebuilds/recreates stack from current tree; refreshes 9Router→Hermes wiring; prunes disk.
+  do_backup_first "update" || return 1
   echo "==> update from current source (ASSISTANT_PROFILE=${ASSISTANT_PROFILE})"
   if [[ -d "${ROOT}/.git" ]]; then
     echo "==> git HEAD: $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
@@ -567,25 +593,11 @@ env_upsert() {
 }
 
 do_archive_before_change() {
-  # Snapshot live options, stamp DR backup (includes .env + profile-options.env).
+  # Snapshot live options + DR backup; verify stamp before any upgrade/downgrade/add.
   local reason="${1:-manual}"
-  local stamp=""
   echo "==> current options (before change)"
-  assistant_profile_summary
-  echo "==> option dump"
   assistant_options_dump
-  echo "==> archive stamp (restore later with: bash run.sh restore <stamp>)"
-  export BACKUP_CHANGE_REASON="$reason"
-  stamp="$(ops backup | tee /dev/stderr | tail -n 1)"
-  unset BACKUP_CHANGE_REASON
-  if [[ -z "$stamp" || ! -d "${BACKUP_DIR:-/data/assistant/backups}/${stamp}" ]]; then
-    echo "ERROR: backup stamp missing — abort change" >&2
-    return 1
-  fi
-  echo "$stamp" > "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null \
-    || echo "$stamp" | sudo tee "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" >/dev/null
-  echo "ARCHIVE_STAMP=${stamp}"
-  echo "Restore this point: bash run.sh restore ${stamp}"
+  do_backup_first "$reason"
 }
 
 do_switch_profile() {
@@ -685,11 +697,11 @@ Docs: docs/02-commands.md
 Stack (all):
   up | down | destroy | ps | logs [svc] | profile | update
 
-  update   # after git pull: rebuild stack, refresh LLM wiring, prune disk
-  destroy  # remove this project's containers + networks (volumes/data kept)
+  update   # backup+verify, then after git pull: rebuild stack, refresh LLM wiring, prune disk
+  destroy  # backup+verify, then remove project containers + networks (volumes/data kept)
            # then rebuild with: bash run.sh up
 
-Change tier / add components (all — archives first):
+Change tier / add components (all — backup+verify first):
   switch-profile <low|medium|high> [--dry-run] [--no-up]
   add-components KEY=VAL […] [--dry-run] [--no-up]
   profile                 # show current options
