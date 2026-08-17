@@ -22,6 +22,32 @@ feature/* ──MR──> develop ──> release/* ──MR──> main
                      └── Feature E 🧪
 ```
 
+### Fetch and rebase first (mandatory)
+
+**Before implementing or promoting any change, fetch the latest remotes and rebase the current branch.** Do not start work, open an MR, or merge onto a stale base.
+
+| When | Onto | Command |
+|------|------|---------|
+| Start / continue `feature/*` or `fix/*` | `origin/develop` | `git fetch origin && git rebase origin/develop` |
+| Start / continue `hotfix/*` or `release/*` | `origin/main` | `git fetch origin && git rebase origin/main` |
+| Promote feature → `develop` (before MR or merge) | `origin/develop` | fetch + rebase, then MR `feature/*` → `develop` |
+| Promote `develop` → production | `origin/main` (on `release/*`) | fetch + rebase `release/*` onto `origin/main`, then MR `release/*` → `main` |
+
+```bash
+git fetch origin
+# feature/fix (from develop):
+git rebase origin/develop
+# hotfix/release (from main):
+git rebase origin/main
+```
+
+Rules:
+
+- Use a **non-interactive** rebase (`git rebase origin/<base>`). Do not use `git rebase -i`.
+- If rebase conflicts, stop, resolve, `git rebase --continue` (or `--abort` and ask). Do not force-push unless the operator explicitly asks (`--force-with-lease`).
+- **Never** merge `develop` straight into `main`. Production path stays `feature/*` → `develop` → `release/*` → `main` (each step via MR).
+- After a release lands on `main`, sync `main` back into `develop` via MR (after fetch + rebase of that sync branch onto `origin/develop`).
+
 ### Merging to `main` — mandatory merge request
 
 **Always create a GitHub Pull Request (merge request) into `main`. Never land production commits by direct push or local-only merge to `main`.**
@@ -35,11 +61,12 @@ feature/* ──MR──> develop ──> release/* ──MR──> main
 
 Release path reminder:
 
-1. Create `release/vX.Y.Z` from `main` (or update it with selected commits).  
-2. Push the release branch.  
-3. **Open MR** `release/vX.Y.Z` → `main` with title `[RELEASE] Release vX.Y.Z`.  
-4. Merge **through that MR** after checks/review.  
-5. Optionally sync `main` back into `develop` (also via MR preferred).
+1. `git fetch origin` and rebase `release/*` onto `origin/main`.  
+2. Create `release/vX.Y.Z` from **latest** `origin/main` (or update it with selected commits).  
+3. Push the release branch.  
+4. **Open MR** `release/vX.Y.Z` → `main` with title `[RELEASE] Release vX.Y.Z`.  
+5. Merge **through that MR** after checks/review.  
+6. Optionally sync `main` back into `develop` (also via MR preferred; fetch + rebase first).
 
 ---
 
@@ -84,8 +111,9 @@ release/v1.5.0
 
 Rules:
 
-- Branch **`feature/*`** and **`fix/*`** from **`develop`** (unless hotfix).
-- Branch **`hotfix/*`** from **`main`**; merge back to `main` and cherry-pick / MR into `develop`.
+- **Fetch + rebase first** (see above) before branching, implementing, or opening an MR.
+- Branch **`feature/*`** and **`fix/*`** from **latest `origin/develop`** (unless hotfix).
+- Branch **`hotfix/*`** from **latest `origin/main`**; merge back to `main` and cherry-pick / MR into `develop`.
 - One MR = one concern. Do not mix unrelated layers.
 - Do not push to a VPS / production host unless the operator explicitly allows it.
 
@@ -106,8 +134,8 @@ develop
 
 ### Create the release branch
 
-1. Create **`release/v1.5.0` from `main`** (clean production baseline).
-2. Bring **only A / B / C** into `release/v1.5.0` (cherry-pick or MR the selected commits/MRs — **not** the whole `develop` tip if D/E must stay out).
+1. `git fetch origin` and rebase onto `origin/main`. Create **`release/v1.5.0` from latest `origin/main`** (clean production baseline).
+2. Bring **only A / B / C** into `release/v1.5.0` (cherry-pick or MR the selected commits/MRs — **not** the whole `develop` tip if D/E must stay out). Rebase the release branch onto `origin/main` again before the production MR.
 
 ```text
 main ────────────────────────┐
@@ -207,8 +235,12 @@ Every ops/product change updates `docs/CHANGELOG.md` at the top with a timestamp
 - If the active account is wrong, stop and ask.
 
 ```bash
-git push -u origin develop
+git fetch origin
+git rebase origin/develop    # feature/fix, before push / MR
 git push -u origin feature/<layer>/<slug>
+
+git fetch origin
+git rebase origin/main       # release, before push / MR to main
 git push -u origin release/v1.5.0
 ```
 
@@ -238,11 +270,13 @@ See root `.gitignore`.
 
 ## 8. Quick checklist
 
+- [ ] **Fetched remotes and rebased** the current branch onto `origin/develop` (feature/fix) or `origin/main` (hotfix/release) before implementing or promoting
 - [ ] Right branch type (`feature` / `fix` / `hotfix` / `release`)
-- [ ] Features/fixes from `develop`; hotfixes from `main`; releases from `main` + selected commits
+- [ ] Features/fixes from **latest** `develop`; hotfixes from **latest** `main`; releases from **latest** `main` + selected commits
 - [ ] MR title `[TYPE][LAYER] …` or `[RELEASE] Release vX.Y.Z`
 - [ ] Feature/fix MR base = `develop`; release/hotfix to `main` as appropriate
 - [ ] **Any change to `main` goes through an open MR — no direct push to `main`**
+- [ ] Do **not** merge `develop` straight into `main` (use `release/*`)
 - [ ] CHANGELOG updated when needed
 - [ ] Auth account correct before push
 - [ ] No VPS deploy without explicit permission
