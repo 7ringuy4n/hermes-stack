@@ -1,5 +1,9 @@
 # Change history
 
+## 2026-08-17 18:07 +07 — release: v0.5.5
+
+- Docs: fetch + rebase onto latest `origin/develop` or `origin/main` before implement or promote; production still via `release/*` MR only.
+
 ## 2026-08-17 18:05 +07 — docs: fetch + rebase before implement or promote
 
 - `docs/GIT.md` and `.cursor/rules/git.mdc`: always `git fetch` then rebase onto `origin/develop` (feature/fix) or `origin/main` (hotfix/release) before implementing or promoting.
