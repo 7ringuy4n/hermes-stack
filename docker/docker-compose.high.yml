@@ -88,17 +88,51 @@ services:
       - SECURITY_LLM_JUDGE=${SECURITY_LLM_JUDGE:-1}
       - ENABLE_LLM_JUDGE=${ENABLE_LLM_JUDGE:-1}
       - SECURITY_YARA=${SECURITY_YARA:-1}
-      - SECURITY_SANDBOX=${SECURITY_SANDBOX:-0}
+      - SECURITY_SANDBOX=${SECURITY_SANDBOX:-1}
+      - SECURITY_FAIL_CLOSED=${SECURITY_FAIL_CLOSED:-1}
+      - ENABLE_ANTIVIRUS=${ENABLE_ANTIVIRUS:-0}
+      - DOCKER_HOST=${SECURITY_DOCKER_HOST:-tcp://docker-socket-proxy:2375}
+      - DOCKER_TLS_VERIFY=
+      - DOCKER_CERT_PATH=
       - QUARANTINE_DIR=/data/quarantine
       - NOTIFY_URL=${NOTIFY_URL:-http://notify:8092}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     volumes:
       - ${ASSISTANT_DATA_DIR:-/data/assistant}/quarantine:/data/quarantine
-      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "127.0.0.1:${SECURITY_PORT:-8093}:8093"
     depends_on:
       - 9router
+      - docker-socket-proxy
+    networks: [internal]
+
+  # Limited Docker API for sandbox detonation only (no raw sock on security-manager).
+  docker-socket-proxy:
+    image: ${DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:0.3.0}
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - POST=1
+      - IMAGES=1
+      - NETWORKS=0
+      - VOLUMES=0
+      - EXEC=0
+      - BUILD=0
+      - SWARM=0
+      - SERVICES=0
+      - TASKS=0
+      - SECRETS=0
+      - CONFIGS=0
+      - PLUGINS=0
+      - SYSTEM=0
+      - INFO=0
+      - AUTH=0
+      - ALLOW_START=1
+      - ALLOW_STOP=1
+      - ALLOW_RESTARTS=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [internal]
 
   siem:

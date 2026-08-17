@@ -6,20 +6,26 @@ User-facing risk message (no stack traces):
 from __future__ import annotations
 
 import ast
+import ipaddress
 import os
 import re
+import socket
 import subprocess
 import tarfile
 import tempfile
 import zipfile
 from enum import Enum
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, File, Form, UploadFile
 from pydantic import BaseModel, Field
 
 AV_URL = os.environ.get("AV_GATEWAY_URL", "http://av-gateway:8098").rstrip("/")
+ENABLE_AV = os.environ.get("ENABLE_ANTIVIRUS", "0") == "1" or os.environ.get(
+    "SECURITY_REQUIRE_AV", "0"
+) == "1"
 NOTIFY_URL = os.environ.get("NOTIFY_URL", "").rstrip("/")
 MAX_BYTES = int(os.environ.get("SECURITY_MAX_BYTES", str(40 * 1024 * 1024)))
 ENABLE_LLM_JUDGE = (
@@ -28,6 +34,8 @@ ENABLE_LLM_JUDGE = (
 )
 ENABLE_YARA = os.environ.get("SECURITY_YARA", "1") == "1"
 ENABLE_SANDBOX = os.environ.get("SECURITY_SANDBOX", "0") == "1"
+# High: treat AV/sandbox/judge outages as RISK (fail closed). Medium/lab may set 0.
+FAIL_CLOSED = os.environ.get("SECURITY_FAIL_CLOSED", "0") == "1"
 EMBED_UPSTREAM = (
     os.environ.get("LLM_JUDGE_URL")
     or os.environ.get("OPENAI_BASE_URL")
@@ -42,6 +50,8 @@ API_KEY = (
 YARA_RULES = os.environ.get("SECURITY_YARA_RULES", "/app/rules/lab.yar")
 SANDBOX_IMAGE = os.environ.get("SECURITY_SANDBOX_IMAGE", "python:3.12-slim")
 SANDBOX_TIMEOUT = int(os.environ.get("SECURITY_SANDBOX_TIMEOUT", "8"))
+# Prefer DOCKER_HOST (tcp://docker-socket-proxy:2375) over raw unix socket.
+DOCKER_HOST = os.environ.get("DOCKER_HOST", "").strip()
 
 USER_RISK_MSG = (
     "File contains risks so it cannot be extracted to inspect information inside."
@@ -71,7 +81,19 @@ _YARA_LITE = [
     (re.compile(rb"/bin/bash\s+-c.*curl.*\|.*sh", re.I), "curl_pipe_sh"),
 ]
 
-app = FastAPI(title="assistant-security", version="1.1.0")
+_BLOCKED_NETS = [
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+app = FastAPI(title="assistant-security", version="1.2.0")
 
 
 def _flow(stage: str, **fields: Any) -> None:
@@ -84,6 +106,62 @@ def _flow(stage: str, **fields: Any) -> None:
             s = f'"{s}"'
         parts.append(f"{k}={s}")
     print(" ".join(parts), flush=True)
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+        return True
+    if ip.is_multicast or ip.is_unspecified:
+        return True
+    return any(ip in net for net in _BLOCKED_NETS)
+
+
+def _assert_public_url(url: str) -> None:
+    """Reject non-http(s) and hosts that resolve to private / metadata ranges."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("scheme_not_allowed")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("missing_host")
+    if host.lower() in {"localhost", "metadata.google.internal"}:
+        raise ValueError("blocked_host")
+    try:
+        infos = socket.getaddrinfo(host, parsed.port or 80, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError("dns_failed") from exc
+    if not infos:
+        raise ValueError("dns_empty")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if _is_blocked_ip(ip):
+            raise ValueError("blocked_ip")
+
+
+def _safe_download(url: str, max_redirects: int = 3) -> tuple[bytes, str]:
+    """Fetch URL without automatic redirect follow; re-validate each hop."""
+    current = url
+    for _ in range(max_redirects + 1):
+        _assert_public_url(current)
+        with httpx.Client(timeout=60, follow_redirects=False) as c:
+            r = c.get(current)
+            if r.status_code in {301, 302, 303, 307, 308}:
+                loc = r.headers.get("location")
+                if not loc:
+                    raise ValueError("redirect_missing")
+                current = str(httpx.URL(current).join(loc))
+                continue
+            r.raise_for_status()
+            filename = current.rstrip("/").split("/")[-1] or "download.bin"
+            return r.content, filename.split("?")[0] or "download.bin"
+    raise ValueError("too_many_redirects")
+
+
+def _unavailable(reason: str) -> dict[str, Any]:
+    """Control unavailable: fail closed on High, soft-skip otherwise."""
+    if FAIL_CLOSED:
+        return {"ok": False, "skipped": True, "reason": reason}
+    return {"ok": True, "skipped": True, "reason": reason}
 
 
 class Verdict(str, Enum):
@@ -209,12 +287,16 @@ def _yara_scan(data: bytes, filename: str) -> dict[str, Any]:
 def _sandbox_detonate(data: bytes, filename: str) -> dict[str, Any]:
     """Network-less docker detonation with optional strace syscall watch."""
     if not ENABLE_SANDBOX:
-        return {"ok": True, "skipped": True}
+        return {"ok": True, "skipped": True, "reason": "sandbox_disabled"}
     if not (filename.endswith(".py") or filename.endswith(".sh")):
         return {"ok": True, "skipped": True, "reason": "not_script"}
-    if not os.path.exists("/var/run/docker.sock"):
-        return {"ok": True, "skipped": True, "reason": "no_docker_sock"}
+    has_docker = bool(DOCKER_HOST) or os.path.exists("/var/run/docker.sock")
+    if not has_docker:
+        return _unavailable("no_docker")
     use_strace = os.environ.get("SECURITY_SANDBOX_STRACE", "1") == "1"
+    env = os.environ.copy()
+    if DOCKER_HOST:
+        env["DOCKER_HOST"] = DOCKER_HOST
     try:
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, filename.replace("/", "_"))
@@ -229,12 +311,14 @@ def _sandbox_detonate(data: bytes, filename: str) -> dict[str, Any]:
                 inner += ["python", "/sample"]
             else:
                 inner += ["sh", "/sample"]
-            # image with strace when available
             image = os.environ.get("SECURITY_SANDBOX_IMAGE", "python:3.12-slim")
-            prep = []
             if use_strace:
-                prep = ["sh", "-c", "apt-get update -qq && apt-get install -y -qq strace >/dev/null 2>&1; " + " ".join(inner)]
-                cmd_inner = prep
+                cmd_inner = [
+                    "sh",
+                    "-c",
+                    "apt-get update -qq && apt-get install -y -qq strace >/dev/null 2>&1; "
+                    + " ".join(inner),
+                ]
             else:
                 cmd_inner = inner
             cmd = [
@@ -254,9 +338,10 @@ def _sandbox_detonate(data: bytes, filename: str) -> dict[str, Any]:
                 f"{path}:/sample:ro",
                 image,
             ] + cmd_inner
-            r = subprocess.run(cmd, capture_output=True, timeout=SANDBOX_TIMEOUT + 45)
+            r = subprocess.run(
+                cmd, capture_output=True, timeout=SANDBOX_TIMEOUT + 45, env=env
+            )
             out = (r.stdout or b"") + (r.stderr or b"")
-            # syscall / egress markers
             bad = re.search(
                 rb"connect\(|socket\(|Network is unreachable|clone\(|ptrace|curl |wget |nc |/etc/passwd",
                 out,
@@ -275,34 +360,34 @@ def _sandbox_detonate(data: bytes, filename: str) -> dict[str, Any]:
     except subprocess.TimeoutExpired:
         return {"ok": False, "reason": "sandbox_timeout"}
     except Exception as e:
-        return {"ok": True, "skipped": True, "reason": str(e)[:80]}
+        return _unavailable(str(e)[:80])
 
 
 def _clam_via_gateway(data: bytes, filename: str, session_id: str) -> dict[str, Any]:
-    if not AV_URL:
-        return {"ok": True, "skipped": True}
+    if not ENABLE_AV or not AV_URL:
+        return {"ok": True, "skipped": True, "reason": "av_disabled"}
     try:
         with httpx.Client(timeout=120) as c:
-            # health
             if c.get(f"{AV_URL}/health").status_code != 200:
-                return {"ok": True, "skipped": True, "reason": "av_down"}
+                return _unavailable("av_down")
             files = {"file": (filename, data)}
             r = c.post(f"{AV_URL}/v1/scan", data={"session_id": session_id}, files=files)
             if r.status_code >= 400:
                 return {"ok": False, "reason": "av_error"}
-            # poll once
             sid = session_id
             st = c.get(f"{AV_URL}/v1/sessions/{sid}/ready")
             if st.status_code == 200 and st.json().get("blocked"):
                 return {"ok": False, "reason": "infected"}
             return {"ok": True, "detail": st.json() if st.status_code == 200 else {}}
     except Exception:
-        return {"ok": True, "skipped": True}
+        return _unavailable("av_exception")
 
 
 def _llm_judge(filename: str, excerpt: str) -> dict[str, Any]:
-    if not ENABLE_LLM_JUDGE or not API_KEY:
-        return {"ok": True, "skipped": True}
+    if not ENABLE_LLM_JUDGE:
+        return {"ok": True, "skipped": True, "reason": "llm_judge_disabled"}
+    if not API_KEY:
+        return _unavailable("llm_judge_no_key")
     prompt = (
         "You are a security judge. Reply ONLY CLEAN or RISK.\n"
         f"Filename: {filename}\n"
@@ -325,7 +410,7 @@ def _llm_judge(filename: str, excerpt: str) -> dict[str, Any]:
                 return {"ok": False, "reason": "llm_judge_risk"}
             return {"ok": True}
     except Exception:
-        return {"ok": True, "skipped": True}
+        return _unavailable("llm_judge_exception")
 
 
 @app.get("/health")
@@ -336,6 +421,8 @@ def health() -> dict[str, Any]:
         "llm_judge": ENABLE_LLM_JUDGE,
         "yara": ENABLE_YARA,
         "sandbox": ENABLE_SANDBOX,
+        "fail_closed": FAIL_CLOSED,
+        "docker_host": bool(DOCKER_HOST) or os.path.exists("/var/run/docker.sock"),
     }
 
 
@@ -406,11 +493,14 @@ class UrlScanReq(BaseModel):
 def scan_url(req: UrlScanReq) -> ScanResult:
     """Download then scan — used before clone/fetch into the server."""
     try:
-        with httpx.Client(timeout=60, follow_redirects=True) as c:
-            r = c.get(req.url)
-            r.raise_for_status()
-            data = r.content
-            filename = req.url.rstrip("/").split("/")[-1] or "download.bin"
+        data, filename = _safe_download(req.url)
+    except ValueError as exc:
+        return ScanResult(
+            verdict=Verdict.RISK,
+            layers={"download": {"ok": False, "reason": str(exc)}},
+            user_message=USER_RISK_MSG,
+            quarantine=True,
+        )
     except Exception:
         return ScanResult(
             verdict=Verdict.ERROR,
