@@ -482,8 +482,11 @@ assistant_restore_zalo() {
 }
 
 assistant_backup_schedules() {
-  local dir="$1"
+  local dir="$1" data="${HERMES_DATA_DIR:-/data/assistant}"
   $SUDO mkdir -p "${dir}/schedules"
+  if [[ -f "${ROOT}/scripts/main/hermes-cron-share.sh" ]]; then
+    HERMES_DATA_DIR="$data" bash "${ROOT}/scripts/main/hermes-cron-share.sh" || true
+  fi
   systemctl list-timers 'assistant-*' --all --no-pager > "${dir}/schedules/systemd-timers.txt" 2>/dev/null || true
   crontab -l > "${dir}/schedules/crontab-user.txt" 2>/dev/null || true
   $SUDO crontab -l > "${dir}/schedules/crontab-root.txt" 2>/dev/null || true
@@ -494,6 +497,13 @@ assistant_backup_schedules() {
   if [[ -d "${HOME}/.config/systemd/user" ]]; then
     tar -C "${HOME}/.config/systemd/user" --format=posix -czf "${dir}/schedules/systemd-user.tgz" \
       --wildcards 'assistant-*' --wildcards 'com.hermes.*' 2>/dev/null || true
+  fi
+  if [[ -f "${data}/cron/jobs.json" ]]; then
+    $SUDO cp -a "${data}/cron/jobs.json" "${dir}/schedules/hermes-jobs.json"
+  fi
+  if [[ -d "${data}/cron" ]]; then
+    $SUDO tar -C "${data}/cron" --format=posix -czf "${dir}/schedules/hermes-cron.tgz" \
+      --exclude='.jobs.lock' --exclude='.tick.lock' --exclude='.fire-*' . 2>/dev/null || true
   fi
   docker exec "$(assistant_container hermes)" hermes cron list > "${dir}/schedules/hermes-cron.txt" 2>/dev/null \
     || echo "(no hermes cron CLI)" > "${dir}/schedules/hermes-cron.txt"
@@ -530,6 +540,20 @@ assistant_restore_schedules() {
     tar -C "${HOME}/.config/systemd/user" -xzf "${dir}/schedules/systemd-user.tgz"
     systemctl --user daemon-reload || true
   fi
+  local data="${HERMES_DATA_DIR:-/data/assistant}"
+  $SUDO mkdir -p "${data}/cron"
+  if [[ -f "${dir}/schedules/hermes-cron.tgz" ]]; then
+    $SUDO tar -C "${data}/cron" --format=posix -xzf "${dir}/schedules/hermes-cron.tgz" || true
+  fi
+  if [[ -f "${dir}/schedules/hermes-jobs.json" ]]; then
+    $SUDO cp -a "${dir}/schedules/hermes-jobs.json" "${data}/cron/jobs.json"
+  fi
+  if [[ -f "${ROOT}/scripts/main/hermes-cron-share.sh" ]]; then
+    HERMES_DATA_DIR="$data" bash "${ROOT}/scripts/main/hermes-cron-share.sh" || true
+  fi
+  $SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "${data}/cron" 2>/dev/null || true
+  assistant_stop_hermes
+  assistant_stack_up || log "WARN: hermes up after schedule restore returned non-zero"
 }
 
 assistant_backup_volumes() {

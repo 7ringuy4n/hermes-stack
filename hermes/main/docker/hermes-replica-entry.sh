@@ -19,6 +19,38 @@ link_shared() {
   fi
 }
 
+link_shared_cron() {
+  # One shared jobs.json survives destroy (replica dirs are named by container id).
+  # Only the Zalo-owner replica runs the ticker against the shared dir.
+  shared_cron="${SHARED}/cron"
+  mkdir -p "$shared_cron"
+  local_cron="${HERMES_HOME}/cron"
+  if [ -f "${local_cron}/jobs.json" ] && [ ! -L "$local_cron" ]; then
+    if [ ! -s "${shared_cron}/jobs.json" ]; then
+      cp -a "${local_cron}/jobs.json" "${shared_cron}/jobs.json" 2>/dev/null || true
+    fi
+  fi
+}
+
+use_shared_cron() {
+  shared_cron="${SHARED}/cron"
+  mkdir -p "$shared_cron"
+  local_cron="${HERMES_HOME}/cron"
+  if [ -e "$local_cron" ] && [ ! -L "$local_cron" ]; then
+    mv "$local_cron" "${HERMES_HOME}/cron.replica-local" 2>/dev/null || rm -rf "$local_cron"
+  fi
+  ln -sfn "$shared_cron" "$local_cron"
+}
+
+use_local_empty_cron() {
+  local_cron="${HERMES_HOME}/cron"
+  if [ -L "$local_cron" ]; then
+    rm -f "$local_cron"
+  fi
+  mkdir -p "$local_cron"
+  printf '%s\n' '{"jobs":[],"updated_at":null}' > "${local_cron}/jobs.json"
+}
+
 link_shared config.yaml
 link_shared .env
 link_shared SOUL.md
@@ -31,6 +63,7 @@ link_shared zalo_allowed_threads.txt
 link_shared zalo_denied_threads.txt
 link_shared zalo_allowed_users.txt
 link_shared zalo_users_mode.txt
+link_shared_cron
 
 # Compose scale uses container id as hostname; resolve service name from /etc/hosts.
 resolve_cname() {
@@ -105,6 +138,9 @@ esac
 if [ "$keep_zalo" != "1" ]; then
   export ZALO_PLUGIN_URL=""
   export ZALO_PLUGIN_TOKEN=""
+  use_local_empty_cron
+else
+  use_shared_cron
 fi
 
 echo "==> hermes replica home=${HERMES_HOME} (shared=${SHARED}) host=${RID} cname=${CNAME} replicas=${REPLICAS} zalo_url=${ZALO_PLUGIN_URL:-<disabled>}"

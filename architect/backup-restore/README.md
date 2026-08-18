@@ -74,7 +74,7 @@ Stamps include `config/env.sealed` (full `.env`) and `config/profile-options.env
 - **Qdrant (1.13+):** restores **per-collection** snapshots from the backup manifest. Full **storage** snapshot recover via HTTP is not supported (CLI/startup only); if the stamp has no collection snapshots (empty knowledge), recover is a clean skip.
 - **Hermes×2:** stops/starts all containers matching `hermes`; compose `--scale hermes=$HERMES_REPLICAS`.
 - **Zalo:** does not archive `zalo_owner` / `zalo_owner.lock` (runtime election). After restore, clears any leftover lock and runs `scripts/main/heal-zalo-sse.sh` so SSE re-attaches (Hermes container ids change on restore).
-- **Schedules:** enables only timer units that exist on the host (missing units are skipped).
+- **Schedules:** enables only timer units that exist on the host (missing units are skipped). Hermes user jobs live in `HERMES_DATA_DIR/cron/jobs.json` (shared). Backup copies that file plus `hermes-cron.tgz`. Restore writes them back, then `hermes-cron-share.sh` promotes leftover replica copies. Replica homes under `replicas/<container-id>/` are **not** the durable store (those ids change on destroy).
 
 Full command index: [docs/02-commands.md](../../docs/02-commands.md).
 
