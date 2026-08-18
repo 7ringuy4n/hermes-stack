@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from manager import WorkflowManager
-from plan import extract_cron_expr, plan_instructions
+from plan import extract_cadence, extract_cron_expr, plan_instructions
 from store import MemoryStore
 
 WORKER_ID = os.environ.get("HOSTNAME") or "workflow-api"
@@ -191,6 +191,7 @@ class ScheduleReq(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
     next_run_at: Optional[str] = None
+    cadence: str = ""
 
 
 class CompleteReq(BaseModel):
@@ -301,6 +302,7 @@ def upsert_schedule(req: ScheduleReq) -> dict[str, Any]:
         schedule_id=req.id,
         enabled=req.enabled,
         next_run_at=_parse_next_run(req.next_run_at),
+        cadence=req.cadence or extract_cadence(req.text),
     )
     return {"ok": True, "schedule": row}
 

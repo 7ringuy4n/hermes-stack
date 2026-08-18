@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS wf.schedules (
   origin JSONB NOT NULL DEFAULT '{}'::jsonb,
   last_fired_at TIMESTAMPTZ,
   next_run_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  cadence TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -99,6 +100,9 @@ class PostgresStore:
                 s = stmt.strip()
                 if s:
                     c.execute(s)
+            c.execute(
+                "ALTER TABLE wf.schedules ADD COLUMN IF NOT EXISTS cadence TEXT NOT NULL DEFAULT ''"
+            )
             c.commit()
 
     def insert_bundle(
@@ -377,8 +381,8 @@ class PostgresStore:
     def insert_schedule(self, row: dict[str, Any]) -> None:
         with self._conn() as c:
             c.execute(
-                """INSERT INTO wf.schedules (id,name,cron_expr,timezone,enabled,text,context,origin,last_fired_at,next_run_at,created_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s)""",
+                """INSERT INTO wf.schedules (id,name,cron_expr,timezone,enabled,text,context,origin,last_fired_at,next_run_at,created_at,cadence)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,%s)""",
                 (
                     row["id"],
                     row.get("name"),
@@ -391,6 +395,7 @@ class PostgresStore:
                     row.get("last_fired_at"),
                     row.get("next_run_at"),
                     row.get("created_at") or datetime.now(timezone.utc),
+                    str(row.get("cadence") or ""),
                 ),
             )
             c.commit()

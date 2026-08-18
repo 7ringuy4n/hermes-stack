@@ -73,8 +73,9 @@ fi
 if [ -d "$_src_skills" ] && [ ! -d "$_dst_skills" ]; then
   cp -a "$_src_skills" "$_dst_skills" 2>/dev/null || true
 elif [ -d "$_src_skills" ] && [ -d "$_dst_skills" ]; then
-  # Merge new skills from source without overwriting existing
-  cp -a -n "$_src_skills"/. "$_dst_skills"/ 2>/dev/null || true
+  # Overlay repo SoT (update existing files). Keep replica-only skills (no delete).
+  # cp -n would leave stale image-gen / media-out after a rolling deploy.
+  cp -a "$_src_skills"/. "$_dst_skills"/ 2>/dev/null || true
 fi
 link_shared messages
 link_shared plugins
