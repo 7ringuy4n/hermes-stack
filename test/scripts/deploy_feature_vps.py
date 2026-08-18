@@ -195,11 +195,56 @@ if [[ "${ENABLE_NOTIFY:-0}" == "1" ]]; then
   docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate notify
 fi
 
+# Empty IMAGE_BACKENDS= in .env disables dispatcher image gen (Low). High must keep backends.
+python3 - <<'PY'
+from pathlib import Path
+p = Path("/opt/assistant/.env")
+lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+want = "IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu"
+out, seen, changed = [], False, False
+for line in lines:
+    if line.startswith("IMAGE_BACKENDS="):
+        cur = line.split("=", 1)[1].strip().strip('"').strip("'")
+        seen = True
+        if not cur:
+            out.append(want)
+            changed = True
+            print("IMAGE_BACKENDS_WAS_EMPTY")
+        else:
+            out.append(line)
+            print(f"IMAGE_BACKENDS_KEEP={cur}")
+    else:
+        out.append(line)
+if not seen:
+    out.append(want)
+    changed = True
+    print("IMAGE_BACKENDS_ADDED")
+if changed:
+    p.write_text("\n".join(out) + "\n", encoding="utf-8")
+    print("IMAGE_BACKENDS_WRITTEN")
+PY
+set -a; . ./.env; set +a
+docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate dispatcher
+sleep 4
+curl -sS -m 8 http://127.0.0.1:8090/health | python3 -c "import sys,json; d=json.load(sys.stdin); print('image_backends', d.get('image_backends'))"
+curl -sS -m 45 -X POST http://127.0.0.1:8090/v1/image \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"fill in 1 line \"IMGTEST\"","filename":"imgtest-poster.png","refine":false}' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print('poster', {k:d.get(k) for k in ('ok','backend','error','detail','file')})"
+
 # Cron file must be group-readable: zalo-api wrote 0600 as root; Hermes could not tick lịch.
 chown 1000:1000 /data/assistant/cron /data/assistant/cron/jobs.json 2>/dev/null || true
 chmod 775 /data/assistant/cron 2>/dev/null || true
 chmod 664 /data/assistant/cron/jobs.json 2>/dev/null || true
 find /data/assistant/replicas -name jobs.json -exec chmod 664 {} + 2>/dev/null || true
+
+# Overlay repo skills onto replica copies before restart (entrypoint used to cp -n and skip updates).
+if [[ -d /opt/assistant/hermes/main/skills ]]; then
+  for d in /data/assistant/replicas/*/skills; do
+    [[ -d "$d" ]] || continue
+    cp -a /opt/assistant/hermes/main/skills/. "$d"/
+  done
+fi
 
 # Bind-mounted skills/plugins/SOUL — restart replicas to pick up files
 docker ps -q --filter name=hermes --filter status=running | xargs -r docker restart
@@ -222,7 +267,18 @@ case "$n9c" in
   *) echo 9ROUTER_DOWN; ok=0 ;;
 esac
 curl -fsS -m 8 http://127.0.0.1:8090/health >/dev/null || { echo DISPATCHER_DOWN; ok=0; }
-curl -fsS -m 8 http://127.0.0.1:8080/health >/dev/null || { echo TRAEFIK_DOWN; ok=0; }
+tr_ok=0
+for _ in $(seq 1 12); do
+  if curl -fsS -m 8 http://127.0.0.1:8080/health >/dev/null 2>&1; then
+    tr_ok=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$tr_ok" != "1" ]]; then
+  echo TRAEFIK_DOWN
+  ok=0
+fi
 curl -fsS -m 8 http://127.0.0.1:8108/health >/dev/null || { echo WORKFLOW_DOWN; ok=0; }
 if [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]]; then
   curl -fsS -m 8 http://127.0.0.1:8088/health >/dev/null || { echo GATEWAY_DOWN; ok=0; }
@@ -254,6 +310,33 @@ test -f /opt/assistant/hermes/main/plugins/zalo/multi_request.py && echo files_m
 test -f /opt/assistant/hermes/main/plugins/zalo/inbound_queue.py && echo files_queue=ok || echo files_queue=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/autosend.py && echo files_autosend=ok || echo files_autosend=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/workflow_client.py && echo files_workflow=ok || echo files_workflow=missing
+test -f /opt/assistant/hermes/main/plugins/zalo/turn_wait.py && echo files_turn_wait=ok || echo files_turn_wait=missing
+test -f /opt/assistant/hermes/main/skills/image-gen/SKILL.md && echo files_image_gen=ok || echo files_image_gen=missing
+if grep -q 'Never' /opt/assistant/hermes/main/skills/image-gen/SKILL.md && grep -q 'web_extract' /opt/assistant/hermes/main/skills/image-gen/SKILL.md; then
+  echo files_image_gen_noscrape=ok
+else
+  echo files_image_gen_noscrape=missing
+  ok=0
+fi
+rep_ok=0
+for f in /data/assistant/replicas/*/skills/image-gen/SKILL.md; do
+  [[ -f "$f" ]] || continue
+  if grep -q 'web_extract' "$f" && grep -q 'Never' "$f"; then
+    rep_ok=1
+  fi
+done
+if [[ "$rep_ok" = "1" ]]; then
+  echo replica_image_gen_noscrape=ok
+else
+  echo replica_image_gen_noscrape=missing
+  ok=0
+fi
+if grep -q 'session' /opt/assistant/hermes/main/messages/ux.json && grep -q 'interrupted' /opt/assistant/hermes/main/messages/ux.json; then
+  echo files_ux_session=ok
+else
+  echo files_ux_session=missing
+  ok=0
+fi
 test -f /opt/assistant/architect/workflow/app.py && echo files_wf_svc=ok || echo files_wf_svc=missing
 python3 - <<'PY'
 from pathlib import Path

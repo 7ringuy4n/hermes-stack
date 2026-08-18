@@ -1,5 +1,74 @@
 # Change history
 
+## 2026-08-18 19:14 +07 — release: v0.5.7
+
+- Isolated parallel Zalo lịch jobs, schedule cadence (once / daily / weekly / monthly / yearly), result-only media, dispatcher/OCR for images and page facts.
+
+## 2026-08-18 18:57 +07 — ops: rolling deploy cadence + silent media (test stack)
+
+- Leftover lab lịch rows deleted (workflow table empty; Hermes `jobs.json` empty) before sync so migrate would not recreate them.
+- Backup verified, source synced, workflow/gateway/zalo-api/notify/dispatcher recreated, Hermes replicas restarted (no destroy, edge overlays kept).
+- Live: Hermes → 9router models OK; Tavily key present; Zalo SSE attached; no `media.done` ack copy.
+
+## 2026-08-18 18:45 +07 — feat: schedule cadence; silent media; web OCR; drop done-ack
+
+- Schedules support **once** (default for clock-only `đặt lịch lúc HH:MM`, row deleted after fire), **daily**, **weekly**, **monthly**, **yearly**. Marker lists: `WORKFLOW_CADENCE_*`.
+- Zalo no longer sends `Đã xong.` / `Done.` after files. Removed `ux.json` `media.done`. Process narration (search/OCR/PIL) is dropped.
+- web-search skill: dispatcher search/extract; if facts are in page images, OCR then `image-gen`. No step chatter.
+
+## 2026-08-18 18:28 +07 — ops: rolling deploy of image-gen overlay (test stack)
+
+- Backup verified, source synced, workflow/gateway/zalo-api/notify/dispatcher recreated, Hermes replicas restarted (no destroy, edge overlays kept).
+- Traefik `/health` can return 503 for a few seconds while Hermes is restarting; feature deploy now retries that probe.
+- Post-check: Hermes → 9router models OK; image-gen no-scrape text present on replica copies; `ux.json` `session.interrupted` present.
+
+## 2026-08-18 18:22 +07 — ops: rolling deploy image-gen overlay + replica skill SoT
+
+- Replica entry overlays repo skills onto the writable copy (no `cp -n`), so skill edits such as image-gen actually land after restart. Replica-only skills are kept.
+- Rolling feature deploy copies image-gen onto replica dirs before Hermes restart and checks the “never scrape URLs” text is present.
+
+## 2026-08-18 18:16 +07 — fix: image-gen must generate, not scrape; session interrupt copy localized
+
+- Image-gen skill: do not `web_extract` / scrape release pages for image URLs. Weather image jobs must `POST` dispatcher `/v1/image` (media-out result only).
+- Workflow job-failure announce moved to `ux.json` `session.interrupted` (locale map). Vietnamese copy also fixes the old “gián đạn” typo.
+
+## 2026-08-18 18:10 +07 — fix: schedule-saved copy is locale map, not hardcoded Vietnamese
+
+- Zalo no longer announces lịch save with a hardcoded Vietnamese line. Copy lives in `messages/ux.json` `schedule.saved` (`en` / `vi`; add more locales there). The adapter picks the key from the user message script. Override: `ZALO_SCHEDULE_SAVED_MSG`.
+- Helper: `hermes/main/plugins/zalo/ux_copy.py`. Unit: `test/scripts/ux_copy_unit.py`.
+
+## 2026-08-18 17:55 +07 — docs: ops issue history under scripts/
+
+- Added `scripts/HISTORY.md`: timestamped symptoms, root causes, fixes, and how to stop the same failure (cron same-minute miss, sequential job stall, readonly SQLite/skills, 9router stream abort, destroy wiping lịch, stack-watch scale, Zalo SSE owner, PowerShell/deploy pitfalls, git promote path).
+- Linked from `scripts/README.md` and `docs/README.md`. Companion to this changelog (what changed vs what broke).
+
+## 2026-08-18 16:50 +07 — test: case 25 Zalo special four (English lịch)
+
+- Case `25-zalo-special-four.md`: one lịch, four English jobs (hello, HCMC weather image, Vietnamese fuel prices, HCMC weather video). Lab script upserts for the current Zalo login thread two minutes ahead and watches the plugin for four replies.
+- Units: `plan_instructions` splits the English list; ingest keeps the daily English list whole.
+
+## 2026-08-18 16:40 +07 — feat: isolated parallel Zalo jobs + image-gen via dispatcher
+
+- Numbered Zalo lists (immediate and lịch) create **independent** jobs (`sequential=false`). The worker claims up to `ZALO_WORKFLOW_PARALLEL` (default 4) at once.
+- Each job uses an isolated Hermes session (`{thread}::job::{job_id}`) so parallel `handle_message` calls are not pending-merged. Sends remap to the real thread and take a per-thread lock.
+- The job still waits until **its** session is idle before complete (lease heartbeat, `ZALO_WORKFLOW_TURN_TIMEOUT_S`).
+- Image-gen skill: native Hermes `image_generation` tool may be off (no BFL/cloud key). Always use dispatcher `POST /v1/image`.
+- Units: `workflow_turn_wait_unit.py` isolation, `workflow_unit.py` parallel queued jobs.
+
+## 2026-08-18 16:25 +07 — policy: numbered list = N jobs, N deliveries
+
+- Immediate and scheduled numbered lists share the same job engine. A lịch is the clock only; tick time creates one job per item.
+- Delivery policy: **each job may send its own reply** (no aggregator). Four tasks → four Zalo messages (text and/or file), not one combined bubble.
+- Zalo `execute=hermes` still runs **one turn per thread** until jobs have isolated sessions. Parallel `handle_message` on the same chat is what dropped the 15:50 list to two replies.
+- Docs: `architect/workflow/README.md`.
+
+## 2026-08-18 16:20 +07 — fix: sequential Zalo schedule jobs wait for the Hermes turn
+
+- Hermes `handle_message` returns immediately (agent keeps running in the background). The Zalo workflow worker used to mark each numbered job complete after the ~8s late-file grace, then claim the next item. Later items were queued as pending follow-ups on the same session, so a 4-item lịch often delivered only the first one or two Zalo replies. Empty overlapping turns also poisoned the transcript.
+- The worker now waits until that thread’s gateway session is idle (and heartbeats the job lease) before late-file sweep and complete. Timeout: `ZALO_WORKFLOW_TURN_TIMEOUT_S` (default 420). A timed-out item is still completed-with-error so the rest of the list can run.
+- Late-file wait no longer marks the part “delivered” when no file was sent, so the next item cannot start on a false signal.
+- Unit: `workflow_turn_wait_unit.py`. Docs: workflow README, case 24 / 22, `DEFAULTS.md`.
+
 ## 2026-08-18 13:55 +07 — fix: 13:54 GMT+7 same-minute miss + multi-cron tests
 
 - Daily cron created **in the same minute** (example: save `13:54 GMT+7` at `13:54:20`) no longer jumps `next_run_at` to tomorrow. 120s grace keeps the run due; after a successful fire the next run is the following day. If `next_run_at` already jumped to tomorrow and today has not fired, the ticker still catch-up fires today’s slot.

@@ -5,6 +5,7 @@ Schedule-shaped text is still exploded into instructions (cron creates jobs).
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import List, Optional
 
@@ -23,6 +24,105 @@ _SCHED_CLOCK = re.compile(
     r"(?:\s*(?P<ampm>am|pm|sáng|sang|chiều|chieu|tối|toi))?"
 )
 _CRON5 = re.compile(r"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$")
+
+CADENCE_ONCE = "once"
+CADENCE_DAILY = "daily"
+CADENCE_WEEKLY = "weekly"
+CADENCE_MONTHLY = "monthly"
+CADENCE_YEARLY = "yearly"
+CADENCES = (
+    CADENCE_ONCE,
+    CADENCE_DAILY,
+    CADENCE_WEEKLY,
+    CADENCE_MONTHLY,
+    CADENCE_YEARLY,
+)
+
+# Extra markers: WORKFLOW_CADENCE_<KIND>=term1,term2
+_CADENCE_DEFAULTS = {
+    CADENCE_YEARLY: (
+        "yearly",
+        "annually",
+        "every year",
+        "hàng năm",
+        "hang nam",
+        "mỗi năm",
+        "moi nam",
+    ),
+    CADENCE_MONTHLY: (
+        "monthly",
+        "every month",
+        "hàng tháng",
+        "hang thang",
+        "mỗi tháng",
+        "moi thang",
+    ),
+    CADENCE_WEEKLY: (
+        "weekly",
+        "every week",
+        "hàng tuần",
+        "hang tuan",
+        "mỗi tuần",
+        "moi tuan",
+    ),
+    CADENCE_DAILY: (
+        "daily",
+        "every day",
+        "hằng ngày",
+        "hàng ngày",
+        "hang ngay",
+        "mỗi ngày",
+        "moi ngay",
+        "mỗi sáng",
+        "moi sang",
+        "mỗi tối",
+        "moi toi",
+    ),
+    CADENCE_ONCE: (
+        "once",
+        "one time",
+        "one-time",
+        "one shot",
+        "one-shot",
+        "một lần",
+        "mot lan",
+        "chỉ một lần",
+        "chi mot lan",
+    ),
+}
+
+_CADENCE_ENV = {
+    CADENCE_ONCE: "WORKFLOW_CADENCE_ONCE",
+    CADENCE_DAILY: "WORKFLOW_CADENCE_DAILY",
+    CADENCE_WEEKLY: "WORKFLOW_CADENCE_WEEKLY",
+    CADENCE_MONTHLY: "WORKFLOW_CADENCE_MONTHLY",
+    CADENCE_YEARLY: "WORKFLOW_CADENCE_YEARLY",
+}
+
+
+def _cadence_markers(kind: str) -> tuple[str, ...]:
+    extra: list[str] = []
+    raw = (os.getenv(_CADENCE_ENV.get(kind, "")) or "").strip()
+    if raw:
+        extra = [p.strip().lower() for p in raw.split(",") if p.strip()]
+    return tuple(_CADENCE_DEFAULTS.get(kind, ())) + tuple(extra)
+
+
+def extract_cadence(text: str) -> str:
+    """Repeat policy from user text. Default: once (remove after the run)."""
+    low = (text or "").lower()
+    if not low.strip():
+        return CADENCE_ONCE
+    for kind in (
+        CADENCE_YEARLY,
+        CADENCE_MONTHLY,
+        CADENCE_WEEKLY,
+        CADENCE_DAILY,
+        CADENCE_ONCE,
+    ):
+        if any(m in low for m in _cadence_markers(kind)):
+            return kind
+    return CADENCE_ONCE
 
 
 def plan_instructions(text: str) -> List[str]:

@@ -16,6 +16,22 @@ BUSY_INTERRUPT_NEEDLES = (
     "your current task will be interrupted",
 )
 
+PROCESS_NARRATION_NEEDLES = (
+    "now i have the",
+    "now i need to",
+    "let me analyze",
+    "let me fetch",
+    "let me get a python",
+    "let me overlay",
+    "python environment with pil",
+    "phiên làm việc đã được khôi phục",
+    "session has been restored",
+    "session restored successfully",
+    "bạn có muốn tôi gửi lại",
+    "mình đang lấy",
+    "let me extract image",
+)
+
 
 def is_busy_interrupt_notice(content: str) -> bool:
     """True when Hermes injected a busy/interrupt / /busy tip."""
@@ -23,3 +39,11 @@ def is_busy_interrupt_notice(content: str) -> bool:
     if not low:
         return False
     return any(n in low for n in BUSY_INTERRUPT_NEEDLES)
+
+
+def is_process_narration(content: str) -> bool:
+    """True when the model is narrating search/OCR/image steps."""
+    low = (content or "").strip().lower()
+    if not low:
+        return False
+    return any(n in low for n in PROCESS_NARRATION_NEEDLES)
