@@ -9,22 +9,19 @@ Applies to **every** create/export/send of a file or media asset: images, PDF, D
 
 ## Hard rules
 
-1. **Do not** narrate steps (“để mình…”, “I’ll generate…”, “locate thread…”, “kiểm tra…”, “pip…”, “uv…”).
-2. **Do not** ask the user to approve anything.
+1. **Do not** narrate steps (“để mình…”, “I’ll generate…”, “Now I have…”, “Let me analyze…”, “locate thread…”, “kiểm tra…”, “pip…”, “uv…”, PIL overlays).
+2. **Do not** ask the user to approve anything or whether to resend the file.
 3. **Do not** mention `chat_id`, `thread_id`, DM/group metadata, display names from internal context, paths, or backends.
-4. Work silently with tools; user-facing text = **result only**.
+4. Work silently with tools; user-facing text = **the result** (file and/or the asked facts). No success ack line.
 5. Write under `/opt/data/media/out/<safe-name>.<ext>` only.
 6. **One delivery only:** images → generate via dispatcher **without** `send_zalo`; office → one `send-file` **or** rely on autosend — never both.
-7. Compound inbound (several requests in one bubble) is **split into turns** unless it is a **single recurring schedule**. This skill applies to the **current** media item only — it does not cancel later numbered requests.
-8. **Compound queue:** if more numbered parts follow (image then prices, etc.), send the **file/image only** on the media turn — **no** `Đã xong.` / `Done.` yet. The adapter sends that ack **after the last part**.
-9. **Recurring schedule payload (unsplit):** if this turn is one lịch with several numbered tasks, after each file send the short success line **then continue the remaining items in the same run**. Do not treat media-out as end-of-run.
+7. Compound inbound (several requests in one bubble) is **split into turns** unless it is a **single schedule**. This skill applies to the **current** media item only — it does not cancel later numbered requests.
+8. **Compound / parallel jobs:** send the **file only** on a media turn. Do not add a short “done” line before or after.
+9. **Schedule payload:** after each file, continue remaining items in that run. Do not treat media-out as end-of-run.
 
-## User-facing reply (only this)
+## User-facing reply
 
-**Success (Vietnamese):** `Đã xong.`  
-**Success (English):** `Done.`  
-
-No “Đây là file của bạn.”, no path dumps, no “để mình gửi…”.
+**Success:** send the file (and any requested facts). No extra sentence.
 
 **Failure (Vietnamese):** `Hiện chưa tạo được file này. Bạn thử lại sau hoặc rút gọn yêu cầu giúp mình.`  
 **Failure (English):** `Couldn’t create that file. Please try again or shorten the request.`
@@ -33,7 +30,7 @@ No “Đây là file của bạn.”, no path dumps, no “để mình gửi…�
 
 - dispatcher / Comfy / Pollinations / pip / uv / root / permission / approve / dashboard  
 - chat_id / thread_id / “DM with …” / internal user labels  
-- Step-by-step plans or process narration
+- Step-by-step plans, “Now I have the page…”, “Let me fetch…”, session-restored notices
 
 ## Route by type
 
@@ -43,3 +40,4 @@ No “Đây là file của bạn.”, no path dumps, no “để mình gửi…�
 | Office | `file-gen` / `documents` → one `POST /v1/send-file` |
 | Markdown / text file | `markdown` → then `file-gen` |
 | Explicit Comfy workflow | `comfyui` → `--output-dir /opt/data/media/out` |
+| Facts printed as images on a web page | download image → `POST http://ocr:8091/v1/ocr` → then answer / `image-gen` |

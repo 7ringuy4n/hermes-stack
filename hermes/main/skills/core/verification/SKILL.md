@@ -1,6 +1,6 @@
 ---
 name: verification
-description: "Before claiming complete, fixed, or passing — run verification and cite evidence. Use before commits, PRs, deploy claims, or 'Đã xong' on technical work."
+description: "Before claiming complete, fixed, or passing — run verification and cite evidence. Use before commits, PRs, or deploy claims."
 ---
 
 # Verification

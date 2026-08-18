@@ -23,6 +23,8 @@ This tree **reuses** that work (via assistant) and **optimizes** it for assistan
 | `inbound_queue.py` | FIFO payload helpers (Valkey or in-memory) |
 | `gateway_noise.py` | Drop Hermes busy/interrupt `/busy` copy |
 | `gate_valkey.py` | Valkey rate / answering / inbound FIFO |
+| `turn_wait.py` | Isolated job sessions + wait-until-idle |
+| `ux_copy.py` | Locale pick for `messages/ux.json` (no hardcoded user copy) |
 | `plugin.yaml` | Plugin manifest (`author: cuong` upstream) |
 | `ATTRIBUTION.md` | Copyright / reuse notice |
 
@@ -48,8 +50,8 @@ Disable auto-sethome with `ZALO_AUTO_SETHOME=0` and run `/sethome` once in the d
 
 | Kind | What happens |
 |------|----------------|
-| Immediate list (`tin nhắn 1` / `1 …` `2.Sau đó` / one-line `1. … 2. …`) | Split into **durable jobs**. Each instruction is wrapped “chỉ làm đúng việc này”. Workers run jobs one at a time (Postgres state, not LLM memory). Autosend keeps files for the **whole sequence**. **`Đã xong.` / `Done.` only after the last part**. |
-| Daily / cron list (`daily`, `wakeup`, `hàng ngày`, `hằng ngày`, `GMT+7`, …) | Stored as a **schedule**. At tick time the scheduler creates one job per numbered item (not one LLM prompt). Extra markers: `ZALO_SCHEDULE_KEEP_WHOLE=term1,term2`. |
+| Immediate list (`tin nhắn 1` / `1 …` `2.Sau đó` / one-line `1. … 2. …`) | Split into **durable jobs**. Each instruction is wrapped “chỉ làm đúng việc này”. Autosend keeps files for the **whole sequence**. Send the file/result only — no success ack line. |
+| Schedule list (`đặt lịch`, `daily` / `hằng ngày`, weekly / monthly / yearly, or a clock) | Stored as a **schedule**. Clock-only `đặt lịch lúc HH:MM` is **once** (removed after it runs). Named cadence words set daily / weekly / monthly / yearly. At tick time the scheduler creates one job per numbered item. Extra markers: `ZALO_SCHEDULE_KEEP_WHOLE=term1,term2`. |
 | Rate limit | Announce once, **enqueue** the message, process later. Copy in `messages/ux.json` `queue.rate_limited`. |
 | Queue full | Cap `ZALO_INBOUND_QUEUE_MAX` (default **8** waiting items / thread). `queue.full` line. Valkey down → fail-open sequential turns. Inbound requests only — not a response queue. |
 | Hermes busy / `/busy` tips | Dropped on Zalo. Never show “Interrupting current task” or First-time `/busy` copy. |

@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
-from gateway_noise import is_busy_interrupt_notice  # noqa: E402
+from gateway_noise import is_busy_interrupt_notice, is_process_narration  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -35,6 +35,15 @@ def main() -> int:
         return 1
     if is_busy_interrupt_notice("Giá xăng E5 RON92"):
         print("FAIL fuel reply must not be noise")
+        return 1
+    if not is_process_narration("Now I have the page with the two fuel price images."):
+        print("FAIL process narration must drop")
+        return 1
+    if not is_process_narration("Phiên làm việc đã được khôi phục thành công."):
+        print("FAIL session restored must drop")
+        return 1
+    if is_process_narration("E5 RON92: 21.230 đ/lít"):
+        print("FAIL price result must not be narration")
         return 1
     print("PASS busy interrupt dropped; user results kept")
     return 0

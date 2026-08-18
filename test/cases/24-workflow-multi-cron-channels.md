@@ -49,6 +49,7 @@ After a successful fire, `next_run_at` advances to the next calendar day.
 python test/scripts/workflow_schedule_concurrency_unit.py
 python test/scripts/workflow_unit.py
 python test/scripts/workflow_gateway_unit.py
+python test/scripts/workflow_turn_wait_unit.py
 python test/scripts/multi_request_unit.py
 ```
 
@@ -62,7 +63,7 @@ python test/scripts/workflow_vps.py
 
 ## Steps (lab — Zalo phone)
 
-1. Send the immediate 6-item list as **one** Zalo bubble. Expect all 6 intents, `Đã xong.` last, no `/busy` tip.
+1. Send the immediate 6-item list as **one** Zalo bubble. Expect all 6 intents, no success-ack line, no `/busy` tip.
 2. Send the 13:54 (or **two minutes from now**) daily list. Expect **one** lịch confirm.
 3. When it fires: all 6 items, origin thread, no `/busy`.
 4. From a second Zalo user (or second thread), save another lịch at the **same** clock. Both must run; replies must not mix threads.
@@ -78,10 +79,12 @@ Authenticated `POST /v1/chat/completions` with the same fixtures. Immediate list
 - Different clock: 06:00 tick does not fire 12:00
 - 13:54 created at 13:54:20 still fires **today**
 - Clock extract prefers `lúc 13:54` over a `6:00` inside item 1
+- Each Zalo `execute=hermes` job uses an isolated Hermes session and may run in parallel (cap `ZALO_WORKFLOW_PARALLEL`). Replies are not merged into one pending follow-up.
 
 ## Fail events
 
 - Only the first numbered item runs → FAIL
+- Four jobs complete in ~8s each while the agent is still running → FAIL (worker did not wait for the turn)
 - Same-minute create skips to tomorrow → FAIL
 - Two users at 13:54 share one workflow / mix replies → FAIL
 - 12:00 job runs at the 06:00 tick → FAIL

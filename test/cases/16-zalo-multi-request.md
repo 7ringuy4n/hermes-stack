@@ -42,7 +42,7 @@ Do **not** let `media-out` / “no recap after file” drop part 2. Splitter mus
 - Lab: both intents addressed (image attempt + price/update answer or controlled "no data")
 - No crash; SSE stays at 1
 - Daily/cron numbered lists are **not** split (case 22)
-- `Đã xong.` / `Done.` must be the **last** outbound bubble on compound runs (image → prices → ack)
+- No extra `Đã xong.` / `Done.` ack after files (file/result only)
 
 ## Fail events
 

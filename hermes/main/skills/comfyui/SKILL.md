@@ -35,7 +35,7 @@ for workflow execution.
 
 ## Assistant stack — output path + result-only (must)
 
-Follow skill **`media-out`**: no step chatter, no approve prompts; user reply = `Đã xong.` / `Done.` (or short failure) after the file is delivered.
+Follow skill **`media-out`**: no step chatter, no approve prompts; after the file is delivered send nothing extra (or a short failure line).
 
 On this product, **never** write finished media to `/opt/data/*.png` or `./outputs`.
 
