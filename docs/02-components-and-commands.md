@@ -155,6 +155,13 @@ Legend: **Yes** = included · **No** = not in this profile · **Opt** = attach /
       <td style="padding:10px;text-align:center;">Yes</td>
       <td style="padding:10px 12px;">00:00 memory / skills tidy</td>
     </tr>
+    <tr>
+      <td style="padding:10px 12px;">OmniRouter</td>
+      <td style="padding:10px;text-align:center;">No</td>
+      <td style="padding:10px;text-align:center;">Opt</td>
+      <td style="padding:10px;text-align:center;">Opt</td>
+      <td style="padding:10px 12px;">General LLM path; pairs with omni-exporter</td>
+    </tr>
     <tr style="background:#f8e8e8;">
       <td colspan="5" style="padding:10px 12px;"><b>High only</b></td>
     </tr>
@@ -183,8 +190,8 @@ Legend: **Yes** = included · **No** = not in this profile · **Opt** = attach /
       <td style="padding:10px 12px;">Grafana / Prom / Loki / Alloy</td>
       <td style="padding:10px;text-align:center;">No</td>
       <td style="padding:10px;text-align:center;">No</td>
-      <td style="padding:10px;text-align:center;">Yes</td>
-      <td style="padding:10px 12px;">Localhost / SSH tunnel</td>
+      <td style="padding:10px;text-align:center;">Opt</td>
+      <td style="padding:10px 12px;">Grafana↔Prom; Loki↔Alloy (~5 GiB / ~40 GB / ~2 vCPU all optionals)</td>
     </tr>
     <tr>
       <td style="padding:10px 12px;">OpenBao</td>
@@ -491,7 +498,7 @@ bash run.sh backup &amp;&amp; bash run.sh verify
 bash run.sh backup-sync-clouddrive   # when ENABLE_CLOUDDRIVE=1
 bash run.sh auto-learn
 bash run.sh channel-status
-# sizing: docs/HARDWARE.md</pre></td>
+# sizing + extras: docs/HARDWARE.md (Grafana+Prom ~1.5GiB/10GB/0.5vCPU, Loki ~1.5GiB/20GB/0.5vCPU, all optionals ~5GiB/40GB/2vCPU)</pre></td>
     </tr>
   </tbody>
 </table>
