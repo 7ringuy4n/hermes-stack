@@ -14,15 +14,18 @@ from pathlib import Path
 
 import paramiko
 
-HOST = os.environ.get("ASSISTANT_SSH_HOST", "72.61.127.249")
-USER = os.environ.get("ASSISTANT_SSH_USER", "tringuyen")
-PASSWORD = os.environ.get("ASSISTANT_SSH_PASSWORD", "")
+HOST = os.environ.get("ASSISTANT_SSH_HOST", "").strip()
+USER = os.environ.get("ASSISTANT_SSH_USER", "").strip()
+PASSWORD = os.environ.get("ASSISTANT_SSH_PASSWORD", "").strip()
 REPO = Path(os.environ.get("ASSISTANT_REPO_ROOT") or Path(__file__).resolve().parents[2])
 REMOTE = "/opt/assistant"
 DATA = "/data/assistant"
 
-if not PASSWORD:
-    raise SystemExit("Set ASSISTANT_SSH_PASSWORD (do not hardcode secrets in the repo).")
+if not HOST or not USER or not PASSWORD:
+    raise SystemExit(
+        "Set ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, and ASSISTANT_SSH_PASSWORD. "
+        "Do not put host, account, or password defaults in this file."
+    )
 
 # Credentials expected after high install (from .env on host — printed, not invented)
 SYNC_GLOBS = [
