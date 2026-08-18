@@ -8,6 +8,7 @@ alwaysApply: false
 
 - Profile×mode summary in `test/reports/**/SUMMARY.md` must use an **HTML `<table>`**, not Markdown pipes.
 - Do not write hostnames, IPs, or account names into `test/` reports.
+- VPS/lab environment probes belong in gitignored `scripts/temp/` (or `hermes/temp/`), not committed `test/scripts/` with real host details.
 - Every capability needs a **fail event**: antivirus infected (EICAR), concurrency ramp until first fail, policy deny, media/search disabled alerts.
 - Hermes/Zalo crash or lost connection must be tested for **automatic restore** (`stack-watch` / `zalo-watch`). QR only if the Zalo session is dead.
 - Happy-path-only AV or concurrency results are incomplete.
