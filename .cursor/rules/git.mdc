@@ -73,4 +73,4 @@ Examples: `[FEATURE][MEMORY] Add memory manager` · `[FIX][SESSION] Fix session 
 - Push only when GitHub auth is the repo owner (`7ringuy4n` for this repo)
 - No VPS/remote apply without explicit permission
 - Force-push / amend only when the operator explicitly asks (`--force-with-lease`)
-- Do not commit `.env`, secrets, or `scripts/temp/**` / `hermes/temp/**` drafts
+- Do not commit `.env`, secrets, lab host/account defaults, or `scripts/temp/**` / `hermes/temp/**` drafts

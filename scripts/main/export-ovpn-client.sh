@@ -20,7 +20,11 @@ case "$CLIENT_NAME" in
 esac
 
 OPENVPN_DATA="${OPENVPN_DATA_DIR:-/data/assistant/openvpn}"
-TARGET_USER="${SUDO_USER:-${USER:-tringuyen}}"
+TARGET_USER="${OVPN_EXPORT_USER:-${SUDO_USER:-${USER:-}}}"
+if [[ -z "$TARGET_USER" ]]; then
+  echo "export-ovpn: set OVPN_EXPORT_USER or run via sudo from a login user"
+  exit 1
+fi
 HOME_DIR="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
 [[ -n "$HOME_DIR" ]] || HOME_DIR="/home/${TARGET_USER}"
 OUT_DIR="${OVPN_EXPORT_DIR:-${HOME_DIR}/assistant-ovpn}"

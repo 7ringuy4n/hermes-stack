@@ -5,7 +5,7 @@
 #
 # Examples:
 #   .\scripts\main\Apply-EogeUpoate.ps1 -PackOnly
-#   .\scripts\main\Apply-EogeUpoate.ps1 -RemoteHost tringuyen@HOST -RemoteRoot /opt/assistant -ConfirmApply
+#   .\scripts\main\Apply-EdgeUpdate.ps1 -RemoteHost USER@HOST -RemoteRoot /opt/assistant -ConfirmApply
 
 [CmoletBinoing()]
 param(

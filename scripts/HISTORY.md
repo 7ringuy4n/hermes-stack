@@ -19,6 +19,67 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-18 19:45 +07 — lab SSH host and account in product scripts
+
+### Symptom
+
+Committed High deploy helpers defaulted SSH host and login name, so clones of `develop`/`main` contained lab identity.
+
+### Root cause
+
+Product entrypoints used fallback literals instead of requiring `ASSISTANT_SSH_*`. Comment examples repeated the same account. OpenVPN export defaulted the chown user to a named login.
+
+### Fix
+
+Require env/flags with no host or account defaults. Placeholders only (`USER@HOST`, `<user>`). VPS probes stay in gitignored `scripts/temp/`.
+
+### Prevent recurrence
+
+Before merging to `develop` or `main`, grep product trees for IPv4 literals and `ASSISTANT_SSH_HOST` defaults. Do not copy temp-folder credentials into `scripts/main/` or committed `test/`.
+
+---
+
+## 2026-08-18 19:39 +07 — stack-watch treated 9router 401 as down
+
+### Symptom
+
+After High up, 9router (and sometimes dispatcher) showed a start time of only a few seconds even though the rest of the stack was minutes old. Dashboard/gateway stayed up, but the router was bouncing.
+
+### Root cause
+
+`stack-watch` probed `GET /v1/models` with `curl -f`. Without an API key that URL returns **401** while 9router is healthy, so every 2-minute tick counted as DOWN and ran `docker restart 9router`. Compose heal was also missing `--profile notify` / `--profile sandbox`, so `--remove-orphans` could drop those services.
+
+### Fix
+
+- Probe 9router as up on HTTP 200/401/307.
+- Align stack-watch compose profiles with `run.sh` (zalo, notify, antivirus, sandbox, omni, traefik/gateway, monitor pairing).
+
+### Prevent recurrence
+
+Do not use `curl -f` on 9router `/v1/models`. Confirm a heal pass does not change `9router` `StartedAt`. Keep notify/sandbox in the heal compose file list whenever those flags are on.
+
+---
+
+## 2026-08-18 19:14 +07 — promote v0.5.7 via MR (not develop→main)
+
+### Symptom
+
+Need the lịch/cadence/media-ack work on both integration and production branches without a direct develop→main merge.
+
+### Root cause
+
+Repo rule is feature → develop → release/* → main, each via GitHub PR.
+
+### Fix
+
+MR #42 `fix/zalo/workflow-wait-turn` → `develop`, then `release/v0.5.7` cherry-pick → MR #43 → `main`, then sync `main` back into `develop`.
+
+### Prevent recurrence
+
+Do not merge `develop` straight into `main`. Empty leftover lab lịch before rolling deploy so migrate does not recreate them.
+
+---
+
 ## 2026-08-18 18:57 +07 — leftover daily lịch would have been re-imported by migrate
 
 ### Symptom
