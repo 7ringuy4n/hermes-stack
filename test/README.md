@@ -41,3 +41,8 @@ Skills lab (Medium destroy/redeploy + auto-learn + text-poster): [cases/12-skill
 
 Zalo: install bridge/proxy first. If the session is dead, stop and ask an operator to run `bash scripts/main/login-zalo.sh` (QR) before Zalo↔Hermes checks.
 
+Plenty-in-one-message + same-time vs different-time cron (Zalo and Hermes API):
+[cases/24-workflow-multi-cron-channels.md](./cases/24-workflow-multi-cron-channels.md) ·
+[scripts/workflow_schedule_concurrency_unit.py](./scripts/workflow_schedule_concurrency_unit.py).
+
+
