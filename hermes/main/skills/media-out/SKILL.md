@@ -15,6 +15,9 @@ Applies to **every** create/export/send of a file or media asset: images, PDF, D
 4. Work silently with tools; user-facing text = **result only**.
 5. Write under `/opt/data/media/out/<safe-name>.<ext>` only.
 6. **One delivery only:** images → generate via dispatcher **without** `send_zalo`; office → one `send-file` **or** rely on autosend — never both.
+7. Compound inbound (several requests in one bubble) is **split into turns** unless it is a **single recurring schedule**. This skill applies to the **current** media item only — it does not cancel later numbered requests.
+8. **Compound queue:** if more numbered parts follow (image then prices, etc.), send the **file/image only** on the media turn — **no** `Đã xong.` / `Done.` yet. The adapter sends that ack **after the last part**.
+9. **Recurring schedule payload (unsplit):** if this turn is one lịch with several numbered tasks, after each file send the short success line **then continue the remaining items in the same run**. Do not treat media-out as end-of-run.
 
 ## User-facing reply (only this)
 

@@ -19,7 +19,7 @@ Hermes loads skills from the compose bind mount; **post-ready-learn** mirrors ma
 1. **Clean:** backup+verify, then destroy stack; remove mirrored docs under `$ASSISTANT_DATA_DIR/docs/skills` (optional full `docs/` refresh).
 2. **Deploy:** sync source tree; `bash run.sh switch-profile medium --no-up` (if needed); `bash run.sh up` (rebuild dispatcher if image-gen changed).
 3. **Learn:** confirm `post-ready-learn` OK (or run `bash run.sh post-ready-learn`).
-4. **Mount check:** Hermes container has category skills, e.g. `core/answering/SKILL.md`, `image-gen/SKILL.md`.
+4. **Mount check:** Hermes container has category skills, e.g. `core/answering/SKILL.md`, `image-gen/SKILL.md`, `communication/friendly-response/SKILL.md`, `communication/vi-people-terms/SKILL.md`.
 5. **Catalog:** `GET /v1/learn/list?q=image-gen&limit=5` — expect ≥1 hit; report total `count`.
 6. **Find:** `POST /v1/learn/find` with selector `knowledge-rag` or `skills` — chunk hits or document names present.
 7. **9router:** `curl` 9router health after deploy.

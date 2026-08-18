@@ -5,8 +5,8 @@
 | | |
 |--|--|
 | **Sits beside** | All stack services (scrape / log ship) |
-| **Owns** | Grafana, Prometheus, Loki/Alloy, alert-watch |
-| **Does not own** | Chat path — Low/Medium run without monitor |
+| **Owns** | Grafana, Prometheus, Loki/Alloy, paired exporters, alert-watch |
+| **Does not own** | Chat path — Low/Medium/High run without monitor |
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
@@ -24,27 +24,44 @@ Observability for High: metrics, logs, dashboards. Access via **localhost or SSH
 
 ## Profile
 
-High only (`ENABLE_GRAFANA` / Loki / Prometheus / Alloy).
+High optional. Flags are independent combos:
 
-## Sub-packages (from lab copy)
+| Flag | Starts together |
+|------|-----------------|
+| `ENABLE_GRAFANA=1` | Grafana + **Prometheus** + `nine-exporter` + `node-exporter` (Hardware panels) + `stack-exporter` |
+| `ENABLE_PROMETHEUS=1` | Prometheus + the same exporters (no Grafana UI) |
+| `ENABLE_LOKI=1` or `ENABLE_ALLOY=1` | **Loki + Alloy** |
+| `ENABLE_OMNIROUTER=1` + Prometheus/Grafana | OmniRouter + **`omni-exporter`** |
 
-| Package | Function |
-|---|---|
-| `grafana/` | Dashboards |
-| `alert-watch/` | Health / alert watcher |
-| `stack-exporter/` / `nine-exporter/` | Exporters |
+Extra usage: Grafana+Prometheus **~1.5 GiB · ~10 GB · ~0.5 vCPU**, Loki+Alloy **~1.5 GiB · ~20 GB · ~0.5 vCPU**, all optional features **~5 GiB RAM · ~40 GB disk · ~2 vCPU**. See [docs/HARDWARE.md](../../docs/HARDWARE.md).
+
+## Sub-packages
+
+| Package | Function | Pairs with |
+|---|---|---|
+| `grafana/` | Dashboards | Prometheus (metrics/Hardware) and/or Loki (logs) |
+| `alert-watch/` | Health / alert watcher | Notify (`ENABLE_NOTIFY=1`) |
+| `nine-exporter/` | 9Router usage metrics | 9Router + Prometheus |
+| `omni-exporter/` (same image as nine-exporter) | OmniRoute usage metrics | OmniRouter + Prometheus |
+| `stack-exporter/` | `assistant_service_up` + Redis/Qdrant | Grafana stack health + Prometheus |
+| `node-exporter` (image `prom/node-exporter`) | Host CPU/RAM | Grafana **Hardware** panels + Prometheus |
 
 ## How it works
 
 ```text
-Services expose /health and metrics
-    → Prometheus scrapes
-    → Loki receives logs (via Alloy/agents)
-    → Grafana dashboards on 127.0.0.1
+Paired exporters expose /metrics
+    → Prometheus scrapes (only jobs whose exporters are up)
+    → Loki receives logs (via Alloy)
+    → Grafana dashboards on 127.0.0.1:23000
 ```
 
 Do not require monitor to run Low chat.
 
+## Tests
+
+When Grafana (or Prometheus-only) is on, run case **20** (`test/scripts/grafana_integration_lab.py`, SSH) and local `grafana_pairing_unit.py`. 9Router is always-on: stack-exporter probes it over **TCP** (UI `/health` is 404). OmniRouter scrape is required only if `ENABLE_OMNIROUTER=1`.
+
 ## Related
 
 - [docs/00-profiles.md](../../docs/00-profiles.md)
+- [docs/HARDWARE.md](../../docs/HARDWARE.md)

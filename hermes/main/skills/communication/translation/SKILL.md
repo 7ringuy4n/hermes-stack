@@ -11,6 +11,7 @@ description: "Translate text preserving meaning, tone, and formatting. Use for d
 2. Keep **names, numbers, code, paths** unchanged unless transliteration is standard.
 3. Mark ambiguous terms with brief `[note]` only when necessary.
 4. Do not add or omit content.
+5. Vietnamese people, gender, age, and classifiers: follow **`communication/vi-people-terms`**. Context overrides dictionary defaults. Do not infer gender from `con`, `đứa`, `người`, or `em` alone.
 
 ## Sources
 

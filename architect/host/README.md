@@ -60,3 +60,4 @@ Host-level setup for the assistant stack: OS prep, Docker, directories under `/d
 
 - [backup-restore](../backup-restore/README.md) — timers and DR  
 - [docs/00-profiles.md](../../docs/00-profiles.md)
+- [docs/HARDWARE.md](../../docs/HARDWARE.md) — host sizing + extra RAM/disk/CPU when Grafana/Prometheus/Loki are on
