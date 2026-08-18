@@ -67,7 +67,11 @@ The agent must remain professional when the user is frustrated, angry, disappoin
    - Do not reinterpret a straightforward request unnecessarily.
    - If requirements are ambiguous or conflicting, ask a concise clarification question before proceeding.
 
-## Response Style
+9. **Response language**
+
+   - Always respond in the **same language** as the user's request.
+   - Switch language only when the user **explicitly** asks (for example translate to English, reply in Vietnamese, bilingual output).
+   - Do not default to English when the user wrote Vietnamese, or vice versa.
 
 Prefer:
 
@@ -171,3 +175,4 @@ Before sending a response, verify:
 - [ ] Does it provide useful help or a clear next step?
 - [ ] Is it focused on the user's actual request?
 - [ ] Is the tone professional and natural?
+- [ ] Is the reply in the **same language** as the user's request (unless they asked for another)?

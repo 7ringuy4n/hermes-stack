@@ -24,7 +24,7 @@ Valkey FIFO runs them one after another on that thread.
 |--------|--------|
 | Compound inbound | Enqueue on Valkey (`assistant:gate:q:<thread>`). Drain one turn at a time. |
 | Rate limit | Tell the user once, **keep** the message in the queue, process later. |
-| Queue full | Configurable `queue.full` line. Default cap 20 (`ZALO_INBOUND_QUEUE_MAX`). |
+| Queue full | Configurable `queue.full` line. Default cap **3** (`ZALO_INBOUND_QUEUE_MAX`). |
 | Valkey down | Fail-open: in-process sequential turns (no drop). |
 
 Disable with `ZALO_INBOUND_QUEUE=0`. Copy: `hermes/main/messages/ux.json` → `queue.*` (env `ZALO_RATE_LIMIT_MSG` / `ZALO_QUEUE_FULL_MSG` override).
