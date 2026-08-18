@@ -398,6 +398,8 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_compound_thread_type: Dict[str, str] = {}
         self._as_compound_seq_t0: Dict[str, float] = {}
         self._as_workflow_task: Optional[asyncio.Task] = None
+        self._as_workflow_inflight: set[asyncio.Task] = set()
+        self._as_dest_send_locks: Dict[str, asyncio.Lock] = {}
 
     @property
     def name(self) -> str:
@@ -565,6 +567,11 @@ class ZaloAdapter(BasePlatformAdapter):
                 await self._as_workflow_task
             except asyncio.CancelledError:
                 pass
+        pending = [t for t in getattr(self, "_as_workflow_inflight", set()) if not t.done()]
+        for t in pending:
+            t.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         await self._close_session()
 
     async def _close_session(self) -> None:
@@ -1076,11 +1083,26 @@ class ZaloAdapter(BasePlatformAdapter):
             },
         )
 
-    def _as_ux_line(self, env_name: str, json_path: tuple, default: str) -> str:
-        """Env override, then messages/ux.json, then default. Never host paths in chat."""
+    def _as_ux_line(
+        self,
+        env_name: str,
+        json_path: tuple,
+        default: str,
+        *,
+        user_text: str = "",
+    ) -> str:
+        """Env override, then messages/ux.json (locale map or string), then default.
+
+        Locale maps use the user's message script (see ``ux_copy.reply_lang``).
+        Operators add languages in ux.json — do not hardcode user copy in Python.
+        """
         raw = (os.getenv(env_name) or "").strip()
         if raw:
             return raw
+        try:
+            from .ux_copy import pick_localized, reply_lang
+        except ImportError:
+            from ux_copy import pick_localized, reply_lang  # type: ignore
         cache = getattr(self, "_as_ux_cache", None)
         if cache is False:
             return default
@@ -1102,6 +1124,8 @@ class ZaloAdapter(BasePlatformAdapter):
             if not isinstance(cur, dict) or key not in cur:
                 return default
             cur = cur[key]
+        if isinstance(cur, dict):
+            return pick_localized(cur, reply_lang(user_text), default)
         s = str(cur or "").strip()
         return s if s else default
 
@@ -1288,11 +1312,13 @@ class ZaloAdapter(BasePlatformAdapter):
             if data.get("ok"):
                 print("[zalo] workflow schedule stored", flush=True)
                 try:
-                    await self._as_gate_announce(
-                        thread_id,
-                        thread_type,
-                        "Đã lưu lịch. Mỗi lần tới giờ sẽ chạy từng việc (không gộp một lần LLM).",
+                    msg = self._as_ux_line(
+                        "ZALO_SCHEDULE_SAVED_MSG",
+                        ("schedule", "saved"),
+                        "Schedule saved. When it is due, each item runs on its own (not as one LLM turn).",
+                        user_text=text,
                     )
+                    await self._as_gate_announce(thread_id, thread_type, msg)
                 except Exception:
                     pass
                 return True
@@ -1306,15 +1332,40 @@ class ZaloAdapter(BasePlatformAdapter):
         logger.info("Zalo: workflow %s jobs=%s", (data.get("workflow") or {}).get("id"), len(parts))
         return True
 
+    def _as_workflow_parallel(self) -> int:
+        return int(self._as_env_float("ZALO_WORKFLOW_PARALLEL", 4.0, 1.0, 16.0))
+
+    def _as_zalo_api_chat_id(self, chat_id: str) -> str:
+        try:
+            from .turn_wait import real_thread_id
+        except ImportError:
+            from turn_wait import real_thread_id  # type: ignore
+        return real_thread_id(chat_id)
+
+    async def _as_with_dest_send_lock(self, dest_id: str, fn):
+        did = str(dest_id or "")
+        locks = self._as_dest_send_locks
+        lock = locks.get(did)
+        if lock is None:
+            lock = asyncio.Lock()
+            locks[did] = lock
+        async with lock:
+            return await fn()
+
     async def _as_workflow_worker(self) -> None:
         try:
-            from .workflow_client import claim_job, complete_job, fail_job, heartbeat, workflow_enabled
+            from .workflow_client import claim_job, fail_job, workflow_enabled
         except ImportError:
-            from workflow_client import claim_job, complete_job, fail_job, heartbeat, workflow_enabled  # type: ignore
+            from workflow_client import claim_job, fail_job, workflow_enabled  # type: ignore
         wid = _replica_id() or "zalo"
+        inflight = self._as_workflow_inflight
         while not self._stop:
             if not workflow_enabled():
                 await asyncio.sleep(5)
+                continue
+            inflight.difference_update({t for t in list(inflight) if t.done()})
+            if len(inflight) >= self._as_workflow_parallel():
+                await asyncio.sleep(0.25)
                 continue
             try:
                 job = claim_job(wid)
@@ -1327,60 +1378,107 @@ class ZaloAdapter(BasePlatformAdapter):
             instruction = str(job.get("instruction") or "").strip()
             ctx = job.get("context") if isinstance(job.get("context"), dict) else {}
             tid = str(ctx.get("thread_id") or "")
-            tt = str(ctx.get("thread_type") or "user")
-            chat_type = str(ctx.get("chat_type") or "dm")
-            sender_id = str(ctx.get("sender_id") or "")
-            sender_name = str(ctx.get("sender_name") or tid)
             if not tid or not instruction:
                 fail_job(jid, "missing thread or instruction")
                 continue
-            source = self.build_source(
-                chat_id=tid,
-                chat_name=sender_name if chat_type == "dm" else tid,
-                chat_type=chat_type,
-                user_id=sender_id,
-                user_name=sender_name,
-            )
-            event = MessageEvent(
-                text=instruction,
-                message_type=MessageType.TEXT,
-                source=source,
-                message_id=jid,
-                raw_message={},
-                timestamp=datetime.now(),
-            )
-            self._as_compound_begin(tid)
-            try:
-                heartbeat(jid, wid)
-                await self.handle_message(event)
-                await self._as_autosend_late_files(tid, tt)
-                complete_job(jid, {"ok": True})
-                print(f"[zalo] workflow job done {jid[:16]}", flush=True)
-            except Exception as e:
-                logger.exception("Zalo: workflow job failed")
-                # Important for cron/schedule semantics:
-                # sequential workflows must not block later items forever.
-                # We mark this job as completed-with-error so dependent jobs
-                # can unlock and the user still receives subsequent items.
-                try:
-                    await self._as_gate_announce(
-                        tid,
-                        tt,
-                        "Phiên làm việc bị gián đạn, vui lòng thử lại sau",
-                    )
-                except Exception:
-                    pass
-                try:
-                    complete_job(
-                        jid,
-                        {"ok": False, "error": type(e).__name__},
-                    )
-                except Exception:
-                    fail_job(jid, type(e).__name__)
-            finally:
-                self._as_compound_end(tid)
-                self._as_compound_seq_done(tid)
+            task = asyncio.create_task(self._as_run_workflow_job(job, wid))
+            inflight.add(task)
+            task.add_done_callback(inflight.discard)
 
+    async def _as_run_workflow_job(self, job: dict, wid: str) -> None:
+        try:
+            from .workflow_client import complete_job, fail_job, heartbeat
+        except ImportError:
+            from workflow_client import complete_job, fail_job, heartbeat  # type: ignore
+        try:
+            from .turn_wait import isolate_session_chat_id
+        except ImportError:
+            from turn_wait import isolate_session_chat_id  # type: ignore
+        jid = str(job.get("id"))
+        instruction = str(job.get("instruction") or "").strip()
+        ctx = job.get("context") if isinstance(job.get("context"), dict) else {}
+        tid = str(ctx.get("thread_id") or "")
+        tt = str(ctx.get("thread_type") or "user")
+        chat_type = str(ctx.get("chat_type") or "dm")
+        sender_id = str(ctx.get("sender_id") or "")
+        sender_name = str(ctx.get("sender_name") or tid)
+        iso = isolate_session_chat_id(tid, jid)
+        zalo_tt = "group" if tt == "group" or chat_type == "group" else "user"
+        try:
+            self._thread_types[iso] = zalo_tt
+            self._thread_types[tid] = zalo_tt
+        except Exception:
+            pass
+        source = self.build_source(
+            chat_id=iso,
+            chat_name=sender_name if chat_type == "dm" else tid,
+            chat_type=chat_type,
+            user_id=f"{sender_id}:{jid}" if sender_id else jid,
+            user_name=sender_name,
+        )
+        event = MessageEvent(
+            text=instruction,
+            message_type=MessageType.TEXT,
+            source=source,
+            message_id=jid,
+            raw_message={},
+            timestamp=datetime.now(),
+        )
+        self._as_compound_begin(iso)
+        try:
+            def _pulse() -> None:
+                heartbeat(jid, wid)
+
+            _pulse()
+            await self.handle_message(event)
+            idle = await self._as_wait_thread_idle(
+                iso, pulse=_pulse, arm_first=True
+            )
+            await self._as_autosend_late_files(iso, zalo_tt)
+            complete_job(jid, {"ok": True, "idle": idle, "isolated": True})
+            print(f"[zalo] workflow job done {jid[:16]} idle={idle}", flush=True)
+        except Exception as e:
+            logger.exception("Zalo: workflow job failed")
+            try:
+                msg = self._as_ux_line(
+                    "ZALO_SESSION_INTERRUPTED_MSG",
+                    ("session", "interrupted"),
+                    "This session was interrupted. Please try again later.",
+                    user_text=instruction,
+                )
+                await self._as_gate_announce(tid, zalo_tt, msg)
+            except Exception:
+                pass
+            try:
+                complete_job(
+                    jid,
+                    {"ok": False, "error": type(e).__name__},
+                )
+            except Exception:
+                fail_job(jid, type(e).__name__)
+        finally:
+            self._as_compound_end(iso)
+            self._as_compound_seq_done(iso)
+
+    async def _as_wait_thread_idle(
+        self,
+        thread_id: str,
+        *,
+        pulse=None,
+        arm_first: bool = False,
+    ) -> bool:
+        try:
+            from .turn_wait import wait_thread_idle
+        except ImportError:
+            from turn_wait import wait_thread_idle  # type: ignore
+        timeout = self._as_env_float("ZALO_WORKFLOW_TURN_TIMEOUT_S", 420.0, 30.0, 900.0)
+        return await wait_thread_idle(
+            lambda: getattr(self, "_active_sessions", None),
+            thread_id,
+            timeout_s=timeout,
+            pulse=pulse,
+            arm_first=arm_first,
+        )
 
     def _as_compound_mark_delivered(self, thread_id: str) -> None:
         ev = self._as_part_delivered.get(str(thread_id or ""))
@@ -1388,16 +1486,13 @@ class ZaloAdapter(BasePlatformAdapter):
             ev.set()
 
     def _as_media_done_caption(self) -> str:
-        env = (os.getenv("ZALO_FILE_CAPTION") or "").strip()
-        if env:
-            return env
-        return self._as_ux_line("ZALO_FILE_CAPTION", ("media", "done"), "Đã xong.")
+        return ""
 
     def _as_is_media_ack_only(self, content: str) -> bool:
         t = (content or "").strip().lower().rstrip(".!?")
         if not t:
             return True
-        return t in {"đã xong", "da xong", "done", "xong", "ok"}
+        return t in {"đã xong", "da xong", "done", "xong"}
 
     def _as_compound_set_after(self, thread_id: str, after: int, thread_type: str = "") -> None:
         tid = str(thread_id or "")
@@ -1413,15 +1508,8 @@ class ZaloAdapter(BasePlatformAdapter):
 
     async def _as_compound_maybe_final_ack(self, thread_id: str) -> None:
         tid = str(thread_id or "")
-        if tid not in self._as_compound_defer_ack:
-            return
         self._as_compound_defer_ack.discard(tid)
-        tt = self._as_compound_thread_type.pop(tid, None) or "user"
-        cap = self._as_media_done_caption()
-        try:
-            await self._as_gate_announce(tid, tt, cap)
-        except Exception as e:
-            logger.warning("Zalo: compound final ack failed: %s", type(e).__name__)
+        self._as_compound_thread_type.pop(tid, None)
 
     async def _as_compound_wait_part(self, thread_id: str) -> None:
         """Wait until the current part sent something, then a short idle gap."""
@@ -1445,7 +1533,6 @@ class ZaloAdapter(BasePlatformAdapter):
             return False
         grace = self._as_env_float("ZALO_AUTOSEND_LATE_S", 8.0, 0.0, 30.0)
         if grace <= 0:
-            self._as_compound_mark_delivered(tid)
             return False
         start = __import__("time").time()
         deadline = start + grace
@@ -1468,7 +1555,11 @@ class ZaloAdapter(BasePlatformAdapter):
             if (now - start) >= idle:
                 break
             await asyncio.sleep(0.45)
-        self._as_compound_mark_delivered(tid)
+        # Only mark delivered when a file actually went out. A timeout here
+        # used to flip the event and let the next sequential item start while
+        # the current Hermes turn was still running.
+        if sent:
+            self._as_compound_mark_delivered(tid)
         return sent
 
     def _as_kick_late_autosend(self, chat_id, metadata=None) -> None:
@@ -2743,17 +2834,17 @@ class ZaloAdapter(BasePlatformAdapter):
     def _thread_type_from_chat_id(self, chat_id: str, metadata: Optional[Dict[str, Any]]) -> str:
         if metadata and metadata.get("thread_type") in {"user", "group"}:
             return metadata["thread_type"]
+        dest_id = self._as_zalo_api_chat_id(str(chat_id or ""))
         _d = getattr(self, "_as_autosend_turn_dest", None)
         if callable(_d):
             _dest = _d() or {}
-            if str(chat_id) == str(_dest.get("thread_id") or "") and _dest.get("thread_type") in {"user", "group"}:
+            if dest_id == str(_dest.get("thread_id") or "") and _dest.get("thread_type") in {"user", "group"}:
                 try:
-                    self._thread_types[str(chat_id)] = _dest["thread_type"]
+                    self._thread_types[dest_id] = _dest["thread_type"]
                 except Exception:
                     pass
                 return _dest["thread_type"]  # ASSISTANT_AUTOSEND_v3
-        # Use the type remembered from inbound messages for this chat.
-        remembered = self._thread_types.get(str(chat_id))
+        remembered = self._thread_types.get(str(chat_id)) or self._thread_types.get(dest_id)
         if remembered in {"user", "group"}:
             return remembered
         return "user"
@@ -2876,10 +2967,10 @@ class ZaloAdapter(BasePlatformAdapter):
         ) or ("approval" in low and ("command" in low or "execute" in low)):
             return ""
         try:
-            from .gateway_noise import is_busy_interrupt_notice
+            from .gateway_noise import is_busy_interrupt_notice, is_process_narration
         except ImportError:
-            from gateway_noise import is_busy_interrupt_notice  # type: ignore
-        if is_busy_interrupt_notice(t):
+            from gateway_noise import is_busy_interrupt_notice, is_process_narration  # type: ignore
+        if is_busy_interrupt_notice(t) or is_process_narration(t):
             return ""
         return None
 
@@ -2891,10 +2982,12 @@ class ZaloAdapter(BasePlatformAdapter):
         if not t:
             return True
         try:
-            from .gateway_noise import is_busy_interrupt_notice
+            from .gateway_noise import is_busy_interrupt_notice, is_process_narration
         except ImportError:
-            from gateway_noise import is_busy_interrupt_notice  # type: ignore
+            from gateway_noise import is_busy_interrupt_notice, is_process_narration  # type: ignore
         if is_busy_interrupt_notice(t):
+            return True
+        if is_process_narration(t):
             return True
         low = t.lower()
         needles = (
@@ -3243,10 +3336,16 @@ class ZaloAdapter(BasePlatformAdapter):
         """True = this outbound is the sender DM / other chat, not the ask thread."""
         if isinstance(metadata, dict) and metadata.get("as_skip_dest"):
             return False
+        try:
+            from .turn_wait import is_isolated_session, real_thread_id
+        except ImportError:
+            from turn_wait import is_isolated_session, real_thread_id  # type: ignore
+        if is_isolated_session(str(chat_id or "")):
+            return False
         dest = self._as_autosend_turn_dest()
         if not dest or not dest.get("thread_id"):
             return False
-        return str(chat_id or "") != str(dest["thread_id"])
+        return real_thread_id(str(chat_id or "")) != str(dest["thread_id"])
 
     def _as_autosend_file_fp(self, file_path) -> str:  # ASSISTANT_AUTOSEND_v5
         """Dedupe key: image stem so foo.png + foo.jpg count as one send."""
@@ -3398,7 +3497,7 @@ class ZaloAdapter(BasePlatformAdapter):
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
             pass
-        caption = self._as_media_done_caption()
+        caption = ""
         for src in picked:
             dest = src
             try:
@@ -3852,8 +3951,8 @@ class ZaloAdapter(BasePlatformAdapter):
         if self._is_gateway_noise(content):  # ASSISTANT_QUIET_SEND_v6
             logger.info("Zalo: drop gateway noise: %s", (content or "")[:100].replace("\n", " "))
             return SendResult(success=True, message_id=None)
-        if self._as_compound_has_more_after(str(chat_id)) and self._as_is_media_ack_only(content):
-            logger.info("Zalo: defer media ack (more compound parts) thread=%s", chat_id)
+        if self._as_is_media_ack_only(content):
+            logger.info("Zalo: drop media ack line")
             return SendResult(success=True, message_id=None)
         if not (isinstance(metadata, dict) and metadata.get("as_skip_autosend")):
             content = await self._as_autosend_turn_files(chat_id, content, metadata)  # ASSISTANT_AUTOSEND_v5
@@ -3866,6 +3965,7 @@ class ZaloAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=None)
         if str(chat_id) not in self._as_hold_inflight:
             self._as_inflight_done(chat_id, metadata)  # ASSISTANT_INFLIGHT_v5
+        dest_id = self._as_zalo_api_chat_id(chat_id)
         thread_type = self._thread_type_from_chat_id(chat_id, metadata)
         # Split long messages.
         _cap = 1800  # ASSISTANT_SEND_RETRY_v2
@@ -3890,20 +3990,20 @@ class ZaloAdapter(BasePlatformAdapter):
                 chunk = self._as_zalo_plain_chunk(chunk)
             if not chunk.strip():
                 continue
-            body = {"threadId": chat_id, "threadType": thread_type, "text": chunk}
+            body = {"threadId": dest_id, "threadType": thread_type, "text": chunk}
             used_quote = False
             if first and quote and len(chunk) <= 1400:  # ASSISTANT_SEND_RETRY_v2
                 body["quote"] = quote  # ASSISTANT_REPLY_QUOTE
                 used_quote = True
                 logger.info("Zalo: reply-quote msgId=%s type=%s thread=%s", quote.get("msgId"), quote.get("msgType"), chat_id)
             first = False
-            res = await self._post("/send", body)
+            res = await self._as_with_dest_send_lock(dest_id, lambda b=body: self._post("/send", b))
             if res.get("error") and used_quote:
                 err = str(res.get("error") or "")
                 logger.warning("Zalo: reply-quote send failed (%s) — retry plain", err[:120])
                 body.pop("quote", None)
                 await asyncio.sleep(1.2)
-                res = await self._post("/send", body)
+                res = await self._as_with_dest_send_lock(dest_id, lambda b=body: self._post("/send", b))
             if res.get("error"):
                 err = str(res.get("error") or "")
                 retryable = True
@@ -3914,7 +4014,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     logger.warning("Zalo: send failed (%s) — backoff retry", err[:120])
                     body.pop("quote", None)
                     await asyncio.sleep(1.5)
-                    res = await self._post("/send", body)
+                    res = await self._as_with_dest_send_lock(dest_id, lambda b=body: self._post("/send", b))
             if res.get("error"):
                 return SendResult(success=False, error=res["error"])
             last = res
@@ -3934,7 +4034,10 @@ class ZaloAdapter(BasePlatformAdapter):
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         thread_type = self._thread_type_from_chat_id(chat_id, metadata)
-        await self._post("/typing", {"threadId": chat_id, "threadType": thread_type})
+        await self._post(
+            "/typing",
+            {"threadId": self._as_zalo_api_chat_id(chat_id), "threadType": thread_type},
+        )
 
 
     def _bridge_shared_root(self) -> str:
@@ -3990,7 +4093,7 @@ class ZaloAdapter(BasePlatformAdapter):
         import shutil
 
         payload = {
-            "threadId": chat_id,
+            "threadId": self._as_zalo_api_chat_id(chat_id),
             "threadType": thread_type,
             "caption": caption or "",
         }
@@ -4039,13 +4142,16 @@ class ZaloAdapter(BasePlatformAdapter):
             if callable(_claim) and not _claim(image_path, chat_id):
                 logger.info("Zalo: skip duplicate image %s", image_path)
                 return SendResult(success=True)  # ASSISTANT_AUTOSEND_v5
-        payload = self._bridge_attachment_payload(chat_id, thread_type, image_path, caption or "")
+        dest_id = self._as_zalo_api_chat_id(chat_id)
+        payload = self._bridge_attachment_payload(dest_id, thread_type, image_path, caption or "")
         if payload.pop("_missing", False):
             return SendResult(
                 success=False,
                 error=f"local file missing: {image_path} — write /opt/data/media/out/*.jpg or POST dispatcher /v1/image",
             )
-        res = await self._post("/send-attachment", payload)
+        res = await self._as_with_dest_send_lock(
+            dest_id, lambda p=payload: self._post("/send-attachment", p)
+        )
         if res.get("error"):
             return SendResult(success=False, error=res["error"])
         self._as_compound_mark_delivered(chat_id)

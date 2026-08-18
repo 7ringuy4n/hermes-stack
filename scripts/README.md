@@ -2,10 +2,11 @@
 
 **Default: `main/`** — `run.sh` and product docs always call `scripts/main/…`.
 
-| Folder | Purpose | Git |
+| Folder / file | Purpose | Git |
 |---|---|---|
 | [`main/`](./main/) | **Default** product ops (Docker, first-setup, checks) | **commit** |
 | [`temp/`](./temp/) | One-off deploy/probe/hotfix (host-specific) | **ignored** |
+| [`HISTORY.md`](./HISTORY.md) | Timestamped **issues + root causes + fixes** (ops companion to `docs/CHANGELOG.md`) | **commit** |
 
 ```bash
 # product (default paths)

@@ -7,6 +7,10 @@ description: "Generate images via dispatcher. Use text-poster path for exact quo
 
 Follow skill **`media-out`** (result only — no step chatter, no approve, no chat_id / names / DM metadata).
 
+The built-in Hermes `image_generation` tool is often **unavailable** (it checks cloud keys such as BFL). Do **not** stop. Generate through this skill and dispatcher instead.
+
+**Never** `web_search`, `web_extract`, or browse GitHub/release/news pages to “find image URLs”. That is not generation. Users must receive a **new file** from dispatcher, not a scrape of someone else’s page. If weather context is needed, one short search for conditions is enough, then `POST /v1/image` with a scene prompt. If dispatcher fails: one failure line from **media-out**, then stop.
+
 ## Output path
 
 Only `/opt/data/media/out/<safe-slug>.png` (or `.jpg`). Never `/opt/data/<file>.png` or `/tmp`.
@@ -51,7 +55,7 @@ Use `refine:true` only if the user explicitly wants an English art prompt rewrit
 
 ## User-facing reply (only this)
 
-After `ok:true`: reply exactly `Đã xong.` (or `Done.`). Nothing else.
+After `ok:true`: send the file only (autosend). No success ack line. If the user also asked for facts, put those facts in the same job’s reply without process chatter.
 
 ## Related
 

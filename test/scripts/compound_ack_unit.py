@@ -18,7 +18,7 @@ class _Stub:
         t = (content or "").strip().lower().rstrip(".!?")
         if not t:
             return True
-        return t in {"đã xong", "da xong", "done", "xong", "ok"}
+        return t in {"đã xong", "da xong", "done", "xong"}
 
 
 def main() -> int:
