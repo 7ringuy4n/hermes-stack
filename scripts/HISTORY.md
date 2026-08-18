@@ -19,6 +19,26 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-18 19:14 +07 — promote v0.5.7 via MR (not develop→main)
+
+### Symptom
+
+Need the lịch/cadence/media-ack work on both integration and production branches without a direct develop→main merge.
+
+### Root cause
+
+Repo rule is feature → develop → release/* → main, each via GitHub PR.
+
+### Fix
+
+MR #42 `fix/zalo/workflow-wait-turn` → `develop`, then `release/v0.5.7` cherry-pick → MR #43 → `main`, then sync `main` back into `develop`.
+
+### Prevent recurrence
+
+Do not merge `develop` straight into `main`. Empty leftover lab lịch before rolling deploy so migrate does not recreate them.
+
+---
+
 ## 2026-08-18 18:57 +07 — leftover daily lịch would have been re-imported by migrate
 
 ### Symptom
