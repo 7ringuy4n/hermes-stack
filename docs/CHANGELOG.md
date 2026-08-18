@@ -82,6 +82,15 @@
 - **Web search default:** Medium/High `WEB_BACKENDS=tavily,firecrawl` round-robin; **SearXNG always appended** as fallback (`architect/models/dispatcher/app.py`).
 - **File security matrix:** Zalo inbound → AV only; dispatcher outbound → security-manager when `SECURITY_URL` set; ingest scan not wired (documented in case 19).
 
+## 2026-08-17 18:07 +07 — release: v0.5.5
+
+- Docs: fetch + rebase onto latest `origin/develop` or `origin/main` before implement or promote; production still via `release/*` MR only.
+
+## 2026-08-17 18:05 +07 — docs: fetch + rebase before implement or promote
+
+- `docs/GIT.md` and `.cursor/rules/git.mdc`: always `git fetch` then rebase onto `origin/develop` (feature/fix) or `origin/main` (hotfix/release) before implementing or promoting.
+- Production path unchanged: `feature/*` → `develop` → `release/*` → `main` (MR only; never merge `develop` straight into `main`).
+
 ## 2026-08-17 18:00 +07 — release: v0.5.4
 
 - P0 skills + exact text-poster; local ONNX embedding fallback; learn unique by path.
