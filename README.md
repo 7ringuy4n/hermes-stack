@@ -73,16 +73,16 @@ Component map with HTML panels: [docs/03-architecture.md](./docs/03-architecture
 
 ### Hardware (tested + minimums)
 
-Lab-tested **High** (Hermes×2, monitor off, Zalo, backup/restore): **Ubuntu 24.04 · 4 vCPU · 16 GiB RAM · ~200 GB SSD**.
+Lab-tested **High** (Hermes×2, monitor off, Zalo, backup/restore): **Ubuntu 24.04 · 4 vCPU · 16 GiB RAM · ~200 GB SSD** (~3 GiB idle).
 
 | Profile | Minimum | Comfortable |
 |---------|---------|-------------|
 | **Low** | 2 vCPU · 4 GiB · 40 GB | 2 · 8 GiB · 80 GB |
 | **Medium** | 2 vCPU · 8 GiB · 80 GB | 4 · 16 GiB · 120 GB |
 | **High** (no Grafana/Loki/Prometheus) | 4 vCPU · 8 GiB · 100 GB | **4 · 16 GiB · 200 GB** |
-| **High** + monitor stack | 4 vCPU · 16 GiB · 150 GB | 8 · 32 GiB · 250 GB |
+| **High** + all optional features | 6 vCPU · 16 GiB · 140 GB | 8 · 32 GiB · 250 GB |
 
-Details: [docs/HARDWARE.md](./docs/HARDWARE.md).
+Add-ons (Grafana+Prometheus **or** Loki+Alloy, exporters start with their component): Grafana+Prometheus **~1.5 GiB · ~10 GB · ~0.5 vCPU** · Loki+Alloy **~1.5 GiB · ~20 GB · ~0.5 vCPU** · **all optional features ~5 GiB RAM · ~40 GB disk · ~2 vCPU**. Details: [docs/HARDWARE.md](./docs/HARDWARE.md).
 
 ### Host hardening (clean Ubuntu)
 
@@ -192,7 +192,7 @@ Admin (exactly one user): after login, DM the bot `!zalo claim`, then
 | Doc | Contents |
 |-----|----------|
 | [docs/README.md](./docs/README.md) | Full doc index |
-| [docs/HARDWARE.md](./docs/HARDWARE.md) | Tested lab + minimum / comfortable specs |
+| [docs/HARDWARE.md](./docs/HARDWARE.md) | Tested lab + extra RAM/disk/CPU when Grafana/Prometheus/Loki/OmniRouter are on |
 | [docs/00-profiles.md](./docs/00-profiles.md) | Low / Medium / High + Traefik modes |
 | [docs/02-commands.md](./docs/02-commands.md) | `run.sh` commands |
 | [docs/03-architecture.md](./docs/03-architecture.md) | System architecture (HTML panels) |

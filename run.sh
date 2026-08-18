@@ -134,12 +134,8 @@ compose() {
   if [[ "${ENABLE_OPENVPN:-0}" == "1" ]]; then
     profiles+=(--profile openvpn)
   fi
-  # Observability — opt-in via ENABLE_* / profile monitor (any profile)
-  case "${ENABLE_GRAFANA:-0}${ENABLE_LOKI:-0}${ENABLE_PROMETHEUS:-0}${ENABLE_ALLOY:-0}" in
-    *1*)
-      profiles+=(--profile monitor)
-      ;;
-  esac
+  # Observability — exporters pair with the component they scrape (see profile.sh)
+  assistant_append_monitor_profiles profiles
   if [[ "$replicas" == "1" ]]; then
     files+=(-f "$ROOT/docker/docker-compose.hermes-hostports.yml")
   fi
@@ -214,10 +210,9 @@ do_stop_disabled_optionals() {
   if [[ "${ENABLE_CLOUDDRIVE:-0}" != "1" ]]; then
     extra+=(clouddrive-sync)
   fi
-  case "${ENABLE_GRAFANA:-0}${ENABLE_LOKI:-0}${ENABLE_PROMETHEUS:-0}${ENABLE_ALLOY:-0}" in
-    *1*) ;;
-    *) extra+=(grafana loki prometheus alloy nine-exporter stack-exporter) ;;
-  esac
+  while IFS= read -r n; do
+    [[ -n "$n" ]] && extra+=("$n")
+  done < <(assistant_disabled_monitor_containers)
   local n
   for n in "${extra[@]}"; do
     docker rm -f "$n" >/dev/null 2>&1 || true
@@ -723,6 +718,7 @@ Timers:
 First setup:
   install-docker [user]   # if docker missing; default = SSH login user (not a hardcoded name)
   first-setup-llm         # 9Router Default Key → combo hermes (oc/* round-robin)
+  first-setup-omnirouter  # OmniRoute Default Key → combo hermes (OpenCode Free oc/*)
 
 High:
   first-setup-openbao     # seed API keys → OpenBao UI (:8200); also on up|update
@@ -753,6 +749,12 @@ case "$cmd" in
         || echo "WARN: first-setup-llm failed — re-run: bash run.sh first-setup-llm"
     else
       echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip LLM first-setup"
+    fi
+    if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+      echo "==> first-setup-omnirouter (OpenCode Free combo)"
+      export STACK_ROOT="${STACK_ROOT:-$ROOT}"
+      python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py" \
+        || echo "WARN: first-setup-omnirouter failed — re-run: bash run.sh first-setup-omnirouter"
     fi
     if [[ "$ASSISTANT_PROFILE" == "high" ]]; then
       do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
@@ -816,7 +818,14 @@ case "$cmd" in
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
     export HERMES_DATA_DIR="${HERMES_DATA_DIR:-/data/assistant}"
     python3 "${SCRIPTS_DIR}/first-setup-9router-hermes.py"
+    if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+      python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py"
+    fi
     do_post_ready_learn
+    ;;
+  first-setup-omnirouter|setup-omnirouter)
+    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
+    python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py"
     ;;
   first-setup-openbao|setup-openbao)
     do_first_setup_openbao

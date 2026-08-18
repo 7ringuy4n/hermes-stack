@@ -24,7 +24,7 @@ Separate OpenAI-compatible LLM gateway for **general / non-coding** tasks. Used 
 
 ## Defaults
 
-- Image: `${OMNIROUTER_IMAGE}` (set in `.env` — separate image/repo from 9router)
+- Image: `${OMNIROUTER_IMAGE:-diegosouzapw/omniroute:latest}` (separate from 9router)
 - Port: host `127.0.0.1:${OMNIROUTER_HOST_PORT:-20129}:20129`
 - Combo: OpenCode Free + all its models (same *style* as 9router `hermes` combo) via `scripts/main/first-setup-omnirouter.sh`
 
@@ -38,8 +38,8 @@ Separate OpenAI-compatible LLM gateway for **general / non-coding** tasks. Used 
 
 ```bash
 ENABLE_OMNIROUTER=1
-OMNIROUTER_IMAGE=...   # required when enabled
+OMNIROUTER_IMAGE=diegosouzapw/omniroute:latest
 OMNIROUTER_INITIAL_PASSWORD=...
 ```
 
-Component uses compose profile `omnirouter`.
+Component uses compose profile `omnirouter`. When Prometheus or Grafana is on, **`omni-exporter` starts with OmniRouter** (`omnirouter_*` metrics). Extra usage ~0.4 GiB RAM · ~1 GB disk · ~0.2 vCPU — [docs/HARDWARE.md](../../docs/HARDWARE.md).

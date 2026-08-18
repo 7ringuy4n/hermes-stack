@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Destroy current profile, deploy High with Notify + OmniRouter + monitor.
+"""Destroy current profile, deploy High (profile defaults).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 Optional: ASSISTANT_REPO_ROOT
-Does not write secrets into test/reports.
+Optional flags (0/1, default 0 unless noted): ENABLE_ZALO, ENABLE_ANTIVIRUS,
+  SECURITY_SANDBOX, SECURITY_LLM_JUDGE, ENABLE_LLM_JUDGE,
+  ENABLE_OMNIROUTER, ENABLE_GRAFANA, ENABLE_LOKI, ENABLE_PROMETHEUS, ENABLE_ALLOY.
+  Grafana=1 pairs Prometheus on (unless ENABLE_PROMETHEUS is set).
+  Loki=1 pairs Alloy on (unless ENABLE_ALLOY is set).
+Notify stays on for High lab alerting. OmniRouter and Grafana default **off**.
+Does not write secrets into test/reports. Does not run Zalo QR login.
 """
 from __future__ import annotations
 
@@ -28,6 +34,24 @@ REMOTE = "/opt/assistant"
 RESUME = os.environ.get("RESUME", "0").strip() in {"1", "true", "yes"}
 SKIP_SYNC = os.environ.get("SKIP_SYNC", "0").strip() in {"1", "true", "yes"}
 esc = PW.replace("'", "'\\''")
+
+
+def env_flag(name: str, default: str = "0") -> str:
+    v = os.environ.get(name, default).strip().lower()
+    return "1" if v in {"1", "true", "yes", "on"} else "0"
+
+
+FLAG_ZALO = env_flag("ENABLE_ZALO")
+FLAG_AV = env_flag("ENABLE_ANTIVIRUS")
+FLAG_SANDBOX = env_flag("SECURITY_SANDBOX")
+FLAG_JUDGE = env_flag("SECURITY_LLM_JUDGE")
+FLAG_LLM_JUDGE = env_flag("ENABLE_LLM_JUDGE", FLAG_JUDGE)
+FLAG_OMNI = env_flag("ENABLE_OMNIROUTER")
+FLAG_GRAFANA = env_flag("ENABLE_GRAFANA")
+FLAG_LOKI = env_flag("ENABLE_LOKI")
+# Pairing: Grafana starts Prometheus; Loki starts Alloy — unless the pair flag is set.
+FLAG_PROM = env_flag("ENABLE_PROMETHEUS", FLAG_GRAFANA)
+FLAG_ALLOY = env_flag("ENABLE_ALLOY", FLAG_LOKI)
 
 SKIP_DIR = {
     ".git",
@@ -167,6 +191,16 @@ echo SYNC_OK
 
 def remote_deploy(c) -> str:
     resume = "1" if RESUME else "0"
+    zalo = FLAG_ZALO
+    av = FLAG_AV
+    sandbox = FLAG_SANDBOX
+    judge = FLAG_JUDGE
+    llm_judge = FLAG_LLM_JUDGE
+    omni = FLAG_OMNI
+    grafana = FLAG_GRAFANA
+    loki = FLAG_LOKI
+    prom = FLAG_PROM
+    alloy = FLAG_ALLOY
     return sudo_bash(
         c,
         rf"""
@@ -187,7 +221,7 @@ rand() {{ python3 -c 'import secrets;print(secrets.token_urlsafe(24))'; }}
 
 upsert ASSISTANT_PROFILE high
 upsert HERMES_REPLICAS 2
-upsert ENABLE_ZALO 0
+upsert ENABLE_ZALO {zalo}
 upsert ENABLE_TELEGRAM 0
 upsert ENABLE_TRAEFIK 1
 upsert ENABLE_API_GATEWAY 1
@@ -203,18 +237,19 @@ upsert ENABLE_POLICY 1
 upsert ENABLE_AUTHZ 1
 upsert ENABLE_MODEL_ROUTER 1
 upsert ENABLE_NOTIFY 1
-upsert ENABLE_OMNIROUTER 1
-upsert ENABLE_GRAFANA 1
-upsert ENABLE_LOKI 1
-upsert ENABLE_PROMETHEUS 1
-upsert ENABLE_ALLOY 1
+upsert ENABLE_OMNIROUTER {omni}
+upsert OMNIROUTER_IMAGE diegosouzapw/omniroute:latest
+upsert ENABLE_GRAFANA {grafana}
+upsert ENABLE_LOKI {loki}
+upsert ENABLE_PROMETHEUS {prom}
+upsert ENABLE_ALLOY {alloy}
 upsert ENABLE_LOG_ARCHIVE 1
 upsert ENABLE_CLOUDDRIVE 0
 upsert ENABLE_OPENVPN 0
-upsert ENABLE_ANTIVIRUS 0
-upsert SECURITY_SANDBOX 0
-upsert SECURITY_LLM_JUDGE 0
-upsert ENABLE_LLM_JUDGE 0
+upsert ENABLE_ANTIVIRUS {av}
+upsert SECURITY_SANDBOX {sandbox}
+upsert SECURITY_LLM_JUDGE {judge}
+upsert ENABLE_LLM_JUDGE {llm_judge}
 upsert SECURITY_YARA 1
 upsert SECURITY_FAIL_CLOSED 1
 upsert LEARN_REQUIRE_APPROVE 0
@@ -223,9 +258,19 @@ grep -q '^ASSISTANT_DATA_DIR=' .env || upsert ASSISTANT_DATA_DIR /data/assistant
 grep -q '^HERMES_DATA_DIR=' .env || upsert HERMES_DATA_DIR /data/assistant
 fill_if_empty GATEWAY_API_KEYS "$(rand)"
 fill_if_empty API_SERVER_KEY "$(rand)"
+fill_if_empty HERMES_DASHBOARD_USER admin
+fill_if_empty GRAFANA_ADMIN_USER admin
+if ! grep -qE '^ZALO_API_TOKEN=.+' .env && ! grep -qE '^ADMIN_API_TOKEN=.+' .env; then
+  TOK=$(rand)
+  upsert ZALO_API_TOKEN "$TOK"
+  upsert ADMIN_API_TOKEN "$TOK"
+fi
 if ! grep -qE '^OMNIROUTER_INITIAL_PASSWORD=.+' .env; then
   N9PW=$(grep -E '^N9ROUTER_INITIAL_PASSWORD=' .env | cut -d= -f2- || true)
   if [[ -n "$N9PW" ]]; then upsert OMNIROUTER_INITIAL_PASSWORD "$N9PW"; fi
+fi
+if [[ "{sandbox}" == "1" ]]; then
+  upsert SECURITY_DOCKER_HOST tcp://docker-socket-proxy:2375
 fi
 
 echo "=== CLEAR OLD FILES ==="
@@ -256,10 +301,20 @@ echo "=== BUILD + HIGH UP ==="
 docker compose --project-directory {REMOTE} -f {REMOTE}/docker/docker-compose.yml build embedding dispatcher ingest || true
 bash run.sh up
 sleep 25
-for i in $(seq 1 40); do
-  curl -fsS -m 5 http://127.0.0.1:8080/health >/dev/null 2>&1 && \
-  curl -fsS -m 5 http://127.0.0.1:23000/api/health >/dev/null 2>&1 && break
-  sleep 3
+for i in $(seq 1 90); do
+  ok=1
+  curl -fsS -m 5 http://127.0.0.1:8080/health >/dev/null 2>&1 || ok=0
+  if [[ "{grafana}" == "1" ]]; then
+    curl -fsS -m 5 http://127.0.0.1:23000/api/health >/dev/null 2>&1 || ok=0
+  fi
+  if [[ "{zalo}" == "1" ]]; then
+    curl -fsS -m 5 http://127.0.0.1:8100/health >/dev/null 2>&1 || ok=0
+  fi
+  if [[ "{av}" == "1" ]]; then
+    curl -fsS -m 5 http://127.0.0.1:8098/health >/dev/null 2>&1 || ok=0
+  fi
+  [[ "$ok" == "1" ]] && break
+  sleep 5
 done
 
 echo "=== HEALTH ==="
@@ -271,10 +326,12 @@ curl -sS -m 10 http://127.0.0.1:8099/health || true
 echo
 curl -sS -m 10 http://127.0.0.1:8092/health || true
 echo
-curl -sS -m 10 http://127.0.0.1:20129/health || true
+if [[ "{omni}" == "1" ]]; then curl -sS -m 10 http://127.0.0.1:20129/ || true; echo; fi
+if [[ "{grafana}" == "1" ]]; then curl -sS -m 10 http://127.0.0.1:23000/api/health || true; echo; fi
+curl -sS -m 10 http://127.0.0.1:8093/health || true
 echo
-curl -sS -m 10 http://127.0.0.1:23000/api/health || true
-echo
+if [[ "{av}" == "1" ]]; then curl -sS -m 10 http://127.0.0.1:8098/health || true; echo; fi
+if [[ "{zalo}" == "1" ]]; then curl -sS -m 10 http://127.0.0.1:8100/health || true; echo; fi
 
 echo "=== CHECK HIGH ==="
 set +e
@@ -283,6 +340,24 @@ check_rc=$?
 set -e
 docker ps --format '{{{{.Names}}}} {{{{.Status}}}}' | sort
 echo CHECK_HIGH_RC=$check_rc
+
+if [[ "{zalo}" == "1" ]]; then
+  echo "=== SETUP ZALO (install only, no QR) ==="
+  linger_uid=$(id -u {USER})
+  loginctl enable-linger {USER} || true
+  for i in $(seq 1 20); do
+    [[ -S /run/user/${{linger_uid}}/bus ]] && break
+    sleep 1
+  done
+  sudo -u {USER} -H env \
+    XDG_RUNTIME_DIR=/run/user/${{linger_uid}} \
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${{linger_uid}}/bus \
+    ASSISTANT_SUDO_PASSWORD='{esc}' \
+    ENABLE_ZALO=1 \
+    bash {REMOTE}/scripts/main/setup-zalo.sh
+  echo SETUP_ZALO_OK
+  echo ZALO_NEED_QR=1
+fi
 
 echo "=== CLEAN SOURCE / TEMP ==="
 rm -f /tmp/assistant-sync.tgz /tmp/hermes-skills.tgz /tmp/assistant.env.new
@@ -308,11 +383,18 @@ keys = [
     "ENABLE_NOTIFY",
     "ENABLE_OMNIROUTER",
     "ENABLE_GRAFANA",
+    "ENABLE_ZALO",
+    "ENABLE_ANTIVIRUS",
+    "SECURITY_SANDBOX",
+    "SECURITY_LLM_JUDGE",
+    "ENABLE_LLM_JUDGE",
+    "SECURITY_YARA",
     "HERMES_DASHBOARD_USER",
     "HERMES_DASHBOARD_PASSWORD",
     "GRAFANA_ADMIN_USER",
     "GRAFANA_ADMIN_PASSWORD",
     "N9ROUTER_INITIAL_PASSWORD",
+    "OMNIROUTER_INITIAL_PASSWORD",
     "OPENBAO_DEV_ROOT_TOKEN",
 ]
 print("ADMIN_BEGIN")
@@ -342,6 +424,8 @@ def main() -> int:
             start = out.index("ADMIN_BEGIN")
             end = out.index("ADMIN_END") + len("ADMIN_END")
             emit("\n" + out[start:end] + "\n")
+        if FLAG_ZALO == "1":
+            emit("\nZALO_NEED_QR=1 — scan QR manually; this script does not run login-zalo.\n")
         return 0
     finally:
         c.close()

@@ -103,7 +103,7 @@ bash run.sh restore "$(cat /data/assistant/backups/PRE_CHANGE)"
 
 Details: [00-profiles.md](./00-profiles.md). Stamps include `config/profile-options.env` (non-secret flags) and `config/env.sealed`.
 
-**Lab-tested (2026-08-16):** High · Hermes×2 · monitor off · stamp `20260816_195940` — backup, verify, restore + canary, gateway/Zalo/DB healthy. Details: [architect/backup-restore/README.md](../architect/backup-restore/README.md). Hardware: [HARDWARE.md](./HARDWARE.md).
+**Lab-tested (2026-08-16):** High · Hermes×2 · monitor off · stamp `20260816_195940` — backup, verify, restore + canary, gateway/Zalo/DB healthy. Details: [architect/backup-restore/README.md](../architect/backup-restore/README.md). Hardware + extra RAM/disk/CPU when Grafana/Prometheus/Loki are on: [HARDWARE.md](./HARDWARE.md).
 
 ---
 

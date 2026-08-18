@@ -38,3 +38,4 @@ Do **not** call this HA until stores are replicated.
 - [00-profiles.md](./00-profiles.md)
 - [03-architecture.md](./03-architecture.md)
 - [06-model-routing.md](./06-model-routing.md)
+- [HARDWARE.md](./HARDWARE.md) — extra RAM/disk/CPU when Grafana/Prometheus/Loki/OmniRouter are on

@@ -20,9 +20,11 @@ Hermes → model-router → 9router (coding) / OmniRouter (general) → fallback
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `ENABLE_MODEL_ROUTER` | 1 | Run model-router; Hermes `OPENAI_BASE_URL` points here |
-| `ENABLE_OMNIROUTER` | 0 | Start OmniRouter (compose profile `omnirouter`) |
-| `OMNIROUTER_IMAGE` | lab fallback 9router image | **Set your OmniRouter image** for production |
+| `ENABLE_OMNIROUTER` | 1 (Low/Medium) / 0 (High) | Start OmniRouter (compose profile `omnirouter`). When Grafana/Prometheus is on, **`omni-exporter` starts with it**. |
+| `OMNIROUTER_IMAGE` | `diegosouzapw/omniroute:latest` | Dedicated OmniRoute image (not 9router) |
 | `HERMES_REPLICAS` | 1 (High=2) | One-node scale only; multi-node = docs |
+
+Hermes must always reach **9Router**. OmniRouter is opt-in. Tests: [test/cases/21-defaults-routers-connected.md](../test/cases/21-defaults-routers-connected.md). Grafana pairing: [test/cases/20-grafana-component-integration.md](../test/cases/20-grafana-component-integration.md).
 
 ## Memory (unchanged story)
 
@@ -39,3 +41,4 @@ Mem0 is removed.
 - [architect/models/model-router/README.md](../architect/models/model-router/README.md)
 - [architect/models/omni-router/README.md](../architect/models/omni-router/README.md)
 - [docs/MULTI_NODE.md](./MULTI_NODE.md)
+- [docs/HARDWARE.md](./HARDWARE.md) — extra usage (~0.4 GiB / ~1 GB / ~0.2 vCPU OmniRouter; Grafana+Prometheus ~1.5 GiB / ~10 GB / ~0.5 vCPU)

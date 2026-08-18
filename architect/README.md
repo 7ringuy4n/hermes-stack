@@ -30,7 +30,7 @@ Platform layers around Hermes. Each subfolder has a **System architecture** sect
 | notification | [notification/README.md](./notification/README.md) | High |
 | zalo-api | [zalo-api/README.md](./zalo-api/README.md) | with Zalo (`ENABLE_ZALO`) |
 | backup-restore | [backup-restore/README.md](./backup-restore/README.md) | Must |
-| monitor | [monitor/README.md](./monitor/README.md) | High optional |
+| monitor | [monitor/README.md](./monitor/README.md) | High optional (Grafana↔Prometheus+exporters, Loki↔Alloy) |
 | edge | [edge/README.md](./edge/README.md) | Traefik / OpenVPN |
 | gateway | [gateway/README.md](./gateway/README.md) | API Gateway |
 

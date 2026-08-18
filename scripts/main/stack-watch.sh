@@ -13,6 +13,8 @@ ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 # shellcheck disable=SC1091
 [[ -f /data/assistant/.env ]] && set -a && source <(tr -d '\r' < /data/assistant/.env) && set +a
 [[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
+# shellcheck source=architect/backup-restore/lib/profile.sh
+source "${ROOT}/architect/backup-restore/lib/profile.sh"
 
 PROJECT="${COMPOSE_PROJECT_NAME:-assistant}"
 PROFILE="${ASSISTANT_PROFILE:-low}"
@@ -28,8 +30,13 @@ else
 fi
 STATE_DIR="${_data_root}/watch"
 COOLDOWN_FILE="${STATE_DIR}/stack-watch.cooldown"
+FAIL_COUNT_FILE="${STATE_DIR}/stack-watch.fail_count"
+DEGRADED_FILE="${STATE_DIR}/stack-watch.degraded"
 BOOT_GRACE_S="${STACK_WATCH_BOOT_GRACE:-600}"
 RESTART_HERMES_ON_PROBE="${STACK_WATCH_RESTART_HERMES:-0}"
+STACK_WATCH_MAX_FAILS="${STACK_WATCH_MAX_FAILS:-5}"
+STACK_WATCH_BASE_COOLDOWN="${STACK_WATCH_BASE_COOLDOWN:-90}"
+STACK_WATCH_MAX_COOLDOWN="${STACK_WATCH_MAX_COOLDOWN:-3600}"
 HERMES_CTR="${HERMES_CONTAINER:-hermes}"
 if [[ "$(id -u)" -ne 0 ]]; then SUDO=sudo; else SUDO=; fi
 
@@ -62,6 +69,52 @@ mark_cooldown() {
   fi
 }
 
+read_fail_count() {
+  [[ -f "$FAIL_COUNT_FILE" ]] || { echo 0; return; }
+  cat "$FAIL_COUNT_FILE" 2>/dev/null || echo 0
+}
+
+write_fail_count() {
+  local n="$1"
+  if [[ -w "$STATE_DIR" ]]; then
+    echo "$n" >"$FAIL_COUNT_FILE"
+  else
+    echo "$n" | $SUDO tee "$FAIL_COUNT_FILE" >/dev/null
+    $SUDO chown "$(id -u):$(id -g)" "$FAIL_COUNT_FILE" 2>/dev/null || true
+  fi
+}
+
+heal_cooldown_sec() {
+  local fails="$1"
+  local base="${STACK_WATCH_BASE_COOLDOWN}"
+  local max="${STACK_WATCH_MAX_COOLDOWN}"
+  if [[ "$fails" -le 2 ]]; then
+    echo "$base"
+    return
+  fi
+  local exp=$((fails - 2))
+  local sec=$((base * (2 ** exp)))
+  if [[ "$sec" -gt "$max" ]]; then
+    sec="$max"
+  fi
+  echo "$sec"
+}
+
+mark_degraded() {
+  log "degraded after ${STACK_WATCH_MAX_FAILS} heal failures — manual check advised"
+  if [[ -w "$STATE_DIR" ]]; then
+    date -Is >"$DEGRADED_FILE"
+  else
+    date -Is | $SUDO tee "$DEGRADED_FILE" >/dev/null
+  fi
+  if [[ -n "${NOTIFY_URL:-}" ]]; then
+    curl -fsS -m 8 -X POST "${NOTIFY_URL}/v1/alert" \
+      -H 'content-type: application/json' \
+      -d '{"title":"stack-watch degraded","body":"Repeated heal failures — check stack health"}' \
+      >/dev/null 2>&1 || true
+  fi
+}
+
 boot_grace_active() {
   local up
   up="$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 999999)"
@@ -91,9 +144,7 @@ compose() {
   local profiles=()
   [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
   [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles+=(--profile antivirus)
-  case "${ENABLE_GRAFANA:-0}${ENABLE_LOKI:-0}${ENABLE_PROMETHEUS:-0}${ENABLE_ALLOY:-0}" in
-    *1*) profiles+=(--profile monitor) ;;
-  esac
+  assistant_append_monitor_profiles profiles
   [[ "${ENABLE_TRAEFIK:-0}" == "1" ]] && profiles+=(--profile traefik)
   [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]] && profiles+=(--profile gateway)
   [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]] && profiles+=(--profile omnirouter)
@@ -171,10 +222,18 @@ heal_by_health() {
   fi
 
   if [[ "$failed" -ne 0 ]]; then
-    if in_cooldown 90; then
-      log "heal skipped (cooldown)"
+    local fails cooldown_sec
+    fails="$(read_fail_count)"
+    fails=$((fails + 1))
+    write_fail_count "$fails"
+    cooldown_sec="$(heal_cooldown_sec "$fails")"
+    if [[ "$fails" -ge "${STACK_WATCH_MAX_FAILS}" ]]; then
+      mark_degraded
+    fi
+    if in_cooldown "$cooldown_sec"; then
+      log "heal skipped (cooldown ${cooldown_sec}s, fail_count=${fails})"
     else
-      log "healing after failed probes (hermes restart=${RESTART_HERMES_ON_PROBE})"
+      log "healing after failed probes (fail_count=${fails}, hermes restart=${RESTART_HERMES_ON_PROBE})"
       ensure_core_up
       restart_bad_containers
       $SUDO docker restart 9router 2>/dev/null || $SUDO docker restart nh-9router 2>/dev/null || true
@@ -196,6 +255,9 @@ heal_by_health() {
       fi
       mark_cooldown
     fi
+  else
+    write_fail_count 0
+    rm -f "$DEGRADED_FILE" 2>/dev/null || $SUDO rm -f "$DEGRADED_FILE" 2>/dev/null || true
   fi
 }
 

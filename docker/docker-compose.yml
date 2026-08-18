@@ -238,11 +238,10 @@ services:
     networks: [internal]
 
   # Optional OmniRouter — ENABLE_OMNIROUTER=1 (compose profile omnirouter)
-  # Set OMNIROUTER_IMAGE to your OmniRouter image (separate repo). Default falls back to
-  # 9router image for lab smoke only — production should set a dedicated OmniRouter image.
+  # Dedicated image (not 9router). Override with OMNIROUTER_IMAGE in .env.
   omni-router:
     profiles: ["omnirouter"]
-    image: ${OMNIROUTER_IMAGE:-decolua/9router:latest}
+    image: ${OMNIROUTER_IMAGE:-diegosouzapw/omniroute:latest}
     container_name: omni-router
     restart: unless-stopped
     environment:

@@ -55,6 +55,7 @@ assistant_profile_apply() {
     low)
       export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-0}"
       export HERMES_REPLICAS=1
+      export ENABLE_OMNIROUTER="${ENABLE_OMNIROUTER:-1}"
       ;;
     medium)
       export ENABLE_OCR="${ENABLE_OCR:-1}"
@@ -64,6 +65,7 @@ assistant_profile_apply() {
       [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,firecrawl
       [[ -n "${IMAGE_BACKENDS+x}" ]] || export IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
       export HERMES_REPLICAS=1
+      export ENABLE_OMNIROUTER="${ENABLE_OMNIROUTER:-1}"
       ;;
     high)
       export ENABLE_OCR="${ENABLE_OCR:-1}"
@@ -121,12 +123,57 @@ assistant_profile_apply() {
   fi
 }
 
+# Observability compose profiles. Exporters start only with the component they scrape.
+#   Grafana ↔ Prometheus + nine-exporter + node-exporter (host hardware) + stack-exporter
+#   Loki ↔ Alloy
+#   OmniRouter ↔ omni-exporter (only when Prometheus is also on)
+assistant_append_monitor_profiles() {
+  local -n _amp_profiles="$1"
+  local g="${ENABLE_GRAFANA:-0}" p="${ENABLE_PROMETHEUS:-0}" l="${ENABLE_LOKI:-0}" a="${ENABLE_ALLOY:-0}"
+  local want_prom=0 want_loki=0
+  [[ "$g" == "1" || "$p" == "1" ]] && want_prom=1
+  [[ "$l" == "1" || "$a" == "1" ]] && want_loki=1
+  if [[ "$g" == "1" ]]; then
+    _amp_profiles+=(--profile grafana)
+  fi
+  if [[ "$want_prom" == "1" ]]; then
+    _amp_profiles+=(--profile prometheus)
+  fi
+  if [[ "$want_loki" == "1" ]]; then
+    _amp_profiles+=(--profile loki --profile alloy)
+  fi
+  if [[ "$want_prom" == "1" && "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+    _amp_profiles+=(--profile omni-exporter)
+  fi
+}
+
+assistant_disabled_monitor_containers() {
+  local g="${ENABLE_GRAFANA:-0}" p="${ENABLE_PROMETHEUS:-0}" l="${ENABLE_LOKI:-0}" a="${ENABLE_ALLOY:-0}"
+  local want_prom=0 want_loki=0
+  [[ "$g" == "1" || "$p" == "1" ]] && want_prom=1
+  [[ "$l" == "1" || "$a" == "1" ]] && want_loki=1
+  [[ "$g" == "1" ]] || echo grafana
+  if [[ "$want_prom" != "1" ]]; then
+    echo prometheus
+    echo nine-exporter
+    echo node-exporter
+    echo stack-exporter
+  fi
+  if [[ "$want_loki" != "1" ]]; then
+    echo loki
+    echo alloy
+  fi
+  if [[ "$want_prom" != "1" || "${ENABLE_OMNIROUTER:-0}" != "1" ]]; then
+    echo omni-exporter
+  fi
+}
+
 assistant_profile_summary() {
   echo "ASSISTANT_PROFILE=${ASSISTANT_PROFILE}"
   echo "ASSISTANT_DATA_DIR=${ASSISTANT_DATA_DIR:-/data/assistant}"
   echo "BACKUP_DIR=${BACKUP_DIR:-/data/assistant/backups}"
   echo "TRAEFIK_MODE=${TRAEFIK_MODE:-local} TRAEFIK_ACME=${TRAEFIK_ACME_ENABLED:-0}"
-  echo "optional OCR=${ENABLE_OCR:-0} SEARXNG=${ENABLE_SEARXNG:-0} JOBS=${ENABLE_JOBS:-0} OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-0} WEB_BACKENDS=${WEB_BACKENDS:-} OPENBAO=${ENABLE_OPENBAO:-0} CLOUDDRIVE=${ENABLE_CLOUDDRIVE:-0} ANTIVIRUS=${ENABLE_ANTIVIRUS:-0} SANDBOX=${SECURITY_SANDBOX:-0} LLM_JUDGE=${SECURITY_LLM_JUDGE:-0} NOTIFY=${ENABLE_NOTIFY:-0} ZALO=${ENABLE_ZALO:-0} TRAEFIK=${ENABLE_TRAEFIK:-0} API_GATEWAY=${ENABLE_API_GATEWAY:-0} OPENVPN=${ENABLE_OPENVPN:-0} OMNIROUTER=${ENABLE_OMNIROUTER:-0} MODEL_ROUTER=${ENABLE_MODEL_ROUTER:-1} LOG_ARCHIVE=${ENABLE_LOG_ARCHIVE:-1} HERMES_REPLICAS=${HERMES_REPLICAS:-1}"
+  echo "optional OCR=${ENABLE_OCR:-0} SEARXNG=${ENABLE_SEARXNG:-0} JOBS=${ENABLE_JOBS:-0} OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-0} WEB_BACKENDS=${WEB_BACKENDS:-} OPENBAO=${ENABLE_OPENBAO:-0} CLOUDDRIVE=${ENABLE_CLOUDDRIVE:-0} ANTIVIRUS=${ENABLE_ANTIVIRUS:-0} SANDBOX=${SECURITY_SANDBOX:-0} LLM_JUDGE=${SECURITY_LLM_JUDGE:-0} NOTIFY=${ENABLE_NOTIFY:-0} ZALO=${ENABLE_ZALO:-0} TRAEFIK=${ENABLE_TRAEFIK:-0} API_GATEWAY=${ENABLE_API_GATEWAY:-0} OPENVPN=${ENABLE_OPENVPN:-0} OMNIROUTER=${ENABLE_OMNIROUTER:-0} GRAFANA=${ENABLE_GRAFANA:-0} PROMETHEUS=${ENABLE_PROMETHEUS:-0} LOKI=${ENABLE_LOKI:-0} ALLOY=${ENABLE_ALLOY:-0} MODEL_ROUTER=${ENABLE_MODEL_ROUTER:-1} LOG_ARCHIVE=${ENABLE_LOG_ARCHIVE:-1} HERMES_REPLICAS=${HERMES_REPLICAS:-1}"
 }
 
 # Non-secret option snapshot (restore later via stamp config/env.sealed + this file).
