@@ -19,6 +19,13 @@ def test_plan() -> None:
         "Thực hiện: 1. Tìm giá USD hiện tại 2. Vẽ hình HCM 3. Cập nhật giá xăng"
     )
     assert len(parts) == 3 and "USD" in parts[0] and "xăng" in parts[2], parts
+    en4 = plan_instructions(
+        "1. Send a hello greeting message.\n"
+        "2. Draw an image of Ho Chi Minh City based on the actual current weather.\n"
+        "3. Give a brief update of the latest E5 RON92 and E10 RON95 gasoline prices, in Vietnamese.\n"
+        "4. Draw a video of Ho Chi Minh City based on the actual current weather."
+    )
+    assert len(en4) == 4 and "hello" in en4[0].lower() and "video" in en4[3].lower(), en4
     cron = extract_cron_expr("hằng ngày lúc 06:00 GMT+7")
     assert cron == "0 6 * * *", cron
     print("PASS plan_instructions + cron extract")
@@ -45,6 +52,28 @@ def test_three_jobs_complete() -> None:
     assert wf["status"] == "COMPLETED", wf["status"]
     assert seen == ["alpha", "beta", "gamma"], seen
     print("PASS sequential 3 jobs → COMPLETED")
+
+
+def test_parallel_jobs_all_queued() -> None:
+    mgr = WorkflowManager(MemoryStore())
+    wf = mgr.create(
+        ["alpha", "beta", "gamma"],
+        context={"execute": "record_only"},
+        wrap=False,
+        sequential=False,
+    )
+    jobs = wf["jobs"]
+    assert len(jobs) == 3
+    assert all(not (j.get("dependencies") or []) for j in jobs), jobs
+    assert all(j["status"] == "QUEUED" for j in jobs), [j["status"] for j in jobs]
+    mgr.dispatch_outbox()
+    seen = []
+    for _ in range(3):
+        job = mgr.claim("w1", execute="record_only")
+        assert job, f"expected parallel job, got {seen}"
+        seen.append(job["instruction"])
+    assert sorted(seen) == ["alpha", "beta", "gamma"], seen
+    print("PASS parallel 3 jobs no deps")
 
 
 def test_partial_failure_and_no_rerun() -> None:
@@ -100,6 +129,7 @@ def test_schedule_tick_creates_jobs() -> None:
         text="1. wakeup 2. image 3. fuel",
         name="morning",
         context={"execute": "record_only"},
+        cadence="daily",
     )
     mgr.store.update_schedule(sch["id"], next_run_at=past)
     ids = mgr.fire_due_schedules()
@@ -138,6 +168,7 @@ def main() -> int:
     try:
         test_plan()
         test_three_jobs_complete()
+        test_parallel_jobs_all_queued()
         test_partial_failure_and_no_rerun()
         test_idempotency_and_stale_lease()
         test_schedule_tick_creates_jobs()

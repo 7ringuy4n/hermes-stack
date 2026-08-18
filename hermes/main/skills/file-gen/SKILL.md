@@ -32,4 +32,4 @@ curl -sS -X POST http://dispatcher:8090/v1/send-file \
   -d '{"path":"/opt/data/media/out/<safe-name>.<ext>","thread_id":"<id>","thread_type":"user|group"}'
 ```
 
-User-facing text per **`media-out`**: `Đã xong.` / `Done.` (or short failure). No path dumps.
+User-facing text per **`media-out`**: file only on success (or short failure). No path dumps.

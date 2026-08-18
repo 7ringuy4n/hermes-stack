@@ -18,6 +18,7 @@ English operations docs for the **assistant** stack.
 | [AGENT_RULES.md](./AGENT_RULES.md) | Operator / agent hard rules (SoT) |
 | [config/DEFAULTS.md](./config/DEFAULTS.md) | Non-secret defaults |
 | [CHANGELOG.md](./CHANGELOG.md) | Change log |
+| [scripts/HISTORY.md](../scripts/HISTORY.md) | Ops issue log: symptoms, root causes, fixes (timestamped) |
 | [GIT.md](./GIT.md) | Git workflow: feature → develop → release → main |
 | [NEXT.md](./NEXT.md) | Backlog |
 
