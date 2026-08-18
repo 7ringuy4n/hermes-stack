@@ -12,6 +12,7 @@ description: "Translate text preserving meaning, tone, and formatting. Use for d
 3. Mark ambiguous terms with brief `[note]` only when necessary.
 4. Do not add or omit content.
 5. Vietnamese people, gender, age, and classifiers: follow **`communication/vi-people-terms`**. Context overrides dictionary defaults. Do not infer gender from `con`, `đứa`, `người`, or `em` alone.
+6. When the user asks to translate or name a target language, that explicit request overrides **response language** (match their requested output language).
 
 ## Sources
 
