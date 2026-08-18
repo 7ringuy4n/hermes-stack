@@ -1,5 +1,65 @@
 # Change history
 
+## 2026-08-18 13:55 +07 — fix: 13:54 GMT+7 same-minute miss + multi-cron tests
+
+- Daily cron created **in the same minute** (example: save `13:54 GMT+7` at `13:54:20`) no longer jumps `next_run_at` to tomorrow. 120s grace keeps the run due; after a successful fire the next run is the following day. If `next_run_at` already jumped to tomorrow and today has not fired, the ticker still catch-up fires today’s slot.
+- Mixed Valkey queue: `claim(execute=…)` skips other execute types instead of returning empty (Zalo `hermes` and Hermes `hermes_http` no longer starve each other).
+- Clock extract prefers `lúc 13:54` / `at HH:MM` over a `6:00 AM` inside item 1 of the payload.
+- Re-upsert of the same clock keeps a past `next_run_at` so catch-up still fires.
+- Tests: `workflow_schedule_concurrency_unit.py` (plenty 6 items, same-time Zalo+Hermes, different clocks, two Zalo users). Case `24-workflow-multi-cron-channels.md`. `workflow_vps.py` ticks same-time vs future clocks with `record_only`.
+
+## 2026-08-18 15:05 +07 — ops: fix Hermes cron perms + replica skills writable
+
+- Hermes cron scheduler can dispatch again: `executions.db*` owned by Hermes uid/gid and group-writable.
+- Hermes replicas no longer hit `[Errno 30] Read-only file system` during startup: `replicas/*/skills` is now a writable per-replica copy instead of a symlink into the repo `:ro` bind mount.
+- Media output directory is group-/user-writable (`media/out`) so scheduled image generations can complete.
+
+## 2026-08-18 15:07 +07 — ops: fix deploy_high.py remote snapshot heredoc formatting
+- Fix local `deploy_high.py` crash caused by an f-string interpolation collision inside the `python3 - <<'PY'` heredoc.
+
+
+## 2026-08-18 15:27 +07 — fix: continue sequential schedule items after a numbered failure
+- Zalo workflow worker exceptions no longer block later sequential schedule items.
+- When a single numbered instruction fails, the job is marked completed-with-error so dependent jobs can unlock and remaining items can still run.
+
+## 2026-08-18 13:10 +07 - feat: generic workflow queue (Postgres + outbox)
+
+- Multi-request and cron no longer rely on one LLM turn. A list becomes **jobs** (`instruction` only — no hardcoded fuel/weather types). Postgres is canonical; Valkey only delivers; outbox + leases + idempotency recover stalled work.
+- Cron **creates jobs** at tick time. Hermes `jobs.json` user lịch is `no_agent` so the old one-prompt ticker does not double-run.
+- New service `workflow` (`:8108`). Zalo adapter submits compound lists and schedule-shaped text; a worker claims `execute=hermes` jobs one at a time.
+- Units: `workflow_unit.py`. VPS: `workflow_vps.py` (record_only drain, no Zalo send).
+
+## 2026-08-18 12:45 +07 — fix: immediate 1. 2. 3. lists run every item (not only the last)
+
+- Zalo often flattens `Thực hiện: 1. … 2. … 3. …` onto one line. The splitter only looked at line-start indexes, so the model got one turn and typically answered only the last item (xăng). Inline `1. 2. 3.` now splits too.
+- Each part is wrapped “chỉ làm đúng việc này”. Queue default cap 8; part message ids are unique (`:part2`, `:part3`).
+- Units: `multi_request_unit.py` Thực hiện fixture (newline + one-line).
+
+## 2026-08-18 12:40 +07 — fix: --timer alias + HH:MM list/show (no raw cron dict)
+
+- `--timer 12:35` is the same as `--time 12:35`. Confirmation shows `buoi-sang-hcm @ 12:35`, not the Hermes schedule object.
+- A prompt that is only `timer HH:MM` is not a task: hide it, and drop it on the next time-only update. Hint to set nội dung with `update … :`.
+- Changing the clock clears `next_run_at` so Hermes recomputes the next tick.
+
+## 2026-08-18 12:05 +07 — fix: compound autosend + readable jobs.json for lịch
+
+- Autosend window is the **whole compound sequence**, not each part's start clock. After each turn, a short late sweep attaches a file that landed as the model finished, then the next part proceeds (no 180s wait for a missing send). Cron / single turns kick the same late sweep after text send.
+- `jobs.json` written by zalo-api is `0664` and owned by Hermes UID 1000 so the ticker can read **and** update last_run. Non-owner replica empty file is also `0664`.
+- Units: `autosend_unit.py`. Clock-only update (`timer 11:50` / `11:50`) changes the cron expr and keeps a real task prompt.
+
+## 2026-08-18 11:35 +07 — feat: !zalo schedule list scoped to this chat
+
+- Default `!zalo schedule list` / show / update / remove by **index** uses only lịch whose origin is the current DM or group.
+- Admin global: `!zalo schedule list all` (also `show all <n>`, `update all <n>`, `remove all <n>`). Unique **name** still resolves across chats.
+- Units: thread-scope + `all` flag in `schedule_crud_unit.py`; list heading in `schedule_list_unit.py`.
+
+## 2026-08-18 11:20 +07 — fix: schedule update colon payload + hằng ngày keep-whole
+
+- `!zalo schedule update` matches job by list index, exact/prefix name, then `:` or `--` payload (numbered lists stay whole). Still supports `--time` / `--schedule`. Clock parse accepts `6h` / `6h sáng`.
+- Keep-whole markers include `hằng ngày`, `thức dậy`, `GMT+7`. A numbered list plus `06:00 GMT+7` also stays one lịch (the previous `hàng ngày`-only check split that spelling).
+- Cron results with `deliver: origin` go to the originating Zalo thread (DM vs group = where the user asked).
+- Units: `schedule_crud_unit.py` colon update; `multi_request_unit.py` `hằng ngày` fixture.
+
 ## 2026-08-18 10:45 +07 — fix: keep Hermes schedules across destroy + !zalo schedule CRUD
 
 - Root cause: jobs lived in `replicas/<container-id>/cron/jobs.json`. Destroy creates new ids; backup excluded `./replicas`; `hermes cron list` used compose `HERMES_HOME=/opt/data` (empty). Restore never re-applied jobs.

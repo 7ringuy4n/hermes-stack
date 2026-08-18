@@ -12,7 +12,7 @@ description: "Daily schedules and recurring reminders in local time (Asia/Ho_Chi
    - If the requested time is **still in the future today** (including a few minutes ahead), schedule **today** — not tomorrow.
    - Example: now `05:58`, user asks daily `06:00` → **today 06:00**, then every day.
    - Only use **tomorrow** when today's slot has **already passed**.
-3. Confirm in one short line: next run as `HH:MM DD/MM/YYYY` (local). Do not invent a second timezone label.
+3. Confirm in one short line: next run as `HH:MM DD/MM/YYYY` (local). If the payload has several numbered items, name **all** of them in that confirm (wakeup + image + prices), not only the first. Do not invent a second timezone label.
 4. Use Hermes built-in schedule tools for persistence (internal CLI only). Do not mention internal job ids, `cron_*` session names, or `job_id:` in user-facing text.
 5. On schedule tool failure: reply only `Phiên làm việc bị gián đạn, vui lòng thử lại sau` (or English equivalent). No stack trace, no architect/feature names.
 6. **One lịch, every item:** if the user lists several numbered tasks for the same clock (wakeup + image + prices, etc.), create **one** recurring schedule whose payload is the **full list**. Do not create one schedule per line — parallel runs at the same time interrupt each other and drop later tasks.

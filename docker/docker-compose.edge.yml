@@ -53,7 +53,7 @@ services:
     container_name: api-gateway
     restart: unless-stopped
     environment:
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - VALKEY_URL=${VALKEY_URL:-${REDIS_URL:-valkey://redis:6379/0}}
       # Prefer https://traefik:443 or http://traefik:80 when Traefik is on
       - GATEWAY_UPSTREAM_URL=${GATEWAY_UPSTREAM_URL:-http://hermes:8642}
       - GATEWAY_PORT=8088
@@ -69,6 +69,12 @@ services:
       - GATEWAY_TRUST_FORWARDED=${GATEWAY_TRUST_FORWARDED:-0}
       - GATEWAY_RL_FAIL_CLOSED=${GATEWAY_RL_FAIL_CLOSED:-1}
       - GATEWAY_MESSAGES_FILE=/app/messages/en.json
+      - WORKFLOW_URL=${WORKFLOW_URL:-http://workflow:8108}
+      - HERMES_WORKFLOW=${HERMES_WORKFLOW:-1}
+      - HERMES_WORKFLOW_TIMEOUT_S=${HERMES_WORKFLOW_TIMEOUT_S:-90}
+      - HERMES_WORKFLOW_WAIT_S=${HERMES_WORKFLOW_WAIT_S:-20}
+      - HERMES_API_URL=${HERMES_API_URL:-http://hermes:8642/v1/chat/completions}
+      - API_SERVER_KEY=${API_SERVER_KEY:-}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - LANG=C.UTF-8
       - LC_ALL=C.UTF-8
@@ -77,6 +83,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      workflow:
+        condition: service_started
       hermes:
         condition: service_started
     networks: [internal]

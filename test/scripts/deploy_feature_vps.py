@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Rolling VPS deploy: backup+verify, sync source, rebuild zalo-api, restart Hermes.
+"""Rolling VPS deploy: backup+verify, sync source, rebuild workflow + gateway + zalo-api, restart Hermes.
 
 Does not destroy the stack. Does not run login-zalo / QR.
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
@@ -135,7 +135,7 @@ echo BACKUP_VERIFY_OK
         sync_tree(c)
         note("sync", "pass", "SYNC_OK")
 
-        note("apply", "start", "rebuild zalo-api, install stack-watch, restart hermes")
+        note("apply", "start", "rebuild workflow + gateway + zalo-api, install stack-watch, restart hermes")
         apply = sudo_bash(
             c,
             r"""
@@ -166,6 +166,26 @@ profiles=""
 [[ "${ENABLE_LOKI:-0}" == "1" ]] && profiles="$profiles --profile loki"
 [[ "${ENABLE_ALLOY:-0}" == "1" ]] && profiles="$profiles --profile alloy"
 
+docker compose --project-directory /opt/assistant $files $profiles build workflow
+docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate workflow
+wf_ok=0
+for _ in $(seq 1 30); do
+  if curl -fsS -m 3 http://127.0.0.1:8108/health >/dev/null 2>&1; then
+    wf_ok=1
+    break
+  fi
+  sleep 2
+done
+echo "workflow_health=$wf_ok"
+test "$wf_ok" = "1"
+python3 /opt/assistant/test/scripts/migrate_jobs_to_workflow.py
+python3 /opt/assistant/test/scripts/workflow_vps.py
+
+if [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]]; then
+  docker compose --project-directory /opt/assistant $files $profiles build api-gateway
+  docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate api-gateway
+fi
+
 if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
   docker compose --project-directory /opt/assistant $files $profiles build zalo-api
   docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate zalo-api
@@ -175,9 +195,23 @@ if [[ "${ENABLE_NOTIFY:-0}" == "1" ]]; then
   docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate notify
 fi
 
+# Cron file must be group-readable: zalo-api wrote 0600 as root; Hermes could not tick lịch.
+chown 1000:1000 /data/assistant/cron /data/assistant/cron/jobs.json 2>/dev/null || true
+chmod 775 /data/assistant/cron 2>/dev/null || true
+chmod 664 /data/assistant/cron/jobs.json 2>/dev/null || true
+find /data/assistant/replicas -name jobs.json -exec chmod 664 {} + 2>/dev/null || true
+
 # Bind-mounted skills/plugins/SOUL — restart replicas to pick up files
 docker ps -q --filter name=hermes --filter status=running | xargs -r docker restart
-sleep 12
+hname=""
+for _ in $(seq 1 24); do
+  sleep 5
+  hname=$(docker ps --filter name=hermes --filter status=running --format '{{.Names}}' | sort | head -1 || true)
+  if [[ -n "$hname" ]] && docker exec "$hname" python3 -c "import urllib.request; urllib.request.urlopen('http://workflow:8108/health', timeout=5)" >/dev/null 2>&1; then
+    break
+  fi
+done
+echo "hermes_probe_container=${hname:-none}"
 
 echo "=== POST HEALTH ==="
 ok=1
@@ -189,16 +223,65 @@ case "$n9c" in
 esac
 curl -fsS -m 8 http://127.0.0.1:8090/health >/dev/null || { echo DISPATCHER_DOWN; ok=0; }
 curl -fsS -m 8 http://127.0.0.1:8080/health >/dev/null || { echo TRAEFIK_DOWN; ok=0; }
+curl -fsS -m 8 http://127.0.0.1:8108/health >/dev/null || { echo WORKFLOW_DOWN; ok=0; }
+if [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]]; then
+  curl -fsS -m 8 http://127.0.0.1:8088/health >/dev/null || { echo GATEWAY_DOWN; ok=0; }
+fi
 if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
   curl -fsS -m 8 http://127.0.0.1:8100/health >/dev/null || { echo ZALO_API_DOWN; ok=0; }
 fi
 echo -n "hermes_to_9router="
-docker exec assistant-hermes-1 python3 -c "import urllib.request; urllib.request.urlopen('http://9router:20128/', timeout=5); print('ok')" 2>/dev/null || { echo fail; ok=0; }
+if [[ -n "$hname" ]]; then
+  docker exec "$hname" python3 -c "import urllib.request; urllib.request.urlopen('http://9router:20128/', timeout=5); print('ok')" 2>/dev/null || { echo fail; ok=0; }
+else
+  echo fail; ok=0
+fi
 echo -n "hermes_to_model_router="
-docker exec assistant-hermes-1 python3 -c "import urllib.request; urllib.request.urlopen('http://model-router:8096/health', timeout=5); print('ok')" 2>/dev/null || { echo fail; ok=0; }
+if [[ -n "$hname" ]]; then
+  docker exec "$hname" python3 -c "import urllib.request; urllib.request.urlopen('http://model-router:8096/health', timeout=5); print('ok')" 2>/dev/null || { echo fail; ok=0; }
+else
+  echo fail; ok=0
+fi
+echo -n "hermes_to_workflow="
+if [[ -n "$hname" ]]; then
+  docker exec "$hname" python3 -c "import urllib.request; urllib.request.urlopen('http://workflow:8108/health', timeout=5); print('ok')" 2>/dev/null || { echo fail; ok=0; }
+else
+  echo fail; ok=0
+fi
 docker ps --filter name=hermes --format '{{.Names}} {{.Status}}'
+docker ps --filter name=workflow --format '{{.Names}} {{.Status}}'
 test -f /opt/assistant/hermes/main/plugins/zalo/multi_request.py && echo files_multi=ok || echo files_multi=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/inbound_queue.py && echo files_queue=ok || echo files_queue=missing
+test -f /opt/assistant/hermes/main/plugins/zalo/autosend.py && echo files_autosend=ok || echo files_autosend=missing
+test -f /opt/assistant/hermes/main/plugins/zalo/workflow_client.py && echo files_workflow=ok || echo files_workflow=missing
+test -f /opt/assistant/architect/workflow/app.py && echo files_wf_svc=ok || echo files_wf_svc=missing
+python3 - <<'PY'
+from pathlib import Path
+p = Path("/data/assistant/cron/jobs.json")
+if p.is_file():
+    st = p.stat()
+    print(f"cron_mode={oct(st.st_mode & 0o777)} uid={st.st_uid} gid={st.st_gid}")
+else:
+    print("cron_mode=missing")
+PY
+python3 - <<'PY'
+import json
+from pathlib import Path
+p = Path("/data/assistant/cron/jobs.json")
+if not p.is_file():
+    raise SystemExit(0)
+data = json.loads(p.read_text(encoding="utf-8"))
+jobs = data.get("jobs") if isinstance(data.get("jobs"), list) else []
+print(f"cron_n={len(jobs)}")
+for j in jobs:
+    if not isinstance(j, dict):
+        continue
+    expr = str(j.get("schedule") or j.get("cron") or j.get("expr") or "")
+    prompt = str(j.get("prompt") or "")
+    last = str(j.get("last_run") or j.get("lastRun") or "")[:32]
+    no_agent = j.get("no_agent")
+    print(f"expr={expr} prompt_len={len(prompt)} last={last or '-'} no_agent={no_agent}")
+PY
 echo "HERMES_9ROUTER_OK=$ok"
 echo APPLY_DONE
 """,
@@ -212,6 +295,12 @@ echo APPLY_DONE
             note("hermes_9router", "pass", "9router health+models and edge probes ok")
         else:
             note("hermes_9router", "fail", apply[-500:])
+        if "PASS workflow vps" in apply:
+            note("workflow_vps", "pass", "health + 3-job drain + plan")
+        if "PASS migrate" in apply:
+            note("migrate_schedules", "pass", "jobs.json → workflow")
+        if "WORKFLOW_DOWN" in apply:
+            note("workflow_health", "fail", "8108 down after apply")
         note("apply", "pass", "APPLY_DONE")
 
         admin = sudo_bash(
@@ -242,8 +331,6 @@ PY
         if "ADMIN_BEGIN" in admin:
             start = admin.index("ADMIN_BEGIN")
             end = admin.index("ADMIN_END") + len("ADMIN_END")
-            # Print to operator stdout only (not written to SUMMARY)
-            print(admin[start:end], flush=True)
             user = ""
             pw_set = False
             for line in admin[start:end].splitlines():
