@@ -17,7 +17,10 @@ This tree **reuses** that work (via assistant) and **optimizes** it for assistan
 | File | Role |
 |---|---|
 | `adapter.py` | Inbound/outbound handling |
-| `gate_valkey.py` | Valkey helpers for rate / already-answering gates |
+| `multi_request.py` | Compound split vs keep-whole schedule jobs |
+| `inbound_queue.py` | FIFO payload helpers (Valkey or in-memory) |
+| `gateway_noise.py` | Drop Hermes busy/interrupt `/busy` copy |
+| `gate_valkey.py` | Valkey rate / answering / inbound FIFO |
 | `plugin.yaml` | Plugin manifest (`author: cuong` upstream) |
 | `ATTRIBUTION.md` | Copyright / reuse notice |
 
@@ -38,6 +41,18 @@ Hermes delivers cron results and cross-platform notices to a **home channel**. I
 | `ZALO_AUTO_SETHOME_DM_ONLY` | `1` | Never auto-claim a group as home |
 
 Disable auto-sethome with `ZALO_AUTO_SETHOME=0` and run `/sethome` once in the desired chat (or set `ZALO_HOME_CHANNEL`).
+
+## Compound messages and cron
+
+| Kind | What happens |
+|------|----------------|
+| Immediate list (`tin nhắn 1` / `1 …` `2.Sau đó`) | Split into turns. **Valkey FIFO** per thread. **`Đã xong.` / `Done.` only after the last part** (e.g. image → prices → ack). |
+| Daily / cron list (`daily`, `wakeup`, `hàng ngày`, …) | **Not** split. One Hermes job (one queue item); when it fires, every numbered item must run. Extra markers: `ZALO_SCHEDULE_KEEP_WHOLE=term1,term2`. Set `0` to always split. |
+| Rate limit | Announce once, **enqueue** the message, process later. Copy in `messages/ux.json` `queue.rate_limited`. |
+| Queue full | Cap `ZALO_INBOUND_QUEUE_MAX` (default 20). `queue.full` line. Valkey down → fail-open sequential turns. |
+| Hermes busy / `/busy` tips | Dropped on Zalo. Never show “Interrupting current task” or First-time `/busy` copy. |
+
+Cron delivery still uses the home channel above. Register **one** job per clock — several crons at the same HH:MM interrupt each other and skip later tasks.
 
 ## Admin commands
 

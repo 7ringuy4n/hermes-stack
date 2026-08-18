@@ -366,6 +366,15 @@ Every capability must include at least one **fail event**, not only success.
 | Hermes crash | Stop/kill a Hermes replica | `stack-watch` (or equivalent) restores the replica without a crash loop |
 | Zalo lost connection | Stop proxy or SSE=0 | `zalo-watch` restores proxy/SSE; QR only if `sessionDead` |
 | Zalo mixed media+text | Ramp interleaved chat + `/v1/image` until first fail | Last-all-success N, first-fail N, **delay p50/p95/max per kind**, SSE=1; text auth via Traefik+`API_SERVER_KEY` |
+| Zalo compound message | One bubble with `tin nhắn 1` + `tin nhắn 2` | Both intents addressed (case 16) |
+| Zalo busy + cron multi-task | Interrupt `/busy` tip; 3-item daily job | Tip dropped; all cron items run (case 22) |
+| Zalo inbound FIFO | 3 requests in one bubble; rate-limit burst | All queued intents run; extras not dropped (case 23) |
+| Zalo latency SLO | 5 short text pings | FAIL if any sample **> 5s** on localhost (case 17) |
+| Grafana integration | Grafana on → each deployed scrape target | `assistant_service_up` + exporter scrape success (case 20) |
+| Default routers | 9Router always; OmniRouter default 0 | Hermes connected; flag matches container (case 21) |
+| Schedule TZ | 05:58 local → daily 06:00 | Must be **today**, not tomorrow (case 15) |
+| Web search backends | `/v1/search` + `/health` | Record `backend` field (case 18) |
+| File pipeline security | EICAR + matrix | AV inbound vs YARA paths (case 19) |
 | Isolation / LLM judge | Judge off; EICAR via YARA; injection file cannot LLM-allow | Sock absent on AI services; sandbox/proxy off; VPN-only edge |
 | Profile switch | Unknown tier / unknown `ENABLE_*`; notify add then remove | Usage error; High↔Medium overlays; existing Zalo flag kept; backup+verify before apply |
 | Skills auto-learn | Ingest down or empty skills dir | post-ready-learn skip/fail without Hermes crash-loop; rebuild dispatcher for text-poster |
@@ -407,3 +416,33 @@ When re-testing a live High/Zalo lab:
 | Skills mount + auto-learn (Medium+) | `cases/12-skills-auto-learn.md` |
 | Exact text poster (text-poster backend) | `cases/13-image-text-poster.md` |
 | Internal docs knowledge-first | `cases/14-knowledge-internal-rag.md` |
+| Schedule TZ (today vs tomorrow) | `cases/15-schedule-timezone.md` |
+| Zalo compound multi-request | `cases/16-zalo-multi-request.md` |
+| Zalo latency SLO | `cases/17-zalo-latency-slo.md` |
+| Web search backend chain | `cases/18-web-search-backends.md` |
+| File/OCR/YARA/AV matrix | `cases/19-file-pipeline-security.md` |
+| Grafana component integration | `cases/20-grafana-component-integration.md` |
+| Default 9Router / OmniRouter connected | `cases/21-defaults-routers-connected.md` |
+| Zalo busy interrupt + multi-task cron | `cases/22-zalo-busy-cron-multi.md` |
+| Zalo inbound FIFO (plenty of requests) | `cases/23-zalo-inbound-queue.md` |
+
+**Unit scripts (no VPS, run in small batches):**
+
+| Script | Case |
+|--------|------|
+| `test/scripts/schedule_timezone_unit.py` | 15 |
+| `test/scripts/multi_request_unit.py` | 16 + 22 (schedule keep-whole) |
+| `test/scripts/gateway_noise_unit.py` | 22 |
+| `test/scripts/inbound_queue_unit.py` | 23 |
+| `test/scripts/web_search_backends_unit.py` | 18 |
+| `test/scripts/grafana_pairing_unit.py` | 20 |
+| `test/scripts/defaults_profile_unit.py` | 21 |
+
+**Lab scripts (SSH, one case per invocation — rule §23):**
+
+| Script | Case |
+|--------|------|
+| `test/scripts/zalo_latency_lab.py` | 17 |
+| `test/scripts/file_pipeline_security_lab.py` | 19 |
+| `test/scripts/grafana_integration_lab.py` | 20 (skip if Grafana off) |
+| `test/scripts/defaults_routers_lab.py` | 21 |

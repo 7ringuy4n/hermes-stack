@@ -29,7 +29,7 @@ Model gateway and tool bus: **Model Router** (coding vs general), **9Router** / 
 | model-router | Must (default on) | Must | Must |
 | dispatcher | Must (web backends empty) | Must + Tavily→Firecrawl→SearXNG | Same |
 | 9router | Must | Must | Must |
-| OmniRouter | Off | Optional | Optional (`ENABLE_OMNIROUTER`) |
+| OmniRouter | Off | Optional | Optional (`ENABLE_OMNIROUTER`; pairs with `omni-exporter` when metrics are on) |
 
 ## Sub-packages
 

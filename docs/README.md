@@ -5,7 +5,7 @@ English operations docs for the **assistant** stack.
 | Doc | Contents |
 |-----|----------|
 | [00-profiles.md](./00-profiles.md) | Low / Medium / High |
-| [HARDWARE.md](./HARDWARE.md) | Tested lab hardware + recommended minimums |
+| [HARDWARE.md](./HARDWARE.md) | Tested lab + extra RAM/disk/CPU (Grafana+Prometheus, Loki, all optionals ~5 GiB / ~40 GB / ~2 vCPU) |
 | [01-workflow.md](./01-workflow.md) | Chat / request path |
 | [02-components-and-commands.md](./02-components-and-commands.md) | Components + commands by profile |
 | [02-commands.md](./02-commands.md) | `run.sh` command reference |

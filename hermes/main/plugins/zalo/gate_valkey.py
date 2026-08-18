@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Valkey gate store — reusable rate-limit + answering slots.
+"""Valkey gate store — reusable rate-limit + answering slots + inbound FIFO.
 
 Talks Redis protocol (Valkey). Logic lives in the server (INCR / EXPIRE / Lua).
 Enable/disable is the caller's env (max_n=0 skips). Fail-open if Valkey is down.
@@ -10,6 +10,7 @@ Usage:
   over, notify = st.rate_take(user_id, chat_id, max_n=1, window_s=10)
   ok = st.answering_try(chat_id, max_n=3, ttl_s=45)
   st.answering_done(chat_id)
+  st.queue_push(chat_id, payload, max_n=20, ttl_s=3600)
 """
 from __future__ import annotations
 
@@ -45,6 +46,17 @@ if n <= 1 then
   return 0
 end
 return redis.call('DECR', KEYS[1])
+"""
+
+PUSH_LUA = """
+local cap = tonumber(ARGV[2])
+local n = redis.call('LLEN', KEYS[1])
+if cap > 0 and n >= cap then
+  return -1
+end
+redis.call('RPUSH', KEYS[1], ARGV[1])
+redis.call('EXPIRE', KEYS[1], ARGV[3])
+return n + 1
 """
 
 
@@ -200,6 +212,63 @@ class GateStore:
         key = self._k("ans", chat_id)
         try:
             self._r.call("EVAL", DONE_LUA, 1, key)
+        except Exception:
+            pass
+
+    def queue_push(self, chat_id: str, payload: str, max_n: int, ttl_s: int) -> int:
+        """RPUSH FIFO. Returns new length, or -1 if at cap."""
+        key = self._k("q", chat_id)
+        cap = max(0, int(max_n))
+        ttl = max(60, int(ttl_s))
+        got = self._r.call("EVAL", PUSH_LUA, 1, key, payload, str(cap), str(ttl))
+        return int(got if got is not None else -1)
+
+    def queue_push_front(self, chat_id: str, payload: str, ttl_s: int) -> None:
+        key = self._k("q", chat_id)
+        ttl = max(60, int(ttl_s))
+        self._r.call("LPUSH", key, payload)
+        self._r.call("EXPIRE", key, str(ttl))
+
+    def queue_pop(self, chat_id: str) -> Optional[str]:
+        key = self._k("q", chat_id)
+        raw = self._r.call("LPOP", key)
+        if raw is None:
+            return None
+        if isinstance(raw, bytes):
+            return raw.decode("utf-8", "replace")
+        return str(raw)
+
+    def queue_len(self, chat_id: str) -> int:
+        key = self._k("q", chat_id)
+        return int(self._r.call("LLEN", key) or 0)
+
+    def queue_seen(self, message_id: str, ttl_s: int = 600) -> bool:
+        """True if this message_id is new (should enqueue)."""
+        mid = str(message_id or "").strip()
+        if not mid:
+            return True
+        key = self._k("qseen", mid)
+        ttl = max(60, int(ttl_s))
+        got = self._r.call("SET", key, "1", "NX", "EX", str(ttl))
+        return got in (b"OK", "OK", True)
+
+    def worker_try(self, chat_id: str, ttl_s: int = 300) -> bool:
+        key = self._k("qwork", chat_id)
+        ttl = max(30, int(ttl_s))
+        got = self._r.call("SET", key, "1", "NX", "EX", str(ttl))
+        return got in (b"OK", "OK", True)
+
+    def worker_touch(self, chat_id: str, ttl_s: int = 300) -> None:
+        key = self._k("qwork", chat_id)
+        try:
+            self._r.call("EXPIRE", key, str(max(30, int(ttl_s))))
+        except Exception:
+            pass
+
+    def worker_done(self, chat_id: str) -> None:
+        key = self._k("qwork", chat_id)
+        try:
+            self._r.call("DEL", key)
         except Exception:
             pass
 
