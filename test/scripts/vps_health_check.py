@@ -23,8 +23,9 @@ set -euo pipefail
 export LC_ALL=C.UTF-8
 cd /opt/assistant
 set -a; . ./.env; set +a
-echo "hermes1=$(docker inspect -f '{{.State.Status}}' assistant-hermes-1 2>/dev/null || echo missing)"
-echo "hermes2=$(docker inspect -f '{{.State.Status}}' assistant-hermes-2 2>/dev/null || echo missing)"
+cid=$(docker ps -q --filter name=hermes | head -1)
+echo "hermes=$(docker inspect -f '{{.State.Status}}' "${cid}" 2>/dev/null || echo missing)"
+echo "hermes_name=$(docker inspect -f '{{.Name}}' "${cid}" 2>/dev/null | tr -d / || echo missing)"
 echo "zalo_api=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8100/health || echo fail)"
 echo "traefik=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health || echo fail)"
 echo "dispatcher=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8090/health || echo fail)"
@@ -33,9 +34,9 @@ echo "9router_root=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0
 echo "9router_models=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:20128/v1/models || echo fail)"
 # From Hermes container to 9router on docker network
 echo -n "hermes_to_9router="
-docker exec assistant-hermes-1 python3 -c "import urllib.request; urllib.request.urlopen('http://9router:20128/', timeout=5); print('ok')" 2>/dev/null || echo fail
+docker exec -e "N9ROUTER_API_KEY=${N9ROUTER_API_KEY}" "${cid}" python3 -c "import os,urllib.request; k=os.environ.get('N9ROUTER_API_KEY',''); req=urllib.request.Request('http://9router:20128/v1/models', headers={'Authorization':'Bearer '+k}); urllib.request.urlopen(req, timeout=5); print('ok')" 2>/dev/null || echo fail
 echo -n "hermes_to_model_router="
-docker exec assistant-hermes-1 python3 -c "import urllib.request; urllib.request.urlopen('http://model-router:8096/health', timeout=5); print('ok')" 2>/dev/null || echo fail
+docker exec "${cid}" python3 -c "import urllib.request; urllib.request.urlopen('http://model-router:8096/health', timeout=5); print('ok')" 2>/dev/null || echo fail
 test -f /opt/assistant/hermes/main/plugins/zalo/multi_request.py && echo files_multi=ok || echo files_multi=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/inbound_queue.py && echo files_queue=ok || echo files_queue=missing
 test -f /opt/assistant/architect/tools/schedule_tz.py && echo files_tz=ok || echo files_tz=missing
