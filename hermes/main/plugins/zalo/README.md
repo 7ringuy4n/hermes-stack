@@ -17,7 +17,9 @@ This tree **reuses** that work (via assistant) and **optimizes** it for assistan
 | File | Role |
 |---|---|
 | `adapter.py` | Inbound/outbound handling |
+| `autosend.py` | Compound file-send window (sequence clock + grace) |
 | `multi_request.py` | Compound split vs keep-whole schedule jobs |
+| `workflow_client.py` | HTTP client for generic workflow jobs / lịch |
 | `inbound_queue.py` | FIFO payload helpers (Valkey or in-memory) |
 | `gateway_noise.py` | Drop Hermes busy/interrupt `/busy` copy |
 | `gate_valkey.py` | Valkey rate / answering / inbound FIFO |
@@ -46,13 +48,13 @@ Disable auto-sethome with `ZALO_AUTO_SETHOME=0` and run `/sethome` once in the d
 
 | Kind | What happens |
 |------|----------------|
-| Immediate list (`tin nhắn 1` / `1 …` `2.Sau đó`) | Split into turns. **Valkey FIFO** per thread. **`Đã xong.` / `Done.` only after the last part** (e.g. image → prices → ack). |
-| Daily / cron list (`daily`, `wakeup`, `hàng ngày`, …) | **Not** split. One Hermes job (one queue item); when it fires, every numbered item must run. Extra markers: `ZALO_SCHEDULE_KEEP_WHOLE=term1,term2`. Set `0` to always split. |
+| Immediate list (`tin nhắn 1` / `1 …` `2.Sau đó` / one-line `1. … 2. …`) | Split into **durable jobs**. Each instruction is wrapped “chỉ làm đúng việc này”. Workers run jobs one at a time (Postgres state, not LLM memory). Autosend keeps files for the **whole sequence**. **`Đã xong.` / `Done.` only after the last part**. |
+| Daily / cron list (`daily`, `wakeup`, `hàng ngày`, `hằng ngày`, `GMT+7`, …) | Stored as a **schedule**. At tick time the scheduler creates one job per numbered item (not one LLM prompt). Extra markers: `ZALO_SCHEDULE_KEEP_WHOLE=term1,term2`. |
 | Rate limit | Announce once, **enqueue** the message, process later. Copy in `messages/ux.json` `queue.rate_limited`. |
-| Queue full | Cap `ZALO_INBOUND_QUEUE_MAX` (default **3** waiting items / thread). `queue.full` line. Valkey down → fail-open sequential turns. Inbound requests only — not a response queue. |
+| Queue full | Cap `ZALO_INBOUND_QUEUE_MAX` (default **8** waiting items / thread). `queue.full` line. Valkey down → fail-open sequential turns. Inbound requests only — not a response queue. |
 | Hermes busy / `/busy` tips | Dropped on Zalo. Never show “Interrupting current task” or First-time `/busy` copy. |
 
-Cron delivery still uses the home channel above. Register **one** job per clock — several crons at the same HH:MM interrupt each other and skip later tasks.
+Cron jobs with `deliver: origin` reply in the **same Zalo thread that created them** (DM if you asked in a DM, group if you asked in a group). `ZALO_HOME_CHANNEL` is only the fallback when origin/home is unset. The workflow service owns execution; `jobs.json` stays for list/CRUD compatibility (`no_agent`).
 
 ## Admin commands
 
@@ -61,7 +63,9 @@ Cron delivery still uses the home channel above. Register **one** job per clock 
 | `!zalo claim` | anyone (proxy logged in) | First setup / take sole admin when empty or still bridge `ownId` |
 | `!zalo admin` | anyone | Show current sole admin |
 | `!zalo admin transfer @tag\|uid\|reply` | current admin | Move sole admin to one other user |
-| `!zalo schedule list\|show\|add\|update\|remove` | current admin | CRUD user schedules (lịch). Durable file: `cron/jobs.json` |
+| `!zalo schedule list` | current admin | List lịch **in this DM/group** |
+| `!zalo schedule list all` | current admin | List **all** user lịch (every DM/group) |
+| `!zalo schedule show\|add\|update\|remove` | current admin | CRUD. `--time` / `--timer HH:MM` change the clock. List/show prints `HH:MM`. Index numbers follow the current chat list; `show all 1` / `update all 1` / `remove all 1` use the global list. |
 
 Durable file: `zalo_admin_users.txt` under Hermes data (exactly one uid).
 

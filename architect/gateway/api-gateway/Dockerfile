@@ -4,7 +4,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
-RUN pip install --no-cache-dir fastapi==0.115.12 uvicorn[standard]==0.34.2 httpx==0.28.1 redis==5.2.1
+RUN pip install --no-cache-dir fastapi==0.115.12 uvicorn[standard]==0.34.2 httpx==0.28.1 valkey==6.1.1
 COPY app.py .
 COPY messages ./messages
 EXPOSE 8088
