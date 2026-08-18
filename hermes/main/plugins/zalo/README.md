@@ -49,7 +49,7 @@ Disable auto-sethome with `ZALO_AUTO_SETHOME=0` and run `/sethome` once in the d
 | Immediate list (`tin nhắn 1` / `1 …` `2.Sau đó`) | Split into turns. **Valkey FIFO** per thread. **`Đã xong.` / `Done.` only after the last part** (e.g. image → prices → ack). |
 | Daily / cron list (`daily`, `wakeup`, `hàng ngày`, …) | **Not** split. One Hermes job (one queue item); when it fires, every numbered item must run. Extra markers: `ZALO_SCHEDULE_KEEP_WHOLE=term1,term2`. Set `0` to always split. |
 | Rate limit | Announce once, **enqueue** the message, process later. Copy in `messages/ux.json` `queue.rate_limited`. |
-| Queue full | Cap `ZALO_INBOUND_QUEUE_MAX` (default 20). `queue.full` line. Valkey down → fail-open sequential turns. |
+| Queue full | Cap `ZALO_INBOUND_QUEUE_MAX` (default **3** waiting items / thread). `queue.full` line. Valkey down → fail-open sequential turns. Inbound requests only — not a response queue. |
 | Hermes busy / `/busy` tips | Dropped on Zalo. Never show “Interrupting current task” or First-time `/busy` copy. |
 
 Cron delivery still uses the home channel above. Register **one** job per clock — several crons at the same HH:MM interrupt each other and skip later tasks.

@@ -10,11 +10,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
 from inbound_queue import (  # noqa: E402
+    DEFAULT_MAX,
     KIND_INBOUND,
     MemoryFifo,
     decode_item,
     encode_item,
     make_item,
+    queue_max,
 )
 from multi_request import split_compound_requests  # noqa: E402
 
@@ -35,6 +37,9 @@ PLENTY_NOW = (
 
 
 def main() -> int:
+    if DEFAULT_MAX != 3 or queue_max() != 3:
+        print(f"FAIL default cap {DEFAULT_MAX} queue_max={queue_max()} want 3")
+        return 1
     fifo = MemoryFifo(max_n=3)
     items = []
     for i, text in enumerate(split_compound_requests(PLENTY_NOW), start=1):
