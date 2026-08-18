@@ -1,0 +1,12 @@
+---
+description: No lab host, account, or secrets in committed source
+alwaysApply: true
+---
+
+# Privacy — lab hosts and secrets
+
+- **Never** put VPS IPs, hostnames, SSH users, passwords, API keys, or dashboard credentials in committed files (`scripts/main`, `test/`, `docs/`, product code).
+- SSH and deploy entrypoints **require** `ASSISTANT_SSH_HOST` / `ASSISTANT_SSH_USER` / `ASSISTANT_SSH_PASSWORD` (or flags). No lab default host or account.
+- When the operator asks to test a VPS or lab host, write one-off scripts under **`scripts/temp/`** or **`hermes/temp/`** (gitignored). Do not add host-specific probes to `scripts/main/` or committed `test/scripts/`.
+- `develop` and `main` must stay production-ready: generic placeholders only (`USER@HOST`, `tvly-YOUR_API_KEY`).
+- Changelog, HISTORY, and test reports: no host, account, or secret material.

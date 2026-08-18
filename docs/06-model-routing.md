@@ -26,6 +26,8 @@ Hermes → model-router → 9router (coding) / OmniRouter (general) → fallback
 
 Hermes must always reach **9Router**. OmniRouter is opt-in. Tests: [test/cases/21-defaults-routers-connected.md](../test/cases/21-defaults-routers-connected.md). Grafana pairing: [test/cases/20-grafana-component-integration.md](../test/cases/20-grafana-component-integration.md).
 
+**Health:** `GET /v1/models` without an API key returns **401** while 9router is up (UI `/` is **307**). Stack-watch treats 200/401/307 as healthy — do not use `curl -f` on that URL or every heal tick will restart 9router.
+
 ## Memory (unchanged story)
 
 | Store | Role |

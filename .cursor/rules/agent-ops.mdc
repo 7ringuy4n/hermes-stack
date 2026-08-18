@@ -9,6 +9,7 @@ Follow **[docs/AGENT_RULES.md](../../docs/AGENT_RULES.md)** as the editable sour
 
 ## Hard gates (every turn)
 
+- **No lab identity in product source:** no VPS IPs, SSH users, passwords, or API keys in committed `scripts/`, `test/`, or docs. Host probes go in gitignored `scripts/temp/` / `hermes/temp/`.
 - Switch to **`develop`**, then `feature/*`, before new work.
 - **No** VPS deploy / remote test scripts without explicit permission.
 - **No** push or MR without explicit permission.

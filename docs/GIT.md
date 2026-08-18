@@ -116,6 +116,7 @@ Rules:
 - Branch **`hotfix/*`** from **latest `origin/main`**; merge back to `main` and cherry-pick / MR into `develop`.
 - One MR = one concern. Do not mix unrelated layers.
 - Do not push to a VPS / production host unless the operator explicitly allows it.
+- Do not commit VPS IPs, SSH account names, passwords, or API keys. Lab/host test scripts go in gitignored `scripts/temp/` (or `hermes/temp/`), not `scripts/main/` or committed `test/`.
 
 ---
 
