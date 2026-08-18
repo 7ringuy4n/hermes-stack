@@ -170,6 +170,10 @@ if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
   docker compose --project-directory /opt/assistant $files $profiles build zalo-api
   docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate zalo-api
 fi
+if [[ "${ENABLE_NOTIFY:-0}" == "1" ]]; then
+  docker compose --project-directory /opt/assistant $files $profiles build notify
+  docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate notify
+fi
 
 # Bind-mounted skills/plugins/SOUL — restart replicas to pick up files
 docker ps -q --filter name=hermes --filter status=running | xargs -r docker restart

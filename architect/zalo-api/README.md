@@ -30,7 +30,7 @@ Started **only** with Zalo (`ENABLE_ZALO=1` → compose profile `zalo`), alongsi
 
 | Area | Function |
 |---|---|
-| In-Zalo | `!zalo claim` / allow / kick / learn / … via `POST /v1/zalo/chat` |
+| In-Zalo | `!zalo claim` / allow / kick / learn / `!zalo schedule` CRUD / … via `POST /v1/zalo/chat` |
 | Allowlists | Approve users / threads |
 | Health | `/health` |
 

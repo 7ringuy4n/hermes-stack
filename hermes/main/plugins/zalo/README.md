@@ -61,6 +61,7 @@ Cron delivery still uses the home channel above. Register **one** job per clock 
 | `!zalo claim` | anyone (proxy logged in) | First setup / take sole admin when empty or still bridge `ownId` |
 | `!zalo admin` | anyone | Show current sole admin |
 | `!zalo admin transfer @tag\|uid\|reply` | current admin | Move sole admin to one other user |
+| `!zalo schedule list\|show\|add\|update\|remove` | current admin | CRUD user schedules (lịch). Durable file: `cron/jobs.json` |
 
 Durable file: `zalo_admin_users.txt` under Hermes data (exactly one uid).
 

@@ -35,11 +35,16 @@ High (`ENABLE_NOTIFY=1`). Off on Low/Medium by default.
 ## How it works
 
 ```text
-ingest / security / zalo-api
-    → POST notify /v1/notify
-    → deliver to admin thread (env NOTIFY_ZALO_THREAD)
+ingest / security / zalo-api / alert-watch
+    → POST notify /v1/notify or /v1/alert
+    → Zalo dest: request thread, else NOTIFY_ZALO_THREAD (override),
+      else sole admin in `zalo_admin_users.txt` / `ZALO_ADMIN_USERS`
     → user chat stays clean (no “saved” spam)
 ```
+
+`NOTIFY_ZALO_THREAD` is optional. When empty, alerts go to the **current sole Zalo admin** (file is re-read on each send, so `!zalo claim` / `!zalo admin transfer` apply without restarting notify). Health: `zalo_thread` + `zalo_dest_source` (`override` | `admin_file` | `admin_env` | `none`) — never the uid.
+
+Zalo cannot DM the same account that scanned the QR (bridge `ownId`). If the sole admin is still that placeholder, run `!zalo claim` from a personal Zalo so alerts land in a human inbox.
 
 Copy for learn alerts: editable `hermes/main/messages/learn-notify.json`.
 

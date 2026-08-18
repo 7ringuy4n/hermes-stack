@@ -289,6 +289,32 @@ if [[ "{resume}" == "1" ]]; then
   docker ps -aq --filter status=created | xargs -r docker rm -f || true
   docker container prune -f || true
 else
+  echo "=== SNAPSHOT SCHEDULES (keep through destroy) ==="
+  mkdir -p /data/assistant/backups
+  if [[ -f /opt/assistant/scripts/main/hermes-cron-share.sh ]]; then
+    HERMES_DATA_DIR=/data/assistant bash /opt/assistant/scripts/main/hermes-cron-share.sh || true
+  fi
+  python3 - <<'PY'
+import json
+from pathlib import Path
+p = Path("/data/assistant/cron/jobs.json")
+n = 0
+if p.is_file():
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        jobs = data.get("jobs") if isinstance(data, dict) else data
+        n = len(jobs) if isinstance(jobs, list) else 0
+    except Exception:
+        n = 0
+print(f"HERMES_JOBS_BEFORE={n}")
+PY
+  CRON_SNAP=/data/assistant/backups/.pre-destroy-hermes-cron.txt
+  HERMES_CID=$(docker ps -q --filter name=hermes | head -1 || true)
+  if [[ -n "$HERMES_CID" ]]; then
+    docker exec "$HERMES_CID" hermes cron list > "$CRON_SNAP" 2>/dev/null || true
+  fi
+  systemctl list-timers 'assistant-*' --all --no-pager 2>/dev/null | head -20 || true
+
   echo "=== DESTROY CURRENT PROFILE ==="
   bash run.sh destroy
   docker ps -aq --filter label=com.docker.compose.project=assistant | xargs -r docker rm -f || true
@@ -332,6 +358,29 @@ curl -sS -m 10 http://127.0.0.1:8093/health || true
 echo
 if [[ "{av}" == "1" ]]; then curl -sS -m 10 http://127.0.0.1:8098/health || true; echo; fi
 if [[ "{zalo}" == "1" ]]; then curl -sS -m 10 http://127.0.0.1:8100/health || true; echo; fi
+
+echo "=== VERIFY SCHEDULES AFTER UP ==="
+if [[ -f /opt/assistant/scripts/main/hermes-cron-share.sh ]]; then
+  HERMES_DATA_DIR=/data/assistant bash /opt/assistant/scripts/main/hermes-cron-share.sh || true
+fi
+python3 - <<'PY'
+import json
+from pathlib import Path
+p = Path("/data/assistant/cron/jobs.json")
+n = 0
+if p.is_file():
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        jobs = data.get("jobs") if isinstance(data, dict) else data
+        n = len(jobs) if isinstance(jobs, list) else 0
+    except Exception:
+        n = 0
+print(f"HERMES_JOBS_AFTER={n}")
+print("CRON_PRESERVED=1" if n else "CRON_PRESERVED=empty")
+PY
+docker ps -q --filter name=hermes | xargs -r docker restart || true
+sleep 8
+systemctl list-timers 'assistant-*' --all --no-pager 2>/dev/null | head -20 || true
 
 echo "=== CHECK HIGH ==="
 set +e
