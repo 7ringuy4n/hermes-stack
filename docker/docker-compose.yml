@@ -90,6 +90,37 @@ services:
       - "127.0.0.1:${SESSION_PORT:-8107}:8107"
     networks: [internal]
 
+  workflow:
+    build: ./architect/workflow
+    container_name: workflow
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
+      - VALKEY_URL=${VALKEY_URL:-${REDIS_URL:-valkey://redis:6379/0}}
+      - HERMES_API_URL=${HERMES_API_URL:-http://hermes:8642/v1/chat/completions}
+      - HERMES_API_KEY=${API_SERVER_KEY:-}
+      - HERMES_WORKFLOW_TIMEOUT_S=${HERMES_WORKFLOW_TIMEOUT_S:-90}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WORKFLOW_PORT:-8108}:8108"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8108/health', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    networks: [internal]
+
   embedding:
     build: ./architect/tools/embedding
     container_name: embedding
@@ -307,6 +338,9 @@ services:
       # Medium+ URLs (services only up when overlay is loaded)
       - OCR_URL=${OCR_URL:-http://ocr:8091}
       - JOBS_URL=${JOBS_URL:-http://jobs:8104}
+      - WORKFLOW_URL=${WORKFLOW_URL:-http://workflow:8108}
+      - HERMES_WORKFLOW=${HERMES_WORKFLOW:-1}
+      - ZALO_WORKFLOW=${ZALO_WORKFLOW:-1}
       - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       # Zalo (used when ENABLE_ZALO=1 + host bridge + zalo-proxy profile)
@@ -317,7 +351,7 @@ services:
       - ZALO_ALLOWED_THREADS=${ZALO_ALLOWED_THREADS:-}
       - ZALO_HOME_CHANNEL=${ZALO_HOME_CHANNEL:-}
       - ZALO_INBOUND_QUEUE=${ZALO_INBOUND_QUEUE:-1}
-      - ZALO_INBOUND_QUEUE_MAX=${ZALO_INBOUND_QUEUE_MAX:-3}
+      - ZALO_INBOUND_QUEUE_MAX=${ZALO_INBOUND_QUEUE_MAX:-8}
       - ZALO_INBOUND_QUEUE_TTL_S=${ZALO_INBOUND_QUEUE_TTL_S:-3600}
       - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
       - ZALO_ADMIN_USERS_FILE=/opt/data/zalo_admin_users.txt
@@ -346,6 +380,7 @@ services:
       - dispatcher
       - memory
       - redis
+      - workflow
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks: [internal]
@@ -384,7 +419,10 @@ services:
       - SESSION_URL=${SESSION_URL:-http://session:8107}
       - INGEST_URL=${INGEST_URL:-http://ingest:8099}
       - HERMES_DATA_DIR=/data/assistant
+      - HERMES_UID=${HERMES_UID:-1000}
+      - HERMES_GID=${HERMES_GID:-1000}
       - HERMES_CONTAINER=${HERMES_CONTAINER:-hermes}
+      - WORKFLOW_URL=${WORKFLOW_URL:-http://workflow:8108}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     volumes:
       - ${ASSISTANT_DATA_DIR:-/data/assistant}:/data/assistant
@@ -393,4 +431,6 @@ services:
       - "127.0.0.1:${ZALO_API_PORT:-8100}:8100"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - workflow
     networks: [internal]

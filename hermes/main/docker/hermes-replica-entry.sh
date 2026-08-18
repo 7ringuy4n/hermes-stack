@@ -40,6 +40,14 @@ use_shared_cron() {
     mv "$local_cron" "${HERMES_HOME}/cron.replica-local" 2>/dev/null || rm -rf "$local_cron"
   fi
   ln -sfn "$shared_cron" "$local_cron"
+  uid="${HERMES_UID:-1000}"
+  gid="${HERMES_GID:-1000}"
+  chown "${uid}:${gid}" "$shared_cron" 2>/dev/null || true
+  chmod 775 "$shared_cron" 2>/dev/null || true
+  if [ -f "${shared_cron}/jobs.json" ]; then
+    chown "${uid}:${gid}" "${shared_cron}/jobs.json" 2>/dev/null || true
+    chmod 664 "${shared_cron}/jobs.json" 2>/dev/null || true
+  fi
 }
 
 use_local_empty_cron() {
@@ -49,12 +57,25 @@ use_local_empty_cron() {
   fi
   mkdir -p "$local_cron"
   printf '%s\n' '{"jobs":[],"updated_at":null}' > "${local_cron}/jobs.json"
+  chmod 664 "${local_cron}/jobs.json" 2>/dev/null || true
 }
 
 link_shared config.yaml
 link_shared .env
 link_shared SOUL.md
-link_shared skills
+# Skills source is :ro bind-mount; replica needs a writable copy so Hermes
+# can populate per-category subdirs at startup.
+_src_skills="${SHARED}/skills"
+_dst_skills="${HERMES_HOME}/skills"
+if [ -L "$_dst_skills" ]; then
+  rm -f "$_dst_skills"
+fi
+if [ -d "$_src_skills" ] && [ ! -d "$_dst_skills" ]; then
+  cp -a "$_src_skills" "$_dst_skills" 2>/dev/null || true
+elif [ -d "$_src_skills" ] && [ -d "$_dst_skills" ]; then
+  # Merge new skills from source without overwriting existing
+  cp -a -n "$_src_skills"/. "$_dst_skills"/ 2>/dev/null || true
+fi
 link_shared messages
 link_shared plugins
 link_shared lazy-packages
