@@ -62,6 +62,8 @@ GRAFANA_HOST_PORT=23000
 ZALO_API_TOKEN=
 # ADMIN_API_TOKEN=   # legacy alias for zalo-api
 ENABLE_NOTIFY=0                # High default off; set 1 for notify + alert-watch
+# Empty NOTIFY_ZALO_THREAD → sole Zalo admin (zalo_admin_users.txt). Override for a group.
+NOTIFY_ZALO_THREAD=
 ENABLE_CLOUDDRIVE=0
 CLOUDDRIVE_MIRROR_DIR=/data/clouddrive
 

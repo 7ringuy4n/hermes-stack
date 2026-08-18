@@ -16,6 +16,8 @@ import httpx
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from dest import resolve_zalo_dest_live
+
 ZALO_BRIDGE = os.environ.get("ZALO_BRIDGE_URL", "http://host.docker.internal:8787").rstrip("/")
 ZALO_TOKEN = os.environ.get("ZALO_PLUGIN_TOKEN", "")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -30,6 +32,8 @@ DEFAULT_ZALO_THREAD_TYPE = (
     os.environ.get("NOTIFY_ZALO_THREAD_TYPE", "user").strip().lower() or "user"
 )
 DEFAULT_TELEGRAM_CHAT = os.environ.get("NOTIFY_TELEGRAM_CHAT", "")
+ADMIN_USERS_FILE = os.environ.get("ZALO_ADMIN_USERS_FILE", "").strip()
+ADMIN_USERS_ENV = os.environ.get("ZALO_ADMIN_USERS", "")
 
 app = FastAPI(title="assistant-notify", version="1.1.0")
 _log: list[dict[str, Any]] = []
@@ -69,7 +73,17 @@ def _norm_thread_type(raw: Optional[str]) -> str:
     return "user"
 
 
-def _zalo_send(thread_id: str, text: str, thread_type: str = "user") -> bool:
+def _zalo_dest(request_thread: Optional[str] = None) -> tuple[str, str]:
+    """Live dest: request → NOTIFY_ZALO_THREAD → sole Zalo admin file/env."""
+    return resolve_zalo_dest_live(
+        request_thread=request_thread or "",
+        env_thread=DEFAULT_ZALO_THREAD,
+        admin_file=ADMIN_USERS_FILE,
+        env_admins=ADMIN_USERS_ENV,
+    )
+
+
+def _zalo_send(thread_id: str, text: str, thread_type: str = "user") -> tuple[bool, str]:
     headers = {"content-type": "application/json"}
     if ZALO_TOKEN:
         headers["x-bridge-token"] = ZALO_TOKEN
@@ -85,9 +99,11 @@ def _zalo_send(thread_id: str, text: str, thread_type: str = "user") -> bool:
                     "text": text[:3500],
                 },
             )
-            return r.status_code < 300
+            if r.status_code < 300:
+                return True, "ok"
+            return False, f"http_{r.status_code}"
     except Exception:
-        return False
+        return False, "network"
 
 
 def _telegram_send(chat_id: str, text: str) -> bool:
@@ -125,10 +141,12 @@ def _email_send(to: str, subject: str, body: str) -> bool:
 
 @app.get("/health")
 def health() -> dict[str, Any]:
+    tid, src = _zalo_dest()
     return {
         "ok": True,
         "zalo_bridge": bool(ZALO_BRIDGE),
-        "zalo_thread": bool(DEFAULT_ZALO_THREAD),
+        "zalo_thread": bool(tid),
+        "zalo_dest_source": src,
         "zalo_thread_type": _norm_thread_type(DEFAULT_ZALO_THREAD_TYPE),
         "telegram": bool(TELEGRAM_BOT_TOKEN),
         "smtp": bool(SMTP_HOST),
@@ -177,14 +195,22 @@ def notify(req: NotifyReq) -> dict[str, Any]:
         return {"ok": True, "results": {"skipped": True}, "reason": "llm_non_critical"}
     prefix = {"info": "ℹ️", "warning": "⚠️", "critical": "🚨"}.get(req.severity.value, "")
     text = f"{prefix} [{req.severity.value.upper()}] {req.title}\n{req.body}".strip()
-    results: dict[str, bool] = {}
+    results: dict[str, Any] = {}
     for ch in req.channels:
         if ch == Channel.log:
             results["log"] = True
         elif ch == Channel.zalo:
-            tid = (req.zalo_thread_id or DEFAULT_ZALO_THREAD or "").strip()
+            tid, src = _zalo_dest(req.zalo_thread_id)
             tt = _norm_thread_type(req.zalo_thread_type)
-            results["zalo"] = bool(tid) and _zalo_send(tid, text, tt)
+            if not tid:
+                results["zalo"] = False
+                results["zalo_reason"] = "no_dest"
+                results["zalo_dest_source"] = src
+            else:
+                ok, reason = _zalo_send(tid, text, tt)
+                results["zalo"] = ok
+                results["zalo_reason"] = reason
+                results["zalo_dest_source"] = src
         elif ch == Channel.telegram:
             cid = req.telegram_chat_id or DEFAULT_TELEGRAM_CHAT
             results["telegram"] = bool(cid) and _telegram_send(cid, text)

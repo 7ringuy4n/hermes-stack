@@ -15,7 +15,11 @@ check() {
 
 echo "ASSISTANT_PROFILE=${ASSISTANT_PROFILE:-unset}"
 check openbao   "http://127.0.0.1:${OPENBAO_PORT:-8200}/v1/sys/health"
-check grafana   "http://127.0.0.1:${GRAFANA_HOST_PORT:-23000}/api/health"
+if [[ "${ENABLE_GRAFANA:-0}" == "1" ]]; then
+  check grafana "http://127.0.0.1:${GRAFANA_HOST_PORT:-23000}/api/health"
+else
+  echo "INFO grafana skipped (ENABLE_GRAFANA=0)"
+fi
 check security  "http://127.0.0.1:${SECURITY_PORT:-8093}/health"
 check authz     "http://127.0.0.1:${AUTHZ_PORT:-8097}/health"
 if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then

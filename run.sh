@@ -739,6 +739,10 @@ case "$cmd" in
     assistant_profile_summary
     compose up -d --remove-orphans
     do_stop_disabled_optionals
+    if [[ -f "${SCRIPTS_DIR}/hermes-cron-share.sh" ]]; then
+      echo "==> share Hermes schedules (keep jobs across replica ids)"
+      bash "${SCRIPTS_DIR}/hermes-cron-share.sh" || true
+    fi
     ensure_profile_timers
     # Wire 9Router Default Key + hermes combo before OpenBao seed so N9ROUTER_API_KEY is present
     if [[ -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then

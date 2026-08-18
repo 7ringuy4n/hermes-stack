@@ -1,5 +1,28 @@
 # Change history
 
+## 2026-08-18 10:45 +07 — fix: keep Hermes schedules across destroy + !zalo schedule CRUD
+
+- Root cause: jobs lived in `replicas/<container-id>/cron/jobs.json`. Destroy creates new ids; backup excluded `./replicas`; `hermes cron list` used compose `HERMES_HOME=/opt/data` (empty). Restore never re-applied jobs.
+- Shared store: `HERMES_DATA_DIR/cron/jobs.json`. `hermes-cron-share.sh` promotes the newest replica copy. Zalo-owner replica ticks the shared dir; other replicas keep an empty local file (no double-run).
+- Backup copies `hermes-jobs.json` + `hermes-cron.tgz`; restore writes them back then brings Hermes up.
+- Zalo admin CRUD: `!zalo schedule list|show|add|update|remove` (user-facing **lịch** / **schedule**).
+- Units: `schedule_crud_unit.py` (separate process from `schedule_list_unit.py`).
+
+## 2026-08-18 10:15 +07 — fix: Zalo admin alerts without NOTIFY_ZALO_THREAD
+
+- Notify was logging alerts (`zalo: false`) whenever `NOTIFY_ZALO_THREAD` was empty, even with `ENABLE_NOTIFY=1` and a sole Zalo admin in `zalo_admin_users.txt`.
+- Dest order: request thread → optional `NOTIFY_ZALO_THREAD` → admin file → `ZALO_ADMIN_USERS`. File is re-read each send (`!zalo claim` / transfer without restart).
+- Notify mounts data dir read-only; health reports `zalo_dest_source` (no uid). zalo-api approve/notify passes the current admin uid.
+- Unit: `test/scripts/notify_dest_unit.py`.
+
+## 2026-08-18 10:00 +07 — ops: High destroy deploy keeps schedules; Zalo concurrent lab
+
+- `deploy_high.py`: snapshot Hermes `cron list` + systemd timers before destroy; verify after `up` (data volumes unchanged by destroy).
+- `check-high.sh`: skip Grafana health when `ENABLE_GRAFANA=0` (High lab default).
+- `vps_health_check.py` / `vps_verify_post_deploy.py`: dynamic Hermes container + authenticated 9router probe.
+- `resume_zalo_setup.py`: finish Zalo install after partial `deploy_high` (no second destroy).
+- Case `08-zalo-concurrent`: documents `test/scripts/zalo_concurrent.py` lab runner and optional FIFO smoke (case 23).
+
 ## 2026-08-18 09:40 +07 — policy: response language matches user request
 
 - Rule **27 / response language**: reply in the **same language** as the user's message unless they explicitly ask for another. Wired in `friendly-response`, SOUL, `answering`, `chat-style`, `zalo-channel`, `translation`, zalo-api response policy.
