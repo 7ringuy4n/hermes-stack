@@ -327,7 +327,11 @@ services:
       - NOTIFY_ZALO_THREAD=${NOTIFY_ZALO_THREAD:-}
       - NOTIFY_ZALO_THREAD_TYPE=${NOTIFY_ZALO_THREAD_TYPE:-user}
       - NOTIFY_TELEGRAM_CHAT=${NOTIFY_TELEGRAM_CHAT:-}
+      - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
+      - ZALO_ADMIN_USERS_FILE=/data/assistant/zalo_admin_users.txt
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}:/data/assistant:ro
     ports:
       - "127.0.0.1:${NOTIFY_PORT:-8092}:8092"
     extra_hosts:

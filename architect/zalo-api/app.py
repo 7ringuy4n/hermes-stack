@@ -17,6 +17,20 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from schedule_list import fmt_hermes_cron_list
+from schedule_crud import (
+    USAGE as SCHEDULE_USAGE,
+    fmt_list as fmt_schedule_list,
+    fmt_show as fmt_schedule_show,
+    jobs_file as schedule_jobs_file,
+    load_bundle as load_schedule_bundle,
+    new_job as new_schedule_job,
+    parse_hhmm_cron,
+    parse_cron_expr,
+    resolve_job as resolve_schedule_job,
+    save_bundle as save_schedule_bundle,
+    split_add_args,
+    visible_jobs as visible_schedule_jobs,
+)
 
 TOKEN = (os.environ.get("ZALO_API_TOKEN") or os.environ.get("ADMIN_API_TOKEN") or "").strip()
 ZALO_BRIDGE = os.environ.get("ZALO_BRIDGE_URL", "http://host.docker.internal:8787").rstrip("/")
@@ -1184,7 +1198,8 @@ def chat_command(
                 "!zalo kick @tag | <id>… — kick USER (nhiều id ok)\n"
                 "!zalo kick <Tên nhóm> | thread:<id> — kick GROUP\n"
                 "!zalo status | clearsessions | help\n"
-                "!zalo schedule list — (admin) xem lịch Hermes\n"
+                "!zalo schedule list — (admin) xem lịch\n"
+                "!zalo schedule add|show|update|remove — (admin) CRUD lịch\n"
                 "!zalo learn | learn list | learn find | learn scan docs\n"
                 "!zalo learn approve|reject <id|*>\n"
                 "!zalo learn delete — reply tin bot: xem list (chưa xóa). Rồi delete <id|tên> hoặc delete all\n"
@@ -1414,7 +1429,15 @@ def chat_command(
 
     if cmd in {"schedule", "cron", "lich"}:
         sub = (arg0 or "list").lower()
-        if sub in {"list", "ls", "show", "jobs"}:
+        tz_name = os.environ.get("TZ", "Asia/Ho_Chi_Minh")
+        path = schedule_jobs_file(HERMES_DATA)
+        bundle = load_schedule_bundle(path)
+        jobs: list[dict[str, Any]] = list(bundle.get("jobs") or [])
+        rest = " ".join(parts[3:]).strip() if len(parts) > 3 else ""
+
+        if sub in {"list", "ls", "jobs"}:
+            if visible_schedule_jobs(jobs):
+                return {"ok": True, "handled": True, "reply": fmt_schedule_list(jobs)}
             rc, raw = _fetch_hermes_cron_list()
             if rc not in {0, -1} and not raw:
                 return {
@@ -1422,15 +1445,101 @@ def chat_command(
                     "handled": True,
                     "reply": "Không đọc được lịch (docker/Hermes).",
                 }
+            if raw.strip():
+                return {"ok": True, "handled": True, "reply": fmt_hermes_cron_list(raw)}
+            return {"ok": True, "handled": True, "reply": fmt_schedule_list(jobs)}
+
+        if sub in {"help", "?"}:
+            return {"ok": True, "handled": True, "reply": SCHEDULE_USAGE}
+
+        if sub in {"show", "get", "view"}:
+            job, err = resolve_schedule_job(jobs, rest or "")
+            if err or job is None:
+                return {"ok": True, "handled": True, "reply": err or SCHEDULE_USAGE}
+            return {"ok": True, "handled": True, "reply": fmt_schedule_show(job)}
+
+        if sub in {"add", "create", "new"}:
+            expr, name, prompt = split_add_args(rest)
+            if not expr or not prompt:
+                return {
+                    "ok": True,
+                    "handled": True,
+                    "reply": "usage:\n!zalo schedule add 6:00 <nội dung>\n!zalo schedule add 0 6 * * * <nội dung>",
+                }
+            job = new_schedule_job(
+                prompt=prompt,
+                expr=expr,
+                name=name,
+                tz_name=tz_name,
+                sender=sender,
+                thread=thread,
+                sender_name=sender_name,
+            )
+            jobs.append(job)
+            save_schedule_bundle(path, jobs, tz_name)
             return {
                 "ok": True,
                 "handled": True,
-                "reply": fmt_hermes_cron_list(raw),
+                "reply": "Đã thêm lịch:\n" + fmt_schedule_show(job),
             }
+
+        if sub in {"update", "edit", "set"}:
+            sel = rest
+            new_time = ""
+            new_prompt = ""
+            if " -- " in rest:
+                sel, new_prompt = rest.split(" -- ", 1)
+                sel, new_prompt = sel.strip(), new_prompt.strip()
+            tm = re.search(r"--time(?:\s+|=)(\S+)", sel, re.I)
+            if tm:
+                new_time = tm.group(1)
+                sel = (sel[: tm.start()] + sel[tm.end() :]).strip()
+            ts = re.search(r"--schedule(?:\s+|=)(.+)$", sel, re.I)
+            if ts and not new_time:
+                new_time = ts.group(1).strip().strip('"')
+                sel = sel[: ts.start()].strip()
+            job, err = resolve_schedule_job(jobs, sel)
+            if err or job is None:
+                return {"ok": True, "handled": True, "reply": err or SCHEDULE_USAGE}
+            if new_time:
+                expr = parse_hhmm_cron(new_time) or parse_cron_expr(new_time)
+                if not expr:
+                    return {
+                        "ok": True,
+                        "handled": True,
+                        "reply": "Lịch không hợp lệ. Dùng 6:00 hoặc 0 6 * * *",
+                    }
+                job["schedule"] = {"kind": "cron", "expr": expr, "display": expr}
+                job["schedule_display"] = expr
+            if new_prompt:
+                job["prompt"] = new_prompt
+            if not new_time and not new_prompt:
+                return {
+                    "ok": True,
+                    "handled": True,
+                    "reply": "usage:\n!zalo schedule update <số|tên> --time 7:00\n!zalo schedule update <số|tên> -- <nội dung>",
+                }
+            save_schedule_bundle(path, jobs, tz_name)
+            return {
+                "ok": True,
+                "handled": True,
+                "reply": "Đã cập nhật lịch:\n" + fmt_schedule_show(job),
+            }
+
+        if sub in {"remove", "rm", "delete", "del"}:
+            job, err = resolve_schedule_job(jobs, rest)
+            if err or job is None:
+                return {"ok": True, "handled": True, "reply": err or SCHEDULE_USAGE}
+            jid = str(job.get("id") or "")
+            jobs = [j for j in jobs if str(j.get("id") or "") != jid]
+            save_schedule_bundle(path, jobs, tz_name)
+            label = fmt_schedule_show(job).splitlines()[0]
+            return {"ok": True, "handled": True, "reply": f"Đã xóa lịch: {label}"}
+
         return {
             "ok": True,
             "handled": True,
-            "reply": "usage: !zalo schedule list",
+            "reply": SCHEDULE_USAGE,
         }
 
     if cmd in {"learn", "pending", "kienthuc"}:
@@ -1853,20 +1962,26 @@ def _chat_reply(reply: str, *, reply_dm: bool = False, group_ack: str = "") -> d
 
 
 def _notify_admin(title: str, body: str, *, severity: str = "info") -> bool:
-    """Send via NotificationManager → admin Zalo (NOTIFY_ZALO_THREAD)."""
+    """Send via NotificationManager → sole Zalo admin (file) or NOTIFY_ZALO_THREAD."""
     if not NOTIFY_URL:
         return False
+    admins = _admin_users()
+    dest = next(iter(admins), "")
+    payload: dict[str, Any] = {
+        "title": title,
+        "body": body,
+        "severity": severity,
+        "channels": ["zalo"],
+        "kind": "alert",
+    }
+    if dest:
+        payload["zalo_thread_id"] = dest
+        payload["zalo_thread_type"] = "user"
     try:
         with httpx.Client(timeout=20) as c:
             r = c.post(
                 f"{NOTIFY_URL}/v1/notify",
-                json={
-                    "title": title,
-                    "body": body,
-                    "severity": severity,
-                    "channels": ["zalo"],
-                    "kind": "alert",
-                },
+                json=payload,
             )
             if r.status_code >= 300:
                 return False
@@ -1881,9 +1996,9 @@ def _approve_ack(detail: str, *, kind: str) -> dict[str, Any]:
     if NOTIFY_ON_APPROVE and _notify_admin("Zalo — user approved", detail):
         # Silent in the channel where !zalo approve was typed.
         return {"ok": True, "handled": True, "reply": ""}
-    # Fallback if notify down / NOTIFY_ZALO_THREAD unset
+    # Fallback if notify down / no dest
     return _chat_reply(
-        detail + "\n(notify chưa gửi — kiểm tra notify + NOTIFY_ZALO_THREAD)",
+        detail + "\n(notify chưa gửi — kiểm tra notify + Zalo admin)",
         reply_dm=(kind == "group"),
         group_ack="",
     )
