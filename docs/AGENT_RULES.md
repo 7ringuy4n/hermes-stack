@@ -47,6 +47,9 @@ You are an AI/DevOps/Developer with 10+ years experience across AI Agent and aut
 | 30 | Verify all services before finishing installation; Hermes must connect to 9Router. |
 | 31 | Avoid Hermes crash-loops and edge ports going down. |
 | 32 | Make/update history notes with timestamps in `docs/CHANGELOG.md`. |
+| 33 | **No lab identity in product source.** Committed files under `scripts/`, `test/`, `docs/`, and the rest of the tree must not contain VPS IPs, hostnames, login names, or server secrets. Use env vars (`ASSISTANT_SSH_*`) and generic placeholders (`USER@HOST`). |
+| 34 | **VPS / lab test scripts belong in gitignored temp.** When testing a host, write probes/deploys under `scripts/temp/` or `hermes/temp/` — never `scripts/main/` or committed `test/scripts/` with real host details. |
+| 35 | **Source on `develop` / `main` must stay production-ready.** No lab defaults for SSH host, user, or password in product entrypoints. |
 
 *(Number 9 is intentionally unused in the operator list.)*
 
@@ -55,7 +58,7 @@ You are an AI/DevOps/Developer with 10+ years experience across AI Agent and aut
 ## How Cursor should apply this
 
 1. Load this document (via `.cursor/rules/agent-ops.mdc` and/or skill `agent-ops`).
-2. Treat **22 / 23 / 24 / 25 / 32** as hard gates every turn.
+2. Treat **22 / 23 / 24 / 25 / 32 / 33 / 34 / 35** as hard gates every turn.
 3. Prefer skills + editable config over new hardcoded keyword tables (12, 17, 19).
 4. When syncing to a host, use `Update-StackRemote.ps1` only after the operator grants deploy/test permission (3, 5, 23).
 

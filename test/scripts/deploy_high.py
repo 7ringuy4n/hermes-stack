@@ -8,6 +8,7 @@ Optional flags (0/1, default 0 unless noted): ENABLE_ZALO, ENABLE_ANTIVIRUS,
   ENABLE_OMNIROUTER, ENABLE_GRAFANA, ENABLE_LOKI, ENABLE_PROMETHEUS, ENABLE_ALLOY.
   Grafana=1 pairs Prometheus on (unless ENABLE_PROMETHEUS is set).
   Loki=1 pairs Alloy on (unless ENABLE_ALLOY is set).
+Optional secret (host .env only, never logged): TAVILY_API_KEY.
 Notify stays on for High lab alerting. OmniRouter and Grafana default **off**.
 Does not write secrets into test/reports. Does not run Zalo QR login.
 """
@@ -16,6 +17,7 @@ from __future__ import annotations
 import base64
 import io
 import os
+import re
 import sys
 import tarfile
 import time
@@ -52,6 +54,10 @@ FLAG_LOKI = env_flag("ENABLE_LOKI")
 # Pairing: Grafana starts Prometheus; Loki starts Alloy — unless the pair flag is set.
 FLAG_PROM = env_flag("ENABLE_PROMETHEUS", FLAG_GRAFANA)
 FLAG_ALLOY = env_flag("ENABLE_ALLOY", FLAG_LOKI)
+_TAVILY_RAW = os.environ.get("TAVILY_API_KEY", "").strip()
+if _TAVILY_RAW and not re.fullmatch(r"[A-Za-z0-9._-]+", _TAVILY_RAW):
+    raise SystemExit("TAVILY_API_KEY rejected: unsafe characters")
+FLAG_TAVILY = _TAVILY_RAW
 
 SKIP_DIR = {
     ".git",
@@ -61,6 +67,7 @@ SKIP_DIR = {
     "hermes/temp",
     "scripts/temp",
     "test/reports",
+    "Untitled",
 }
 TEXT_EXT = {".sh", ".py", ".yml", ".yaml", ".md", ".json", ".txt", ".example"}
 
@@ -201,6 +208,7 @@ def remote_deploy(c) -> str:
     loki = FLAG_LOKI
     prom = FLAG_PROM
     alloy = FLAG_ALLOY
+    tavily = FLAG_TAVILY
     return sudo_bash(
         c,
         rf"""
@@ -254,6 +262,9 @@ upsert SECURITY_YARA 1
 upsert SECURITY_FAIL_CLOSED 1
 upsert LEARN_REQUIRE_APPROVE 0
 upsert OFFICE_FILE_GEN 1
+if [[ -n "{tavily}" ]]; then
+  upsert TAVILY_API_KEY {tavily}
+fi
 grep -q '^ASSISTANT_DATA_DIR=' .env || upsert ASSISTANT_DATA_DIR /data/assistant
 grep -q '^HERMES_DATA_DIR=' .env || upsert HERMES_DATA_DIR /data/assistant
 fill_if_empty GATEWAY_API_KEYS "$(rand)"
@@ -274,7 +285,9 @@ if [[ "{sandbox}" == "1" ]]; then
 fi
 
 echo "=== CLEAR OLD FILES ==="
-rm -rf /tmp/assistant /tmp/9r-*.json 2>/dev/null || true
+rm -rf /tmp/assistant /tmp/9r-*.json /tmp/assistant.env.new 2>/dev/null || true
+rm -f /tmp/assistant-sync.tgz 2>/dev/null || true
+docker rm -f grafana prometheus loki alloy nine-exporter node-exporter stack-exporter omni-exporter 2>/dev/null || true
 mkdir -p /data/assistant/docs /data/assistant/backups /data/assistant/media/out
 chown -R 1000:1000 /data/assistant || true
 if [[ -f /tmp/hermes-skills.tgz ]]; then
@@ -379,7 +392,10 @@ print("HERMES_JOBS_AFTER=" + str(n))
 print("CRON_PRESERVED=1" if n else "CRON_PRESERVED=empty")
 PY
 docker ps -q --filter name=hermes | xargs -r docker restart || true
-sleep 8
+for i in $(seq 1 24); do
+  curl -fsS -m 5 http://127.0.0.1:8080/health >/dev/null 2>&1 && break
+  sleep 5
+done
 systemctl list-timers 'assistant-*' --all --no-pager 2>/dev/null | head -20 || true
 
 echo "=== CHECK HIGH ==="
@@ -449,8 +465,39 @@ keys = [
 print("ADMIN_BEGIN")
 for k in keys:
     print(f"{{k}}={{env.get(k, '')}}")
+print("TAVILY_PRESENT=" + ("1" if env.get("TAVILY_API_KEY") else "0"))
 print("ADMIN_END")
 PY
+
+echo "=== POST CONNECT ==="
+n9c=$(curl -sS -m 8 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:20128/ || echo 000)
+echo "9router_http=$n9c"
+tr_ok=0
+for i in $(seq 1 12); do
+  if curl -fsS -m 8 http://127.0.0.1:8080/health >/dev/null 2>&1; then tr_ok=1; break; fi
+  sleep 2
+done
+echo "traefik_ok=$tr_ok"
+gw_ok=0
+curl -fsS -m 8 http://127.0.0.1:8088/health >/dev/null 2>&1 && gw_ok=1 || true
+echo "gateway_ok=$gw_ok"
+python3 - <<'PY'
+import json, urllib.request
+try:
+    h = json.load(urllib.request.urlopen("http://127.0.0.1:8090/health", timeout=8))
+    keys = h.get("keys") or {{}}
+    print("dispatcher_ok", h.get("ok"))
+    print("dispatcher_tavily", bool(keys.get("tavily")))
+except Exception as e:
+    print("dispatcher_ok", False)
+    print("dispatcher_tavily", False)
+    print("dispatcher_err", type(e).__name__)
+PY
+hcount=$(docker ps --filter name=hermes --filter status=running --format '{{{{.Names}}}}' | wc -l | tr -d ' ')
+echo "hermes_running=$hcount"
+mon=$(docker ps --format '{{{{.Names}}}}' | grep -E '^(grafana|prometheus|loki|alloy)$' || true)
+if [[ -z "$mon" ]]; then echo "monitor_off=1"; else echo "monitor_unexpected=$mon"; fi
+echo POST_CONNECT_DONE
 
 echo HIGH_DEPLOY_DONE
 """,

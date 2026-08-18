@@ -122,7 +122,11 @@ boot_grace_active() {
 }
 
 compose() {
-  # Keep overlays aligned with run.sh so heal does not strip edge/hostports.
+  # Keep overlays + profiles aligned with run.sh so heal does not strip
+  # edge/hostports/scale or --remove-orphans notify/sandbox/antivirus.
+  assistant_profile_apply
+  PROFILE="${ASSISTANT_PROFILE:-$PROFILE}"
+  HERMES_REPLICAS="${HERMES_REPLICAS:-1}"
   local existing=(--project-directory "${ROOT}" -f "${ROOT}/docker/docker-compose.yml")
   case "$PROFILE" in
     medium)
@@ -143,10 +147,20 @@ compose() {
   fi
   local profiles=()
   [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
+  [[ "${ENABLE_NOTIFY:-0}" == "1" ]] && profiles+=(--profile notify)
   [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles+=(--profile antivirus)
+  [[ "${SECURITY_SANDBOX:-0}" == "1" ]] && profiles+=(--profile sandbox)
+  [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles+=(--profile clouddrive)
+  [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles+=(--profile comfy-gpu)
   assistant_append_monitor_profiles profiles
-  [[ "${ENABLE_TRAEFIK:-0}" == "1" ]] && profiles+=(--profile traefik)
+  if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
+    case "${TRAEFIK_ACME_ENABLED:-0}" in
+      1) profiles+=(--profile traefik-acme) ;;
+      *) profiles+=(--profile traefik) ;;
+    esac
+  fi
   [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]] && profiles+=(--profile gateway)
+  [[ "${ENABLE_OPENVPN:-0}" == "1" ]] && profiles+=(--profile openvpn)
   [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]] && profiles+=(--profile omnirouter)
   $SUDO docker compose -p "$PROJECT" "${existing[@]}" "${profiles[@]}" "$@"
 }
@@ -192,9 +206,22 @@ probe() {
   return 1
 }
 
+# 9router /v1/models is 401 without a key (process up). curl -f treated that as DOWN
+# and restarted 9router on every stack-watch tick.
+probe_9router() {
+  local url="http://127.0.0.1:${N9ROUTER_HOST_PORT:-20128}/v1/models"
+  local code
+  code="$(curl -sS -m 4 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo 000)"
+  case "$code" in
+    200|401|307) return 0 ;;
+  esac
+  log "DOWN 9router ${url} http=${code}"
+  return 1
+}
+
 heal_by_health() {
   local failed=0
-  probe 9router "http://127.0.0.1:${N9ROUTER_HOST_PORT:-20128}/v1/models" || failed=1
+  probe_9router || failed=1
   probe dispatcher "http://127.0.0.1:${DISPATCHER_PORT:-8090}/health" || failed=1
   # Host-published Hermes dashboard only exists when replicas=1
   if [[ "${HERMES_REPLICAS}" == "1" ]]; then
