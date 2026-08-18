@@ -105,6 +105,10 @@ Zalo home channel (when `ENABLE_ZALO=1`):
 ZALO_HOME_CHANNEL=
 ZALO_AUTO_SETHOME=1
 ZALO_AUTO_SETHOME_DM_ONLY=1
+# Inbound request FIFO (not a response queue). Same on Low/Medium/High when ENABLE_ZALO=1.
+ZALO_INBOUND_QUEUE=1
+ZALO_INBOUND_QUEUE_MAX=3
+ZALO_INBOUND_QUEUE_TTL_S=3600
 ```
 
 | Profile | Optional on |
