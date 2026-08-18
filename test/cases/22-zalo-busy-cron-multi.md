@@ -32,8 +32,8 @@ must execute **wakeup + image + fuel prices** on each run — not only the first
 
 - Adapter drops busy/interrupt `/busy` copy (`gateway_noise.py`).
 - Immediate compound still splits, but waits until the current part has sent before the next.
-- Schedule-shaped lists stay **one job** (`ZALO_SCHEDULE_KEEP_WHOLE`, default on). Markers include `hằng ngày` / `hàng ngày` / `GMT+7`.
-- Skills: one cron, complete every numbered item after media.
+- Schedule-shaped lists stay **one lịch** on ingest (`ZALO_SCHEDULE_KEEP_WHOLE`). At tick time the workflow service creates **one job per numbered item**. The Zalo worker waits until the Hermes gateway session for that thread is idle before claiming the next job (`turn_wait.py`).
+- Skills: complete every numbered item after media.
 
 ## Preconditions
 
