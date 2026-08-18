@@ -51,6 +51,30 @@ def main() -> int:
     else:
         print("PASS json parse")
 
+    dict_sched = fmt_hermes_cron_list(
+        json.dumps(
+            [
+                {
+                    "name": "buoi-sang-hcm",
+                    "schedule": {"kind": "cron", "expr": "35 12 * * *", "display": "35 12 * * *"},
+                    "prompt": "timer 11:50",
+                }
+            ]
+        )
+    )
+    if "12:35" not in dict_sched or "kind" in dict_sched or "timer 11:50" in dict_sched:
+        print(f"FAIL dict schedule label: {dict_sched!r}")
+        fails += 1
+    else:
+        print("PASS dict schedule label")
+
+    scoped = fmt_hermes_cron_list(payload, heading="lịch chat này")
+    if not scoped.startswith("lịch chat này"):
+        print(f"FAIL heading: {scoped!r}")
+        fails += 1
+    else:
+        print("PASS heading")
+
     capped = fmt_hermes_cron_list(
         "\n".join(f"job-{i} 0 {i} * * * task" for i in range(5)),
         limit=2,

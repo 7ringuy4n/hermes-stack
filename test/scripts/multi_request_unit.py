@@ -73,6 +73,68 @@ def main() -> int:
         print(f"FAIL VN schedule job must stay whole, got {vn_kept!r}")
         return 1
     print("PASS schedule/cron numbered list stays one job")
+    hang_daily = (
+        "yêu cầu:\n"
+        "1. Gửi tin nhắn hằng ngày để nhắc thức dậy vào 06:00 GMT+7\n"
+        "2. Vẽ hình Thành phố Hồ Chí Minh dựa trên thời tiết thực tế.\n"
+        "3. Cập nhật ngắn gọn giá xăng E5 RON92 và E10 RON95 gần nhất, bằng tiếng Việt"
+    )
+    hang_kept = split_compound_requests(hang_daily)
+    if hang_kept != [hang_daily]:
+        print(f"FAIL hằng ngày schedule must stay whole, got {hang_kept!r}")
+        return 1
+    print("PASS hằng ngày + GMT+7 numbered list stays one job")
+    thuchien = (
+        "Thực hiện:\n"
+        "1. Tìm giá USD hiện tại\n"
+        "2. Vẽ hình Thành phố Hồ Chí Minh dựa trên thời tiết thực tế.\n"
+        "3. Cập nhật ngắn gọn giá xăng E5 RON92 và E10 RON95 gần nhất, bằng tiếng Việt."
+    )
+    th_parts = split_compound_requests(thuchien)
+    if len(th_parts) != 3 or "USD" not in th_parts[0] or "xăng" not in th_parts[2]:
+        print(f"FAIL Thực hiện newline list: {th_parts!r}")
+        return 1
+    flat = (
+        "Thực hiện: 1. Tìm giá USD hiện tại 2. Vẽ hình Thành phố Hồ Chí Minh "
+        "dựa trên thời tiết thực tế. 3. Cập nhật ngắn gọn giá xăng E5 RON92 và E10 RON95 gần nhất."
+    )
+    flat_parts = split_compound_requests(flat)
+    if len(flat_parts) != 3 or "USD" not in flat_parts[0] or "xăng" not in flat_parts[2]:
+        print(f"FAIL Thực hiện one-line list: {flat_parts!r}")
+        return 1
+    from multi_request import wrap_compound_part
+    wrapped = wrap_compound_part(1, 3, "Tìm giá USD hiện tại")
+    if "1/3" not in wrapped or "USD" not in wrapped:
+        print(f"FAIL wrap: {wrapped!r}")
+        return 1
+    print("PASS Thực hiện 3-part split (newline + one-line) + wrap")
+    plenty = (
+        "Thực hiện:\n"
+        "1. Gửi tin chào buổi sáng\n"
+        "2. Vẽ hình thời tiết HCMC\n"
+        "3. Cập nhật giá xăng E5 RON92 và E10 RON95\n"
+        "4. Báo tỷ giá USD/VND\n"
+        "5. Tóm tắt lịch hôm nay\n"
+        "6. Nhắc uống nước"
+    )
+    plenty_parts = split_compound_requests(plenty)
+    if len(plenty_parts) != 6 or "USD" not in plenty_parts[3]:
+        print(f"FAIL plenty immediate 6: {plenty_parts!r}")
+        return 1
+    plenty_cron = (
+        "hằng ngày lúc 13:54 GMT+7:\n"
+        "1. wakeup 6:00 AM GMT +7\n"
+        "2. Vẽ hình HCMC\n"
+        "3. Cập nhật giá xăng\n"
+        "4. USD\n"
+        "5. calendar\n"
+        "6. water"
+    )
+    kept6 = split_compound_requests(plenty_cron)
+    if kept6 != [plenty_cron]:
+        print(f"FAIL plenty schedule must stay whole, got {kept6!r}")
+        return 1
+    print("PASS plenty 6-item immediate split + 13:54 schedule keep-whole")
     return 0
 
 

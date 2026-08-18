@@ -306,7 +306,7 @@ if p.is_file():
         n = len(jobs) if isinstance(jobs, list) else 0
     except Exception:
         n = 0
-print(f"HERMES_JOBS_BEFORE={n}")
+print("HERMES_JOBS_BEFORE=" + str(n))
 PY
   CRON_SNAP=/data/assistant/backups/.pre-destroy-hermes-cron.txt
   HERMES_CID=$(docker ps -q --filter name=hermes | head -1 || true)
@@ -375,7 +375,7 @@ if p.is_file():
         n = len(jobs) if isinstance(jobs, list) else 0
     except Exception:
         n = 0
-print(f"HERMES_JOBS_AFTER={n}")
+print("HERMES_JOBS_AFTER=" + str(n))
 print("CRON_PRESERVED=1" if n else "CRON_PRESERVED=empty")
 PY
 docker ps -q --filter name=hermes | xargs -r docker restart || true
