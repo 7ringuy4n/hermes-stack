@@ -1,12 +1,23 @@
 """Workflow manager: Postgres/memory is source of truth; queue only delivers."""
 from __future__ import annotations
 
+import calendar
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-from plan import plan_instructions, wrap_instruction
+from plan import (
+    CADENCE_DAILY,
+    CADENCE_MONTHLY,
+    CADENCE_ONCE,
+    CADENCE_WEEKLY,
+    CADENCE_YEARLY,
+    CADENCES,
+    extract_cadence,
+    plan_instructions,
+    wrap_instruction,
+)
 from store import MemoryStore, utcnow
 
 PENDING = "PENDING"
@@ -57,6 +68,64 @@ def next_daily_cron(
     if 0 <= delta <= max(0, int(grace_s)):
         return candidate.astimezone(timezone.utc)
     return (candidate + timedelta(days=1)).astimezone(timezone.utc)
+
+
+def _clock_parts(expr: str) -> tuple[int, int]:
+    parts = (expr or "").split()
+    if len(parts) < 2:
+        raise ValueError("cron")
+    return int(parts[0]), int(parts[1])
+
+
+def _add_months(dt: datetime, months: int) -> datetime:
+    m0 = dt.month - 1 + months
+    year = dt.year + m0 // 12
+    month = m0 % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
+
+
+def resolve_cadence(raw: str, text: str = "") -> str:
+    kind = (raw or "").strip().lower()
+    if kind in CADENCES:
+        return kind
+    return extract_cadence(text)
+
+
+def next_run_after(
+    cadence: str,
+    expr: str,
+    tz_name: str,
+    now: datetime,
+    *,
+    grace_s: int = 0,
+) -> datetime | None:
+    """Next fire after `now`. once → None (caller deletes the row)."""
+    kind = resolve_cadence(cadence)
+    if kind == CADENCE_ONCE:
+        return None
+    if kind == CADENCE_DAILY:
+        return next_daily_cron(expr, tz_name, now, grace_s=grace_s)
+    minute, hour = _clock_parts(expr)
+    tz = ZoneInfo(tz_name or "Asia/Ho_Chi_Minh")
+    local = now.astimezone(tz)
+    base = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if kind == CADENCE_WEEKLY:
+        cand = base if base > local else base + timedelta(days=7)
+        return cand.astimezone(timezone.utc)
+    if kind == CADENCE_MONTHLY:
+        cand = base if base > local else _add_months(base, 1)
+        return cand.astimezone(timezone.utc)
+    if kind == CADENCE_YEARLY:
+        if base > local:
+            cand = base
+        else:
+            try:
+                cand = base.replace(year=base.year + 1)
+            except ValueError:
+                cand = base.replace(year=base.year + 1, day=28)
+        return cand.astimezone(timezone.utc)
+    return next_daily_cron(expr, tz_name, now, grace_s=grace_s)
 
 
 class WorkflowManager:
@@ -273,6 +342,7 @@ class WorkflowManager:
         schedule_id: str | None = None,
         enabled: bool = True,
         next_run_at: datetime | None = None,
+        cadence: str = "",
     ) -> dict[str, Any]:
         now = utcnow()
         sid = schedule_id or _id("sch_")
@@ -281,6 +351,7 @@ class WorkflowManager:
             "id": sid,
             "created_at": now,
         }
+        kind = resolve_cadence(cadence or (existing or {}).get("cadence") or "", text)
         same_clock = bool(
             existing
             and str(existing.get("cron_expr") or "") == str(cron_expr)
@@ -303,6 +374,7 @@ class WorkflowManager:
                 "context": context or {},
                 "origin": origin or {},
                 "next_run_at": nxt,
+                "cadence": kind,
             }
         )
         if existing:
@@ -328,14 +400,19 @@ class WorkflowManager:
                     str(sch.get("text") or ""),
                     origin=sch.get("origin") or {},
                     context=sch.get("context") or {},
-                    sequential=True,
+                    sequential=False,
                     idempotency_prefix=prefix,
                 )
             except (ValueError, KeyError):
                 continue
             created.append(str(wf.get("id")))
+            kind = resolve_cadence(str(sch.get("cadence") or ""), str(sch.get("text") or ""))
+            if kind == CADENCE_ONCE:
+                self.store.delete_schedule(sid)
+                continue
             try:
-                nxt = next_daily_cron(
+                nxt = next_run_after(
+                    kind,
                     str(sch.get("cron_expr")),
                     str(sch.get("timezone")),
                     now + timedelta(seconds=1),
@@ -343,9 +420,14 @@ class WorkflowManager:
                 )
             except ValueError:
                 nxt = now + timedelta(days=1)
+            if nxt is None:
+                self.store.delete_schedule(sid)
+                continue
             if nxt <= now:
                 nxt = now + timedelta(days=1)
-            self.store.update_schedule(sid, last_fired_at=now, next_run_at=nxt)
+            self.store.update_schedule(
+                sid, last_fired_at=now, next_run_at=nxt, cadence=kind
+            )
         return created
 
     def _schedules_to_fire(self, now: datetime) -> list[dict[str, Any]]:
