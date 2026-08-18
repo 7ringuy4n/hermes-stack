@@ -17,12 +17,15 @@ from pathlib import Path
 from threading import Lock
 
 import httpx
-import redis
+try:
+    import valkey  # type: ignore
+except ImportError:  # pragma: no cover - local fallback until valkey is installed
+    import redis as valkey  # type: ignore
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 # ── constants (env-overridable) ─────────────────────────────────────────────
-REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+VALKEY_URL = os.environ.get("VALKEY_URL") or os.environ.get("REDIS_URL", "valkey://redis:6379/0")
 UPSTREAM_URL = os.environ.get(
     "GATEWAY_UPSTREAM_URL", "http://traefik:80"
 ).rstrip("/")
@@ -46,6 +49,15 @@ MESSAGES_PATH = Path(
     )
 )
 PROXY_TIMEOUT_S = float(os.environ.get("GATEWAY_PROXY_TIMEOUT_S", "120"))
+WORKFLOW_URL = (os.environ.get("WORKFLOW_URL") or "http://workflow:8108").rstrip("/")
+HERMES_WORKFLOW_ENABLED = os.environ.get("HERMES_WORKFLOW", "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+HERMES_WORKFLOW_TIMEOUT_S = float(os.environ.get("HERMES_WORKFLOW_TIMEOUT_S", "90"))
+HERMES_WORKFLOW_WAIT_S = float(os.environ.get("HERMES_WORKFLOW_WAIT_S", "20"))
 GATEWAY_API_KEYS = {
     k.strip()
     for k in os.environ.get("GATEWAY_API_KEYS", "").split(",")
@@ -75,9 +87,11 @@ GATEWAY_RL_FAIL_CLOSED = os.environ.get(
     "GATEWAY_RL_FAIL_CLOSED", "1"
 ).strip().lower() in {"1", "true", "yes", "on"}
 LOCAL_RL_MAX = int(os.environ.get("GATEWAY_LOCAL_RL_MAX", str(RATE_LIMIT_REQUESTS)))
+_VALKEY_ERROR = getattr(valkey, "ValkeyError", None) or getattr(valkey, "RedisError", Exception)
 
 app = FastAPI(title="hermes-stack-api-gateway", version="0.5.2")
-_redis = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+_valkey_cls = getattr(valkey, "Valkey", None) or getattr(valkey, "Redis")
+_redis = _valkey_cls.from_url(VALKEY_URL, decode_responses=True)
 _http: httpx.AsyncClient | None = None
 _local_rl: dict[str, list[float]] = defaultdict(list)
 _local_lock = Lock()
@@ -124,6 +138,184 @@ def _path_skips_rate_limit(path: str) -> bool:
     return False
 
 
+def _workflow_http(method: str, path: str, payload: dict | None = None) -> dict:
+    try:
+        with httpx.Client(timeout=HERMES_WORKFLOW_TIMEOUT_S) as client:
+            r = client.request(method, f"{WORKFLOW_URL}{path}", json=payload)
+            r.raise_for_status()
+            data = r.json()
+            return data if isinstance(data, dict) else {}
+    except (httpx.HTTPError, ValueError):
+        return {}
+
+
+def _extract_text(content: object) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str) and item.strip():
+                parts.append(item.strip())
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return "\n".join(parts).strip()
+    return ""
+
+
+def _latest_user_text(payload: dict) -> str:
+    messages = payload.get("messages")
+    if isinstance(messages, list):
+        for msg in reversed(messages):
+            if not isinstance(msg, dict):
+                continue
+            if str(msg.get("role") or "").lower() != "user":
+                continue
+            text = _extract_text(msg.get("content"))
+            if text:
+                return text
+    return ""
+
+
+def _numbered_bodies(raw: str) -> list[str]:
+    import re
+
+    items: list[tuple[int, str]] = []
+    for m in re.finditer(r"(?m)^\s*(\d+)(?:[.)]\s*|\s+)(.+)$", raw or ""):
+        n = int(m.group(1))
+        if 1 <= n <= 20:
+            body = m.group(2).strip()
+            if body:
+                items.append((n, body))
+    if len(items) >= 2 and {1, 2}.issubset({n for n, _ in items}):
+        items.sort(key=lambda x: x[0])
+        return [body for _, body in items]
+    marks: list[tuple[int, int, int]] = []
+    for m in re.finditer(r"(?:^|(?<=\n)|(?<=[\s:]))(\d+)[.)]\s*", raw or ""):
+        n = int(m.group(1))
+        if 1 <= n <= 20:
+            marks.append((n, m.end(), m.start()))
+    if len(marks) < 2:
+        return []
+    out: list[tuple[int, str]] = []
+    for i, (n, body_start, _tok) in enumerate(marks):
+        end = marks[i + 1][2] if i + 1 < len(marks) else len(raw)
+        body = (raw[body_start:end] or "").strip()
+        if body:
+            out.append((n, body))
+    nums = {n for n, _ in out}
+    if 1 not in nums or 2 not in nums:
+        return []
+    out.sort(key=lambda x: x[0])
+    seen: set[int] = set()
+    parts: list[str] = []
+    for n, body in out:
+        if n in seen:
+            continue
+        seen.add(n)
+        parts.append(body)
+    return parts
+
+
+def _plan_instructions(text: str) -> list[str]:
+    import re
+
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    labeled = list(
+        re.finditer(r"(?i)(?:tin\s+nhắn|message|msg|yêu\s+cầu|request)\s*(\d+)\s*[:.\-—]\s*", raw)
+    )
+    if len(labeled) >= 2:
+        parts: list[str] = []
+        for i, m in enumerate(labeled):
+            start = m.end()
+            end = labeled[i + 1].start() if i + 1 < len(labeled) else len(raw)
+            chunk = raw[start:end].strip()
+            if chunk:
+                parts.append(chunk)
+        if len(parts) >= 2:
+            return parts
+    numbered = _numbered_bodies(raw)
+    if len(numbered) >= 2:
+        return numbered
+    return [raw]
+
+
+def _looks_like_schedule(text: str) -> bool:
+    import re
+
+    low = (text or "").lower()
+    if not low.strip():
+        return False
+    markers = (
+        "hàng ngày",
+        "hằng ngày",
+        "mỗi ngày",
+        "daily",
+        "every day",
+        "schedule",
+        "đặt lịch",
+        "hẹn giờ",
+        "gmt+7",
+        "gmt +7",
+    )
+    if any(m in low for m in markers):
+        return True
+    return len(_numbered_bodies(text)) >= 2 and bool(
+        re.search(r"(?i)(?:\d{1,2}\s*[:h]\s*\d{2}\s*(?:am|pm|gmt|sáng|chiều|tối)|gmt\s*\+?\s*7)", low)
+    )
+
+
+def _chat_completion_ack(model: str, text: str, workflow: dict, *, scheduled: bool) -> dict:
+    content = (
+        "Saved schedule in Hermes workflow. Each numbered item will run as a durable job at the configured time."
+        if scheduled
+        else f"Accepted workflow with {len((workflow or {}).get('jobs') or [])} jobs. Hermes will run them durably in order."
+    )
+    return {
+        "id": f"workflow-{workflow.get('id') or 'accepted'}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model or "hermes-workflow",
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+            }
+        ],
+        "workflow": workflow,
+        "accepted_text": text,
+    }
+
+
+def _aggregate_workflow_text(workflow: dict) -> str:
+    jobs = workflow.get("jobs") if isinstance(workflow, dict) else None
+    if not isinstance(jobs, list):
+        return ""
+    parts: list[str] = []
+    for i, job in enumerate(jobs, start=1):
+        if not isinstance(job, dict):
+            continue
+        result = job.get("result") if isinstance(job.get("result"), dict) else {}
+        text = ""
+        if isinstance(result.get("text"), str) and result.get("text").strip():
+            text = result["text"].strip()
+        elif isinstance(result.get("raw"), dict):
+            raw = result["raw"]
+            choices = raw.get("choices")
+            if isinstance(choices, list) and choices:
+                msg = choices[0].get("message") if isinstance(choices[0], dict) else None
+                if isinstance(msg, dict):
+                    text = _extract_text(msg.get("content"))
+        if text:
+            parts.append(f"{i}. {text}")
+    return "\n\n".join(parts).strip()
+
+
 def _extract_api_key(request: Request) -> str:
     auth = request.headers.get(AUTH_HEADER, "") or ""
     if auth.lower().startswith("bearer "):
@@ -162,7 +354,7 @@ def _rate_limit_allow(identity: str) -> bool:
         if count == 1:
             _redis.expire(key, RATE_LIMIT_WINDOW_S)
         return int(count) <= RATE_LIMIT_REQUESTS
-    except redis.RedisError:
+    except _VALKEY_ERROR:
         if GATEWAY_RL_FAIL_CLOSED:
             return _local_rate_limit_allow(identity)
         return True
@@ -262,6 +454,89 @@ async def proxy(full_path: str, request: Request) -> Response:
                 "limit": GATEWAY_MAX_BODY_BYTES,
             },
         )
+    if (
+        HERMES_WORKFLOW_ENABLED
+        and request.method.upper() == "POST"
+        and path in {"/v1/chat/completions", "/chat/completions"}
+        and body
+    ):
+        try:
+            payload = json.loads(body.decode("utf-8"))
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            text = _latest_user_text(payload)
+            model = str(payload.get("model") or "hermes-workflow")
+            if text:
+                context = {
+                    "execute": "hermes_http",
+                    "model": model,
+                    "api_url": os.environ.get("HERMES_API_URL") or "http://hermes:8642/v1/chat/completions",
+                    "api_key": os.environ.get("API_SERVER_KEY") or "",
+                }
+                if _looks_like_schedule(text):
+                    data = _workflow_http(
+                        "POST",
+                        "/v1/schedules",
+                        {
+                            "name": text[:60],
+                            "text": text,
+                            "timezone": os.environ.get("TZ") or "Asia/Ho_Chi_Minh",
+                            "origin": {"platform": "hermes-api", "path": path},
+                            "context": context,
+                        },
+                    )
+                    schedule = data.get("schedule") if isinstance(data, dict) else None
+                    if isinstance(schedule, dict) and schedule.get("id"):
+                        return JSONResponse(
+                            status_code=200,
+                            content=_chat_completion_ack(model, text, schedule, scheduled=True),
+                        )
+                instructions = _plan_instructions(text)
+                if len(instructions) >= 2:
+                    data = _workflow_http(
+                        "POST",
+                        "/v1/workflows",
+                        {
+                            "instructions": instructions,
+                            "origin": {"platform": "hermes-api", "path": path},
+                            "context": context,
+                            "sequential": True,
+                            "wrap": True,
+                        },
+                    )
+                    workflow = data.get("workflow") if isinstance(data, dict) else None
+                    if isinstance(workflow, dict) and workflow.get("id"):
+                        waited = _workflow_http(
+                            "POST",
+                            f"/v1/workflows/{workflow['id']}/wait",
+                            {"timeout_s": min(HERMES_WORKFLOW_TIMEOUT_S, HERMES_WORKFLOW_WAIT_S)},
+                        )
+                        done = waited.get("workflow") if isinstance(waited, dict) else None
+                        if isinstance(done, dict) and str(done.get("status") or "") == "COMPLETED":
+                            content = _aggregate_workflow_text(done)
+                            if content:
+                                return JSONResponse(
+                                    status_code=200,
+                                    content={
+                                        "id": f"workflow-{done.get('id')}",
+                                        "object": "chat.completion",
+                                        "created": int(time.time()),
+                                        "model": model,
+                                        "choices": [
+                                            {
+                                                "index": 0,
+                                                "message": {"role": "assistant", "content": content},
+                                                "finish_reason": "stop",
+                                            }
+                                        ],
+                                        "workflow": done,
+                                    },
+                                )
+                        return JSONResponse(
+                            status_code=200,
+                            content=_chat_completion_ack(model, text, workflow, scheduled=False),
+                        )
     try:
         upstream = await _http.request(
             request.method,

@@ -396,6 +396,8 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_compound_after: Dict[str, int] = {}
         self._as_compound_defer_ack: set[str] = set()
         self._as_compound_thread_type: Dict[str, str] = {}
+        self._as_compound_seq_t0: Dict[str, float] = {}
+        self._as_workflow_task: Optional[asyncio.Task] = None
 
     @property
     def name(self) -> str:
@@ -543,6 +545,7 @@ class ZaloAdapter(BasePlatformAdapter):
 
         # Start the SSE inbound loop.
         self._sse_task = asyncio.create_task(self._sse_loop())
+        self._as_workflow_task = asyncio.create_task(self._as_workflow_worker())
         self._mark_connected()
         logger.info("Zalo: connected to bridge %s (ownId=%s)", self.bridge_url, self._own_id)
         return True
@@ -554,6 +557,12 @@ class ZaloAdapter(BasePlatformAdapter):
             self._sse_task.cancel()
             try:
                 await self._sse_task
+            except asyncio.CancelledError:
+                pass
+        if self._as_workflow_task and not self._as_workflow_task.done():
+            self._as_workflow_task.cancel()
+            try:
+                await self._as_workflow_task
             except asyncio.CancelledError:
                 pass
         await self._close_session()
@@ -1222,12 +1231,156 @@ class ZaloAdapter(BasePlatformAdapter):
             self._as_part_delivered[tid] = asyncio.Event()
         else:
             ev.clear()
+        seq = getattr(self, "_as_compound_seq_t0", None)
+        if not isinstance(seq, dict):
+            self._as_compound_seq_t0 = {}
+            seq = self._as_compound_seq_t0
+        if tid not in seq:
+            seq[tid] = __import__("time").time()
 
     def _as_compound_end(self, thread_id: str) -> None:
         tid = str(thread_id or "")
         self._as_hold_inflight.discard(tid)
         self._as_part_delivered.pop(tid, None)
         self._as_inflight_done(tid)
+
+    def _as_compound_seq_done(self, thread_id: str) -> None:
+        tid = str(thread_id or "")
+        seq = getattr(self, "_as_compound_seq_t0", None)
+        if isinstance(seq, dict):
+            seq.pop(tid, None)
+
+    async def _as_try_workflow_submit(
+        self,
+        *,
+        text: str,
+        thread_id: str,
+        thread_type: str,
+        sender_id: str,
+        sender_name: str,
+        chat_type: str,
+    ) -> bool:
+        try:
+            from .workflow_client import create_schedule, create_workflow, workflow_enabled
+            from .multi_request import looks_like_schedule_job, plan_instructions
+        except ImportError:
+            from workflow_client import create_schedule, create_workflow, workflow_enabled  # type: ignore
+            from multi_request import looks_like_schedule_job, plan_instructions  # type: ignore
+        if not workflow_enabled():
+            return False
+        origin = {
+            "platform": "zalo",
+            "chat_id": thread_id,
+            "thread_id": thread_id,
+            "user_id": sender_id,
+            "chat_name": sender_name,
+        }
+        context = {
+            "thread_id": thread_id,
+            "thread_type": thread_type,
+            "chat_type": chat_type,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "execute": "hermes",
+        }
+        if looks_like_schedule_job(text):
+            data = create_schedule(cron_expr="", text=text, origin=origin, context=context)
+            if data.get("ok"):
+                print("[zalo] workflow schedule stored", flush=True)
+                try:
+                    await self._as_gate_announce(
+                        thread_id,
+                        thread_type,
+                        "Đã lưu lịch. Mỗi lần tới giờ sẽ chạy từng việc (không gộp một lần LLM).",
+                    )
+                except Exception:
+                    pass
+                return True
+        parts = plan_instructions(text)
+        if len(parts) < 2:
+            return False
+        data = create_workflow(instructions=parts, origin=origin, context=context)
+        if not data.get("ok"):
+            return False
+        print(f"[zalo] workflow created jobs={len(parts)}", flush=True)
+        logger.info("Zalo: workflow %s jobs=%s", (data.get("workflow") or {}).get("id"), len(parts))
+        return True
+
+    async def _as_workflow_worker(self) -> None:
+        try:
+            from .workflow_client import claim_job, complete_job, fail_job, heartbeat, workflow_enabled
+        except ImportError:
+            from workflow_client import claim_job, complete_job, fail_job, heartbeat, workflow_enabled  # type: ignore
+        wid = _replica_id() or "zalo"
+        while not self._stop:
+            if not workflow_enabled():
+                await asyncio.sleep(5)
+                continue
+            try:
+                job = claim_job(wid)
+            except Exception:
+                job = None
+            if not isinstance(job, dict) or not job.get("id"):
+                await asyncio.sleep(1.2)
+                continue
+            jid = str(job.get("id"))
+            instruction = str(job.get("instruction") or "").strip()
+            ctx = job.get("context") if isinstance(job.get("context"), dict) else {}
+            tid = str(ctx.get("thread_id") or "")
+            tt = str(ctx.get("thread_type") or "user")
+            chat_type = str(ctx.get("chat_type") or "dm")
+            sender_id = str(ctx.get("sender_id") or "")
+            sender_name = str(ctx.get("sender_name") or tid)
+            if not tid or not instruction:
+                fail_job(jid, "missing thread or instruction")
+                continue
+            source = self.build_source(
+                chat_id=tid,
+                chat_name=sender_name if chat_type == "dm" else tid,
+                chat_type=chat_type,
+                user_id=sender_id,
+                user_name=sender_name,
+            )
+            event = MessageEvent(
+                text=instruction,
+                message_type=MessageType.TEXT,
+                source=source,
+                message_id=jid,
+                raw_message={},
+                timestamp=datetime.now(),
+            )
+            self._as_compound_begin(tid)
+            try:
+                heartbeat(jid, wid)
+                await self.handle_message(event)
+                await self._as_autosend_late_files(tid, tt)
+                complete_job(jid, {"ok": True})
+                print(f"[zalo] workflow job done {jid[:16]}", flush=True)
+            except Exception as e:
+                logger.exception("Zalo: workflow job failed")
+                # Important for cron/schedule semantics:
+                # sequential workflows must not block later items forever.
+                # We mark this job as completed-with-error so dependent jobs
+                # can unlock and the user still receives subsequent items.
+                try:
+                    await self._as_gate_announce(
+                        tid,
+                        tt,
+                        "Phiên làm việc bị gián đạn, vui lòng thử lại sau",
+                    )
+                except Exception:
+                    pass
+                try:
+                    complete_job(
+                        jid,
+                        {"ok": False, "error": type(e).__name__},
+                    )
+                except Exception:
+                    fail_job(jid, type(e).__name__)
+            finally:
+                self._as_compound_end(tid)
+                self._as_compound_seq_done(tid)
+
 
     def _as_compound_mark_delivered(self, thread_id: str) -> None:
         ev = self._as_part_delivered.get(str(thread_id or ""))
@@ -1285,6 +1438,57 @@ class ZaloAdapter(BasePlatformAdapter):
         if gap > 0:
             await asyncio.sleep(gap)
 
+    async def _as_autosend_late_files(self, thread_id: str, thread_type: str = "") -> bool:
+        """After handle_message, attach a file that landed as the model finished."""
+        tid = str(thread_id or "")
+        if not tid:
+            return False
+        grace = self._as_env_float("ZALO_AUTOSEND_LATE_S", 8.0, 0.0, 30.0)
+        if grace <= 0:
+            self._as_compound_mark_delivered(tid)
+            return False
+        start = __import__("time").time()
+        deadline = start + grace
+        # Mid-sequence: don't stall text parts. Last part / cron: wait the full grace.
+        idle = grace if not self._as_compound_has_more_after(tid) else min(1.6, grace)
+        seen = getattr(self, "_as_sent_fp", None)
+        n_before = len(seen) if isinstance(seen, set) else 0
+        meta = {"thread_type": thread_type or "user", "as_skip_dest": True}
+        sent = False
+        while True:
+            await self._as_autosend_turn_files(tid, "", meta)
+            seen = getattr(self, "_as_sent_fp", None)
+            n_after = len(seen) if isinstance(seen, set) else 0
+            if n_after > n_before:
+                sent = True
+                break
+            now = __import__("time").time()
+            if now >= deadline:
+                break
+            if (now - start) >= idle:
+                break
+            await asyncio.sleep(0.45)
+        self._as_compound_mark_delivered(tid)
+        return sent
+
+    def _as_kick_late_autosend(self, chat_id, metadata=None) -> None:
+        """Cron / single-turn: keep watching media-out after the text send returns."""
+        tid = str(chat_id or "")
+        if not tid or tid in self._as_hold_inflight:
+            return
+        meta = metadata if isinstance(metadata, dict) else {}
+        if meta.get("as_skip_autosend"):
+            return
+        tasks = getattr(self, "_as_late_tasks", None)
+        if not isinstance(tasks, dict):
+            self._as_late_tasks = {}
+            tasks = self._as_late_tasks
+        prev = tasks.get(tid)
+        if prev is not None and not prev.done():
+            return
+        tt = str(meta.get("thread_type") or "user")
+        tasks[tid] = asyncio.create_task(self._as_autosend_late_files(tid, tt))
+
     def _as_inbound_queue_enabled(self) -> bool:
         try:
             from .inbound_queue import queue_flag_on
@@ -1338,6 +1542,15 @@ class ZaloAdapter(BasePlatformAdapter):
             )
         store = self._as_gate_store()
         if store is None:
+            if await self._as_try_workflow_submit(
+                text=text,
+                thread_id=thread_id,
+                thread_type=thread_type,
+                sender_id=sender_id,
+                sender_name=sender_name,
+                chat_type=chat_type,
+            ):
+                return
             await self._as_dispatch_event(event, text)
             return
         item = make_item(
@@ -1355,6 +1568,15 @@ class ZaloAdapter(BasePlatformAdapter):
         )
         mid = str(message_id or "")
         try:
+            if await self._as_try_workflow_submit(
+                text=text,
+                thread_id=thread_id,
+                thread_type=thread_type,
+                sender_id=sender_id,
+                sender_name=sender_name,
+                chat_type=chat_type,
+            ):
+                return
             if mid and hasattr(store, "queue_seen") and not store.queue_seen(mid):
                 logger.info("Zalo: skip duplicate queue id=%s", mid[:24])
                 self._as_queue_kick(thread_id)
@@ -1427,18 +1649,30 @@ class ZaloAdapter(BasePlatformAdapter):
                     parts = split_compound_requests(text) or [text]
                     rest = parts[1:]
                     text = parts[0] if parts else text
+                    total = len(parts)
+                    if len(parts) >= 2:
+                        try:
+                            from .multi_request import wrap_compound_part
+                        except ImportError:
+                            from multi_request import wrap_compound_part  # type: ignore
+                        total = len(parts)
+                        text = wrap_compound_part(1, total, text)
+                        print(f"[zalo] compound split n={total} via queue", flush=True)
+                        logger.info("Zalo: compound message split into %d parts (queue)", total)
                     item["text"] = text
                     item["kind"] = KIND_PART
-                    for part in reversed(rest):
+                    for i, part in enumerate(reversed(rest)):
+                        part_n = total - i if len(parts) >= 2 else 2
+                        body = wrap_compound_part(part_n, total, part) if len(parts) >= 2 else part
                         nxt = make_item(
                             kind=KIND_PART,
-                            text=part,
+                            text=body,
                             thread_id=tid,
                             thread_type=str(item.get("thread_type") or "user"),
                             sender_id=str(item.get("sender_id") or ""),
                             sender_name=str(item.get("sender_name") or ""),
                             chat_type=str(item.get("chat_type") or "dm"),
-                            message_id=str(item.get("message_id") or "") + ":part",
+                            message_id=str(item.get("message_id") or "") + f":part{part_n}",
                             media_urls=[],
                             media_types=[],
                             message_type=str(item.get("message_type") or "TEXT"),
@@ -1521,6 +1755,7 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_compound_begin(tid)
         try:
             await self.handle_message(event)
+            await self._as_autosend_late_files(tid, str(item.get("thread_type") or "user"))
             await self._as_compound_wait_part(tid)
         except Exception:
             logger.exception("Zalo: queued part failed thread=%s", tid)
@@ -1528,19 +1763,22 @@ class ZaloAdapter(BasePlatformAdapter):
             self._as_compound_end(tid)
             self._as_compound_after.pop(tid, None)
             if parts_after <= 0:
+                self._as_compound_seq_done(tid)
                 await self._as_compound_maybe_final_ack(tid)
 
     async def _as_dispatch_event(self, event, text: str) -> None:
         """Fail-open path: split + sequential handle without Valkey queue."""
         try:
-            from .multi_request import split_compound_requests
+            from .multi_request import split_compound_requests, wrap_compound_part
         except ImportError:
             split_compound_requests = lambda t: [t]  # type: ignore[misc, assignment]
+            wrap_compound_part = lambda i, n, b: b  # type: ignore[misc, assignment]
         parts = split_compound_requests(text)
         if len(parts) <= 1:
             await self.handle_message(event)
             return
         logger.info("Zalo: compound message split into %d parts", len(parts))
+        print(f"[zalo] compound split n={len(parts)} via dispatch", flush=True)
         tid = str(getattr(getattr(event, "source", None), "chat_id", "") or "")
         tt = str(getattr(getattr(event, "source", None), "chat_type", None) or "dm")
         zalo_tt = "group" if tt == "group" else "user"
@@ -1552,7 +1790,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 if idx > 0:
                     await self._as_compound_wait_part(tid)
                 part_event = MessageEvent(
-                    text=part,
+                    text=wrap_compound_part(idx + 1, len(parts), part),
                     message_type=event.message_type,
                     source=event.source,
                     message_id=str(event.message_id or "") + f":part{idx + 1}",
@@ -1562,9 +1800,11 @@ class ZaloAdapter(BasePlatformAdapter):
                     timestamp=datetime.now(),
                 )
                 await self.handle_message(part_event)
+                await self._as_autosend_late_files(tid, zalo_tt)
             await self._as_compound_wait_part(tid)
         finally:
             self._as_compound_after.pop(tid, None)
+            self._as_compound_seq_done(tid)
             await self._as_compound_maybe_final_ack(tid)
             self._as_compound_end(tid)
 
@@ -3102,6 +3342,18 @@ class ZaloAdapter(BasePlatformAdapter):
         t0 = float(clock.get("t0") or 0.0)
         if t0 <= 0:
             t0 = time.time() - 180
+        seq_map = getattr(self, "_as_compound_seq_t0", None)
+        seq_t0 = 0.0
+        if isinstance(seq_map, dict):
+            try:
+                seq_t0 = float(seq_map.get(tid) or 0.0)
+            except (TypeError, ValueError):
+                seq_t0 = 0.0
+        try:
+            from .autosend import file_in_send_window
+        except ImportError:
+            from autosend import file_in_send_window  # type: ignore
+        grace = self._as_env_float("ZALO_AUTOSEND_GRACE_S", 8.0, 0.0, 60.0)
         ok_ext = self._as_autosend_ok_ext()
         found = []
         for root in self._as_autosend_roots():
@@ -3116,9 +3368,10 @@ class ZaloAdapter(BasePlatformAdapter):
                     if p.name.startswith("."):
                         continue
                     try:
-                        if p.stat().st_mtime + 1 < t0:
-                            continue
+                        mt = p.stat().st_mtime
                     except OSError:
+                        continue
+                    if not file_in_send_window(mt, t0, seq_t0, grace_s=grace):
                         continue
                     found.append(p)
             except OSError:
@@ -3604,6 +3857,7 @@ class ZaloAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=None)
         if not (isinstance(metadata, dict) and metadata.get("as_skip_autosend")):
             content = await self._as_autosend_turn_files(chat_id, content, metadata)  # ASSISTANT_AUTOSEND_v5
+            self._as_kick_late_autosend(chat_id, metadata)
         content = self._apply_timing_footer(content, chat_id, metadata)  # ASSISTANT_TIMING_FOOTER_v6
         # Re-check after autosend caption swap
         if self._is_gateway_noise(content):

@@ -13,6 +13,43 @@ _SCHEDULE_INTERNAL_RE = re.compile(
 )
 _CRON_SESSION_RE = re.compile(r"cron_[a-z0-9_-]+", re.I)
 _EMPTY_CRON_RE = re.compile(r"^\s*no scheduled jobs?\b", re.I)
+_CLOCK_PROMPT_RE = re.compile(
+    r"^(?:timer|hẹn\s*giờ|hen\s*gio|lúc|luc|at)\s+",
+    re.I,
+)
+_HHMM_PROMPT_RE = re.compile(
+    r"^\d{1,2}\s*[:h]\s*\d{2}(?:\s*(?:am|pm|sáng|sang|chiều|chieu|tối|toi))?\s*$",
+    re.I,
+)
+
+
+def cron_expr_clock(expr: str) -> str:
+    """Daily `M H * * *` → `HH:MM`; otherwise the expr as-is."""
+    parts = (expr or "").split()
+    if len(parts) >= 5 and parts[2] == "*" and parts[3] == "*" and parts[4] == "*":
+        try:
+            minute = int(parts[0])
+            hour = int(parts[1])
+        except ValueError:
+            return (expr or "").strip()
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return f"{hour:02d}:{minute:02d}"
+    return (expr or "").strip()
+
+
+def schedule_clock_label(schedule: Any) -> str:
+    if isinstance(schedule, dict):
+        expr = str(schedule.get("expr") or schedule.get("display") or "").strip()
+    else:
+        expr = str(schedule or "").strip()
+    if not expr:
+        return ""
+    return cron_expr_clock(expr)
+
+
+def prompt_is_clock_only(text: str) -> bool:
+    t = _CLOCK_PROMPT_RE.sub("", (text or "").strip()).strip()
+    return bool(t) and bool(_HHMM_PROMPT_RE.match(t))
 
 
 def schedule_row_label(row: Any) -> str | None:
@@ -32,14 +69,15 @@ def schedule_row_label(row: Any) -> str | None:
     name = str(row.get("name") or row.get("id") or row.get("job_id") or "").strip()
     if not name or _SCHEDULE_INTERNAL_RE.search(name):
         return None
-    schedule = str(
+    schedule = schedule_clock_label(
         row.get("schedule")
+        or row.get("schedule_display")
         or row.get("cron")
         or row.get("expression")
         or row.get("at")
         or row.get("next")
         or ""
-    ).strip()
+    )
     payload = str(
         row.get("message")
         or row.get("payload")
@@ -52,13 +90,16 @@ def schedule_row_label(row: Any) -> str | None:
     bits = [name]
     if schedule:
         bits.append(f"@ {schedule}")
-    if payload:
+    if payload and not prompt_is_clock_only(payload):
         bits.append(f"— {payload}")
     return " ".join(bits)[:240]
 
 
-def fmt_hermes_cron_list(raw: str, *, limit: int | None = None) -> str:
+def fmt_hermes_cron_list(
+    raw: str, *, limit: int | None = None, heading: str | None = None
+) -> str:
     cap = limit if limit is not None else ZALO_SCHEDULE_LIST_LIMIT
+    title = (heading or "lịch Hermes").strip() or "lịch Hermes"
     text = (raw or "").strip()
     if not text or text.lower().startswith("(no hermes cron"):
         return "Lịch trống hoặc không đọc được (Hermes chưa sẵn sàng)."
@@ -98,7 +139,7 @@ def fmt_hermes_cron_list(raw: str, *, limit: int | None = None) -> str:
         return "Lịch trống (chưa có lịch nào)."
     total = len(rows)
     shown = rows[:cap]
-    lines = [f"lịch Hermes ({len(shown)}/{total}):"]
+    lines = [f"{title} ({len(shown)}/{total}):"]
     for i, row in enumerate(shown, 1):
         lines.append(f"{i}. {row}")
     rest = total - len(shown)
