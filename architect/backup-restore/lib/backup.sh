@@ -106,9 +106,10 @@ assistant_compose_profiles() {
   case "${ENABLE_CLOUDDRIVE:-0}" in
     1) profiles+=(--profile clouddrive) ;;
   esac
-  case "${ENABLE_GRAFANA:-0}${ENABLE_LOKI:-0}${ENABLE_PROMETHEUS:-0}${ENABLE_ALLOY:-0}" in
-    *1*) profiles+=(--profile monitor) ;;
+  case "${ENABLE_OMNIROUTER:-0}" in
+    1) profiles+=(--profile omnirouter) ;;
   esac
+  assistant_append_monitor_profiles profiles
   printf '%s\n' "${profiles[@]}"
 }
 

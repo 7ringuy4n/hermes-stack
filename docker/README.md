@@ -17,7 +17,11 @@ Compose YAML lives here so the repo root stays clean. **`run.sh` always passes
 | Profile | Enable via |
 |---------|------------|
 | `zalo` | `ENABLE_ZALO=1` |
-| `monitor` | any of `ENABLE_GRAFANA` / `ENABLE_LOKI` / `ENABLE_PROMETHEUS` / `ENABLE_ALLOY` = `1` |
+| `grafana` | `ENABLE_GRAFANA=1` (also starts Prometheus + paired exporters) |
+| `prometheus` | `ENABLE_PROMETHEUS=1` or Grafana — `nine-exporter`, `node-exporter`, `stack-exporter` |
+| `loki` / `alloy` | `ENABLE_LOKI=1` or `ENABLE_ALLOY=1` (always together) |
+| `omni-exporter` | `ENABLE_OMNIROUTER=1` **and** Prometheus/Grafana |
+| `omnirouter` | `ENABLE_OMNIROUTER=1` |
 | `notify` / `antivirus` / `sandbox` / `clouddrive` / `comfy-gpu` | matching `ENABLE_*` / `SECURITY_SANDBOX` / `COMFYUI_HAS_GPU` |
 | `traefik` / `gateway` / `openvpn` | `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` |
 
@@ -29,4 +33,4 @@ export ENABLE_GRAFANA=0 ENABLE_LOKI=0 ENABLE_PROMETHEUS=0 ENABLE_ALLOY=0
 bash run.sh up
 ```
 
-Sizing: [docs/HARDWARE.md](../docs/HARDWARE.md). DR: [architect/backup-restore/README.md](../architect/backup-restore/README.md).
+Sizing (base + extra RAM/disk/CPU when Grafana/Prometheus/Loki/OmniRouter are on): [docs/HARDWARE.md](../docs/HARDWARE.md). DR: [architect/backup-restore/README.md](../architect/backup-restore/README.md).

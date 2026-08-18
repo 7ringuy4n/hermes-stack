@@ -46,7 +46,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
     </td>
     <td style="width:33%;padding:12px;background:#fde8e8;border:1px solid #f0c0c0;vertical-align:top;">
       <div style="font-weight:700;margin-bottom:6px;">High only</div>
-      authz · security · notify<br/>monitor · OpenBao · CloudDrive
+      authz · security · notify<br/>monitor opt · OpenBao · CloudDrive
     </td>
   </tr>
   <tr>
@@ -78,7 +78,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
     <td style="padding:8px;background:#eee;text-align:center;width:5%;">→</td>
     <td style="padding:14px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:30%;"><b>Medium</b><br/>+ OCR web file-gen compact</td>
     <td style="padding:8px;background:#eee;text-align:center;width:5%;">→</td>
-    <td style="padding:14px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;width:30%;"><b>High</b><br/>+ security ACL monitor CloudDrive</td>
+    <td style="padding:14px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;width:30%;"><b>High</b><br/>+ security ACL · monitor opt · CloudDrive</td>
   </tr>
   <tr>
     <td colspan="5" style="padding:10px 12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;">
@@ -95,13 +95,13 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
     <td style="padding:8px;background:#eee;text-align:center;width:5%;">→</td>
     <td style="padding:14px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:30%;"><b>Medium</b><br/>OCR · web · file-gen · compact</td>
     <td style="padding:8px;background:#eee;text-align:center;width:5%;">→</td>
-    <td style="padding:14px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;width:30%;"><b>High</b><br/>security · ACL · monitor · CloudDrive · OpenBao</td>
+    <td style="padding:14px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;width:30%;"><b>High</b><br/>security · ACL · monitor opt · CloudDrive · OpenBao</td>
   </tr>
 </table>
 
 - **Low:** Must only + text chat. Dispatcher on; web backends empty.
 - **Medium:** + OCR, Jobs, web, file-gen, compact @ 00:00.
-- **High:** + secret-probe, AV, authz, notify, monitor, OpenBao, CloudDrive. zalo-api with ENABLE_ZALO.
+- **High:** + secret-probe, AV, authz, notify, **optional** monitor (Grafana↔Prometheus+exporters, Loki↔Alloy), OpenBao, CloudDrive. zalo-api with ENABLE_ZALO. Extra RAM/disk/CPU: [HARDWARE.md](./HARDWARE.md).
 - **Social apps:** attach anytime — not a profile.
 
 ---

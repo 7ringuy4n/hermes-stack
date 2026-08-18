@@ -1,5 +1,89 @@
 # Change history
 
+## 2026-08-18 09:30 +07 — copy: user-facing lịch/schedule (not cron) + queue docs
+
+- Skills/zalo-api: user-facing text uses **lịch** / **schedule**; avoid **cron** / **cron job** in Zalo replies and admin schedule list.
+- `messages/README.md`: documents `queue.full` default and `ZALO_INBOUND_QUEUE_MAX=20` cap behavior.
+
+## 2026-08-18 09:25 +07 — feat: Low/Medium OmniRouter default + !zalo schedule list
+
+- `profile.sh`: `ENABLE_OMNIROUTER` default **1** on **Low** and **Medium**; **High** stays **0** (opt-in via `.env`).
+- Zalo admin: `!zalo schedule list` (alias `!zalo cron list`) runs `hermes cron list` in Hermes and shows user jobs (filters internal optimize/session crons; cap `ZALO_SCHEDULE_LIST_LIMIT`).
+- Tests: `defaults_profile_unit.py`, `schedule_list_unit.py`. Docs: `DEFAULTS.md`, `06-model-routing.md`, case 21.
+- zalo-api Docker image includes `schedule_list.py` (fixes crash loop after first deploy).
+
+## 2026-08-18 09:10 +07 — fix: compound queue — `Đã xong.` only after last part
+
+- Multi-part Zalo (image + prices, etc.): media turn sends the file **only**; `Đã xong.` / `Done.` is deferred until **after the last queued part** (not between parts).
+- Removed remaining “banter OK” tone from temp `common-rules`; aligns with `communication/friendly-response`.
+- Copy: `messages/ux.json` → `media.done`. Skills/media-out + zalo-channel updated.
+
+## 2026-08-18 09:05 +07 — feat: default friendly-response + Vietnamese people-terms skills
+
+- Mounted as default request/response: `communication/friendly-response` (no banter/insults/blame; result → next step) and `communication/vi-people-terms` (context for người / đàn ông / phụ nữ / con / thằng / đứa; full dictionary in `reference.md`).
+- Wired from SOUL, answering, chat-style, zalo-channel, translation, and zalo-api response policy (replaces “banter is OK”).
+- Sources: hermes plan docs *AI Agent — Friendly User Response Skill* and *Vietnamese Semantic Dictionary — People, Gender, and Human References*.
+
+## 2026-08-18 08:57 +07 — ops: rolling deploy Valkey inbound FIFO + busy-interrupt filter
+
+- Backup verified, source synced, zalo-api rebuilt, Hermes replicas restarted (no destroy).
+- Hermes reaches 9router and model-router. On-host files `inbound_queue.py` present.
+
+## 2026-08-18 08:45 +07 — feat: Valkey inbound FIFO for compound + rate-limited Zalo
+
+- Compound and follow-up Zalo turns enqueue on Valkey (`gate_valkey` list per thread). A drain task runs **one Hermes turn at a time** so overlapping `handle_message` cannot inject busy-interrupt UX.
+- Rate-limit: user gets the queued notice **once**, the message is **kept** and processed later (not dropped). Cap `ZALO_INBOUND_QUEUE_MAX` (default 20). Valkey down → fail-open sequential in-process turns.
+- Copy lives in `hermes/main/messages/ux.json` `queue.*` (env override). Daily numbered lists still stay **one cron job**; immediate 3-item lists split onto the FIFO (case 23).
+- Tests: `inbound_queue_unit.py` (separate process from case 16).
+
+## 2026-08-18 08:25 +07 — fix: drop Zalo busy-interrupt UX; multi-task cron runs every item
+
+- Hermes gateway “Interrupting current task” / First-time `/busy` tips are dropped on Zalo (`gateway_noise.py`). They are not in this repo’s source — they come from upstream Hermes when a new turn starts mid-run.
+- Immediate compound still splits, but the adapter waits until the current part has actually sent (then a short gap) before the next `handle_message`, and holds the answering slot for the whole sequence.
+- Numbered **daily/cron** lists stay **one job** (wakeup + weather image + fuel in one payload). Skills require completing every item after media; do not register parallel crons at the same clock.
+- Tests: `gateway_noise_unit.py` + schedule keep-whole fixture in case 16 unit; new case `22-zalo-busy-cron-multi`.
+
+## 2026-08-18 08:17 +07 — ops: rolling deploy numbered Zalo split + zalo-api policy
+
+- Backup verified, source synced, zalo-api rebuilt, Hermes replicas restarted (no destroy).
+- On-host unit: numbered `1 …` / `2.Sau đó` split PASS. Hermes reaches 9router and model-router; Traefik recovered after restart (brief 503 while replicas came up).
+
+## 2026-08-18 08:10 +07 — fix: numbered Zalo lists (`1 …` / `2.Sau đó`) + media-out vs compound
+
+- Splitter missed live style `yêu cầu:` + `1 vẽ…` + `2.Sau đó …` (no `1.` / no space after `2.`), so one Hermes turn ran **image + fuel**.
+- `media-out` / response policy “after a file, one short line, no recap” then dropped request 2. **Not** the summarization skill (`tóm tắt`) — it was the file-result policy on an unsplit turn.
+- Splitter now accepts numbered lines `1 task` / `2.Sau đó` (indexes 1–20, must include 1 and 2). Skills/SOUL/zalo-api: media-out applies **per turn** after split. Unit fixture added (case 16).
+
+## 2026-08-18 07:50 +07 — ops: High lab deploy matches profile defaults (Omni/Grafana off)
+
+- `test/scripts/deploy_high.py` no longer force-enables OmniRouter, Grafana, Prometheus, Loki, or Alloy. Defaults are **0** (same as `profile.sh`). Opt in with `ENABLE_OMNIROUTER=1` / `ENABLE_GRAFANA=1` (Grafana pairs Prometheus; Loki pairs Alloy).
+- No Hermes fire-and-forget memory/log rewrite.
+
+## 2026-08-18 07:45 +07 — test: Grafana pairing + router defaults; simple-chat SLO 5s
+
+- **Grafana (when on):** case `20-grafana-component-integration` — Prometheus jobs + `assistant_service_up` for each deployed target; 9Router via **TCP** (UI `/health` 404); Omni scrape only if OmniRouter is on. Stack-exporter + High compose `HEALTH_TARGETS` include `9router`.
+- **Defaults:** case `21-defaults-routers-connected` — 9Router always on; `ENABLE_MODEL_ROUTER` default 1; `ENABLE_OMNIROUTER` / Grafana default **0**. `deploy_high.py` no longer forces Omni/Grafana on (opt-in env flags).
+- **Latency:** simple host-side chat **> 5s is FAIL** (case 17). Previous lab p95 ~9s is an improvement ticket, not a pass.
+- Docs: `DEFAULTS.md` matches `profile.sh` (Low Traefik default on; Medium Hermes×1; High OmniRouter default off). Monitor + model-routing docs point at cases 20–21.
+
+## 2026-08-18 07:35 +07 — ops: rolling VPS deploy + SSH labs 15–19
+
+- Backup stamp `20260818_072647` verified, then rolling sync (no destroy): zalo-api rebuilt, Hermes replicas restarted, skills/plugins/SOUL bind-mounts live.
+- Labs (separate processes): 15 TZ unit PASS; 16 compound split PASS; 17 chat p50 ~4s / p95 ~9s PASS; 18 search backend=searxng (Tavily/Firecrawl keys unset) PASS; 19 YARA RISK + ClamAV BLOCKED PASS. Ingest `SECURITY_URL` still unset (documented gap).
+- Case 19 lab polls av-gateway session ready (async SCANNING is not a false clean).
+
+## 2026-08-18 07:15 +07 — fix: Zalo schedule TZ, compound messages, stack-watch backoff, lab cases 15–19
+
+- **Schedule TZ:** `architect/tools/schedule_tz.py` — at 05:58 local, daily 06:00 is **today** not tomorrow; skill `core/scheduling` + zalo-api response policy.
+- **Zalo compound messages:** `hermes/main/plugins/zalo/multi_request.py` splits `tin nhắn 1:` / `tin nhắn 2:` (including mid-sentence); adapter runs each part sequentially.
+- **Zalo safety:** skills `communication/zalo-channel`, `core/safety`, `SOUL.md`, zalo-api policy — user errors only `Phiên làm việc bị gián đạn…`; no `/help`, channel dumps, or host secret scans.
+- **stack-watch:** exponential backoff (90s→3600s), degraded after 5 fails, optional `NOTIFY_URL` alert — no infinite restart loop.
+- **Tests:** cases `15-schedule-timezone` … `19-file-pipeline-security`; unit scripts for TZ/multi-request/web-search; SSH labs for latency SLO and file/AV matrix. `test/RULES.md` §13–15 updated.
+- **Web search default:** Medium/High `WEB_BACKENDS=tavily,firecrawl` round-robin; **SearXNG always appended** as fallback (`architect/models/dispatcher/app.py`).
+- **File security matrix:** Zalo inbound → AV only; dispatcher outbound → security-manager when `SECURITY_URL` set; ingest scan not wired (documented in case 19).
+
+=======
+>>>>>>> origin/main
 ## 2026-08-17 18:07 +07 — release: v0.5.5
 
 - Docs: fetch + rebase onto latest `origin/develop` or `origin/main` before implement or promote; production still via `release/*` MR only.

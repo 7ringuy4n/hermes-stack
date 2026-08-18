@@ -34,6 +34,28 @@ fi
 
 log() { echo "==> $*"; }
 
+ensure_user_bus() {
+  # sudo -u / paramiko has no login session; linger + XDG_RUNTIME_DIR are required
+  # for systemctl --user (otherwise: Failed to connect to bus: No medium found).
+  if [[ "$(id -u)" -eq 0 ]]; then
+    return 0
+  fi
+  local uid
+  uid="$(id -u)"
+  $SUDO loginctl enable-linger "${USER}" 2>/dev/null || true
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${uid}}"
+  local i
+  for i in $(seq 1 25); do
+    if [[ -S "${XDG_RUNTIME_DIR}/bus" ]]; then
+      export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
+      return 0
+    fi
+    sleep 1
+  done
+  log "WARN: user systemd bus not ready (${XDG_RUNTIME_DIR}/bus)"
+  return 1
+}
+
 wait_profile_ready() {
   log "wait for profile services (${PROFILE}) before installing Zalo plugin"
   case "$PROFILE" in
@@ -130,6 +152,7 @@ EOF
   local bin
   bin="$(command -v hermes-zalo-plugin)"
   mkdir -p "${HOME}/.config/systemd/user"
+  ensure_user_bus || true
   if ! systemctl --user list-unit-files 2>/dev/null | grep -q '^com.hermes.zaloplugin.service'; then
     cat > "${HOME}/.config/systemd/user/assistant-zalo.service" <<EOF
 [Unit]
@@ -148,11 +171,16 @@ RestartSec=5
 WantedBy=default.target
 EOF
   fi
-  systemctl --user daemon-reload
+  systemctl --user daemon-reload 2>/dev/null || true
   if systemctl --user list-unit-files 2>/dev/null | grep -q '^com.hermes.zaloplugin.service'; then
-    systemctl --user enable --now com.hermes.zaloplugin.service
+    systemctl --user enable --now com.hermes.zaloplugin.service 2>/dev/null || true
   else
-    systemctl --user enable --now assistant-zalo.service
+    systemctl --user enable --now assistant-zalo.service 2>/dev/null || true
+  fi
+  if ! curl -fsS -m 3 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+    log "user systemd did not start bridge — launching hermes-zalo-plugin start"
+    nohup "$bin" start >/tmp/hermes-zalo-plugin.log 2>&1 &
+    sleep 2
   fi
   loginctl enable-linger "${USER}" 2>/dev/null || true
   if command -v ufw >/dev/null 2>&1; then

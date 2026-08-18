@@ -9,7 +9,7 @@
 | **Core** | `core/*` | Answering, reasoning, verification, safety, … |
 | **Knowledge** | `knowledge/*` | Research, web strategy, RAG, documents |
 | **Coding** | `coding/*` + `coding/SKILL.md` router | Debug, review, security, git, testing |
-| **Communication** | `communication/*` | Email, chat tone, translation |
+| **Communication** | `communication/*` | Email, chat tone, translation, **friendly-response** (default), **vi-people-terms** (Vietnamese people/gender) |
 | **Media** | `image-gen`, `media-out`, `comfyui`, `file-gen` | Exact text → `image-gen` text-poster path |
 | **Documents** | `pdf`, `docx`, `xlsx`, `documents`, … | |
 | **Web** | `tavily`, `firecrawl`, `searxng*` | |

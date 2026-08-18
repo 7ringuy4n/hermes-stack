@@ -390,6 +390,12 @@ class ZaloAdapter(BasePlatformAdapter):
         # Silent auto-sethome (mirrors Yuanbao): stop gateway "📬 No home channel" spam.
         _existing_home = (os.getenv(ZALO_HOME_CHANNEL_ENV) or "").strip()
         self._auto_sethome_done: bool = bool(_existing_home)
+        self._as_hold_inflight: set[str] = set()
+        self._as_part_delivered: Dict[str, asyncio.Event] = {}
+        self._as_queue_tasks: Dict[str, asyncio.Task] = {}
+        self._as_compound_after: Dict[str, int] = {}
+        self._as_compound_defer_ack: set[str] = set()
+        self._as_compound_thread_type: Dict[str, str] = {}
 
     @property
     def name(self) -> str:
@@ -1061,36 +1067,70 @@ class ZaloAdapter(BasePlatformAdapter):
             },
         )
 
-    async def _zalo_rate_limit_drop(self, sender_id, thread_id, thread_type) -> bool:  # ASSISTANT_RATE_LIMIT_v4
-        """True = drop inbound (too many messages). Announce at most once per window."""
-        import os
+    def _as_ux_line(self, env_name: str, json_path: tuple, default: str) -> str:
+        """Env override, then messages/ux.json, then default. Never host paths in chat."""
+        raw = (os.getenv(env_name) or "").strip()
+        if raw:
+            return raw
+        cache = getattr(self, "_as_ux_cache", None)
+        if cache is False:
+            return default
+        if cache is None:
+            path = (
+                os.getenv("ZALO_UX_PATH")
+                or os.getenv("ASSISTANT_UX_PATH")
+                or "/opt/data/messages/ux.json"
+            ).strip()
+            try:
+                cache = json.loads(Path(path).read_text(encoding="utf-8"))
+            except Exception:
+                cache = False
+            self._as_ux_cache = cache
+        if not isinstance(cache, dict):
+            return default
+        cur: Any = cache
+        for key in json_path:
+            if not isinstance(cur, dict) or key not in cur:
+                return default
+            cur = cur[key]
+        s = str(cur or "").strip()
+        return s if s else default
 
+    def _zalo_rate_check(self, sender_id, thread_id) -> tuple:
+        """(over_limit, should_announce). Never sends. Fail-open = not over."""
         n, window = self._zalo_rate_limit_cfg()
         if n <= 0:
-            return False
+            return False, False
         sid = str(sender_id or "")
         tid = str(thread_id or "")
         if not sid or not tid:
-            return False
+            return False, False
         store = self._as_gate_store()
         if store is None:
-            return False
+            return False, False
         try:
             over, notify = store.rate_take(sid, tid, n, window)
         except Exception:
-            return False
+            return False, False
+        return bool(over), bool(notify)
+
+    async def _zalo_rate_limit_drop(self, sender_id, thread_id, thread_type) -> bool:  # ASSISTANT_RATE_LIMIT_v4
+        """True = drop inbound (too many messages). Announce at most once per window."""
+        over, notify = self._zalo_rate_check(sender_id, thread_id)
         if not over:
             return False
         logger.info(
             "Zalo: rate-limit drop sender=%s thread=%s type=%s via valkey",
-            sid, tid, thread_type,
+            sender_id, thread_id, thread_type,
         )
         if notify:
-            msg = (os.getenv("ZALO_RATE_LIMIT_MSG") or "").strip() or (
-                "Bạn gửi hơi nhanh — mình trả lời lần lượt nhé. Đợi vài giây rồi gửi tiếp ạ."
+            msg = self._as_ux_line(
+                "ZALO_RATE_LIMIT_MSG",
+                ("queue", "rate_limited"),
+                "Bạn gửi hơi nhanh — tin này đã vào hàng chờ, mình trả lời lần lượt.",
             )
             try:
-                await self._as_gate_announce(tid, thread_type, msg)
+                await self._as_gate_announce(thread_id, thread_type, msg)
             except Exception as e:
                 logger.warning("Zalo: rate-limit announce failed: %s", type(e).__name__)
         return True
@@ -1160,6 +1200,373 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception:
             pass
         return True
+
+
+    def _as_env_float(self, name: str, default: float, lo: float, hi: float) -> float:
+        raw = (os.getenv(name) or "").strip()
+        if not raw:
+            return default
+        try:
+            val = float(raw)
+        except ValueError:
+            return default
+        return max(lo, min(hi, val))
+
+    def _as_compound_begin(self, thread_id: str) -> None:
+        tid = str(thread_id or "")
+        if not tid:
+            return
+        self._as_hold_inflight.add(tid)
+        ev = self._as_part_delivered.get(tid)
+        if ev is None:
+            self._as_part_delivered[tid] = asyncio.Event()
+        else:
+            ev.clear()
+
+    def _as_compound_end(self, thread_id: str) -> None:
+        tid = str(thread_id or "")
+        self._as_hold_inflight.discard(tid)
+        self._as_part_delivered.pop(tid, None)
+        self._as_inflight_done(tid)
+
+    def _as_compound_mark_delivered(self, thread_id: str) -> None:
+        ev = self._as_part_delivered.get(str(thread_id or ""))
+        if ev is not None:
+            ev.set()
+
+    def _as_media_done_caption(self) -> str:
+        env = (os.getenv("ZALO_FILE_CAPTION") or "").strip()
+        if env:
+            return env
+        return self._as_ux_line("ZALO_FILE_CAPTION", ("media", "done"), "Đã xong.")
+
+    def _as_is_media_ack_only(self, content: str) -> bool:
+        t = (content or "").strip().lower().rstrip(".!?")
+        if not t:
+            return True
+        return t in {"đã xong", "da xong", "done", "xong", "ok"}
+
+    def _as_compound_set_after(self, thread_id: str, after: int, thread_type: str = "") -> None:
+        tid = str(thread_id or "")
+        if after > 0:
+            self._as_compound_after[tid] = after
+            if thread_type:
+                self._as_compound_thread_type[tid] = thread_type
+        else:
+            self._as_compound_after.pop(tid, None)
+
+    def _as_compound_has_more_after(self, thread_id: str) -> bool:
+        return self._as_compound_after.get(str(thread_id or ""), 0) > 0
+
+    async def _as_compound_maybe_final_ack(self, thread_id: str) -> None:
+        tid = str(thread_id or "")
+        if tid not in self._as_compound_defer_ack:
+            return
+        self._as_compound_defer_ack.discard(tid)
+        tt = self._as_compound_thread_type.pop(tid, None) or "user"
+        cap = self._as_media_done_caption()
+        try:
+            await self._as_gate_announce(tid, tt, cap)
+        except Exception as e:
+            logger.warning("Zalo: compound final ack failed: %s", type(e).__name__)
+
+    async def _as_compound_wait_part(self, thread_id: str) -> None:
+        """Wait until the current part sent something, then a short idle gap."""
+        tid = str(thread_id or "")
+        timeout = self._as_env_float("ZALO_COMPOUND_PART_TIMEOUT_S", 180.0, 15.0, 600.0)
+        gap = self._as_env_float("ZALO_COMPOUND_GAP_S", 4.0, 0.0, 30.0)
+        ev = self._as_part_delivered.get(tid)
+        if ev is not None:
+            try:
+                await asyncio.wait_for(ev.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.warning("Zalo: compound part wait timeout thread=%s", tid)
+            ev.clear()
+        if gap > 0:
+            await asyncio.sleep(gap)
+
+    def _as_inbound_queue_enabled(self) -> bool:
+        try:
+            from .inbound_queue import queue_flag_on
+        except ImportError:
+            from inbound_queue import queue_flag_on  # type: ignore
+        if not queue_flag_on():
+            return False
+        return self._as_gate_store() is not None
+
+    def _as_queue_kick(self, thread_id: str) -> None:
+        tid = str(thread_id or "")
+        if not tid:
+            return
+        prev = self._as_queue_tasks.get(tid)
+        if prev is not None and not prev.done():
+            return
+        self._as_queue_tasks[tid] = asyncio.create_task(self._as_queue_drain(tid))
+
+    async def _as_enqueue_inbound(
+        self,
+        *,
+        text: str,
+        thread_id: str,
+        thread_type: str,
+        sender_id: str,
+        sender_name: str,
+        chat_type: str,
+        message_id: str,
+        media_urls: List[str],
+        media_types: List[str],
+        message_type: str,
+        rate_over: bool,
+        rate_notify: bool,
+        event,
+    ) -> None:
+        try:
+            from .inbound_queue import (
+                KIND_INBOUND,
+                encode_item,
+                make_item,
+                queue_max,
+                queue_ttl_s,
+            )
+        except ImportError:
+            from inbound_queue import (  # type: ignore
+                KIND_INBOUND,
+                encode_item,
+                make_item,
+                queue_max,
+                queue_ttl_s,
+            )
+        store = self._as_gate_store()
+        if store is None:
+            await self._as_dispatch_event(event, text)
+            return
+        item = make_item(
+            kind=KIND_INBOUND,
+            text=text,
+            thread_id=thread_id,
+            thread_type=thread_type,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            chat_type=chat_type,
+            message_id=message_id,
+            media_urls=media_urls,
+            media_types=media_types,
+            message_type=message_type,
+        )
+        mid = str(message_id or "")
+        try:
+            if mid and hasattr(store, "queue_seen") and not store.queue_seen(mid):
+                logger.info("Zalo: skip duplicate queue id=%s", mid[:24])
+                self._as_queue_kick(thread_id)
+                return
+            n = store.queue_push(thread_id, encode_item(item), queue_max(), queue_ttl_s())
+        except Exception as e:
+            logger.warning("Zalo: queue push failed %s — inline", type(e).__name__)
+            await self._as_dispatch_event(event, text)
+            return
+        if n < 0:
+            msg = self._as_ux_line(
+                "ZALO_QUEUE_FULL_MSG",
+                ("queue", "full"),
+                "Hàng chờ đầy. Gửi lại sau giúp mình.",
+            )
+            try:
+                await self._as_gate_announce(thread_id, thread_type, msg)
+            except Exception:
+                pass
+            return
+        if rate_over and rate_notify:
+            msg = self._as_ux_line(
+                "ZALO_RATE_LIMIT_MSG",
+                ("queue", "rate_limited"),
+                "Bạn gửi hơi nhanh — tin này đã vào hàng chờ, mình trả lời lần lượt.",
+            )
+            try:
+                await self._as_gate_announce(thread_id, thread_type, msg)
+            except Exception as e:
+                logger.warning("Zalo: rate-limit announce failed: %s", type(e).__name__)
+        logger.info("Zalo: inbound queued thread=%s len=%s rate_over=%s", thread_id, n, rate_over)
+        self._as_queue_kick(thread_id)
+
+    async def _as_queue_drain(self, thread_id: str) -> None:
+        tid = str(thread_id or "")
+        store = self._as_gate_store()
+        if store is None or not tid:
+            return
+        try:
+            if not store.worker_try(tid, 300):
+                return
+        except Exception:
+            return
+        try:
+            from .inbound_queue import KIND_PART, decode_item, encode_item, make_item, queue_ttl_s
+        except ImportError:
+            from inbound_queue import KIND_PART, decode_item, encode_item, make_item, queue_ttl_s  # type: ignore
+        try:
+            from .multi_request import split_compound_requests
+        except ImportError:
+            split_compound_requests = lambda t: [t]  # type: ignore[misc, assignment]
+        try:
+            while True:
+                try:
+                    raw = store.queue_pop(tid)
+                except Exception:
+                    break
+                if not raw:
+                    break
+                try:
+                    store.worker_touch(tid, 300)
+                except Exception:
+                    pass
+                item = decode_item(raw)
+                if not item:
+                    continue
+                text = str(item.get("text") or "")
+                kind = str(item.get("kind") or KIND_PART)
+                if kind != KIND_PART:
+                    parts = split_compound_requests(text) or [text]
+                    rest = parts[1:]
+                    text = parts[0] if parts else text
+                    item["text"] = text
+                    item["kind"] = KIND_PART
+                    for part in reversed(rest):
+                        nxt = make_item(
+                            kind=KIND_PART,
+                            text=part,
+                            thread_id=tid,
+                            thread_type=str(item.get("thread_type") or "user"),
+                            sender_id=str(item.get("sender_id") or ""),
+                            sender_name=str(item.get("sender_name") or ""),
+                            chat_type=str(item.get("chat_type") or "dm"),
+                            message_id=str(item.get("message_id") or "") + ":part",
+                            media_urls=[],
+                            media_types=[],
+                            message_type=str(item.get("message_type") or "TEXT"),
+                        )
+                        try:
+                            store.queue_push_front(tid, encode_item(nxt), queue_ttl_s())
+                        except Exception:
+                            pass
+                await self._as_run_queued_part(item)
+        finally:
+            try:
+                store.worker_done(tid)
+            except Exception:
+                pass
+            try:
+                leftover = store.queue_len(tid)
+            except Exception:
+                leftover = 0
+            if leftover > 0 and not self._stop:
+                self._as_queue_kick(tid)
+
+    async def _as_run_queued_part(self, item: dict) -> None:
+        tid = str(item.get("thread_id") or "")
+        if not tid:
+            return
+        deadline = asyncio.get_event_loop().time() + self._as_env_float(
+            "ZALO_COMPOUND_PART_TIMEOUT_S", 180.0, 15.0, 600.0
+        )
+        while asyncio.get_event_loop().time() < deadline:
+            if self._as_inflight_try(tid):
+                break
+            await asyncio.sleep(0.45)
+        else:
+            logger.warning("Zalo: queue part no answering slot thread=%s — requeue", tid)
+            store = self._as_gate_store()
+            try:
+                from .inbound_queue import encode_item, queue_ttl_s
+            except ImportError:
+                from inbound_queue import encode_item, queue_ttl_s  # type: ignore
+            if store is not None:
+                try:
+                    store.queue_push_front(tid, encode_item(item), queue_ttl_s())
+                except Exception:
+                    pass
+            return
+        chat_type = str(item.get("chat_type") or "dm")
+        sender_id = str(item.get("sender_id") or "")
+        sender_name = str(item.get("sender_name") or tid)
+        source = self.build_source(
+            chat_id=tid,
+            chat_name=sender_name if chat_type == "dm" else tid,
+            chat_type=chat_type,
+            user_id=sender_id,
+            user_name=sender_name,
+        )
+        mt_name = str(item.get("message_type") or "TEXT")
+        mt = getattr(MessageType, mt_name, MessageType.TEXT)
+        event = MessageEvent(
+            text=str(item.get("text") or ""),
+            message_type=mt,
+            source=source,
+            message_id=str(item.get("message_id") or ""),
+            raw_message={},
+            media_urls=list(item.get("media_urls") or []),
+            media_types=list(item.get("media_types") or []),
+            timestamp=datetime.now(),
+        )
+        parts_after = 0
+        store = self._as_gate_store()
+        if store is not None:
+            try:
+                parts_after = int(store.queue_len(tid) or 0)
+            except Exception:
+                parts_after = 0
+        self._as_compound_set_after(
+            tid,
+            parts_after,
+            str(item.get("thread_type") or "user"),
+        )
+        self._as_compound_begin(tid)
+        try:
+            await self.handle_message(event)
+            await self._as_compound_wait_part(tid)
+        except Exception:
+            logger.exception("Zalo: queued part failed thread=%s", tid)
+        finally:
+            self._as_compound_end(tid)
+            self._as_compound_after.pop(tid, None)
+            if parts_after <= 0:
+                await self._as_compound_maybe_final_ack(tid)
+
+    async def _as_dispatch_event(self, event, text: str) -> None:
+        """Fail-open path: split + sequential handle without Valkey queue."""
+        try:
+            from .multi_request import split_compound_requests
+        except ImportError:
+            split_compound_requests = lambda t: [t]  # type: ignore[misc, assignment]
+        parts = split_compound_requests(text)
+        if len(parts) <= 1:
+            await self.handle_message(event)
+            return
+        logger.info("Zalo: compound message split into %d parts", len(parts))
+        tid = str(getattr(getattr(event, "source", None), "chat_id", "") or "")
+        tt = str(getattr(getattr(event, "source", None), "chat_type", None) or "dm")
+        zalo_tt = "group" if tt == "group" else "user"
+        self._as_compound_begin(tid)
+        try:
+            for idx, part in enumerate(parts):
+                parts_after = len(parts) - idx - 1
+                self._as_compound_set_after(tid, parts_after, zalo_tt)
+                if idx > 0:
+                    await self._as_compound_wait_part(tid)
+                part_event = MessageEvent(
+                    text=part,
+                    message_type=event.message_type,
+                    source=event.source,
+                    message_id=str(event.message_id or "") + f":part{idx + 1}",
+                    raw_message=event.raw_message,
+                    media_urls=event.media_urls if idx == 0 else [],
+                    media_types=event.media_types if idx == 0 else [],
+                    timestamp=datetime.now(),
+                )
+                await self.handle_message(part_event)
+            await self._as_compound_wait_part(tid)
+        finally:
+            self._as_compound_after.pop(tid, None)
+            await self._as_compound_maybe_final_ack(tid)
+            self._as_compound_end(tid)
 
 
     def _as_secret_probe_text(self, text: str) -> bool:  # ASSISTANT_SECRET_PROBE_v1
@@ -1697,16 +2104,32 @@ class ZaloAdapter(BasePlatformAdapter):
                         logger.info("Zalo: attached buffered media for %s", pending_key)
             # group_mode == "all" → respond to everything (subject to A+B above)
 
-        # ASSISTANT_RATE_LIMIT_v4 — Valkey 1 / 10s; only after message is for the bot
-        if await self._zalo_rate_limit_drop(sender_id, thread_id, thread_type):
+        # ASSISTANT_RATE_LIMIT_v4 — Valkey 1 / 10s; queue overflow instead of drop when enabled
+        rate_over, rate_notify = self._zalo_rate_check(sender_id, thread_id)
+        queue_on = self._as_inbound_queue_enabled()
+        if (not queue_on) and rate_over:
+            logger.info(
+                "Zalo: rate-limit drop sender=%s thread=%s type=%s via valkey",
+                sender_id, thread_id, thread_type,
+            )
+            if rate_notify:
+                msg = self._as_ux_line(
+                    "ZALO_RATE_LIMIT_MSG",
+                    ("queue", "rate_limited"),
+                    "Bạn gửi hơi nhanh — tin này đã vào hàng chờ, mình trả lời lần lượt.",
+                )
+                try:
+                    await self._as_gate_announce(thread_id, thread_type, msg)
+                except Exception as e:
+                    logger.warning("Zalo: rate-limit announce failed: %s", type(e).__name__)
             return
         # ASSISTANT_SECRET_PROBE_v5 — short refuse + notify admin; no LLM
         _sp = getattr(self, "_as_secret_probe_drop", None)
         if _sp and await _sp(m, sender_id, thread_id, thread_type, text):
             return
 
-        # ASSISTANT_INFLIGHT_v6 — already answering (Valkey max 3 per chat); never block other chats
-        if await self._as_inflight_drop(sender_id, thread_id, thread_type):
+        # ASSISTANT_INFLIGHT_v6 — already answering; Valkey queue serializes when enabled
+        if (not queue_on) and await self._as_inflight_drop(sender_id, thread_id, thread_type):
             return
 
         # ASSISTANT_KNOWLEDGE_CITE_v7 — short content titles, never paths/filenames
@@ -1861,7 +2284,25 @@ class ZaloAdapter(BasePlatformAdapter):
             sender_id=str(sender_id or ""),
             sender_name=str(sender_name or ""),
         )
-        await self.handle_message(event)
+        if queue_on:
+            mt_name = getattr(message_type, "name", None) or "TEXT"
+            await self._as_enqueue_inbound(
+                text=text,
+                thread_id=str(thread_id),
+                thread_type=str(thread_type),
+                sender_id=str(sender_id or ""),
+                sender_name=str(sender_name or ""),
+                chat_type=str(chat_type),
+                message_id=str(m.get("messageId") or ""),
+                media_urls=media_urls,
+                media_types=media_types,
+                message_type=str(mt_name),
+                rate_over=rate_over,
+                rate_notify=rate_notify,
+                event=event,
+            )
+            return
+        await self._as_dispatch_event(event, text)
 
 
     async def _fetch_media_via_bridge(self, media: Dict[str, Any]) -> Optional[bytes]:  # ASSISTANT_MEDIA_PROXY_v1
@@ -2194,6 +2635,12 @@ class ZaloAdapter(BasePlatformAdapter):
             )
         ) or ("approval" in low and ("command" in low or "execute" in low)):
             return ""
+        try:
+            from .gateway_noise import is_busy_interrupt_notice
+        except ImportError:
+            from gateway_noise import is_busy_interrupt_notice  # type: ignore
+        if is_busy_interrupt_notice(t):
+            return ""
         return None
 
     def _is_gateway_noise(self, content: str) -> bool:  # ASSISTANT_QUIET_SEND_v6
@@ -2202,6 +2649,12 @@ class ZaloAdapter(BasePlatformAdapter):
 
         t = (content or "").strip()
         if not t:
+            return True
+        try:
+            from .gateway_noise import is_busy_interrupt_notice
+        except ImportError:
+            from gateway_noise import is_busy_interrupt_notice  # type: ignore
+        if is_busy_interrupt_notice(t):
             return True
         low = t.lower()
         needles = (
@@ -2692,7 +3145,7 @@ class ZaloAdapter(BasePlatformAdapter):
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
             pass
-        caption = (os.getenv("ZALO_FILE_CAPTION") or "").strip() or "Đã xong."
+        caption = self._as_media_done_caption()
         for src in picked:
             dest = src
             try:
@@ -2749,8 +3202,13 @@ class ZaloAdapter(BasePlatformAdapter):
             if blocked_n:
                 return "File contains risks so it cannot be sent."
             if self._as_autosend_looks_like_ack(content) or not (content or "").strip():
+                if self._as_compound_has_more_after(tid):
+                    return ""
                 return caption
             return content
+        if self._as_compound_has_more_after(tid):
+            self._as_compound_defer_ack.add(tid)
+            return ""
         return caption
 
 
@@ -3141,13 +3599,19 @@ class ZaloAdapter(BasePlatformAdapter):
         if self._is_gateway_noise(content):  # ASSISTANT_QUIET_SEND_v6
             logger.info("Zalo: drop gateway noise: %s", (content or "")[:100].replace("\n", " "))
             return SendResult(success=True, message_id=None)
+        if self._as_compound_has_more_after(str(chat_id)) and self._as_is_media_ack_only(content):
+            logger.info("Zalo: defer media ack (more compound parts) thread=%s", chat_id)
+            return SendResult(success=True, message_id=None)
         if not (isinstance(metadata, dict) and metadata.get("as_skip_autosend")):
             content = await self._as_autosend_turn_files(chat_id, content, metadata)  # ASSISTANT_AUTOSEND_v5
         content = self._apply_timing_footer(content, chat_id, metadata)  # ASSISTANT_TIMING_FOOTER_v6
         # Re-check after autosend caption swap
         if self._is_gateway_noise(content):
             return SendResult(success=True, message_id=None)
-        self._as_inflight_done(chat_id, metadata)  # ASSISTANT_INFLIGHT_v5
+        if not (content or "").strip():
+            return SendResult(success=True, message_id=None)
+        if str(chat_id) not in self._as_hold_inflight:
+            self._as_inflight_done(chat_id, metadata)  # ASSISTANT_INFLIGHT_v5
         thread_type = self._thread_type_from_chat_id(chat_id, metadata)
         # Split long messages.
         _cap = 1800  # ASSISTANT_SEND_RETRY_v2
@@ -3211,6 +3675,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     msg_id = str(msg.get("msgId"))
                 elif result.get("msgId") is not None:
                     msg_id = str(result.get("msgId"))
+        self._as_compound_mark_delivered(chat_id)
         return SendResult(success=True, message_id=msg_id)
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
@@ -3329,6 +3794,7 @@ class ZaloAdapter(BasePlatformAdapter):
         res = await self._post("/send-attachment", payload)
         if res.get("error"):
             return SendResult(success=False, error=res["error"])
+        self._as_compound_mark_delivered(chat_id)
         return SendResult(success=True)
 
 
@@ -3368,6 +3834,7 @@ class ZaloAdapter(BasePlatformAdapter):
         res = await self._post("/send-attachment", payload)
         if res.get("error"):
             return SendResult(success=False, error=res["error"])
+        self._as_compound_mark_delivered(chat_id)
         return SendResult(success=True)
 
 
