@@ -1,5 +1,9 @@
 # Change history
 
+## 2026-08-18 19:14 +07 — release: v0.5.7
+
+- Isolated parallel Zalo lịch jobs, schedule cadence (once / daily / weekly / monthly / yearly), result-only media, dispatcher/OCR for images and page facts.
+
 ## 2026-08-18 18:57 +07 — ops: rolling deploy cadence + silent media (test stack)
 
 - Leftover lab lịch rows deleted (workflow table empty; Hermes `jobs.json` empty) before sync so migrate would not recreate them.
