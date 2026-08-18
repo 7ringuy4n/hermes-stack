@@ -20,8 +20,8 @@
 param(
     [ValidateSet("all", "destroy", "sync", "up", "zalo-bridge", "verify", "smoke", "credentials")]
     [string] $Phase = "all",
-    [string] $HostName = $(if ($env:ASSISTANT_SSH_HOST) { $env:ASSISTANT_SSH_HOST } else { "72.61.127.249" }),
-    [string] $UserName = $(if ($env:ASSISTANT_SSH_USER) { $env:ASSISTANT_SSH_USER } else { "tringuyen" }),
+    [string] $HostName = $(if ($env:ASSISTANT_SSH_HOST) { $env:ASSISTANT_SSH_HOST } else { "" }),
+    [string] $UserName = $(if ($env:ASSISTANT_SSH_USER) { $env:ASSISTANT_SSH_USER } else { "" }),
     [string] $Password = $(if ($env:ASSISTANT_SSH_PASSWORD) { $env:ASSISTANT_SSH_PASSWORD } else { "" })
 )
 
@@ -33,8 +33,8 @@ $Py = Join-Path $PSScriptRoot "deploy_high_vps.py"
 if (-not (Test-Path -LiteralPath $Py)) {
     throw "Missing $Py"
 }
-if (-not $Password) {
-    throw "Set -Password or env ASSISTANT_SSH_PASSWORD (do not commit secrets)."
+if (-not $HostName -or -not $UserName -or -not $Password) {
+    throw "Set -HostName/-UserName/-Password or ASSISTANT_SSH_HOST/USER/PASSWORD (no lab defaults in source)."
 }
 
 $env:ASSISTANT_SSH_HOST = $HostName
