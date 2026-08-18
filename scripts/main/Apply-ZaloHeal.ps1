@@ -4,9 +4,9 @@
   Sync Zalo heal scripts to VPS (LF-safe). Optional remote heal.
 
 .EXAMPLE
-  $env:ASSISTANT_SSH_HOST='72.61.127.249'
-  $env:ASSISTANT_SSH_USER='tringuyen'
-  $env:ASSISTANT_SSH_PASSWORD='***'
+  $env:ASSISTANT_SSH_HOST='<host>'
+  $env:ASSISTANT_SSH_USER='<user>'
+  $env:ASSISTANT_SSH_PASSWORD='<password>'
   pwsh -File scripts/main/Apply-ZaloHeal.ps1 -RunHeal
 #>
 [CmdletBinding()]

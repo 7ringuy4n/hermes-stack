@@ -1,5 +1,21 @@
 # Change history
 
+## 2026-08-18 19:45 +07 — release: v0.5.8
+
+- Product deploy scripts no longer ship lab SSH host/account defaults. stack-watch treats 9router 401 as healthy and keeps notify/sandbox profiles.
+
+## 2026-08-18 19:45 +07 — fix: strip lab host/account defaults from product scripts
+
+- `deploy_high_vps.py`, `Deploy-High.ps1`, `Apply-ZaloHeal.ps1`, `export-ovpn-client.sh`, and edge-update examples require `ASSISTANT_SSH_*` / `OVPN_EXPORT_USER` (generic placeholders only).
+- Operator rules 33–35: no VPS IP/account/secrets in committed `scripts/` or `test/`; host probes stay in gitignored `scripts/temp/` / `hermes/temp/`; `develop`/`main` stay production-ready.
+
+## 2026-08-18 19:39 +07 — ops: High redeploy (no monitor); stack-watch 9router 401 + profiles
+
+- Destroy + High: Zalo, Notify, OmniRouter, 9router, AV/sandbox/judge, jobs/workflow; Grafana/Prometheus/Loki/Alloy off. Backup verified first. Tavily key on host `.env` (`keys.tavily` true). Hermes×2 → 9router models OK (`hermes` combo present).
+- `stack-watch` compose now matches `run.sh` profiles (notify, sandbox, antivirus, omni, edge) so `--remove-orphans` cannot drop them.
+- `stack-watch` 9router probe accepts 401/307 on `/v1/models` (unauthenticated) instead of restarting the router every tick.
+- High deploy: optional `TAVILY_API_KEY` env upserts host `.env` (not logged).
+
 ## 2026-08-18 19:14 +07 — release: v0.5.7
 
 - Isolated parallel Zalo lịch jobs, schedule cadence (once / daily / weekly / monthly / yearly), result-only media, dispatcher/OCR for images and page facts.
