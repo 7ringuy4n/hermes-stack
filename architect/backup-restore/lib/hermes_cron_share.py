@@ -46,6 +46,19 @@ def dump_jobs_file(path: Path, jobs: list[dict[str, Any]], *, updated_at: str | 
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             f.write(raw)
         os.replace(tmp, path)
+        try:
+            os.chmod(path, 0o664)
+        except OSError:
+            pass
+        try:
+            uid = int(os.getenv("HERMES_UID") or "1000")
+            gid = int(os.getenv("HERMES_GID") or "1000")
+            os.chown(path, uid, gid)
+        except (OSError, ValueError):
+            try:
+                os.chmod(path, 0o666)
+            except OSError:
+                pass
     except Exception:
         try:
             os.unlink(tmp)

@@ -19,16 +19,18 @@ from pydantic import BaseModel, Field
 from schedule_list import fmt_hermes_cron_list
 from schedule_crud import (
     USAGE as SCHEDULE_USAGE,
+    apply_schedule_update,
     fmt_list as fmt_schedule_list,
     fmt_show as fmt_schedule_show,
     jobs_file as schedule_jobs_file,
     load_bundle as load_schedule_bundle,
     new_job as new_schedule_job,
-    parse_hhmm_cron,
-    parse_cron_expr,
+    parse_update_args as parse_schedule_update,
     resolve_job as resolve_schedule_job,
     save_bundle as save_schedule_bundle,
     split_add_args,
+    take_all_flag as take_schedule_all_flag,
+    jobs_for_thread as schedule_jobs_for_thread,
     visible_jobs as visible_schedule_jobs,
 )
 
@@ -56,6 +58,84 @@ ALLOWED_USERS_FILE = os.environ.get(
     "ZALO_ALLOWED_USERS_FILE", "/data/hermes/zalo_allowed_users.txt"
 )
 HERMES_DATA = os.environ.get("HERMES_DATA_DIR", "/data/hermes")
+WORKFLOW_URL = (os.environ.get("WORKFLOW_URL") or "http://workflow:8108").rstrip("/")
+
+
+def _workflow_http(method: str, path: str, payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    url = f"{WORKFLOW_URL}{path}"
+    try:
+        r = httpx.request(method, url, json=payload, timeout=8.0)
+        if r.status_code >= 300:
+            return {}
+        data = r.json()
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _workflow_row_as_job(row: dict[str, Any]) -> dict[str, Any]:
+    expr = str(row.get("cron_expr") or "")
+    origin = row.get("origin") if isinstance(row.get("origin"), dict) else {}
+    return {
+        "id": str(row.get("id") or ""),
+        "name": str(row.get("name") or row.get("id") or "lịch"),
+        "prompt": str(row.get("text") or ""),
+        "schedule": {"kind": "cron", "expr": expr, "display": expr},
+        "schedule_display": expr,
+        "origin": origin,
+        "enabled": bool(row.get("enabled", True)),
+        "state": "scheduled",
+        "deliver": "origin",
+    }
+
+
+def _merge_workflow_schedules(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    data = _workflow_http("GET", "/v1/schedules")
+    rows = data.get("schedules") if isinstance(data, dict) else None
+    if not isinstance(rows, list) or not rows:
+        return jobs
+    by_id = {str(j.get("id") or ""): j for j in jobs if isinstance(j, dict)}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        job = _workflow_row_as_job(row)
+        if job.get("id"):
+            by_id[str(job["id"])] = job
+    return [j for j in by_id.values() if j.get("id")]
+
+
+def _workflow_upsert_schedule(job: dict[str, Any], expr: str, prompt: str, tz_name: str) -> None:
+    if not expr or not prompt:
+        return
+    origin = job.get("origin") if isinstance(job.get("origin"), dict) else {}
+    tid = str(origin.get("thread_id") or origin.get("chat_id") or "")
+    ctx = {
+        "thread_id": tid,
+        "thread_type": str(origin.get("thread_type") or "user"),
+        "chat_type": str(origin.get("chat_type") or "dm"),
+        "sender_id": str(origin.get("user_id") or ""),
+        "sender_name": str(origin.get("chat_name") or tid),
+        "execute": "hermes",
+    }
+    _workflow_http(
+        "POST",
+        "/v1/schedules",
+        {
+            "id": str(job.get("id") or ""),
+            "name": str(job.get("name") or ""),
+            "cron_expr": expr,
+            "timezone": tz_name,
+            "text": prompt,
+            "origin": origin,
+            "context": ctx,
+            "enabled": True,
+        },
+    )
+
+
+def _workflow_delete_schedule(sid: str) -> None:
+    if sid:
+        _workflow_http("DELETE", f"/v1/schedules/{sid}")
 # Sole operator admin (exactly one uid). File wins over env when present.
 ADMIN_USERS_FILE = os.environ.get(
     "ZALO_ADMIN_USERS_FILE",
@@ -79,7 +159,7 @@ RESPONSE_POLICY_TEXT = """# Response policy (always — default, survives sessio
 - Compound user message with multiple requests: answer all parts, not only the first.
 - Numbered lists count (`1 …` / `2. …` / `2.Sau đó`), not only `tin nhắn 1:`.
 - Immediate compound is split into turns; Valkey queues parts so the next turn starts only after the current send (do not interrupt).
-- A daily numbered list is **one lịch/schedule**. When it runs, finish every item after media. Do not register parallel schedules at the same clock.
+- A daily numbered list (`hàng ngày` / `hằng ngày` / `06:00 GMT+7`) is **one lịch/schedule**. When it runs, finish every item after media. Do not register parallel schedules at the same clock.
 - User-facing wording: **lịch** / **schedule** — never **cron** / **cron job**.
 - After sending a generated file: one short line only for **that** item ("Đã xong." / "Done."). On compound multi-part queues, defer that ack until **after the last part** (image then prices → prices then ack).
 - Never send Hermes busy/interrupt UX (`Interrupting current task`, `First-time tip`, `/busy queue|steer|status`).
@@ -1198,7 +1278,8 @@ def chat_command(
                 "!zalo kick @tag | <id>… — kick USER (nhiều id ok)\n"
                 "!zalo kick <Tên nhóm> | thread:<id> — kick GROUP\n"
                 "!zalo status | clearsessions | help\n"
-                "!zalo schedule list — (admin) xem lịch\n"
+                "!zalo schedule list — (admin) lịch chat này\n"
+                "!zalo schedule list all — (admin) mọi lịch\n"
                 "!zalo schedule add|show|update|remove — (admin) CRUD lịch\n"
                 "!zalo learn | learn list | learn find | learn scan docs\n"
                 "!zalo learn approve|reject <id|*>\n"
@@ -1432,12 +1513,54 @@ def chat_command(
         tz_name = os.environ.get("TZ", "Asia/Ho_Chi_Minh")
         path = schedule_jobs_file(HERMES_DATA)
         bundle = load_schedule_bundle(path)
-        jobs: list[dict[str, Any]] = list(bundle.get("jobs") or [])
+        file_jobs: list[dict[str, Any]] = list(bundle.get("jobs") or [])
+        jobs: list[dict[str, Any]] = _merge_workflow_schedules(file_jobs)
         rest = " ".join(parts[3:]).strip() if len(parts) > 3 else ""
 
         if sub in {"list", "ls", "jobs"}:
-            if visible_schedule_jobs(jobs):
-                return {"ok": True, "handled": True, "reply": fmt_schedule_list(jobs)}
+            want_all, _ = take_schedule_all_flag(rest)
+            vis = visible_schedule_jobs(jobs)
+            if want_all:
+                if vis:
+                    return {
+                        "ok": True,
+                        "handled": True,
+                        "reply": fmt_schedule_list(vis, heading="lịch tất cả"),
+                    }
+                rc, raw = _fetch_hermes_cron_list()
+                if rc not in {0, -1} and not raw:
+                    return {
+                        "ok": True,
+                        "handled": True,
+                        "reply": "Không đọc được lịch (docker/Hermes).",
+                    }
+                if raw.strip():
+                    return {
+                        "ok": True,
+                        "handled": True,
+                        "reply": fmt_hermes_cron_list(raw, heading="lịch tất cả"),
+                    }
+                return {
+                    "ok": True,
+                    "handled": True,
+                    "reply": fmt_schedule_list(jobs, heading="lịch tất cả"),
+                }
+            scoped = schedule_jobs_for_thread(jobs, thread)
+            if scoped:
+                return {
+                    "ok": True,
+                    "handled": True,
+                    "reply": fmt_schedule_list(scoped, heading="lịch chat này"),
+                }
+            if vis:
+                return {
+                    "ok": True,
+                    "handled": True,
+                    "reply": (
+                        "Chưa có lịch trong cuộc chat này.\n"
+                        "Admin xem tất cả: !zalo schedule list all"
+                    ),
+                }
             rc, raw = _fetch_hermes_cron_list()
             if rc not in {0, -1} and not raw:
                 return {
@@ -1446,14 +1569,27 @@ def chat_command(
                     "reply": "Không đọc được lịch (docker/Hermes).",
                 }
             if raw.strip():
-                return {"ok": True, "handled": True, "reply": fmt_hermes_cron_list(raw)}
-            return {"ok": True, "handled": True, "reply": fmt_schedule_list(jobs)}
+                return {
+                    "ok": True,
+                    "handled": True,
+                    "reply": fmt_hermes_cron_list(raw, heading="lịch tất cả"),
+                }
+            return {
+                "ok": True,
+                "handled": True,
+                "reply": "Chưa có lịch trong cuộc chat này.",
+            }
 
         if sub in {"help", "?"}:
             return {"ok": True, "handled": True, "reply": SCHEDULE_USAGE}
 
         if sub in {"show", "get", "view"}:
-            job, err = resolve_schedule_job(jobs, rest or "")
+            want_all, sel = take_schedule_all_flag(rest or "")
+            vis = visible_schedule_jobs(jobs)
+            pool = vis if want_all else schedule_jobs_for_thread(jobs, thread)
+            job, err = resolve_schedule_job(pool, sel or "")
+            if (err or job is None) and not want_all and sel and not sel.split()[0].isdigit():
+                job, err = resolve_schedule_job(vis, sel)
             if err or job is None:
                 return {"ok": True, "handled": True, "reply": err or SCHEDULE_USAGE}
             return {"ok": True, "handled": True, "reply": fmt_schedule_show(job)}
@@ -1475,8 +1611,9 @@ def chat_command(
                 thread=thread,
                 sender_name=sender_name,
             )
-            jobs.append(job)
-            save_schedule_bundle(path, jobs, tz_name)
+            file_jobs.append(job)
+            save_schedule_bundle(path, file_jobs, tz_name)
+            _workflow_upsert_schedule(job, expr, prompt, tz_name)
             return {
                 "ok": True,
                 "handled": True,
@@ -1484,42 +1621,27 @@ def chat_command(
             }
 
         if sub in {"update", "edit", "set"}:
-            sel = rest
-            new_time = ""
-            new_prompt = ""
-            if " -- " in rest:
-                sel, new_prompt = rest.split(" -- ", 1)
-                sel, new_prompt = sel.strip(), new_prompt.strip()
-            tm = re.search(r"--time(?:\s+|=)(\S+)", sel, re.I)
-            if tm:
-                new_time = tm.group(1)
-                sel = (sel[: tm.start()] + sel[tm.end() :]).strip()
-            ts = re.search(r"--schedule(?:\s+|=)(.+)$", sel, re.I)
-            if ts and not new_time:
-                new_time = ts.group(1).strip().strip('"')
-                sel = sel[: ts.start()].strip()
-            job, err = resolve_schedule_job(jobs, sel)
+            want_all, sel = take_schedule_all_flag(rest)
+            vis = visible_schedule_jobs(jobs)
+            pool = vis if want_all else schedule_jobs_for_thread(jobs, thread)
+            job, expr, new_prompt, err = parse_schedule_update(sel, pool)
+            head = (sel or "").split(None, 1)[0] if sel else ""
+            if (err or job is None) and not want_all and head and not head.isdigit():
+                job, expr, new_prompt, err = parse_schedule_update(sel, vis)
             if err or job is None:
                 return {"ok": True, "handled": True, "reply": err or SCHEDULE_USAGE}
-            if new_time:
-                expr = parse_hhmm_cron(new_time) or parse_cron_expr(new_time)
-                if not expr:
-                    return {
-                        "ok": True,
-                        "handled": True,
-                        "reply": "Lịch không hợp lệ. Dùng 6:00 hoặc 0 6 * * *",
-                    }
-                job["schedule"] = {"kind": "cron", "expr": expr, "display": expr}
-                job["schedule_display"] = expr
-            if new_prompt:
-                job["prompt"] = new_prompt
-            if not new_time and not new_prompt:
-                return {
-                    "ok": True,
-                    "handled": True,
-                    "reply": "usage:\n!zalo schedule update <số|tên> --time 7:00\n!zalo schedule update <số|tên> -- <nội dung>",
-                }
-            save_schedule_bundle(path, jobs, tz_name)
+            apply_schedule_update(job, expr, new_prompt)
+            jid = str(job.get("id") or "")
+            replaced = False
+            for i, row in enumerate(file_jobs):
+                if str(row.get("id") or "") == jid:
+                    file_jobs[i] = job
+                    replaced = True
+                    break
+            if replaced:
+                save_schedule_bundle(path, file_jobs, tz_name)
+            sch = str((job.get("schedule") or {}).get("expr") or job.get("schedule_display") or "")
+            _workflow_upsert_schedule(job, sch, str(job.get("prompt") or ""), tz_name)
             return {
                 "ok": True,
                 "handled": True,
@@ -1527,12 +1649,18 @@ def chat_command(
             }
 
         if sub in {"remove", "rm", "delete", "del"}:
-            job, err = resolve_schedule_job(jobs, rest)
+            want_all, sel = take_schedule_all_flag(rest)
+            vis = visible_schedule_jobs(jobs)
+            pool = vis if want_all else schedule_jobs_for_thread(jobs, thread)
+            job, err = resolve_schedule_job(pool, sel)
+            if (err or job is None) and not want_all and sel and not sel.split()[0].isdigit():
+                job, err = resolve_schedule_job(vis, sel)
             if err or job is None:
                 return {"ok": True, "handled": True, "reply": err or SCHEDULE_USAGE}
             jid = str(job.get("id") or "")
-            jobs = [j for j in jobs if str(j.get("id") or "") != jid]
-            save_schedule_bundle(path, jobs, tz_name)
+            file_jobs = [j for j in file_jobs if str(j.get("id") or "") != jid]
+            save_schedule_bundle(path, file_jobs, tz_name)
+            _workflow_delete_schedule(jid)
             label = fmt_schedule_show(job).splitlines()[0]
             return {"ok": True, "handled": True, "reply": f"Đã xóa lịch: {label}"}
 
