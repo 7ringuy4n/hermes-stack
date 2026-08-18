@@ -1,5 +1,15 @@
 # Change history
 
+## 2026-08-18 09:40 +07 — policy: response language matches user request
+
+- Rule **27 / response language**: reply in the **same language** as the user's message unless they explicitly ask for another. Wired in `friendly-response`, SOUL, `answering`, `chat-style`, `zalo-channel`, `translation`, zalo-api response policy.
+
+## 2026-08-18 09:34 +07 — config: Zalo inbound queue cap default 3
+
+- `ZALO_INBOUND_QUEUE_MAX` default **3** waiting items per thread (was 20). Wired through compose / `.env.example` / `DEFAULTS.md`.
+- This FIFO is **inbound user requests** (compound parts + rate-limit defer) on any profile with `ENABLE_ZALO=1`. Outbound replies are not queued in a second list — they send as each sequential turn finishes.
+- Copy: `ux.json` `queue.rate_limited` / `queue.full` are **response lines** for those inbound events. `queue.queued` stays reserved.
+
 ## 2026-08-18 09:30 +07 — copy: user-facing lịch/schedule (not cron) + queue docs
 
 - Skills/zalo-api: user-facing text uses **lịch** / **schedule**; avoid **cron** / **cron job** in Zalo replies and admin schedule list.
@@ -82,8 +92,6 @@
 - **Web search default:** Medium/High `WEB_BACKENDS=tavily,firecrawl` round-robin; **SearXNG always appended** as fallback (`architect/models/dispatcher/app.py`).
 - **File security matrix:** Zalo inbound → AV only; dispatcher outbound → security-manager when `SECURITY_URL` set; ingest scan not wired (documented in case 19).
 
-=======
->>>>>>> origin/main
 ## 2026-08-17 18:07 +07 — release: v0.5.5
 
 - Docs: fetch + rebase onto latest `origin/develop` or `origin/main` before implement or promote; production still via `release/*` MR only.
