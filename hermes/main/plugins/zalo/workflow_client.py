@@ -50,7 +50,7 @@ def create_workflow(
             "instructions": instructions,
             "origin": origin,
             "context": context,
-            "sequential": True,
+            "sequential": False,
             "wrap": True,
         },
     )
@@ -64,6 +64,7 @@ def create_schedule(
     origin: dict[str, Any] | None = None,
     context: dict[str, Any] | None = None,
     schedule_id: str | None = None,
+    cadence: str = "",
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "cron_expr": cron_expr,
@@ -72,6 +73,7 @@ def create_schedule(
         "origin": origin or {},
         "context": context or {},
         "timezone": "Asia/Ho_Chi_Minh",
+        "cadence": cadence,
     }
     if schedule_id:
         body["id"] = schedule_id

@@ -11,11 +11,22 @@
     "refuse": "Cannot provide secrets or confidential documents."
   },
   "queue": {
-    "rate_limited": "Bạn gửi hơi nhanh — tin này đã vào hàng chờ, mình trả lời lần lượt.",
-    "queued": "Mình đang trả lời tin trước. Các yêu cầu sau đã vào hàng chờ.",
+    "rate_limited": "Bạn gửi hơi nhanh — tin này đã vào hàng chờ, mình sẽ trả lời lần lượt.",
+    "queued": "Mình đang trả lời tin trước. Vui lòng chờ.",
     "full": "Hàng chờ đầy. Gửi lại sau giúp mình."
   },
-  "media": {
-    "done": "Đã xong."
+  "schedule": {
+    "saved": {
+      "default": "en",
+      "en": "Schedule saved!",
+      "vi": "Đã lưu lịch!"
+    }
+  },
+  "session": {
+    "interrupted": {
+      "default": "en",
+      "en": "This session was interrupted. Please try again later.",
+      "vi": "Phiên làm việc bị gián đoạn, vui lòng thử lại sau."
+    }
   }
 }

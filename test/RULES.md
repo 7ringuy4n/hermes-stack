@@ -369,6 +369,7 @@ Every capability must include at least one **fail event**, not only success.
 | Zalo compound message | One bubble with `tin nhắn 1` + `tin nhắn 2` | Both intents addressed (case 16) |
 | Zalo busy + cron multi-task | Interrupt `/busy` tip; 3-item daily job | Tip dropped; all cron items run (case 22) |
 | Zalo inbound FIFO | 3 requests in one bubble; rate-limit burst | All queued intents run; extras not dropped (case 23) |
+| Zalo special four (hello/image/fuel/video) | 4-item English lịch, 2 minutes | Four jobs, four Zalo replies; no `/busy` (case 25) |
 | Zalo latency SLO | 5 short text pings | FAIL if any sample **> 5s** on localhost (case 17) |
 | Grafana integration | Grafana on → each deployed scrape target | `assistant_service_up` + exporter scrape success (case 20) |
 | Default routers | 9Router always; OmniRouter default 0 | Hermes connected; flag matches container (case 21) |
@@ -425,6 +426,8 @@ When re-testing a live High/Zalo lab:
 | Default 9Router / OmniRouter connected | `cases/21-defaults-routers-connected.md` |
 | Zalo busy interrupt + multi-task cron | `cases/22-zalo-busy-cron-multi.md` |
 | Zalo inbound FIFO (plenty of requests) | `cases/23-zalo-inbound-queue.md` |
+| Plenty-in-one + same/different-time cron | `cases/24-workflow-multi-cron-channels.md` |
+| Zalo special four (hello + image + fuel + video) | `cases/25-zalo-special-four.md` |
 
 **Unit scripts (no VPS, run in small batches):**
 
@@ -437,12 +440,14 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/web_search_backends_unit.py` | 18 |
 | `test/scripts/grafana_pairing_unit.py` | 20 |
 | `test/scripts/defaults_profile_unit.py` | 21 |
+| `test/scripts/ux_copy_unit.py` | schedule-saved locale map |
 
 **Lab scripts (SSH, one case per invocation — rule §23):**
 
 | Script | Case |
 |--------|------|
 | `test/scripts/zalo_latency_lab.py` | 17 |
+| `test/scripts/zalo_special_four_lab.py` | 25 |
 | `test/scripts/file_pipeline_security_lab.py` | 19 |
 | `test/scripts/grafana_integration_lab.py` | 20 (skip if Grafana off) |
 | `test/scripts/defaults_routers_lab.py` | 21 |

@@ -135,6 +135,18 @@ def main() -> int:
         print(f"FAIL plenty schedule must stay whole, got {kept6!r}")
         return 1
     print("PASS plenty 6-item immediate split + 13:54 schedule keep-whole")
+    en_cron = (
+        "every day at 16:40 GMT+7:\n"
+        "1. Send a hello greeting message.\n"
+        "2. Draw an image of Ho Chi Minh City based on the actual current weather.\n"
+        "3. Give a brief update of the latest E5 RON92 and E10 RON95 gasoline prices, in Vietnamese.\n"
+        "4. Draw a video of Ho Chi Minh City based on the actual current weather."
+    )
+    en_kept = split_compound_requests(en_cron)
+    if en_kept != [en_cron]:
+        print(f"FAIL English special-four schedule must stay whole, got {en_kept!r}")
+        return 1
+    print("PASS English 4-item daily list stays one lịch")
     return 0
 
 
