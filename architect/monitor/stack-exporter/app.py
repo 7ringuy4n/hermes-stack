@@ -22,6 +22,7 @@ COLL_KNOWLEDGE = os.environ.get("QDRANT_COLLECTION_KNOWLEDGE", "knowledge_chunks
 COLL_MEMORY = os.environ.get("QDRANT_COLLECTION_MEMORY", "conversational_memory")
 # Must/High health targets — optional clamav/av-gateway/notify are added by compose
 # when ENABLE_ANTIVIRUS=1 / ENABLE_NOTIFY=1 (do not hardcode them here).
+# OmniRoute has no /health — compose probes omni-router:20129/ (GET /).
 HEALTH_TARGETS = os.environ.get(
     "HEALTH_TARGETS",
     "redis_via_tcp=redis:6379,"
@@ -34,7 +35,8 @@ HEALTH_TARGETS = os.environ.get(
     "dispatcher=dispatcher:8090/health,"
     "memory=memory:8095/health,"
     "zalo-api=zalo-api:8100/health,"
-    "openbao=openbao:8200/v1/sys/health",
+    "openbao=openbao:8200/v1/sys/health,"
+    "9router=9router:20128",
 )
 
 _lock = threading.Lock()
@@ -213,10 +215,8 @@ def _parse_health_targets(raw: str) -> list[tuple[str, str, str, int, str]]:
             port = int(port_s)
         except ValueError:
             continue
-        kind = "tcp" if name in ("clamav", "redis_via_tcp") or path == "" else "http"
-        if name == "redis_via_tcp":
-            kind = "tcp"
-        if name == "clamav":
+        kind = "tcp" if name in ("clamav", "redis_via_tcp", "9router") or path == "" else "http"
+        if name in ("redis_via_tcp", "clamav", "9router"):
             kind = "tcp"
         if name == "qdrant" and path == "/readyz":
             kind = "http"

@@ -11,6 +11,14 @@ scrape_configs:
     static_configs:
       - targets: ["nine-exporter:9101"]
 
+  - job_name: omni-exporter
+    static_configs:
+      - targets: ["omni-exporter:9104"]
+
+  - job_name: node-exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
   - job_name: stack-exporter
     static_configs:
       - targets: ["stack-exporter:9102"]

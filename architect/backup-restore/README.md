@@ -95,7 +95,7 @@ Date: **2026-08-17** · Host: Ubuntu **24.04.4 LTS** · Profile: **High** · `HE
 | Traefik after volume restore | **Fixed** | Volume restore stops Traefik; compose restore now includes `--profile traefik` (and peers) so edge returns |
 | stack-watch vs Hermes×2 | **Fixed** | Watch previously ran `compose up` without `--scale`, collapsing replicas and dropping Zalo SSE; now preserves `HERMES_REPLICAS` |
 
-Prior lab stamp: `20260816_195940`. Hardware: **4 vCPU / 16 GiB RAM / ~200 GB disk** (see [docs/HARDWARE.md](../../docs/HARDWARE.md)).
+Prior lab stamp: `20260816_195940`. Hardware: **4 vCPU / 16 GiB RAM / ~200 GB disk**, monitor off (~3 GiB idle). Enabling Grafana+Prometheus / Loki / all optionals adds RAM, disk, and CPU — [docs/HARDWARE.md](../../docs/HARDWARE.md) (**all optional features ~5 GiB RAM · ~40 GB disk · ~2 vCPU**).
 
 ## Related
 

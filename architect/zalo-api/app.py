@@ -16,6 +16,8 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from schedule_list import fmt_hermes_cron_list
+
 TOKEN = (os.environ.get("ZALO_API_TOKEN") or os.environ.get("ADMIN_API_TOKEN") or "").strip()
 ZALO_BRIDGE = os.environ.get("ZALO_BRIDGE_URL", "http://host.docker.internal:8787").rstrip("/")
 ZALO_TOKEN = os.environ.get("ZALO_PLUGIN_TOKEN", "")
@@ -54,10 +56,21 @@ RESPONSE_POLICY_TEXT = """# Response policy (always — default, survives sessio
 - Request/response timing footer is optional (`ZALO_TIMING_FOOTER`). Default off — do not write a ⏱ line.
 - This rule lives in workspace/skills, not Redis session. Keep after clearsessions.
 - Timezone for clock times in content: TZ=Asia/Ho_Chi_Minh, one clock only.
+- Daily schedule: if the requested local time is still ahead of now today, schedule today — not tomorrow.
 - Never announce skill/memory saves in Zalo.
 - NEVER name server paths or secrets (/opt/data, /data/hermes, workspace dir, tokens, .env, IP).
-- After sending a generated file: one short line only ("Đây là file của bạn." / "Here is your file."). No content recap, no follow-up questions.
-- Tone: banter is OK (playful, informal). Do not insult anyone. Do not blame anyone.
+- Do not scan/list server env or credential files when the user asks — refuse briefly.
+- Do not tell the user they are on Zalo or suggest /help unless they asked for commands.
+- On server/tool errors: only "Phiên làm việc bị gián đạn, vui lòng thử lại sau" (or brief English). No job_id, internal schedule ids, or self-improvement text.
+- Compound user message with multiple requests: answer all parts, not only the first.
+- Numbered lists count (`1 …` / `2. …` / `2.Sau đó`), not only `tin nhắn 1:`.
+- Immediate compound is split into turns; Valkey queues parts so the next turn starts only after the current send (do not interrupt).
+- A daily numbered list is **one lịch/schedule**. When it runs, finish every item after media. Do not register parallel schedules at the same clock.
+- User-facing wording: **lịch** / **schedule** — never **cron** / **cron job**.
+- After sending a generated file: one short line only for **that** item ("Đã xong." / "Done."). On compound multi-part queues, defer that ack until **after the last part** (image then prices → prices then ack).
+- Never send Hermes busy/interrupt UX (`Interrupting current task`, `First-time tip`, `/busy queue|steer|status`).
+- Tone: follow `communication/friendly-response` — no banter, no insults, no sarcasm, no blame. Stay friendly under all user emotions. Prefer result → explanation → next step.
+- Vietnamese people/gender words: follow `communication/vi-people-terms` (context, not a fixed map).
 - If the user swears: still answer the question. Do not refuse the turn. Do not repeat slurs as an attack. Do not roast or insult on request.
 """
 HERMES_STATE_DB_REL = (
@@ -216,7 +229,12 @@ def _docker_bin() -> Optional[str]:
     return None
 
 
-def _docker_exec_hermes(args: list[str], timeout: float = 90.0) -> tuple[int, str]:
+def _docker_exec_hermes(
+    args: list[str],
+    timeout: float = 90.0,
+    *,
+    max_out: int = 800,
+) -> tuple[int, str]:
     docker = _docker_bin()
     if not docker:
         # Volume wipe of /data/hermes is enough; skip docker exec noise.
@@ -229,9 +247,18 @@ def _docker_exec_hermes(args: list[str], timeout: float = 90.0) -> tuple[int, st
             timeout=timeout,
         )
         out = ((r.stdout or "") + (r.stderr or "")).strip()
-        return r.returncode, out[:800]
+        cap = max(80, int(max_out))
+        return r.returncode, out[:cap]
     except Exception as exc:
         return -1, str(exc)
+
+
+def _fetch_hermes_cron_list() -> tuple[int, str]:
+    return _docker_exec_hermes(
+        ["hermes", "cron", "list"],
+        timeout=120.0,
+        max_out=6000,
+    )
 
 
 def _wipe_hermes_file_sessions() -> dict[str, Any]:
@@ -1156,6 +1183,7 @@ def chat_command(
                 "!zalo kick @tag | <id>… — kick USER (nhiều id ok)\n"
                 "!zalo kick <Tên nhóm> | thread:<id> — kick GROUP\n"
                 "!zalo status | clearsessions | help\n"
+                "!zalo schedule list — (admin) xem lịch Hermes\n"
                 "!zalo learn | learn list | learn find | learn scan docs\n"
                 "!zalo learn approve|reject <id|*>\n"
                 "!zalo learn delete — reply tin bot: xem list (chưa xóa). Rồi delete <id|tên> hoặc delete all\n"
@@ -1382,6 +1410,27 @@ def chat_command(
         if NOTIFY_ON_APPROVE and _notify_admin("Zalo — sessions cleared", msg):
             return {"ok": True, "handled": True, "reply": ""}
         return {"ok": True, "handled": True, "reply": msg}
+
+    if cmd in {"schedule", "cron", "lich"}:
+        sub = (arg0 or "list").lower()
+        if sub in {"list", "ls", "show", "jobs"}:
+            rc, raw = _fetch_hermes_cron_list()
+            if rc not in {0, -1} and not raw:
+                return {
+                    "ok": True,
+                    "handled": True,
+                    "reply": "Không đọc được lịch (docker/Hermes).",
+                }
+            return {
+                "ok": True,
+                "handled": True,
+                "reply": fmt_hermes_cron_list(raw),
+            }
+        return {
+            "ok": True,
+            "handled": True,
+            "reply": "usage: !zalo schedule list",
+        }
 
     if cmd in {"learn", "pending", "kienthuc"}:
         sub = (arg0 or "list").lower()

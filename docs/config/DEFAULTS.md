@@ -69,6 +69,11 @@ ENABLE_GRAFANA=0
 ENABLE_LOKI=0
 ENABLE_PROMETHEUS=0
 ENABLE_ALLOY=0
+# Pairing: Grafana starts Prometheus + nine/node/stack exporters.
+# Loki starts Alloy (and the reverse). OmniRouter starts omni-exporter when Prometheus/Grafana is on.
+# Extra: Grafana+Prometheus ~1.5 GiB / ~10 GB / ~0.5 vCPU · Loki+Alloy ~1.5 GiB / ~20 GB / ~0.5 vCPU · all optionals ~5 GiB / ~40 GB / ~2 vCPU — docs/HARDWARE.md
+# profile.sh: Low/Medium default 1; High default 0 (override in .env anytime).
+ENABLE_OMNIROUTER=0
 ENABLE_OPENBAO=0
 ENABLE_OPENBAO_AGENT=0
 ENABLE_ANTIVIRUS=0
@@ -104,9 +109,9 @@ ZALO_AUTO_SETHOME_DM_ONLY=1
 
 | Profile | Optional on |
 |---|---|
-| low | none by default; **Traefik/API Gateway forced off** |
-| medium | OCR, SearXNG, Jobs, office file-gen, web backends + compact; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=2**; OpenVPN opt-in |
-| high | Medium + OpenBao UI, security-manager (YARA), SIEM, authz, policy, monitor; AV/sandbox/LLM judge **off** unless opted in; zalo-api with Zalo; notify opt-in; CloudDrive; **Traefik + API Gateway default ON** (`TRAEFIK_MODE=local`); **HERMES_REPLICAS=2**; OpenVPN opt-in |
+| low | none by default; Traefik + API Gateway **default ON**; Hermes×1; **OmniRouter default on** |
+| medium | OCR, SearXNG, Jobs, office file-gen, web backends + compact; **Traefik + API Gateway default ON**; **HERMES_REPLICAS=1**; **OmniRouter default on**; OpenVPN opt-in |
+| high | Medium + OpenBao UI, security-manager (YARA), SIEM, authz, policy, **optional** Grafana/Prometheus/Loki (paired exporters); AV/sandbox/LLM judge **off** unless opted in; zalo-api with Zalo; notify opt-in; CloudDrive; **Traefik + API Gateway default ON** (`TRAEFIK_MODE=local`); **HERMES_REPLICAS=2**; OpenVPN opt-in; **OmniRouter default off** |
 
 High overlay: `docker-compose.high.yml`. Edge overlay: `docker-compose.edge.yml` when `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` is `1`. Smoke: `bash run.sh check-high`. Seed keys: `bash run.sh first-setup-openbao`.
 
@@ -132,3 +137,11 @@ Details: [docs/05-edge-networking.md](../05-edge-networking.md). Snippet: [edge.
 ```
 
 When `HERMES_REPLICAS>1`, host ports `:28642`/`:29119` are **not** published (avoid bind clash). Reach Hermes via Traefik (`:8080`) or API Gateway (`:8088`). Low (`replicas=1`) still publishes localhost gateway/dashboard ports.
+
+Sizing and extra RAM/disk/CPU when Grafana/Prometheus/Loki/OmniRouter are enabled: [docs/HARDWARE.md](../HARDWARE.md).
+
+## Connectivity tests
+
+- Always-on **9Router** + default **model-router**: [test/cases/21-defaults-routers-connected.md](../../test/cases/21-defaults-routers-connected.md)
+- When Grafana is on, each deployed target: [test/cases/20-grafana-component-integration.md](../../test/cases/20-grafana-component-integration.md)
+- Simple chat must answer in **≤ 5s** on the host ([test/cases/17-zalo-latency-slo.md](../../test/cases/17-zalo-latency-slo.md)).

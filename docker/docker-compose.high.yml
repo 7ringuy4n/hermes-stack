@@ -1,5 +1,8 @@
 # assistant — High profile overlay (merged after medium when ASSISTANT_PROFILE=high)
-# Adds: OpenBao (+ UI), security, SIEM, authz, policy, monitor, optional CloudDrive.
+# Adds: OpenBao (+ UI), security, SIEM, authz, policy, optional monitor, optional CloudDrive.
+# Monitor profiles are paired (not one blob): grafana, prometheus, loki, alloy, omni-exporter.
+# Grafana starts Prometheus + nine/node/stack exporters. Loki starts Alloy.
+# OmniRouter starts omni-exporter only when Prometheus/Grafana is on.
 # Zalo channel admin is zalo-api (compose profile zalo when ENABLE_ZALO=1) — not High-only.
 # Notify OFF by default — compose profile "notify" when ENABLE_NOTIFY=1.
 # ClamAV / av-gateway OFF by default — compose profile "antivirus" when ENABLE_ANTIVIRUS=1.
@@ -181,7 +184,7 @@ services:
     networks: [internal]
 
   loki:
-    profiles: ["monitor"]
+    profiles: ["loki"]
     image: ${LOKI_IMAGE:-grafana/loki:3.4.2}
     container_name: loki
     restart: unless-stopped
@@ -193,7 +196,7 @@ services:
     networks: [internal]
 
   alloy:
-    profiles: ["monitor"]
+    profiles: ["alloy"]
     image: ${ALLOY_IMAGE:-grafana/alloy:v1.9.1}
     container_name: alloy
     restart: unless-stopped
@@ -212,7 +215,7 @@ services:
     networks: [internal]
 
   prometheus:
-    profiles: ["monitor"]
+    profiles: ["prometheus"]
     image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.2.1}
     container_name: prometheus
     restart: unless-stopped
@@ -227,7 +230,7 @@ services:
     networks: [internal]
 
   grafana:
-    profiles: ["monitor"]
+    profiles: ["grafana"]
     image: ${GRAFANA_IMAGE:-grafana/grafana:11.6.0}
     container_name: grafana
     restart: unless-stopped
@@ -244,11 +247,11 @@ services:
       - ./config/monitor/grafana:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
-      - loki
     networks: [internal]
 
+  # Pairs with 9Router (always on). Starts with Prometheus.
   nine-exporter:
-    profiles: ["monitor"]
+    profiles: ["prometheus"]
     build: ./architect/monitor/nine-exporter
     container_name: nine-exporter
     restart: unless-stopped
@@ -259,8 +262,43 @@ services:
       - SCRAPE_INTERVAL=30
     networks: [internal]
 
+  # Pairs with OmniRouter. run.sh adds profile omni-exporter only when both OmniRouter and Prometheus/Grafana are on.
+  omni-exporter:
+    profiles: ["omni-exporter"]
+    build: ./architect/monitor/nine-exporter
+    container_name: omni-exporter
+    restart: unless-stopped
+    environment:
+      - LISTEN=0.0.0.0:9104
+      - METRIC_PREFIX=omnirouter
+      - ROUTER_URL=http://omni-router:20129
+      - ROUTER_PASSWORD=${OMNIROUTER_INITIAL_PASSWORD:-${N9ROUTER_INITIAL_PASSWORD:-}}
+      - SCRAPE_INTERVAL=30
+    depends_on:
+      - omni-router
+    networks: [internal]
+
+  # Pairs with Grafana Hardware panels (node_cpu_* / node_memory_*). Starts with Prometheus.
+  node-exporter:
+    profiles: ["prometheus"]
+    image: ${NODE_EXPORTER_IMAGE:-prom/node-exporter:v1.9.1}
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    networks: [internal]
+
+  # Pairs with Grafana stack health (assistant_service_up). Starts with Prometheus.
   stack-exporter:
-    profiles: ["monitor"]
+    profiles: ["prometheus"]
     build: ./architect/monitor/stack-exporter
     container_name: stack-exporter
     restart: unless-stopped
@@ -271,7 +309,9 @@ services:
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_COLLECTION_KNOWLEDGE=${QDRANT_COLLECTION_KNOWLEDGE:-knowledge_chunks}
       - QDRANT_COLLECTION_MEMORY=${QDRANT_COLLECTION_MEMORY:-conversational_memory}
-      - HEALTH_TARGETS=${STACK_HEALTH_TARGETS:-qdrant=qdrant:6333/readyz,security-manager=security-manager:8093/health,ocr=ocr:8091/health,ingest=ingest:8099/health,authz=authz:8097/health,embedding=embedding:8094/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,openbao=openbao:8200/v1/sys/health}
+      # OmniRoute has no /health (404). Probe `/` (SPA 200). /v1/models needs auth.
+      # 9Router UI /health is 404 and /v1/models is 401 — TCP listen only (nine-exporter does authenticated scrape).
+      - HEALTH_TARGETS=${STACK_HEALTH_TARGETS:-qdrant=qdrant:6333/readyz,security-manager=security-manager:8093/health,ocr=ocr:8091/health,ingest=ingest:8099/health,authz=authz:8097/health,embedding=embedding:8094/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,openbao=openbao:8200/v1/sys/health,omni-router=omni-router:20129/,model-router=model-router:8096/health,9router=9router:20128}
     networks: [internal]
 
   # Optional — only when run.sh passes --profile notify (ENABLE_NOTIFY=1)

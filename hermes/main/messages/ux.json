@@ -9,5 +9,13 @@
   },
   "secret_probe": {
     "refuse": "Cannot provide secrets or confidential documents."
+  },
+  "queue": {
+    "rate_limited": "Bạn gửi hơi nhanh — tin này đã vào hàng chờ, mình trả lời lần lượt.",
+    "queued": "Mình đang trả lời tin trước. Các yêu cầu sau đã vào hàng chờ.",
+    "full": "Hàng chờ đầy. Gửi lại sau giúp mình."
+  },
+  "media": {
+    "done": "Đã xong."
   }
 }

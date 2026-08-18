@@ -39,7 +39,7 @@ Whole system: [03-architecture.md](./03-architecture.md).
   </tr>
   <tr><td colspan="5" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr>
-    <td colspan="5" style="padding:12px;background:#2563eb;color:#fff;text-align:center;">Load skills → common-rules · mode-router</td>
+      <td colspan="5" style="padding:12px;background:#2563eb;color:#fff;text-align:center;">Load skills → common-rules · friendly-response · vi-people-terms · mode-router</td>
   </tr>
   <tr><td colspan="5" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr>
@@ -51,7 +51,7 @@ Whole system: [03-architecture.md](./03-architecture.md).
   <tr><td colspan="5" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr>
     <td colspan="5" style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;">
-      One short reply → plugin if social-app
+      One short reply → plugin if social-app. Zalo Valkey FIFO serializes compound/rate-limited turns; busy/interrupt copy is dropped; daily lists stay one cron job.
     </td>
   </tr>
 </table>
@@ -419,7 +419,7 @@ Valkey = short-term. Postgres = durable facts.
   </tr>
 </table>
 
-**Tested (2026-08-16):** High profile round-trip `backup` → `verify` → `restore` with canary file and post-restore health (gateway, Zalo SSE, Postgres, Valkey, Hermes×2). Details: [architect/backup-restore/README.md](../architect/backup-restore/README.md) · sizing: [HARDWARE.md](./HARDWARE.md).
+**Tested (2026-08-16):** High profile round-trip `backup` → `verify` → `restore` with canary file and post-restore health (gateway, Zalo SSE, Postgres, Valkey, Hermes×2). Details: [architect/backup-restore/README.md](../architect/backup-restore/README.md) · sizing + extra RAM/disk/CPU: [HARDWARE.md](./HARDWARE.md).
 
 ---
 
@@ -431,7 +431,7 @@ Valkey = short-term. Postgres = durable facts.
   <tr>
     <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">All services<br/>health · metrics · logs</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:14px;background:#fde8e8;border:3px solid #fbbf24;text-align:center;width:36%;"><b>THIS — monitor</b><br/>Prom · Loki · Alloy · Grafana</td>
+    <td style="padding:14px;background:#fde8e8;border:3px solid #fbbf24;text-align:center;width:36%;"><b>THIS — monitor</b><br/>Prom · Loki · Alloy · Grafana<br/><small>exporters pair with components</small></td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">localhost / SSH</td>
   </tr>
@@ -450,6 +450,8 @@ Valkey = short-term. Postgres = durable facts.
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:16%;">Grafana</td>
   </tr>
 </table>
+
+Grafana **pairs with Prometheus** (`node-exporter` for Hardware panels, `nine-exporter` for 9Router, `stack-exporter` for UP/DOWN). Loki **pairs with Alloy**. OmniRouter **pairs with `omni-exporter`** when metrics are on. Extra usage: Grafana+Prometheus ~1.5 GiB / ~10 GB / ~0.5 vCPU, Loki+Alloy ~1.5 GiB / ~20 GB / ~0.5 vCPU, all optional features **~5 GiB RAM · ~40 GB disk · ~2 vCPU** — [HARDWARE.md](./HARDWARE.md).
 
 ---
 
