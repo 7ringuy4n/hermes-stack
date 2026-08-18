@@ -32,7 +32,7 @@ must execute **wakeup + image + fuel prices** on each run — not only the first
 
 - Adapter drops busy/interrupt `/busy` copy (`gateway_noise.py`).
 - Immediate compound still splits, but waits until the current part has sent before the next.
-- Schedule-shaped lists stay **one job** (`ZALO_SCHEDULE_KEEP_WHOLE`, default on).
+- Schedule-shaped lists stay **one job** (`ZALO_SCHEDULE_KEEP_WHOLE`, default on). Markers include `hằng ngày` / `hàng ngày` / `GMT+7`.
 - Skills: one cron, complete every numbered item after media.
 
 ## Preconditions
@@ -44,6 +44,7 @@ must execute **wakeup + image + fuel prices** on each run — not only the first
 
 1. `python test/scripts/gateway_noise_unit.py`
 2. `python test/scripts/multi_request_unit.py` — schedule fixture stays **one** part; immediate `1`/`2.Sau đó` still splits
+3. `python test/scripts/workflow_schedule_concurrency_unit.py` — plenty (6) items, same-time vs different-time, Zalo + Hermes, 13:54 GMT+7 catch-up
 
 ## Steps (lab — optional)
 

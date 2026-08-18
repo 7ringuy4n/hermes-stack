@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from schedule_list import (
     ZALO_SCHEDULE_LIST_LIMIT,
     fmt_hermes_cron_list,
+    prompt_is_clock_only,
     schedule_row_label,
 )
 
@@ -19,7 +20,13 @@ _CRON5_RE = re.compile(
     r"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+))?\s*$"
 )
 _HHMM_RE = re.compile(
-    r"^(?P<h>\d{1,2})\s*[:h]\s*(?P<m>\d{2})?\s*(?P<ampm>am|pm|sáng|chiều|tối)?$",
+    r"^(?P<h>\d{1,2})\s*[:h]\s*(?P<m>\d{2})?\s*(?P<ampm>am|pm|sáng|sang|chiều|chieu|tối|toi)?$",
+    re.I,
+)
+_FLAG_TIME_RE = re.compile(r"--time(?:r)?(?:\s+|=)(\S+)", re.I)
+_FLAG_SCHED_RE = re.compile(r"--schedule(?:\s+|=)(.+)$", re.I)
+_TIMER_PREFIX_RE = re.compile(
+    r"^(?:timer|hẹn\s*giờ|hen\s*gio|lúc|luc|at)\s+",
     re.I,
 )
 _INTERNAL_RE = re.compile(
@@ -35,6 +42,25 @@ def _now_iso(tz_name: str) -> str:
 
 def jobs_file(data_dir: str) -> Path:
     return Path(data_dir) / "cron" / JOBS_NAME
+
+
+def _relax_jobs_perms(path: Path) -> None:
+    """Hermes ticks as UID 1000; zalo-api writes as root. Keep the file writable."""
+    import os
+
+    try:
+        os.chmod(path, 0o664)
+    except OSError:
+        pass
+    try:
+        uid = int(os.getenv("HERMES_UID") or "1000")
+        gid = int(os.getenv("HERMES_GID") or "1000")
+        os.chown(path, uid, gid)
+    except (OSError, ValueError):
+        try:
+            os.chmod(path, 0o666)
+        except OSError:
+            pass
 
 
 def load_bundle(path: Path) -> dict[str, Any]:
@@ -66,6 +92,7 @@ def save_bundle(path: Path, jobs: list[dict[str, Any]], tz_name: str) -> None:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             f.write(raw)
         os.replace(tmp, path)
+        _relax_jobs_perms(path)
     except Exception:
         try:
             os.unlink(tmp)
@@ -88,6 +115,36 @@ def visible_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def job_origin_thread_ids(job: dict[str, Any]) -> set[str]:
+    origin = job.get("origin") if isinstance(job.get("origin"), dict) else {}
+    out: set[str] = set()
+    for key in ("chat_id", "thread_id"):
+        val = str(origin.get(key) or "").strip()
+        if val:
+            out.add(val)
+    return out
+
+
+def jobs_for_thread(jobs: list[dict[str, Any]], thread_id: str) -> list[dict[str, Any]]:
+    """User jobs whose origin is this Zalo thread (DM or group)."""
+    tid = (thread_id or "").strip()
+    vis = visible_jobs(jobs)
+    if not tid:
+        return vis
+    return [j for j in vis if tid in job_origin_thread_ids(j)]
+
+
+def take_all_flag(rest: str) -> tuple[bool, str]:
+    """Split leading all/*/--all from schedule rest (admin global scope)."""
+    raw = (rest or "").strip()
+    if not raw:
+        return False, ""
+    tokens = raw.split(None, 1)
+    if tokens[0].lower() in {"all", "*", "--all"}:
+        return True, tokens[1].strip() if len(tokens) > 1 else ""
+    return False, raw
+
+
 def parse_hhmm_cron(text: str) -> Optional[str]:
     t = (text or "").strip().lower()
     m = _HHMM_RE.match(t)
@@ -96,13 +153,21 @@ def parse_hhmm_cron(text: str) -> Optional[str]:
     hour = int(m.group("h"))
     minute = int(m.group("m") or 0)
     ampm = (m.group("ampm") or "").lower()
-    if ampm in {"pm", "chiều", "tối"} and hour < 12:
+    if ampm in {"pm", "chiều", "chieu", "tối", "toi"} and hour < 12:
         hour += 12
-    if ampm in {"am", "sáng"} and hour == 12:
+    if ampm in {"am", "sáng", "sang"} and hour == 12:
         hour = 0
     if hour > 23 or minute > 59:
         return None
     return f"{minute} {hour} * * *"
+
+
+def extract_clock_payload(text: str) -> Optional[str]:
+    """If the whole payload is a clock (optionally after timer/lúc), return cron expr."""
+    t = _TIMER_PREFIX_RE.sub("", (text or "").strip()).strip()
+    if not t:
+        return None
+    return parse_hhmm_cron(t) or parse_cron_expr(t)
 
 
 def parse_cron_expr(text: str) -> Optional[str]:
@@ -132,6 +197,20 @@ def split_add_args(rest: str) -> tuple[Optional[str], str, str]:
     else:
         left, prompt = raw, ""
     tokens = left.split()
+    joined = " ".join(tokens)
+    tm = _TIMER_PREFIX_RE.match(joined)
+    if tm:
+        rest_t = joined[tm.end() :].strip()
+        bits = rest_t.split(None, 1)
+        if bits:
+            expr = parse_hhmm_cron(bits[0])
+            if expr:
+                leftover = bits[1].strip() if len(bits) > 1 else ""
+                if leftover and not prompt:
+                    prompt = leftover
+                elif leftover:
+                    name = leftover
+                return expr, name, prompt
     # 5-field cron at start
     if len(tokens) >= 5 and all(re.match(r"^[\d*/,-]+$", t) or t == "*" for t in tokens[:5]):
         expr = " ".join(tokens[:5])
@@ -155,23 +234,136 @@ def split_add_args(rest: str) -> tuple[Optional[str], str, str]:
     return expr, name, prompt
 
 
-def resolve_job(jobs: list[dict[str, Any]], sel: str) -> tuple[Optional[dict[str, Any]], str]:
-    s = (sel or "").strip()
+def resolve_job_prefix(
+    jobs: list[dict[str, Any]], rest: str
+) -> tuple[Optional[dict[str, Any]], str, str]:
+    """Match list index, exact name/id, or longest name/id prefix of rest.
+
+    Returns (job, leftover_after_selector, err). Leftover is the remainder of
+    rest after the matched name (for `update Tên : payload`).
+    """
+    s = (rest or "").strip()
     if not s:
-        return None, "usage: !zalo schedule show|update|remove <số|tên>"
+        return None, "", "usage: !zalo schedule show|update|remove <số|tên>"
     visible = visible_jobs(jobs)
-    if s.isdigit():
-        idx = int(s)
+    tokens = s.split(None, 1)
+    head = tokens[0]
+    tail = tokens[1] if len(tokens) > 1 else ""
+    if head.isdigit():
+        idx = int(head)
         if 1 <= idx <= len(visible):
-            return visible[idx - 1], ""
-        return None, f"Không có lịch số {idx} (đang có {len(visible)})."
+            return visible[idx - 1], tail, ""
+        return None, "", f"Không có lịch số {idx} (đang có {len(visible)})."
     sl = s.lower()
+    best: Optional[dict[str, Any]] = None
+    best_len = 0
+    for job in visible:
+        name = str(job.get("name") or "").strip()
+        jid = str(job.get("id") or "").strip()
+        for key in (name, jid):
+            if not key:
+                continue
+            kl = key.lower()
+            if sl == kl:
+                return job, "", ""
+            if sl.startswith(kl) and len(kl) > best_len:
+                best = job
+                best_len = len(kl)
+    if best is not None and best_len:
+        leftover = s[best_len:].strip()
+        return best, leftover, ""
     for job in visible:
         name = str(job.get("name") or "").lower()
         jid = str(job.get("id") or "").lower()
-        if sl == name or sl == jid or sl in name:
-            return job, ""
-    return None, f"Không tìm thấy lịch “{s}”."
+        if sl in name or sl == jid:
+            return job, "", ""
+    shown = s if len(s) <= 80 else s[:77] + "…"
+    return None, "", f"Không tìm thấy lịch “{shown}”."
+
+
+def resolve_job(jobs: list[dict[str, Any]], sel: str) -> tuple[Optional[dict[str, Any]], str]:
+    job, _leftover, err = resolve_job_prefix(jobs, sel)
+    return job, err
+
+
+def _strip_prompt_sep(text: str) -> str:
+    t = (text or "").strip()
+    if t.startswith(":"):
+        t = t[1:].strip()
+    if t.startswith("--"):
+        t = t[2:].strip()
+    return t
+
+
+def parse_update_args(
+    rest: str, jobs: list[dict[str, Any]]
+) -> tuple[Optional[dict[str, Any]], Optional[str], str, str]:
+    """Parse `update` rest into (job, new_cron_expr, new_prompt, err).
+
+    Accepts:
+      update <n|tên> --time 7:00
+      update <n|tên> --timer 12:35
+      update <n|tên> -- <nội dung>
+      update <tên> : <nội dung>   (colon; keeps a following numbered list whole)
+    """
+    raw = (rest or "").strip()
+    if not raw:
+        return None, None, "", (
+            "usage:\n!zalo schedule update <số|tên> --time 7:00\n"
+            "!zalo schedule update <số|tên> -- <nội dung>\n"
+            "!zalo schedule update <tên> : <nội dung>"
+        )
+    new_time = ""
+    tm = _FLAG_TIME_RE.search(raw)
+    if tm:
+        new_time = tm.group(1)
+        raw = (raw[: tm.start()] + raw[tm.end() :]).strip()
+    ts = _FLAG_SCHED_RE.search(raw)
+    if ts and not new_time:
+        new_time = ts.group(1).strip().strip('"')
+        raw = raw[: ts.start()].strip()
+    new_prompt = ""
+    if " -- " in raw:
+        sel, new_prompt = raw.split(" -- ", 1)
+        sel, new_prompt = sel.strip(), new_prompt.strip()
+        job, err = resolve_job(jobs, sel)
+    else:
+        job, leftover, err = resolve_job_prefix(jobs, raw)
+        new_prompt = _strip_prompt_sep(leftover)
+    if err or job is None:
+        return None, None, "", err or (
+            "usage:\n!zalo schedule update <số|tên> --time 7:00\n"
+            "!zalo schedule update <số|tên> -- <nội dung>"
+        )
+    expr: Optional[str] = None
+    if new_time:
+        expr = parse_hhmm_cron(new_time) or parse_cron_expr(new_time)
+        if not expr:
+            return job, None, new_prompt, "Lịch không hợp lệ. Dùng 6:00 hoặc 0 6 * * *"
+    elif new_prompt:
+        clock = extract_clock_payload(new_prompt)
+        if clock:
+            expr = clock
+            new_prompt = ""
+    if not new_time and not expr and not new_prompt:
+        return job, None, "", (
+            "usage:\n!zalo schedule update <số|tên> --time 7:00\n"
+            "!zalo schedule update <số|tên> -- <nội dung>\n"
+            "!zalo schedule update <tên> : <nội dung>"
+        )
+    return job, expr, new_prompt, ""
+
+
+def apply_schedule_update(job: dict[str, Any], expr: Optional[str], new_prompt: str) -> None:
+    """Write time and/or prompt. Clock-only old prompt is not a real task — drop it."""
+    if expr:
+        job["schedule"] = {"kind": "cron", "expr": expr, "display": expr}
+        job["schedule_display"] = expr
+        job["next_run_at"] = None
+        if not new_prompt and prompt_is_clock_only(str(job.get("prompt") or "")):
+            job["prompt"] = ""
+    if new_prompt:
+        job["prompt"] = new_prompt
 
 
 def new_job(
@@ -198,7 +390,7 @@ def new_job(
         "model_snapshot": None,
         "base_url": None,
         "script": None,
-        "no_agent": False,
+        "no_agent": True,
         "monitor_script": None,
         "monitor_url": None,
         "monitor_state": None,
@@ -234,29 +426,45 @@ def new_job(
 def fmt_show(job: dict[str, Any]) -> str:
     label = schedule_row_label(job) or str(job.get("name") or "lịch")
     prompt = re.sub(r"\s+", " ", str(job.get("prompt") or "")).strip()
+    if prompt_is_clock_only(prompt):
+        prompt = ""
     enabled = "bật" if job.get("enabled") else "tắt"
     state = str(job.get("state") or "")
     lines = [label, f"trạng thái: {enabled}" + (f" / {state}" if state else "")]
     if prompt:
         lines.append(prompt[:500])
+    else:
+        lines.append("Chưa có nội dung. Đặt việc: !zalo schedule update <tên> : <việc>")
     return "\n".join(lines)
 
 
-def fmt_list(jobs: list[dict[str, Any]], *, limit: int | None = None) -> str:
+def fmt_list(
+    jobs: list[dict[str, Any]],
+    *,
+    limit: int | None = None,
+    heading: str | None = None,
+) -> str:
     cap = limit if limit is not None else ZALO_SCHEDULE_LIST_LIMIT
     return fmt_hermes_cron_list(
         __import__("json").dumps(visible_jobs(jobs), ensure_ascii=False),
         limit=cap,
+        heading=heading,
     )
 
 
 USAGE = (
     "!zalo schedule list\n"
+    "!zalo schedule list all\n"
     "!zalo schedule show <số|tên>\n"
+    "!zalo schedule show all <số|tên>\n"
     "!zalo schedule add <lịch> <nội dung>\n"
     "  ví dụ: !zalo schedule add 6:00 Gửi giá xăng\n"
     "  ví dụ: !zalo schedule add 0 6 * * * Gửi giá xăng\n"
     "!zalo schedule update <số|tên> --time 7:00\n"
+    "!zalo schedule update <số|tên> --timer 12:35\n"
     "!zalo schedule update <số|tên> -- <nội dung mới>\n"
-    "!zalo schedule remove <số|tên>"
+    "!zalo schedule update <tên> : <nội dung mới>\n"
+    "!zalo schedule update all <số|tên> --time 7:00\n"
+    "!zalo schedule remove <số|tên>\n"
+    "!zalo schedule remove all <số|tên>"
 )
