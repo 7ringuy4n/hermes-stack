@@ -235,6 +235,11 @@ if changed:
     print("IMAGE_BACKENDS_WRITTEN")
 PY
 set -a; . ./.env; set +a
+docker compose --project-directory /opt/assistant $files $profiles build session
+docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate session
+sleep 2
+curl -sS -m 20 -X POST http://127.0.0.1:8107/v1/sessions/reset-all || echo SESSION_RESET_SKIP
+echo SESSION_RESET_DONE
 docker compose --project-directory /opt/assistant $files $profiles build dispatcher
 docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate dispatcher
 sleep 4
@@ -250,6 +255,42 @@ chmod 775 /data/assistant/cron 2>/dev/null || true
 chmod 664 /data/assistant/cron/jobs.json 2>/dev/null || true
 find /data/assistant/replicas -name jobs.json -exec chmod 664 {} + 2>/dev/null || true
 
+# Overlay repo messages (protocol drop list) onto the shared mount.
+if [[ -d /opt/assistant/hermes/main/messages ]]; then
+  mkdir -p /data/assistant/messages
+  cp -a /opt/assistant/hermes/main/messages/. /data/assistant/messages/ 2>/dev/null || true
+fi
+# Hermes Agent transcripts live under replica HERMES_HOME (not only Valkey).
+# A huge sessions.json makes a 1-word ping compact + 413 on the LLM hop.
+find /data/assistant/replicas -name sessions.json -not -path '*/home/.cache/*' -print -delete 2>/dev/null || true
+# Hermes chat must go through model-router (compose default). Direct 9router inherits
+# a huge context and returns 413 from the upstream model.
+python3 - <<'PY'
+from pathlib import Path
+import re
+p = Path("/opt/assistant/.env")
+t = p.read_text(encoding="utf-8", errors="replace")
+t2, n = re.subn(
+    r"(?m)^HERMES_OPENAI_BASE_URL=.*9router.*$",
+    "HERMES_OPENAI_BASE_URL=http://model-router:8096/v1",
+    t,
+)
+if n:
+    p.write_text(t2, encoding="utf-8")
+    print("HERMES_OPENAI_TO_MODEL_ROUTER")
+else:
+    print("HERMES_OPENAI_UNCHANGED")
+cfg = Path("/data/assistant/config.yaml")
+if cfg.is_file():
+    raw = cfg.read_text(encoding="utf-8", errors="replace")
+    fixed = raw.replace("http://9router:20128/v1", "http://model-router:8096/v1")
+    if fixed != raw:
+        cfg.write_text(fixed, encoding="utf-8")
+        print("HERMES_CONFIG_YAML_TO_MODEL_ROUTER")
+    else:
+        print("HERMES_CONFIG_YAML_UNCHANGED")
+PY
+set -a; . ./.env; set +a
 # Overlay repo skills onto replica copies before restart (entrypoint used to cp -n and skip updates).
 if [[ -d /opt/assistant/hermes/main/skills ]]; then
   for d in /data/assistant/replicas/*/skills; do
@@ -257,9 +298,32 @@ if [[ -d /opt/assistant/hermes/main/skills ]]; then
     cp -a /opt/assistant/hermes/main/skills/. "$d"/
   done
 fi
+if [[ -d /opt/assistant/hermes/main/plugins ]]; then
+  mkdir -p /data/assistant/plugins
+  cp -a /opt/assistant/hermes/main/plugins/. /data/assistant/plugins/ 2>/dev/null || true
+  for d in /data/assistant/replicas/*/plugins; do
+    [[ -d "$d" ]] || continue
+    cp -a /opt/assistant/hermes/main/plugins/. "$d"/
+  done
+  while IFS= read -r ad; do
+    [[ -n "$ad" ]] || continue
+    dir=$(dirname "$ad")
+    cp -a /opt/assistant/hermes/main/plugins/zalo/*.py "$dir"/ 2>/dev/null || true
+  done < <(find /data/assistant /opt/data -name adapter.py 2>/dev/null | grep -Ei 'zalo|zalo_platform' || true)
+fi
 
-# Bind-mounted skills/plugins/SOUL — restart replicas to pick up files
-docker ps -q --filter name=hermes --filter status=running | xargs -r docker restart
+# Hermes Zalo owner probes the host bridge at boot. Wait until it is logged in
+# so adapter creation does not fail while inject-event is being patched.
+for _ in $(seq 1 30); do
+  if curl -fsS -m 5 http://127.0.0.1:8787/health | grep -q '"loggedIn":true'; then
+    echo BRIDGE_READY_BEFORE_HERMES
+    break
+  fi
+  sleep 2
+done
+
+# Recreate replicas so OPENAI_BASE_URL and overlaid plugins/messages take effect.
+docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate --scale hermes="${HERMES_REPLICAS:-1}" hermes
 hname=""
 for _ in $(seq 1 24); do
   sleep 5
@@ -269,6 +333,25 @@ for _ in $(seq 1 24); do
   fi
 done
 echo "hermes_probe_container=${hname:-none}"
+
+# Patch the host Node bridge after Hermes recreate. Restart only when newly patched
+# so an existing inject-event route is not dropped (8787 Connection refused).
+python3 /opt/assistant/scripts/main/patch_zalo_bridge_inject.py || echo INJECT_PATCH_FAIL
+for _ in $(seq 1 20); do
+  code=$(curl -sS -m 3 -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8787/inject-event -H 'Content-Type: application/json' -d '{}' || echo 000)
+  echo "inject_http=$code"
+  case "$code" in
+    200|400|401|403) echo INJECT_ROUTE_OK; break ;;
+  esac
+  sleep 1
+done
+for _ in $(seq 1 30); do
+  if curl -fsS -m 5 http://127.0.0.1:8787/health | grep -q '"loggedIn":true'; then
+    echo BRIDGE_LOGGED_IN
+    break
+  fi
+  sleep 2
+done
 
 echo "=== POST HEALTH ==="
 ok=1
@@ -330,7 +413,20 @@ else
   echo files_classify_nocite=missing
   ok=0
 fi
-test -f /opt/assistant/architect/models/model-router/config/outbound.json && echo files_outbound_cfg=ok || { echo files_outbound_cfg=missing; ok=0; }
+if grep -q 'execution_class' /opt/assistant/architect/models/model-router/config/classify.json; then
+  echo files_fast_dispatcher=ok
+else
+  echo files_fast_dispatcher=missing
+  ok=0
+fi
+test -f /opt/assistant/hermes/main/plugins/zalo/classify_client.py && echo files_classify_client=ok || { echo files_classify_client=missing; ok=0; }
+test -f /opt/assistant/hermes/main/plugins/zalo/gateway_noise.py && echo files_gateway_noise=ok || { echo files_gateway_noise=missing; ok=0; }
+if [[ -n "$hname" ]] && docker exec "$hname" python3 -c "import sys; sys.path.insert(0,'/opt/data/plugins/zalo'); import classify_client, gateway_noise; print('replica_plugin_import=ok')" 2>/dev/null; then
+  :
+else
+  echo replica_plugin_import=fail
+  ok=0
+fi
 test -f /opt/assistant/hermes/main/skills/image-gen/SKILL.md && echo files_image_gen=ok || echo files_image_gen=missing
 if grep -q 'Never' /opt/assistant/hermes/main/skills/image-gen/SKILL.md && grep -q 'web_extract' /opt/assistant/hermes/main/skills/image-gen/SKILL.md; then
   echo files_image_gen_noscrape=ok

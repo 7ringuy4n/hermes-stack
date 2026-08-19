@@ -108,6 +108,16 @@ if [[ -z "$KEY" ]]; then
   exit 0
 fi
 tmpdir=$(mktemp -d)
+classify_one() {{
+  i="$1"
+  t0=$(date +%s%3N)
+  code=$(curl -sS -m 25 -o "$tmpdir/cl-$i.json" -w "%{{http_code}}" \\
+    -X POST "http://127.0.0.1:8096/v1/classify" \\
+    -H "Content-Type: application/json" \\
+    -d "{{\\"text\\":\\"ping $i xin chào\\",\\"timezone\\":\\"Asia/Ho_Chi_Minh\\"}}" || echo 000)
+  t1=$(date +%s%3N)
+  echo "classify $code $((t1-t0))" > "$tmpdir/k-$i.txt"
+}}
 send_one() {{
   i="$1"
   t0=$(date +%s%3N)
@@ -118,24 +128,45 @@ send_one() {{
   t1=$(date +%s%3N)
   echo "text $code $((t1-t0))" > "$tmpdir/c-$i.txt"
 }}
+send_vi() {{
+  i="$1"
+  t0=$(date +%s%3N)
+  code=$(curl -sS -m "$CHAT_TO" -o "$tmpdir/v-$i.json" -w "%{{http_code}}" \\
+    -X POST "http://127.0.0.1:8080/v1/chat/completions" \\
+    -H "Authorization: Bearer ${{KEY}}" -H "Content-Type: application/json" \\
+    -d "{{\\"model\\":\\"hermes\\",\\"messages\\":[{{\\"role\\":\\"user\\",\\"content\\":\\"xin chào $i\\"}}],\\"max_tokens\\":16}}" || echo 000)
+  t1=$(date +%s%3N)
+  echo "vi $code $((t1-t0))" > "$tmpdir/vlat-$i.txt"
+}}
 for i in $(seq 1 $N); do send_one "$i"; done
+for i in $(seq 1 $N); do send_vi "$i"; done
+for i in $(seq 1 $N); do classify_one "$i"; done
 echo "ROWS_BEGIN"
-for i in $(seq 1 $N); do cat "$tmpdir/c-$i.txt" 2>/dev/null || echo "text 000 0"; done
+for i in $(seq 1 $N); do cat "$tmpdir/k-$i.txt" 2>/dev/null || echo "classify 000 0"; cat "$tmpdir/c-$i.txt" 2>/dev/null || echo "text 000 0"; cat "$tmpdir/vlat-$i.txt" 2>/dev/null || echo "vi 000 0"; done
 echo "ROWS_END"
 rm -rf "$tmpdir"
 echo "RESULT:{{\\"status\\":\\"DONE\\",\\"n\\":$N}}"
 '''
-    out = sudo_bash(c, script, timeout=CHAT_TO * N + 60)
+    out = sudo_bash(c, script, timeout=CHAT_TO * N * 3 + 90)
     latencies: list[int] = []
+    classify_ms: list[int] = []
+    vi_ms: list[int] = []
     http_codes: list[str] = []
     for line in out.splitlines():
         if line.strip() in {"ROWS_BEGIN", "ROWS_END"}:
             continue
         parts = line.split()
-        if len(parts) >= 3 and parts[0] == "text":
-            http_codes.append(parts[1])
+        if len(parts) >= 3 and parts[0] in {"text", "classify", "vi"}:
+            if parts[0] == "text":
+                http_codes.append(parts[1])
             if parts[2].isdigit():
-                latencies.append(int(parts[2]))
+                val = int(parts[2])
+                if parts[0] == "text":
+                    latencies.append(val)
+                elif parts[0] == "classify":
+                    classify_ms.append(val)
+                else:
+                    vi_ms.append(val)
 
     if not latencies:
         note("latency", "SKIP", "no samples")
@@ -149,6 +180,10 @@ echo "RESULT:{{\\"status\\":\\"DONE\\",\\"n\\":$N}}"
         "p95_ms": percentile(latencies, 95),
         "max_ms": max(latencies),
         "http_codes": http_codes,
+        "classify_p50_ms": percentile(classify_ms, 50) if classify_ms else None,
+        "classify_max_ms": max(classify_ms) if classify_ms else None,
+        "vi_p50_ms": percentile(vi_ms, 50) if vi_ms else None,
+        "vi_max_ms": max(vi_ms) if vi_ms else None,
     }
     note("latency", "RECORD", json.dumps(summary))
 
