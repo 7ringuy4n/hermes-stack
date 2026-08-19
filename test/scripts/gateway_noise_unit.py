@@ -64,7 +64,23 @@ def main() -> int:
     if not is_process_narration("Rendering frames..."):
         print("FAIL rendering frames must drop")
         return 1
-    if is_process_narration("E5 RON92: 21.230 đ/lít"):
+    if not drop_outbound("✓ Context compaction complete — continuing turn..."):
+        print("FAIL compaction protocol must drop")
+        return 1
+    if not drop_outbound("⚠️ Request payload too large (413) — compression attempt 1/3..."):
+        print("FAIL 413 protocol must drop")
+        return 1
+    if not drop_outbound(
+        "🔄 Session auto-reset — the conversation exceeded the maximum context size "
+        "and could not be compressed further. Your next message will start a fresh session."
+    ):
+        print("FAIL session auto-reset protocol must drop")
+        return 1
+    if not drop_outbound(
+        "⚠️ Cron 'Báo cáo' failed: vars() argument must have __dict__ attribute"
+    ):
+        print("FAIL python exception protocol must drop")
+        return 1
         print("FAIL price result must not be narration")
         return 1
     if drop_outbound(""):

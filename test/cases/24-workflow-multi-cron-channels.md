@@ -82,7 +82,7 @@ Authenticated `POST /v1/chat/completions` with the same fixtures. Immediate list
 - Same clock: Zalo `execute=hermes` and Hermes `execute=hermes_http` both create 6 jobs, no shared job ids
 - Different clock: 06:00 tick does not fire 12:00
 - 13:54 created at 13:54:20 still fires **today**
-- Clock extract prefers `lúc 13:54` over a `6:00` inside item 1
+- Interactive chat must not wait for unrelated media/OCR jobs. Classify `execution_class=interactive` → Hermes; `async` → ACK then workflow.
 - Each Zalo `execute=hermes` job uses an isolated Hermes session and may run in parallel (cap `ZALO_WORKFLOW_PARALLEL`). Replies are not merged into one pending follow-up.
 
 ## Fail events

@@ -9,7 +9,7 @@
 | File | Function |
 |---|---|
 | `learn-notify.json` | Knowledge pending/approved/deleted notify templates (`from={id}|{name}`) |
-| `ux.json` | Cite empty/ingest-down, secret-probe refuse, Zalo queue, schedule confirm, session interrupted |
+| `ux.json` | Cite empty/ingest-down, secret-probe refuse, Zalo queue, schedule confirm, session interrupted, async ACK |
 | `zalo-bridge.json` | zca-js / plugin API error catalog (invalid-param, retryable send). Not user NLU. |
 
 ### `ux.json` → `queue` (Zalo inbound FIFO)
@@ -30,9 +30,17 @@ Confirm when a lịch is stored. Value is a **locale map** (`en`, `vi`, …). Th
 |-----|----------------|------|
 | `schedule.saved` | `ZALO_SCHEDULE_SAVED_MSG` (forces one string for all locales) | After `create_schedule` succeeds |
 
+### `ux.json` → `outbound_protocol_drop`
+
+Hermes Agent protocol lines (compaction, HTTP 413, session auto-reset). Substring match on these markers is **not** user NLU — it is a known protocol format. Adapter drops matching outbound before the outbound LLM hop.
+
 ### `ux.json` → `session.interrupted`
 
 Sent when a Zalo workflow job throws. Same locale-map rules as `schedule.saved`. Override: `ZALO_SESSION_INTERRUPTED_MSG`.
+
+### `ux.json` → `schedule.job_failed`
+
+Sent when a scheduled job cannot complete (including a dropped Python/protocol crash line). Same locale-map rules as `schedule.saved`. Override: `ZALO_JOB_FAILED_MSG`.
 
 ## Rules
 

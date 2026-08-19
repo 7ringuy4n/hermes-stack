@@ -42,7 +42,14 @@ def main() -> int:
     if not file_in_send_window(t0 + 50, t0, t0, grace_s=8, ceiling=t0 + 100):
         print("FAIL in-job file under ceiling")
         return 1
-    from autosend import bridge_response_ok, existing_media_path, file_ready_for_send, looks_invalid_param  # noqa: E402
+    from autosend import (  # noqa: E402
+        bridge_response_ok,
+        existing_media_path,
+        file_ready_for_send,
+        looks_invalid_param,
+        prefer_remuxed_video,
+        video_dedupe_stem,
+    )
 
     if file_ready_for_send(t0, t0 + 0.1, min_age_s=0.8):
         print("FAIL growing file treated ready")
@@ -67,6 +74,18 @@ def main() -> int:
         print("FAIL empty body")
         return 1
     import tempfile
+
+    if video_dedupe_stem("city.mp4") != video_dedupe_stem("city.zalo.mp4"):
+        print("FAIL video stem")
+        return 1
+    with tempfile.TemporaryDirectory() as tmp:
+        raw = Path(tmp) / "city.mp4"
+        remux = Path(tmp) / "city.zalo.mp4"
+        raw.write_bytes(b"x" * 2000)
+        remux.write_bytes(b"y" * 2000)
+        if Path(prefer_remuxed_video(str(raw))).name != "city.zalo.mp4":
+            print("FAIL prefer remux")
+            return 1
 
     with tempfile.TemporaryDirectory() as tmp:
         png = Path(tmp) / "scene.png"

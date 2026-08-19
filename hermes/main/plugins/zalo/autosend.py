@@ -7,6 +7,7 @@ DEFAULT_GRACE_S = 8.0
 # File suffixes are protocol, not user NLU.
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 VIDEO_EXTS = (".mp4", ".webm", ".mov", ".m4v", ".mkv")
+ZALO_VIDEO_SUFFIX = ".zalo.mp4"
 # zca-js sendMessage drops some empty-msg attachment payloads; a space is not user copy.
 ATTACH_CAPTION_FALLBACK = " "
 
@@ -108,6 +109,36 @@ def bridge_response_ok(data) -> bool:
     if "ok" in data:
         return data.get("ok") is True
     return False
+
+
+def video_dedupe_stem(path: str) -> str:
+    """foo.mp4 and foo.zalo.mp4 share one send key."""
+    name = Path(str(path or "")).name.lower()
+    if name.endswith(ZALO_VIDEO_SUFFIX):
+        return name[: -len(ZALO_VIDEO_SUFFIX)]
+    p = Path(str(path or ""))
+    if p.suffix.lower() in VIDEO_EXTS:
+        return (p.stem or p.name or "").lower()
+    return (p.stem or p.name or "").lower()
+
+
+def prefer_remuxed_video(path: str) -> str:
+    """Send baseline remux when it exists; otherwise keep the original path."""
+    raw = str(path or "").strip()
+    if not raw:
+        return ""
+    p = Path(raw)
+    if p.suffix.lower() not in VIDEO_EXTS:
+        return raw
+    if p.name.endswith(ZALO_VIDEO_SUFFIX):
+        return raw
+    sibling = p.with_name(p.stem + ZALO_VIDEO_SUFFIX)
+    try:
+        if sibling.is_file() and sibling.stat().st_size > 1000:
+            return str(sibling)
+    except OSError:
+        return raw
+    return raw
 
 
 def existing_media_path(path: str) -> str:

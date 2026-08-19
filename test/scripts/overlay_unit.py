@@ -27,7 +27,7 @@ def main() -> int:
         print("FAIL overlay line cap")
         return 1
     try:
-        from PIL import Image
+        from PIL import Image, ImageDraw, ImageFont
     except ImportError:
         print("SKIP overlay render (no Pillow)")
         return 0
@@ -42,6 +42,25 @@ def main() -> int:
         if p.stat().st_size == before:
             print("FAIL overlay did not change file")
             return 1
+        tiny = Path(tmp) / "tiny.jpg"
+        Image.new("RGB", (160, 90), (20, 40, 60)).save(tiny, quality=90)
+        apply_overlay(tiny, ["E5 RON92 21000dong/lit va E10 RON95 22000dong/lit cap nhat hom nay tai HCMC"])
+        im = Image.open(tiny)
+        if im.size != (160, 90):
+            print("FAIL overlay changed canvas")
+            return 1
+        from overlay import wrap_text_to_width  # noqa: E402
+        d = ImageDraw.Draw(im)
+        font = ImageFont.load_default()
+        wrapped = wrap_text_to_width("abcdefg hijklmnopqrstuvwxyz", font, 40, d)
+        if not wrapped:
+            print("FAIL wrap empty")
+            return 1
+        for line in wrapped:
+            bbox = d.textbbox((0, 0), line, font=font)
+            if bbox[2] - bbox[0] > 48:
+                print("FAIL wrap overflow")
+                return 1
     print("PASS overlay")
     return 0
 

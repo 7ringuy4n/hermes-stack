@@ -72,8 +72,13 @@ def put_session(session_id: str, body: SessionPut) -> dict[str, Any]:
         messages.extend(body.messages)
     else:
         messages = body.messages
-    # keep last 40 turns
-    messages = messages[-40:]
+    # keep last N messages (env SESSION_MAX_MESSAGES, default 16)
+    try:
+        cap = int(os.environ.get("SESSION_MAX_MESSAGES") or "16")
+    except (TypeError, ValueError):
+        cap = 16
+    cap = max(4, min(40, cap))
+    messages = messages[-cap:]
     now = time.time()
     created_at = (cur.get("created_at") if cur else None) or now
     data = {
