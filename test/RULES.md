@@ -27,6 +27,7 @@ For every run and every profile:
    - `public`
 7. Record all results with timestamps.
 8. Do not reuse artifacts from a previous profile unless the test explicitly requires persistence.
+9. **Restore defaults (rule 41):** when the run is finished, revert test-only source and config to product defaults. Do not leave lab timeouts, cache-bust keys, host identities, or profile flags that were only for that run.
 
 Destroy, upgrade, and downgrade (`destroy`, `switch-profile`, `add-components`, `update`) **abort** if backup or verify fails.
 

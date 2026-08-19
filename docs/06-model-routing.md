@@ -20,6 +20,8 @@ Hermes → INPUT Secret Probe → task_hint → model-router
 2. Hermes `metadata.task_hint` / `task_type`
 3. Default → **normal** (fast path). Never `SECRET` as a task type.
 4. Multi-task / schedule intercept: `POST /v1/classify` (LLM JSON). Prompt: `config/classify.json`.
+   Fast Dispatcher fields on the same JSON: `execution_class` (`interactive`|`async`|`schedule`), `task_type`, `response_mode` (`direct`|`ack_then_deliver`|`confirm`).
+   Interactive chat stays off the job queue. Image/video/OCR ACK then workflow. Lịch persist + confirm.
 
 Do not classify user prose with split/join/regex/keyword lists in application code.
 
