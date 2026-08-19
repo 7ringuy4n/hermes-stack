@@ -1,5 +1,79 @@
 # Change history
 
+## 2026-08-19 13:12 +07 — default LLM image size Full HD
+
+- `IMAGE_LLM_SIZE` example and dispatcher llm fallback default is `1920x1080`.
+
+## 2026-08-19 12:30 +07 — LLM classify for cite and outbound; no keyword NLU
+
+- Cite intercept consumes `task_hint=knowledge` from `POST /v1/classify`. No Vietnamese/English cite needles in adapter code.
+- Zalo outbound drop uses `POST /v1/outbound` (`action=send|drop`). Plugin error strings live in `hermes/main/messages/zalo-bridge.json`. File suffixes stay protocol.
+- Scheduling skill no longer persists Hermes CLI cron jobs (that path paraphrased once-lịch into `jobs.json`).
+
+## 2026-08-19 12:15 +07 — fix: once-lịch numbered list hit knowledge-cite refuse
+
+- Substring `trích dẫn` (including “không trích dẫn nguồn”) made Zalo answer `Không thấy kiến thức khớp` and skip classify/workflow.
+- Cite intercept is command/catalog only; `task_hint=schedule` or several instructions skip cite. Classify keeps numbered once-lịch as `PLAN_N 3` with the stated clock. Case 29.
+
+## 2026-08-19 11:25 +07 — pin dispatcher media; drop manim chatter; memory/gateway unchanged
+
+- Isolated lịch jobs append a dispatcher-only hint (`POST /v1/image` / `/v1/video`). ComfyUI remains a dispatcher backend (`comfy-cpu`), not a Hermes manim install.
+- Zalo drops pangocairo/manim/matplotlib process lines. Rolling apply no longer aborts the whole sync if `workflow_vps` schedule upsert lags after recreate.
+
+## 2026-08-19 10:40 +07 — fix: video generated but not sent; pin dispatcher media; quiet overlay
+
+- Zalo `/send-attachment` returned invalid parameter for matplotlib mp4s. Isolated jobs then kept watching `media/out` and sent a **later** infographic instead of the video.
+- Isolated jobs no longer spawn late autosend after complete. File window has a **ceiling**. Video is remuxed to baseline H.264 (Hermes ffmpeg or dispatcher `POST /v1/video-remux`). Default generate path is dispatcher `POST /v1/image` + `overlay` and `POST /v1/video`.
+- Medium/High empty `IMAGE_BACKENDS=` now fills `llm,vendor,comfy-cpu,comfy-gpu` (profile.sh + first-setup). Media turns drop process chatter after the file.
+- Cases 25–26 tightened; case 28 covers leftover claim + video send. `AGENT_RULES.md` **Rules (numbered)** is exclude-only.
+
+## 2026-08-19 09:45 +07 — test: one-picture weather+fuel user request (cases 26–27)
+
+- New cases simulate a real Zalo sentence: one HCMC image from live weather, with E5 RON92 / E10 RON95 and weather overlaid in Vietnamese. Classify keeps that as **one** instruction (not case 16’s two tasks, not case 25’s four).
+- Daily wrapper (case 27) is `task_hint=schedule` with `PLAN_N 1`. Classify prompt tells the LLM not to split overlay facts.
+
+## 2026-08-19 09:20 +07 — fix: lịch autosend posted files but Zalo users got none
+
+- Hermes treated any JSON from `/send-attachment` as success (HTTP 400 `file not found` included). `logger.info` send lines were invisible at the default log level, so case 25 reported `attach=0`.
+- Isolated jobs also finished before media landed (`hold_inflight` blocked late watch; 8s cap). Empty captions can make zca-js drop the attachment.
+- Now: require plugin `success: true`, print `[zalo] send-attachment path` only after a real ack, watch files for the whole job, drain the window, resolve png/jpg siblings, non-empty caption fallback. Claim before send so parallel jobs do not spam the same file.
+
+## 2026-08-19 08:55 +07 — fix: scheduled media was written but not sent on Zalo
+
+- Isolated lịch jobs (`thread::job::{id}`) never matched the remembered turn dest, so autosend skipped files. Documents also posted the isolated id as `threadId`.
+- Dest match now uses the real thread. Workflow jobs bind dest + t0 on the isolated session. Autosend skips already-claimed files and picks the next (image vs video). Video extensions included. Case 25 fails if `attach=0`.
+
+## 2026-08-19 08:45 +07 — fix: Zalo profile must keep zalo-api; classify 32k; case 25 admin DM
+
+- `ENABLE_ZALO=1` is a combo: `zalo-proxy` + `zalo-api`. stack-watch starts missing `zalo-api`; check-high fails if the container is gone. Rule 38. `test/RULES.md` links to root `AGENT_RULES.md` for numbered rules.
+- Classify `max_tokens` 32768.
+- Case 25 sends only to the current Zalo admin DM (`zalo_admin_users.txt`), not a group.
+
+## 2026-08-19 08:30 +07 — fix: once lịch same-day retest reused a completed workflow
+
+- `idempotency_prefix` was `{schedule_id}:{date}`, so a second once-fire the same day returned the already-COMPLETED jobs and sent nothing.
+- Once cadence now keys by fire timestamp. Daily/weekly still one workflow per calendar day.
+
+## 2026-08-19 08:15 +07 — fix: classify timeout must not fake a 1-task plan
+
+- LLM ReadTimeout still returned `ok: true` with the whole blob as one instruction, so lịch upsert stored PLAN_N 1.
+- Classify now retries once (90s), returns `ok: false` with empty instructions on LLM failure. Workflow upsert is 503 until classify succeeds. Client timeout 100s, one HTTP retry. No Hermes recreate (docker cp + restart model-router/workflow).
+
+## 2026-08-19 07:55 +07 — fix: classify reads reasoning_content + 2048 tokens
+
+- Combo/reasoning models often leave `content` empty. Classifier now uses `content` or `reasoning_content`, `max_tokens` 2048, and JSON `raw_decode` so numbered lists return N instructions.
+
+## 2026-08-19 07:40 +07 — feat: LLM classify for task_hint and multi-task plans
+
+- Rule 36: application code does not split/join/regex/keyword-parse user content. Model Router `POST /v1/classify` returns structured `task_hint` + `instructions` + cadence/cron. Secret Probe stays independent of task_hint.
+- Workflow/Zalo/API Gateway consume that JSON, persist `context.plan`, and explode jobs at tick from stored instructions.
+- Tests 05/16/21/22/24/25 updated. `docs/AGENT_RULES.md` is gitignored (operator-only).
+
+## 2026-08-19 07:10 +07 — fix: skip disabled monitor scrapes; task_hint vs secret-probe
+
+- alert-watch no longer warns when **node-exporter** (and other optional hosts) are off. Host metrics scrape only if Grafana/Prometheus is on; AV/Zalo/Omni/OCR/OpenBao health rows follow `ENABLE_*`. Same skip in stack-exporter.
+- Architect: Secret Probe (`SAFE`/`BLOCKED`/`REVIEW`) is independent of `task_hint` (`normal`/`schedule`/`coding`/`tool`/`search`/`file`/`unknown`). Policy file `config/agent/secret-probe.json`. Input gate on Zalo + API Gateway; output gate on Zalo send. Notify of probes does not include message text.
+
 ## 2026-08-18 19:45 +07 — release: v0.5.8
 
 - Product deploy scripts no longer ship lab SSH host/account defaults. stack-watch treats 9router 401 as healthy and keeps notify/sandbox profiles.

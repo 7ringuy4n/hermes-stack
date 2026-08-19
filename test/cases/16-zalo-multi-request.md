@@ -3,6 +3,9 @@
 One inbound Zalo message contains **two or more** distinct user tasks.
 Bot must process **all** tasks, not only the first.
 
+LLM classify (`POST model-router /v1/classify`) returns `instructions[]`.
+Application code does not split/join/regex the user text.
+
 ## Example fixture
 
 ```text
@@ -10,7 +13,7 @@ tin nhắn 1: vẽ hình thời tiết hiện tại ở thành phố hồ chí m
 tin nhắn 2: cập nhật giá xăng E5 RON92 và E5 RON95
 ```
 
-Also this live style (must split the same way):
+Also this live style (must classify to two instructions):
 
 ```text
 yêu cầu:
@@ -18,7 +21,7 @@ yêu cầu:
 2.Sau đó cập nhật giá xăng E5 RON92 và E5 RON95
 ```
 
-Do **not** let `media-out` / “no recap after file” drop part 2. Splitter must emit two turns.
+Do **not** let `media-out` / “no recap after file” drop part 2.
 
 ## Preconditions
 
@@ -27,8 +30,9 @@ Do **not** let `media-out` / “no recap after file” drop part 2. Splitter mus
 
 ## Steps (unit)
 
-1. Run `python test/scripts/multi_request_unit.py`
-2. Assert splitter returns 2 parts for the example fixture
+1. Run `python test/scripts/llm_classify_unit.py`
+2. Run `python test/scripts/multi_request_unit.py`
+3. Assert mock LLM output has 2 instructions for the example fixture
 
 ## Steps (lab)
 
@@ -38,10 +42,10 @@ Do **not** let `media-out` / “no recap after file” drop part 2. Splitter mus
 
 ## Pass criteria
 
-- Splitter unit PASS
+- Classify unit PASS
 - Lab: both intents addressed (image attempt + price/update answer or controlled "no data")
 - No crash; SSE stays at 1
-- Daily/cron numbered lists are **not** split (case 22)
+- Daily/cron numbered lists are `task_hint=schedule` (one lịch; explode at tick — case 22)
 - No extra `Đã xong.` / `Done.` ack after files (file/result only)
 
 ## Fail events

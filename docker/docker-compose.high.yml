@@ -299,7 +299,9 @@ services:
   # Pairs with Grafana stack health (assistant_service_up). Starts with Prometheus.
   stack-exporter:
     profiles: ["prometheus"]
-    build: ./architect/monitor/stack-exporter
+    build:
+      context: ./architect/monitor
+      dockerfile: stack-exporter/Dockerfile
     container_name: stack-exporter
     restart: unless-stopped
     environment:
@@ -309,6 +311,16 @@ services:
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_COLLECTION_KNOWLEDGE=${QDRANT_COLLECTION_KNOWLEDGE:-knowledge_chunks}
       - QDRANT_COLLECTION_MEMORY=${QDRANT_COLLECTION_MEMORY:-conversational_memory}
+      - ENABLE_OCR=${ENABLE_OCR:-0}
+      - ENABLE_OPENBAO=${ENABLE_OPENBAO:-0}
+      - ENABLE_ANTIVIRUS=${ENABLE_ANTIVIRUS:-0}
+      - ENABLE_ZALO=${ENABLE_ZALO:-0}
+      - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-0}
+      - ENABLE_AUTHZ=${ENABLE_AUTHZ:-0}
+      - ENABLE_SECURITY=${ENABLE_SECURITY:-0}
+      - ENABLE_JOBS=${ENABLE_JOBS:-0}
+      - ENABLE_GRAFANA=${ENABLE_GRAFANA:-0}
+      - ENABLE_PROMETHEUS=${ENABLE_PROMETHEUS:-0}
       # OmniRoute has no /health (404). Probe `/` (SPA 200). /v1/models needs auth.
       # 9Router UI /health is 404 and /v1/models is 401 — TCP listen only (nine-exporter does authenticated scrape).
       - HEALTH_TARGETS=${STACK_HEALTH_TARGETS:-qdrant=qdrant:6333/readyz,security-manager=security-manager:8093/health,ocr=ocr:8091/health,ingest=ingest:8099/health,authz=authz:8097/health,embedding=embedding:8094/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,openbao=openbao:8200/v1/sys/health,omni-router=omni-router:20129/,model-router=model-router:8096/health,9router=9router:20128}
@@ -340,7 +352,9 @@ services:
 
   alert-watch:
     profiles: ["notify"]
-    build: ./architect/monitor/alert-watch
+    build:
+      context: ./architect/monitor
+      dockerfile: alert-watch/Dockerfile
     container_name: alert-watch
     restart: unless-stopped
     environment:
@@ -351,6 +365,21 @@ services:
       - N9ROUTER_URL=${N9ROUTER_URL:-http://9router:20128}
       - N9ROUTER_PASSWORD=${N9ROUTER_INITIAL_PASSWORD:-}
       - N9ROUTER_API_KEY=${N9ROUTER_API_KEY:-}
+      - NODE_EXPORTER_URL=${NODE_EXPORTER_URL:-}
+      - ENABLE_GRAFANA=${ENABLE_GRAFANA:-0}
+      - ENABLE_PROMETHEUS=${ENABLE_PROMETHEUS:-0}
+      - ENABLE_LOKI=${ENABLE_LOKI:-0}
+      - ENABLE_ALLOY=${ENABLE_ALLOY:-0}
+      - ENABLE_OCR=${ENABLE_OCR:-0}
+      - ENABLE_OPENBAO=${ENABLE_OPENBAO:-0}
+      - ENABLE_ANTIVIRUS=${ENABLE_ANTIVIRUS:-0}
+      - ENABLE_ZALO=${ENABLE_ZALO:-0}
+      - ENABLE_NOTIFY=${ENABLE_NOTIFY:-1}
+      - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-0}
+      - ENABLE_AUTHZ=${ENABLE_AUTHZ:-0}
+      - ENABLE_SECURITY=${ENABLE_SECURITY:-0}
+      - ENABLE_JOBS=${ENABLE_JOBS:-0}
+      - SECURITY_SANDBOX=${SECURITY_SANDBOX:-0}
       - HEALTH_TARGETS=${ALERT_HEALTH_TARGETS:-qdrant=qdrant:6333/readyz,ocr=ocr:8091/health,ingest=ingest:8099/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,openbao=openbao:8200/v1/sys/health}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     ports:

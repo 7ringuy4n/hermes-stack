@@ -19,7 +19,7 @@ _FONTS = (
 
 _POSTER_HINT = re.compile(
     r"điền|dien vao|fill\s+(in|with)|write|chữ|chu |poster|dòng|dong |"
-    r"\blines?\b|hàng chữ|in chữ|text on|overlay",
+    r"\blines?\b|hàng chữ|in chữ|text on",
     re.I,
 )
 _BW = re.compile(

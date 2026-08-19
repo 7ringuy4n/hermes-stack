@@ -2,18 +2,26 @@
 
 ## Goal
 
-Keep Hermes answering when a preferred LLM path fails, and split **coding** vs **other** tasks across routers.
+Keep Hermes answering when a preferred LLM path fails. **task_hint** selects the pipeline; **Secret Probe** decides whether processing is allowed.
 
 ```text
-Hermes → model-router → 9router (coding) / OmniRouter (general) → fallback pool → clear error
+Hermes → INPUT Secret Probe → task_hint → model-router
+  NORMAL  → Direct LLM (9router / Omni)
+  CODING  → 9router
+  SCHEDULE → Schedule Manager (workflow) — not model-router state
+  TOOL / SEARCH / FILE → dedicated pipelines
+  UNKNOWN → LLM with context
+         → OUTPUT Secret Probe → user
 ```
 
 ## Classification (hybrid)
 
-1. `X-Task-Type: coding|general`
+1. `X-Task-Type` (`normal|schedule|coding|tool|search|file|unknown`; aliases `general`→`normal`)
 2. Hermes `metadata.task_hint` / `task_type`
-3. Heuristic file `architect/models/model-router/config/heuristic.json`
-4. Unknown → **general**
+3. Default → **normal** (fast path). Never `SECRET` as a task type.
+4. Multi-task / schedule intercept: `POST /v1/classify` (LLM JSON). Prompt: `config/classify.json`.
+
+Do not classify user prose with split/join/regex/keyword lists in application code.
 
 ## Flags
 

@@ -13,7 +13,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from manager import WorkflowManager
-from plan import extract_cadence, extract_cron_expr, plan_instructions
+from classify_client import CADENCES, classify_text, valid_cron
+from plan import plan_instructions
 from store import MemoryStore
 
 WORKER_ID = os.environ.get("HOSTNAME") or "workflow-api"
@@ -285,24 +286,35 @@ def fail(jid: str, req: FailReq) -> dict[str, Any]:
 
 @app.post("/v1/schedules")
 def upsert_schedule(req: ScheduleReq) -> dict[str, Any]:
-    expr = (req.cron_expr or "").strip() or (extract_cron_expr(req.time) or "")
-    if not expr:
-        expr = extract_cron_expr(req.text) or ""
-    if not expr:
-        raise HTTPException(400, "cron_expr or time required")
     if not req.text.strip():
         raise HTTPException(400, "text required")
+    plan = None
+    incoming = req.context.get("plan") if isinstance(req.context, dict) else None
+    if isinstance(incoming, dict) and incoming.get("instructions"):
+        plan = incoming
+    else:
+        plan = classify_text(req.text, timezone=req.timezone)
+    if not (plan or {}).get("ok") or not (plan or {}).get("instructions"):
+        raise HTTPException(503, "classify unavailable")
+    expr = valid_cron(req.cron_expr) or valid_cron(req.time) or valid_cron(str((plan or {}).get("cron_expr") or ""))
+    if not expr:
+        raise HTTPException(400, "cron_expr or time required")
+    cadence = (req.cadence or "").strip().lower()
+    if cadence not in CADENCES:
+        cadence = str(plan.get("cadence") or "once")
+    ctx = dict(req.context or {})
+    ctx["plan"] = plan
     row = mgr.upsert_schedule(
         cron_expr=expr,
         text=req.text,
         name=req.name,
         tz_name=req.timezone,
         origin=req.origin,
-        context=req.context,
+        context=ctx,
         schedule_id=req.id,
         enabled=req.enabled,
         next_run_at=_parse_next_run(req.next_run_at),
-        cadence=req.cadence or extract_cadence(req.text),
+        cadence=cadence,
     )
     return {"ok": True, "schedule": row}
 

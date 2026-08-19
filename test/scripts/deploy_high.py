@@ -89,6 +89,7 @@ def connect():
 
 
 def sudo_bash(c, script: str, timeout: int = 3600) -> str:
+    script = str(script or "").replace("\r\n", "\n").replace("\r", "\n")
     b64 = base64.b64encode(script.encode("utf-8")).decode("ascii")
     cmd = f"echo '{esc}' | sudo -S bash -lc \"echo {b64} | base64 -d | bash\""
     _i, o, e = c.exec_command(cmd, timeout=timeout, get_pty=True)

@@ -14,7 +14,7 @@ from plan import (
     CADENCE_WEEKLY,
     CADENCE_YEARLY,
     CADENCES,
-    extract_cadence,
+    plan_from_stored,
     plan_instructions,
     wrap_instruction,
 )
@@ -89,7 +89,7 @@ def resolve_cadence(raw: str, text: str = "") -> str:
     kind = (raw or "").strip().lower()
     if kind in CADENCES:
         return kind
-    return extract_cadence(text)
+    return CADENCE_ONCE
 
 
 def next_run_after(
@@ -351,7 +351,7 @@ class WorkflowManager:
             "id": sid,
             "created_at": now,
         }
-        kind = resolve_cadence(cadence or (existing or {}).get("cadence") or "", text)
+        kind = resolve_cadence(cadence or (existing or {}).get("cadence") or "", "")
         same_clock = bool(
             existing
             and str(existing.get("cron_expr") or "") == str(cron_expr)
@@ -394,10 +394,14 @@ class WorkflowManager:
                 continue
             seen.add(sid)
             day = now.astimezone(ZoneInfo(str(sch.get("timezone") or "UTC"))).date().isoformat()
-            prefix = f"{sid}:{day}"
+            kind = resolve_cadence(str(sch.get("cadence") or ""), "")
+            if kind == CADENCE_ONCE:
+                prefix = f"{sid}:once:{secrets.token_hex(8)}"
+            else:
+                prefix = f"{sid}:{day}"
             try:
-                wf = self.create_from_text(
-                    str(sch.get("text") or ""),
+                wf = self.create(
+                    plan_from_stored(sch, str(sch.get("text") or "")),
                     origin=sch.get("origin") or {},
                     context=sch.get("context") or {},
                     sequential=False,
@@ -406,7 +410,6 @@ class WorkflowManager:
             except (ValueError, KeyError):
                 continue
             created.append(str(wf.get("id")))
-            kind = resolve_cadence(str(sch.get("cadence") or ""), str(sch.get("text") or ""))
             if kind == CADENCE_ONCE:
                 self.store.delete_schedule(sid)
                 continue

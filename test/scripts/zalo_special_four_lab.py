@@ -35,6 +35,8 @@ def ts() -> str:
 
 
 def main() -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     OUT.mkdir(parents=True, exist_ok=True)
     c = connect()
     try:
@@ -101,19 +103,45 @@ def get(url):
 def post(url, body):
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST", headers={{"Content-Type":"application/json"}})
-    with urllib.request.urlopen(req, timeout=12) as r:
+    with urllib.request.urlopen(req, timeout=120) as r:
         return json.loads(r.read().decode() or "{{}}")
 
 home = (os.environ.get("ZALO_HOME_CHANNEL") or "").strip()
 thread_id = ""
 thread_type = "user"
 sender_id = ""
-if home:
+admin_id = ""
+for path in (
+    "/data/assistant/zalo_admin_users.txt",
+    "/opt/data/zalo_admin_users.txt",
+):
+    try:
+        lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        continue
+    for line in lines:
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        tid, _, _label = raw.partition("|")
+        tid = tid.strip()
+        if tid:
+            admin_id = tid
+            break
+    if admin_id:
+        break
+if admin_id:
+    thread_id = admin_id
+    thread_type = "user"
+    sender_id = admin_id
+elif home:
     if ":" in home:
         prefix, _, rest = home.partition(":")
-        if prefix.strip().lower() in {{"user", "group"}}:
-            thread_type = prefix.strip().lower()
+        if prefix.strip().lower() == "user":
+            thread_type = "user"
             thread_id = rest.strip()
+        elif prefix.strip().lower() == "group":
+            raise SystemExit("NO_ADMIN_DM")
         else:
             thread_id = home
             thread_type = "user"
@@ -122,21 +150,8 @@ if home:
         thread_type = "user"
     sender_id = thread_id
 if not thread_id:
-    sched = get("http://127.0.0.1:8108/v1/schedules")
-    for s in reversed(sched.get("schedules") or []):
-        o = s.get("origin") if isinstance(s.get("origin"), dict) else {{}}
-        ctx = s.get("context") if isinstance(s.get("context"), dict) else {{}}
-        if str(o.get("platform") or "") != "zalo":
-            continue
-        tid = str(o.get("thread_id") or ctx.get("thread_id") or "").strip()
-        if tid and "::job::" not in tid:
-            thread_id = tid
-            thread_type = str(o.get("thread_type") or ctx.get("thread_type") or "user")
-            sender_id = str(o.get("user_id") or ctx.get("sender_id") or tid)
-            break
-if not thread_id:
-    raise SystemExit("NO_THREAD")
-print(f"DEST thread_type={{thread_type}} tid_len={{len(thread_id)}}")
+    raise SystemExit("NO_ADMIN_DM")
+print(f"DEST thread_type={{thread_type}} tid_len={{len(thread_id)}} admin_dm=1")
 # Drop leftover test id if re-run
 try:
     urllib.request.urlopen(urllib.request.Request(
@@ -164,7 +179,7 @@ body = {{
     "context": {{
         "thread_id": thread_id,
         "thread_type": thread_type,
-        "chat_type": "group" if thread_type == "group" else "dm",
+        "chat_type": "dm",
         "sender_id": sender_id,
         "sender_name": sender_id,
         "execute": "hermes",
@@ -172,16 +187,22 @@ body = {{
 }}
 got = post("http://127.0.0.1:8108/v1/schedules", body)
 sch = got.get("schedule") or {{}}
+ctx = sch.get("context") if isinstance(sch.get("context"), dict) else {{}}
+plan = ctx.get("plan") if isinstance(ctx.get("plan"), dict) else {{}}
+inst = plan.get("instructions") if isinstance(plan.get("instructions"), list) else []
 print("UPSERT", got.get("ok"), sch.get("id"), sch.get("cron_expr"), sch.get("next_run_at"))
-print("TEXT_ITEMS", text.count(chr(10))+1)
+print("PLAN_HINT", plan.get("task_hint"), "PLAN_N", len(inst), "CADENCE", sch.get("cadence"))
 PY
 echo CREATE_DONE
 """,
-            timeout=60,
+            timeout=240,
         )
         print(_sanitize(apply[-1500:]), flush=True)
-        if "CREATE_DONE" not in apply or "NO_THREAD" in apply:
+        if "CREATE_DONE" not in apply or "NO_ADMIN_DM" in apply or "NO_THREAD" in apply:
             print("FAIL create", flush=True)
+            return 1
+        if "PLAN_N 4" not in apply:
+            print("FAIL classify did not persist 4 instructions", flush=True)
             return 1
 
         wait_s = int((fire_local - datetime.now(TZ)).total_seconds()) + 15
@@ -189,17 +210,21 @@ echo CREATE_DONE
         time.sleep(max(5, wait_s))
 
         print(f"[{ts()}] watching plugin / workflow up to {WAIT_AFTER_FIRE_S}s", flush=True)
+        since_iso = (fire_local.astimezone(timezone.utc) - timedelta(seconds=45)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        fire_pg = fire_local.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S+00")
         watch_sh = r"""
 set -euo pipefail
 deadline=$(( $(date +%s) + __WAIT__ ))
-echo "WATCH_START $(date -Is)"
+echo "WATCH_START $(date -Is) since=__SINCE__ fire=__FIRE__"
 set +e
 cd /opt/assistant
 set -a; . ./.env; set +a
 PGUSER="${MEMORY_DB_USER:-hermes}"
 PGDB="${MEMORY_DB_NAME:-hermes_memory}"
 export PGPASSWORD="${MEMORY_DB_PASSWORD:-}"
-since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+since="__SINCE__"
 hermes_logs() {
   docker ps --filter name=hermes --filter status=running --format '{{.Names}}' | while read -r n; do
     docker logs --since "$since" "$n" 2>&1
@@ -227,23 +252,27 @@ for s in (d.get("schedules") or []):
     if s.get("id")==sid:
         sch=s
         break
-print("sched_fired", bool(sch and sch.get("last_fired_at")), "next", (sch or {}).get("next_run_at"))
+print("sched_present", bool(sch), "fired", bool(sch and sch.get("last_fired_at")), "next", (sch or {}).get("next_run_at"))
 PY
   docker exec -e PGPASSWORD="$PGPASSWORD" postgres psql -U "$PGUSER" -d "$PGDB" -Atc "
 SELECT 'wf='||w.id||' status='||w.status||' jobs='||count(j.id)||' done='||count(*) FILTER (WHERE j.status='COMPLETED')||' run='||count(*) FILTER (WHERE j.status='RUNNING')
 FROM wf.workflows w JOIN wf.jobs j ON j.workflow_id=w.id
-WHERE w.origin->>'test'='case25'
+WHERE w.origin->>'test'='case25' AND w.created_at >= TIMESTAMPTZ '__FIRE__'
 GROUP BY w.id, w.status
 ORDER BY w.created_at DESC LIMIT 3;
 " 2>/dev/null || true
-  logs=$(hermes_logs | grep -E '\[zalo\] workflow job done|send-attachment path|workflow job failed|Zalo: drop send' | tail -20)
+  logs=$(hermes_logs | grep -E '\[zalo\] workflow job done|send-attachment path|send-attachment fail|workflow job failed|Zalo: drop send|skip autosend' | tail -20)
   echo "LOGS_N=$(printf '%s\n' "$logs" | grep -c . || true)"
   printf '%s\n' "$logs" | tail -10
   done_n=$(hermes_logs | grep -c '\[zalo\] workflow job done' || true)
   attach_n=$(hermes_logs | grep -c 'send-attachment path' || true)
-  echo "done_jobs=$done_n attach=$attach_n"
-  if [ "${done_n:-0}" -ge 4 ]; then
+  attach_mp4=$(hermes_logs | grep -c 'send-attachment path.*\.mp4' || true)
+  echo "done_jobs=$done_n attach=$attach_n attach_mp4=$attach_mp4"
+  find /data/assistant/media/out -name '*.mp4' -newermt "$since" -printf 'NEW_MP4 %T+ %p\n' 2>/dev/null | tail -5 || true
+  if [ "${done_n:-0}" -ge 4 ] && [ "${attach_n:-0}" -ge 1 ] && [ "${attach_mp4:-0}" -ge 1 ]; then
     echo "FOUR_JOBS_DONE"
+    echo "MEDIA_SENT"
+    echo "VIDEO_SENT"
     break
   fi
   sleep 15
@@ -252,13 +281,18 @@ echo "WATCH_END $(date -Is) done_jobs=$done_n attach=$attach_n"
 docker exec -e PGPASSWORD="$PGPASSWORD" postgres psql -U "$PGUSER" -d "$PGDB" -c "
 SELECT j.seq, left(j.instruction,80) AS instr, j.status, left(coalesce(j.error,''),40) AS err
 FROM wf.workflows w JOIN wf.jobs j ON j.workflow_id=w.id
-WHERE w.origin->>'test'='case25'
+WHERE w.origin->>'test'='case25' AND w.created_at >= TIMESTAMPTZ '__FIRE__'
 ORDER BY w.created_at DESC, j.seq
 LIMIT 8;
 " 2>/dev/null || true
 echo WATCH_DONE
 """
-        watch_sh = watch_sh.replace("__WAIT__", str(WAIT_AFTER_FIRE_S)).replace("__SID__", SID)
+        watch_sh = (
+            watch_sh.replace("__WAIT__", str(WAIT_AFTER_FIRE_S))
+            .replace("__SID__", SID)
+            .replace("__SINCE__", since_iso)
+            .replace("__FIRE__", fire_pg)
+        )
         watch = sudo_bash(
             c,
             watch_sh,
@@ -266,13 +300,40 @@ echo WATCH_DONE
         )
         print(_sanitize(watch[-4000:]), flush=True)
         (OUT / "watch.txt").write_text(_sanitize(watch), encoding="utf-8")
-        ok = "FOUR_JOBS_DONE" in watch or "done_jobs=4" in watch
+        four = "FOUR_JOBS_DONE" in watch or "done_jobs=4" in watch
+        media = "MEDIA_SENT" in watch
+        video = "VIDEO_SENT" in watch
+        if not media:
+            for line in reversed(watch.splitlines()):
+                if "attach=" in line:
+                    raw = line.rsplit("attach=", 1)[-1].split()[0]
+                    try:
+                        media = int(raw) >= 1
+                    except ValueError:
+                        media = False
+                    break
+        if not video:
+            for line in reversed(watch.splitlines()):
+                if "attach_mp4=" in line:
+                    raw = line.rsplit("attach_mp4=", 1)[-1].split()[0]
+                    try:
+                        video = int(raw) >= 1
+                    except ValueError:
+                        video = False
+                    break
+        if four and not media:
+            print("FAIL media created but not sent (attach=0)", flush=True)
+        if four and media and not video:
+            print("FAIL video not sent (no send-attachment mp4 in fire window)", flush=True)
+        ok = four and media and video
         summary = [
             "# Case 25 Zalo special four",
             "",
             f"- Time: `{ts()}`",
             f"- Fire local: `{fire_local.strftime('%H:%M')} GMT+7`",
-            f"- Four jobs done: **{'yes' if ok else 'no'}**",
+            f"- Four jobs done: **{'yes' if four else 'no'}**",
+            f"- Media sent: **{'yes' if media else 'no'}**",
+            f"- Video sent: **{'yes' if video else 'no'}**",
             "",
             "See `watch.txt`.",
             "",
