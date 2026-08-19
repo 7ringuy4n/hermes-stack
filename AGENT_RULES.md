@@ -64,6 +64,8 @@ You are an AI/DevOps/Developer with 10+ years experience across AI Agent and aut
 * When classification is ambiguous, return structured uncertainty and ask for clarification rather than guessing.
 * Keep deterministic keyword rules only for explicit commands, security boundaries, protocol markers, or cases where exact matching is intentionally required.
 * When changing intent classification, test both **false positives and false negatives**, including natural-language, multilingual, paraphrased, and unrelated requests.
+| 40 | **Zalo Testing — All Zalo test cases must simulate real user requests sent through the Zalo Bridge, rather than directly calling internal services or bypassing the Zalo integration path.
+| 41 | Restore Defaults — After testing is complete, revert all test-specific source/configuration values to their original/default values and verify no test-only changes remain.
 
 *(Number 9 is intentionally unused in the operator list.)*
 
@@ -83,7 +85,7 @@ exclude:
 ## How Cursor should apply this
 
 1. Load this document (via `.cursor/rules/agent-ops.mdc` and/or skill `agent-ops`).
-2. Treat **22 / 23 / 24 / 25 / 32 / 33 / 34 / 35 / 36 / 38** as hard gates every turn.
+2. Treat **22 / 23 / 24 / 25 / 32 / 33 / 34 / 35 / 36 / 38 / 40 / 41** as hard gates every turn.
 3. Prefer skills + editable config over new hardcoded keyword tables (12, 17, 19).
 4. When syncing to a host, use `Update-StackRemote.ps1` only after the operator grants deploy/test permission (3, 5, 23).
 5. Lab procedure and case index: [`test/RULES.md`](./test/RULES.md).

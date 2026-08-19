@@ -1099,7 +1099,7 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
 @app.post("/v1/video")
 def video_generate(req: VideoReq) -> dict[str, Any]:
     """Default video path: still (existing or /v1/image) → short H.264 mp4."""
-    from video_clip import ffmpeg_bin, still_to_mp4
+    from video_clip import clamp_seconds, ffmpeg_bin, still_to_mp4
 
     out_dir = MEDIA_DIR / "out"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1148,7 +1148,7 @@ def video_generate(req: VideoReq) -> dict[str, Any]:
         "backend": "ffmpeg-still",
         "still": str(still),
         "provider": used,
-        "seconds": max(2.0, min(12.0, float(req.seconds))),
+        "seconds": clamp_seconds(req.seconds),
     }
 
 
