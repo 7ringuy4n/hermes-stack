@@ -245,6 +245,11 @@ heal_by_health() {
       ;;
   esac
   if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
+    if ! $SUDO docker ps --format '{{.Names}}' | grep -qx zalo-api; then
+      log "zalo-api missing while ENABLE_ZALO=1 — starting zalo combo"
+      compose up -d --no-deps zalo-api zalo-proxy >/dev/null 2>&1 || true
+      failed=1
+    fi
     probe zalo-api "http://127.0.0.1:${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}/health" || failed=1
   fi
 

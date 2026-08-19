@@ -24,6 +24,9 @@ except ImportError:  # pragma: no cover - local fallback until valkey is install
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from secret_probe import is_blocked as _secret_blocked
+from classify_client import classify_text
+
 # ── constants (env-overridable) ─────────────────────────────────────────────
 VALKEY_URL = os.environ.get("VALKEY_URL") or os.environ.get("REDIS_URL", "valkey://redis:6379/0")
 UPSTREAM_URL = os.environ.get(
@@ -108,6 +111,7 @@ def _load_messages() -> dict:
             "misconfigured": "Gateway misconfigured: set GATEWAY_API_KEYS.",
             "body_too_large": "Request body too large.",
             "health_ok": "ok",
+            "secret_blocked": "Cannot provide secrets or confidential documents.",
         }
 
 
@@ -179,94 +183,18 @@ def _latest_user_text(payload: dict) -> str:
     return ""
 
 
-def _numbered_bodies(raw: str) -> list[str]:
-    import re
-
-    items: list[tuple[int, str]] = []
-    for m in re.finditer(r"(?m)^\s*(\d+)(?:[.)]\s*|\s+)(.+)$", raw or ""):
-        n = int(m.group(1))
-        if 1 <= n <= 20:
-            body = m.group(2).strip()
-            if body:
-                items.append((n, body))
-    if len(items) >= 2 and {1, 2}.issubset({n for n, _ in items}):
-        items.sort(key=lambda x: x[0])
-        return [body for _, body in items]
-    marks: list[tuple[int, int, int]] = []
-    for m in re.finditer(r"(?:^|(?<=\n)|(?<=[\s:]))(\d+)[.)]\s*", raw or ""):
-        n = int(m.group(1))
-        if 1 <= n <= 20:
-            marks.append((n, m.end(), m.start()))
-    if len(marks) < 2:
-        return []
-    out: list[tuple[int, str]] = []
-    for i, (n, body_start, _tok) in enumerate(marks):
-        end = marks[i + 1][2] if i + 1 < len(marks) else len(raw)
-        body = (raw[body_start:end] or "").strip()
-        if body:
-            out.append((n, body))
-    nums = {n for n, _ in out}
-    if 1 not in nums or 2 not in nums:
-        return []
-    out.sort(key=lambda x: x[0])
-    seen: set[int] = set()
-    parts: list[str] = []
-    for n, body in out:
-        if n in seen:
-            continue
-        seen.add(n)
-        parts.append(body)
-    return parts
-
-
 def _plan_instructions(text: str) -> list[str]:
-    import re
-
     raw = (text or "").strip()
     if not raw:
         return []
-    labeled = list(
-        re.finditer(r"(?i)(?:tin\s+nhắn|message|msg|yêu\s+cầu|request)\s*(\d+)\s*[:.\-—]\s*", raw)
-    )
-    if len(labeled) >= 2:
-        parts: list[str] = []
-        for i, m in enumerate(labeled):
-            start = m.end()
-            end = labeled[i + 1].start() if i + 1 < len(labeled) else len(raw)
-            chunk = raw[start:end].strip()
-            if chunk:
-                parts.append(chunk)
-        if len(parts) >= 2:
-            return parts
-    numbered = _numbered_bodies(raw)
-    if len(numbered) >= 2:
-        return numbered
-    return [raw]
+    plan = classify_text(raw)
+    items = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
+    return items or [raw]
 
 
 def _looks_like_schedule(text: str) -> bool:
-    import re
-
-    low = (text or "").lower()
-    if not low.strip():
-        return False
-    markers = (
-        "hàng ngày",
-        "hằng ngày",
-        "mỗi ngày",
-        "daily",
-        "every day",
-        "schedule",
-        "đặt lịch",
-        "hẹn giờ",
-        "gmt+7",
-        "gmt +7",
-    )
-    if any(m in low for m in markers):
-        return True
-    return len(_numbered_bodies(text)) >= 2 and bool(
-        re.search(r"(?i)(?:\d{1,2}\s*[:h]\s*\d{2}\s*(?:am|pm|gmt|sáng|chiều|tối)|gmt\s*\+?\s*7)", low)
-    )
+    plan = classify_text(text or "")
+    return plan.get("task_hint") == "schedule"
 
 
 def _chat_completion_ack(model: str, text: str, workflow: dict, *, scheduled: bool) -> dict:
@@ -454,89 +382,106 @@ async def proxy(full_path: str, request: Request) -> Response:
                 "limit": GATEWAY_MAX_BODY_BYTES,
             },
         )
-    if (
-        HERMES_WORKFLOW_ENABLED
-        and request.method.upper() == "POST"
-        and path in {"/v1/chat/completions", "/chat/completions"}
-        and body
-    ):
+    payload = None
+    text = ""
+    if request.method.upper() == "POST" and path in {"/v1/chat/completions", "/chat/completions"} and body:
         try:
             payload = json.loads(body.decode("utf-8"))
         except ValueError:
             payload = None
         if isinstance(payload, dict):
             text = _latest_user_text(payload)
-            model = str(payload.get("model") or "hermes-workflow")
-            if text:
-                context = {
-                    "execute": "hermes_http",
-                    "model": model,
-                    "api_url": os.environ.get("HERMES_API_URL") or "http://hermes:8642/v1/chat/completions",
-                    "api_key": os.environ.get("API_SERVER_KEY") or "",
-                }
-                if _looks_like_schedule(text):
-                    data = _workflow_http(
-                        "POST",
-                        "/v1/schedules",
-                        {
-                            "name": text[:60],
-                            "text": text,
-                            "timezone": os.environ.get("TZ") or "Asia/Ho_Chi_Minh",
-                            "origin": {"platform": "hermes-api", "path": path},
-                            "context": context,
-                        },
-                    )
-                    schedule = data.get("schedule") if isinstance(data, dict) else None
-                    if isinstance(schedule, dict) and schedule.get("id"):
+            if text and _secret_blocked(text, direction="input"):
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "error": "secret_blocked",
+                        "message": MESSAGES.get(
+                            "secret_blocked",
+                            "Cannot provide secrets or confidential documents.",
+                        ),
+                    },
+                )
+    if HERMES_WORKFLOW_ENABLED and isinstance(payload, dict) and text:
+        model = str(payload.get("model") or "hermes-workflow")
+        plan = classify_text(text, timezone=os.environ.get("TZ") or "Asia/Ho_Chi_Minh")
+        context = {
+            "execute": "hermes_http",
+            "model": model,
+            "api_url": os.environ.get("HERMES_API_URL") or "http://hermes:8642/v1/chat/completions",
+            "api_key": os.environ.get("API_SERVER_KEY") or "",
+            "plan": plan,
+        }
+        if plan.get("task_hint") == "schedule":
+            data = _workflow_http(
+                "POST",
+                "/v1/schedules",
+                {
+                    "name": text[:60],
+                    "text": text,
+                    "cron_expr": plan.get("cron_expr") or "",
+                    "cadence": plan.get("cadence") or "",
+                    "timezone": os.environ.get("TZ") or "Asia/Ho_Chi_Minh",
+                    "origin": {"platform": "hermes-api", "path": path},
+                    "context": context,
+                },
+            )
+            schedule = data.get("schedule") if isinstance(data, dict) else None
+            if isinstance(schedule, dict) and schedule.get("id"):
+                return JSONResponse(
+                    status_code=200,
+                    content=_chat_completion_ack(model, text, schedule, scheduled=True),
+                )
+        instructions = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
+        if len(instructions) >= 2:
+            data = _workflow_http(
+                "POST",
+                "/v1/workflows",
+                {
+                    "instructions": instructions,
+                    "origin": {"platform": "hermes-api", "path": path},
+                    "context": context,
+                    "sequential": True,
+                    "wrap": True,
+                },
+            )
+            workflow = data.get("workflow") if isinstance(data, dict) else None
+            if isinstance(workflow, dict) and workflow.get("id"):
+                waited = _workflow_http(
+                    "POST",
+                    f"/v1/workflows/{workflow['id']}/wait",
+                    {"timeout_s": min(HERMES_WORKFLOW_TIMEOUT_S, HERMES_WORKFLOW_WAIT_S)},
+                )
+                done = waited.get("workflow") if isinstance(waited, dict) else None
+                if isinstance(done, dict) and str(done.get("status") or "") == "COMPLETED":
+                    content = _aggregate_workflow_text(done)
+                    if content:
+                        if _secret_blocked(content, direction="output"):
+                            content = MESSAGES.get(
+                                "secret_blocked",
+                                "Cannot provide secrets or confidential documents.",
+                            )
                         return JSONResponse(
                             status_code=200,
-                            content=_chat_completion_ack(model, text, schedule, scheduled=True),
+                            content={
+                                "id": f"workflow-{done.get('id')}",
+                                "object": "chat.completion",
+                                "created": int(time.time()),
+                                "model": model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "message": {"role": "assistant", "content": content},
+                                        "finish_reason": "stop",
+                                    }
+                                ],
+                                "workflow": done,
+                            },
                         )
-                instructions = _plan_instructions(text)
-                if len(instructions) >= 2:
-                    data = _workflow_http(
-                        "POST",
-                        "/v1/workflows",
-                        {
-                            "instructions": instructions,
-                            "origin": {"platform": "hermes-api", "path": path},
-                            "context": context,
-                            "sequential": True,
-                            "wrap": True,
-                        },
-                    )
-                    workflow = data.get("workflow") if isinstance(data, dict) else None
-                    if isinstance(workflow, dict) and workflow.get("id"):
-                        waited = _workflow_http(
-                            "POST",
-                            f"/v1/workflows/{workflow['id']}/wait",
-                            {"timeout_s": min(HERMES_WORKFLOW_TIMEOUT_S, HERMES_WORKFLOW_WAIT_S)},
-                        )
-                        done = waited.get("workflow") if isinstance(waited, dict) else None
-                        if isinstance(done, dict) and str(done.get("status") or "") == "COMPLETED":
-                            content = _aggregate_workflow_text(done)
-                            if content:
-                                return JSONResponse(
-                                    status_code=200,
-                                    content={
-                                        "id": f"workflow-{done.get('id')}",
-                                        "object": "chat.completion",
-                                        "created": int(time.time()),
-                                        "model": model,
-                                        "choices": [
-                                            {
-                                                "index": 0,
-                                                "message": {"role": "assistant", "content": content},
-                                                "finish_reason": "stop",
-                                            }
-                                        ],
-                                        "workflow": done,
-                                    },
-                                )
-                        return JSONResponse(
-                            status_code=200,
-                            content=_chat_completion_ack(model, text, workflow, scheduled=False),
-                        )
+                return JSONResponse(
+                    status_code=200,
+                    content=_chat_completion_ack(model, text, workflow, scheduled=False),
+                )
     try:
         upstream = await _http.request(
             request.method,

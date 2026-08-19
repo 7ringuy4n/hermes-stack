@@ -20,11 +20,13 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional
 
+from optional_services import host_expected, monitor_metrics_on, name_unresolved
+
 LISTEN = os.environ.get("LISTEN", "0.0.0.0:9103")
 CHECK_INTERVAL = float(os.environ.get("CHECK_INTERVAL", "60"))
 COOLDOWN = float(os.environ.get("ALERT_COOLDOWN_SECONDS", "1800"))
 NOTIFY_URL = os.environ.get("NOTIFY_URL", "http://notify:8092").rstrip("/")
-NODE_EXPORTER = os.environ.get("NODE_EXPORTER_URL", "http://node-exporter:9100").rstrip("/")
+NODE_EXPORTER = (os.environ.get("NODE_EXPORTER_URL") or "").strip().rstrip("/")
 N9ROUTER_URL = os.environ.get("N9ROUTER_URL", "http://9router:20128").rstrip("/")
 N9ROUTER_PASSWORD = os.environ.get("N9ROUTER_PASSWORD", "")
 N9ROUTER_API_KEY = os.environ.get("N9ROUTER_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
@@ -182,11 +184,17 @@ def _parse_health_targets(raw: str) -> list[tuple[str, str, str, int, str]]:
 
 def check_services() -> None:
     for name, kind, host, port, path in _parse_health_targets(HEALTH_TARGETS):
-        if kind == "tcp":
-            ok = _tcp_ok(host, port)
-        else:
-            # Any HTTP response (incl. 401/404) means the process is up
-            ok = _http_reachable(f"http://{host}:{port}{path or '/'}")
+        if not host_expected(host):
+            continue
+        try:
+            if kind == "tcp":
+                ok = _tcp_ok(host, port)
+            else:
+                ok = _http_reachable(f"http://{host}:{port}{path or '/'}")
+        except Exception as e:
+            if name_unresolved(e) and not host_expected(host):
+                continue
+            ok = False
         prev = _prev_up.get(name)
         _prev_up[name] = ok
         if prev is None:
@@ -228,14 +236,17 @@ def _parse_prom(text: str) -> list[tuple[str, dict[str, str], float]]:
 
 
 def check_resources() -> None:
+    if not NODE_EXPORTER or not monitor_metrics_on():
+        return
     try:
         text = _http_text(f"{NODE_EXPORTER}/metrics", timeout=8)
     except Exception as e:
-        # Don't spam if node-exporter profile off — one cooldown key
+        if name_unresolved(e) and not monitor_metrics_on():
+            return
         _fire(
             "node_exporter_unreachable",
             "node-exporter unreachable",
-            f"Cannot scrape {NODE_EXPORTER}/metrics: {e}. CPU/RAM/disk alerts paused.",
+            f"Cannot scrape host metrics (CPU/RAM/disk alerts paused). Monitor profile is on.",
             "warning",
         )
         return

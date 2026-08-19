@@ -400,6 +400,21 @@ def verify(key: str, model: str) -> None:
         print(f"WARN smoke chat {model} HTTP {e.code}: {e.read()[:200]!r}")
 
 
+def pin_image_backends(env: dict[str, str]) -> None:
+    """Medium/High: empty IMAGE_BACKENDS leaves Hermes inventing PIL/matplotlib. Pin dispatcher."""
+    profile = (env.get("ASSISTANT_PROFILE") or os.environ.get("ASSISTANT_PROFILE") or "low").strip().lower()
+    if profile not in {"medium", "high"}:
+        return
+    cur = (env.get("IMAGE_BACKENDS") or "").strip()
+    if cur:
+        print(f"OK: IMAGE_BACKENDS already {cur}")
+        return
+    want = "llm,vendor,comfy-cpu,comfy-gpu"
+    set_env_key(ROOT / ".env", "IMAGE_BACKENDS", want)
+    env["IMAGE_BACKENDS"] = want
+    print(f"OK: pinned IMAGE_BACKENDS={want}")
+
+
 def main() -> int:
     env = load_env(ROOT / ".env")
     password = env.get("N9ROUTER_INITIAL_PASSWORD") or ""
@@ -416,6 +431,7 @@ def main() -> int:
     set_env_key(ROOT / ".env", "HERMES_DEFAULT_MODEL", model)
     set_env_key(ROOT / ".env", "N9ROUTER_DEFAULT_COMBO", COMBO_NAME)
     set_env_key(ROOT / ".env", "N9ROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
+    pin_image_backends(env)
 
     for _ in range(30):
         if (HERMES_DATA / "config.yaml").exists():

@@ -201,6 +201,18 @@ class ImageReq(BaseModel):
     send_zalo: bool = False
     caption: str = ""
     refine: bool = True  # DeepSeek/LLM rewrite prompt before gen; wait for reply
+    overlay: Optional[list[str]] = None  # short fact lines already fetched by the agent
+
+
+class VideoReq(BaseModel):
+    """Short H.264 clip from a still (dispatcher default — not Hermes-invented tools)."""
+    prompt: Optional[str] = None
+    image: Optional[str] = None  # existing file under media/out
+    filename: Optional[str] = None
+    seconds: float = 4.0
+    overlay: Optional[list[str]] = None
+    refine: bool = False
+    provider: Optional[str] = None
 
 
 @app.get("/health")
@@ -934,6 +946,27 @@ def _send_zalo_base64(thread_id: str, thread_type: str, dest: Path, caption: str
     return _send_zalo_attachment(thread_id, thread_type, dest, caption)
 
 
+def _apply_image_overlay(dest: Path, lines) -> int:
+    """Paint caller-supplied fact lines onto dest. Returns how many lines were drawn."""
+    from overlay import apply_overlay, clean_overlay_lines
+
+    facts = clean_overlay_lines(lines)
+    if not facts or not dest.is_file():
+        return 0
+    apply_overlay(dest, facts)
+    return len(facts)
+
+
+def _chown_media(path: Path) -> None:
+    try:
+        uid = int(os.environ.get("HERMES_UID") or "1000")
+        gid = int(os.environ.get("HERMES_GID") or str(uid))
+        os.chown(path.parent, uid, gid)
+        os.chown(path, uid, gid)
+    except OSError:
+        pass
+
+
 @app.post("/v1/image")
 def image_generate(req: ImageReq) -> dict[str, Any]:
     """Image gen fallback (Medium+): llm → vendor → ComfyUI CPU → ComfyUI GPU.
@@ -968,7 +1001,8 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             os.chown(dest, uid, gid)
         except OSError:
             pass
-        return {
+        overlay_n = _apply_image_overlay(dest, req.overlay)
+        out: dict[str, Any] = {
             "ok": True,
             "file": name,
             "path": str(dest),
@@ -976,6 +1010,9 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             "n": poster["n"],
             "phrase": poster["phrase"],
         }
+        if overlay_n:
+            out["overlay"] = overlay_n
+        return out
 
     if not image_backends() and not (req.provider or "").strip():
         raise HTTPException(503, _msg("image_gen_disabled", "Image generation is unavailable (no media backends configured)."))
@@ -1033,6 +1070,7 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             img.convert("RGB").save(dest, quality=90)
     except Exception:  # noqa: BLE001
         pass
+    overlay_n = _apply_image_overlay(dest, req.overlay)
     hermes_path = f"/opt/data/media/out/{dest.name}"
     result: dict[str, Any] = {
         "ok": True,
@@ -1044,6 +1082,7 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
         "file": str(dest),
         "hermes_path": hermes_path,
         "errors": errors,
+        "overlay": overlay_n,
     }
     if req.send_zalo:
         if not req.thread_id:
@@ -1055,6 +1094,88 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
                 req.thread_id, req.thread_type, dest, req.caption or prompt[:80]
             )
     return result
+
+
+@app.post("/v1/video")
+def video_generate(req: VideoReq) -> dict[str, Any]:
+    """Default video path: still (existing or /v1/image) → short H.264 mp4."""
+    from video_clip import ffmpeg_bin, still_to_mp4
+
+    out_dir = MEDIA_DIR / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    still: Optional[Path] = None
+    used = ""
+    if (req.image or "").strip():
+        name = Path(str(req.image).strip()).name
+        cand = out_dir / name
+        if cand.is_file():
+            still = cand
+            used = "still"
+    if still is None:
+        prompt = (req.prompt or "").strip()
+        if not prompt:
+            raise HTTPException(400, _msg("prompt_required", "A prompt or image is required."))
+        img = image_generate(
+            ImageReq(
+                prompt=prompt,
+                filename=(req.filename or "clip-still.jpg").rsplit(".", 1)[0] + ".jpg",
+                provider=req.provider,
+                refine=req.refine,
+                overlay=req.overlay,
+            )
+        )
+        still = Path(str(img.get("file") or ""))
+        used = str(img.get("provider") or img.get("backend") or "image")
+        if not still.is_file():
+            raise HTTPException(502, {"error": "still image missing", "detail": img})
+    elif req.overlay:
+        _apply_image_overlay(still, req.overlay)
+    if not ffmpeg_bin():
+        raise HTTPException(503, "ffmpeg missing — cannot encode video")
+    name = req.filename or f"clip-{uuid.uuid4().hex[:10]}.mp4"
+    if not name.lower().endswith(".mp4"):
+        name += ".mp4"
+    dest = out_dir / name
+    try:
+        still_to_mp4(still, dest, seconds=req.seconds)
+        _chown_media(dest)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, {"error": "video encode failed", "detail": str(e)}) from e
+    return {
+        "ok": True,
+        "file": str(dest),
+        "hermes_path": f"/opt/data/media/out/{dest.name}",
+        "backend": "ffmpeg-still",
+        "still": str(still),
+        "provider": used,
+        "seconds": max(2.0, min(12.0, float(req.seconds))),
+    }
+
+
+class RemuxReq(BaseModel):
+    filename: str
+
+
+@app.post("/v1/video-remux")
+def video_remux(req: RemuxReq) -> dict[str, Any]:
+    """Re-encode an existing clip in media/out to Zalo-safe H.264."""
+    from video_clip import ffmpeg_bin, remux_mp4
+
+    name = Path(str(req.filename or "").strip()).name
+    if not name:
+        raise HTTPException(400, "filename required")
+    src = (MEDIA_DIR / "out") / name
+    if not src.is_file():
+        raise HTTPException(404, f"missing {name}")
+    if not ffmpeg_bin():
+        raise HTTPException(503, "ffmpeg missing — cannot encode video")
+    dest = src.with_name(src.stem + ".zalo.mp4")
+    try:
+        remux_mp4(src, dest)
+        _chown_media(dest)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, {"error": "video remux failed", "detail": str(e)}) from e
+    return {"ok": True, "file": str(dest), "hermes_path": f"/opt/data/media/out/{dest.name}"}
 
 
 from office_file import register_office_file
