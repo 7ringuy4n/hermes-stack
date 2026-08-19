@@ -3,6 +3,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
+COPY classify.py .
 COPY messages ./messages
 COPY config ./config
 ENV MODEL_ROUTER_PORT=8096

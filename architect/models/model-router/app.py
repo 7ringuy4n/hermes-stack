@@ -1,10 +1,9 @@
 """Model Router — task-aware LLM proxy (v0.5.0).
 
-Routing (hybrid classification):
-  1. Explicit client tag: X-Task-Type / body.metadata.task_type
-  2. Hermes task_hint (metadata.task_hint)
-  3. Heuristic from config/heuristic patterns
-  4. Unknown → general
+Routing:
+  1. Explicit client tag: X-Task-Type / body.metadata.task_hint
+  2. Default → normal (fast path). No substring / split NLU.
+  3. POST /v1/classify uses an LLM and returns structured JSON.
 
 Providers:
   coding  → 9router (if healthy) else OmniRouter if only that exists → fallback pool
@@ -12,7 +11,7 @@ Providers:
 
 Missing API keys skip that provider. Ollama optional. Nothing left → clear error.
 Admin-editable messages: messages/en.json
-Heuristic patterns: config/heuristic.json (not hardcoded business rules in code).
+Classify prompt: config/classify.json
 """
 from __future__ import annotations
 
@@ -26,9 +25,10 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from classify import TASK_HINTS, classify_with_llm, outbound_with_llm  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent
 MESSAGES_PATH = Path(os.environ.get("MODEL_ROUTER_MESSAGES", str(ROOT / "messages" / "en.json")))
-HEURISTIC_PATH = Path(os.environ.get("MODEL_ROUTER_HEURISTIC", str(ROOT / "config" / "heuristic.json")))
 
 N9_BASE = os.environ.get("N9ROUTER_BASE_URL", "http://9router:20128/v1").rstrip("/")
 OMNI_BASE = os.environ.get("OMNIROUTER_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
@@ -64,10 +64,6 @@ MESSAGES = _load_json(
         "health_ok": "ok",
     },
 )
-HEURISTIC = _load_json(
-    HEURISTIC_PATH,
-    {"coding_substrings": ["```", "def ", "function ", "import ", "error:", "stack trace", "compile"]},
-)
 
 
 def _client() -> httpx.AsyncClient:
@@ -92,36 +88,38 @@ async def _probe(name: str, url: str, headers: Optional[dict] = None) -> bool:
     return ok
 
 
+TASK_ALIASES = {
+    "code": "coding",
+    "general": "normal",
+    "other": "normal",
+    "chat": "normal",
+}
+# SECRET is never a task_hint — security_status lives on Secret Probe.
+PROVIDER_CODING = {"coding"}
+
+
+def _normalize_hint(raw: str) -> str | None:
+    val = (raw or "").strip().lower()
+    if not val or val in {"secret", "blocked", "sensitive"}:
+        return None
+    if val in TASK_ALIASES:
+        return TASK_ALIASES[val]
+    if val in TASK_HINTS:
+        return val
+    return None
+
+
 def _classify(request: Request, body: dict) -> str:
-    # 1) explicit header
-    hdr = (request.headers.get("x-task-type") or request.headers.get("X-Task-Type") or "").strip().lower()
-    if hdr in {"coding", "code", "general", "other"}:
-        return "coding" if hdr in {"coding", "code"} else "general"
+    hdr = (request.headers.get("x-task-type") or request.headers.get("X-Task-Type") or "").strip()
+    mapped = _normalize_hint(hdr)
+    if mapped:
+        return mapped
     meta = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
-    # 2) Hermes hint
     for key in ("task_type", "task_hint", "task"):
-        val = str(meta.get(key) or body.get(key) or "").strip().lower()
-        if val in {"coding", "code"}:
-            return "coding"
-        if val in {"general", "other", "chat"}:
-            return "general"
-    # 3) heuristic
-    blobs: list[str] = []
-    for m in body.get("messages") or []:
-        if isinstance(m, dict):
-            c = m.get("content")
-            if isinstance(c, str):
-                blobs.append(c.lower())
-            elif isinstance(c, list):
-                for part in c:
-                    if isinstance(part, dict) and isinstance(part.get("text"), str):
-                        blobs.append(part["text"].lower())
-    text = "\n".join(blobs)
-    for sub in HEURISTIC.get("coding_substrings") or []:
-        if str(sub).lower() in text:
-            return "coding"
-    # 4) unknown → general
-    return "general"
+        mapped = _normalize_hint(str(meta.get(key) or body.get(key) or ""))
+        if mapped:
+            return mapped
+    return "normal"
 
 
 def _auth_headers(key: str) -> dict[str, str]:
@@ -139,7 +137,8 @@ async def _candidates(task: str) -> list[tuple[str, str, dict[str, str], Optiona
     if ENABLE_OMNI and OMNI_BASE:
         omni_ok = await _probe("omni", OMNI_BASE, _auth_headers(OMNI_KEY))
 
-    if task == "coding":
+    coding = task in PROVIDER_CODING
+    if coding:
         if n9_ok:
             out.append(("9router", N9_BASE, _auth_headers(N9_KEY), None))
         elif omni_ok:
@@ -185,7 +184,48 @@ async def health() -> dict[str, Any]:
         "nine_router": n9,
         "omni_router": omni,
         "enable_omni": ENABLE_OMNI,
+        "task_hints": list(TASK_HINTS),
+        "classify": "/v1/classify",
+        "outbound": "/v1/outbound",
     }
+
+
+@app.post("/v1/classify")
+async def classify_endpoint(request: Request) -> dict[str, Any]:
+    raw = await request.body()
+    body: dict = {}
+    if raw:
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except Exception:
+            body = {}
+    text = str(body.get("text") or "")
+    timezone = str(body.get("timezone") or os.environ.get("TZ") or "Asia/Ho_Chi_Minh")
+    return await classify_with_llm(
+        text,
+        timezone=timezone,
+        client=_client(),
+        n9_base=N9_BASE,
+        n9_key=N9_KEY,
+    )
+
+
+@app.post("/v1/outbound")
+async def outbound_endpoint(request: Request) -> dict[str, Any]:
+    raw = await request.body()
+    body: dict = {}
+    if raw:
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except Exception:
+            body = {}
+    text = str(body.get("text") or "")
+    return await outbound_with_llm(
+        text,
+        client=_client(),
+        n9_base=N9_BASE,
+        n9_key=N9_KEY,
+    )
 
 
 @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
@@ -200,7 +240,7 @@ async def proxy(path: str, request: Request) -> Response:
             body = {}
 
     is_chat = path.rstrip("/").endswith("chat/completions") or path == "chat/completions"
-    task = _classify(request, body) if is_chat or body else "general"
+    task = _classify(request, body) if is_chat or body else "normal"
     candidates = await _candidates(task)
     if not candidates:
         return JSONResponse(

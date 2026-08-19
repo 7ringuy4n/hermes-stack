@@ -16,6 +16,8 @@ When the user asks for:
 
 Then this skill is the default: answer using **local** `knowledge_chunks` only.
 
+Do **not** use this skill for a **lịch**/schedule job, greeting, weather, or fuel-price summary. “Không trích dẫn nguồn” on those tasks means do not footnote sources — it is not a catalog cite.
+
 1. Query **`INGEST_URL`** / Memory Manager — collection `knowledge_chunks` (top 5 + count).
 2. **Ground** answers in retrieved chunks; quote or paraphrase with attribution.
 3. Empty retrieval → refuse politely; **no inventing** (`core/fact-checking`).

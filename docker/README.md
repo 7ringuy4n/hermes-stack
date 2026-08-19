@@ -16,7 +16,7 @@ Compose YAML lives here so the repo root stays clean. **`run.sh` always passes
 
 | Profile | Enable via |
 |---------|------------|
-| `zalo` | `ENABLE_ZALO=1` |
+| `zalo` | `ENABLE_ZALO=1` — **both** `zalo-proxy` and `zalo-api` (required combo) |
 | `grafana` | `ENABLE_GRAFANA=1` (also starts Prometheus + paired exporters) |
 | `prometheus` | `ENABLE_PROMETHEUS=1` or Grafana — `nine-exporter`, `node-exporter`, `stack-exporter` |
 | `loki` / `alloy` | `ENABLE_LOKI=1` or `ENABLE_ALLOY=1` (always together) |

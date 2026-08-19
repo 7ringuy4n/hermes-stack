@@ -14,6 +14,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
+from optional_services import host_expected
+
 LISTEN = os.environ.get("LISTEN", "0.0.0.0:9102")
 SCRAPE_INTERVAL = float(os.environ.get("SCRAPE_INTERVAL", "30"))
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
@@ -298,6 +300,8 @@ def render_metrics() -> str:
         lines.append(_line("assistant_qdrant_segments", st["segments"], labels))
 
     for name, kind, host, port, path in _parse_health_targets(HEALTH_TARGETS):
+        if not host_expected(host):
+            continue
         ok = False
         if name == "redis_via_tcp":
             ok = _tcp_ok(host, port)

@@ -100,6 +100,7 @@ services:
       - HERMES_API_URL=${HERMES_API_URL:-http://hermes:8642/v1/chat/completions}
       - HERMES_API_KEY=${API_SERVER_KEY:-}
       - HERMES_WORKFLOW_TIMEOUT_S=${HERMES_WORKFLOW_TIMEOUT_S:-90}
+      - MODEL_ROUTER_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     depends_on:
       postgres:
@@ -368,6 +369,7 @@ services:
       - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
       - GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-true}
       - HERMES_REPLICAS=${HERMES_REPLICAS:-1}
+      - SECRET_PROBE_POLICY=/opt/data/secret-probe.json
     volumes:
       - ${HERMES_DATA_DIR:-/data/assistant}:/opt/data
       # Repo SoT for Low; durable runtime state stays on HERMES_DATA_DIR
@@ -376,6 +378,7 @@ services:
       - ./hermes/main/messages:/opt/data/messages:ro
       - ./hermes/main/SOUL.md:/opt/data/SOUL.md:ro
       - ./hermes/main/docker/hermes-replica-entry.sh:/opt/stack/hermes-replica-entry.sh:ro
+      - ./config/agent/secret-probe.json:/opt/data/secret-probe.json:ro
     depends_on:
       - 9router
       - model-router
@@ -387,7 +390,8 @@ services:
       - "host.docker.internal:host-gateway"
     networks: [internal]
 
-  # Optional — ENABLE_ZALO=1 (run.sh --profile zalo). Proxies host bridge :8787 into Docker network.
+  # Optional — ENABLE_ZALO=1 (run.sh --profile zalo). Host bridge :8787 into Docker.
+  # Combo: zalo-proxy AND zalo-api must both run. Bridge-only is not a working Zalo channel.
   zalo-proxy:
     profiles: ["zalo"]
     image: ${SOCAT_IMAGE:-alpine/socat:1.8.0.3}
@@ -396,9 +400,11 @@ services:
     command: TCP-LISTEN:8787,fork,reuseaddr TCP:host.docker.internal:8787
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      - zalo-api
     networks: [internal]
 
-  # Zalo channel admin API (!zalo claim / allowlists). Replaces legacy admin-api.
+  # Zalo channel admin API (!zalo claim / allowlists). Required companion of zalo-proxy.
   zalo-api:
     profiles: ["zalo"]
     build: ./architect/zalo-api
@@ -435,4 +441,9 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - workflow
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
     networks: [internal]

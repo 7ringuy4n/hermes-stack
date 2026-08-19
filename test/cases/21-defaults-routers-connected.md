@@ -17,7 +17,9 @@ Lab helper `test/scripts/deploy_high.py` follows the same defaults (**OmniRouter
 ## Connectivity
 
 ```text
-Hermes → model-router → 9router (coding) / OmniRouter (general, if enabled)
+Hermes → INPUT Secret Probe → task_hint (explicit or default normal)
+       → POST /v1/classify when schedule/multi-task intercept needs structure
+       → model-router → 9router (coding) / OmniRouter (general, if enabled)
 ```
 
 | Flag live | Must be true |
