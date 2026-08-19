@@ -20,7 +20,52 @@ OUTBOUND_CFG_PATH = Path(
 TASK_HINTS = ("normal", "schedule", "coding", "tool", "search", "file", "knowledge", "unknown")
 OUTBOUND_ACTIONS = ("send", "drop")
 CADENCES = ("once", "daily", "weekly", "monthly", "yearly")
+EXECUTION_CLASSES = ("interactive", "async", "schedule")
+TASK_TYPES = (
+    "chat",
+    "media_generation",
+    "file_processing",
+    "create_schedule",
+    "knowledge",
+    "search",
+    "tool",
+    "coding",
+)
+RESPONSE_MODES = ("direct", "ack_then_deliver", "confirm")
+HINT_EXECUTION = {
+    "schedule": ("schedule", "create_schedule", "confirm"),
+    "file": ("async", "file_processing", "ack_then_deliver"),
+    "knowledge": ("interactive", "knowledge", "direct"),
+    "coding": ("interactive", "coding", "direct"),
+    "search": ("interactive", "search", "direct"),
+    "normal": ("interactive", "chat", "direct"),
+    "unknown": ("interactive", "chat", "direct"),
+    "tool": ("interactive", "tool", "direct"),
+}
 CRON_CHARS = set("0123456789*,/-")
+
+
+def normalize_execution(src: dict[str, Any], hint: str) -> tuple[str, str, str]:
+    """Validate Fast Dispatcher enums. Fallback is from task_hint, not user prose."""
+    raw_cls = str(src.get("execution_class") or "").strip().lower()
+    raw_type = str(src.get("task_type") or "").strip().lower()
+    raw_mode = str(src.get("response_mode") or "").strip().lower()
+    d_cls, d_type, d_mode = HINT_EXECUTION.get(hint, ("interactive", "chat", "direct"))
+    if raw_type not in TASK_TYPES:
+        raw_type = d_type
+    if raw_cls not in EXECUTION_CLASSES:
+        raw_cls = d_cls
+        if hint == "tool" and raw_type == "media_generation":
+            raw_cls = "async"
+    if raw_mode not in RESPONSE_MODES:
+        raw_mode = d_mode
+        if raw_cls == "async":
+            raw_mode = "ack_then_deliver"
+        elif raw_cls == "schedule":
+            raw_mode = "confirm"
+    if hint == "schedule":
+        return "schedule", "create_schedule", "confirm"
+    return raw_cls, raw_type, raw_mode
 
 
 def _load_cfg() -> dict[str, Any]:
@@ -28,8 +73,8 @@ def _load_cfg() -> dict[str, Any]:
         return json.loads(CFG_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {
-            "timeout_s": 90,
-            "max_tokens": 32768,
+            "timeout_s": 8,
+            "max_tokens": 1024,
             "temperature": 0,
             "system": "Return JSON with task_hint, instructions, cadence, cron_expr.",
             "user_template": "Timezone: {timezone}\nMessage:\n{text}",
@@ -119,6 +164,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         cadence = "daily" if hint == "schedule" else "once"
     cron = valid_cron(str(src.get("cron_expr") or ""))
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
+    exec_cls, task_type, response_mode = normalize_execution(src, hint)
     return {
         "ok": True,
         "task_hint": hint,
@@ -126,6 +172,9 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "cadence": cadence if hint == "schedule" else None,
         "cron_expr": cron if hint == "schedule" else None,
         "timezone": tz,
+        "execution_class": exec_cls,
+        "task_type": task_type,
+        "response_mode": response_mode,
     }
 
 
@@ -148,7 +197,7 @@ async def classify_with_llm(
         "model": (model or os.environ.get("MODEL_ROUTER_CLASSIFY_MODEL") or "hermes").strip() or "hermes",
         "stream": False,
         "temperature": float(cfg.get("temperature") or 0),
-        "max_tokens": int(cfg.get("max_tokens") or 32768),
+        "max_tokens": int(cfg.get("max_tokens") or 1024),
         "messages": [
             {"role": "system", "content": str(cfg.get("system") or "")},
             {"role": "user", "content": tmpl.replace("{timezone}", tz).replace("{text}", blob)},
@@ -157,10 +206,10 @@ async def classify_with_llm(
     headers = {"Content-Type": "application/json"}
     if n9_key:
         headers["Authorization"] = f"Bearer {n9_key}"
-    timeout = float(cfg.get("timeout_s") or 90)
+    timeout = float(cfg.get("timeout_s") or 8)
     url = f"{n9_base.rstrip('/')}/chat/completions"
     content = ""
-    llm_attempts = 2
+    llm_attempts = 1
     for attempt in range(llm_attempts):
         try:
             resp = await client.post(url, headers=headers, json=payload, timeout=timeout)
@@ -196,7 +245,7 @@ def _load_outbound_cfg() -> dict[str, Any]:
         return json.loads(OUTBOUND_CFG_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {
-            "timeout_s": 8,
+            "timeout_s": 2,
             "max_tokens": 64,
             "temperature": 0,
             "system": 'Return JSON {"action":"send"} or {"action":"drop"}.',
@@ -238,7 +287,7 @@ async def outbound_with_llm(
     headers = {"Content-Type": "application/json"}
     if n9_key:
         headers["Authorization"] = f"Bearer {n9_key}"
-    timeout = float(cfg.get("timeout_s") or 8)
+    timeout = float(cfg.get("timeout_s") or 2)
     url = f"{n9_base.rstrip('/')}/chat/completions"
     content = ""
     try:

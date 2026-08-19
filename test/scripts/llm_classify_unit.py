@@ -35,6 +35,26 @@ def main() -> int:
     assert poster["task_hint"] == "tool"
     assert len(poster["instructions"]) == 1
     assert "E10 RON95" in poster["instructions"][0]
+    media = normalize_plan(
+        {
+            "task_hint": "tool",
+            "execution_class": "async",
+            "task_type": "media_generation",
+            "response_mode": "ack_then_deliver",
+            "instructions": ["Draw HCMC weather"],
+        },
+        "ignored",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert media["execution_class"] == "async"
+    assert media["response_mode"] == "ack_then_deliver"
+    hello = normalize_plan(
+        {"task_hint": "normal", "instructions": ["Hello"]},
+        "Hello",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert hello["execution_class"] == "interactive"
+    assert hello["response_mode"] == "direct"
     sched = normalize_plan(
         {
             "task_hint": "schedule",

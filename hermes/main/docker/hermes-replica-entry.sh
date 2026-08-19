@@ -78,7 +78,16 @@ elif [ -d "$_src_skills" ] && [ -d "$_dst_skills" ]; then
   cp -a "$_src_skills"/. "$_dst_skills"/ 2>/dev/null || true
 fi
 link_shared messages
-link_shared plugins
+# Plugins: overlay SoT so new modules (classify_client, gateway_noise) land on
+# existing replica dirs. A leftover directory is not replaced by link_shared.
+_src_plugins="${SHARED}/plugins"
+_dst_plugins="${HERMES_HOME}/plugins"
+if [ -L "$_dst_plugins" ]; then
+  :
+elif [ -d "$_src_plugins" ]; then
+  mkdir -p "$_dst_plugins"
+  cp -a "$_src_plugins"/. "$_dst_plugins"/ 2>/dev/null || true
+fi
 link_shared lazy-packages
 link_shared zalo_admin_users.txt
 link_shared zalo_allowed_threads.txt

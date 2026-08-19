@@ -1,5 +1,65 @@
 # Change history
 
+## 2026-08-19 19:45 +07 — classify one hop; normalize chat JSON; cron vars() leak
+
+- `/v1/classify` and `/v1/outbound` use the first healthy provider only, then fail-open. Classify LLM timeout is 3s so a hello is not held on four ReadTimeouts.
+- Chat proxy sanitizes the request and normalizes Chat Completions JSON (string `message`, list `content`, error bodies failover). Cron `vars() argument must have __dict__` is treated as protocol and rewritten from `ux.json` `schedule.job_failed`.
+
+## 2026-08-19 16:55 +07 — Zalo Bridge hi latency test; Hermes config.yaml via model-router
+
+- Case 17 uses `zalo_user_latency.py`: inject a short DM onto the Zalo plugin SSE stream (`POST /inject-event`) as the named admin user. Not Traefik chat.
+- Rolling apply rewrites Hermes `config.yaml` `base_url` from 9router to model-router (env alone was ignored). Model-router fails over on HTTP 413/429.
+- Adapter logs `Zalo: send ok` for measured outbound. Outbound `/send` uses a separate HTTP session from SSE so POST is not reset by the long GET /events.
+
+## 2026-08-19 16:40 +07 — drop Hermes 413/compaction from Zalo; cap session length
+
+- Zalo outbound drops Hermes protocol lines (context compaction, payload 413, session auto-reset) via `ux.json` `outbound_protocol_drop`.
+- Session store keeps at most `SESSION_MAX_MESSAGES` (default 16). Rolling apply recreates session, `POST /v1/sessions/reset-all`, deletes replica `sessions/sessions.json`, and points Hermes `OPENAI_BASE_URL` at model-router when the host still targeted 9router.
+
+## 2026-08-19 16:22 +07 — restore lab-only classify cache key (rule 41)
+
+- Removed `prompt_rev` from `classify.json` (Docker cache-bust only). Product classify stays 8s / 1024 tokens. Chat `model=hermes` still prefers 9router.
+
+## 2026-08-19 16:00 +07 — classify/outbound use Omni like chat; 8s classify budget
+
+- `/v1/classify` and `/v1/outbound` pick the same general-chat LLM as the proxy (Omni when healthy, else 9router). They no longer always call 9router.
+- Classify timeout is 8s / 1024 tokens so a hello is not held for 20s when the upstream is slow. Failed classify stays interactive.
+- Chat proxy fails over from Omni 401/403 to 9router (OpenCode combo smoke was 403 HTML). `model=hermes` and classify/outbound prefer 9router so OpenCode free models are not first hop for Fast Dispatcher or Hermes chat.
+
+## 2026-08-19 15:35 +07 — video length caller-chosen (max 2 min); faster classify for chat
+
+- `POST /v1/video` `seconds` is the caller length; hard cap 120s (`VIDEO_SECONDS_MAX`). Encode timeout scales with duration.
+- Classify uses 20s timeout and 1024 max tokens (was 90s / 32768) so hello/chat is not blocked on a huge completion. Failed classify stays interactive/direct.
+- Outbound send/drop LLM is 2s then fail-open send, so Zalo replies are not held on a second 9router hop.
+
+## 2026-08-19 15:20 +07 — overlay fit; Zalo sendVideo; case-25 watch stop
+
+- Overlay wraps and shrinks fact text so it stays inside the image frame.
+- Video encode adds AAC + yuv420p. Adapter uploads clip + thumbnail and calls zca-js `sendVideo` (generic attach was `Tham số không hợp lệ`).
+- Case 25 lab stops after four jobs complete plus a short extra poll instead of looping until the full wait.
+
+## 2026-08-19 14:45 +07 — Zalo plugin import path + remux-before-autosend
+
+- Adapter and sibling modules put `/opt/data/plugins/zalo` on `sys.path` so `hermes_plugins.zalo_platform` can import `classify_client` / `gateway_noise`.
+- Autosend prefers `*.zalo.mp4` and remuxes before attach so raw mp4 is not sent in parallel with remux.
+
+## 2026-08-19 14:10 +07 — Fast Dispatcher UX: interactive vs async vs schedule
+
+- Classify JSON adds `execution_class`, `task_type`, `response_mode`. Hello stays off the job queue. Image/video/OCR ACK (`ux.json` async.ack) then workflow. Lịch still persist + confirm.
+- Video attachments remux before send; mp4 is not sent as an image. Invalid-parameter retries remuxed file.
+- Replica entry and rolling apply overlay plugin modules so `gateway_noise` / `classify_client` exist on every Hermes replica.
+
+## 2026-08-19 14:05 +07 — High lab 24–29: video send fail; replica plugin modules missing
+
+- Case 25: four jobs completed; new mp4 remuxed; Zalo `send-attachment` invalid-parameter and no successful mp4 send.
+- After destroy, backup restore brought back an isolated `::job::` 07:00 schedule (deleted before case 26).
+- `assistant-hermes-2` inbound: `ModuleNotFoundError: gateway_noise` / `classify_client` (stale replica plugins dir). Entrypoint now overlays shared plugins like skills.
+
+## 2026-08-19 13:25 +07 — workflow_vps schedule POST timeout
+
+- Live `POST /v1/schedules` waits on LLM classify; the VPS probe timeout is 120s instead of 8s.
+- Schedule upsert uses 5-token `cron_expr` (not a clock string in `time`). `valid_cron` only accepts cron tokens.
+
 ## 2026-08-19 13:15 +07 — release: v0.5.9
 
 - LLM classify for Zalo cite, schedule, and outbound drop. Dispatcher remains the image/video path. Default `IMAGE_LLM_SIZE` is Full HD (`1920x1080`).

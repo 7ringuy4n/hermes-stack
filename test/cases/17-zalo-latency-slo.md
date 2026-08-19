@@ -13,10 +13,9 @@ Detect slow paths. A **simple text** reply on the host (no WAN hop) must be **as
 
 ## Steps
 
-1. Run `python test/scripts/zalo_latency_lab.py` (batch size 5, separate process)
-2. Record per-message: start, end, latency ms, HTTP/status
-3. Compute min / p50 / p95 / max
-4. Repeat with UTF-8 Vietnamese short ping
+1. Run `python test/scripts/zalo_user_latency.py` (Zalo Bridge `POST /inject-event` as the allowlisted user named `ZALO_TEST_USER_NAME`, default display name `Tn`; text `ZALO_LATENCY_TEXT` default `hi`). Do **not** bypass the bridge with Traefik `/v1/chat/completions`.
+2. Record inject → inbound log → `Zalo: send ok` ms. Bridge `sseClients` must stay `1`.
+3. Optional extra: `python test/scripts/zalo_latency_lab.py` for Traefik-only comparison (not the Zalo path).
 
 ## Pass criteria
 
@@ -39,6 +38,7 @@ Lab 2026-08-18: p50 4.1s / p95 9.2s — **p95 misses the 5s SLO**; treat as impr
 
 ## Improvement checklist (when FAIL)
 
+- [ ] Classify hop (`classify.json` timeout/max_tokens, `MODEL_ROUTER_CLASSIFY_TIMEOUT_S`)
 - [ ] model-router / 9router health and combo warm
 - [ ] Valkey session lock contention
 - [ ] OmniRouter vs 9router path for general chat

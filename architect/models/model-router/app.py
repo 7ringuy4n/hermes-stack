@@ -25,7 +25,8 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from classify import TASK_HINTS, classify_with_llm, outbound_with_llm  # noqa: E402
+from classify import TASK_HINTS, classify_with_llm, outbound_with_llm, normalize_plan  # noqa: E402
+from chat_norm import normalize_chat_completion, sanitize_chat_payload
 
 ROOT = Path(__file__).resolve().parent
 MESSAGES_PATH = Path(os.environ.get("MODEL_ROUTER_MESSAGES", str(ROOT / "messages" / "en.json")))
@@ -43,6 +44,12 @@ FALLBACK_OPENAI_MODEL = os.environ.get("FALLBACK_OPENAI_MODEL", "gpt-4o-mini")
 TIMEOUT_S = float(os.environ.get("MODEL_ROUTER_TIMEOUT_S", "90"))
 HEALTH_TTL_S = float(os.environ.get("MODEL_ROUTER_HEALTH_TTL_S", "15"))
 LISTEN_PORT = int(os.environ.get("MODEL_ROUTER_PORT", "8096"))
+# Retry next provider on these (413 payload, 429 rate, auth, 5xx).
+FAILOVER_HTTP = {401, 403, 413, 429}
+
+
+def _failover_status(code: int) -> bool:
+    return code >= 500 or code in FAILOVER_HTTP
 
 app = FastAPI(title="assistant-model-router", version="0.5.0")
 _http: httpx.AsyncClient | None = None
@@ -129,7 +136,7 @@ def _auth_headers(key: str) -> dict[str, str]:
     return h
 
 
-async def _candidates(task: str) -> list[tuple[str, str, dict[str, str], Optional[str]]]:
+async def _candidates(task: str, *, prefer_omni: bool | None = None) -> list[tuple[str, str, dict[str, str], Optional[str]]]:
     """Return ordered (name, base_url, headers, default_model_override)."""
     out: list[tuple[str, str, dict[str, str], Optional[str]]] = []
     n9_ok = await _probe("9router", N9_BASE, _auth_headers(N9_KEY)) if N9_BASE else False
@@ -138,15 +145,16 @@ async def _candidates(task: str) -> list[tuple[str, str, dict[str, str], Optiona
         omni_ok = await _probe("omni", OMNI_BASE, _auth_headers(OMNI_KEY))
 
     coding = task in PROVIDER_CODING
-    if coding:
+    use_omni_first = (not coding) if prefer_omni is None else prefer_omni
+    if coding or not use_omni_first:
         if n9_ok:
             out.append(("9router", N9_BASE, _auth_headers(N9_KEY), None))
-        elif omni_ok:
+        if omni_ok:
             out.append(("omni-router", OMNI_BASE, _auth_headers(OMNI_KEY), None))
     else:
         if omni_ok:
             out.append(("omni-router", OMNI_BASE, _auth_headers(OMNI_KEY), None))
-        elif n9_ok:
+        if n9_ok:
             out.append(("9router", N9_BASE, _auth_headers(N9_KEY), None))
 
     if FALLBACK_OPENAI and FALLBACK_OPENAI_KEY:
@@ -161,6 +169,13 @@ async def _candidates(task: str) -> list[tuple[str, str, dict[str, str], Optiona
     if OLLAMA_BASE:
         out.append(("ollama", f"{OLLAMA_BASE}/v1", {}, OLLAMA_MODEL))
     return out
+
+
+def _bearer_key(headers: dict[str, str]) -> str:
+    auth = str(headers.get("Authorization") or "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return ""
 
 
 @app.on_event("shutdown")
@@ -201,13 +216,23 @@ async def classify_endpoint(request: Request) -> dict[str, Any]:
             body = {}
     text = str(body.get("text") or "")
     timezone = str(body.get("timezone") or os.environ.get("TZ") or "Asia/Ho_Chi_Minh")
-    return await classify_with_llm(
-        text,
-        timezone=timezone,
-        client=_client(),
-        n9_base=N9_BASE,
-        n9_key=N9_KEY,
-    )
+    last: dict[str, Any] = {}
+    candidates = await _candidates("normal", prefer_omni=False)
+    if candidates:
+        _name, base, headers, model = candidates[0]
+        last = await classify_with_llm(
+            text,
+            timezone=timezone,
+            client=_client(),
+            n9_base=base,
+            n9_key=_bearer_key(headers),
+            model=model,
+        )
+        if last.get("ok"):
+            return last
+    opened = normalize_plan({"task_hint": "normal", "instructions": [text] if text.strip() else []}, text, timezone)
+    opened["error"] = last.get("error") or "classify_llm_failed"
+    return opened
 
 
 @app.post("/v1/outbound")
@@ -220,12 +245,20 @@ async def outbound_endpoint(request: Request) -> dict[str, Any]:
         except Exception:
             body = {}
     text = str(body.get("text") or "")
-    return await outbound_with_llm(
-        text,
-        client=_client(),
-        n9_base=N9_BASE,
-        n9_key=N9_KEY,
-    )
+    last: dict[str, Any] = {}
+    candidates = await _candidates("normal", prefer_omni=False)
+    if candidates:
+        _name, base, headers, model = candidates[0]
+        last = await outbound_with_llm(
+            text,
+            client=_client(),
+            n9_base=base,
+            n9_key=_bearer_key(headers),
+            model=model,
+        )
+        if last.get("ok") and str(last.get("action") or "") in {"send", "drop"}:
+            return last
+    return last or {"ok": False, "action": "send", "error": "outbound_llm_failed"}
 
 
 @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
@@ -241,7 +274,10 @@ async def proxy(path: str, request: Request) -> Response:
 
     is_chat = path.rstrip("/").endswith("chat/completions") or path == "chat/completions"
     task = _classify(request, body) if is_chat or body else "normal"
-    candidates = await _candidates(task)
+    want_omni = True
+    if is_chat and str((body or {}).get("model") or "").strip().lower() == "hermes":
+        want_omni = False
+    candidates = await _candidates(task, prefer_omni=want_omni)
     if not candidates:
         return JSONResponse(
             status_code=503,
@@ -251,7 +287,7 @@ async def proxy(path: str, request: Request) -> Response:
     stream = bool(body.get("stream")) if isinstance(body, dict) else False
     last_err = ""
     for name, base, headers, model_override in candidates:
-        payload = dict(body) if body else {}
+        payload = sanitize_chat_payload(dict(body) if body else {})
         if model_override and "model" in payload:
             payload["model"] = model_override
         elif model_override and is_chat:
@@ -266,10 +302,27 @@ async def proxy(path: str, request: Request) -> Response:
                     content=json.dumps(payload).encode("utf-8"),
                 )
                 upstream = await _client().send(req, stream=True)
-                if upstream.status_code >= 500:
+                if _failover_status(upstream.status_code):
                     await upstream.aclose()
                     last_err = f"{name}:{upstream.status_code}"
                     continue
+                ctype = str(upstream.headers.get("content-type") or "").lower()
+                if "event-stream" not in ctype:
+                    raw_body = await upstream.aread()
+                    await upstream.aclose()
+                    try:
+                        parsed = json.loads(raw_body.decode("utf-8", errors="replace") or "{}")
+                    except Exception:
+                        parsed = None
+                    norm = normalize_chat_completion(parsed)
+                    if norm is None:
+                        last_err = f"{name}:bad_chat_json"
+                        continue
+                    return JSONResponse(
+                        content=norm,
+                        status_code=200,
+                        headers={"x-model-router-provider": name, "x-model-router-task": task},
+                    )
 
                 async def gen():
                     async for chunk in upstream.aiter_bytes():
@@ -284,9 +337,23 @@ async def proxy(path: str, request: Request) -> Response:
                 headers=headers,
                 content=json.dumps(payload).encode("utf-8") if payload else raw,
             )
-            if upstream.status_code >= 500:
+            if _failover_status(upstream.status_code):
                 last_err = f"{name}:{upstream.status_code}"
                 continue
+            if is_chat:
+                try:
+                    parsed = json.loads(upstream.content.decode("utf-8", errors="replace") or "{}")
+                except Exception:
+                    parsed = None
+                norm = normalize_chat_completion(parsed)
+                if norm is None:
+                    last_err = f"{name}:bad_chat_json"
+                    continue
+                return JSONResponse(
+                    content=norm,
+                    status_code=200,
+                    headers={"x-model-router-provider": name, "x-model-router-task": task},
+                )
             return Response(
                 content=upstream.content,
                 status_code=upstream.status_code,
