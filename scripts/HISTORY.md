@@ -19,6 +19,272 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-19 12:30 +07 — keyword cite/noise lists; Hermes cron skill stole lịch
+
+### Symptom
+
+Once-lịch with “không trích dẫn nguồn” was refused as knowledge cite. Gateway noise used a growing English/Vietnamese needle list. Hermes `jobs.json` still held a paraphrased tomorrow 11:25 once.
+
+### Root cause
+
+Application code classified user and outbound text with keyword dictionaries (rule 36). The scheduling skill told Hermes to persist CLI cron jobs, which rewrote numbered tasks into one wrapper prompt.
+
+### Fix
+
+Inbound: `task_hint=knowledge` from LLM classify. Outbound: `POST /v1/outbound`. Bridge errors in editable JSON. Scheduling skill executes due jobs only and does not persist cron.
+
+### Prevent recurrence
+
+`knowledge_cite_unit.py` fails if the once-lịch fixture is `knowledge`. `gateway_noise_unit.py` uses an injected outbound planner, not production needles.
+
+---
+
+## 2026-08-19 12:15 +07 — once-lịch refused as knowledge cite; tick ran one wrapper job
+
+### Symptom
+
+Zalo 11:22 GMT+7: numbered once-lịch at 11:24 (greeting, fuel E5/E10, HCMC weather, “không trích dẫn nguồn”) got `Không thấy kiến thức khớp «…»`. A 11:25 tick ran **one** English job (“Schedule a one-time task… greet and send weather and gasoline…”) instead of three tasks.
+
+### Root cause
+
+1. Knowledge-cite intercept matched substring `trích dẫn` anywhere, so ingest listed docs and bypassed Hermes classify (rule 15).
+2. Classify sometimes stored the schedule wrapper as a single paraphrased instruction and rounded the clock (`11:24` → `25 11 * * *`). Tick explodes stored `instructions[]` only.
+
+### Fix
+
+Cite intercept: explicit `cite`/`find`/catalog-list commands only. Classify `schedule` or `instructions.length >= 2` skips cite. Prompt: numbered deliverables stay separate, wrapper is cadence/cron only, keep the user’s language, exact clock. Case 29.
+
+### Prevent recurrence
+
+`knowledge_cite_unit.py` fails if the live fixture is treated as cite. Mock classify for that fixture must be `once` + `24 11 * * *` + three instructions.
+
+---
+
+## 2026-08-19 12:10 +07 — dispatcher video used; Zalo still rejects mp4 attachments
+
+### Symptom
+
+Manim/pangocairo chatter on Zalo. Case 25 wrote a new mp4 then `send-attachment` failed (invalid parameter).
+
+### Root cause
+
+Hermes invented manim/matplotlib instead of dispatcher. After the skill/job hint it did `POST /v1/video`. zca-js `sendMessage` still rejects these clips. ComfyUI CPU is up as a dispatcher backend, not removed.
+
+### Fix
+
+Dispatcher `/v1/video`, isolated-job dispatcher hint, drop manim lines. Video delivery still needs zca-js `sendVideo` + thumbnail (not sendMessage attachments).
+
+### Prevent recurrence
+
+Case 25 fails without `send-attachment` of a new mp4. Case 26 requires the infographic file sent.
+
+---
+
+## 2026-08-19 10:40 +07 — video on disk, requester got nothing; leftover job stole the next image
+
+### Symptom
+
+Case 25 wrote `hcmc_weather.mp4` then Zalo `send-attachment` failed (invalid parameter). The isolated video job stayed active and later sent case 26’s infographic. Users saw many mid-generation messages. Images did not match weather/fuel overlay.
+
+### Root cause
+
+1. Matplotlib/odd-codec mp4 is rejected by zca-js `sendMessage` attachments.
+2. Isolated sessions spawned `_as_kick_late_autosend` that outlived `workflow job done` and claimed newer files in the shared `media/out` folder.
+3. Empty `IMAGE_BACKENDS=` (variable set but blank) skipped the Medium/High default, so Hermes invented its own tools.
+4. Native `image_generation` is off (`check_image_generation_requirements` false).
+
+### Fix
+
+H.264 remux before send; job file ceiling; no late autosend on isolated jobs; dispatcher `/v1/video` + `overlay` on `/v1/image`; pin `IMAGE_BACKENDS`; result-only after a file send. Case 28.
+
+### Prevent recurrence
+
+Case 25 fails without `send-attachment` of a **new** mp4 in the fire window. Case 26 fails on leftover-job send. Units cover ceiling + overlay + process-narration drop.
+
+---
+
+## 2026-08-19 09:45 +07 — need tests that match one infographic sentence
+
+### Symptom
+
+Users ask for one picture (HCMC weather + fuel overlay in Vietnamese). Existing cases were four numbered jobs (25) or image-then-fuel text (16).
+
+### Root cause
+
+Lab coverage did not include that one-task phrasing. Classify could split overlay facts into extra jobs.
+
+### Fix
+
+Cases 26–27 + fixtures. Classify system rule: one image/video with overlay facts is one instruction.
+
+### Prevent recurrence
+
+`zalo_weather_fuel_lab.py` fails if live classify is not `PLAN_N 1`.
+
+---
+
+## 2026-08-19 09:20 +07 — lịch created media, plugin “ok”, user still got no file
+
+### Symptom
+
+Case 25 jobs completed. `media/out` had a weather png/jpg. Hermes `[flow] zalo_send_file` ran. Admin DM did not receive the image/video. Lab `attach=0` because it grepped `logger.info`.
+
+### Root cause
+
+1. `_post` ignored HTTP status, so a missing host file (`400 file not found`) or a body without `success: true` still looked like a send.
+2. Isolated jobs marked idle in ~1.5s; late autosend was skipped while `hold_inflight` was set; the 8s/30s cap ended before dispatcher files landed.
+3. Claim-before-send stuck a failed file. Empty caption can make zca-js skip attachments.
+
+### Fix
+
+Require plugin `success: true`. Print `[zalo] send-attachment path` only after that ack. Watch `media/out` for the whole isolated job and drain remaining files. Resolve png/jpg siblings. Caption fallback. Claim after a real send.
+
+### Prevent recurrence
+
+Case 25 counts print-line `send-attachment path` after plugin success. Autosend unit covers `bridge_response_ok` and sibling paths.
+
+---
+
+## 2026-08-19 08:55 +07 — lịch media created, user got no file
+
+### Symptom
+
+Schedule jobs completed. Files appeared under `media/out`. Zalo user received text (or nothing extra) and no image/video.
+
+### Root cause
+
+Autosend compared isolated session id `{thread}::job::{id}` to the last inbound dest `{thread}` and skipped. `send_document` could also post the isolated id as `threadId`. Parallel jobs also raced on the newest file claim.
+
+### Fix
+
+Treat isolated and real ids as the same dest. Remap attachments with `real_thread_id`. Bind dest/t0 per job. Skip claimed files and send the next unclaimed one. Include video extensions.
+
+### Prevent recurrence
+
+Case 25 requires `send-attachment` (`MEDIA_SENT`), not only four job-done lines.
+
+---
+
+## 2026-08-19 08:45 +07 — Zalo up but zalo-api not treated as required
+
+### Symptom
+
+Host bridge / plugin can be logged in while operators expect zalo-api (allowlists, `!zalo`, admin DM). Rolling compose without profile `zalo` can leave the API behind.
+
+### Root cause
+
+zalo-proxy and zalo-api share profile `zalo`, but health/heal did not require the API container to exist.
+
+### Fix
+
+Proxy `depends_on` zalo-api. stack-watch starts the combo if `zalo-api` is missing. check-high fails when ENABLE_ZALO=1 and the container is absent. Case 25 uses the sole admin DM from `zalo_admin_users.txt`.
+
+### Prevent recurrence
+
+Rule 38. Do not recreate Hermes/Zalo without `--profile zalo`.
+
+---
+
+## 2026-08-19 08:30 +07 — case 25 watch saw old completed jobs
+
+### Symptom
+
+Lab upsert stored 4 instructions, but watch showed 4 COMPLETED jobs and zero `[zalo] workflow job done` lines.
+
+### Root cause
+
+Same schedule id fired earlier the same day. Fire reused `{id}:{date}` idempotency and deleted the once row. No new jobs.
+
+### Fix
+
+Once cadence uses `{id}:{timestamp}` idempotency. Lab watch filters workflows created at/after the fire clock.
+
+### Prevent recurrence
+
+Do not treat a COMPLETED workflow from earlier the same day as a new once-fire.
+
+---
+
+## 2026-08-19 08:15 +07 — classify timeout stored one fake job
+
+### Symptom
+
+Case 25 upsert stored `PLAN_N 1` / `task_hint unknown` even though a later classify probe returned 4 instructions.
+
+### Root cause
+
+9router ReadTimeout. Classifier still returned `ok: true` with the original blob as the only instruction. Workflow persisted that plan.
+
+### Fix
+
+Retry classify. On LLM failure return `ok: false` and empty instructions. Schedule upsert fails closed (503) instead of saving one merged job. Longer timeout (90s LLM / 100s client).
+
+### Prevent recurrence
+
+Lab fail-fast on `PLAN_N != 4`. Do not treat classify fallback as a successful multi-task plan.
+
+---
+
+## 2026-08-19 07:55 +07 — classify empty JSON from reasoning models
+
+### Symptom
+
+`POST /v1/classify` returned one instruction (the whole blob) instead of four numbered tasks.
+
+### Root cause
+
+The default combo model writes JSON in `reasoning_content` and leaves `content` empty. `max_tokens` 256/400 also hit `finish_reason=length`.
+
+### Fix
+
+Read `content` or `reasoning_content`, raise `max_tokens` to 2048, parse the first JSON object from the model text.
+
+### Prevent recurrence
+
+Classify config `max_tokens`/`timeout_s` live in `classify.json`. Probe classify `n` after model-router recreate.
+
+---
+
+## 2026-08-19 07:40 +07 — numbered lists classified in app code
+
+### Symptom
+
+Task routing and “1. 2. 3.” job splits used regex/keyword/split in gateway, Zalo, and workflow. That drifted from the architect (LLM owns understanding) and broke when phrasing changed.
+
+### Root cause
+
+`plan_instructions`, `looks_like_schedule`, and model-router substring heuristics interpreted user prose in application code.
+
+### Fix
+
+`POST /v1/classify` (LLM JSON). Callers validate cron tokens and enums, persist `context.plan`, execute jobs. No split/join NLU in product code.
+
+### Prevent recurrence
+
+Operator rule 36. New classify behavior needs a prompt/config change, not a new regex.
+
+---
+
+## 2026-08-19 07:10 +07 — notify alerted node-exporter while monitor was off
+
+### Symptom
+
+With High + Notify and Grafana/Prometheus off, Zalo received `[WARNING] node-exporter unreachable` (DNS name resolution failure). CPU/RAM/disk alerts were paused even though host metrics were never enabled.
+
+### Root cause
+
+alert-watch always scraped `http://node-exporter:9100`. The prometheus profile (which starts node-exporter) was off. Python defaults also listed optional services (AV, Zalo) that compose may not run.
+
+### Fix
+
+Gate scrapes on `ENABLE_*`. Empty `NODE_EXPORTER_URL` and monitor-off → skip, no alert. Skip optional health targets and DNS failures for disabled hosts. Same filter in stack-exporter.
+
+### Prevent recurrence
+
+Do not default scrape URLs to containers that only exist under optional compose profiles. Pass ENABLE flags into alert-watch/stack-exporter.
+
+---
+
 ## 2026-08-18 19:45 +07 — lab SSH host and account in product scripts
 
 ### Symptom

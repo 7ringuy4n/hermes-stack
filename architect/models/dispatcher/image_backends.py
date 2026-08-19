@@ -210,7 +210,7 @@ def gen_llm(prompt: str) -> bytes:
     if not key:
         raise RuntimeError("IMAGE_LLM_API_KEY missing (or OPENAI_API_KEY / GEMINI_API_KEY / DEEPSEEK_API_KEY)")
     base, model = _llm_base_and_model()
-    size = _env("IMAGE_LLM_SIZE", "IMAGE_PAID1_SIZE", default="1024x1024")
+    size = _env("IMAGE_LLM_SIZE", "IMAGE_PAID1_SIZE", default="1920x1080")
     prov = _llm_provider()
     headers = {"content-type": "application/json", "authorization": f"Bearer {key}"}
     # Gemini often also accepts x-goog-api-key

@@ -36,6 +36,7 @@ Protect the stack from risky files: antivirus (opt-in), YARA/static limits, opti
 | [av-gateway/](./av-gateway/README.md) | Scan files (ClamAV) before OCR/ingest |
 | [security-manager/](./security-manager/README.md) | Type/size limits, YARA/rules, risk decision |
 | [siem/](./siem/README.md) | Security event intake / forward (High) |
+| [secret-probe/](./secret-probe/README.md) | Input/output security gate (`SAFE`/`BLOCKED`/`REVIEW`) |
 
 ## How it works (High, inbound file)
 
@@ -51,7 +52,7 @@ File from social-app or upload
 
 LLM `CLEAN` is ignored. Isolation layers decide allow.
 
-**Secret-probe:** if the *message text* asks for secrets/confidential docs, refuse early (skill + editable lists preferred over huge hardcoded regex). Notify admin via notification layer when configured.
+**Secret-probe:** independent **security_status** (`SAFE` / `BLOCKED` / `REVIEW`), never a `task_hint`. Input gate before Model Router / schedule / tools; output gate before the user. Policy: [`config/agent/secret-probe.json`](../../config/agent/secret-probe.json). Package: [secret-probe/](./secret-probe/README.md).
 
 ## Related
 

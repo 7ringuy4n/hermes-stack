@@ -20,7 +20,7 @@
 
 ## Purpose
 
-Model gateway and tool bus: **Model Router** (coding vs general), **9Router** / optional **OmniRouter**, and **dispatcher** (web search, media helpers). Hermes talks here instead of hardcoding vendors in skills.
+Model gateway and tool bus: **Model Router** (task_hint → providers), **9Router** / optional **OmniRouter**, and **dispatcher** (web search, media helpers). Hermes talks here instead of hardcoding vendors in skills. Security is **Secret Probe**, not a task type.
 
 ## Profile
 
@@ -43,10 +43,12 @@ Model gateway and tool bus: **Model Router** (coding vs general), **9Router** / 
 
 ```text
 Hermes needs a completion
-    → model-router
+    → INPUT Secret Probe (BLOCK stops)
+    → model-router task_hint
         → coding  → 9router (when up)
-        → general → OmniRouter (if enabled) else 9router / pool
+        → normal / others → OmniRouter (if enabled) else 9router / pool
         → clear no_model_available if nothing left
+    → OUTPUT Secret Probe
 
 Hermes / skill needs web search (Medium+)
     → dispatcher /v1/search

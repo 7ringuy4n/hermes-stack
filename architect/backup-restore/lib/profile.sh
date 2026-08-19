@@ -63,7 +63,7 @@ assistant_profile_apply() {
       export ENABLE_JOBS="${ENABLE_JOBS:-1}"
       export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-1}"
       [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,firecrawl
-      [[ -n "${IMAGE_BACKENDS+x}" ]] || export IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
+      [[ -n "${IMAGE_BACKENDS:-}" ]] || export IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
       export HERMES_REPLICAS=1
       export ENABLE_OMNIROUTER="${ENABLE_OMNIROUTER:-1}"
       ;;
@@ -73,7 +73,7 @@ assistant_profile_apply() {
       export ENABLE_JOBS="${ENABLE_JOBS:-1}"
       export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-1}"
       [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,firecrawl
-      [[ -n "${IMAGE_BACKENDS+x}" ]] || export IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
+      [[ -n "${IMAGE_BACKENDS:-}" ]] || export IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
       # Monitor optional (allowed if enabled); lab often sets 0
       export ENABLE_GRAFANA="${ENABLE_GRAFANA:-0}"
       export ENABLE_LOKI="${ENABLE_LOKI:-0}"

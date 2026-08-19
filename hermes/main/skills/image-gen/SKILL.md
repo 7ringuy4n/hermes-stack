@@ -1,15 +1,15 @@
 ---
 name: image-gen
-description: "Generate images via dispatcher. Use text-poster path for exact quoted text / N lines (fill in, lines, poster, black and white). Use diffusion only for art/scenes without readable text. RESULT-ONLY (see media-out)."
+description: "Generate images via dispatcher POST /v1/image (default). Overlay facts with overlay[]. Never invent matplotlib/PIL. RESULT-ONLY (see media-out)."
 ---
 
 # Image generation
 
 Follow skill **`media-out`** (result only — no step chatter, no approve, no chat_id / names / DM metadata).
 
-The built-in Hermes `image_generation` tool is often **unavailable** (it checks cloud keys such as BFL). Do **not** stop. Generate through this skill and dispatcher instead.
+The built-in Hermes `image_generation` tool is often **unavailable** (it checks cloud keys such as BFL). Do **not** stop. Do **not** invent matplotlib, PIL scripts, HTML screenshots, or new skills. Generate through this skill and dispatcher instead.
 
-**Never** `web_search`, `web_extract`, or browse GitHub/release/news pages to “find image URLs”. That is not generation. Users must receive a **new file** from dispatcher, not a scrape of someone else’s page. If weather context is needed, one short search for conditions is enough, then `POST /v1/image` with a scene prompt. If dispatcher fails: one failure line from **media-out**, then stop.
+**Never** `web_search`, `web_extract`, or browse GitHub/release/news pages to “find image URLs”. That is not generation. Users must receive a **new file** from dispatcher, not a scrape of someone else’s page. If weather/fuel context is needed, one short search for conditions is enough, then `POST /v1/image` with a **scene prompt** plus `overlay` fact lines (Vietnamese when the user asked for Vietnamese). If dispatcher fails: one failure line from **media-out**, then stop.
 
 ## Output path
 
@@ -44,10 +44,10 @@ Only when the user wants illustration, photo, or art **without** exact readable 
 ```bash
 mkdir -p /opt/data/media/out && curl -sS -X POST http://dispatcher:8090/v1/image \
   -H 'content-type: application/json' \
-  -d '{"prompt":"<user request>","filename":"<safe-slug>.png","refine":false}'
+  -d '{"prompt":"<scene>","filename":"<safe-slug>.png","refine":false,"overlay":["<short fact 1>","<short fact 2>"]}'
 ```
 
-Use `refine:true` only if the user explicitly wants an English art prompt rewrite. Do not install Pillow/pip/uv in Hermes — dispatcher owns rendering.
+Use `refine:true` only if the user explicitly wants an English art prompt rewrite. Do not install Pillow/pip/uv in Hermes — dispatcher owns rendering. Put live weather and fuel **on the image** via `overlay` (already-fetched strings), not as a separate chat message unless the user asked for text as well.
 
 ## Delivery
 
@@ -60,5 +60,6 @@ After `ok:true`: send the file only (autosend). No success ack line. If the user
 ## Related
 
 - `media-out` — result-only rules for all media
+- `video-gen` — short H.264 clips via `POST /v1/video`
 - `comfyui` — explicit Comfy workflow only; still `--output-dir /opt/data/media/out`
 - `file-gen` — office docs only, not images
