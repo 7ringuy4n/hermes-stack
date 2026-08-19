@@ -33,6 +33,14 @@ def test_session_match() -> None:
     iso = isolate_session_chat_id(TID, "job_ab")
     if not is_isolated_session(iso) or real_thread_id(iso) != TID:
         raise SystemExit(f"FAIL isolate {iso}")
+    from turn_wait import same_dest_thread
+
+    if not same_dest_thread(iso, TID) or not same_dest_thread(TID, iso):
+        raise SystemExit("FAIL same_dest_thread isolated vs real")
+    if same_dest_thread(iso, "other-thread"):
+        raise SystemExit("FAIL same_dest_thread other")
+    if same_dest_thread("", TID):
+        raise SystemExit("FAIL same_dest_thread empty")
     iso_active = {f"zalo:dm:{iso}": object()}
     if not session_active_for_thread(iso_active, iso):
         raise SystemExit("FAIL isolated session match")

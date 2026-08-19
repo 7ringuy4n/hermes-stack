@@ -50,4 +50,6 @@ Whenever you create, export, generate, or send any file / media (image, PDF, DOC
 - User-facing text must be **result only**: success → the file / the asked facts (no extra ack line); failure → one short failure line. No “Đây là file của bạn.”
 - Deliver the file **once** (do not combine `send_zalo` + send-file + manual re-send). Prefer generate-only for images; Zalo autosend attaches the file.
 
-Follow skill `media-out` for all media types. Skills `image-gen`, `file-gen`, `documents`, `markdown`, and `comfyui` inherit this rule.
+Follow skill `media-out` for all media types. Skills `image-gen`, `video-gen`, `file-gen`, `documents`, `markdown`, and `comfyui` inherit this rule.
+
+Images and short videos on this stack: only dispatcher `POST http://dispatcher:8090/v1/image` and `POST http://dispatcher:8090/v1/video`. Dispatcher may use ComfyUI internally. Never manim, matplotlib, PIL frame loops, or new skills. Do not tell the user about missing pangocairo or installs.

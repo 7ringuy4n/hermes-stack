@@ -1,12 +1,12 @@
 FROM python:3.12-slim
 WORKDIR /app
-# curl only for Low. ffmpeg is optional (Medium+ video); install later if needed.
+# ffmpeg: default video path is still→H.264 (Zalo send-attachment).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates fonts-dejavu-core \
+      curl ca-certificates fonts-dejavu-core ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py ocr_stub.py video_summary.py office_file.py image_backends.py text_poster.py ./
+COPY app.py ocr_stub.py video_summary.py office_file.py image_backends.py text_poster.py overlay.py video_clip.py ./
 COPY comfy_workflows ./comfy_workflows
 ENV MEDIA_CACHE_DIR=/data/media
 EXPOSE 8090

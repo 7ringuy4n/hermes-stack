@@ -1283,13 +1283,27 @@ class ZaloAdapter(BasePlatformAdapter):
         sender_id: str,
         sender_name: str,
         chat_type: str,
+        plan: dict | None = None,
     ) -> bool:
         try:
             from .workflow_client import create_schedule, create_workflow, workflow_enabled
-            from .multi_request import looks_like_schedule_job, plan_instructions
+            from .classify_client import classify_text
+            from .knowledge_cite import plan_is_knowledge
         except ImportError:
             from workflow_client import create_schedule, create_workflow, workflow_enabled  # type: ignore
-            from multi_request import looks_like_schedule_job, plan_instructions  # type: ignore
+            from classify_client import classify_text  # type: ignore
+            from knowledge_cite import plan_is_knowledge  # type: ignore
+        if not isinstance(plan, dict):
+            plan = classify_text(text)
+        if plan_is_knowledge(plan):
+            await self._as_knowledge_cite_reply(
+                {"text": text},
+                sender_id,
+                thread_id,
+                thread_type,
+                plan=plan,
+            )
+            return True
         if not workflow_enabled():
             return False
         origin = {
@@ -1306,9 +1320,16 @@ class ZaloAdapter(BasePlatformAdapter):
             "sender_id": sender_id,
             "sender_name": sender_name,
             "execute": "hermes",
+            "plan": plan,
         }
-        if looks_like_schedule_job(text):
-            data = create_schedule(cron_expr="", text=text, origin=origin, context=context)
+        if plan.get("task_hint") == "schedule":
+            data = create_schedule(
+                cron_expr=str(plan.get("cron_expr") or ""),
+                text=text,
+                origin=origin,
+                context=context,
+                cadence=str(plan.get("cadence") or ""),
+            )
             if data.get("ok"):
                 print("[zalo] workflow schedule stored", flush=True)
                 try:
@@ -1322,7 +1343,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
                 return True
-        parts = plan_instructions(text)
+        parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
         if len(parts) < 2:
             return False
         data = create_workflow(instructions=parts, origin=origin, context=context)
@@ -1396,6 +1417,13 @@ class ZaloAdapter(BasePlatformAdapter):
             from turn_wait import isolate_session_chat_id  # type: ignore
         jid = str(job.get("id"))
         instruction = str(job.get("instruction") or "").strip()
+        if instruction and "dispatcher:8090/v1/" not in instruction:
+            instruction = (
+                instruction
+                + "\n\nIf this task creates an image or video, use only "
+                "POST http://dispatcher:8090/v1/image or POST http://dispatcher:8090/v1/video. "
+                "Do not use manim, matplotlib, or PIL. User-facing: the file only."
+            )
         ctx = job.get("context") if isinstance(job.get("context"), dict) else {}
         tid = str(ctx.get("thread_id") or "")
         tt = str(ctx.get("thread_type") or "user")
@@ -1409,6 +1437,8 @@ class ZaloAdapter(BasePlatformAdapter):
             self._thread_types[tid] = zalo_tt
         except Exception:
             pass
+        self._as_mark_recv(iso)
+        self._as_autosend_remember_turn(iso, zalo_tt)
         source = self.build_source(
             chat_id=iso,
             chat_name=sender_name if chat_type == "dm" else tid,
@@ -1425,6 +1455,8 @@ class ZaloAdapter(BasePlatformAdapter):
             timestamp=datetime.now(),
         )
         self._as_compound_begin(iso)
+        stop = asyncio.Event()
+        watch = asyncio.create_task(self._as_watch_job_files(iso, zalo_tt, stop))
         try:
             def _pulse() -> None:
                 heartbeat(jid, wid)
@@ -1457,6 +1489,14 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception:
                 fail_job(jid, type(e).__name__)
         finally:
+            self._as_set_file_ceiling(iso)
+            self._as_cancel_late_autosend(iso)
+            stop.set()
+            watch.cancel()
+            try:
+                await watch
+            except (asyncio.CancelledError, Exception):
+                pass
             self._as_compound_end(iso)
             self._as_compound_seq_done(iso)
 
@@ -1526,33 +1566,60 @@ class ZaloAdapter(BasePlatformAdapter):
         if gap > 0:
             await asyncio.sleep(gap)
 
+    async def _as_watch_job_files(
+        self, thread_id: str, thread_type: str, stop: asyncio.Event
+    ) -> None:
+        """While an isolated lịch job runs, attach files as soon as they land."""
+        tid = str(thread_id or "")
+        if not tid:
+            return
+        meta = {"thread_type": thread_type or "user", "as_skip_dest": True}
+        while not stop.is_set():
+            try:
+                await self._as_autosend_turn_files(tid, "", meta)
+            except Exception:
+                logger.warning("Zalo: job file watch failed thread=%s", tid[:24], exc_info=True)
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=1.2)
+            except asyncio.TimeoutError:
+                continue
+
     async def _as_autosend_late_files(self, thread_id: str, thread_type: str = "") -> bool:
         """After handle_message, attach a file that landed as the model finished."""
         tid = str(thread_id or "")
         if not tid:
             return False
-        grace = self._as_env_float("ZALO_AUTOSEND_LATE_S", 8.0, 0.0, 30.0)
+        grace = self._as_env_float("ZALO_AUTOSEND_LATE_S", 8.0, 0.0, 180.0)
+        try:
+            from .turn_wait import is_isolated_session
+        except ImportError:
+            from turn_wait import is_isolated_session  # type: ignore
+        if is_isolated_session(tid):
+            grace = max(grace, self._as_env_float("ZALO_AUTOSEND_JOB_LATE_S", 45.0, 8.0, 180.0))
         if grace <= 0:
             return False
         start = __import__("time").time()
         deadline = start + grace
-        # Mid-sequence: don't stall text parts. Last part / cron: wait the full grace.
+        # Mid-sequence: don't stall text parts. Isolated lịch jobs wait for media.
         idle = grace if not self._as_compound_has_more_after(tid) else min(1.6, grace)
         seen = getattr(self, "_as_sent_fp", None)
         n_before = len(seen) if isinstance(seen, set) else 0
         meta = {"thread_type": thread_type or "user", "as_skip_dest": True}
         sent = False
+        last_hit = start
         while True:
             await self._as_autosend_turn_files(tid, "", meta)
             seen = getattr(self, "_as_sent_fp", None)
             n_after = len(seen) if isinstance(seen, set) else 0
+            now = __import__("time").time()
             if n_after > n_before:
                 sent = True
-                break
-            now = __import__("time").time()
+                n_before = n_after
+                last_hit = now
+                continue
             if now >= deadline:
                 break
-            if (now - start) >= idle:
+            if (now - last_hit) >= idle:
                 break
             await asyncio.sleep(0.45)
         # Only mark delivered when a file actually went out. A timeout here
@@ -1565,7 +1632,17 @@ class ZaloAdapter(BasePlatformAdapter):
     def _as_kick_late_autosend(self, chat_id, metadata=None) -> None:
         """Cron / single-turn: keep watching media-out after the text send returns."""
         tid = str(chat_id or "")
-        if not tid or tid in self._as_hold_inflight:
+        if not tid:
+            return
+        try:
+            from .turn_wait import is_isolated_session
+        except ImportError:
+            from turn_wait import is_isolated_session  # type: ignore
+        # Isolated lịch jobs watch files themselves; do not spawn a late
+        # task that outlives the job and steals the next run's media.
+        if is_isolated_session(tid):
+            return
+        if tid in self._as_hold_inflight:
             return
         meta = metadata if isinstance(metadata, dict) else {}
         if meta.get("as_skip_autosend"):
@@ -1579,6 +1656,119 @@ class ZaloAdapter(BasePlatformAdapter):
             return
         tt = str(meta.get("thread_type") or "user")
         tasks[tid] = asyncio.create_task(self._as_autosend_late_files(tid, tt))
+
+    def _as_cancel_late_autosend(self, thread_id: str) -> None:
+        tid = str(thread_id or "")
+        tasks = getattr(self, "_as_late_tasks", None)
+        if not isinstance(tasks, dict):
+            return
+        prev = tasks.pop(tid, None)
+        if prev is not None and not prev.done():
+            prev.cancel()
+
+    def _as_set_file_ceiling(self, thread_id: str, when=None) -> None:
+        tid = str(thread_id or "")
+        if not tid:
+            return
+        caps = getattr(self, "_as_file_ceiling", None)
+        if not isinstance(caps, dict):
+            self._as_file_ceiling = {}
+            caps = self._as_file_ceiling
+        caps[tid] = float(when if when is not None else __import__("time").time())
+
+    def _as_mark_job_file_sent(self, thread_id: str) -> None:
+        tid = str(thread_id or "")
+        if not tid:
+            return
+        seen = getattr(self, "_as_job_file_sent", None)
+        if not isinstance(seen, set):
+            self._as_job_file_sent = set()
+            seen = self._as_job_file_sent
+        seen.add(tid)
+
+    def _as_job_already_sent_file(self, thread_id: str) -> bool:
+        seen = getattr(self, "_as_job_file_sent", None)
+        return isinstance(seen, set) and str(thread_id or "") in seen
+
+    def _as_remux_zalo_video(self, path: str) -> str:
+        """Re-encode mp4 to baseline H.264 so Zalo send-attachment accepts it."""
+        import shutil
+        import subprocess
+        from pathlib import Path
+
+        src = Path(str(path or ""))
+        if not src.is_file():
+            return str(path or "")
+        if src.suffix.lower() not in {".mp4", ".mov", ".m4v", ".webm", ".mkv"}:
+            return str(src)
+        if src.name.endswith(".zalo.mp4"):
+            return str(src)
+        ffmpeg = shutil.which("ffmpeg")
+        dest = src.with_name(src.stem + ".zalo.mp4")
+        if ffmpeg:
+            cmd = [
+                ffmpeg,
+                "-y",
+                "-i",
+                str(src),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-profile:v",
+                "baseline",
+                "-level",
+                "3.1",
+            "-vf",
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+            "-b:v",
+            "800k",
+            "-r",
+            "25",
+            "-movflags",
+                "+faststart",
+                "-an",
+                str(dest),
+            ]
+            try:
+                subprocess.run(cmd, check=True, capture_output=True, timeout=90)
+            except Exception:
+                logger.warning("Zalo: ffmpeg remux failed for %s", src.name)
+                ffmpeg = None
+        if not ffmpeg or not dest.is_file():
+            try:
+                import json as _json
+                import os
+                import urllib.request
+
+                base = (os.getenv("DISPATCHER_URL") or "http://dispatcher:8090").rstrip("/")
+                body = _json.dumps({"filename": src.name}).encode("utf-8")
+                req = urllib.request.Request(
+                    base + "/v1/video-remux",
+                    data=body,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=90) as resp:
+                    data = _json.loads(resp.read().decode("utf-8") or "{}")
+                remote = str((data or {}).get("file") or "")
+                if remote:
+                    mapped = Path(remote.replace("/data/media/out", str(src.parent)))
+                    if mapped.is_file():
+                        return str(mapped)
+                    sibling = src.with_name(src.stem + ".zalo.mp4")
+                    if sibling.is_file():
+                        return str(sibling)
+            except Exception:
+                logger.warning("Zalo: dispatcher remux failed for %s", src.name)
+                return str(src)
+        try:
+            if dest.is_file() and dest.stat().st_size > 1000:
+                logger.info("Zalo: remuxed video %s → %s", src.name, dest.name)
+                return str(dest)
+        except OSError:
+            pass
+        return str(src)
 
     def _as_inbound_queue_enabled(self) -> bool:
         try:
@@ -1901,17 +2091,11 @@ class ZaloAdapter(BasePlatformAdapter):
 
 
     def _as_secret_probe_text(self, text: str) -> bool:  # ASSISTANT_SECRET_PROBE_v1
-        import re as _re
-        t = (text or "").lower()
-        if not t.strip():
-            return False
-        return bool(_re.search(
-            r"secret|confidential|m[aậ]t\s*kh[aẩ]u|m[aậ]t\s*m[aã]|"
-            r"openbao|vault token|\.env\b|api[_ ]?key|private[_ ]?key|"
-            r"/opt/assistant|/data/hermes|n[oộ]i\s*b[oộ]\s*(server|m[aá]y)|"
-            r"t[aà]i\s*li[eệ]u\s*m[aậ]t|h[oồ] s[oơ]\s*m[aậ]t|classified",
-            t,
-        ))
+        try:
+            from secret_probe import is_blocked
+        except ImportError:
+            from .secret_probe import is_blocked  # type: ignore
+        return bool(is_blocked(text or "", direction="input"))
 
     def _as_is_zalo_admin(self, sender_id) -> bool:  # ASSISTANT_SECRET_PROBE_v1
         import os
@@ -2014,13 +2198,18 @@ class ZaloAdapter(BasePlatformAdapter):
         who = f"user_id: {sid} ({alias})" if alias else f"user_id: {sid}"
         tz = ZoneInfo(os.getenv("TZ") or "Asia/Ho_Chi_Minh")
         stamp = datetime.now(tz).strftime("%H:%M %d/%m/%Y")
-        words = " ".join((orig or "").split())[:240]
         notify = (os.getenv("NOTIFY_URL") or "http://notify:8092").rstrip("/")
+        refuse = self._as_ux_line(
+            "ZALO_SECRET_PROBE_REFUSE",
+            ("secret_probe", "refuse"),
+            "Cannot provide secrets or confidential documents.",
+            user_text=orig,
+        )
         try:
             nbody = json.dumps(
                 {
                     "title": "Confidential probe",
-                    "body": f"{stamp}\n{who}\n{words}",
+                    "body": f"{stamp}\n{who}",
                     "severity": "warning",
                     "channels": ["zalo"],
                     "kind": "security",
@@ -2038,7 +2227,7 @@ class ZaloAdapter(BasePlatformAdapter):
         try:
             await self.send(
                 chat_id=str(thread_id),
-                content="Không cung cấp secret / tài liệu mật.",
+                content=refuse,
                 metadata={
                     "thread_type": "group" if thread_type == "group" else "user",
                     "as_skip_timing": True,
@@ -2083,53 +2272,30 @@ class ZaloAdapter(BasePlatformAdapter):
 
 
 
-    def _as_is_knowledge_cite_ask(self, text: str) -> bool:  # ASSISTANT_KNOWLEDGE_CITE_v7
-        t = (text or "").strip().lower()
-        if not t or t.startswith("!zalo"):
-            return False
-        if "trích dẫn" in t or "trich dan" in t:
-            return True
-        if t == "cite" or t.startswith("cite ") or " cite " in t:
-            return True
-        if "tìm tài liệu" in t or "tim tai lieu" in t or "tìm tai lieu" in t:
-            return True
-        if "find doc" in t or t.startswith("find ") or t == "find":
-            return True
-        needles = ("tài liệu", "tai lieu", "tại liệu", "kiến thức", "kien thuc")
-        tails = ("đang có", "dang co", "đã học", "da hoc")
-        if any(n in t for n in needles) and any(x in t for x in tails):
-            return True
-        return False
+    def _as_is_knowledge_cite_ask(self, text: str, plan=None) -> bool:  # ASSISTANT_KNOWLEDGE_CITE_v7
+        try:
+            from .knowledge_cite import plan_is_knowledge
+            from .classify_client import classify_text
+        except ImportError:
+            from knowledge_cite import plan_is_knowledge  # type: ignore
+            from classify_client import classify_text  # type: ignore
+        if not isinstance(plan, dict):
+            plan = classify_text(text or "")
+        return plan_is_knowledge(plan)
 
-    def _as_cite_topic(self, text: str) -> str:
-        t = (text or "").lower()
-        for d in (
-            "trích dẫn", "trich dan", "tài liệu", "tai lieu", "tại liệu",
-            "kiến thức", "kien thuc", "đang có", "dang co", "đã học", "da hoc",
-            "cite", "theo", "tìm", "tim", "find", "docs", "documents", "document",
-        ):
-            t = t.replace(d, " ")
-        return " ".join(t.split())
+    def _as_cite_topic(self, text: str, plan=None) -> str:
+        try:
+            from .knowledge_cite import cite_query
+            from .classify_client import classify_text
+        except ImportError:
+            from knowledge_cite import cite_query  # type: ignore
+            from classify_client import classify_text  # type: ignore
+        if not isinstance(plan, dict):
+            plan = classify_text(text or "")
+        return cite_query(plan)
 
     def _as_knowledge_trim(self, content: str) -> str:  # ASSISTANT_KNOWLEDGE_CITE_v7
-        """Block Hermes citation dumps (APA / 80 quotes / SKILL.md)."""
-        t = content or ""
-        low = t.lower()
-        dump = False
-        if len(t) > 700 and (
-            "trích dẫn" in low or "trich dan" in low or "section" in low or "apa" in low
-        ):
-            dump = True
-        if "apa citation" in low or "tổng ·" in low or ".bib" in low:
-            dump = True
-        if "skill.md" in low and ("trích" in low or "shimadzu" in low):
-            dump = True
-        if not dump:
-            return t
-        return (
-            "Chỉ liệt kê tối đa 5 tài liệu đã học (không dump section/APA). "
-            "Gõ !zalo learn list hoặc hỏi một từ khóa."
-        )
+        return content or ""
 
     async def _as_cite_send(self, thread_id, thread_type, msg: str) -> None:
         await self.send(
@@ -2145,17 +2311,25 @@ class ZaloAdapter(BasePlatformAdapter):
             },
         )
 
-    async def _as_knowledge_cite_reply(self, m, sender_id, thread_id, thread_type) -> bool:  # ASSISTANT_KNOWLEDGE_CITE_v7
-        """True = handled (always skip Hermes on cite/list/find)."""
+    async def _as_knowledge_cite_reply(self, m, sender_id, thread_id, thread_type, plan=None) -> bool:  # ASSISTANT_KNOWLEDGE_CITE_v7
+        """True = handled (catalog/cite from classify task_hint=knowledge)."""
         text = (m.get("text") if isinstance(m, dict) else "") or ""
-        if not self._as_is_knowledge_cite_ask(text):
+        try:
+            from .classify_client import classify_text
+            from .knowledge_cite import cite_query, plan_is_knowledge
+        except ImportError:
+            from classify_client import classify_text  # type: ignore
+            from knowledge_cite import cite_query, plan_is_knowledge  # type: ignore
+        if not isinstance(plan, dict):
+            plan = classify_text(text)
+        if not plan_is_knowledge(plan):
             return False
         import json
         import os
         import urllib.parse
         import urllib.request
         url = (os.getenv("INGEST_URL") or "http://ingest:8099").rstrip("/")
-        topic = self._as_cite_topic(text)
+        topic = cite_query(plan)
         limit = (os.getenv("LEARN_LIST_LIMIT") or "5").strip() or "5"
         qs = "limit=" + limit
         if topic:
@@ -2461,10 +2635,6 @@ class ZaloAdapter(BasePlatformAdapter):
 
         # ASSISTANT_INFLIGHT_v6 — already answering; Valkey queue serializes when enabled
         if (not queue_on) and await self._as_inflight_drop(sender_id, thread_id, thread_type):
-            return
-
-        # ASSISTANT_KNOWLEDGE_CITE_v7 — short content titles, never paths/filenames
-        if await self._as_knowledge_cite_reply(m, sender_id, thread_id, thread_type):
             return
 
         self._as_turn_handoff(thread_id)  # ASSISTANT_TIMING_FOOTER_v6
@@ -2818,6 +2988,8 @@ class ZaloAdapter(BasePlatformAdapter):
     async def _post(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
         import aiohttp
 
+        if not self.bridge_url:
+            return {"error": "no bridge"}
         if not self._session or self._session.closed:
             return {"error": "no session"}
         try:
@@ -2825,9 +2997,25 @@ class ZaloAdapter(BasePlatformAdapter):
                 f"{self.bridge_url}{path}",
                 data=json.dumps(body),
                 headers=self._headers(),
-                timeout=aiohttp.ClientTimeout(total=60),
+                timeout=aiohttp.ClientTimeout(
+                    total=120 if path == "/send-attachment" else 60
+                ),
             ) as resp:
-                return await resp.json()
+                try:
+                    data = await resp.json(content_type=None)
+                except Exception:
+                    text = ""
+                    try:
+                        text = await resp.text()
+                    except Exception:
+                        text = ""
+                    return {"error": f"http {resp.status}: {(text or '')[:180]}"}
+                if not isinstance(data, dict):
+                    return {"error": f"http {resp.status}: {str(data)[:160]}"}
+                if resp.status >= 400:
+                    err = str(data.get("error") or data.get("message") or f"http {resp.status}")
+                    data["error"] = err
+                return data
         except Exception as e:
             return {"error": str(e)}
 
@@ -2906,20 +3094,11 @@ class ZaloAdapter(BasePlatformAdapter):
         return out
 
     def _as_send_retryable(self, err) -> bool:  # ASSISTANT_SEND_RETRY_v1
-        t = str(err or "").lower()
-        return any(
-            x in t
-            for x in (
-                "lỗi không xác định",
-                "loi khong xac dinh",
-                "unknown",
-                "too many",
-                "try again",
-                "timeout",
-                "econnreset",
-                "socket hang",
-            )
-        )
+        try:
+            from .autosend import looks_retryable_send
+        except ImportError:
+            from autosend import looks_retryable_send  # type: ignore
+        return looks_retryable_send(str(err or ""))
 
     def _as_zalo_plain_chunk(self, text: str) -> str:  # ASSISTANT_SEND_RETRY_v1
         """Flatten markdown tables/fences — Zalo often returns unknown error."""
@@ -2949,134 +3128,24 @@ class ZaloAdapter(BasePlatformAdapter):
         t = (content or "").strip()
         if not t:
             return None
-        low = t.lower()
-        if any(
-            n in low
-            for n in (
-                "dangerous command",
-                "requires approval",
-                "approval is required",
-                "terminal command approval",
-                "command approved",
-                "agent is resuming",
-                "bot cần duyệt lệnh",
-                "mở hermes dashboard",
-                "approve lệnh",
-                "trả lời: approve",
-            )
-        ) or ("approval" in low and ("command" in low or "execute" in low)):
-            return ""
         try:
-            from .gateway_noise import is_busy_interrupt_notice, is_process_narration
+            from .gateway_noise import drop_outbound
         except ImportError:
-            from gateway_noise import is_busy_interrupt_notice, is_process_narration  # type: ignore
-        if is_busy_interrupt_notice(t) or is_process_narration(t):
+            from gateway_noise import drop_outbound  # type: ignore
+        if drop_outbound(t):
             return ""
         return None
 
     def _is_gateway_noise(self, content: str) -> bool:  # ASSISTANT_QUIET_SEND_v6
         """Drop Hermes progress / PII / process-narration spam from chat."""
-        import re as _re
-
         t = (content or "").strip()
         if not t:
             return True
         try:
-            from .gateway_noise import is_busy_interrupt_notice, is_process_narration
+            from .gateway_noise import drop_outbound
         except ImportError:
-            from gateway_noise import is_busy_interrupt_notice, is_process_narration  # type: ignore
-        if is_busy_interrupt_notice(t):
-            return True
-        if is_process_narration(t):
-            return True
-        low = t.lower()
-        needles = (
-            "⏳ working",
-            "still working",
-            "waiting on hermes",
-            "⏳ waiting on",
-            "gateway shutting down",
-            "cannot connect to provider",
-            "your current task will be interrupted",
-            "auto-reconnect at",
-            "provider may be slow",
-            "provider may be overloaded",
-            "the agent is back",
-            "send any message after restart",
-            "execute_code",
-            "eexecute_code",
-            "script execution",
-            "spawn subprocesses",
-            "mutate files",
-            "dangerous command",
-            "requires approval",
-            "command approved",
-            "agent is resuming",
-            "bot cần duyệt lệnh",
-            "theo quy trình image-gen",
-            "theo quy trình",
-            "gửi qua dispatcher",
-            "gửi file này cho bạn",
-            "để mình tạo",
-            "để mình kiểm tra",
-            "để mình dùng",
-            "để mình gửi",
-            "để mình cài",
-            "pip không có",
-            "dùng uv để cài",
-            "file cũ bị root",
-            "i'll generate",
-            "i will generate",
-            "let me first locate",
-            "locate the zalo thread",
-            "thread info",
-            "generating the image",
-            "generating that image",
-            "this is a dm with",
-            "chat_id=",
-            "thread_id=",
-            "chat id=",
-            "thread id=",
-            '"title":',
-        )
-        if any(n in low for n in needles):
-            return True
-        if "approval" in low and ("command" in low or "execute" in low or "dashboard" in low):
-            return True
-        # Leak: chat_id=233… / (chat_id=…)
-        if _re.search(r"(?i)\bchat[_\s-]?id\b\s*[=:]", t):
-            return True
-        if _re.search(r"(?i)\bthread[_\s-]?id\b\s*[=:]", t):
-            return True
-        if _re.search(r"(?i)\b(dm|direct message)\s+with\b", t) and _re.search(r"\d{10,}", t):
-            return True
-        # Short process-only updates while generating/sending media
-        if len(t) < 280 and any(
-            n in low
-            for n in (
-                "để mình tạo",
-                "để mình kiểm",
-                "để mình dùng",
-                "để mình gửi",
-                "để mình cài",
-                "let me create",
-                "let me generate",
-                "let me send",
-                "let me install",
-                "let me check",
-                "let me first",
-                "generating",
-                "i'll generate",
-            )
-        ):
-            return True
-        if t.startswith("{") and ("execute_code" in low):
-            return True
-        if "base64" in low and ("placeholder" in low or "png" in low or "jpeg" in low):
-            if len(t) > 400:
-                return True
-        return False
-
+            from gateway_noise import drop_outbound  # type: ignore
+        return drop_outbound(t)
 
     def _as_timing_enabled(self) -> bool:  # ASSISTANT_TIMING_FOOTER_v6
         import os
@@ -3268,22 +3337,38 @@ class ZaloAdapter(BasePlatformAdapter):
             ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
             ".rtf", ".odt", ".ods",
             ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp",
+            ".mp4", ".webm", ".mov", ".m4v", ".mkv",
         )
 
     def _as_autosend_remember_turn(self, thread_id, thread_type=None) -> None:  # ASSISTANT_AUTOSEND_v3
         """Bind this turn's outbound (file + text) to the thread that asked."""
+        try:
+            from .turn_wait import real_thread_id
+        except ImportError:
+            from turn_wait import real_thread_id  # type: ignore
         tid = str(thread_id or "").strip()
         if not tid:
             return
         tt = "group" if str(thread_type or "").lower() in {"group", "g"} else "user"
-        self._as_turn = {"thread_id": tid, "thread_type": tt}
+        dest = {"thread_id": tid, "thread_type": tt}
+        turns = getattr(self, "_as_turns", None)
+        if not isinstance(turns, dict):
+            turns = {}
+            self._as_turns = turns
+        turns[tid] = dest
+        real = real_thread_id(tid)
+        if real and real not in turns:
+            turns[real] = {"thread_id": real, "thread_type": tt}
+        self._as_turn = dest
         try:
             self._thread_types[tid] = tt
+            if real:
+                self._thread_types[real] = tt
         except Exception:
             pass
         http = getattr(self, "_as_timing_http", None)
         if callable(http):
-            http("POST", "/v1/turn/dest", {"thread_id": tid, "thread_type": tt})
+            http("POST", "/v1/turn/dest", {"thread_id": real or tid, "thread_type": tt})
             return
         try:
             import json as _json
@@ -3292,7 +3377,7 @@ class ZaloAdapter(BasePlatformAdapter):
             base = (os.getenv("SESSION_URL") or "http://session:8107").rstrip("/")
             req = urllib.request.Request(
                 base + "/v1/turn/dest",
-                data=_json.dumps({"thread_id": tid, "thread_type": tt}).encode("utf-8"),
+                data=_json.dumps({"thread_id": real or tid, "thread_type": tt}).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
@@ -3300,10 +3385,27 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception:
             pass
 
-    def _as_autosend_turn_dest(self) -> dict:  # ASSISTANT_AUTOSEND_v3
+    def _as_autosend_turn_dest(self, chat_id=None) -> dict:  # ASSISTANT_AUTOSEND_v3
+        try:
+            from .turn_wait import real_thread_id
+        except ImportError:
+            from turn_wait import real_thread_id  # type: ignore
+        turns = getattr(self, "_as_turns", None)
+        cid = str(chat_id or "").strip()
+        if isinstance(turns, dict) and cid:
+            hit = turns.get(cid) or turns.get(real_thread_id(cid))
+            if isinstance(hit, dict) and hit.get("thread_id"):
+                return hit
         local = getattr(self, "_as_turn", None)
         if isinstance(local, dict) and local.get("thread_id"):
-            return local
+            if not cid:
+                return local
+            try:
+                from .turn_wait import same_dest_thread
+            except ImportError:
+                from turn_wait import same_dest_thread  # type: ignore
+            if same_dest_thread(cid, str(local.get("thread_id") or "")):
+                return local
         data = {}
         http = getattr(self, "_as_timing_http", None)
         if callable(http):
@@ -3342,7 +3444,7 @@ class ZaloAdapter(BasePlatformAdapter):
             from turn_wait import is_isolated_session, real_thread_id  # type: ignore
         if is_isolated_session(str(chat_id or "")):
             return False
-        dest = self._as_autosend_turn_dest()
+        dest = self._as_autosend_turn_dest(chat_id)
         if not dest or not dest.get("thread_id"):
             return False
         return real_thread_id(str(chat_id or "")) != str(dest["thread_id"])
@@ -3396,6 +3498,19 @@ class ZaloAdapter(BasePlatformAdapter):
             seen.add(key)
         return first
 
+    def _as_autosend_already_sent(self, file_path) -> bool:
+        key = self._as_autosend_file_fp(file_path)
+        if not key:
+            return False
+        seen = getattr(self, "_as_sent_fp", None)
+        return isinstance(seen, set) and key in seen
+
+    def _as_autosend_file_unclaim(self, file_path) -> None:
+        key = self._as_autosend_file_fp(file_path)
+        seen = getattr(self, "_as_sent_fp", None)
+        if key and isinstance(seen, set):
+            seen.discard(key)
+
     def _as_autosend_looks_like_ack(self, content: str) -> bool:  # ASSISTANT_AUTOSEND_v3
         low = (content or "").lower()
         needles = (
@@ -3426,15 +3541,21 @@ class ZaloAdapter(BasePlatformAdapter):
         meta = metadata if isinstance(metadata, dict) else {}
         if meta.get("as_skip_autosend"):
             return content
-        dest_turn = self._as_autosend_turn_dest()
-        tid = str((dest_turn or {}).get("thread_id") or chat_id or "")
-        if dest_turn and dest_turn.get("thread_id") and str(chat_id or "") != dest_turn["thread_id"]:
+        try:
+            from .turn_wait import same_dest_thread
+        except ImportError:
+            from turn_wait import same_dest_thread  # type: ignore
+        dest_turn = self._as_autosend_turn_dest(chat_id)
+        cid = str(chat_id or "")
+        dest_id = str((dest_turn or {}).get("thread_id") or "")
+        if dest_id and cid and not meta.get("as_skip_dest") and not same_dest_thread(cid, dest_id):
             logger.info(
                 "Zalo: skip autosend chat=%s (turn is %s)",
                 chat_id,
                 dest_turn.get("thread_id"),
             )
             return content
+        tid = cid or dest_id
         if dest_turn.get("thread_type") in {"user", "group"}:
             meta = {**meta, "thread_type": dest_turn["thread_type"]}
         clock = (getattr(self, "_as_tclock", {}) or {}).get(tid) or {}
@@ -3448,13 +3569,21 @@ class ZaloAdapter(BasePlatformAdapter):
                 seq_t0 = float(seq_map.get(tid) or 0.0)
             except (TypeError, ValueError):
                 seq_t0 = 0.0
+        cap_map = getattr(self, "_as_file_ceiling", None)
+        ceiling = 0.0
+        if isinstance(cap_map, dict):
+            try:
+                ceiling = float(cap_map.get(tid) or 0.0)
+            except (TypeError, ValueError):
+                ceiling = 0.0
         try:
-            from .autosend import file_in_send_window
+            from .autosend import file_in_send_window, file_ready_for_send
         except ImportError:
-            from autosend import file_in_send_window  # type: ignore
+            from autosend import file_in_send_window, file_ready_for_send  # type: ignore
         grace = self._as_env_float("ZALO_AUTOSEND_GRACE_S", 8.0, 0.0, 60.0)
         ok_ext = self._as_autosend_ok_ext()
         found = []
+        now = time.time()
         for root in self._as_autosend_roots():
             try:
                 if not root.is_dir():
@@ -3470,26 +3599,20 @@ class ZaloAdapter(BasePlatformAdapter):
                         mt = p.stat().st_mtime
                     except OSError:
                         continue
-                    if not file_in_send_window(mt, t0, seq_t0, grace_s=grace):
+                    if not file_in_send_window(mt, t0, seq_t0, grace_s=grace, ceiling=ceiling):
+                        continue
+                    if not file_ready_for_send(mt, now):
                         continue
                     found.append(p)
             except OSError:
                 continue
         if not found:
             return content
-        found.sort(key=lambda x: x.stat().st_mtime, reverse=True)
         img_ext = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
-        picked = []
-        seen_stem = set()
-        for p in found:
-            if p.suffix.lower() in img_ext:
-                stem = p.stem.lower()
-                if stem in seen_stem:
-                    continue
-                seen_stem.add(stem)
-            picked.append(p)
-            if len(picked) >= 1:
-                break
+        video_ext = {".mp4", ".webm", ".mov", ".m4v", ".mkv"}
+        found.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        if found[0].suffix.lower() in video_ext:
+            found = [p for p in found if p.suffix.lower() in video_ext]
         sent = 0
         blocked_n = 0
         out_dir = self._as_autosend_roots()[0]
@@ -3498,7 +3621,13 @@ class ZaloAdapter(BasePlatformAdapter):
         except OSError:
             pass
         caption = ""
-        for src in picked:
+        seen_stem = set()
+        for src in found:
+            if src.suffix.lower() in img_ext:
+                stem = src.stem.lower()
+                if stem in seen_stem:
+                    continue
+                seen_stem.add(stem)
             dest = src
             try:
                 if src.parent.resolve() != out_dir.resolve():
@@ -3506,9 +3635,20 @@ class ZaloAdapter(BasePlatformAdapter):
                     shutil.copy2(src, dest)
             except OSError:
                 dest = src
+            if self._as_autosend_already_sent(dest):
+                logger.info("Zalo: autosend skip already-claimed %s", dest.name)
+                continue
             try:
-                if not self._as_autosend_file_claim(dest, tid):
-                    logger.info("Zalo: autosend skip already-claimed %s", dest.name)
+                dest_send = dest
+                try:
+                    from .autosend import existing_media_path
+                except ImportError:
+                    from autosend import existing_media_path  # type: ignore
+                resolved = existing_media_path(str(dest))
+                if resolved:
+                    dest_send = Path(resolved)
+                if not self._as_autosend_file_claim(dest_send, tid):
+                    logger.info("Zalo: autosend skip already-claimed %s", dest_send.name)
                     continue
                 meta_send = {
                     **meta,
@@ -3516,19 +3656,27 @@ class ZaloAdapter(BasePlatformAdapter):
                     "as_skip_timing": True,
                     "as_claimed": True,
                 }
-                if dest.suffix.lower() in img_ext:
+                kind = dest_send.suffix.lower()
+                if kind in img_ext:
                     res = await self.send_image_file(
                         tid,
-                        str(dest),
+                        str(dest_send),
+                        caption="",
+                        metadata=meta_send,
+                    )
+                elif kind in video_ext:
+                    res = await self.send_video(
+                        tid,
+                        str(dest_send),
                         caption="",
                         metadata=meta_send,
                     )
                 else:
                     res = await self.send_document(
                         tid,
-                        str(dest),
+                        str(dest_send),
                         caption="",
-                        file_name=dest.name,
+                        file_name=dest_send.name,
                         metadata=meta_send,
                     )
                 err = ""
@@ -3540,15 +3688,23 @@ class ZaloAdapter(BasePlatformAdapter):
                     ok = bool(getattr(res, "success", False) if res is not None else False)
                 if err == "av_blocked":
                     blocked_n += 1
+                    self._as_autosend_file_unclaim(dest_send)
                     continue
                 if ok:
                     sent += 1
+                    self._as_mark_job_file_sent(tid)
                     flow = getattr(self, "_as_flow", None)
                     if callable(flow):
-                        flow("zalo_send_file", thread_id=tid, file=dest.name, path=str(dest)[:160])
+                        flow("zalo_send_file", thread_id=tid, file=dest_send.name, path=str(dest_send)[:160])
                     else:
-                        print(f"[flow] stage=zalo_send_file thread_id={tid} file={dest.name}", flush=True)
+                        print(f"[flow] stage=zalo_send_file thread_id={tid} file={dest_send.name}", flush=True)
+                    break
+                self._as_autosend_file_unclaim(dest_send)
             except Exception as e:
+                try:
+                    self._as_autosend_file_unclaim(dest_send)
+                except Exception:
+                    pass
                 logger.warning("Zalo autosend failed %s: %s", src.name, e)
         if sent <= 0:
             if blocked_n:
@@ -3935,13 +4091,26 @@ class ZaloAdapter(BasePlatformAdapter):
         if getattr(self, "_as_autosend_wrong_thread", lambda *_: False)(chat_id, metadata):
             logger.info("Zalo: drop send to %s (not the requesting thread)", chat_id)
             return SendResult(success=True)  # ASSISTANT_AUTOSEND_v3
+        if not (isinstance(metadata, dict) and metadata.get("as_skip_autosend")):
+            content = await self._as_autosend_turn_files(chat_id, content, metadata)  # ASSISTANT_AUTOSEND_v5
+            self._as_kick_late_autosend(chat_id, metadata)
         _red = getattr(self, "_as_redact_internal", None)
         if callable(_red):
             content = _red(content)  # ASSISTANT_PATH_REDACT_v1
+        try:
+            from secret_probe import is_blocked as _out_blocked
+        except ImportError:
+            from .secret_probe import is_blocked as _out_blocked  # type: ignore
+        if _out_blocked(content or "", direction="output"):
+            content = self._as_ux_line(
+                "ZALO_SECRET_PROBE_REFUSE",
+                ("secret_probe", "refuse"),
+                "Cannot provide secrets or confidential documents.",
+                user_text=content or "",
+            )
         _trim = getattr(self, "_as_knowledge_trim", None)
         if callable(_trim):
             content = _trim(content)  # ASSISTANT_KNOWLEDGE_CITE_v7
-        # Drop process/PII chatter BEFORE autosend (avoid mid-turn spam + duplicate attaches)
         notice = self._rewrite_gateway_user_notice(content)  # ASSISTANT_QUIET_SEND_v6
         if notice is not None:
             if notice == "":
@@ -3954,9 +4123,11 @@ class ZaloAdapter(BasePlatformAdapter):
         if self._as_is_media_ack_only(content):
             logger.info("Zalo: drop media ack line")
             return SendResult(success=True, message_id=None)
-        if not (isinstance(metadata, dict) and metadata.get("as_skip_autosend")):
-            content = await self._as_autosend_turn_files(chat_id, content, metadata)  # ASSISTANT_AUTOSEND_v5
-            self._as_kick_late_autosend(chat_id, metadata)
+        if self._as_job_already_sent_file(chat_id) and (content or "").strip():
+            low = (content or "").strip().lower()
+            if not low.startswith("hiện chưa tạo") and "couldn't create" not in low and "couldn’t create" not in low:
+                logger.info("Zalo: drop text after media result")
+                return SendResult(success=True, message_id=None)
         content = self._apply_timing_footer(content, chat_id, metadata)  # ASSISTANT_TIMING_FOOTER_v6
         # Re-check after autosend caption swap
         if self._is_gateway_noise(content):
@@ -4098,6 +4269,13 @@ class ZaloAdapter(BasePlatformAdapter):
             "caption": caption or "",
         }
         p = str(file_path or "")
+        try:
+            from .autosend import existing_media_path
+        except ImportError:
+            from autosend import existing_media_path  # type: ignore
+        resolved = existing_media_path(p)
+        if resolved:
+            p = resolved
         cont_root = self._bridge_shared_root()
         out_dir = os.path.join(cont_root, "media", "out")
         # Resolve missing/relative paths under workspace → stage into media/out
@@ -4124,12 +4302,26 @@ class ZaloAdapter(BasePlatformAdapter):
             payload["paths"] = [host_path]
             payload["path"] = host_path
             payload["fileName"] = os.path.basename(p) or "attach.bin"
-            logger.info("Zalo: send-attachment path %s", host_path)
             return payload
         logger.error("Zalo: local file missing for send: %s", file_path)
         payload["_missing"] = True
         payload["path"] = self._bridge_local_path(file_path)
         return payload
+
+    def _as_attach_caption(self, caption) -> str:
+        try:
+            from .autosend import ATTACH_CAPTION_FALLBACK
+        except ImportError:
+            from autosend import ATTACH_CAPTION_FALLBACK  # type: ignore
+        t = str(caption or "")
+        return t if t.strip() else ATTACH_CAPTION_FALLBACK
+
+    def _as_bridge_ok(self, res) -> bool:
+        try:
+            from .autosend import bridge_response_ok
+        except ImportError:
+            from autosend import bridge_response_ok  # type: ignore
+        return bridge_response_ok(res)
 
     async def send_image(self, chat_id, image_url, caption=None, reply_to=None, metadata=None):
         return await self.send_image_file(chat_id, image_url, caption, reply_to, metadata)
@@ -4143,7 +4335,9 @@ class ZaloAdapter(BasePlatformAdapter):
                 logger.info("Zalo: skip duplicate image %s", image_path)
                 return SendResult(success=True)  # ASSISTANT_AUTOSEND_v5
         dest_id = self._as_zalo_api_chat_id(chat_id)
-        payload = self._bridge_attachment_payload(dest_id, thread_type, image_path, caption or "")
+        payload = self._bridge_attachment_payload(
+            dest_id, thread_type, image_path, self._as_attach_caption(caption)
+        )
         if payload.pop("_missing", False):
             return SendResult(
                 success=False,
@@ -4152,15 +4346,24 @@ class ZaloAdapter(BasePlatformAdapter):
         res = await self._as_with_dest_send_lock(
             dest_id, lambda p=payload: self._post("/send-attachment", p)
         )
-        if res.get("error"):
-            return SendResult(success=False, error=res["error"])
+        if not self._as_bridge_ok(res):
+            err = str((res or {}).get("error") or "send-attachment rejected")
+            print(f"[zalo] send-attachment fail {err[:160]}", flush=True)
+            logger.warning("Zalo: send-attachment fail dest=%s %s", dest_id, err[:200])
+            return SendResult(success=False, error=err)
+        host_path = str(payload.get("path") or "")
+        print(f"[zalo] send-attachment path {host_path}", flush=True)
+        logger.info("Zalo: send-attachment path %s", host_path)
         self._as_compound_mark_delivered(chat_id)
         return SendResult(success=True)
 
 
     async def send_document(self, chat_id, file_path, caption=None, file_name=None, reply_to=None, metadata=None, **kwargs):
         thread_type = self._thread_type_from_chat_id(chat_id, metadata)
-        payload = self._bridge_attachment_payload(chat_id, thread_type, file_path, caption or "")
+        dest_id = self._as_zalo_api_chat_id(chat_id)
+        payload = self._bridge_attachment_payload(
+            dest_id, thread_type, file_path, self._as_attach_caption(caption)
+        )
         if payload.pop("_missing", False):
             return SendResult(
                 success=False,
@@ -4168,38 +4371,37 @@ class ZaloAdapter(BasePlatformAdapter):
             )
         if file_name and ("paths" in payload or "path" in payload):
             payload["fileName"] = file_name
-        _dest = getattr(self, "_as_autosend_turn_dest", lambda: {})()
-        if isinstance(_dest, dict) and _dest.get("thread_id") and str(chat_id) != str(_dest["thread_id"]):
-            logger.info(
-                "Zalo: retarget file %s → %s type=%s",
-                chat_id,
-                _dest.get("thread_id"),
-                _dest.get("thread_type"),
-            )
-            chat_id = _dest["thread_id"]
-            payload["threadId"] = chat_id
-            if _dest.get("thread_type") in {"user", "group"}:
-                payload["threadType"] = _dest["thread_type"]
-                metadata = {**(metadata or {}), "thread_type": _dest["thread_type"]}
-        _claim = getattr(self, "_as_autosend_file_claim", None)
-        if callable(_claim) and not _claim(file_path, chat_id):
-            logger.info("Zalo: skip duplicate file %s", file_name or file_path)
-            return SendResult(success=True)  # ASSISTANT_AUTOSEND_v3
-        if not (isinstance(metadata, dict) and metadata.get("as_skip_outbound_av")):  # ASSISTANT_AUTOSEND_v3
+        payload["threadId"] = dest_id
+        meta = metadata if isinstance(metadata, dict) else {}
+        if not meta.get("as_claimed"):
+            _claim = getattr(self, "_as_autosend_file_claim", None)
+            if callable(_claim) and not _claim(file_path, chat_id):
+                logger.info("Zalo: skip duplicate file %s", file_name or file_path)
+                return SendResult(success=True)
+        if not meta.get("as_skip_outbound_av"):
             _scan = getattr(self, "_as_outbound_scan", None)
             if _scan:
-                _verdict = await _scan(file_path, chat_id, file_name or payload.get("fileName"))
+                _verdict = await _scan(file_path, dest_id, file_name or payload.get("fileName"))
                 if _verdict == "blocked":
                     return SendResult(success=False, error="av_blocked")
-        res = await self._post("/send-attachment", payload)
-        if res.get("error"):
-            return SendResult(success=False, error=res["error"])
+        res = await self._as_with_dest_send_lock(
+            dest_id, lambda p=payload: self._post("/send-attachment", p)
+        )
+        if not self._as_bridge_ok(res):
+            err = str((res or {}).get("error") or "send-attachment rejected")
+            print(f"[zalo] send-attachment fail {err[:160]}", flush=True)
+            logger.warning("Zalo: send-attachment fail dest=%s %s", dest_id, err[:200])
+            return SendResult(success=False, error=err)
+        host_path = str(payload.get("path") or "")
+        print(f"[zalo] send-attachment path {host_path}", flush=True)
+        logger.info("Zalo: send-attachment path %s", host_path)
         self._as_compound_mark_delivered(chat_id)
         return SendResult(success=True)
 
 
     async def send_video(self, chat_id, video_path, caption=None, reply_to=None, metadata=None, **kwargs):
-        return await self.send_document(chat_id, video_path, caption=caption, metadata=metadata)
+        staged = self._as_remux_zalo_video(str(video_path or "")) or video_path
+        return await self.send_document(chat_id, staged, caption=caption, metadata=metadata)
 
     async def send_voice(self, chat_id, audio_path, caption=None, reply_to=None, metadata=None, **kwargs):
         thread_type = self._thread_type_from_chat_id(chat_id, metadata)

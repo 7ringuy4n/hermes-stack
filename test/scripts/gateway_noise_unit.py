@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Unit tests for Zalo busy/interrupt gateway-noise filter (no VPS)."""
+"""Unit tests for Zalo outbound drop (LLM classify, injected planner)."""
 from __future__ import annotations
 
 import io
@@ -9,7 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
-from gateway_noise import is_busy_interrupt_notice, is_process_narration  # noqa: E402
+from classify_client import set_outbound_planner  # noqa: E402
+from gateway_noise import drop_outbound, is_busy_interrupt_notice, is_process_narration  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -23,7 +24,22 @@ BUSY = (
 )
 
 
+def _planner(text: str, timezone: str = "Asia/Ho_Chi_Minh") -> dict:
+    low = (text or "").strip().lower()
+    drop = (
+        "interrupting current task" in low
+        or "/busy" in low
+        or "now i have the page" in low
+        or "phiên làm việc đã được khôi phục" in low
+        or "manim" in low
+        or "pangocairo" in low
+        or "rendering frames" in low
+    )
+    return {"action": "drop" if drop else "send"}
+
+
 def main() -> int:
+    set_outbound_planner(_planner)
     if not is_busy_interrupt_notice(BUSY):
         print("FAIL expected busy interrupt notice to be dropped")
         return 1
@@ -42,8 +58,19 @@ def main() -> int:
     if not is_process_narration("Phiên làm việc đã được khôi phục thành công."):
         print("FAIL session restored must drop")
         return 1
+    if not is_process_narration("Manim can't be installed (missing system dependency pangocairo)."):
+        print("FAIL manim install chatter must drop")
+        return 1
+    if not is_process_narration("Rendering frames..."):
+        print("FAIL rendering frames must drop")
+        return 1
     if is_process_narration("E5 RON92: 21.230 đ/lít"):
         print("FAIL price result must not be narration")
+        return 1
+    if drop_outbound(""):
+        pass
+    else:
+        print("FAIL empty line must drop")
         return 1
     print("PASS busy interrupt dropped; user results kept")
     return 0
