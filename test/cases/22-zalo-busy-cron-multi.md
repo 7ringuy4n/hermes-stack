@@ -31,8 +31,8 @@ must execute **wakeup + image + fuel prices** on each run — not only the first
 ## Fix (source)
 
 - Adapter drops busy/interrupt `/busy` copy (`gateway_noise.py`).
-- Immediate compound still splits, but waits until the current part has sent before the next.
-- Schedule-shaped lists stay **one lịch** on ingest (`ZALO_SCHEDULE_KEEP_WHOLE`). At tick time the workflow service creates **one job per numbered item**. The Zalo worker waits until the Hermes gateway session for that thread is idle before claiming the next job (`turn_wait.py`).
+- Immediate multi-task messages are classified by the LLM into `instructions[]` and run as jobs.
+- Schedule-shaped lists are `task_hint=schedule` (one lịch on ingest). At tick time the workflow service creates **one job per stored instruction**. The Zalo worker waits until the Hermes gateway session for that thread is idle before claiming the next job (`turn_wait.py`).
 - Skills: complete every numbered item after media.
 
 ## Preconditions
@@ -43,8 +43,9 @@ must execute **wakeup + image + fuel prices** on each run — not only the first
 ## Steps (unit — no VPS)
 
 1. `python test/scripts/gateway_noise_unit.py`
-2. `python test/scripts/multi_request_unit.py` — schedule fixture stays **one** part; immediate `1`/`2.Sau đó` still splits
-3. `python test/scripts/workflow_schedule_concurrency_unit.py` — plenty (6) items, same-time vs different-time, Zalo + Hermes, 13:54 GMT+7 catch-up
+2. `python test/scripts/llm_classify_unit.py`
+3. `python test/scripts/multi_request_unit.py` — schedule fixture is `task_hint=schedule` (one ingest blob); immediate lists classify to N instructions
+4. `python test/scripts/workflow_schedule_concurrency_unit.py` — plenty (6) items, same-time vs different-time, Zalo + Hermes, 13:54 GMT+7 catch-up
 
 ## Steps (lab — optional)
 

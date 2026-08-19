@@ -35,6 +35,46 @@ def main() -> int:
     if file_in_send_window(t0 - 600, part2, t0, grace_s=8):
         print("FAIL old file kept")
         return 1
+    # Isolated job ceiling: later file belongs to the next job
+    if file_in_send_window(t0 + 800, t0, t0, grace_s=8, ceiling=t0 + 100):
+        print("FAIL ceiling leaked later file")
+        return 1
+    if not file_in_send_window(t0 + 50, t0, t0, grace_s=8, ceiling=t0 + 100):
+        print("FAIL in-job file under ceiling")
+        return 1
+    from autosend import bridge_response_ok, existing_media_path, file_ready_for_send, looks_invalid_param  # noqa: E402
+
+    if file_ready_for_send(t0, t0 + 0.1, min_age_s=0.8):
+        print("FAIL growing file treated ready")
+        return 1
+    if not file_ready_for_send(t0, t0 + 2.0, min_age_s=0.8):
+        print("FAIL settled file not ready")
+        return 1
+    if not looks_invalid_param("Tham số không hợp lệ"):
+        print("FAIL invalid param detect")
+        return 1
+
+    if not bridge_response_ok({"success": True, "result": {"msgId": "1"}}):
+        print("FAIL plugin success")
+        return 1
+    if bridge_response_ok({"error": "file not found: x"}):
+        print("FAIL plugin error body")
+        return 1
+    if bridge_response_ok({"success": True, "error": "file not found"}):
+        print("FAIL success+error")
+        return 1
+    if bridge_response_ok({}):
+        print("FAIL empty body")
+        return 1
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        png = Path(tmp) / "scene.png"
+        png.write_bytes(b"png")
+        hit = existing_media_path(str(Path(tmp) / "scene.jpg"))
+        if Path(hit).name != "scene.png":
+            print("FAIL sibling png")
+            return 1
     print("PASS autosend window")
     return 0
 

@@ -23,6 +23,10 @@ fi
 check security  "http://127.0.0.1:${SECURITY_PORT:-8093}/health"
 check authz     "http://127.0.0.1:${AUTHZ_PORT:-8097}/health"
 if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
+  if ! docker ps --format '{{.Names}}' | grep -qx zalo-api; then
+    echo "FAIL zalo-api  container missing (ENABLE_ZALO=1 requires zalo-api)"
+    fail=1
+  fi
   check zalo-api "http://127.0.0.1:${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}/health"
 else
   echo "INFO zalo-api skipped (ENABLE_ZALO=0)"
