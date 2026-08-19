@@ -36,7 +36,8 @@ Applies to **every** create/export/send of a file or media asset: images, PDF, D
 
 | Need | Skill / API |
 |------|-------------|
-| Image | `image-gen` → `POST /v1/image` (**no** `send_zalo`) |
+| Image | `image-gen` → `POST /v1/image` (**no** `send_zalo`; use `overlay` for on-image facts) |
+| Short video | `video-gen` → `POST /v1/video` (**no** matplotlib / manim) |
 | Office | `file-gen` / `documents` → one `POST /v1/send-file` |
 | Markdown / text file | `markdown` → then `file-gen` |
 | Explicit Comfy workflow | `comfyui` → `--output-dir /opt/data/media/out` |

@@ -8,8 +8,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
+sys.path.insert(0, str(ROOT / "test" / "scripts"))
 
 from multi_request import split_compound_requests  # noqa: E402
+from classify_fixtures import install_unit_planner  # noqa: E402
+
+install_unit_planner()
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -147,6 +151,32 @@ def main() -> int:
         print(f"FAIL English special-four schedule must stay whole, got {en_kept!r}")
         return 1
     print("PASS English 4-item daily list stays one lịch")
+    from classify_fixtures import FIXTURE_INFOGRAPHIC_VI, FIXTURE_INFOGRAPHIC_DAILY  # noqa: E402
+
+    one = split_compound_requests(FIXTURE_INFOGRAPHIC_VI)
+    if len(one) != 1 or "E10 RON95" not in one[0]:
+        print(f"FAIL infographic must stay one task, got {one!r}")
+        return 1
+    daily_one = split_compound_requests(FIXTURE_INFOGRAPHIC_DAILY)
+    if daily_one != [FIXTURE_INFOGRAPHIC_DAILY]:
+        print(f"FAIL daily infographic schedule must stay whole, got {daily_one!r}")
+        return 1
+    print("PASS weather+fuel infographic is one task")
+    from classify_fixtures import FIXTURE_ONCE_NOCITE  # noqa: E402
+    from classify_client import classify_text  # noqa: E402
+
+    once_plan = classify_text(FIXTURE_ONCE_NOCITE)
+    if once_plan.get("task_hint") != "schedule" or len(once_plan.get("instructions") or []) != 3:
+        print(f"FAIL once-lịch numbered list: {once_plan!r}")
+        return 1
+    if once_plan.get("cron_expr") != "24 11 * * *" or once_plan.get("cadence") != "once":
+        print(f"FAIL once-lịch clock: {once_plan!r}")
+        return 1
+    once_kept = split_compound_requests(FIXTURE_ONCE_NOCITE)
+    if once_kept != [FIXTURE_ONCE_NOCITE]:
+        print(f"FAIL once-lịch ingest must stay whole, got {once_kept!r}")
+        return 1
+    print("PASS once-lịch 3 numbered tasks stay schedule PLAN_N 3")
     return 0
 
 

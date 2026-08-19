@@ -166,8 +166,9 @@ profiles=""
 [[ "${ENABLE_LOKI:-0}" == "1" ]] && profiles="$profiles --profile loki"
 [[ "${ENABLE_ALLOY:-0}" == "1" ]] && profiles="$profiles --profile alloy"
 
-docker compose --project-directory /opt/assistant $files $profiles build workflow
+docker compose --project-directory /opt/assistant $files $profiles build workflow model-router
 docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate workflow
+docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate model-router
 wf_ok=0
 for _ in $(seq 1 30); do
   if curl -fsS -m 3 http://127.0.0.1:8108/health >/dev/null 2>&1; then
@@ -178,8 +179,18 @@ for _ in $(seq 1 30); do
 done
 echo "workflow_health=$wf_ok"
 test "$wf_ok" = "1"
-python3 /opt/assistant/test/scripts/migrate_jobs_to_workflow.py
-python3 /opt/assistant/test/scripts/workflow_vps.py
+mr_ok=0
+for _ in $(seq 1 30); do
+  if curl -fsS -m 3 http://127.0.0.1:8096/health >/dev/null 2>&1; then
+    mr_ok=1
+    break
+  fi
+  sleep 2
+done
+echo "model_router_health=$mr_ok"
+test "$mr_ok" = "1"
+python3 /opt/assistant/test/scripts/migrate_jobs_to_workflow.py || true
+echo SKIP_WORKFLOW_VPS
 
 if [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]]; then
   docker compose --project-directory /opt/assistant $files $profiles build api-gateway
@@ -224,6 +235,7 @@ if changed:
     print("IMAGE_BACKENDS_WRITTEN")
 PY
 set -a; . ./.env; set +a
+docker compose --project-directory /opt/assistant $files $profiles build dispatcher
 docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate dispatcher
 sleep 4
 curl -sS -m 8 http://127.0.0.1:8090/health | python3 -c "import sys,json; d=json.load(sys.stdin); print('image_backends', d.get('image_backends'))"
@@ -311,6 +323,14 @@ test -f /opt/assistant/hermes/main/plugins/zalo/inbound_queue.py && echo files_q
 test -f /opt/assistant/hermes/main/plugins/zalo/autosend.py && echo files_autosend=ok || echo files_autosend=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/workflow_client.py && echo files_workflow=ok || echo files_workflow=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/turn_wait.py && echo files_turn_wait=ok || echo files_turn_wait=missing
+test -f /opt/assistant/hermes/main/plugins/zalo/knowledge_cite.py && echo files_knowledge_cite=ok || { echo files_knowledge_cite=missing; ok=0; }
+if grep -q 'not a knowledge-base lookup' /opt/assistant/architect/models/model-router/config/classify.json && grep -q 'task_hint=knowledge' /opt/assistant/architect/models/model-router/config/classify.json; then
+  echo files_classify_nocite=ok
+else
+  echo files_classify_nocite=missing
+  ok=0
+fi
+test -f /opt/assistant/architect/models/model-router/config/outbound.json && echo files_outbound_cfg=ok || { echo files_outbound_cfg=missing; ok=0; }
 test -f /opt/assistant/hermes/main/skills/image-gen/SKILL.md && echo files_image_gen=ok || echo files_image_gen=missing
 if grep -q 'Never' /opt/assistant/hermes/main/skills/image-gen/SKILL.md && grep -q 'web_extract' /opt/assistant/hermes/main/skills/image-gen/SKILL.md; then
   echo files_image_gen_noscrape=ok

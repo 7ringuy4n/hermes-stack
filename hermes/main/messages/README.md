@@ -10,6 +10,7 @@
 |---|---|
 | `learn-notify.json` | Knowledge pending/approved/deleted notify templates (`from={id}|{name}`) |
 | `ux.json` | Cite empty/ingest-down, secret-probe refuse, Zalo queue, schedule confirm, session interrupted |
+| `zalo-bridge.json` | zca-js / plugin API error catalog (invalid-param, retryable send). Not user NLU. |
 
 ### `ux.json` → `queue` (Zalo inbound FIFO)
 

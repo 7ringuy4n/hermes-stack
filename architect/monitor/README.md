@@ -40,7 +40,7 @@ Extra usage: Grafana+Prometheus **~1.5 GiB · ~10 GB · ~0.5 vCPU**, Loki+Alloy 
 | Package | Function | Pairs with |
 |---|---|---|
 | `grafana/` | Dashboards | Prometheus (metrics/Hardware) and/or Loki (logs) |
-| `alert-watch/` | Health / alert watcher | Notify (`ENABLE_NOTIFY=1`) |
+| `alert-watch/` | Health / alert watcher | Notify (`ENABLE_NOTIFY=1`). Scrapes **node-exporter only when Grafana/Prometheus is on**. Optional health targets (AV, Zalo, Omni, OCR, OpenBao) are skipped when their `ENABLE_*` is off. DNS failures for disabled hosts are not alerts. |
 | `nine-exporter/` | 9Router usage metrics | 9Router + Prometheus |
 | `omni-exporter/` (same image as nine-exporter) | OmniRoute usage metrics | OmniRouter + Prometheus |
 | `stack-exporter/` | `assistant_service_up` + Redis/Qdrant | Grafana stack health + Prometheus |

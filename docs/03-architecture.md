@@ -30,7 +30,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
     <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
   </tr>
   <tr>
-    <td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">model-router — coding → 9router · general → OmniRouter (optional) / fallback</td>
+    <td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">model-router — task_hint (NORMAL fast path · CODING → 9router · never SECRET)</td>
   </tr>
   <tr>
     <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>

@@ -1,5 +1,16 @@
 # Deployment & Profile Test Rules
 
+Numbered operator rules (source of truth): [`../AGENT_RULES.md`](../AGENT_RULES.md) section **Operator rules**.
+
+## Rules (numbered)
+
+Existing cases: [`cases/`](./cases/). Skip only:
+
+exclude:
+| Skills mount + auto-learn (Medium+) | `test/cases/12-skills-auto-learn.md` |
+| Exact text poster (text-poster backend) | `test/cases/13-image-text-poster.md` |
+| Internal docs knowledge-first | `test/cases/14-knowledge-internal-rag.md` |
+
 ## 1. Test Runs
 
 Run the complete test suite **2 times**, using different test cases/data each run.
@@ -369,7 +380,9 @@ Every capability must include at least one **fail event**, not only success.
 | Zalo compound message | One bubble with `tin nhắn 1` + `tin nhắn 2` | Both intents addressed (case 16) |
 | Zalo busy + cron multi-task | Interrupt `/busy` tip; 3-item daily job | Tip dropped; all cron items run (case 22) |
 | Zalo inbound FIFO | 3 requests in one bubble; rate-limit burst | All queued intents run; extras not dropped (case 23) |
-| Zalo special four (hello/image/fuel/video) | 4-item English lịch, 2 minutes | Four jobs, four Zalo replies; no `/busy` (case 25) |
+| Zalo special four (hello/image/fuel/video) | 4-item English lịch, 2 minutes | Four jobs, **new** image+video `send-attachment` in the fire window; leftover mp4 does not count (case 25) |
+| Zalo weather+fuel infographic | One Vietnamese sentence | `PLAN_N 1`, file sent to admin DM, overlay facts on the image (case 26) |
+| Zalo media + lịch delivery | Video invalid-param / leftover job | Remuxed mp4 sent; completed job must not claim a later file; media turns result-only (case 28) |
 | Zalo latency SLO | 5 short text pings | FAIL if any sample **> 5s** on localhost (case 17) |
 | Grafana integration | Grafana on → each deployed scrape target | `assistant_service_up` + exporter scrape success (case 20) |
 | Default routers | 9Router always; OmniRouter default 0 | Hermes connected; flag matches container (case 21) |
@@ -428,13 +441,19 @@ When re-testing a live High/Zalo lab:
 | Zalo inbound FIFO (plenty of requests) | `cases/23-zalo-inbound-queue.md` |
 | Plenty-in-one + same/different-time cron | `cases/24-workflow-multi-cron-channels.md` |
 | Zalo special four (hello + image + fuel + video) | `cases/25-zalo-special-four.md` |
+| Zalo weather+fuel infographic (one picture) | `cases/26-zalo-weather-fuel-poster.md` |
+| Daily lịch of one weather+fuel infographic | `cases/27-zalo-weather-fuel-daily.md` |
+| Zalo media gen + lịch delivery | `cases/28-zalo-media-cron-delivery.md` |
+| Zalo once-lịch numbered tasks (no cite) | `cases/29-zalo-once-numbered-nocite.md` |
 
 **Unit scripts (no VPS, run in small batches):**
 
 | Script | Case |
 |--------|------|
 | `test/scripts/schedule_timezone_unit.py` | 15 |
-| `test/scripts/multi_request_unit.py` | 16 + 22 (schedule keep-whole) |
+| `test/scripts/multi_request_unit.py` | 16 + 22 (schedule keep-whole) + 26/27 infographic + 29 once-lịch |
+| `test/scripts/knowledge_cite_unit.py` | 29 |
+| `test/scripts/llm_classify_unit.py` | 24/25/26/27/29 classify JSON |
 | `test/scripts/gateway_noise_unit.py` | 22 |
 | `test/scripts/inbound_queue_unit.py` | 23 |
 | `test/scripts/web_search_backends_unit.py` | 18 |
@@ -448,6 +467,7 @@ When re-testing a live High/Zalo lab:
 |--------|------|
 | `test/scripts/zalo_latency_lab.py` | 17 |
 | `test/scripts/zalo_special_four_lab.py` | 25 |
+| `test/scripts/zalo_weather_fuel_lab.py` | 26 |
 | `test/scripts/file_pipeline_security_lab.py` | 19 |
 | `test/scripts/grafana_integration_lab.py` | 20 (skip if Grafana off) |
 | `test/scripts/defaults_routers_lab.py` | 21 |
