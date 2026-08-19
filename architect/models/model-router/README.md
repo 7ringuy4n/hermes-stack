@@ -20,21 +20,26 @@
 
 ## Purpose
 
-OpenAI-compatible proxy between Hermes and LLM providers. Separates **coding** vs **general** tasks and applies fallbacks without hanging Hermes.
+OpenAI-compatible proxy between Hermes and LLM providers. Classifies **task_hint** (not security). `NORMAL` is the fast path (no extra classifier LLM). `SECRET` is never a task type.
 
 ## Classification (hybrid)
 
-1. Client header `X-Task-Type: coding|general`
+1. Client header `X-Task-Type`
 2. Request `metadata.task_hint` / `metadata.task_type` (Hermes)
-3. Heuristic patterns in `config/heuristic.json` (admin-editable)
-4. Unknown → **general**
+3. Default → **normal** (fast path)
+4. `POST /v1/classify` — LLM returns `task_hint`, `instructions`, `cadence`, `cron_expr`
+
+Hints: `normal` · `schedule` · `coding` · `tool` · `search` · `file` · `unknown`  
+Aliases: `general`/`chat` → `normal`, `code` → `coding`. Values `secret`/`blocked` are ignored (Secret Probe owns security).
+
+Prompt file: `config/classify.json` (admin-editable). Application code validates the JSON protocol only.
 
 ## Providers
 
 | Task | Preferred | Then |
 |------|-----------|------|
 | coding | 9router (if healthy) | OmniRouter if only that exists → OpenAI fallback (if keyed) → Ollama (if configured) |
-| general | OmniRouter (if `ENABLE_OMNIROUTER=1` and healthy) | 9router → fallbacks |
+| normal / schedule / tool / search / file / unknown | OmniRouter (if `ENABLE_OMNIROUTER=1` and healthy) | 9router → fallbacks |
 
 Missing API keys skip that provider. If nothing works → JSON error `no_model_available` (message in `messages/en.json`).
 

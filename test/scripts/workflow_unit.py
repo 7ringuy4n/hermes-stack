@@ -8,10 +8,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "workflow"))
+sys.path.insert(0, str(ROOT / "test" / "scripts"))
 
 from manager import COMPLETED, DEAD, RUNNING, WorkflowManager, next_daily_cron  # noqa: E402
 from plan import extract_cron_expr, plan_instructions  # noqa: E402
 from store import MemoryStore  # noqa: E402
+from classify_fixtures import install_unit_planner  # noqa: E402
+
+install_unit_planner()
 
 
 def test_plan() -> None:
@@ -26,6 +30,12 @@ def test_plan() -> None:
         "4. Draw a video of Ho Chi Minh City based on the actual current weather."
     )
     assert len(en4) == 4 and "hello" in en4[0].lower() and "video" in en4[3].lower(), en4
+    from classify_fixtures import FIXTURE_INFOGRAPHIC_VI, FIXTURE_INFOGRAPHIC_DAILY  # noqa: E402
+
+    poster = plan_instructions(FIXTURE_INFOGRAPHIC_VI)
+    assert len(poster) == 1 and "E10 RON95" in poster[0] and "thời tiết" in poster[0], poster
+    daily = plan_instructions(FIXTURE_INFOGRAPHIC_DAILY)
+    assert len(daily) == 1 and "E5 RON92" in daily[0], daily
     cron = extract_cron_expr("hằng ngày lúc 06:00 GMT+7")
     assert cron == "0 6 * * *", cron
     print("PASS plan_instructions + cron extract")
@@ -141,6 +151,36 @@ def test_schedule_tick_creates_jobs() -> None:
     print("PASS schedule tick → 3 jobs, no duplicate same window")
 
 
+def test_once_schedule_refire_same_day() -> None:
+    mgr = WorkflowManager(MemoryStore())
+    past = datetime.now(timezone.utc) - timedelta(minutes=1)
+    sch = mgr.upsert_schedule(
+        cron_expr="0 8 * * *",
+        text="1. wakeup 2. image 3. fuel",
+        name="once-lab",
+        schedule_id="case25_once",
+        context={"execute": "record_only", "plan": {"ok": True, "instructions": ["a", "b", "c"]}},
+        cadence="once",
+        next_run_at=past,
+    )
+    ids1 = mgr.fire_due_schedules()
+    assert len(ids1) == 1, ids1
+    assert mgr.store.get_schedule("case25_once") is None, mgr.store.get_schedule("case25_once")
+    sch2 = mgr.upsert_schedule(
+        cron_expr="1 8 * * *",
+        text="1. wakeup 2. image 3. fuel",
+        name="once-lab-2",
+        schedule_id="case25_once",
+        context={"execute": "record_only", "plan": {"ok": True, "instructions": ["a", "b", "c"]}},
+        cadence="once",
+        next_run_at=past,
+    )
+    ids2 = mgr.fire_due_schedules()
+    assert len(ids2) == 1, ids2
+    assert ids2[0] != ids1[0], (ids1, ids2)
+    print("PASS once cadence re-fire same day creates a new workflow")
+
+
 def test_timezone_default_gmt7() -> None:
     now = datetime(2026, 8, 18, 22, 30, tzinfo=timezone.utc)
     nxt = next_daily_cron("0 6 * * *", "Asia/Ho_Chi_Minh", now)
@@ -172,6 +212,7 @@ def main() -> int:
         test_partial_failure_and_no_rerun()
         test_idempotency_and_stale_lease()
         test_schedule_tick_creates_jobs()
+        test_once_schedule_refire_same_day()
         test_timezone_default_gmt7()
         test_same_minute_grace_1354()
     except AssertionError as e:

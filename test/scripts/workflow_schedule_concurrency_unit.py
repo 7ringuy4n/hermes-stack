@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "workflow"))
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 sys.path.insert(0, str(ROOT / "architect" / "gateway" / "api-gateway"))
+sys.path.insert(0, str(ROOT / "test" / "scripts"))
 
 from manager import WorkflowManager, next_daily_cron  # noqa: E402
 from plan import extract_cron_expr, plan_instructions  # noqa: E402
@@ -23,6 +24,9 @@ from store import MemoryStore  # noqa: E402
 from multi_request import looks_like_schedule_job, split_compound_requests  # noqa: E402
 
 import app as gateway  # noqa: E402
+from classify_fixtures import install_unit_planner  # noqa: E402
+
+install_unit_planner()
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -131,6 +135,7 @@ def test_same_minute_1354_is_due_today() -> None:
         origin={"platform": "zalo", "thread_id": "u-zalo"},
         context={"execute": "hermes", "thread_id": "u-zalo"},
         schedule_id="sch_zalo_1354",
+        cadence="daily",
         next_run_at=nxt,
     )
     ids = mgr.fire_due_schedules(created)
@@ -152,6 +157,7 @@ def test_same_time_two_channels() -> None:
         origin={"platform": "zalo", "thread_id": "z1"},
         context={"execute": "hermes", "thread_id": "z1", "sender_id": "z-user"},
         schedule_id="sch_zalo_0600",
+        cadence="daily",
         next_run_at=due,
     )
     mgr.upsert_schedule(
@@ -161,6 +167,7 @@ def test_same_time_two_channels() -> None:
         origin={"platform": "hermes-api", "path": "/v1/chat/completions"},
         context={"execute": "hermes_http", "model": "gpt-test"},
         schedule_id="sch_hermes_0600",
+        cadence="daily",
         next_run_at=due,
     )
     ids = mgr.fire_due_schedules(now)
@@ -202,6 +209,7 @@ def test_different_time_independent() -> None:
         origin={"platform": "zalo", "thread_id": "z-morning"},
         context={"execute": "hermes", "thread_id": "z-morning"},
         schedule_id="sch_diff_0600",
+        cadence="daily",
         next_run_at=_local(6, 0, 0),
     )
     mgr.upsert_schedule(
@@ -211,6 +219,7 @@ def test_different_time_independent() -> None:
         origin={"platform": "hermes-api"},
         context={"execute": "hermes_http"},
         schedule_id="sch_diff_1200",
+        cadence="daily",
         next_run_at=_local(12, 0, 0),
     )
     morning = mgr.fire_due_schedules(at_0605)
@@ -239,6 +248,7 @@ def test_two_zalo_users_same_clock() -> None:
             origin={"platform": "zalo", "thread_id": uid, "user_id": uid},
             context={"execute": "hermes", "thread_id": uid, "sender_id": uid},
             schedule_id=f"sch_{uid}_1354",
+            cadence="daily",
             next_run_at=due,
         )
     ids = mgr.fire_due_schedules(now)
@@ -260,6 +270,7 @@ def test_reupsert_keeps_due_past_next_run() -> None:
         text=PLENTY_CRON_1354,
         name="keep-due",
         schedule_id="sch_keep_due",
+        cadence="daily",
         next_run_at=due,
     )
     later = _local(13, 55, 0)
@@ -268,6 +279,7 @@ def test_reupsert_keeps_due_past_next_run() -> None:
         text=PLENTY_CRON_1354,
         name="keep-due",
         schedule_id="sch_keep_due",
+        cadence="daily",
     )
     nxt = again.get("next_run_at")
     assert nxt is not None
@@ -289,6 +301,7 @@ def test_missed_today_when_next_run_already_tomorrow() -> None:
         origin={"platform": "zalo", "thread_id": "u-miss"},
         context={"execute": "hermes", "thread_id": "u-miss"},
         schedule_id="sch_missed_1354",
+        cadence="daily",
         next_run_at=tomorrow,
     )
     ids = mgr.fire_due_schedules(_local(13, 55, 0, day=18))

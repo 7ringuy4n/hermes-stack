@@ -41,6 +41,13 @@ def real_thread_id(chat_id: str) -> str:
     return raw
 
 
+def same_dest_thread(a: str, b: str) -> bool:
+    """True when both ids map to the same Zalo thread (isolated job ids included)."""
+    left = real_thread_id(a)
+    right = real_thread_id(b)
+    return bool(left) and left == right
+
+
 def is_isolated_session(chat_id: str) -> bool:
     return JOB_SESSION_MARK in str(chat_id or "")
 

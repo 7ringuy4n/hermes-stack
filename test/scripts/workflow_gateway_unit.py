@@ -7,8 +7,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "gateway" / "api-gateway"))
+sys.path.insert(0, str(ROOT / "test" / "scripts"))
 
 import app  # noqa: E402
+from classify_fixtures import install_unit_planner  # noqa: E402
+
+install_unit_planner()
 
 
 def main() -> int:

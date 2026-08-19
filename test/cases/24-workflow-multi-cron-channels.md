@@ -6,6 +6,9 @@ items must create **one job per item** at tick time. Two schedules at the
 **different clocks** must fire independently. This applies to **Zalo users**
 and **direct Hermes API users**.
 
+LLM classify produces `task_hint` + `instructions[]` + `cadence` + `cron_expr`.
+App code validates cron tokens and persists; it does not parse the user prose.
+
 ## Fixtures
 
 **Immediate plenty (6 items, no daily wording):**
@@ -20,7 +23,7 @@ Thực hiện:
 6. Nhắc uống nước
 ```
 
-**Daily plenty at 13:54 GMT+7 (keep whole on ingest):**
+**Daily plenty at 13:54 GMT+7 (classify as schedule; keep whole on ingest):**
 
 ```text
 hằng ngày lúc 13:54 GMT+7:
@@ -46,6 +49,7 @@ After a successful fire, `next_run_at` advances to the next calendar day.
 ## Steps (unit — no VPS)
 
 ```bash
+python test/scripts/llm_classify_unit.py
 python test/scripts/workflow_schedule_concurrency_unit.py
 python test/scripts/workflow_unit.py
 python test/scripts/workflow_gateway_unit.py
