@@ -13,6 +13,7 @@ Follow **[docs/AGENT_RULES.md](../../docs/AGENT_RULES.md)** as the editable sour
 - Switch to **`develop`**, then `feature/*`, before new work.
 - **No** VPS deploy / remote test scripts without explicit permission.
 - **No** push or MR without explicit permission.
+- After a test run finishes, **restore product defaults** (no leftover lab-only config).
 - Update **`docs/CHANGELOG.md`** (top entry + timestamp) for product/ops changes.
 - Prefer **skills + editable config/messages** over hardcoded keywords or chat strings.
 - SSH/remote bash: **LF only**, prefer single-line SSH, fail on non-zero exit.

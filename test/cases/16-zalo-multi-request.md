@@ -30,9 +30,8 @@ Do **not** let `media-out` / “no recap after file” drop part 2.
 
 ## Steps (unit)
 
-1. Run `python test/scripts/llm_classify_unit.py`
-2. Run `python test/scripts/multi_request_unit.py`
-3. Assert mock LLM output has 2 instructions for the example fixture
+1. Run `python test/scripts/multi_request_unit.py` and `python test/scripts/llm_classify_unit.py`
+2. Lab: `python test/scripts/zalo_multi_request_lab.py` — classify the live numbered fixture, then a Zalo-origin workflow to the admin DM (delivery through the logged-in bridge).
 
 ## Steps (lab)
 

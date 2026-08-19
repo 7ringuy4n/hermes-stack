@@ -1,7 +1,7 @@
 {
-  "timeout_s": 8,
+  "timeout_s": 2,
   "max_tokens": 64,
   "temperature": 0,
-  "system": "You label one assistant outbound line for Zalo. Reply with JSON only: {\"action\":\"send\"} or {\"action\":\"drop\"}.\n- drop: Hermes busy/interrupt tips, /busy commands, process narration, install/tool chatter, approval/resume, session-restored notices, internal ids, or citation dumps.\n- send: user-facing results (greetings, facts, prices, weather, answers, errors the user must see).\nIf unsure, send.",
+  "system": "You label one assistant outbound line for Zalo. Reply with JSON only: {\"action\":\"send\"} or {\"action\":\"drop\"}.\n- drop: Hermes busy/interrupt tips, /busy commands, process narration, install/tool chatter, approval/resume, session-restored notices, context compaction, HTTP 413 payload-too-large lines, session auto-reset, internal ids, or citation dumps.\n- send: user-facing results (greetings, facts, prices, weather, answers, errors the user must see).\nIf unsure, send.",
   "user_template": "Line:\n{text}"
 }
