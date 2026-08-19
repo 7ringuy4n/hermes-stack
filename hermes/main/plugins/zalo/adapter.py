@@ -31,9 +31,19 @@ import json
 import logging
 import os
 import socket
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Hermes loads this file as hermes_plugins.zalo_platform.adapter. Relative
+# imports then miss siblings next to the repo plugin. Put both dirs on path.
+_ZALO_PLUGIN_DIR = Path(__file__).resolve().parent
+_ZALO_SHARED_PLUGIN = Path(os.getenv("HERMES_SHARED_DATA") or "/opt/data") / "plugins" / "zalo"
+for _zalo_dir in (_ZALO_PLUGIN_DIR, _ZALO_SHARED_PLUGIN):
+    _zalo_s = str(_zalo_dir)
+    if _zalo_dir.is_dir() and _zalo_s not in sys.path:
+        sys.path.insert(0, _zalo_s)
 
 
 def _replica_id() -> str:
@@ -612,7 +622,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 if self._last_event_id:
                     headers["Last-Event-ID"] = str(self._last_event_id)
 
-                timeout = aiohttp.ClientTimeout(total=None, sock_read=None)
+                timeout = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=None)
                 async with self._session.get(
                     f"{self.bridge_url}/events", headers=headers, timeout=timeout
                 ) as resp:
@@ -1287,11 +1297,11 @@ class ZaloAdapter(BasePlatformAdapter):
     ) -> bool:
         try:
             from .workflow_client import create_schedule, create_workflow, workflow_enabled
-            from .classify_client import classify_text
+            from .classify_client import classify_text, plan_is_async
             from .knowledge_cite import plan_is_knowledge
         except ImportError:
             from workflow_client import create_schedule, create_workflow, workflow_enabled  # type: ignore
-            from classify_client import classify_text  # type: ignore
+            from classify_client import classify_text, plan_is_async  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
         if not isinstance(plan, dict):
             plan = classify_text(text)
@@ -1344,12 +1354,23 @@ class ZaloAdapter(BasePlatformAdapter):
                     pass
                 return True
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
-        if len(parts) < 2:
+        async_job = plan_is_async(plan) or len(parts) >= 2
+        if not async_job or not parts:
             return False
+        try:
+            ack = self._as_ux_line(
+                "ZALO_ASYNC_ACK_MSG",
+                ("async", "ack"),
+                "Got it — working on that now.",
+                user_text=text,
+            )
+            await self._as_gate_announce(thread_id, thread_type, ack)
+        except Exception:
+            pass
         data = create_workflow(instructions=parts, origin=origin, context=context)
         if not data.get("ok"):
             return False
-        print(f"[zalo] workflow created jobs={len(parts)}", flush=True)
+        print(f"[zalo] workflow created jobs={len(parts)} class={plan.get('execution_class')}", flush=True)
         logger.info("Zalo: workflow %s jobs=%s", (data.get("workflow") or {}).get("id"), len(parts))
         return True
 
@@ -1701,16 +1722,19 @@ class ZaloAdapter(BasePlatformAdapter):
             return str(path or "")
         if src.suffix.lower() not in {".mp4", ".mov", ".m4v", ".webm", ".mkv"}:
             return str(src)
-        if src.name.endswith(".zalo.mp4"):
-            return str(src)
         ffmpeg = shutil.which("ffmpeg")
-        dest = src.with_name(src.stem + ".zalo.mp4")
+        overwrite = src.name.endswith(".zalo.mp4")
+        dest = src.with_name(src.stem + ".next.mp4") if overwrite else src.with_name(src.stem + ".zalo.mp4")
         if ffmpeg:
             cmd = [
                 ffmpeg,
                 "-y",
                 "-i",
                 str(src),
+                "-f",
+                "lavfi",
+                "-i",
+                "anullsrc=channel_layout=mono:sample_rate=44100",
                 "-c:v",
                 "libx264",
                 "-pix_fmt",
@@ -1719,15 +1743,19 @@ class ZaloAdapter(BasePlatformAdapter):
                 "baseline",
                 "-level",
                 "3.1",
-            "-vf",
-            "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
-            "-b:v",
-            "800k",
-            "-r",
-            "25",
-            "-movflags",
+                "-vf",
+                "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+                "-b:v",
+                "800k",
+                "-r",
+                "25",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "64k",
+                "-shortest",
+                "-movflags",
                 "+faststart",
-                "-an",
                 str(dest),
             ]
             try:
@@ -1764,6 +1792,10 @@ class ZaloAdapter(BasePlatformAdapter):
                 return str(src)
         try:
             if dest.is_file() and dest.stat().st_size > 1000:
+                if overwrite:
+                    dest.replace(src)
+                    logger.info("Zalo: remuxed video %s", src.name)
+                    return str(src)
                 logger.info("Zalo: remuxed video %s → %s", src.name, dest.name)
                 return str(dest)
         except OSError:
@@ -2990,32 +3022,33 @@ class ZaloAdapter(BasePlatformAdapter):
 
         if not self.bridge_url:
             return {"error": "no bridge"}
-        if not self._session or self._session.closed:
-            return {"error": "no session"}
+        # Do not share the SSE ClientSession — concurrent GET /events + POST /send
+        # yields aiohttp "Server disconnected".
+        timeout = aiohttp.ClientTimeout(
+            total=120 if path == "/send-attachment" else 60
+        )
         try:
-            async with self._session.post(
-                f"{self.bridge_url}{path}",
-                data=json.dumps(body),
-                headers=self._headers(),
-                timeout=aiohttp.ClientTimeout(
-                    total=120 if path == "/send-attachment" else 60
-                ),
-            ) as resp:
-                try:
-                    data = await resp.json(content_type=None)
-                except Exception:
-                    text = ""
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    f"{self.bridge_url}{path}",
+                    data=json.dumps(body),
+                    headers=self._headers(),
+                ) as resp:
                     try:
-                        text = await resp.text()
+                        data = await resp.json(content_type=None)
                     except Exception:
                         text = ""
-                    return {"error": f"http {resp.status}: {(text or '')[:180]}"}
-                if not isinstance(data, dict):
-                    return {"error": f"http {resp.status}: {str(data)[:160]}"}
-                if resp.status >= 400:
-                    err = str(data.get("error") or data.get("message") or f"http {resp.status}")
-                    data["error"] = err
-                return data
+                        try:
+                            text = await resp.text()
+                        except Exception:
+                            text = ""
+                        return {"error": f"http {resp.status}: {(text or '')[:180]}"}
+                    if not isinstance(data, dict):
+                        return {"error": f"http {resp.status}: {str(data)[:160]}"}
+                    if resp.status >= 400:
+                        err = str(data.get("error") or data.get("message") or f"http {resp.status}")
+                        data["error"] = err
+                    return data
         except Exception as e:
             return {"error": str(e)}
 
@@ -3133,6 +3166,13 @@ class ZaloAdapter(BasePlatformAdapter):
         except ImportError:
             from gateway_noise import drop_outbound  # type: ignore
         if drop_outbound(t):
+            if "vars() argument must have __dict__" in t:
+                return self._as_ux_line(
+                    "ZALO_JOB_FAILED_MSG",
+                    ("schedule", "job_failed"),
+                    "Scheduled job failed. Please try again later.",
+                    user_text=t,
+                )
             return ""
         return None
 
@@ -3456,8 +3496,14 @@ class ZaloAdapter(BasePlatformAdapter):
         p = Path(str(file_path or ""))
         stem = (p.stem or p.name or "").lower()
         try:
+            from .autosend import VIDEO_EXTS, video_dedupe_stem
+        except ImportError:
+            from autosend import VIDEO_EXTS, video_dedupe_stem  # type: ignore
+        try:
             if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
                 return f"img:{stem}"
+            if p.suffix.lower() in VIDEO_EXTS:
+                return f"vid:{video_dedupe_stem(str(p))}"
             return f"{p.stat().st_size}:{p.name}"
         except OSError:
             return f"img:{stem}" if stem else (p.name or "")
@@ -3577,9 +3623,19 @@ class ZaloAdapter(BasePlatformAdapter):
             except (TypeError, ValueError):
                 ceiling = 0.0
         try:
-            from .autosend import file_in_send_window, file_ready_for_send
+            from .autosend import (
+                file_in_send_window,
+                file_ready_for_send,
+                prefer_remuxed_video,
+                video_dedupe_stem,
+            )
         except ImportError:
-            from autosend import file_in_send_window, file_ready_for_send  # type: ignore
+            from autosend import (  # type: ignore
+                file_in_send_window,
+                file_ready_for_send,
+                prefer_remuxed_video,
+                video_dedupe_stem,
+            )
         grace = self._as_env_float("ZALO_AUTOSEND_GRACE_S", 8.0, 0.0, 60.0)
         ok_ext = self._as_autosend_ok_ext()
         found = []
@@ -3610,9 +3666,26 @@ class ZaloAdapter(BasePlatformAdapter):
             return content
         img_ext = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
         video_ext = {".mp4", ".webm", ".mov", ".m4v", ".mkv"}
+        still_names = {"clip-still.jpg", "clip-still.jpeg", "clip-still.png"}
         found.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-        if found[0].suffix.lower() in video_ext:
+        has_video = any(p.suffix.lower() in video_ext for p in found)
+        if has_video:
+            found = [p for p in found if p.name.lower() not in still_names]
+        if found and found[0].suffix.lower() in video_ext:
             found = [p for p in found if p.suffix.lower() in video_ext]
+        deduped = []
+        seen_vid = set()
+        for p in found:
+            if p.suffix.lower() in video_ext:
+                key = video_dedupe_stem(str(p))
+                if key in seen_vid:
+                    continue
+                seen_vid.add(key)
+                preferred = Path(prefer_remuxed_video(str(p)))
+                deduped.append(preferred if preferred.is_file() else p)
+            else:
+                deduped.append(p)
+        found = deduped
         sent = 0
         blocked_n = 0
         out_dir = self._as_autosend_roots()[0]
@@ -3665,6 +3738,11 @@ class ZaloAdapter(BasePlatformAdapter):
                         metadata=meta_send,
                     )
                 elif kind in video_ext:
+                    dest_send = Path(prefer_remuxed_video(str(dest_send)))
+                    if not dest_send.name.endswith(".zalo.mp4"):
+                        remuxed = self._as_remux_zalo_video(str(dest_send))
+                        if remuxed:
+                            dest_send = Path(remuxed)
                     res = await self.send_video(
                         tid,
                         str(dest_send),
@@ -4189,6 +4267,7 @@ class ZaloAdapter(BasePlatformAdapter):
             if res.get("error"):
                 return SendResult(success=False, error=res["error"])
             last = res
+            logger.info("Zalo: send ok thread=%s chars=%s", dest_id, len(chunk))
             await asyncio.sleep(0.2)
         msg_id = None
         if isinstance(last, dict):
@@ -4327,6 +4406,13 @@ class ZaloAdapter(BasePlatformAdapter):
         return await self.send_image_file(chat_id, image_url, caption, reply_to, metadata)
 
     async def send_image_file(self, chat_id, image_path, caption=None, reply_to=None, metadata=None, **kwargs):
+        try:
+            from .autosend import VIDEO_EXTS
+        except ImportError:
+            from autosend import VIDEO_EXTS  # type: ignore
+        raw = str(image_path or "")
+        if any(raw.lower().endswith(ext) for ext in VIDEO_EXTS):
+            return await self.send_video(chat_id, image_path, caption, reply_to, metadata, **kwargs)
         thread_type = self._thread_type_from_chat_id(chat_id, metadata)
         meta = metadata if isinstance(metadata, dict) else {}
         if not meta.get("as_claimed"):
@@ -4359,6 +4445,16 @@ class ZaloAdapter(BasePlatformAdapter):
 
 
     async def send_document(self, chat_id, file_path, caption=None, file_name=None, reply_to=None, metadata=None, **kwargs):
+        try:
+            from .autosend import VIDEO_EXTS, looks_invalid_param
+        except ImportError:
+            from autosend import VIDEO_EXTS, looks_invalid_param  # type: ignore
+        raw_path = str(file_path or "")
+        if any(raw_path.lower().endswith(ext) for ext in VIDEO_EXTS):
+            remuxed = self._as_remux_zalo_video(raw_path) or raw_path
+            file_path = remuxed
+            if not file_name:
+                file_name = Path(str(remuxed)).name
         thread_type = self._thread_type_from_chat_id(chat_id, metadata)
         dest_id = self._as_zalo_api_chat_id(chat_id)
         payload = self._bridge_attachment_payload(
@@ -4391,6 +4487,22 @@ class ZaloAdapter(BasePlatformAdapter):
             err = str((res or {}).get("error") or "send-attachment rejected")
             print(f"[zalo] send-attachment fail {err[:160]}", flush=True)
             logger.warning("Zalo: send-attachment fail dest=%s %s", dest_id, err[:200])
+            if looks_invalid_param(err) and any(str(file_path).lower().endswith(ext) for ext in VIDEO_EXTS):
+                retry_path = self._as_remux_zalo_video(str(file_path))
+                if retry_path:
+                    payload2 = self._bridge_attachment_payload(
+                        dest_id, thread_type, retry_path, self._as_attach_caption(caption)
+                    )
+                    payload2.pop("_missing", None)
+                    res2 = await self._as_with_dest_send_lock(
+                        dest_id, lambda p=payload2: self._post("/send-attachment", p)
+                    )
+                    if self._as_bridge_ok(res2):
+                        host_path = str(payload2.get("path") or retry_path)
+                        print(f"[zalo] send-attachment path {host_path}", flush=True)
+                        logger.info("Zalo: send-attachment path %s", host_path)
+                        self._as_compound_mark_delivered(chat_id)
+                        return SendResult(success=True)
             return SendResult(success=False, error=err)
         host_path = str(payload.get("path") or "")
         print(f"[zalo] send-attachment path {host_path}", flush=True)
@@ -4399,8 +4511,125 @@ class ZaloAdapter(BasePlatformAdapter):
         return SendResult(success=True)
 
 
+    def _as_upload_item(self, data) -> dict:
+        if not isinstance(data, dict):
+            return {}
+        r = data.get("result")
+        if isinstance(r, list) and r:
+            r = r[0]
+        if isinstance(r, dict) and isinstance(r.get("result"), (list, dict)):
+            r = r.get("result")
+            if isinstance(r, list) and r:
+                r = r[0]
+        return r if isinstance(r, dict) else {}
+
+    def _as_video_thumb(self, video_path: str) -> str:
+        import shutil
+        import subprocess
+        from pathlib import Path
+
+        src = Path(str(video_path or ""))
+        parent = src.parent
+        for name in ("clip-still.jpg", "clip-still.jpeg", "clip-still.png"):
+            cand = parent / name
+            try:
+                if cand.is_file() and cand.stat().st_size > 100:
+                    return str(cand)
+            except OSError:
+                continue
+        dest = src.with_name((src.stem.replace(".zalo", "") or src.stem) + ".thumb.jpg")
+        ffmpeg = shutil.which("ffmpeg")
+        if not ffmpeg:
+            return ""
+        try:
+            subprocess.run(
+                [ffmpeg, "-y", "-i", str(src), "-frames:v", "1", "-q:v", "4", str(dest)],
+                check=True,
+                capture_output=True,
+                timeout=30,
+            )
+        except Exception:
+            return ""
+        try:
+            if dest.is_file() and dest.stat().st_size > 100:
+                return str(dest)
+        except OSError:
+            return ""
+        return ""
+
     async def send_video(self, chat_id, video_path, caption=None, reply_to=None, metadata=None, **kwargs):
         staged = self._as_remux_zalo_video(str(video_path or "")) or video_path
+        thread_type = self._thread_type_from_chat_id(chat_id, metadata)
+        dest_id = self._as_zalo_api_chat_id(chat_id)
+        payload = self._bridge_attachment_payload(
+            dest_id, thread_type, staged, self._as_attach_caption(caption)
+        )
+        host_mp4 = str(payload.get("path") or "")
+        thumb = self._as_video_thumb(str(staged))
+        if thumb:
+            tpay = self._bridge_attachment_payload(
+                dest_id, thread_type, thumb, self._as_attach_caption(caption)
+            )
+            host_thumb = str(tpay.get("path") or "")
+        else:
+            host_thumb = ""
+        if host_mp4 and host_thumb:
+            up_v = await self._post(
+                "/api/uploadAttachment",
+                {"args": [[host_mp4], dest_id, thread_type]},
+            )
+            up_t = await self._post(
+                "/api/uploadAttachment",
+                {"args": [[host_thumb], dest_id, thread_type]},
+            )
+            item_v = self._as_upload_item(up_v)
+            item_t = self._as_upload_item(up_t)
+            video_url = str(
+                item_v.get("fileUrl")
+                or item_v.get("normalUrl")
+                or item_v.get("videoUrl")
+                or ""
+            )
+            thumb_url = str(
+                item_t.get("thumbUrl")
+                or item_t.get("normalUrl")
+                or item_t.get("hdUrl")
+                or item_t.get("fileUrl")
+                or ""
+            )
+            width = int(item_v.get("width") or item_t.get("width") or 768)
+            height = int(item_v.get("height") or item_t.get("height") or 512)
+            duration = int(item_v.get("duration") or 4000)
+            if duration and duration < 100:
+                duration = duration * 1000
+            if duration <= 0:
+                duration = 4000
+            if video_url and thumb_url:
+                sent = await self._post(
+                    "/api/sendVideo",
+                    {
+                        "args": [
+                            {
+                                "videoUrl": video_url,
+                                "thumbnailUrl": thumb_url,
+                                "duration": duration,
+                                "width": width,
+                                "height": height,
+                                "msg": self._as_attach_caption(caption),
+                            },
+                            dest_id,
+                            thread_type,
+                        ]
+                    },
+                )
+                if self._as_bridge_ok(sent):
+                    print(f"[zalo] send-attachment path {host_mp4}", flush=True)
+                    logger.info("Zalo: send-attachment path %s", host_mp4)
+                    self._as_compound_mark_delivered(chat_id)
+                    return SendResult(success=True)
+                err = str((sent or {}).get("error") or "sendVideo rejected")
+                print(f"[zalo] send-attachment fail {err[:160]}", flush=True)
+                logger.warning("Zalo: sendVideo fail dest=%s %s", dest_id, err[:200])
         return await self.send_document(chat_id, staged, caption=caption, metadata=metadata)
 
     async def send_voice(self, chat_id, audio_path, caption=None, reply_to=None, metadata=None, **kwargs):

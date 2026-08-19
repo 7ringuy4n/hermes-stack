@@ -232,6 +232,7 @@ hermes_logs() {
 }
 done_n=0
 attach_n=0
+extra_after_done=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
   curl -sS -m 5 http://127.0.0.1:8787/health 2>/dev/null | python3 -c 'import sys,json
 try:
@@ -274,6 +275,16 @@ ORDER BY w.created_at DESC LIMIT 3;
     echo "MEDIA_SENT"
     echo "VIDEO_SENT"
     break
+  fi
+  if [ "${done_n:-0}" -ge 4 ]; then
+    extra_after_done=$((extra_after_done + 1))
+    echo "jobs_complete extra_poll=$extra_after_done"
+    if [ "$extra_after_done" -ge 4 ]; then
+      echo "FOUR_JOBS_DONE"
+      if [ "${attach_n:-0}" -ge 1 ]; then echo "MEDIA_SENT"; fi
+      echo "VIDEO_MISSING"
+      break
+    fi
   fi
   sleep 15
 done

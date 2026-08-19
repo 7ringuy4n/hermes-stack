@@ -20,6 +20,11 @@
       "default": "en",
       "en": "Schedule saved!",
       "vi": "Đã lưu lịch!"
+    },
+    "job_failed": {
+      "default": "en",
+      "en": "Scheduled job failed. Please try again later.",
+      "vi": "Lịch chạy không thành công. Vui lòng thử lại sau."
     }
   },
   "session": {
@@ -28,5 +33,19 @@
       "en": "This session was interrupted. Please try again later.",
       "vi": "Phiên làm việc bị gián đoạn, vui lòng thử lại sau."
     }
-  }
+  },
+  "async": {
+    "ack": {
+      "default": "en",
+      "en": "Got it — working on that now.",
+      "vi": "Đã nhận yêu cầu. Mình đang xử lý..."
+    }
+  },
+  "outbound_protocol_drop": [
+    "Context compaction complete",
+    "Request payload too large (413)",
+    "Session auto-reset",
+    "compression attempt",
+    "vars() argument must have __dict__"
+  ]
 }

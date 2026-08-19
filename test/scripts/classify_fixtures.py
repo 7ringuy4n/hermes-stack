@@ -126,6 +126,9 @@ _PLANS = {
     FIXTURE_EN4: {"task_hint": "tool", "instructions": _EN4},
     FIXTURE_INFOGRAPHIC_VI: {
         "task_hint": "tool",
+        "execution_class": "async",
+        "task_type": "media_generation",
+        "response_mode": "ack_then_deliver",
         "instructions": [FIXTURE_INFOGRAPHIC_VI],
     },
     FIXTURE_INFOGRAPHIC_EN: {
@@ -143,6 +146,13 @@ _PLANS = {
         "instructions": _ONCE_NOCITE,
         "cadence": "once",
         "cron_expr": "24 11 * * *",
+    },
+    "Hello": {
+        "task_hint": "normal",
+        "execution_class": "interactive",
+        "task_type": "chat",
+        "response_mode": "direct",
+        "instructions": ["Hello"],
     },
     "cite labsolution": {
         "task_hint": "knowledge",
