@@ -1,5 +1,9 @@
 # Change history
 
+## 2026-08-19 20:30 +07 — Release v0.5.10
+
+- Production cut of fail-open classify (one hop), Chat Completions JSON normalize, and cron TypeError rewrite on Zalo outbound.
+
 ## 2026-08-19 19:45 +07 — classify one hop; normalize chat JSON; cron vars() leak
 
 - `/v1/classify` and `/v1/outbound` use the first healthy provider only, then fail-open. Classify LLM timeout is 3s so a hello is not held on four ReadTimeouts.
