@@ -1,5 +1,9 @@
 # Change history
 
+## 2026-08-19 13:15 +07 — release: v0.5.9
+
+- LLM classify for Zalo cite, schedule, and outbound drop. Dispatcher remains the image/video path. Default `IMAGE_LLM_SIZE` is Full HD (`1920x1080`).
+
 ## 2026-08-19 13:12 +07 — default LLM image size Full HD
 
 - `IMAGE_LLM_SIZE` example and dispatcher llm fallback default is `1920x1080`.
