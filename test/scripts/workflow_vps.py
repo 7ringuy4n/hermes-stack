@@ -17,7 +17,7 @@ PLENTY = (
 )
 
 
-def _req(method: str, path: str, payload=None, timeout: float = 8.0) -> dict:
+def _req(method: str, path: str, payload=None, timeout: float = 120.0) -> dict:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     r = urllib.request.Request(
         BASE + path,
@@ -25,8 +25,13 @@ def _req(method: str, path: str, payload=None, timeout: float = 8.0) -> dict:
         method=method,
         headers={"Content-Type": "application/json"} if data else {},
     )
-    with urllib.request.urlopen(r, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8") or "{}")
+    try:
+        with urllib.request.urlopen(r, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")[:500]
+        print(f"HTTP {e.code} {path} {body}")
+        raise
 
 
 def _wait_completed(wid: str, tries: int = 80) -> str:
@@ -107,7 +112,7 @@ def main() -> int:
         {
             "id": "vps_record_sched",
             "name": "vps-record",
-            "time": "06:00 GMT+7",
+            "cron_expr": "0 6 * * *",
             "text": PLENTY,
             "context": {"execute": "record_only"},
         },
@@ -122,6 +127,21 @@ def main() -> int:
     past = (datetime.now(timezone.utc) - timedelta(seconds=8)).isoformat()
     future = (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat()
     test_ids = ("vps_zalo_same", "vps_hermes_same", "vps_later_clock")
+    six = [
+        "wakeup-record",
+        "image-record",
+        "fuel-record",
+        "usd-record",
+        "calendar-record",
+        "water-record",
+    ]
+    plan6 = {
+        "ok": True,
+        "task_hint": "schedule",
+        "instructions": six,
+        "cadence": "daily",
+        "cron_expr": "0 6 * * *",
+    }
     for sid in test_ids:
         _req("DELETE", f"/v1/schedules/{sid}")
     zalo = _req(
@@ -131,9 +151,10 @@ def main() -> int:
             "id": "vps_zalo_same",
             "name": "vps-zalo-same",
             "cron_expr": "0 6 * * *",
+            "cadence": "daily",
             "text": PLENTY,
             "origin": {"platform": "zalo", "thread_id": "vps-zalo", "test": "case24"},
-            "context": {"execute": "record_only", "thread_id": "vps-zalo"},
+            "context": {"execute": "record_only", "thread_id": "vps-zalo", "plan": plan6},
             "next_run_at": past,
         },
     )
@@ -144,9 +165,10 @@ def main() -> int:
             "id": "vps_hermes_same",
             "name": "vps-hermes-same",
             "cron_expr": "0 6 * * *",
+            "cadence": "daily",
             "text": PLENTY,
             "origin": {"platform": "hermes-api", "test": "case24"},
-            "context": {"execute": "record_only"},
+            "context": {"execute": "record_only", "plan": plan6},
             "next_run_at": past,
         },
     )
@@ -157,9 +179,13 @@ def main() -> int:
             "id": "vps_later_clock",
             "name": "vps-later",
             "cron_expr": "0 12 * * *",
+            "cadence": "daily",
             "text": PLENTY,
             "origin": {"platform": "hermes-api", "test": "case24-later"},
-            "context": {"execute": "record_only"},
+            "context": {
+                "execute": "record_only",
+                "plan": {**plan6, "cron_expr": "0 12 * * *"},
+            },
             "next_run_at": future,
         },
     )

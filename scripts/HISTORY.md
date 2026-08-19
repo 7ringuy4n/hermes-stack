@@ -19,6 +19,216 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-19 20:25 +07 — hi >15s; cron TypeError vars() on Zalo
+
+### Symptom
+
+A short Zalo ping still took more than 15s. A lịch job posted a Python `vars() argument must have __dict__` crash to the user.
+
+### Root cause
+
+Classify tried every model-router candidate (8s ReadTimeout each). Cron chat completions from 9router were not valid OpenAI message objects, so the Hermes OpenAI client raised TypeError (HTTP None).
+
+### Fix
+
+One classify/outbound provider then fail-open. 3s classify budget. Normalize/sanitize chat JSON in model-router. Rewrite the Python exception protocol line via `ux.json` `schedule.job_failed`. Restart the host bridge with `node server.js` after inject-event is patched — `hermes-zalo-plugin start` overwrites `server.js` and drops the route. Do not restart the bridge as root (cookies live in uid 1000’s home).
+
+### Prevent recurrence
+
+Do not loop every LLM provider on the Fast Dispatcher hop. Do not pass through non-ChatCompletion JSON as HTTP 200. Rolling apply must wait until the bridge is logged in before recreating Hermes, and must not call the plugin CLI `start` after a file patch.
+
+## 2026-08-19 16:55 +07 — hi still 413; Hermes config.yaml still pointed at 9router
+
+### Symptom
+
+After the previous apply, a short Zalo ping still compacted/413'd. Hermes logs showed `base_url=http://9router:20128/v1` even though the container env was model-router.
+
+### Root cause
+
+Shared `/data/assistant/config.yaml` `model.base_url` overrides `OPENAI_BASE_URL`. 9router mapped `hermes` to `gpt-oss-120b` which rejects the tool-heavy payload.
+
+### Fix
+
+Hermes `POST /send` shared the aiohttp session with `GET /events`, so the reply often failed with Server disconnected (~30s after inject). Outbound `_post` now uses its own short-lived session.
+
+### Prevent recurrence
+
+Do not treat compose env as the Hermes LLM URL when `config.yaml` also sets `base_url`.
+
+## 2026-08-19 16:40 +07 — Zalo ping waited on compaction then 413 leak
+
+### Symptom
+
+A short Zalo message waited more than 15s. The user received Hermes compaction / HTTP 413 / session auto-reset text instead of a greeting.
+
+### Root cause
+
+The same Zalo thread reused a huge Hermes `sessions/sessions.json` (Valkey `conversation_active` was empty). Hermes compacted; 9router (Hermes was calling it directly, not model-router) returned 413 from `gpt-oss-120b`. Outbound classify fail-opens to send, so protocol chatter reached Zalo. 9router 429 retries also added seconds.
+
+### Fix
+
+Drop known protocol markers from `ux.json` before classify. Cap Valkey history (`SESSION_MAX_MESSAGES=16`). Delete replica `sessions/sessions.json`. Recreate Hermes so chat uses model-router. Recreate session and reset-all. Overlay `messages/` onto the shared data dir.
+
+### Prevent recurrence
+
+Do not let one social thread accumulate unbounded turns. Protocol status lines stay in editable config, not adapter keyword tables.
+
+## 2026-08-19 16:22 +07 — leftover lab cache key in classify.json
+
+### Symptom
+
+`prompt_rev` was left in product classify config after the High latency lab.
+
+### Root cause
+
+A Docker layer cache-bust was committed as if it were a product field.
+
+### Fix
+
+Removed `prompt_rev`. Rule 41 now in AGENT_RULES / test RULES / agent-ops hard gates.
+
+### Prevent recurrence
+
+After a lab run, strip test-only keys before calling the tree production-ready.
+
+## 2026-08-19 16:00 +07 — classify stuck on 9router; chat >3s
+
+### Symptom
+
+Simple chat p50 ~14s. Classify timed out on 9router while Omni was enabled for general proxy traffic.
+
+### Root cause
+
+`/v1/classify` always posted to 9router. Nvidia 502 overload blocked Fast Dispatcher. Classify also waited 20s before fail-open.
+
+### Fix
+
+Classify/outbound use the same Omni-first candidate list as chat. Classify timeout 8s.
+
+### Prevent recurrence
+
+Case 17 records classify vs text separately. Omni on High lab for general chat.
+
+## 2026-08-19 15:35 +07 — clip capped at 12s; chat waited on classify
+
+### Symptom
+
+Video length was clamped to 12 seconds. Simple Zalo/chat turns waited on classify (90s timeout, 32k max tokens).
+
+### Root cause
+
+Encoder treated a lab-era 12s ceiling as the product max. Classify completion budget was sized like a full chat turn.
+
+### Fix
+
+Caller `seconds` up to 120s. Classify timeout 20s / 1024 tokens / one attempt. Outbound filter 2s then send.
+
+### Prevent recurrence
+
+`video_clip_unit` asserts 45s allowed and 200s capped. Case 17 records classify p50 separately.
+
+---
+
+## 2026-08-19 15:20 +07 — video attach invalid param; overlay clip; lab watch loop
+
+### Symptom
+
+Generated mp4 was on disk; Zalo returned `Tham số không hợp lệ`. Overlay text ran past the image edge. Case 25 watch reprinted the same fail until the SSH wait expired.
+
+### Root cause
+
+zca-js `sendVideo` needs `videoUrl` + `thumbnailUrl` + duration. `sendMessage` attachments do not fill those fields. Encode used jpeg-range `yuvj420p` and `-an`. Overlay drew full-width strings without wrapping. Watch required `attach_mp4>=1` before break.
+
+### Fix
+
+Remux with AAC/yuv420p. Adapter `send_video` uploads thumb + clip then `/api/sendVideo`. Overlay wrap-to-width. Watch exits after four jobs plus four extra polls.
+
+### Prevent recurrence
+
+`overlay_unit` long-line wrap. Case 25 prints `VIDEO_MISSING` and stops.
+
+---
+
+## 2026-08-19 14:45 +07 — replica ImportError + video sent before remux
+
+### Symptom
+
+Hermes replica inbound: `ModuleNotFoundError: gateway_noise`. Case 25 wrote `.zalo.mp4` after Zalo rejected the original mp4.
+
+### Root cause
+
+Hermes loads the adapter as `hermes_plugins.zalo_platform.adapter`; relative imports do not see files in `/opt/data/plugins/zalo`. Autosend attached the encoder mp4 before remux finished.
+
+### Fix
+
+Insert plugin dirs on `sys.path`. Prefer/send remuxed video; remux in the autosend path before `send_video`.
+
+### Prevent recurrence
+
+Rolling apply checks `import classify_client, gateway_noise`. Autosend unit covers `foo.mp4` vs `foo.zalo.mp4`.
+
+---
+
+## 2026-08-19 14:10 +07 — interactive chat waited on media; video send invalid param
+
+### Symptom
+
+Hello and simple chat shared the heavy path. Case 25 wrote `.zalo.mp4` but Zalo rejected the attachment. Replica missing `gateway_noise`.
+
+### Root cause
+
+No Fast Dispatcher lane. Video files could go through `send_image`. Replica `plugins/` dirs were stale.
+
+### Fix
+
+LLM classify returns `execution_class`. Async ACK then workflow. Remux mp4 before send; overlay plugins on rolling apply.
+
+### Prevent recurrence
+
+`llm_classify_unit` asserts hello is interactive and media is async. Lab cases 25/28 require `send-attachment path …mp4`.
+
+---
+
+## 2026-08-19 14:05 +07 — High lab: video not sent; leftover job schedule; replica plugin ImportError
+
+### Symptom
+
+Case 25 four jobs COMPLETED; `.zalo.mp4` written; Zalo invalid-parameter on attach; no `send-attachment path …mp4`. Leftover 07:00 schedule used `thread_id=…::job::…`. hermes-2 logged `No module named 'gateway_noise'`.
+
+### Root cause
+
+Remux retry did not log a successful mp4 send. Destroy restore reapplied an isolated-job schedule. Replica `plugins/` was an old directory, so `link_shared` skipped new modules.
+
+### Fix
+
+Delete leftover `::job::` schedules before later labs. Overlay shared plugins onto replica dirs in `hermes-replica-entry.sh`. Video send still FAIL for case 25/28 this run.
+
+### Prevent recurrence
+
+Entrypoint plugin overlay. Lab cleanup of `::job::` origins after restore. Do not count leftover mp4 as a send.
+
+---
+
+## 2026-08-19 13:25 +07 — workflow_vps schedule POST timed out at 8s
+
+### Symptom
+
+Case 24 VPS probe hung on `POST /v1/schedules` after health/create/plan passed.
+
+### Root cause
+
+Schedule upsert waits for live LLM classify; the probe used an 8s HTTP timeout.
+
+### Fix
+
+`workflow_vps.py` uses a 120s request timeout, matching other live classify labs.
+
+### Prevent recurrence
+
+Do not use short localhost timeouts for classify-backed schedule upserts on a live host.
+
+---
+
 ## 2026-08-19 12:30 +07 — keyword cite/noise lists; Hermes cron skill stole lịch
 
 ### Symptom

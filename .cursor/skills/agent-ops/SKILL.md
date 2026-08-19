@@ -31,6 +31,7 @@ Do **not** copy those rules into application runtime code or user-facing bot rep
 | New feature request | Checkout `develop` → `feature/<layer>/<slug>` |
 | Deploy / test on VPS | Ask permission first; then `Update-StackRemote.ps1` if syncing |
 | Push / open MR | Ask permission first; follow `docs/GIT.md` |
+| Lab run finished | Restore product defaults (rule 41); do not leave test-only config |
 | Keyword triggers / copy | Skill or `hermes/main/messages/` / `config/agent/*` — not hardcoded lists in adapters |
 | Can Valkey/queue/3rd party do it? | Use that component (enable/disable via profile/env) |
 | Can a skill solve it? | Add/update skill; skip app code |
