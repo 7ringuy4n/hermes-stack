@@ -5,12 +5,12 @@
 # assistant
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
-[![Profiles](https://img.shields.io/badge/profiles-low%20%7C%20medium%20%7C%20high-blue.svg)](#which-profile-should-i-use)
+[![Workers](https://img.shields.io/badge/workers-optional%20components-blue.svg)](#which-workers-should-i-enable)
 [![Docs](https://img.shields.io/badge/docs-index-informational.svg)](./docs/README.md)
 
-Self-hosted **Hermes Agent** stack with memory, knowledge ingest, optional channels
-(Zalo / Telegram), and ops tooling. Profiles scale from a minimal Low box to a full
-High lab (OpenBao, Grafana, authz).
+Self-hosted **Hermes Agent** stack with memory, knowledge ingest, optional workers
+(Schedule, Media|File, Notify, Message/Zalo, Security, Monitor), and ops tooling.
+**OmniRouter** is the default LLM path; **9Router** is optional.
 
 This repository is the **product source of truth**. Runtime data stays on the host
 (`ASSISTANT_DATA_DIR`, default `/data/assistant`). Never commit `.env`.
@@ -24,22 +24,25 @@ This repository is the **product source of truth**. Runtime data stays on the ho
 
 You need a Linux host with Docker and Compose, Git, and SSH. If that is new:
 
-1. Install Docker with the script in [Quick start](#quick-start-low) (or your distro docs).
-2. Start on **Low** only — one Hermes, no Zalo, no monitor.
+1. Install Docker with the script in [Quick start](#quick-start-core) (or your distro docs).
+2. Start **core only** (all `WORKER_*=inactive`) — Hermes + OmniRouter + edge.
 3. Open the dashboard through an SSH tunnel (ports stay on localhost for safety).
-4. Read [docs/00-profiles.md](./docs/00-profiles.md) before jumping to Medium/High.
+4. Read [docs/00-workers.md](./docs/00-workers.md) before enabling optional workers.
 
 Full doc map: **[docs/README.md](./docs/README.md)** · Architecture: **[docs/03-architecture.md](./docs/03-architecture.md)** · Hardware: **[docs/HARDWARE.md](./docs/HARDWARE.md)**
 
 ## Use cases
 
-| You want… | Start with | Why |
-|-----------|------------|-----|
-| Private AI chat + facts that persist | **Low** | Hermes + Valkey session + Postgres memory + Qdrant knowledge |
-| Chat that can search the web, OCR PDFs, queue long jobs | **Medium** | Adds dispatcher search, OCR, jobs workers, optional image path |
-| Lab/enterprise controls (ACL, SIEM, secrets, dual Hermes) | **High** | Authz/policy, OpenBao, SIEM; Hermes×2 on one node; monitor optional |
-| Zalo / Telegram as the front door | Any profile + channel flag | Social packs attach anytime — not a separate profile |
-| Coding vs general model split | Medium/High + Model Router | [docs/06-model-routing.md](./docs/06-model-routing.md) |
+| You want… | Enable | Why |
+|-----------|--------|-----|
+| Private AI chat + facts that persist | Core only | Hermes + Valkey session + Postgres memory + Qdrant knowledge |
+| Chat that can search the web, OCR PDFs, queue long jobs | `WORKER_MEDIA_FILE=active` | Dispatcher search, OCR, jobs, optional image path |
+| Timed deliveries | `WORKER_SCHEDULE=active` | Schedule Worker (Go clock) |
+| Zalo / Telegram as the front door | `WORKER_MESSAGE=active` + `ENABLE_ZALO=1` | Message Worker (zalo-proxy + zalo-api) |
+| Alerts to SMS/email/Zalo | `WORKER_NOTIFY=active` | Notification Worker |
+| Lab/enterprise controls (ACL, SIEM, secrets) | `WORKER_SECURITY=active` | OpenBao / authz / SIEM overlay |
+| Dashboards | `WORKER_MONITOR=active` | Grafana / Loki / Prometheus |
+| Coding vs general model split | Model Router + Omni (default) / 9Router optional | [docs/06-model-routing.md](./docs/06-model-routing.md) |
 
 ## High-level architecture
 
@@ -50,12 +53,12 @@ Full doc map: **[docs/README.md](./docs/README.md)** · Architecture: **[docs/03
   <tr><td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr><td colspan="3" style="padding:14px;background:#2563eb;color:#fff;text-align:center;font-weight:700;">hermes — Agent · skills · plugins (×1 or ×2 on one node)</td></tr>
   <tr><td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
-  <tr><td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">model-router — coding → 9router · general → OmniRouter (opt) / fallback</td></tr>
+  <tr><td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">model-router — general → OmniRouter (default) · coding → 9Router (optional)</td></tr>
   <tr><td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr>
-    <td style="width:34%;padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;vertical-align:top;"><b>Platform</b><br/>dispatcher · memory · session<br/>ingest / OCR / jobs</td>
+    <td style="width:34%;padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;vertical-align:top;"><b>Platform</b><br/>memory · session · ingest<br/>Media\|File: dispatcher / OCR / jobs</td>
     <td style="width:33%;padding:12px;background:#fff8e6;border:1px solid #f0e0b0;vertical-align:top;"><b>Stores (SPOFs today)</b><br/>Valkey · Postgres · Qdrant</td>
-    <td style="width:33%;padding:12px;background:#fde8e8;border:1px solid #f0c0c0;vertical-align:top;"><b>Channels</b><br/>zalo-api when ENABLE_ZALO<br/>notify (High opt)</td>
+    <td style="width:33%;padding:12px;background:#fde8e8;border:1px solid #f0c0c0;vertical-align:top;"><b>Workers</b><br/>Schedule · Message (Zalo)<br/>Notify · Security · Monitor</td>
   </tr>
 </table>
 
@@ -73,14 +76,14 @@ Component map with HTML panels: [docs/03-architecture.md](./docs/03-architecture
 
 ### Hardware (tested + minimums)
 
-Lab-tested **High** (Hermes×2, monitor off, Zalo, backup/restore): **Ubuntu 24.04 · 4 vCPU · 16 GiB RAM · ~200 GB SSD** (~3 GiB idle).
+Lab-tested worker stack (Schedule + Media|File + Notify + Message/Zalo, monitor off): **Ubuntu 24.04 · 4 vCPU · 16 GiB RAM · ~200 GB SSD**.
 
-| Profile | Minimum | Comfortable |
-|---------|---------|-------------|
-| **Low** | 2 vCPU · 4 GiB · 40 GB | 2 · 8 GiB · 80 GB |
-| **Medium** | 2 vCPU · 8 GiB · 80 GB | 4 · 16 GiB · 120 GB |
-| **High** (no Grafana/Loki/Prometheus) | 4 vCPU · 8 GiB · 100 GB | **4 · 16 GiB · 200 GB** |
-| **High** + all optional features | 6 vCPU · 16 GiB · 140 GB | 8 · 32 GiB · 250 GB |
+| Setup | Minimum | Comfortable |
+|-------|---------|-------------|
+| **Core only** | 2 vCPU · 4 GiB · 40 GB | 2 · 8 GiB · 80 GB |
+| **+ Media\|File** | 2 vCPU · 8 GiB · 80 GB | 4 · 16 GiB · 120 GB |
+| **+ Message/Zalo + Schedule** | 4 vCPU · 8 GiB · 100 GB | **4 · 16 GiB · 200 GB** |
+| **+ Security + Monitor** | 6 vCPU · 16 GiB · 140 GB | 8 · 32 GiB · 250 GB |
 
 Add-ons (Grafana+Prometheus **or** Loki+Alloy, exporters start with their component): Grafana+Prometheus **~1.5 GiB · ~10 GB · ~0.5 vCPU** · Loki+Alloy **~1.5 GiB · ~20 GB · ~0.5 vCPU** · **all optional features ~5 GiB RAM · ~40 GB disk · ~2 vCPU**. Details: [docs/HARDWARE.md](./docs/HARDWARE.md).
 
@@ -97,30 +100,29 @@ sudo fail2ban-client status sshd   # confirm the jail is active
 
 Keep SSH key-based auth where possible; fail2ban complements (does not replace) firewall rules (`ufw` / security groups).
 
-## Quick start (Low)
+## Quick start (core)
 
 ```bash
 git clone <your-repo-url> /opt/assistant
 cd /opt/assistant
 
 cp -n .env.example .env
-# Edit every CHANGE_ME value (Hermes dashboard, 9Router, memory DB, …)
+# Fill every CHANGE_ME_* (or: python3 scripts/temp/generate_env_secrets.py --out .env --force)
 
 sudo bash scripts/main/install-docker.sh   # skip if Docker already works
 # On clean Ubuntu: install fail2ban (see Host hardening above)
-export ASSISTANT_PROFILE=low
 bash run.sh up
-bash run.sh first-setup-llm
+bash run.sh first-setup-omnirouter
 bash run.sh ps
 ```
 
-Tunnel the Hermes dashboard (and 9Router if needed). With Hermes×1 (Low default):
+Tunnel Hermes / OmniRouter / Traefik:
 
 ```bash
-ssh -L 29119:127.0.0.1:29119 -L 20128:127.0.0.1:20128 USER@HOST
+ssh -L 29119:127.0.0.1:29119 -L 20129:127.0.0.1:20129 -L 8080:127.0.0.1:8080 USER@HOST
 ```
 
-On High with Hermes×2, host `:29119` is not published — tunnel Traefik (`8080`) and/or API Gateway (`8088`) instead ([docs/00-profiles.md](./docs/00-profiles.md)).
+When `HERMES_REPLICAS>1`, host `:29119` is not published — tunnel Traefik (`8080`) and/or API Gateway (`8088`) instead ([docs/00-workers.md](./docs/00-workers.md)).
 
 Update later:
 
@@ -130,23 +132,26 @@ cd /opt/assistant && git pull && bash run.sh update
 
 Defaults (non-secret): [docs/config/DEFAULTS.md](./docs/config/DEFAULTS.md) · Commands: [docs/02-commands.md](./docs/02-commands.md)
 
-## Which profile should I use?
+## Which workers should I enable?
 
-| Profile | Adds | Choose when |
-|---------|------|-------------|
-| **low** | Hermes×1, Model Router, Traefik/Gateway, Valkey, Postgres, Qdrant, memory, ingest/embedding, 9router | Smallest useful stack |
-| **medium** | + OCR, jobs, SearXNG, ComfyUI CPU, compact timer | Documents + web + async work |
-| **high** | + OpenBao, authz, SIEM; zalo-api with Zalo; Hermes×2 one node; monitor optional; Zalo optional | Controls / lab / dual Hermes load |
+| Worker | Adds | Choose when |
+|--------|------|-------------|
+| *(none — core)* | Hermes, Model Router, OmniRouter, Traefik/Gateway, Valkey, Postgres, Qdrant | Smallest useful stack |
+| **Media\|File** | Dispatcher, OCR, Jobs, SearXNG, Comfy CPU | Documents + web + async work |
+| **Schedule** | Schedule Worker clock | Timed deliveries |
+| **Message** | zalo-proxy + zalo-api (Zalo) | Chat from Zalo |
+| **Notification** | notify + alert-watch | Ops alerts |
+| **Security** | OpenBao / authz / SIEM overlay | Controls / lab |
+| **Monitor** | Grafana / Loki / Prometheus | Dashboards |
 
 ```bash
-export ASSISTANT_PROFILE=medium   # or high
+# Edit .env, then:
 bash run.sh up
 # or, from a running stack (backup+verify first):
-bash run.sh switch-profile medium
-bash run.sh add-components ENABLE_ZALO=1
+bash run.sh add-components WORKER_MEDIA_FILE=active WORKER_MESSAGE=active ENABLE_ZALO=1
 ```
 
-Traefik defaults to `TRAEFIK_MODE=local` (VPN/localhost). `public` + ACME is explicit opt-in. Compose YAML: [`docker/`](./docker/README.md). Backup/restore: [architect/backup-restore/README.md](./architect/backup-restore/README.md).
+Traefik defaults to `TRAEFIK_MODE=local` (VPN/localhost). Compose YAML: [`docker/`](./docker/README.md). Backup/restore: [architect/backup-restore/README.md](./architect/backup-restore/README.md).
 
 ## Resilience (what is / is not HA)
 

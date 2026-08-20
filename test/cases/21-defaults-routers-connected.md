@@ -1,19 +1,19 @@
-# Case: default flags — 9Router / OmniRouter connected
+# Case: default router flags — OmniRouter default, 9Router optional
 
 Check **component defaults** vs **live** `.env`, then prove Hermes can reach the routers that should be on.
 
-## Defaults (SoT: `architect/backup-restore/lib/profile.sh`)
+## Defaults (SoT: `architect/backup-restore/lib/workers.sh`)
 
 | Item | Default |
 |------|---------|
-| 9Router | **always on** (no `ENABLE_9ROUTER`) |
+| 9Router | **off by default** (`ENABLE_9ROUTER=0`) |
 | Router Worker (`ENABLE_MODEL_ROUTER`) | **1** (container `router-worker`, DNS alias `model-router`) |
 | `ENABLE_OMNIROUTER` | **1** |
 | Schedule / media / security / notify / message / monitor | **0** |
 | `ENABLE_GRAFANA` / Prometheus / Loki | **0** |
 | Hermes `OPENAI_BASE_URL` | `http://model-router:8096/v1` |
 
-Lab helper `test/scripts/deploy_high.py` is legacy; use `ENABLE_*` on the host `.env`. Set `ENABLE_OMNIROUTER=0` only when a lab must force 9router-only general chat.
+Lab helper `test/scripts/deploy_high.py` is legacy; use `WORKER_*` / `ENABLE_*` on the host `.env`. Set `ENABLE_OMNIROUTER=0` only when a lab must force a non-default path, and enable `ENABLE_9ROUTER=1` if coding / fallback depends on it.
 
 ## Connectivity
 
@@ -25,10 +25,11 @@ Hermes → INPUT Secret Probe → task_hint (explicit or default normal)
 
 | Flag live | Must be true |
 |-----------|----------------|
-| always | `9router` container running; Hermes replica can open `http://9router:20128/` |
+| always | `router-worker` `/health` 200; Hermes can open `http://model-router:8096/health` |
 | `ENABLE_MODEL_ROUTER=1` (default) | `router-worker` `/health` 200; Hermes can open `http://model-router:8096/health` |
 | `ENABLE_OMNIROUTER=1` | `omni-router` GET `/` 2xx/3xx; router-worker config points at it |
-| `ENABLE_OMNIROUTER=0` | `omni-router` **absent**; simple chat still works via 9Router failover |
+| `ENABLE_9ROUTER=1` | `9router` container running; Hermes replica can open `http://9router:20128/` |
+| `ENABLE_OMNIROUTER=0` | `omni-router` **absent**; only valid if the intended alternate router path is enabled and tested |
 
 ## Steps
 
@@ -38,20 +39,22 @@ Hermes → INPUT Secret Probe → task_hint (explicit or default normal)
 
 1. Dump live flags (no secrets).
 2. Compare to the table above — **RECORD** mismatches (lab overrides are OK if labelled).
-3. Hermes→9router and Hermes→model-router probes.
-4. OmniRouter present **iff** flag is 1.
-5. Optional: one short `model-router` chat ping; if latency **> 5s** on localhost, mark **SLOW** (case 17).
+3. Hermes→model-router probe.
+4. OmniRouter present **iff** `ENABLE_OMNIROUTER=1`.
+5. 9Router present **iff** `ENABLE_9ROUTER=1`.
+6. Optional: one short `model-router` chat ping; if latency **> 5s** on localhost, mark **SLOW** (case 17).
 
 ## Pass criteria
 
-- Unit: profile.sh strings match the table
-- 9Router always reachable from Hermes
+- Unit: worker defaults match the table
 - Model-router healthy when default 1
 - OmniRouter container matches the live flag
-- Simple chat does not crash if OmniRouter is off
+- 9Router container matches the live flag
+- Simple chat does not crash when the chosen router path is disabled or switched intentionally
 
 ## Fail events
 
-- Hermes cannot reach 9Router
-- `ENABLE_OMNIROUTER=0` but OmniRouter still required for general chat (no 9Router fallback)
+- Hermes cannot reach model-router
+- `ENABLE_9ROUTER=0` but docs/tests still assume it is always on
+- `ENABLE_OMNIROUTER=0` but the alternate route is not enabled / not working
 - `ENABLE_OMNIROUTER=1` but Grafana `omnirouter_scrape_success==0` (case 20)

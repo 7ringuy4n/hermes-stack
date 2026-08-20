@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Zalo bridge + adapter AFTER profile services are ready.
+# Install Zalo bridge + adapter AFTER worker services are ready.
 # Does NOT perform QR login — that is a manual last step:
 #   bash scripts/main/login-zalo.sh
 #
@@ -20,8 +20,6 @@ PLUGIN_DIR="${HERMES_DATA}/plugins/zalo"
 PORT="${ZALO_PLUGIN_PORT:-8787}"
 HOST_BIND="${ZALO_PLUGIN_HOST:-0.0.0.0}"
 ZALO_REPO_URL="${ZALO_REPO_URL:-https://github.com/cuongdev/hermes-zalo-plugin.git}"
-PROFILE="${ASSISTANT_PROFILE:-low}"
-
 if [[ "$(id -u)" -ne 0 ]]; then SUDO=sudo; else SUDO=; fi
 
 # Non-interactive deploy (paramiko): cache sudo creds so later $SUDO calls do not hang on a TTY prompt.
@@ -56,36 +54,39 @@ ensure_user_bus() {
   return 1
 }
 
-wait_profile_ready() {
-  log "wait for profile services (${PROFILE}) before installing Zalo plugin"
-  case "$PROFILE" in
-    high)
-      bash "${ROOT}/scripts/main/check-medium.sh" || {
-        echo "ERROR: Medium smoke failed — refuse Zalo install" >&2
-        return 1
-      }
-      bash "${ROOT}/scripts/main/check-high.sh" || {
-        echo "ERROR: High smoke failed — refuse Zalo install" >&2
-        return 1
-      }
-      ;;
-    medium)
-      bash "${ROOT}/scripts/main/check-medium.sh" || return 1
-      ;;
-    *)
-      local tries=60 i=0
-      until curl -fsS -m 3 "http://127.0.0.1:${N9ROUTER_HOST_PORT:-20128}/v1/models" >/dev/null 2>&1; do
-        i=$((i + 1))
-        [[ "$i" -ge "$tries" ]] && {
-          echo "ERROR: Low core not ready" >&2
-          return 1
-        }
-        sleep 5
-        echo "  waiting (${i}/${tries})…"
-      done
-      ;;
-  esac
-  log "profile services ready"
+wait_core_ready() {
+  # Worker model: wait for Router Worker / OmniRouter (default) and Message Worker zalo-api.
+  # Do not wait on 9Router (optional) or obsolete ASSISTANT_PROFILE tiers.
+  log "wait for core services before installing Zalo plugin"
+  local tries=60 i=0
+  local router_ok=0 omni_ok=0 zalo_api_ok=0
+  local model_port="${MODEL_ROUTER_PORT:-8096}"
+  local omni_port="${OMNIROUTER_HOST_PORT:-20129}"
+  local zalo_api_port="${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}"
+
+  for i in $(seq 1 "$tries"); do
+    router_ok=0
+    omni_ok=0
+    zalo_api_ok=0
+    curl -fsS -m 3 "http://127.0.0.1:${model_port}/health" >/dev/null 2>&1 && router_ok=1
+    if [[ "${ENABLE_OMNIROUTER:-1}" == "1" ]]; then
+      if curl -fsS -m 3 "http://127.0.0.1:${omni_port}/" >/dev/null 2>&1 \
+        || curl -fsS -m 3 "http://127.0.0.1:${omni_port}/v1/models" >/dev/null 2>&1; then
+        omni_ok=1
+      fi
+    else
+      omni_ok=1
+    fi
+    curl -fsS -m 3 "http://127.0.0.1:${zalo_api_port}/health" >/dev/null 2>&1 && zalo_api_ok=1
+    if [[ "$router_ok" == "1" && "$omni_ok" == "1" && "$zalo_api_ok" == "1" ]]; then
+      log "core services ready (model-router + omni + zalo-api)"
+      return 0
+    fi
+    sleep 5
+    echo "  waiting (${i}/${tries}) router=${router_ok} omni=${omni_ok} zalo-api=${zalo_api_ok}…"
+  done
+  echo "ERROR: core not ready for Zalo (need model-router, OmniRouter when enabled, and zalo-api)" >&2
+  return 1
 }
 
 need_node() {
@@ -290,21 +291,21 @@ EOF
 main() {
   log "setup-zalo (install only) HERMES_DATA=${HERMES_DATA}"
   log "credit: Cường Tuấn Nguyễn / cuongdev — hermes-zalo-plugin (MIT)"
-  wait_profile_ready
+  wait_core_ready
   install_bridge
   install_adapter
   enable_plugin
   wire_env
   cd "$ROOT"
   set -a && source ./.env && set +a
-  export ENABLE_ZALO=1 ASSISTANT_PROFILE="${PROFILE}"
+  export ENABLE_ZALO=1
   if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
     printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S bash -lc \
-      "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=1 ASSISTANT_PROFILE=${PROFILE} && bash run.sh up" || true
+      "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=1 && bash run.sh up" || true
     printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker restart hermes zalo-proxy 2>/dev/null \
       || printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker restart hermes || true
   else
-    $SUDO bash -lc "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=1 ASSISTANT_PROFILE=${PROFILE} && bash run.sh up" || true
+    $SUDO bash -lc "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=1 && bash run.sh up" || true
     $SUDO docker restart hermes zalo-proxy 2>/dev/null || $SUDO docker restart hermes || true
   fi
   print_next

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""First-setup after Low/Medium/High stack is up:
+"""First-setup after the stack is up with 9Router enabled:
 
 1) Login to 9Router with N9ROUTER_INITIAL_PASSWORD
 2) Read Default Key from GET /api/keys
@@ -202,15 +202,15 @@ def patch_hermes(key: str, model: str) -> None:
 def recreate_services() -> None:
     """Recreate LLM-facing services using the same compose files as run.sh."""
     print("==> recreate embedding dispatcher hermes")
-    profile = os.environ.get("ASSISTANT_PROFILE", "low")
+    env = load_env(ROOT / ".env")
     replicas = os.environ.get("HERMES_REPLICAS", "1")
     files = [
         f"--project-directory {ROOT}",
         f"-f {ROOT}/docker/docker-compose.yml",
     ]
-    if profile in {"medium", "high"}:
+    if env.get("ENABLE_MEDIA_FILE") == "1" or env.get("ENABLE_OCR") == "1" or env.get("ENABLE_JOBS") == "1":
         files.append(f"-f {ROOT}/docker/docker-compose.medium.yml")
-    if profile == "high":
+    if any(env.get(k) == "1" for k in ("ENABLE_SECURITY", "ENABLE_MONITOR", "ENABLE_NOTIFY", "ENABLE_OPENBAO", "ENABLE_SIEM", "ENABLE_AUTHZ", "ENABLE_CLOUDDRIVE")):
         files.append(f"-f {ROOT}/docker/docker-compose.high.yml")
     files_s = " ".join(files)
     # Drop leftover force-recreate aliases (hexprefix_assistant-hermes-N) that collide.
@@ -223,7 +223,7 @@ def recreate_services() -> None:
     )
     cmd = (
         f"cd {ROOT} && set -a && . ./.env && set +a && "
-        f"export ASSISTANT_PROFILE={profile} COMPOSE_PROGRESS=plain && "
+        f"export COMPOSE_PROGRESS=plain && "
         f"docker compose {files_s} up -d --force-recreate "
         f"--scale hermes={replicas} embedding dispatcher hermes"
     )
@@ -401,9 +401,9 @@ def verify(key: str, model: str) -> None:
 
 
 def pin_image_backends(env: dict[str, str]) -> None:
-    """Medium/High: empty IMAGE_BACKENDS leaves Hermes inventing PIL/matplotlib. Pin dispatcher."""
-    profile = (env.get("ASSISTANT_PROFILE") or os.environ.get("ASSISTANT_PROFILE") or "low").strip().lower()
-    if profile not in {"medium", "high"}:
+    """Media|File worker: empty IMAGE_BACKENDS leaves Hermes inventing PIL/matplotlib. Pin dispatcher."""
+    media_on = (env.get("ENABLE_MEDIA_FILE") or os.environ.get("ENABLE_MEDIA_FILE") or "0").strip()
+    if media_on != "1":
         return
     cur = (env.get("IMAGE_BACKENDS") or "").strip()
     if cur:

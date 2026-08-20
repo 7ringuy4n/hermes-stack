@@ -1,4 +1,4 @@
-# Deployment & Profile Test Rules
+# Deployment & Worker Test Rules
 
 Numbered operator rules (source of truth): [`../AGENT_RULES.md`](../AGENT_RULES.md) section **Operator rules**.
 
@@ -15,21 +15,21 @@ exclude:
 
 Run the complete test suite **2 times**, using different test cases/data each run.
 
-For every run and every profile:
+For every run and every target worker set:
 
 1. **Backup first:** `bash run.sh backup` then `bash run.sh verify <stamp>` must succeed.
 2. Clear previous test files/data.
-3. Destroy the current profile/environment (`bash run.sh destroy` also backup+verifies).
+3. Destroy the current environment (`bash run.sh destroy` also backup+verifies).
 4. Recreate from source.
-5. Deploy the profile.
+5. Deploy the chosen worker set.
 6. Test both modes:
    - `local`
    - `public`
 7. Record all results with timestamps.
 8. Do not reuse artifacts from a previous profile unless the test explicitly requires persistence.
-9. **Restore defaults (rule 41):** when the run is finished, revert test-only source and config to product defaults. Do not leave lab timeouts, cache-bust keys, host identities, or profile flags that were only for that run.
+9. **Restore defaults (rule 41):** when the run is finished, revert test-only source and config to product defaults. Do not leave lab timeouts, cache-bust keys, host identities, or worker/component flags that were only for that run.
 
-Destroy, upgrade, and downgrade (`destroy`, `switch-profile`, `add-components`, `update`) **abort** if backup or verify fails.
+Destroy and config changes (`destroy`, `add-components`, `update`) **abort** if backup or verify fails. `switch-profile` is legacy and must fail fast.
 
 ## 2. Zalo Installation
 
@@ -41,9 +41,9 @@ When Zalo is requested:
 4. Ask the user to manually scan the QR code.
 5. Continue testing only after the user confirms the QR login is complete.
 
-## 3. All Profiles — Basic Tests
+## 3. All Worker Sets — Basic Tests
 
-For **every profile** verify:
+For **every tested worker set** verify:
 
 - Installation completes without unhandled exceptions.
 - All expected services start successfully.
@@ -55,12 +55,12 @@ For **every profile** verify:
 - Session creation, request handling, and response delivery work.
 - Restart services and verify recovery.
 - Verify logs contain no unexpected `ERROR`, exception, or repeated failure.
-- Verify local/public exposure follows the profile's security rules.
+- Verify local/public exposure follows the active edge/security rules.
 - Verify disabled components are actually inaccessible/disabled.
 - Verify enabled optional components work.
 - Verify graceful failure when a dependency is unavailable.
 
-## 4. Medium / High Profiles — Media
+## 4. Media|File Worker — Media
 
 Verify image/media generation behavior.
 
@@ -79,7 +79,7 @@ Also test:
 - Generated media delivery failure.
 - Unsupported media type.
 
-## 5. High Profile — Concurrent Request Test
+## 5. Security / full worker set — Concurrent Request Test
 
 Run concurrent requests containing:
 
