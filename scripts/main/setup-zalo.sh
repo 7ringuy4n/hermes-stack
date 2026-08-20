@@ -433,6 +433,12 @@ wire_env() {
     "${HERMES_SHARED_DATA}/zalo_admin_users.txt" \
     "${HERMES_SHARED_DATA}/zalo_allowed_threads.txt" \
     2>/dev/null || true
+  $SUDO chmod -R ug+rwX "${HERMES_SHARED_DATA}/media" 2>/dev/null || true
+  $SUDO chmod g+s \
+    "${HERMES_SHARED_DATA}/media" \
+    "${HERMES_SHARED_DATA}/media/inbound" \
+    "${HERMES_SHARED_DATA}/media/out" \
+    2>/dev/null || true
   $SUDO chmod 600 "$local_env" || true
   # Hermes may rewrite shared .env / config.yaml — keep the parent writable by HERMES_UID.
   $SUDO chmod u+w "$HERMES_SHARED_DATA" 2>/dev/null || true
