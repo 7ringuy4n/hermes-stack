@@ -6,31 +6,38 @@ Compose YAML lives here so the repo root stays clean. **`run.sh` always passes
 
 | File | Role |
 |------|------|
-| `docker-compose.yml` | Must / Low base |
-| `docker-compose.medium.yml` | Medium (+ OCR, SearXNG, Jobs, Comfy CPU, …) |
-| `docker-compose.high.yml` | High (+ security, SIEM, OpenBao, optional **monitor**) |
+| `docker-compose.yml` | Core + optional profiles (schedule, zalo, omnirouter, 9router, …) |
+| `docker-compose.media.yml` | Media\|File Worker overlay (dispatcher, OCR, Jobs, Comfy CPU) |
+| `docker-compose.security.yml` | Security / Notify / Monitor overlay |
 | `docker-compose.edge.yml` | Traefik / API Gateway / OpenVPN |
 | `docker-compose.hermes-hostports.yml` | Host `:28642` / `:29119` when `HERMES_REPLICAS=1` |
+| `docker-compose.medium.yml` / `docker-compose.high.yml` | Legacy overlays (prefer workers + media/security) |
 
-## Profiles (components)
+## Compose profiles (components)
 
 | Profile | Enable via |
 |---------|------------|
-| `zalo` | `ENABLE_ZALO=1` — **both** `zalo-proxy` and `zalo-api` (required combo) |
-| `grafana` | `ENABLE_GRAFANA=1` (also starts Prometheus + paired exporters) |
-| `prometheus` | `ENABLE_PROMETHEUS=1` or Grafana — `nine-exporter`, `node-exporter`, `stack-exporter` |
-| `loki` / `alloy` | `ENABLE_LOKI=1` or `ENABLE_ALLOY=1` (always together) |
-| `omni-exporter` | `ENABLE_OMNIROUTER=1` **and** Prometheus/Grafana |
-| `omnirouter` | `ENABLE_OMNIROUTER=1` |
-| `notify` / `antivirus` / `sandbox` / `clouddrive` / `comfy-gpu` | matching `ENABLE_*` / `SECURITY_SANDBOX` / `COMFYUI_HAS_GPU` |
+| `schedule` | `WORKER_SCHEDULE=active` / `ENABLE_SCHEDULE=1` |
+| `media` | `WORKER_MEDIA_FILE=active` |
+| `zalo` | `ENABLE_ZALO=1` (Message worker) — **both** `zalo-proxy` and `zalo-api` |
+| `omnirouter` | `ENABLE_OMNIROUTER=1` (**default**) |
+| `9router` | `ENABLE_9ROUTER=1` (**optional**, off by default) |
+| `notify` | `WORKER_NOTIFY=active` / `ENABLE_NOTIFY=1` |
+| `grafana` / `prometheus` / `loki` / `alloy` | Monitor worker / matching `ENABLE_*` |
 | `traefik` / `gateway` / `openvpn` | `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` |
 
-High without Loki/Prometheus/Grafana:
+Example — Schedule + Media|File + Notify + Message:
 
 ```bash
-export ASSISTANT_PROFILE=high
-export ENABLE_GRAFANA=0 ENABLE_LOKI=0 ENABLE_PROMETHEUS=0 ENABLE_ALLOY=0
+# In .env:
+# WORKER_SCHEDULE=active
+# WORKER_MEDIA_FILE=active
+# WORKER_NOTIFY=active
+# WORKER_MESSAGE=active
+# ENABLE_ZALO=1
+# ENABLE_OMNIROUTER=1
+# ENABLE_9ROUTER=0
 bash run.sh up
 ```
 
-Sizing (base + extra RAM/disk/CPU when Grafana/Prometheus/Loki/OmniRouter are on): [docs/HARDWARE.md](../docs/HARDWARE.md). DR: [architect/backup-restore/README.md](../architect/backup-restore/README.md).
+Sizing: [docs/HARDWARE.md](../docs/HARDWARE.md). Workers: [docs/00-workers.md](../docs/00-workers.md). DR: [architect/backup-restore/README.md](../architect/backup-restore/README.md).
