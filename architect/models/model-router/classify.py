@@ -252,6 +252,19 @@ def _router_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
     return _default_classify_combo_alias()
 
 
+def _classify_model_candidates(cfg: dict[str, Any], override: str | None = None) -> list[str]:
+    """Primary classify combo, then chat combo when they differ (403/empty failover)."""
+    out: list[str] = []
+    for candidate in (
+        _router_llm_model(cfg, override),
+        _default_chat_combo_alias(),
+    ):
+        name = str(candidate or "").strip()
+        if name and name not in out:
+            out.append(name)
+    return out or [_default_chat_combo_alias()]
+
+
 def _outbound_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
     for candidate in (
         override,
@@ -508,17 +521,6 @@ async def classify_with_llm(
         if plan_schema_ok(plan):
             return plan
     tmpl = str(cfg.get("user_template") or "Timezone: {timezone}\nMessage:\n{text}")
-    payload = {
-        "model": _router_llm_model(cfg, model),
-        "stream": False,
-        "temperature": float(cfg.get("temperature") or 0),
-        "messages": [
-            {"role": "system", "content": str(cfg.get("system") or "")},
-            {"role": "user", "content": tmpl.replace("{timezone}", tz).replace("{text}", blob)},
-        ],
-    }
-    if cfg.get("max_tokens") not in (None, ""):
-        payload["max_tokens"] = int(cfg["max_tokens"])
     headers = {"Content-Type": "application/json"}
     if n9_key:
         headers["Authorization"] = f"Bearer {n9_key}"
@@ -526,36 +528,65 @@ async def classify_with_llm(
     url = f"{n9_base.rstrip('/')}/chat/completions"
     last_err = "classify_llm_failed"
     llm_attempts = max(1, int(cfg.get("retry") or 1))
-    for attempt in range(llm_attempts):
-        content = ""
-        try:
-            resp = await client.post(url, headers=headers, json=payload, timeout=timeout)
-            raw = resp.text
-            data = _loads_first(raw) or {}
-            content = _message_text(data)
-            if not content:
+    for model_id in _classify_model_candidates(cfg, model):
+        payload = {
+            "model": model_id,
+            "stream": False,
+            "temperature": float(cfg.get("temperature") or 0),
+            "messages": [
+                {"role": "system", "content": str(cfg.get("system") or "")},
+                {
+                    "role": "user",
+                    "content": tmpl.replace("{timezone}", tz).replace("{text}", blob),
+                },
+            ],
+        }
+        if cfg.get("max_tokens") not in (None, ""):
+            payload["max_tokens"] = int(cfg["max_tokens"])
+        for attempt in range(llm_attempts):
+            content = ""
+            try:
+                resp = await client.post(url, headers=headers, json=payload, timeout=timeout)
+                raw = resp.text
+                if resp.status_code >= 400:
+                    print(
+                        f"[classify] http={resp.status_code} model={model_id} "
+                        f"attempt={attempt + 1}",
+                        flush=True,
+                    )
+                    last_err = "classify_llm_failed"
+                    # Auth/quota on this combo → try next model immediately.
+                    if resp.status_code in {401, 403, 404, 429}:
+                        break
+                    continue
+                data = _loads_first(raw) or {}
+                content = _message_text(data)
+                if not content:
+                    print(
+                        f"[classify] empty content model={model_id} attempt={attempt + 1} "
+                        f"finish={((data.get('choices') or [{}])[0] or {}).get('finish_reason')}",
+                        flush=True,
+                    )
+                    last_err = "classify_llm_failed"
+                    continue
+            except Exception as exc:
                 print(
-                    f"[classify] empty content attempt={attempt + 1} "
-                    f"finish={((data.get('choices') or [{}])[0] or {}).get('finish_reason')}",
+                    f"[classify] llm_err {type(exc).__name__} model={model_id} "
+                    f"attempt={attempt + 1} budget={timeout}",
                     flush=True,
                 )
                 last_err = "classify_llm_failed"
                 continue
-        except Exception as exc:
-            print(
-                f"[classify] llm_err {type(exc).__name__} attempt={attempt + 1} budget={timeout}",
-                flush=True,
-            )
-            last_err = "classify_llm_failed"
-            continue
-        parsed = _json_object(content) or _loads_first(content)
-        if not parsed:
-            last_err = "classify_llm_failed"
-            continue
-        plan = normalize_plan(parsed, blob, tz)
-        if plan_schema_ok(plan):
-            return plan
-        last_err = "classify_invalid"
+            parsed = _json_object(content) or _loads_first(content)
+            if not parsed:
+                last_err = "classify_llm_failed"
+                continue
+            plan = normalize_plan(parsed, blob, tz)
+            if plan_schema_ok(plan):
+                if model_id != _router_llm_model(cfg, model):
+                    print(f"[classify] ok via fallback model={model_id}", flush=True)
+                return plan
+            last_err = "classify_invalid"
     guess = heuristic_plan(blob)
     if guess:
         plan = normalize_plan(guess, blob, tz)
