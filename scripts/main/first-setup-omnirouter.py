@@ -202,14 +202,38 @@ def ensure_combo_round_robin(opener) -> None:
 
 
 def recreate_model_router() -> None:
-    print("==> recreate model-router")
-    cmd = (
-        f"cd {ROOT} && set -a && . ./.env && set +a && "
-        f"export COMPOSE_PROGRESS=plain && "
-        f"docker compose --project-directory {ROOT} -f {ROOT}/docker/docker-compose.yml "
-        f"up -d --no-deps --force-recreate model-router"
-    )
-    subprocess.check_call(["bash", "-lc", cmd])
+    print("==> recreate router-worker (model-router)")
+    # Prefer container restart — bare compose file lacks active profiles and fails when 9router is off.
+    for name in ("router-worker", "model-router", "assistant-router-worker-1"):
+        rc = subprocess.call(["docker", "restart", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if rc == 0:
+            print(f"==> restarted {name}")
+            return
+    print("WARN: could not restart router-worker by name — skip recreate")
+
+
+def enable_omni_memory(opener: urllib.request.OpenerDirector) -> None:
+    """Best-effort: enable OmniRoute conversational memory when API supports it."""
+    for path, payload in (
+        ("/api/v1/settings/memory", {"enabled": True}),
+        ("/api/settings/memory", {"enabled": True}),
+        ("/api/v1/memory", {"enabled": True}),
+    ):
+        try:
+            body = json.dumps(payload).encode()
+            req = urllib.request.Request(
+                f"{BASE}{path}",
+                data=body,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with opener.open(req, timeout=10) as resp:
+                if 200 <= resp.status < 300:
+                    print(f"==> omni memory enabled via {path}")
+                    return
+        except Exception:
+            continue
+    print("NOTE: omni memory API not found — using OMNIROUTER_ENABLE_MEMORY container env")
 
 
 def verify(key: str, model: str) -> None:
@@ -267,6 +291,8 @@ def main() -> int:
     model = ensure_opencode_combo(opener)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
     set_env_key(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
+    set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "1"))
+    enable_omni_memory(opener)
 
     recreate_model_router()
     time.sleep(3)

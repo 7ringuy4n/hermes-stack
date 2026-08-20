@@ -33,6 +33,10 @@ DATA_DIR = Path(os.environ.get("ASSISTANT_DATA_DIR") or os.environ.get("HERMES_D
 DOCS_ROOT = Path(os.environ.get("LEARN_DOCS_HOST") or (DATA_DIR / "docs"))
 
 N9_PORT = int(os.environ.get("N9ROUTER_HOST_PORT", "20128"))
+OMNI_PORT = int(os.environ.get("OMNIROUTER_HOST_PORT", "20129"))
+ROUTER_PORT = int(os.environ.get("MODEL_ROUTER_HOST_PORT", "8096"))
+ENABLE_9ROUTER = (os.environ.get("ENABLE_9ROUTER") or "0").strip().lower() in {"1", "true", "yes", "on"}
+ENABLE_OMNI = (os.environ.get("ENABLE_OMNIROUTER") or "1").strip().lower() in {"1", "true", "yes", "on"}
 HERMES_PORT = int(os.environ.get("HERMES_DASHBOARD_PORT", "29119"))
 TRAEFIK_PORT = int(os.environ.get("TRAEFIK_HOST_PORT", "8080"))
 GATEWAY_PORT = int(os.environ.get("GATEWAY_HOST_PORT", "8088"))
@@ -157,10 +161,18 @@ def main() -> int:
 
     print(f"skills found: {len(skill_dirs)} under {SKILLS_DIR}", flush=True)
 
-    if not wait_ready("9router", f"http://127.0.0.1:{N9_PORT}/"):
+    # Prefer Router Worker / OmniRouter; 9Router only when ENABLE_9ROUTER=1
+    llm_ok = False
+    if wait_ready("model-router", f"http://127.0.0.1:{ROUTER_PORT}/health", tries=20):
+        llm_ok = True
+    elif ENABLE_OMNI and wait_ready("omni-router", f"http://127.0.0.1:{OMNI_PORT}/", tries=15):
+        llm_ok = True
+    elif ENABLE_9ROUTER and wait_ready("9router", f"http://127.0.0.1:{N9_PORT}/", tries=15):
+        llm_ok = True
+    if not llm_ok:
+        print("FAIL no LLM router ready (model-router / omni / 9router)", file=sys.stderr)
         return 1
-    # Hermes×2 (High) does not publish :29119 — probe Gateway /health then Traefik /health
-    # (Traefik `/` is a 404 by design; Hermes API health is `/health`).
+    # Hermes×1 publishes dashboard; replicas>1 use gateway/traefik health
     hermes_urls = []
     if HERMES_REPLICAS <= 1:
         hermes_urls.append(f"http://127.0.0.1:{HERMES_PORT}/")

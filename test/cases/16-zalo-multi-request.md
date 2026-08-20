@@ -44,7 +44,7 @@ Do **not** let `media-out` / “no recap after file” drop part 2.
 - Classify unit PASS
 - Lab: both intents addressed (image attempt + price/update answer or controlled "no data")
 - No crash; SSE stays at 1
-- Daily/cron numbered lists are `task_hint=schedule` (one lịch; explode at tick — case 22)
+- Daily/cron numbered lists are `task_hint=schedule` (one lịch; explode at tick — case 22). Greeting + fuel summary + weather summary + later draw/send-image is **four** jobs, not one overlay poster.
 - No extra `Đã xong.` / `Done.` ack after files (file/result only)
 
 ## Fail events

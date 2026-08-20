@@ -7,7 +7,8 @@ items must create **one job per item** at tick time. Two schedules at the
 and **direct Hermes API users**.
 
 LLM classify produces `task_hint` + `instructions[]` + `cadence` + `cron_expr`.
-App code validates cron tokens and persists; it does not parse the user prose.
+App code validates cron tokens and persists to the Go schedule worker; it does
+not parse the user prose. At tick the worker injects inner work back to Hermes.
 
 ## Fixtures
 

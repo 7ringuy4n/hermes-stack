@@ -1,4 +1,4 @@
-# Case: Zalo media generation + lịch delivery (video send, leftover claim, quiet)
+# Case: Zalo media generation + schedule delivery (video send, leftover claim, quiet)
 
 Regression lab for **media generation** and **schedule / cron ticks**. Complements case 25 (four numbered jobs) and case 26 (one infographic). Focus: the file that landed must be **sent** to the admin DM; a leftover isolated job must not steal the next run’s media; video must be a Zalo-acceptable H.264 clip; mid-generation chatter must not reach the user.
 

@@ -1,5 +1,82 @@
 # Change history
 
+## 2026-08-20 13:15 +07 — [RELEASE] v0.5.11
+
+- Worker activation model (`WORKER_*=active|inactive`), Schedule Worker (Go), Media|File and security overlays, quiet Zalo outbound (30s), channel registry, OmniRouter default / 9Router optional.
+
+## 2026-08-20 13:10 +07 — VPS rolling deploy (worker components)
+
+- Destroy + clear stale cron; redeploy with Schedule, Media|File, Notify, Message workers (`WORKER_*=active`, security/monitor inactive).
+- Zalo bridge rebound (`loggedIn=true`, SSE connected). Logs: `test/reports/deploy-rearchitect-run5.log`, `abnormal-logs-run5.log`.
+
+## 2026-08-20 12:50 +07 — case 11 worker model; outbound timeout 30s
+
+- Case **11**: renamed to `11-worker-switch.md`; script `worker_switch.py` (add/remove `WORKER_*`; `switch-profile` fail event). Removed obsolete profile upgrade/downgrade case.
+- Outbound classify: default/fallback `timeout_s` **30** (`outbound.json`, model-router, Zalo classify client).
+
+## 2026-08-20 11:50 +07 — quiet delivery; infographic skill; no upgrade/downgrade
+
+- Outbound to Zalo: structural drop of Hermes agent status frames (Working / iteration N/M / provider-failure); LLM `/v1/outbound` fail-closed to drop; skills `quiet-delivery` + `image-gen/infographic-design`.
+- Secret probe: still **code** policy (`secret-probe.json`); added password/credentials patterns.
+- `switch-profile` remains disabled (worker `add-components` only); archive comment no longer says upgrade/downgrade.
+
+## 2026-08-20 10:45 +07 — 9Router optional; channel registry; web search combo
+
+- **9Router** optional (`ENABLE_9ROUTER=0` default, compose profile `9router`). OmniRouter remains default router; memory enabled via `OMNIROUTER_ENABLE_MEMORY=1`.
+- **Web search**: top **3** results; fixed combo order Tavily → Firecrawl → SearXNG (dispatcher merge, not round-robin).
+- **Message Worker** channel registry (`architect/zalo-api/channels_registry.py`) + `/v1/channels*` APIs; synced from Zalo allowlists.
+- **Zalo adapter**: runtime `print` → `logger`; lab SSH helper renamed `deploy_stack.py` (`deploy_high.py` shim).
+- **Deploy**: `run.sh destroy` + `run.sh up` with worker flags (Schedule, Media|File, Notify, Message).
+
+## 2026-08-20 10:20 +07 — Zalo lab cases 16–29; case 16/29 fixes
+
+- Full lab run on VPS `72.61.127.249`: cases **17, 26, 27, 28 PASS** on first pass; **16** (480s watch too short for sequential image+fuel) and **29** (transient classify `ok=false`) failed once.
+- Fixes: `zalo_multi_request_lab.py` default watch **720s**; case 29 classify **3× retry**; `classify.json` schedule prompt no longer uses standalone word *lịch*.
+- Rerun cases **16 + 29: PASS** (`test/reports/rerun-16-29.log`). Zalo bridge `0.0.0.0:8787`, `sseClients=1` throughout.
+
+## 2026-08-20 09:15 +07 — workers active/inactive; dispatcher in Media|File; Valkey name
+
+- Default setup is worker activation (`WORKER_*=inactive|active`). Bundled `ENABLE_*` live on each worker (`workers.sh`). Product tiers and `ASSISTANT_PROFILE` are gone from runtime.
+- Dispatcher starts only with the Media|File Worker (compose profile `media`). Workflow stays the async compound-job runner; Schedule Worker is the clock only.
+- Valkey container is `valkey` (not `redis`). Overlays: `docker-compose.media.yml`, `docker-compose.security.yml`.
+- Case 17: quota / free-model failover is not a Zalo latency SLO fail.
+
+## 2026-08-20 08:45 +07 — Zalo SSE + lab deploy verification
+
+- Single-replica Zalo: `profile.sh` defaults `ZALO_PLUGIN_URL` to `host.docker.internal:8787` (socat SSE breaks long-lived connections).
+- Lab VPS: destroy+component deploy OK; gateway `zalo` platform connected; `config.yaml` patched to `model-router:8096/v1` (OmniRouter path).
+- `zalo_user_latency.py`: probe reads replica `agent.log` / `gateway_state.json` (not only docker stdout).
+- Zalo cases 16–29 running via `scripts/temp/run_zalo_cases.py`.
+
+## 2026-08-20 08:10 +07 — core API Gateway + worker-routing skill
+
+- Core defaults: API Gateway on, Valkey inbound queue on, gateway skips rate limit for coding and schedule paths. Optional workers remain `ENABLE_*=0` in product source.
+- New skill `core/worker-routing`: maps classifier JSON to schedule / web-search / media-file / security workers.
+- Lab destroy+deploy with schedule, media, notify, message workers: `scripts/temp/deploy_rearchitect_lab.py`.
+
+## 2026-08-20 07:10 +07 — OmniRouter default; Go schedule worker
+
+- OmniRouter is the default general/classify/outbound router (High included). 9router stays coding + failover. Chat `model=hermes` no longer forces 9router.
+- Go schedule worker (SQLite) owns when-to-run. Hermes Schedule skill stores inner `fire_text`; at tick the worker injects that message back into Hermes (`scheduleFire` protocol). Workflow no longer ticks cron when `SCHEDULE_URL` is set.
+- Classify JSON adds `process_original_message`, `message`, `attachments_required`, `attachment_types`, `skill`, `skill_action`. Skills: `schedule`, `web-search`, `media-file`, `security`.
+
+## 2026-08-19 21:25 +07 — classify once-lịch: compact prompt, one timeout, provider failover
+
+- Dropped character-length timeout buckets. Classify uses one `timeout_s` in `classify.json` and a short JSON contract (task_details optional; validator fills).
+- `/v1/classify` tries the next healthy provider on timeout instead of returning ok=false after one hop. Zalo HTTP classify wait is 70s so it is not shorter than the LLM hop. Workflows stay sequential=false.
+## 2026-08-19 21:15 +07 — once-lịch classify timeout used hello budget
+
+- Numbered once lịch under 400 characters used the 3s hello classify timeout and the 5s HTTP client abort, so Zalo returned classify.failed instead of saving the schedule.
+- Classify wait now scales with payload length (short / medium / long). Workflow create stays sequential=false.
+## 2026-08-19 21:05 +07 — classify task_details; workflows default async
+
+- Classifier JSON adds per-instruction `task_details` (execution_class, task_type, depends_on). Validator rejects schedule without a 5-field cron. Timeout/invalid classify is a failure (`response_mode=confirm`), not fail-open to hello.
+- Workflow `sequential` defaults to false. Jobs run in parallel unless `depends_on` (or an explicit sequential flag) requires order. Classify retry is 2 attempts.
+## 2026-08-19 20:50 +07 — cron numbered briefing must explode to N Zalo sends
+
+- Classify keeps greeting / fuel-summary / weather-summary / draw-image as separate instructions when the user numbered them. Overlay-on-the-same-picture stays one job.
+- Schedule tick re-classifies if stored plan was a single blob; multi-instruction fires run sequentially. Hermes once `run_at` jobs migrate into workflow. Media chmod copies root-owned files so the bridge can send.
+
 ## 2026-08-19 20:30 +07 — Release v0.5.10
 
 - Production cut of fail-open classify (one hop), Chat Completions JSON normalize, and cron TypeError rewrite on Zalo outbound.

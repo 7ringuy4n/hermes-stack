@@ -47,6 +47,10 @@ mkdir -p /opt/data/media/out && curl -sS -X POST http://dispatcher:8090/v1/image
   -d '{"prompt":"<scene>","filename":"<safe-slug>.png","refine":false,"overlay":["<short fact 1>","<short fact 2>"]}'
 ```
 
+## Infographic (default when the image must show informational text)
+
+When the user wants **weather / fuel / prices / metrics on the picture** (readable facts + scene), follow skill **`image-gen/infographic-design`** first: layout, hierarchy, panels, Unicode. Then `POST /v1/image` with a scene prompt plus `overlay` fact lines. Do not dump text randomly on the photo.
+
 Use `refine:true` only if the user explicitly wants an English art prompt rewrite. Do not install Pillow/pip/uv in Hermes — dispatcher owns rendering. Put live weather and fuel **on the image** via `overlay` (already-fetched strings), not as a separate chat message unless the user asked for text as well.
 
 ## Delivery

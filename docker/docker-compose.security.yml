@@ -1,0 +1,418 @@
+# assistant — Security / notify / monitor overlay (WORKER_SECURITY, WORKER_NOTIFY, WORKER_MONITOR, OpenBao).
+# Adds: OpenBao (+ UI), security, SIEM, authz, policy, optional monitor, optional CloudDrive.
+# Monitor profiles are paired (not one blob): grafana, prometheus, loki, alloy, omni-exporter.
+# Grafana starts Prometheus + nine/node/stack exporters. Loki starts Alloy.
+# OmniRouter starts omni-exporter only when Prometheus/Grafana is on.
+# Zalo channel admin is zalo-api (compose profile zalo when ENABLE_ZALO=1) — not High-only.
+# Notify OFF by default — compose profile "notify" when ENABLE_NOTIFY=1.
+# ClamAV / av-gateway OFF by default — compose profile "antivirus" when ENABLE_ANTIVIRUS=1.
+# Docker socket proxy OFF by default — compose profile "sandbox" when SECURITY_SANDBOX=1 (not recommended).
+#
+# Do NOT re-list Must/Medium environment lists here (Compose list-merge replaces).
+
+volumes:
+  clamav_data:
+  loki_data:
+  alloy_data:
+  prometheus_data:
+  grafana_data:
+
+services:
+  openbao:
+    image: ${OPENBAO_IMAGE:-openbao/openbao:2.2.0}
+    container_name: openbao
+    restart: unless-stopped
+    cap_add: ["IPC_LOCK"]
+    environment:
+      - BAO_DEV_ROOT_TOKEN_ID=${OPENBAO_DEV_ROOT_TOKEN:-CHANGE_ME_OPENBAO}
+      - BAO_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+      - BAO_ADDR=http://127.0.0.1:8200
+      - VAULT_UI=true
+      - BAO_UI=true
+    # -dev binds all interfaces *inside* the container so other services can reach it.
+    # Host publish is 127.0.0.1 only (VPN/SSH tunnel). Do not put OpenBao on Traefik/ACME.
+    command:
+      - server
+      - -dev
+      - -dev-root-token-id=${OPENBAO_DEV_ROOT_TOKEN:-CHANGE_ME_OPENBAO}
+      - -dev-listen-address=0.0.0.0:8200
+    ports:
+      - "127.0.0.1:${OPENBAO_PORT:-8200}:8200"
+    networks: [internal]
+
+  # Optional — only when run.sh passes --profile antivirus (ENABLE_ANTIVIRUS=1)
+  clamav:
+    profiles: ["antivirus"]
+    image: ${CLAMAV_IMAGE:-clamav/clamav:1.4}
+    container_name: clamav
+    restart: unless-stopped
+    volumes:
+      - clamav_data:/var/lib/clamav
+    ports:
+      - "127.0.0.1:${CLAMAV_PORT:-3310}:3310"
+    healthcheck:
+      test: ["CMD-SHELL", "echo PING | nc -w 2 127.0.0.1 3310 | grep -q PONG"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+    networks: [internal]
+
+  av-gateway:
+    profiles: ["antivirus"]
+    build: ./architect/security/av-gateway
+    container_name: av-gateway
+    restart: unless-stopped
+    environment:
+      - CLAMAV_HOST=${CLAMAV_HOST:-clamav}
+      - CLAMAV_PORT=3310
+      - AV_QUEUE_WORKERS=${AV_QUEUE_WORKERS:-2}
+      - AV_SCAN_TIMEOUT_SECONDS=${AV_SCAN_TIMEOUT_SECONDS:-120}
+      - AV_QUARANTINE_DIR=/data/quarantine
+      - AV_QUARANTINE_DAYS=${AV_QUARANTINE_DAYS:-7}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}/quarantine:/data/quarantine
+    ports:
+      - "127.0.0.1:${AV_GATEWAY_PORT:-8098}:8098"
+    depends_on:
+      - clamav
+    networks: [internal]
+
+  security-manager:
+    build: ./architect/security/security-manager
+    container_name: security-manager
+    restart: unless-stopped
+    environment:
+      # Empty / unreachable when ENABLE_ANTIVIRUS=0 — isolation still runs (YARA/static/limits)
+      - AV_GATEWAY_URL=${AV_GATEWAY_URL:-http://av-gateway:8098}
+      - LLM_JUDGE_URL=${LLM_JUDGE_URL:-http://omni-router:20129/v1}
+      - LLM_JUDGE_KEY=${LLM_JUDGE_KEY:-${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}}
+      - OPENAI_BASE_URL=${LLM_JUDGE_URL:-http://omni-router:20129/v1}
+      - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
+      - SECURITY_LLM_JUDGE=${SECURITY_LLM_JUDGE:-0}
+      - ENABLE_LLM_JUDGE=${ENABLE_LLM_JUDGE:-0}
+      - SECURITY_YARA=${SECURITY_YARA:-1}
+      - SECURITY_SANDBOX=${SECURITY_SANDBOX:-0}
+      - SECURITY_FAIL_CLOSED=${SECURITY_FAIL_CLOSED:-1}
+      - ENABLE_ANTIVIRUS=${ENABLE_ANTIVIRUS:-0}
+      - DOCKER_HOST=${SECURITY_DOCKER_HOST:-}
+      - DOCKER_TLS_VERIFY=
+      - DOCKER_CERT_PATH=
+      - QUARANTINE_DIR=/data/quarantine
+      - NOTIFY_URL=${NOTIFY_URL:-http://notify:8092}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}/quarantine:/data/quarantine
+    ports:
+      - "127.0.0.1:${SECURITY_PORT:-8093}:8093"
+    networks: [internal]
+
+  # Opt-in only (SECURITY_SANDBOX=1). Still not a production isolation boundary —
+  # prefer a dedicated sandbox broker. Do not mount docker.sock on AI-facing services.
+  docker-socket-proxy:
+    profiles: ["sandbox"]
+    image: ${DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:0.3.0}
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - POST=1
+      - IMAGES=1
+      - NETWORKS=0
+      - VOLUMES=0
+      - EXEC=0
+      - BUILD=0
+      - SWARM=0
+      - SERVICES=0
+      - TASKS=0
+      - SECRETS=0
+      - CONFIGS=0
+      - PLUGINS=0
+      - SYSTEM=0
+      - INFO=0
+      - AUTH=0
+      - ALLOW_START=1
+      - ALLOW_STOP=1
+      - ALLOW_RESTARTS=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [internal]
+
+  siem:
+    build: ./architect/security/siem
+    container_name: siem
+    restart: unless-stopped
+    environment:
+      - LOKI_URL=${LOKI_URL:-http://loki:3100}
+      - LISTEN=0.0.0.0:8105
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    ports:
+      - "127.0.0.1:${SIEM_PORT:-8105}:8105"
+    networks: [internal]
+
+  authz:
+    build: ./architect/authentication/authz
+    container_name: authz
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
+      - ZALO_ALLOWED_THREADS=${ZALO_ALLOWED_THREADS:-}
+      - ZALO_HOME_CHANNEL=${ZALO_HOME_CHANNEL:-}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    ports:
+      - "127.0.0.1:${AUTHZ_PORT:-8097}:8097"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+
+  policy-center:
+    build: ./architect/authentication/policy-center
+    container_name: policy-center
+    restart: unless-stopped
+    environment:
+      - POLICY_STORE=/data/policies.json
+      - SIEM_URL=${SIEM_URL:-http://siem:8105}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}/policy-center:/data
+    ports:
+      - "127.0.0.1:${POLICY_PORT:-8106}:8106"
+    networks: [internal]
+
+  loki:
+    profiles: ["loki"]
+    image: ${LOKI_IMAGE:-grafana/loki:3.4.2}
+    container_name: loki
+    restart: unless-stopped
+    user: "0:0"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./config/monitor/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks: [internal]
+
+  alloy:
+    profiles: ["alloy"]
+    image: ${ALLOY_IMAGE:-grafana/alloy:v1.9.1}
+    container_name: alloy
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./config/monitor/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy/data
+    depends_on:
+      - loki
+    networks: [internal]
+
+  prometheus:
+    profiles: ["prometheus"]
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.2.1}
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./config/monitor/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks: [internal]
+
+  grafana:
+    profiles: ["grafana"]
+    image: ${GRAFANA_IMAGE:-grafana/grafana:11.6.0}
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-23000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme-set-in-env}
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://127.0.0.1:23000}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/monitor/grafana:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks: [internal]
+
+  # Pairs with 9Router (always on). Starts with Prometheus.
+  nine-exporter:
+    profiles: ["prometheus"]
+    build: ./architect/monitor/nine-exporter
+    container_name: nine-exporter
+    restart: unless-stopped
+    environment:
+      - LISTEN=0.0.0.0:9101
+      - N9ROUTER_URL=${N9ROUTER_URL:-}
+      - N9ROUTER_PASSWORD=${N9ROUTER_INITIAL_PASSWORD:-}
+      - SCRAPE_INTERVAL=30
+    networks: [internal]
+
+  # Pairs with OmniRouter. run.sh adds profile omni-exporter only when both OmniRouter and Prometheus/Grafana are on.
+  omni-exporter:
+    profiles: ["omni-exporter"]
+    build: ./architect/monitor/nine-exporter
+    container_name: omni-exporter
+    restart: unless-stopped
+    environment:
+      - LISTEN=0.0.0.0:9104
+      - METRIC_PREFIX=omnirouter
+      - ROUTER_URL=http://omni-router:20129
+      - ROUTER_PASSWORD=${OMNIROUTER_INITIAL_PASSWORD:-${N9ROUTER_INITIAL_PASSWORD:-}}
+      - SCRAPE_INTERVAL=30
+    depends_on:
+      - omni-router
+    networks: [internal]
+
+  # Pairs with Grafana Hardware panels (node_cpu_* / node_memory_*). Starts with Prometheus.
+  node-exporter:
+    profiles: ["prometheus"]
+    image: ${NODE_EXPORTER_IMAGE:-prom/node-exporter:v1.9.1}
+    container_name: node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    networks: [internal]
+
+  # Pairs with Grafana stack health (assistant_service_up). Starts with Prometheus.
+  stack-exporter:
+    profiles: ["prometheus"]
+    build:
+      context: ./architect/monitor
+      dockerfile: stack-exporter/Dockerfile
+    container_name: stack-exporter
+    restart: unless-stopped
+    environment:
+      - LISTEN=0.0.0.0:9102
+      - SCRAPE_INTERVAL=30
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_COLLECTION_KNOWLEDGE=${QDRANT_COLLECTION_KNOWLEDGE:-knowledge_chunks}
+      - QDRANT_COLLECTION_MEMORY=${QDRANT_COLLECTION_MEMORY:-conversational_memory}
+      - ENABLE_OCR=${ENABLE_OCR:-0}
+      - ENABLE_OPENBAO=${ENABLE_OPENBAO:-0}
+      - ENABLE_ANTIVIRUS=${ENABLE_ANTIVIRUS:-0}
+      - ENABLE_ZALO=${ENABLE_ZALO:-0}
+      - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-1}
+      - ENABLE_AUTHZ=${ENABLE_AUTHZ:-0}
+      - ENABLE_SECURITY=${ENABLE_SECURITY:-0}
+      - ENABLE_JOBS=${ENABLE_JOBS:-0}
+      - ENABLE_GRAFANA=${ENABLE_GRAFANA:-0}
+      - ENABLE_PROMETHEUS=${ENABLE_PROMETHEUS:-0}
+      # OmniRoute has no /health (404). Probe `/` (SPA 200). /v1/models needs auth.
+      # 9Router UI /health is 404 and /v1/models is 401 — TCP listen only (nine-exporter does authenticated scrape).
+      - HEALTH_TARGETS=${STACK_HEALTH_TARGETS:-qdrant=qdrant:6333/readyz,security-manager=security-manager:8093/health,ocr=ocr:8091/health,ingest=ingest:8099/health,authz=authz:8097/health,embedding=embedding:8094/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,openbao=openbao:8200/v1/sys/health,omni-router=omni-router:20129/,model-router=model-router:8096/health}
+    networks: [internal]
+
+  # Optional — only when run.sh passes --profile notify (ENABLE_NOTIFY=1)
+  notify:
+    profiles: ["notify"]
+    build: ./architect/notification/notify
+    container_name: notify
+    restart: unless-stopped
+    environment:
+      - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://host.docker.internal:8787}
+      - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - NOTIFY_ZALO_THREAD=${NOTIFY_ZALO_THREAD:-}
+      - NOTIFY_ZALO_THREAD_TYPE=${NOTIFY_ZALO_THREAD_TYPE:-user}
+      - NOTIFY_TELEGRAM_CHAT=${NOTIFY_TELEGRAM_CHAT:-}
+      - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
+      - ZALO_ADMIN_USERS_FILE=/data/assistant/zalo_admin_users.txt
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}:/data/assistant:ro
+    ports:
+      - "127.0.0.1:${NOTIFY_PORT:-8092}:8092"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [internal]
+
+  alert-watch:
+    profiles: ["notify"]
+    build:
+      context: ./architect/monitor
+      dockerfile: alert-watch/Dockerfile
+    container_name: alert-watch
+    restart: unless-stopped
+    environment:
+      - LISTEN=0.0.0.0:9103
+      - CHECK_INTERVAL=${ALERT_CHECK_INTERVAL:-60}
+      - ALERT_COOLDOWN_SECONDS=${ALERT_COOLDOWN_SECONDS:-1800}
+      - NOTIFY_URL=${NOTIFY_URL:-http://notify:8092}
+      - N9ROUTER_URL=${N9ROUTER_URL:-}
+      - N9ROUTER_PASSWORD=${N9ROUTER_INITIAL_PASSWORD:-}
+      - N9ROUTER_API_KEY=${N9ROUTER_API_KEY:-}
+      - NODE_EXPORTER_URL=${NODE_EXPORTER_URL:-}
+      - ENABLE_GRAFANA=${ENABLE_GRAFANA:-0}
+      - ENABLE_PROMETHEUS=${ENABLE_PROMETHEUS:-0}
+      - ENABLE_LOKI=${ENABLE_LOKI:-0}
+      - ENABLE_ALLOY=${ENABLE_ALLOY:-0}
+      - ENABLE_OCR=${ENABLE_OCR:-0}
+      - ENABLE_OPENBAO=${ENABLE_OPENBAO:-0}
+      - ENABLE_ANTIVIRUS=${ENABLE_ANTIVIRUS:-0}
+      - ENABLE_ZALO=${ENABLE_ZALO:-0}
+      - ENABLE_NOTIFY=${ENABLE_NOTIFY:-1}
+      - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-1}
+      - ENABLE_AUTHZ=${ENABLE_AUTHZ:-0}
+      - ENABLE_SECURITY=${ENABLE_SECURITY:-0}
+      - ENABLE_JOBS=${ENABLE_JOBS:-0}
+      - SECURITY_SANDBOX=${SECURITY_SANDBOX:-0}
+      - HEALTH_TARGETS=${ALERT_HEALTH_TARGETS:-qdrant=qdrant:6333/readyz,ocr=ocr:8091/health,ingest=ingest:8099/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,openbao=openbao:8200/v1/sys/health}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    ports:
+      - "127.0.0.1:${ALERT_WATCH_PORT:-9103}:9103"
+    depends_on:
+      - notify
+    networks: [internal]
+
+  # Optional — ENABLE_CLOUDDRIVE=1 + rclone config on host
+  clouddrive-sync:
+    profiles: ["clouddrive"]
+    image: ${RCLONE_IMAGE:-rclone/rclone:1.69}
+    container_name: clouddrive-sync
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          rclone sync "${CLOUDDRIVE_REMOTE}${CLOUDDRIVE_DOCS_PATH}" /data/clouddrive --exclude ".git/**" || true
+          sleep "${CLOUDDRIVE_SYNC_SECONDS:-900}"
+        done
+    environment:
+      - CLOUDDRIVE_REMOTE=${CLOUDDRIVE_REMOTE:-clouddrive:}
+      - CLOUDDRIVE_DOCS_PATH=${CLOUDDRIVE_DOCS_PATH:-assistant/docs}
+      - CLOUDDRIVE_SYNC_SECONDS=${CLOUDDRIVE_SYNC_SECONDS:-900}
+    volumes:
+      - ${RCLONE_CONFIG_DIR:-/root/.config/rclone}:/config/rclone:ro
+      - ${CLOUDDRIVE_MIRROR_DIR:-/data/clouddrive}:/data/clouddrive
+    networks: [internal]
+
+  hermes:
+    depends_on:
+      - openbao
+      - authz
+
+  ingest:
+    depends_on:
+      - security-manager

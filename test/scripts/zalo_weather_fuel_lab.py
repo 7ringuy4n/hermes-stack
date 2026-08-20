@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Lab: one-task HCMC weather+fuel infographic to admin DM.
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from classify_fixtures import FIXTURE_INFOGRAPHIC_DAILY, FIXTURE_INFOGRAPHIC_VI  # noqa: E402
-from deploy_high import connect, sudo_bash  # noqa: E402
+from deploy_stack import connect, sudo_bash  # noqa: E402
 from sanitize import sanitize as _sanitize  # noqa: E402
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
@@ -261,3 +261,4 @@ echo WATCH_DONE
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
