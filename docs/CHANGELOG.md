@@ -1,5 +1,10 @@
 # Change history
 
+## 2026-08-20 18:50 +07 — Classifier combo uses Omni `oc/*` catalog + unblock
+
+- `first-setup-omnirouter` clears `blockedProviders` for OpenCode, loads all `oc/*` from `/api/models`, and writes combo members with `connectionId` (Omni object shape).
+- Note: host may still see OpenCode upstream HTTP 403 (quota/block); classify fails open until upstream recovers.
+
 ## 2026-08-20 18:40 +07 — Classify combo `classifier` (OpenCode Free)
 
 - Dedicated Omni combo **`classifier`**: `first-setup-omnirouter` ensures OpenCode provider + fills combo with all current `oc/*` models; default `MODEL_ROUTER_CLASSIFY_MODEL=classifier`.

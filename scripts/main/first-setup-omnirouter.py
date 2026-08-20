@@ -143,21 +143,46 @@ def _combo_member_count(combo: dict) -> int:
     return len(models) if isinstance(models, list) else 0
 
 
-def ensure_opencode_provider(opener) -> None:
-    """Ensure an OpenCode Free connection exists so ``oc/*`` models can route."""
+def unblock_opencode(opener) -> None:
+    """Omni may ship with ``blockedProviders: ['opencode']`` — clear it for classify."""
+    try:
+        _, settings = http_json(opener, "GET", f"{BASE}/api/settings")
+    except Exception as e:
+        print(f"WARN settings read failed: {e}")
+        return
+    blocked = list(settings.get("blockedProviders") or [])
+    cleaned = [p for p in blocked if str(p).lower() not in {"opencode", "oc"}]
+    if cleaned == blocked:
+        print(f"==> blockedProviders ok ({blocked})")
+        return
+    print(f"==> unblock OpenCode in blockedProviders: {blocked} → {cleaned}")
+    try:
+        http_json(opener, "PATCH", f"{BASE}/api/settings", {"blockedProviders": cleaned})
+    except Exception as e:
+        print(f"WARN blockedProviders patch failed: {e}")
+
+
+def ensure_opencode_provider(opener) -> dict | None:
+    """Ensure an OpenCode Free connection exists; return connection dict."""
     try:
         _, data = http_json(opener, "GET", f"{BASE}/api/providers")
     except Exception as e:
         print(f"WARN providers list failed: {e}")
-        return
+        return None
     conns = data.get("connections") or []
     for c in conns:
-        if str(c.get("provider") or "").lower() == "opencode":
+        if str(c.get("provider") or "").lower() in {"opencode", "oc"}:
             print(f"==> keep OpenCode provider connection id={c.get('id')}")
-            return
+            return c if isinstance(c, dict) else None
     print("==> create OpenCode Free provider connection")
     for payload in (
-        {"provider": "opencode", "authType": "apikey", "name": "opencode-free", "isActive": True},
+        {
+            "provider": "opencode",
+            "authType": "apikey",
+            "name": "opencode-free",
+            "isActive": True,
+            "proxyEnabled": False,
+        },
         {"provider": "opencode", "name": "opencode-free", "isActive": True},
     ):
         try:
@@ -166,29 +191,49 @@ def ensure_opencode_provider(opener) -> None:
             print(f"WARN create opencode provider HTTP {e.code}: {e.read()[:200]!r}")
             continue
         if status in (200, 201):
-            print(f"==> OpenCode provider created: {body}")
-            return
+            conn = body.get("connection") if isinstance(body, dict) else None
+            print(f"==> OpenCode provider created id={(conn or {}).get('id')}")
+            return conn if isinstance(conn, dict) else None
         print(f"WARN create opencode provider rejected: {body}")
+    return None
 
 
 def list_oc_models(opener) -> list[str]:
-    """All OpenCode Free model ids (``oc/...``). Catalog is not always on /v1/models."""
+    """All OpenCode Free model ids (``oc/...``) from Omni catalog / fallbacks."""
     oc: list[str] = []
 
-    # 1) Omni/9Router suggested-models helper (when present)
-    q = urllib.parse.urlencode({"url": OPENCODE_MODELS_URL, "type": "opencode-free"})
+    # 1) Omni /api/models catalog (provider ``oc``)
     try:
-        _, data = http_json(opener, "GET", f"{BASE}/api/providers/suggested-models?{q}")
-        rows = data.get("data") or []
-        oc = [
-            f"oc/{m['id']}" if not str(m["id"]).startswith("oc/") else str(m["id"])
-            for m in rows
-            if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]
-        ]
+        _, data = http_json(opener, "GET", f"{BASE}/api/models")
+        for row in data.get("models") or []:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("provider") or "").lower() not in {"oc", "opencode"}:
+                continue
+            if row.get("available") is False:
+                continue
+            full = row.get("fullModel") or row.get("model")
+            if isinstance(full, str) and full.strip():
+                mid = full.strip()
+                oc.append(mid if mid.startswith("oc/") else f"oc/{mid}")
     except Exception as e:
-        print(f"WARN suggested-models unavailable ({e})")
+        print(f"WARN /api/models oc scan failed ({e})")
 
-    # 2) Direct OpenCode Zen catalog
+    # 2) Omni/9Router suggested-models helper (when present)
+    if not oc:
+        q = urllib.parse.urlencode({"url": OPENCODE_MODELS_URL, "type": "opencode-free"})
+        try:
+            _, data = http_json(opener, "GET", f"{BASE}/api/providers/suggested-models?{q}")
+            rows = data.get("data") or []
+            oc = [
+                f"oc/{m['id']}" if not str(m["id"]).startswith("oc/") else str(m["id"])
+                for m in rows
+                if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]
+            ]
+        except Exception as e:
+            print(f"WARN suggested-models unavailable ({e})")
+
+    # 3) Direct OpenCode Zen catalog
     if not oc:
         try:
             req = urllib.request.Request(
@@ -209,22 +254,10 @@ def list_oc_models(opener) -> list[str]:
         except Exception as e:
             print(f"WARN OpenCode zen catalog failed ({e})")
 
-    # 3) Already-published oc/* on /v1/models
-    if not oc:
-        try:
-            _, data = http_json(opener, "GET", f"{BASE}/v1/models")
-            for m in data.get("data") or []:
-                mid = (m or {}).get("id") if isinstance(m, dict) else None
-                if isinstance(mid, str) and mid.startswith("oc/"):
-                    oc.append(mid)
-        except Exception as e:
-            print(f"WARN /v1/models oc scan failed ({e})")
-
     if not oc:
         print("WARN OpenCode catalog empty; using fallback list")
         oc = list(OPENCODE_FREE_FALLBACK)
 
-    # Dedupe preserve order; prefer big-pickle first
     seen: set[str] = set()
     uniq: list[str] = []
     for mid in oc:
@@ -238,34 +271,50 @@ def list_oc_models(opener) -> list[str]:
 
 def ensure_classifier_combo(opener) -> str:
     """Create/update combo ``classifier`` with all current OpenCode Free models."""
-    ensure_opencode_provider(opener)
+    unblock_opencode(opener)
+    conn = ensure_opencode_provider(opener)
     oc = list_oc_models(opener)
     if not oc:
         raise SystemExit("no oc/* OpenCode Free models for classifier combo")
     print(f"==> classifier OpenCode models ({len(oc)}): {oc}")
+
+    # Omni Combos expect member *objects* (connectionId) like the hermes combo shape.
+    members: list[dict] = []
+    conn_id = (conn or {}).get("id")
+    for i, mid in enumerate(oc, 1):
+        item: dict = {
+            "id": f"classifier-model-{i}-{mid.replace('/', '-').replace('.', '-')}"[:80],
+            "kind": "model",
+            "model": mid,
+            "providerId": "oc",
+            "weight": 0,
+            "label": mid,
+        }
+        if conn_id:
+            item["connectionId"] = conn_id
+        members.append(item)
 
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = data.get("combos") or []
     existing = next((c for c in combos if (c.get("name") or "") == CLASSIFY_COMBO_NAME), None)
     payload = {
         "name": CLASSIFY_COMBO_NAME,
-        "models": oc,
+        "models": members,
         "strategy": COMBO_STRATEGY,
         "description": "Classify/intent combo — all OpenCode Free (oc/*) models",
     }
     if existing and existing.get("id"):
         cid = existing["id"]
-        print(f"==> update combo {CLASSIFY_COMBO_NAME} ({cid}) members={len(oc)}")
+        print(f"==> update combo {CLASSIFY_COMBO_NAME} ({cid}) members={len(members)}")
         status, body = http_json(opener, "PUT", f"{BASE}/api/combos/{cid}", payload)
         if status not in (200, 201):
             raise SystemExit(f"classifier combo update failed: {body}")
     else:
-        print(f"==> create combo {CLASSIFY_COMBO_NAME} members={len(oc)}")
+        print(f"==> create combo {CLASSIFY_COMBO_NAME} members={len(members)}")
         status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
         if status not in (200, 201):
             raise SystemExit(f"classifier combo create failed: {body}")
 
-    # Per-combo strategy (Omni/9Router Combos UI shape)
     try:
         http_json(
             opener,
