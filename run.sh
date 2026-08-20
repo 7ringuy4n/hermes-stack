@@ -33,6 +33,14 @@ ensure_hermes_media_dirs() {
   chown -R "${uid}:${gid}" "${data}/media" 2>/dev/null || true
   chmod -R ug+rwX "${data}/media" 2>/dev/null || true
   chmod g+s "${data}/media" "${data}/media/inbound" "${data}/media/out" 2>/dev/null || true
+  for f in .env config.yaml; do
+    if [[ -f "${data}/${f}" ]]; then
+      chown "${uid}:${gid}" "${data}/${f}" 2>/dev/null || true
+      chmod u+rw "${data}/${f}" 2>/dev/null || true
+    fi
+  done
+  chown "${uid}:${gid}" "${data}" 2>/dev/null || true
+  chmod u+rwx "${data}" 2>/dev/null || true
 }
 
 compose() {
