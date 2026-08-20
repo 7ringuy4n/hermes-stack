@@ -1,5 +1,10 @@
 # Change history
 
+## 2026-08-20 15:25 +07 — Hermes OPENAI key + clean-host Zalo shared-data path
+
+- **Hermes compose** now sets `OPENAI_API_KEY` from `OMNIROUTER_API_KEY` (fallback `N9ROUTER_API_KEY`) so Omni-default installs are not left with an empty key when 9Router is off.
+- **`setup-zalo.sh`** writes shared Hermes config/plugin into `ASSISTANT_DATA_DIR` (host path mounted as `/opt/data` in Hermes), not a bare host `/opt/data`.
+
 ## 2026-08-20 15:05 +07 — clean-host Zalo setup seeds shared Hermes config
 
 - **`setup-zalo.sh`** now seeds shared `config.yaml` from a live replica on clean hosts, enables `zalo-platform` in the real `plugins:` block, and writes `gateway.platforms.zalo.enabled: true`.
