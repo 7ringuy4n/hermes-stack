@@ -34,6 +34,16 @@ TASK_TYPES = (
 RESPONSE_MODES = ("direct", "ack_then_deliver", "confirm")
 ATTACHMENT_TYPES = ("image", "file", "audio", "video")
 SKILLS = ("media_file", "web_search", "schedule", "security", "knowledge")
+# Prefer final answer first; then provider-specific chain-of-thought fields when content is empty.
+MESSAGE_TEXT_KEYS = (
+    "content",
+    "reasoning_content",  # DeepSeek / Qwen / Moonshot / Zhipu
+    "reasoning",  # Groq gpt-oss / OpenRouter / vLLM convention
+    "thinking",  # some OpenAI-compat / Claude-style shims
+    "thinking_content",
+    "thought",
+    "reasoning_text",
+)
 HINT_SKILL = {
     "search": ("web_search", "search"),
     "schedule": ("schedule", "create"),
@@ -276,27 +286,52 @@ def valid_cron(expr: str) -> str | None:
     return " ".join(parts)
 
 
+def _coerce_message_field(val: Any) -> str:
+    """Turn a message field (str / list parts / reasoning_details) into text."""
+    if isinstance(val, str) and val.strip():
+        return val.strip()
+    if isinstance(val, list):
+        parts: list[str] = []
+        for item in val:
+            if isinstance(item, str) and item.strip():
+                parts.append(item.strip())
+            elif isinstance(item, dict):
+                for sub in ("text", "content", "reasoning", "reasoning_text"):
+                    t = item.get(sub)
+                    if isinstance(t, str) and t.strip():
+                        parts.append(t.strip())
+                        break
+        if parts:
+            return "\n".join(parts)
+    return ""
+
+
+def _message_field_keys(msg: dict[str, Any]) -> list[str]:
+    """Known CoT keys first, then any other message keys that look like reasoning."""
+    keys = list(MESSAGE_TEXT_KEYS)
+    known = set(MESSAGE_TEXT_KEYS)
+    for k in msg:
+        if not isinstance(k, str) or k in known:
+            continue
+        kl = k.lower()
+        if "reason" in kl or "think" in kl or kl.endswith("_thought"):
+            keys.append(k)
+    # OpenRouter may put structured CoT under reasoning_details
+    if "reasoning_details" in msg and "reasoning_details" not in known:
+        keys.append("reasoning_details")
+    return keys
+
+
 def _message_text(data: dict[str, Any]) -> str:
     choices = data.get("choices") if isinstance(data, dict) else None
     if not isinstance(choices, list) or not choices:
         return ""
     ch = choices[0] if isinstance(choices[0], dict) else {}
     msg = ch.get("message") if isinstance(ch.get("message"), dict) else {}
-    for key in ("content", "reasoning_content"):
-        val = msg.get(key)
-        if isinstance(val, str) and val.strip():
-            return val
-        if isinstance(val, list):
-            parts: list[str] = []
-            for item in val:
-                if isinstance(item, str) and item.strip():
-                    parts.append(item.strip())
-                elif isinstance(item, dict):
-                    t = item.get("text")
-                    if isinstance(t, str) and t.strip():
-                        parts.append(t.strip())
-            if parts:
-                return "\n".join(parts)
+    for key in _message_field_keys(msg):
+        text = _coerce_message_field(msg.get(key))
+        if text:
+            return text
     text = ch.get("text")
     if isinstance(text, str) and text.strip():
         return text
