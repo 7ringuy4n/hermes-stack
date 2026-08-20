@@ -22,6 +22,10 @@ PLUGIN_SRC="${ROOT}/hermes/main/plugins/zalo"
 PLUGIN_DIR="${HERMES_SHARED_DATA}/plugins/zalo"
 PORT="${ZALO_PLUGIN_PORT:-8787}"
 HOST_BIND="${ZALO_PLUGIN_HOST:-0.0.0.0}"
+# 0.0.0.0 is required so Docker (zalo-proxy / Hermes host.docker.internal) can reach the host
+# bridge. Risk: the port is reachable on every host NIC. Mitigate: firewall allow only Docker
+# bridge / private nets; set ZALO_PLUGIN_TOKEN; never expose 8787 on the public internet.
+# Loopback-only (127.0.0.1) breaks schedule inject and Hermes SSE from containers.
 ZALO_REPO_URL="${ZALO_REPO_URL:-https://github.com/cuongdev/hermes-zalo-plugin.git}"
 if [[ "$(id -u)" -ne 0 ]]; then SUDO=sudo; else SUDO=; fi
 
@@ -420,10 +424,12 @@ wire_env() {
   upsert ZALO_HOST_DATA_DIR "$ZALO_HOST_DATA_DIR"
   upsert GATEWAY_ALLOW_ALL_USERS "${GATEWAY_ALLOW_ALL_USERS:-true}"
   $SUDO mkdir -p "${HERMES_SHARED_DATA}/channels"
+  $SUDO mkdir -p "${HERMES_SHARED_DATA}/media/inbound" "${HERMES_SHARED_DATA}/media/out"
   $SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" \
     "$local_env" \
     "${HERMES_SHARED_DATA}/config.yaml" \
     "${HERMES_SHARED_DATA}/channels" \
+    "${HERMES_SHARED_DATA}/media" \
     "${HERMES_SHARED_DATA}/zalo_admin_users.txt" \
     "${HERMES_SHARED_DATA}/zalo_allowed_threads.txt" \
     2>/dev/null || true

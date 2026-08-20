@@ -14,21 +14,21 @@ def main() -> int:
     try:
         sftp_put(
             c,
-            _file_bytes(ROOT / "docker" / "docker-compose.high.yml"),
-            "/tmp/docker-compose.high.yml",
+            _file_bytes(ROOT / "docker" / "docker-compose.security.yml"),
+            "/tmp/docker-compose.security.yml",
         )
         out = sudo_bash(
             c,
             r"""
 set -euo pipefail
-install -m 0644 /tmp/docker-compose.high.yml /opt/assistant/docker/docker-compose.high.yml
-sed -i 's/\r$//' /opt/assistant/docker/docker-compose.high.yml
+install -m 0644 /tmp/docker-compose.security.yml /opt/assistant/docker/docker-compose.security.yml
+sed -i 's/\r$//' /opt/assistant/docker/docker-compose.security.yml
 cd /opt/assistant
 set -a
 . ./.env
 set +a
 export COMPOSE_PROGRESS=plain
-files="-f /opt/assistant/docker/docker-compose.yml -f /opt/assistant/docker/docker-compose.medium.yml -f /opt/assistant/docker/docker-compose.high.yml"
+files="-f /opt/assistant/docker/docker-compose.yml -f /opt/assistant/docker/docker-compose.media.yml -f /opt/assistant/docker/docker-compose.security.yml"
 docker compose --project-directory /opt/assistant $files --profile prometheus --profile omni-exporter --profile omnirouter up -d --no-deps --force-recreate stack-exporter
 sleep 35
 echo '=== HEALTH_TARGETS ==='

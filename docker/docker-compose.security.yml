@@ -1,5 +1,7 @@
 # assistant — Security / notify / monitor overlay (WORKER_SECURITY, WORKER_NOTIFY, WORKER_MONITOR, OpenBao).
 # Adds: OpenBao (+ UI), security, SIEM, authz, policy, optional monitor, optional CloudDrive.
+# Security core (openbao, security-manager, authz, siem, policy-center) uses profile "security"
+# only when ENABLE_SECURITY=1 / WORKER_SECURITY=active. Notify alone must not start them.
 # Monitor profiles are paired (not one blob): grafana, prometheus, loki, alloy, omni-exporter.
 # Grafana starts Prometheus + nine/node/stack exporters. Loki starts Alloy.
 # OmniRouter starts omni-exporter only when Prometheus/Grafana is on.
@@ -19,6 +21,7 @@ volumes:
 
 services:
   openbao:
+    profiles: ["security"]
     image: ${OPENBAO_IMAGE:-openbao/openbao:2.2.0}
     container_name: openbao
     restart: unless-stopped
@@ -80,6 +83,7 @@ services:
     networks: [internal]
 
   security-manager:
+    profiles: ["security"]
     build: ./architect/security/security-manager
     container_name: security-manager
     restart: unless-stopped
@@ -140,6 +144,7 @@ services:
     networks: [internal]
 
   siem:
+    profiles: ["security"]
     build: ./architect/security/siem
     container_name: siem
     restart: unless-stopped
@@ -152,6 +157,7 @@ services:
     networks: [internal]
 
   authz:
+    profiles: ["security"]
     build: ./architect/authentication/authz
     container_name: authz
     restart: unless-stopped
@@ -168,6 +174,7 @@ services:
     networks: [internal]
 
   policy-center:
+    profiles: ["security"]
     build: ./architect/authentication/policy-center
     container_name: policy-center
     restart: unless-stopped
@@ -410,11 +417,5 @@ services:
       - ${CLOUDDRIVE_MIRROR_DIR:-/data/clouddrive}:/data/clouddrive
     networks: [internal]
 
-  hermes:
-    depends_on:
-      - openbao
-      - authz
-
-  ingest:
-    depends_on:
-      - security-manager
+  # Do not attach hermes/ingest depends_on to profiled security services —
+  # Notify-only stacks load this overlay without --profile security.

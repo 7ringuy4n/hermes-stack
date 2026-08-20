@@ -187,6 +187,12 @@ services:
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - NOTIFY_URL=${NOTIFY_URL:-http://notify:8092}
+      - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://zalo-proxy:8787}
+      - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
+      - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
+      - ZALO_ADMIN_USERS_FILE=/data/assistant/zalo_admin_users.txt
+      - NOTIFY_ZALO_THREAD=${NOTIFY_ZALO_THREAD:-}
+      - NOTIFY_ZALO_THREAD_TYPE=${NOTIFY_ZALO_THREAD_TYPE:-user}
       - INGEST_MEDIA_ROOT=/data/media
       - LEARN_DOCS_ROOT=${LEARN_DOCS_ROOT:-/data/assistant/docs}
       - LEARN_LIST_LIMIT=${LEARN_LIST_LIMIT:-5}
