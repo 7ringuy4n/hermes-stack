@@ -1,5 +1,10 @@
 # Change history
 
+## 2026-08-20 20:50 +07 — Dual Hermes .env Permission denied on auto-sethome
+
+- Replica entry + `run.sh` also chown shared `.env` / `config.yaml` / data root to Hermes UID (scaled replicas rewrite home channel).
+- Dual isolation lab pass flag scopes to **media** Permission denied (not unrelated `.env` noise).
+
 ## 2026-08-20 20:45 +07 — Rule 50 + durable media perms + dual Hermes isolation case
 
 - **AGENT_RULES #50**: source-first fixes — merge then pull on host; no lasting lab hotpatch cheats. Hard gate in agent-ops.

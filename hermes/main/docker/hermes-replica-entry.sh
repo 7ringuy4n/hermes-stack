@@ -18,6 +18,15 @@ ensure_shared_media() {
   chown -R "${uid}:${gid}" "${SHARED}/media" 2>/dev/null || true
   chmod -R ug+rwX "${SHARED}/media" 2>/dev/null || true
   chmod g+s "${SHARED}/media" "${SHARED}/media/inbound" "${SHARED}/media/out" 2>/dev/null || true
+  # Shared SoT files Hermes may rewrite (home channel / auto-sethome).
+  for f in .env config.yaml; do
+    if [ -f "${SHARED}/${f}" ]; then
+      chown "${uid}:${gid}" "${SHARED}/${f}" 2>/dev/null || true
+      chmod u+rw "${SHARED}/${f}" 2>/dev/null || true
+    fi
+  done
+  chown "${uid}:${gid}" "${SHARED}" 2>/dev/null || true
+  chmod u+rwx "${SHARED}" 2>/dev/null || true
 }
 ensure_shared_media
 
