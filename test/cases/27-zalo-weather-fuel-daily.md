@@ -1,10 +1,11 @@
-# Case: daily lịch of one weather + fuel infographic
+# Case: daily schedule of one weather + fuel infographic
 
 Same **one-task** poster as case 26, wrapped as a recurring schedule. Classify
 must store **one** instruction (the poster), not three jobs (draw / fuel / weather).
 
 **Architect:** Secret Probe → LLM classify (`task_hint=schedule`, `cadence=daily`,
-one instruction) → Schedule Manager `context.plan` → tick creates **one** job.
+one instruction) → Schedule skill → Go worker. Tick injects the poster text;
+Hermes creates **one** job.
 
 ## Fixture
 

@@ -1,0 +1,131 @@
+# assistant — Media|File Worker overlay (dispatcher, OCR, Jobs, SearXNG, ComfyUI CPU).
+# Merged when WORKER_MEDIA_FILE=active (or ENABLE_MEDIA_FILE / ENABLE_OCR / ENABLE_JOBS / ENABLE_SEARXNG is 1).
+#
+# Worker bundled defaults (when active): ENABLE_OCR=1 ENABLE_JOBS=1 OFFICE_FILE_GEN=1
+# IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
+# File-gen lives in dispatcher (office_file.py). Web backends: vendors first, SearXNG last.
+#
+# Do NOT re-list hermes/dispatcher environment here — Compose list-merge would
+# replace the base env and drop core keys.
+
+services:
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    container_name: searxng
+    restart: unless-stopped
+    volumes:
+      - ./config/searxng:/etc/searxng:ro
+    environment:
+      - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://searxng:8080/}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    ports:
+      - "127.0.0.1:${SEARXNG_PORT:-8888}:8080"
+    networks: [internal]
+
+  ocr:
+    build: ./architect/tools/ocr
+    container_name: ocr
+    restart: unless-stopped
+    environment:
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://omni-router:20129/v1}
+      - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
+      - OCR_MODEL=${OCR_MODEL:-hermes}
+      - OCR_MEDIA_ROOT=/data/media
+      - OCR_FALLBACK=${OCR_FALLBACK:-1}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}/media:/data/media
+    ports:
+      - "127.0.0.1:${OCR_PORT:-8091}:8091"
+    networks: [internal]
+
+  jobs:
+    build: ./architect/tools/jobs
+    container_name: jobs
+    restart: unless-stopped
+    environment:
+      - VALKEY_URL=${VALKEY_URL:-valkey://valkey:6379/0}
+      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
+      - RQ_QUEUES=${RQ_QUEUES:-default,ingest,memory,learn,security}
+      - INGEST_URL=${INGEST_URL:-http://ingest:8099}
+      - MEMORY_URL=${MEMORY_URL:-http://memory:8095}
+      - OCR_URL=${OCR_URL:-http://ocr:8091}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      valkey:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${JOBS_PORT:-8104}:8104"
+    networks: [internal]
+
+  jobs-worker:
+    build: ./architect/tools/jobs
+    container_name: jobs-worker
+    restart: unless-stopped
+    command: ["python", "worker.py"]
+    environment:
+      - VALKEY_URL=${VALKEY_URL:-valkey://valkey:6379/0}
+      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
+      - RQ_QUEUES=${RQ_QUEUES:-default,ingest,memory,learn,security}
+      - INGEST_URL=${INGEST_URL:-http://ingest:8099}
+      - MEMORY_URL=${MEMORY_URL:-http://memory:8095}
+      - OCR_URL=${OCR_URL:-http://ocr:8091}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      valkey:
+        condition: service_healthy
+      jobs:
+        condition: service_started
+    networks: [internal]
+
+  # Default self-host image gen (no VGA): SDXL / SD 1.5 via ComfyUI CPU
+  comfyui-cpu:
+    image: ${COMFYUI_CPU_IMAGE:-yanwk/comfyui-boot:cpu}
+    container_name: comfyui-cpu
+    restart: unless-stopped
+    environment:
+      # --cpu required: cpu image still ships torch without CUDA; without it main.py asserts
+      - CLI_ARGS=--listen 0.0.0.0 --port 8188 --cpu
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}/comfyui:/root
+    ports:
+      - "127.0.0.1:${COMFYUI_CPU_PORT:-8188}:8188"
+    networks: [internal]
+
+  # Optional GPU path: FLUX.2 [klein] 4B — enable with COMFYUI_HAS_GPU=1 (compose profile comfy-gpu)
+  comfyui-gpu:
+    profiles: ["comfy-gpu"]
+    image: ${COMFYUI_GPU_IMAGE:-yanwk/comfyui-boot:cu124}
+    container_name: comfyui-gpu
+    restart: unless-stopped
+    environment:
+      - CLI_ARGS=--listen 0.0.0.0 --port 8188
+      - NVIDIA_VISIBLE_DEVICES=all
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}/comfyui-gpu:/root
+    ports:
+      - "127.0.0.1:${COMFYUI_GPU_PORT:-8189}:8188"
+    networks: [internal]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  dispatcher:
+    depends_on:
+      - searxng
+      - comfyui-cpu
+
+  hermes:
+    depends_on:
+      - ocr
+      - jobs
+
+  ingest:
+    depends_on:
+      - ocr

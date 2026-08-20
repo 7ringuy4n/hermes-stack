@@ -1221,7 +1221,7 @@ class ZaloAdapter(BasePlatformAdapter):
         if self._as_inflight_try(thread_id):
             return False
         logger.info("Zalo: already answering wait thread=%s type=%s via valkey", thread_id, thread_type)
-        print(f"[zalo] already answering wait thread={thread_id}", flush=True)
+        logger.info(f"[zalo] already answering wait thread={thread_id}")
         try:
             announce = getattr(self, "_as_gate_announce", None)
             msg = "Bot đang trả lời tin này. Đợi xong rồi gửi tiếp nhé."
@@ -1294,17 +1294,35 @@ class ZaloAdapter(BasePlatformAdapter):
         sender_name: str,
         chat_type: str,
         plan: dict | None = None,
+        schedule_fire: bool = False,
     ) -> bool:
         try:
             from .workflow_client import create_schedule, create_workflow, workflow_enabled
+            from .schedule_client import create_schedule as go_create_schedule
+            from .schedule_client import fire_text_from_plan, schedule_enabled
             from .classify_client import classify_text, plan_is_async
             from .knowledge_cite import plan_is_knowledge
         except ImportError:
             from workflow_client import create_schedule, create_workflow, workflow_enabled  # type: ignore
+            from schedule_client import create_schedule as go_create_schedule  # type: ignore
+            from schedule_client import fire_text_from_plan, schedule_enabled  # type: ignore
             from classify_client import classify_text, plan_is_async  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
         if not isinstance(plan, dict):
             plan = classify_text(text)
+        if plan.get("ok") is False:
+            logger.info(f"[zalo] classify failed error={plan.get('error')}")
+            try:
+                msg = self._as_ux_line(
+                    "ZALO_CLASSIFY_FAILED_MSG",
+                    ("classify", "failed"),
+                    "Could not classify this request. Please send it again.",
+                    user_text=text,
+                )
+                await self._as_gate_announce(thread_id, thread_type, msg)
+            except Exception:
+                pass
+            return True
         if plan_is_knowledge(plan):
             await self._as_knowledge_cite_reply(
                 {"text": text},
@@ -1314,8 +1332,6 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan=plan,
             )
             return True
-        if not workflow_enabled():
-            return False
         origin = {
             "platform": "zalo",
             "chat_id": thread_id,
@@ -1332,16 +1348,28 @@ class ZaloAdapter(BasePlatformAdapter):
             "execute": "hermes",
             "plan": plan,
         }
-        if plan.get("task_hint") == "schedule":
-            data = create_schedule(
-                cron_expr=str(plan.get("cron_expr") or ""),
-                text=text,
-                origin=origin,
-                context=context,
-                cadence=str(plan.get("cadence") or ""),
-            )
+        if plan.get("task_hint") == "schedule" and not schedule_fire:
+            fire_text = fire_text_from_plan(plan, text)
+            if schedule_enabled():
+                data = go_create_schedule(
+                    cron_expr=str(plan.get("cron_expr") or ""),
+                    text=text,
+                    fire_text=fire_text,
+                    origin=origin,
+                    context=context,
+                    cadence=str(plan.get("cadence") or ""),
+                    timezone=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
+                )
+            else:
+                data = create_schedule(
+                    cron_expr=str(plan.get("cron_expr") or ""),
+                    text=text,
+                    origin=origin,
+                    context=context,
+                    cadence=str(plan.get("cadence") or ""),
+                )
             if data.get("ok"):
-                print("[zalo] workflow schedule stored", flush=True)
+                logger.info("[zalo] schedule stored")
                 try:
                     msg = self._as_ux_line(
                         "ZALO_SCHEDULE_SAVED_MSG",
@@ -1353,6 +1381,20 @@ class ZaloAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
                 return True
+            logger.warning("[zalo] schedule store failed")
+            try:
+                msg = self._as_ux_line(
+                    "ZALO_SCHEDULE_FAILED_MSG",
+                    ("schedule", "failed"),
+                    "Could not save this lịch. Please send it again.",
+                    user_text=text,
+                )
+                await self._as_gate_announce(thread_id, thread_type, msg)
+            except Exception:
+                pass
+            return True
+        if not workflow_enabled():
+            return False
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
         async_job = plan_is_async(plan) or len(parts) >= 2
         if not async_job or not parts:
@@ -1367,10 +1409,15 @@ class ZaloAdapter(BasePlatformAdapter):
             await self._as_gate_announce(thread_id, thread_type, ack)
         except Exception:
             pass
-        data = create_workflow(instructions=parts, origin=origin, context=context)
+        data = create_workflow(
+            instructions=parts,
+            origin=origin,
+            context=context,
+            task_details=plan.get("task_details") if isinstance(plan.get("task_details"), list) else [],
+        )
         if not data.get("ok"):
             return False
-        print(f"[zalo] workflow created jobs={len(parts)} class={plan.get('execution_class')}", flush=True)
+        logger.info(f"[zalo] workflow created jobs={len(parts)} class={plan.get('execution_class')}")
         logger.info("Zalo: workflow %s jobs=%s", (data.get("workflow") or {}).get("id"), len(parts))
         return True
 
@@ -1489,7 +1536,7 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             await self._as_autosend_late_files(iso, zalo_tt)
             complete_job(jid, {"ok": True, "idle": idle, "isolated": True})
-            print(f"[zalo] workflow job done {jid[:16]} idle={idle}", flush=True)
+            logger.info(f"[zalo] workflow job done {jid[:16]} idle={idle}")
         except Exception as e:
             logger.exception("Zalo: workflow job failed")
             try:
@@ -1836,6 +1883,7 @@ class ZaloAdapter(BasePlatformAdapter):
         rate_over: bool,
         rate_notify: bool,
         event,
+        schedule_fire: bool = False,
     ) -> None:
         try:
             from .inbound_queue import (
@@ -1862,6 +1910,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 sender_id=sender_id,
                 sender_name=sender_name,
                 chat_type=chat_type,
+                schedule_fire=schedule_fire,
             ):
                 return
             await self._as_dispatch_event(event, text)
@@ -1878,6 +1927,7 @@ class ZaloAdapter(BasePlatformAdapter):
             media_urls=media_urls,
             media_types=media_types,
             message_type=message_type,
+            schedule_fire=schedule_fire,
         )
         mid = str(message_id or "")
         try:
@@ -1888,6 +1938,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 sender_id=sender_id,
                 sender_name=sender_name,
                 chat_type=chat_type,
+                schedule_fire=schedule_fire,
             ):
                 return
             if mid and hasattr(store, "queue_seen") and not store.queue_seen(mid):
@@ -1970,7 +2021,7 @@ class ZaloAdapter(BasePlatformAdapter):
                             from multi_request import wrap_compound_part  # type: ignore
                         total = len(parts)
                         text = wrap_compound_part(1, total, text)
-                        print(f"[zalo] compound split n={total} via queue", flush=True)
+                        logger.info(f"[zalo] compound split n={total} via queue")
                         logger.info("Zalo: compound message split into %d parts (queue)", total)
                     item["text"] = text
                     item["kind"] = KIND_PART
@@ -2091,7 +2142,7 @@ class ZaloAdapter(BasePlatformAdapter):
             await self.handle_message(event)
             return
         logger.info("Zalo: compound message split into %d parts", len(parts))
-        print(f"[zalo] compound split n={len(parts)} via dispatch", flush=True)
+        logger.info(f"[zalo] compound split n={len(parts)} via dispatch")
         tid = str(getattr(getattr(event, "source", None), "chat_id", "") or "")
         tt = str(getattr(getattr(event, "source", None), "chat_type", None) or "dm")
         zalo_tt = "group" if tt == "group" else "user"
@@ -2268,7 +2319,7 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception:
             pass
         logger.info("Zalo: secret-probe deny sender=%s thread=%s", sid, thread_id)
-        print(f"[zalo] secret-probe deny sender={sid} thread={thread_id}", flush=True)
+        logger.info(f"[zalo] secret-probe deny sender={sid} thread={thread_id}")
         return True
 
 
@@ -2833,6 +2884,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 rate_over=rate_over,
                 rate_notify=rate_notify,
                 event=event,
+                schedule_fire=bool(m.get("scheduleFire") or m.get("schedule_fire")),
             )
             return
         await self._as_dispatch_event(event, text)
@@ -3775,7 +3827,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     if callable(flow):
                         flow("zalo_send_file", thread_id=tid, file=dest_send.name, path=str(dest_send)[:160])
                     else:
-                        print(f"[flow] stage=zalo_send_file thread_id={tid} file={dest_send.name}", flush=True)
+                        logger.debug(f"[flow] stage=zalo_send_file thread_id={tid} file={dest_send.name}")
                     break
                 self._as_autosend_file_unclaim(dest_send)
             except Exception as e:
@@ -3842,7 +3894,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 s = f'"{s}"'
             parts.append(f"{k}={s}")
         line = " ".join(parts)
-        print(line, flush=True)
+        logger.debug(line)
         logger.info("%s", line)
 
     def _as_file_pipeline_enabled(self) -> bool:  # ASSISTANT_FILE_PIPELINE_v6
@@ -4328,7 +4380,14 @@ class ZaloAdapter(BasePlatformAdapter):
                 logger.info("Zalo: copied %s → %s for bridge send", p, dest)
                 p = dest
             if os.path.isfile(p):
-                os.chmod(p, 0o644)
+                try:
+                    os.chmod(p, 0o644)
+                except OSError:
+                    dest = os.path.join(out_dir, "send-" + (os.path.basename(p) or "out.bin"))
+                    shutil.copy2(p, dest)
+                    os.chmod(dest, 0o644)
+                    logger.info("Zalo: copied root-owned media to %s", dest)
+                    p = dest
         except Exception as e:
             logger.warning("Zalo: could not stage/chmod file for bridge: %s", e)
         if p == cont_root or p.startswith(cont_root + "/"):
@@ -4434,11 +4493,11 @@ class ZaloAdapter(BasePlatformAdapter):
         )
         if not self._as_bridge_ok(res):
             err = str((res or {}).get("error") or "send-attachment rejected")
-            print(f"[zalo] send-attachment fail {err[:160]}", flush=True)
+            logger.info(f"[zalo] send-attachment fail {err[:160]}")
             logger.warning("Zalo: send-attachment fail dest=%s %s", dest_id, err[:200])
             return SendResult(success=False, error=err)
         host_path = str(payload.get("path") or "")
-        print(f"[zalo] send-attachment path {host_path}", flush=True)
+        logger.info(f"[zalo] send-attachment path {host_path}")
         logger.info("Zalo: send-attachment path %s", host_path)
         self._as_compound_mark_delivered(chat_id)
         return SendResult(success=True)
@@ -4485,7 +4544,7 @@ class ZaloAdapter(BasePlatformAdapter):
         )
         if not self._as_bridge_ok(res):
             err = str((res or {}).get("error") or "send-attachment rejected")
-            print(f"[zalo] send-attachment fail {err[:160]}", flush=True)
+            logger.info(f"[zalo] send-attachment fail {err[:160]}")
             logger.warning("Zalo: send-attachment fail dest=%s %s", dest_id, err[:200])
             if looks_invalid_param(err) and any(str(file_path).lower().endswith(ext) for ext in VIDEO_EXTS):
                 retry_path = self._as_remux_zalo_video(str(file_path))
@@ -4499,13 +4558,13 @@ class ZaloAdapter(BasePlatformAdapter):
                     )
                     if self._as_bridge_ok(res2):
                         host_path = str(payload2.get("path") or retry_path)
-                        print(f"[zalo] send-attachment path {host_path}", flush=True)
+                        logger.info(f"[zalo] send-attachment path {host_path}")
                         logger.info("Zalo: send-attachment path %s", host_path)
                         self._as_compound_mark_delivered(chat_id)
                         return SendResult(success=True)
             return SendResult(success=False, error=err)
         host_path = str(payload.get("path") or "")
-        print(f"[zalo] send-attachment path {host_path}", flush=True)
+        logger.info(f"[zalo] send-attachment path {host_path}")
         logger.info("Zalo: send-attachment path %s", host_path)
         self._as_compound_mark_delivered(chat_id)
         return SendResult(success=True)
@@ -4623,12 +4682,12 @@ class ZaloAdapter(BasePlatformAdapter):
                     },
                 )
                 if self._as_bridge_ok(sent):
-                    print(f"[zalo] send-attachment path {host_mp4}", flush=True)
+                    logger.info(f"[zalo] send-attachment path {host_mp4}")
                     logger.info("Zalo: send-attachment path %s", host_mp4)
                     self._as_compound_mark_delivered(chat_id)
                     return SendResult(success=True)
                 err = str((sent or {}).get("error") or "sendVideo rejected")
-                print(f"[zalo] send-attachment fail {err[:160]}", flush=True)
+                logger.info(f"[zalo] send-attachment fail {err[:160]}")
                 logger.warning("Zalo: sendVideo fail dest=%s %s", dest_id, err[:200])
         return await self.send_document(chat_id, staged, caption=caption, metadata=metadata)
 

@@ -66,6 +66,15 @@ You are an AI/DevOps/Developer with 10+ years experience across AI Agent and aut
 * When changing intent classification, test both **false positives and false negatives**, including natural-language, multilingual, paraphrased, and unrelated requests.
 | 40 | **Zalo Testing — All Zalo test cases must simulate real user requests sent through the Zalo Bridge, rather than directly calling internal services or bypassing the Zalo integration path.
 | 41 | Restore Defaults — After testing is complete, revert all test-specific source/configuration values to their original/default values and verify no test-only changes remain.
+| 42 | Async Workflows — Workflows must be asynchronous and non-blocking by default; do not force sequential execution unless ordering or data dependency explicitly requires it.
+| 43 | Router Timeout — Do not use overly strict request timeouts. Free-model routers may need additional time to switch, retry, or find an available model. Use configurable, fault-tolerant timeouts with appropriate retry/grace periods, while still preventing indefinite hangs.
+| 44 | Temporary Files — Always add temporary/test-environment folders and generated temporary artifacts to .gitignore; never commit them to the source repository.
+| 45 | Abnormal Test Behavior — If abnormal tasks or operations are discovered during testing, update the affected logic to handle them correctly without rearchitecting the existing system unless explicitly required.
+| 46 | Classification Testing — Test classification in detail for every supported request type and task_hint, including correct routing and false classifications. Test cases must contain no secrets, no chit-chat, and no summaries. Classification output must return JSON only and include only the fields required by the current requirements.
+| 47| Test Integrity & Architecture Alignment — NEVER cheat by changing test cases only to obtain a passing result. Every test must represent the CURRENT architecture, component responsibilities, APIs, workflows, security boundaries, concurrency model, and realistic user behavior. Before modifying a test, inspect the current implementation and architecture. If the architecture intentionally changed, update the test accordingly; otherwise, fix the implementation instead of weakening the test. Never remove assertions, reduce coverage, bypass validation, mock away the behavior under test, skip real integration paths, or change expected results without architectural justification. Tests must prove that the system works according to its intended architecture, not that the implementation can satisfy an artificially modified test.
+| 48 | Test Cases Must Follow the Current Architecture — After any rearchitecture, refactoring, component replacement, workflow change, responsibility change, or API change, review ALL affected test cases and update them to match the CURRENT architecture. Do not preserve outdated test assumptions, obsolete component paths, deprecated APIs, old worker responsibilities, or previous request flows merely to keep tests passing. Tests must validate the system as it is architected now. When a test is no longer applicable, replace it with an equivalent test that validates the intended behavior through the current architecture rather than simply deleting it. Re-run the updated tests and ensure they still represent realistic user requests and end-to-end behavior.
+| 49 | Social-App Test Routing — When a supported social app such as **Zalo** is available and already authenticated/configured, ALL applicable end-to-end test cases MUST simulate requests through that real social-app channel (e.g., Zalo → bridge/proxy → Hermes) rather than bypassing the social-app layer. Tests must use realistic user requests, message types, attachments, and interaction flows supported by the current architecture. If the social app is unavailable, not authenticated, or not configured, simulate the request directly against Hermes while preserving the same expected user behavior. Never modify or weaken test cases simply to avoid using the available social-app integration.
+
 
 *(Number 9 is intentionally unused in the operator list.)*
 
@@ -107,7 +116,7 @@ exclude:
 
 | Case | File |
 |------|------|
-| Basic health (all profiles) | `test/cases/01-basic-health.md` |
+| Basic health | `test/cases/01-basic-health.md` |
 | Media disabled | `test/cases/02-media-disabled.md` |
 | High 10-type concurrency | `test/cases/03-high-concurrency.md` |
 | Web search | `test/cases/04-web-search.md` |
@@ -117,7 +126,7 @@ exclude:
 | Zalo concurrent text | `test/cases/08-zalo-concurrent.md` |
 | Zalo concurrent text + media gen + delay | `test/cases/09-zalo-concurrent-media.md` |
 | Isolation risks (sock, judge, VPN-only) | `test/cases/10-security-isolation-risks.md` |
-| Profile upgrade/downgrade + add/remove options | `test/cases/11-profile-switch.md` |
+| Worker add/remove | `test/cases/11-worker-switch.md` |
 | Schedule TZ (today vs tomorrow) | `test/cases/15-schedule-timezone.md` |
 | Zalo compound multi-request | `test/cases/16-zalo-multi-request.md` |
 | Zalo latency SLO | `test/cases/17-zalo-latency-slo.md` |
@@ -130,6 +139,6 @@ exclude:
 | Plenty-in-one + same/different-time cron | `test/cases/24-workflow-multi-cron-channels.md` |
 | Zalo special four (hello + image + fuel + video) | `test/cases/25-zalo-special-four.md` |
 | Zalo weather+fuel infographic (one picture) | `test/cases/26-zalo-weather-fuel-poster.md` |
-| Daily lịch of one weather+fuel infographic | `test/cases/27-zalo-weather-fuel-daily.md` |
-| Zalo media gen + lịch delivery (video send, leftover claim, quiet) | `test/cases/28-zalo-media-cron-delivery.md` |
-| Zalo once-lịch numbered tasks (no cite intercept) | `test/cases/29-zalo-once-numbered-nocite.md` |
+| Daily schedule of one weather+fuel infographic | `test/cases/27-zalo-weather-fuel-daily.md` |
+| Zalo media gen + schedule delivery (video send, leftover claim, quiet) | `test/cases/28-zalo-media-cron-delivery.md` |
+| Zalo once-schedule numbered tasks (no cite intercept) | `test/cases/29-zalo-once-numbered-nocite.md` |

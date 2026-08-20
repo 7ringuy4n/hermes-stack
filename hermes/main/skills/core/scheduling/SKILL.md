@@ -5,7 +5,7 @@ description: "Execute a due lịch payload in local time (Asia/Ho_Chi_Minh). Do 
 
 # Scheduling (local timezone)
 
-Zalo and API Gateway persist lịch via LLM classify (`task_hint=schedule`) and the workflow Schedule Manager. This skill does **not** create Hermes CLI cron jobs.
+Zalo and API Gateway persist lịch via LLM classify (`task_hint=schedule`) and the **Schedule skill → Go schedule worker**. This skill does **not** create Hermes CLI cron jobs and does **not** persist a new schedule when a due payload arrives.
 
 ## Must follow
 

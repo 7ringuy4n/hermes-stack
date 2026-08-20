@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Upload OmniRouter first-setup and run it on the VPS."""
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import ROOT, connect, sftp_put, sudo_bash, _file_bytes  # noqa: E402
+from deploy_stack import ROOT, connect, sftp_put, sudo_bash, _file_bytes  # noqa: E402
 
 
 def main() -> int:
@@ -55,3 +55,4 @@ echo OMNI_COMBO_SETUP_DONE
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
