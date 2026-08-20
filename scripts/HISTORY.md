@@ -19,6 +19,30 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-20 15:05 +07 — clean-host Zalo bridge logged in but Hermes never attached
+
+### Symptom
+
+On a fresh deploy, QR login succeeded and bridge health showed `loggedIn=true`, but Zalo never interacted with Hermes and bridge health stayed `sseClients=0`.
+
+### Root cause
+
+1. `setup-zalo.sh` skipped plugin activation when `/data/assistant/config.yaml` did not exist yet on a clean host.
+2. The old `sed` logic inserted `- zalo-platform` under the first unrelated `enabled:` key instead of the real `plugins:` block.
+3. Shared `/data/assistant/.env` could remain root-owned, so Hermes replicas could not read the linked env file.
+4. Restart logic targeted `hermes`, but compose used `assistant-hermes-1`.
+
+### Fix
+
+- Seed shared `config.yaml` from the newest live replica when the shared file is missing.
+- Rewrite the config edit path to place `zalo-platform` only under the real `plugins:` block and set `gateway.platforms.zalo.enabled: true`.
+- Chown shared `.env` to `HERMES_UID:HERMES_GID` before restart.
+- Resolve the active Hermes container name before restart.
+
+### Prevent recurrence
+
+Any first-setup channel attach script must work with an empty shared data dir, not assume pre-existing shared config, and must edit structured config blocks by scope rather than matching the first same-named key in the file.
+
 ## 2026-08-20 14:20 +07 — clean Ubuntu first setup blocked
 
 ### Symptom

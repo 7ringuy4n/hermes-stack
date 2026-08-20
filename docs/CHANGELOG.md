@@ -1,5 +1,10 @@
 # Change history
 
+## 2026-08-20 15:05 +07 — clean-host Zalo setup seeds shared Hermes config
+
+- **`setup-zalo.sh`** now seeds shared `config.yaml` from a live replica on clean hosts, enables `zalo-platform` in the real `plugins:` block, and writes `gateway.platforms.zalo.enabled: true`.
+- **`setup-zalo.sh`** also fixes shared `.env` ownership for Hermes (`HERMES_UID:GID`) and resolves the real Hermes container name before restart.
+
 ## 2026-08-20 14:40 +07 — [RELEASE] v0.5.12
 
 - Clean-OS first-setup fixes (zalo-api Dockerfile, destroy without containers, OmniRouter wait path).
