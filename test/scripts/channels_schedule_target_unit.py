@@ -27,7 +27,25 @@ def test_extract() -> None:
         "schedule daily at 07:00 to group Ops hello",
         {"target_channel": "Ops"},
     ) == "Ops"
+    assert extract_target_group_ref(
+        "đặt lịch chạy một lần lúc 20:30 vào group Zalo LC group và thực hiện các việc sau "
+        "Chào buổi tối và chúc ngủ ngon",
+        {},
+    ) in {"Zalo LC group", "LC group"}
+    assert extract_target_group_ref(
+        "hello",
+        {"target_channel": "LC group"},
+    ) == "LC group"
     assert extract_target_group_ref("hello", {}) == ""
+
+
+def test_resolve_prefixed_and_reverse(tmp_path: Path) -> None:
+    reg.REGISTRY_FILE = tmp_path / "registry.json"
+    reg.upsert("zalo", "5275909225773405280", name="LC group", kind="group")
+    hit = reg.resolve("zalo", "Zalo LC group")
+    assert hit and hit["external_id"] == "5275909225773405280"
+    hit2 = reg.resolve("zalo", "LC group")
+    assert hit2 and hit2["external_id"] == "5275909225773405280"
 
 
 def test_resolve_and_apply(tmp_path: Path) -> None:
@@ -76,6 +94,7 @@ def test_resolve_and_apply(tmp_path: Path) -> None:
 def main() -> int:
     test_extract()
     with tempfile.TemporaryDirectory() as td:
+        test_resolve_prefixed_and_reverse(Path(td))
         test_resolve_and_apply(Path(td))
     print("ok")
     return 0

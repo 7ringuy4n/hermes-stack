@@ -18,9 +18,19 @@ JSON body (deterministic fields from classifier JSON, not from parsing user pros
 - `timezone` — IANA zone (default `Asia/Ho_Chi_Minh`)
 - `fire_text` — inner work only (`instructions` joined, or `message`). **Never** the “đặt lịch lúc HH:MM” wrapper
 - `text` — original inbound (audit only)
-- `origin` / `context` — thread routing so the worker can inject back into the same Zalo conversation
+- `origin` / `context` — thread routing so the worker can inject back into the conversation
 
 The worker stores the row in SQLite, waits, and sends `fire_text` back through the Hermes inbound pipeline (`scheduleFire` protocol flag). Hermes classifies that inner message again and routes through skills.
+
+## Deliver into a named Zalo group
+
+When classify JSON includes `target_channel` (group display name), Zalo adapter resolves it via zalo-api channel registry and rewrites schedule `origin.thread_id` to that group (requester stays `user_id`).
+
+If the group is unknown:
+
+- Tell the user to open that group and run `!zalo allow` / `!zalo label`, or DM `!zalo refresh`, then retry.
+- **Do not** ask for a raw chat ID.
+- **Do not** invent “send the request inside the group instead.”
 
 ## Must follow
 
