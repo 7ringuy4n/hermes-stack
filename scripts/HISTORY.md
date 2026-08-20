@@ -19,6 +19,28 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-20 20:35 +07 — DM schedule into named group asked for chat ID
+
+### Symptom
+
+From DM: “đặt lịch … vào group Zalo LC group …” — bot replied to send the request inside the group or provide a chat ID, instead of creating a schedule that delivers to that group.
+
+### Root cause
+
+1. Classify combo `classifier` returned HTTP 403 / empty content → `classify_llm_failed` → Zalo fail-open to Hermes chat, which invented the “go to the group / give chat ID” reply.
+2. Channel registry had only the DM user (no groups) until someone ran `!zalo refresh`, so even a good `target_channel: LC group` would have hit `group_not_found`.
+3. Name “Zalo LC group” did not match registry name “LC group” (prefix / reverse containment).
+
+### Fix
+
+- Classify retries with the chat combo (`hermes`) when the classify combo is forbidden or empty.
+- zalo-api syncs bridge contacts on startup and again on resolve miss; resolve accepts platform-prefixed and reverse-contained names.
+- Schedule skill documents `!zalo refresh` / `!zalo allow` UX — never ask for raw chat IDs.
+
+### Prevent recurrence
+
+Keep a working classify path (dedicated combo or failover to chat combo). Do not rely on Hermes free-chat to create schedules. Registry must stay warm from bridge contacts without requiring the operator to remember `!zalo refresh` before the first named-group schedule.
+
 ## 2026-08-20 20:20 +07 — Legacy check-medium/high wrappers and High deploy PS1
 
 ### Symptom
