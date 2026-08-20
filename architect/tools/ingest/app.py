@@ -29,6 +29,21 @@ COLLECTION = os.environ.get("QDRANT_COLLECTION_KNOWLEDGE", "knowledge_chunks")
 SECURITY_URL = os.environ.get("SECURITY_URL", "").rstrip("/")
 AUTHZ_URL = os.environ.get("AUTHZ_URL", "http://authz:8097").rstrip("/")
 NOTIFY_URL = os.environ.get("NOTIFY_URL", "http://notify:8092").rstrip("/")
+# Bridge fallback when Notification Worker is off / unreachable (learn pending must still reach admin).
+ZALO_BRIDGE_URL = (
+    os.environ.get("ZALO_BRIDGE_URL")
+    or os.environ.get("ZALO_PLUGIN_URL")
+    or "http://zalo-proxy:8787"
+).rstrip("/")
+ZALO_PLUGIN_TOKEN = (os.environ.get("ZALO_PLUGIN_TOKEN") or "").strip()
+ZALO_ADMIN_USERS_FILE = (
+    os.environ.get("ZALO_ADMIN_USERS_FILE") or "/data/assistant/zalo_admin_users.txt"
+).strip()
+ZALO_ADMIN_USERS = (os.environ.get("ZALO_ADMIN_USERS") or "").strip()
+NOTIFY_ZALO_THREAD = (os.environ.get("NOTIFY_ZALO_THREAD") or "").strip()
+NOTIFY_ZALO_THREAD_TYPE = (
+    os.environ.get("NOTIFY_ZALO_THREAD_TYPE") or "user"
+).strip().lower() or "user"
 QUEUE = "ingest:jobs"
 PENDING_HASH = "ingest:pending"
 # Shared lab job bus (also used by memory-manager index jobs)
@@ -146,27 +161,76 @@ class LearnScan(BaseModel):
     sender_name: Optional[str] = None
 
 
-def _notify_admin(title: str, body: str) -> bool:
-    if not NOTIFY_URL:
+def _admin_zalo_dest() -> tuple[str, str]:
+    """Resolve sole-admin Zalo DM (or NOTIFY_ZALO_THREAD override). Never log the uid."""
+    tid = NOTIFY_ZALO_THREAD
+    if tid:
+        return tid, NOTIFY_ZALO_THREAD_TYPE if NOTIFY_ZALO_THREAD_TYPE in {"user", "group"} else "user"
+    path = ZALO_ADMIN_USERS_FILE
+    if path and Path(path).is_file():
+        try:
+            for line in Path(path).read_text(encoding="utf-8").splitlines():
+                raw = line.strip()
+                if not raw or raw.startswith("#"):
+                    continue
+                uid = raw.split("|", 1)[0].strip()
+                if uid:
+                    return uid, "user"
+        except OSError:
+            pass
+    for part in ZALO_ADMIN_USERS.split(","):
+        uid = part.strip()
+        if uid:
+            return uid, "user"
+    return "", "user"
+
+
+def _bridge_dm_admin(title: str, body: str) -> bool:
+    """Direct bridge /send when notify worker is down — learn approve must not be silent."""
+    tid, ttype = _admin_zalo_dest()
+    if not tid or not ZALO_BRIDGE_URL:
         return False
+    text = f"{title}\n{body}".strip()
+    headers = {"content-type": "application/json"}
+    if ZALO_PLUGIN_TOKEN:
+        headers["x-bridge-token"] = ZALO_PLUGIN_TOKEN
+        headers["Authorization"] = f"Bearer {ZALO_PLUGIN_TOKEN}"
     try:
         with httpx.Client(timeout=20) as c:
             r = c.post(
-                f"{NOTIFY_URL}/v1/notify",
-                json={
-                    "title": title,
-                    "body": body,
-                    "severity": "info",
-                    "channels": ["zalo"],
-                    "kind": "alert",
-                },
+                f"{ZALO_BRIDGE_URL}/send",
+                headers=headers,
+                json={"threadId": tid, "threadType": ttype, "text": text[:3500]},
             )
-            if r.status_code >= 300:
-                return False
-            data = r.json() if r.content else {}
-            return bool((data.get("results") or {}).get("zalo"))
+            return r.status_code < 300
     except Exception:
         return False
+
+
+def _notify_admin(title: str, body: str) -> bool:
+    """Prefer Notification Worker; fall back to Zalo bridge DM so pending learn is never silent."""
+    tid, ttype = _admin_zalo_dest()
+    if NOTIFY_URL:
+        try:
+            payload: dict[str, Any] = {
+                "title": title,
+                "body": body,
+                "severity": "info",
+                "channels": ["zalo"],
+                "kind": "alert",
+            }
+            if tid:
+                payload["zalo_thread_id"] = tid
+                payload["zalo_thread_type"] = ttype
+            with httpx.Client(timeout=20) as c:
+                r = c.post(f"{NOTIFY_URL}/v1/notify", json=payload)
+                if r.status_code < 300:
+                    data = r.json() if r.content else {}
+                    if bool((data.get("results") or {}).get("zalo")):
+                        return True
+        except Exception:
+            pass
+    return _bridge_dm_admin(title, body)
 
 
 def _learn_notify_cfg() -> dict[str, Any]:

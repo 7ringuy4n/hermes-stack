@@ -4270,6 +4270,13 @@ class ZaloAdapter(BasePlatformAdapter):
                         notified=meta.get("notified"),
                         path=ingest_rel,
                     )
+                    if meta.get("pending_id") and not meta.get("notified"):
+                        logger.error(
+                            "Zalo learn pending id=%s file=%s but admin notify failed "
+                            "(check notify worker / ZALO_BRIDGE_URL / zalo_admin_users.txt)",
+                            meta.get("pending_id"),
+                            file_name,
+                        )
         except Exception as e:
             logger.warning("Zalo file-pipeline error for %s: %s", file_name, e)
             self._as_flow("ingest_error", thread_id=thread_id, file=file_name, error=type(e).__name__)

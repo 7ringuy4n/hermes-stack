@@ -10,7 +10,7 @@ from deploy_stack import ROOT, connect, sftp_put, sudo_bash, _file_bytes  # noqa
 
 FILES = [
     ("architect/monitor/nine-exporter/app.py", "/tmp/nine-exporter-app.py"),
-    ("docker/docker-compose.high.yml", "/tmp/docker-compose.high.yml"),
+    ("docker/docker-compose.security.yml", "/tmp/docker-compose.security.yml"),
     ("config/monitor/prometheus.yml", "/tmp/prometheus.yml"),
 ]
 
@@ -25,16 +25,16 @@ def main() -> int:
             r"""
 set -euo pipefail
 install -m 0644 /tmp/nine-exporter-app.py /opt/assistant/architect/monitor/nine-exporter/app.py
-install -m 0644 /tmp/docker-compose.high.yml /opt/assistant/docker/docker-compose.high.yml
+install -m 0644 /tmp/docker-compose.security.yml /opt/assistant/docker/docker-compose.security.yml
 install -m 0644 /tmp/prometheus.yml /opt/assistant/config/monitor/prometheus.yml
 sed -i 's/\r$//' /opt/assistant/architect/monitor/nine-exporter/app.py \
-  /opt/assistant/docker/docker-compose.high.yml /opt/assistant/config/monitor/prometheus.yml
+  /opt/assistant/docker/docker-compose.security.yml /opt/assistant/config/monitor/prometheus.yml
 cd /opt/assistant
 set -a
 . ./.env
 set +a
 export COMPOSE_PROGRESS=plain
-files="-f /opt/assistant/docker/docker-compose.yml -f /opt/assistant/docker/docker-compose.medium.yml -f /opt/assistant/docker/docker-compose.high.yml"
+files="-f /opt/assistant/docker/docker-compose.yml -f /opt/assistant/docker/docker-compose.media.yml -f /opt/assistant/docker/docker-compose.security.yml"
 docker compose --project-directory /opt/assistant $files --profile prometheus --profile grafana --profile omni-exporter --profile omnirouter build nine-exporter omni-exporter
 docker compose --project-directory /opt/assistant $files --profile prometheus --profile grafana --profile omni-exporter --profile omnirouter up -d --no-deps --force-recreate nine-exporter omni-exporter node-exporter prometheus
 sleep 10
