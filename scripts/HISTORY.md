@@ -37,7 +37,7 @@ Media dirs were only created in `setup-zalo` (or one-off lab chown). Fresh volum
 
 ### Prevent recurrence
 
-Do not mkdir media as root without chown to `HERMES_UID`. Prefer entrypoint + stack-watch heal over manual SSH chown.
+Do not mkdir media as root without chown to `HERMES_UID`. Prefer entrypoint + stack-watch heal over manual SSH chown. Shared `.env` / `config.yaml` must also stay Hermes-UID-writable when replicas rewrite home-channel settings.
 
 ---
 
@@ -108,6 +108,340 @@ Do not add profile-tier smoke aliases. New smoke scripts must use worker names (
 ### Prevent recurrence
 
 Do not reintroduce ASSISTANT_PROFILE overlays. Learn pending must never depend on Notify Worker alone. After any bridge restart, verify listen is `0.0.0.0:8787` and `/inject-event` returns `{"ok":true}` from the schedule network.
+
+## 2026-08-20 19:35 +07 — Security containers started while Security Worker inactive
+
+### Symptom
+
+Hosts with Security Worker inactive still ran OpenBao / security-manager / authz / SIEM / policy-center. Notify or other workers pulled those services up as hard dependencies.
+
+### Root cause
+
+Security services lived on the always-on compose path (or Notify `depends_on`) instead of compose profile `security` gated by `WORKER_SECURITY` / `ENABLE_SECURITY`.
+
+### Fix
+
+- Put OpenBao and security-plane services behind `--profile security`.
+- Notification Worker no longer starts them; `run.sh` removes them when Security is inactive.
+- Drop hermes/ingest hard `depends_on` onto profiled security services from the security overlay.
+
+### Prevent recurrence
+
+Optional security plane must follow the same worker activation pattern as Media|File. Do not hard-depend core chat on Security containers.
+
+## 2026-08-20 18:55 +07 — Classify returned empty JSON from reasoning / CoT models
+
+### Symptom
+
+Dedicated classify combo still failed with empty `content` even when the provider returned a usable plan in reasoning / thinking fields. Schedules and multi-task plans fell through or timed out.
+
+### Root cause
+
+`_message_text` only read `message.content`. OpenCode / reasoning models often leave `content` empty and put the answer in `reasoning_content`, `reasoning`, `thinking`, `thinking_content`, `thought`, `reasoning_text`, or `reasoning_details`.
+
+### Fix
+
+Expand `_message_text` to read those CoT fields (and any other message key containing reason/think) before declaring classify empty.
+
+### Prevent recurrence
+
+Any new classify provider must be tested with “content empty, CoT filled.” Do not require non-empty `content` alone.
+
+## 2026-08-20 18:50 +07 — Classifier combo had no usable OpenCode members
+
+### Symptom
+
+`MODEL_ROUTER_CLASSIFY_MODEL=classifier` returned 401/403 or empty; combo existed but members were wrong shape or OpenCode stayed in `blockedProviders`.
+
+### Root cause
+
+`first-setup-omnirouter` did not clear OpenCode blocks, did not load the live `oc/*` catalog, and wrote combo members without Omni’s `connectionId` object shape.
+
+### Fix
+
+- Clear `blockedProviders` for OpenCode.
+- Load all current `oc/*` from `/api/models`.
+- Write combo members with `connectionId`.
+- Note: upstream OpenCode HTTP 403 (quota/block) can still occur — classify must fail open / failover until upstream recovers (see 20:35 failover).
+
+### Prevent recurrence
+
+After first-setup, probe classify with the `classifier` combo. If members are empty, re-run Omni first-setup rather than hardcoding model ids in product code.
+
+## 2026-08-20 18:40 +07 — Chat and classify shared one Omni combo
+
+### Symptom
+
+Classify burned free-tier quota / slow models used for chat. alert-watch still probed 9Router login when `ENABLE_9ROUTER=0`. Bare Zalo images triggered document-OCR Q&A prompts.
+
+### Root cause
+
+One combo (`hermes`) handled both interactive chat and classify. Watch scripts assumed 9Router always on. Image inbound path treated every image as a document OCR job.
+
+### Fix
+
+- Dedicated Omni combo **`classifier`** (OpenCode Free `oc/*`); chat/outbound stay on **`hermes`**.
+- Default `MODEL_ROUTER_CLASSIFY_MODEL=classifier`.
+- alert-watch skips 9Router `/api/auth/login` when 9Router is disabled.
+- Bare Zalo images no longer force document-OCR Q&A.
+
+### Prevent recurrence
+
+Keep classify and chat on separate combos. Optional routers must be skipped by watches when disabled.
+
+## 2026-08-20 16:35 +07 — first-setup overwrote Omni combo member lists
+
+### Symptom
+
+Operators curated Omni Combos in the UI; next `first-setup-omnirouter` rewrote a fixed `oc/*` member list and undid their routing.
+
+### Root cause
+
+First-setup treated combo membership as code-owned SoT.
+
+### Fix
+
+`first-setup-omnirouter` only ensures combo alias `hermes` exists (classifier setup still fills `classifier` from catalog where required). Chat combo members stay UI-managed. Stack sends the combo **name** only.
+
+### Prevent recurrence
+
+Do not hardcode chat combo members in product setup. Document that operators manage members in Omni Combos.
+
+## 2026-08-20 16:25 +07 — Operators treated `hermes` as a vendor model id
+
+### Symptom
+
+Docs and env looked like a standalone model named `hermes`. People set OpenRouter / vendor model ids and got 401s.
+
+### Root cause
+
+Naming collision: `hermes` is the **OmniRouter/9Router combo alias** in the OpenAI `model` field, not a vendor model id.
+
+### Fix
+
+Clarify in docs/env: classify/outbound resolve from `OMNIROUTER_DEFAULT_COMBO` / `N9ROUTER_DEFAULT_COMBO`. There is no standalone model id `hermes`.
+
+### Prevent recurrence
+
+Keep the wording “combo alias” in DEFAULTS and model-routing docs.
+
+## 2026-08-20 16:15 +07 — Zalo chat OpenRouter 401; classify model hardcoded
+
+### Symptom
+
+Zalo chat hit OpenRouter 401. Classify/outbound still used a hardcoded model string in `classify.json` instead of the env combo.
+
+### Root cause
+
+Shared Hermes `config.yaml` still pointed at the wrong `base_url` / key path. Classify ignored `MODEL_ROUTER_CLASSIFY_MODEL`.
+
+### Fix
+
+- Classify/outbound use `MODEL_ROUTER_CLASSIFY_MODEL` / `MODEL_ROUTER_OUTBOUND_MODEL` (default combo name).
+- `patch-hermes-model-router.py` + `setup-zalo.sh` / `first-setup-omnirouter.py` point shared `config.yaml` at `http://model-router:8096/v1`.
+
+### Prevent recurrence
+
+After Zalo setup, verify Hermes `base_url` is model-router, not a direct OpenRouter or stale 9Router URL.
+
+## 2026-08-20 16:05 +07 — Classify garbage JSON; `!zalo` admin help dropped
+
+### Symptom
+
+Omni returned invalid JSON / `task_hint: chat` for admin commands. `!zalo …` help text was LLM-filtered away by outbound quiet-delivery.
+
+### Root cause
+
+Classify lacked a tight token cap, invalid-hint map, and local hello heuristic. Outbound treated admin command replies like agent chatter.
+
+### Fix
+
+- Classify: pin a small default free model where needed, cap `max_tokens`, map invalid `task_hint: chat` → `normal`, dedupe instruction spam, local hello heuristic on garbage JSON.
+- Zalo outbound: do not LLM-filter `!zalo …` (`zalo_admin_reply` bypass + gateway_noise guard).
+
+### Prevent recurrence
+
+Admin protocol replies must bypass outbound LLM drop. Classify must never invent `task_hint: chat` for `!zalo` commands.
+
+## 2026-08-20 14:35 +07 — clean-OS first-setup blocked (zalo-api / destroy / smoke names)
+
+### Symptom
+
+Fresh host: zalo-api crash-looped (`ModuleNotFoundError: channels_registry`); destroy failed backup with no containers; setup waited on 9Router / Low profile; smoke still named `check-medium` / `check-high`.
+
+### Root cause
+
+Dockerfile omitted `channels_registry.py`. Destroy always required a backup when the project had never been up. Setup still assumed profile/9Router. Product tiers renamed to workers but smoke script names lagged.
+
+### Fix
+
+- Copy `channels_registry.py` into zalo-api image.
+- `setup-zalo.sh` waits for model-router + OmniRouter + zalo-api.
+- Destroy skips backup when no project containers.
+- Secrets-first `.env.example`; smoke `check-media` / `check-security` (wrappers removed later at 20:20).
+
+### Prevent recurrence
+
+Clean-host first-setup must not assume 9Router or ASSISTANT_PROFILE. New modules added to zalo-api must be listed in the Dockerfile.
+
+## 2026-08-20 13:10 +07 — Worker-component rolling redeploy left stale cron / SSE
+
+### Symptom
+
+After rearchitecture deploy, leftover cron and unbound Zalo SSE caused abnormal schedule/media behavior on the lab host.
+
+### Root cause
+
+Destroy without clearing stale cron + bridge rebind left old schedules and a half-attached Zalo owner path.
+
+### Fix
+
+Destroy + clear stale cron; redeploy with Schedule / Media|File / Notify / Message workers (`WORKER_*=active`; security/monitor inactive). Rebind Zalo bridge (`loggedIn=true`, SSE connected).
+
+### Prevent recurrence
+
+Worker redeploys that change schedule ownership must clear or migrate old cron before up. Verify SSE after every Zalo-affecting recreate.
+
+## 2026-08-20 12:50 +07 — Case 11 still profile upgrade/downgrade; outbound 3–8s too short
+
+### Symptom
+
+Case 11 still tested `switch-profile` tiers. Outbound classify timed out on free models and dropped quiet-delivery decisions.
+
+### Root cause
+
+Product moved to workers; tests and outbound budget did not.
+
+### Fix
+
+- Case **11** → `11-worker-switch.md` / `worker_switch.py` (add/remove `WORKER_*`; fail event for obsolete `switch-profile`).
+- Outbound classify timeout default/fallback **30s**.
+
+### Prevent recurrence
+
+Rule 48: after rearchitecture, update cases to workers. Rule 43: do not use overly strict free-model timeouts.
+
+## 2026-08-20 11:50 +07 — Zalo users saw Hermes “Working / iteration N” frames
+
+### Symptom
+
+Outbound Zalo showed agent status / provider-failure frames. Infographic requests had no dedicated skill. Docs still mentioned profile upgrade/downgrade.
+
+### Root cause
+
+Hermes status lines were not structurally dropped before send. Quiet-delivery was incomplete. `switch-profile` archive copy still said upgrade/downgrade.
+
+### Fix
+
+- Structural drop of Working / iteration / provider-failure frames; LLM `/v1/outbound` fail-closed to drop; skills `quiet-delivery` + `image-gen/infographic-design`.
+- Secret-probe stays code policy; add password/credentials patterns.
+- `switch-profile` stays disabled; worker `add-components` only.
+
+### Prevent recurrence
+
+Protocol/status frames must be dropped in code, not only by LLM outbound. Do not re-enable profile upgrade/downgrade UX.
+
+## 2026-08-20 10:45 +07 — 9Router always-on; web search round-robin; no channel registry
+
+### Symptom
+
+Labs without 9Router still expected it. Web search order was unpredictable. Schedules could not resolve named Zalo groups. Deploy helpers still named `deploy_high`.
+
+### Root cause
+
+9Router was core Must. Search backends round-robin. No durable channel id↔name store.
+
+### Fix
+
+- 9Router optional (`ENABLE_9ROUTER=0` default). OmniRouter default; memory via `OMNIROUTER_ENABLE_MEMORY=1`.
+- Web search: top **3**; fixed order Tavily → Firecrawl → SearXNG.
+- Message Worker channel registry + `/v1/channels*` APIs.
+- Lab deploy helper renamed `deploy_stack.py` (`deploy_high.py` shim).
+
+### Prevent recurrence
+
+Optional routers must default off in product source. Named-group schedules need a warm registry (see 15:45 / 20:35).
+
+## 2026-08-20 10:20 +07 — Zalo lab 16/29 failed once then passed
+
+### Symptom
+
+Batch cases 16–29: **16** timed out watching sequential image+fuel; **29** saw transient classify `ok=false`. Other listed cases passed.
+
+### Root cause
+
+Watch budget 480s too short for sequential media. Classify free-tier flaked once. Schedule prompt used standalone word *lịch* as a brittle cue.
+
+### Fix
+
+- `zalo_multi_request_lab.py` default watch **720s**.
+- Case 29 classify **3× retry**.
+- `classify.json` schedule prompt no longer keys off standalone *lịch*.
+- Rerun 16 + 29 PASS.
+
+### Prevent recurrence
+
+Media compound labs need long watches. Classify flakes need retry, not a weaker assertion (rule 47).
+
+## 2026-08-20 09:15 +07 — Product still spoke Low/Medium/High profiles at runtime
+
+### Symptom
+
+Operators enabled “High” and got the wrong optional set. Dispatcher always started. Redis container name confused Valkey docs.
+
+### Root cause
+
+Runtime still centered on `ASSISTANT_PROFILE` instead of worker activation. Dispatcher was Must rather than Media|File.
+
+### Fix
+
+- `WORKER_*=inactive|active`; bundled `ENABLE_*` on each worker (`workers.sh`). Product tiers gone from runtime.
+- Dispatcher only with Media|File (`docker-compose.media.yml`). Schedule Worker is the clock; workflow is async jobs.
+- Valkey container renamed `valkey`. Case 17: quota/failover is not a latency SLO fail.
+
+### Prevent recurrence
+
+Do not reintroduce ASSISTANT_PROFILE as the runtime gate. New optionals attach to a worker, not a tier name.
+
+## 2026-08-20 08:45 +07 — Single-replica Zalo SSE broke via socat URL
+
+### Symptom
+
+Gateway showed Zalo disconnected or flaky SSE on single-replica hosts using a socat-style plugin URL.
+
+### Root cause
+
+Long-lived SSE does not survive some socat/proxy hops. Defaults still preferred that path.
+
+### Fix
+
+- `profile.sh` / defaults: `ZALO_PLUGIN_URL` → `host.docker.internal:8787` for single-replica.
+- Patch Hermes `config.yaml` to `model-router:8096/v1`.
+- Latency probe reads replica `agent.log` / `gateway_state.json`, not only docker stdout.
+
+### Prevent recurrence
+
+Prefer host.docker.internal (or documented bridge) for SSE. After deploy, check `sseClients=1` and gateway platform connected.
+
+## 2026-08-20 08:10 +07 — Optional workers off; no skill mapping classifier → workers
+
+### Symptom
+
+Core stack lacked a clear map from classify JSON to Schedule / web-search / media-file / security workers. API Gateway and Valkey queue were not default-on for core.
+
+### Root cause
+
+Rearchitecture incomplete: workers existed as flags but skills/gateway defaults lagged.
+
+### Fix
+
+- Core: API Gateway on, Valkey inbound queue on; gateway skips RL for coding and schedule paths.
+- Skill `core/worker-routing` maps classifier JSON to workers.
+- Lab helper under gitignored temp for destroy+component deploy.
+
+### Prevent recurrence
+
+Classifier schema changes must update `worker-routing` in the same change. Keep optional workers default inactive in product source.
 
 ## 2026-08-20 15:45 +07 — Classify dead-end + schedule by group name
 
