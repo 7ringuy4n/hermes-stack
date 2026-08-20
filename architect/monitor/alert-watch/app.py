@@ -22,14 +22,29 @@ from typing import Any, Optional
 
 from optional_services import host_expected, monitor_metrics_on, name_unresolved
 
+def _abs_http_base(raw: str, default: str) -> str:
+    """Empty env overrides default in compose (${VAR:-}); treat blank as missing."""
+    val = (raw or "").strip().rstrip("/")
+    if val and "://" in val:
+        return val
+    return (default or "").strip().rstrip("/")
+
+
+def _flag(name: str, default: str = "0") -> bool:
+    return (os.environ.get(name, default) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 LISTEN = os.environ.get("LISTEN", "0.0.0.0:9103")
 CHECK_INTERVAL = float(os.environ.get("CHECK_INTERVAL", "60"))
 COOLDOWN = float(os.environ.get("ALERT_COOLDOWN_SECONDS", "1800"))
 NOTIFY_URL = os.environ.get("NOTIFY_URL", "http://notify:8092").rstrip("/")
 NODE_EXPORTER = (os.environ.get("NODE_EXPORTER_URL") or "").strip().rstrip("/")
-N9ROUTER_URL = os.environ.get("N9ROUTER_URL", "http://9router:20128").rstrip("/")
+N9ROUTER_URL = _abs_http_base(os.environ.get("N9ROUTER_URL", ""), "http://9router:20128")
+OMNIROUTER_URL = _abs_http_base(os.environ.get("OMNIROUTER_URL", ""), "http://omni-router:20129")
 N9ROUTER_PASSWORD = os.environ.get("N9ROUTER_PASSWORD", "")
 N9ROUTER_API_KEY = os.environ.get("N9ROUTER_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
+ENABLE_9ROUTER = _flag("ENABLE_9ROUTER", "0")
+ENABLE_OMNIROUTER = _flag("ENABLE_OMNIROUTER", "1")
 
 CPU_PCT = float(os.environ.get("ALERT_CPU_PCT", "90"))
 MEM_PCT = float(os.environ.get("ALERT_MEM_PCT", "90"))
@@ -355,8 +370,8 @@ def _n9_get(path: str) -> Any:
 
 
 def check_llm_quota() -> None:
-    # 1) Provider dashboard errors (quota / 429 often land in lastError)
-    if N9ROUTER_PASSWORD:
+    # 1) Provider dashboard errors — 9Router UI only (skip when optional 9Router is off)
+    if ENABLE_9ROUTER and N9ROUTER_PASSWORD and N9ROUTER_URL.startswith("http"):
         try:
             providers = _n9_get("/api/providers")
             for conn in providers.get("connections") or []:
@@ -376,19 +391,21 @@ def check_llm_quota() -> None:
                         flush=True,
                     )
         except Exception as e:
-            _fire(
-                "n9router_api_unreachable",
-                "9Router API unreachable",
-                f"Cannot read /api/providers: {e}",
-                "warning",
-            )
+            print(f"[alert-watch] 9Router /api/providers skip: {e}", flush=True)
 
-    # 2) Lightweight probe: models list — 429 here means gateway throttling
+    # 2) Lightweight probe: models list on the active OpenAI-compatible router
+    probe = ""
+    if ENABLE_9ROUTER and N9ROUTER_URL.startswith("http"):
+        probe = N9ROUTER_URL
+    elif ENABLE_OMNIROUTER and OMNIROUTER_URL.startswith("http"):
+        probe = OMNIROUTER_URL
+    if not probe:
+        return
     headers = {"Accept": "application/json"}
     if N9ROUTER_API_KEY:
         headers["Authorization"] = f"Bearer {N9ROUTER_API_KEY}"
     try:
-        req = urllib.request.Request(f"{N9ROUTER_URL}/v1/models", headers=headers)
+        req = urllib.request.Request(f"{probe}/v1/models", headers=headers)
         with urllib.request.urlopen(req, timeout=15) as resp:
             _ = resp.read()
     except urllib.error.HTTPError as e:
@@ -401,7 +418,7 @@ def check_llm_quota() -> None:
             _fire(
                 "llm_http_429",
                 "LLM HTTP 429 / quota",
-                f"GET {N9ROUTER_URL}/v1/models → {e.code}\n{body}",
+                f"GET {probe}/v1/models → {e.code}\n{body}",
                 "critical",
             )
         else:
