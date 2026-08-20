@@ -68,6 +68,7 @@ compose() {
   [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles+=(--profile comfy-gpu)
   [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
   [[ "${ENABLE_NOTIFY:-0}" == "1" ]] && profiles+=(--profile notify)
+  [[ "${ENABLE_SECURITY:-0}" == "1" ]] && profiles+=(--profile security)
   [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles+=(--profile antivirus)
   if [[ "${SECURITY_SANDBOX:-0}" == "1" ]]; then
     echo "WARN: SECURITY_SANDBOX=1 starts docker-socket-proxy — not a production isolation boundary" >&2
@@ -166,6 +167,9 @@ do_stop_disabled_optionals() {
   local -a extra=()
   if [[ "${ENABLE_NOTIFY:-0}" != "1" ]]; then
     extra+=(notify alert-watch)
+  fi
+  if [[ "${ENABLE_SECURITY:-0}" != "1" ]]; then
+    extra+=(openbao security-manager authz siem policy-center)
   fi
   if [[ "${ENABLE_ANTIVIRUS:-0}" != "1" ]]; then
     extra+=(clamav av-gateway)

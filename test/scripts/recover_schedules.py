@@ -59,7 +59,7 @@ if p.is_file():
     enabled = sum(1 for j in jobs if isinstance(j, dict) and j.get("enabled"))
 print(f"HERMES_JOBS={n} enabled={enabled}")
 PY
-files="-f /opt/assistant/docker/docker-compose.yml -f /opt/assistant/docker/docker-compose.medium.yml -f /opt/assistant/docker/docker-compose.high.yml"
+files="-f /opt/assistant/docker/docker-compose.yml -f /opt/assistant/docker/docker-compose.media.yml -f /opt/assistant/docker/docker-compose.security.yml"
 [[ "${ENABLE_TRAEFIK:-0}" == "1" || "${ENABLE_API_GATEWAY:-0}" == "1" ]] && files="$files -f /opt/assistant/docker/docker-compose.edge.yml"
 profiles="--profile zalo --profile notify"
 [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles="$profiles --profile antivirus"

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """High fail-events: EICAR AV, concurrency ramp until fail, Hermes/Zalo auto-heal.
 
 Leaves High running. Reports omit host/account.
@@ -114,7 +114,7 @@ PY
 export ENABLE_ANTIVIRUS=1 ASSISTANT_PROFILE=high
 # Bring ClamAV + av-gateway without tearing down High
 set -a; source <(tr -d '\r' < /data/assistant/.env); set +a
-docker compose --project-directory {REMOTE} -f docker/docker-compose.yml -f docker/docker-compose.medium.yml -f docker/docker-compose.high.yml \
+docker compose --project-directory {REMOTE} -f docker/docker-compose.yml -f docker/docker-compose.media.yml -f docker/docker-compose.security.yml \
   --profile antivirus --env-file /data/assistant/.env up -d clamav av-gateway
 echo 'wait clamd...'
 ok=0
