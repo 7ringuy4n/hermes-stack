@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-20 15:45 +07 — Zalo classify fail-open + schedule-by-group-name registry
+
+- **Classify outage** no longer dead-ends Zalo chat with “Could not classify…” — Hermes falls through to normal reply when `/v1/classify` fails (Omni free-tier 429 / empty JSON).
+- **Channel registry** (`/data/assistant/channels/registry.json`) stores Zalo user/group id↔name from inbound traffic, allowlists, admin, and bridge `/contacts` (`!zalo refresh`).
+- **Schedule-by-group-name**: NL like `đặt lịch … gửi vào nhóm Family` resolves the group id and stores schedule `origin` as that group while keeping the requester as `user_id`.
+
 ## 2026-08-20 15:25 +07 — Hermes OPENAI key + clean-host Zalo shared-data path
 
 - **Hermes compose** now sets `OPENAI_API_KEY` from `OMNIROUTER_API_KEY` (fallback `N9ROUTER_API_KEY`) so Omni-default installs are not left with an empty key when 9Router is off.

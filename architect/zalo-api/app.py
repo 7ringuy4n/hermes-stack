@@ -16,7 +16,13 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from channels_registry import list_channels, resolve, sync_from_allowlist, upsert as channel_upsert
+from channels_registry import (
+    list_channels,
+    resolve,
+    sync_contacts,
+    sync_from_allowlist,
+    upsert as channel_upsert,
+)
 from schedule_list import fmt_hermes_cron_list
 from schedule_crud import (
     USAGE as SCHEDULE_USAGE,
@@ -1071,13 +1077,49 @@ class ChatCmd(BaseModel):
     quote_text: str = ""  # quoted / replied message body (citations)
 
 
-@app.get("/health")
-def health() -> dict[str, Any]:
-    _scrub_admin_from_deny()
+def _sync_registry_from_files() -> None:
+    """Seed durable id↔name map from allowlists + sole admin."""
     try:
         sync_from_allowlist("zalo", _read_entries(), kind="group")
     except Exception:
         pass
+    try:
+        sync_from_allowlist("zalo", _read_allowed_users(), kind="user")
+    except Exception:
+        pass
+    try:
+        for u in _read_admin_file():
+            channel_upsert("zalo", u["id"], name=u.get("name") or "", kind="user", meta={"role": "admin"})
+    except Exception:
+        pass
+
+
+def _sync_registry_from_bridge_contacts() -> int:
+    """Pull bridge /contacts into the channel registry (best-effort)."""
+    try:
+        with httpx.Client(timeout=15.0) as c:
+            r = c.get(f"{ZALO_BRIDGE}/contacts", headers=_bridge_headers())
+            if r.status_code >= 300:
+                return 0
+            data = r.json() if r.content else {}
+    except Exception:
+        return 0
+    if not isinstance(data, dict):
+        return 0
+    if data.get("success") is False:
+        return 0
+    groups = data.get("groups") if isinstance(data.get("groups"), list) else []
+    friends = data.get("friends") if isinstance(data.get("friends"), list) else []
+    try:
+        return int(sync_contacts("zalo", groups, friends))
+    except Exception:
+        return 0
+
+
+@app.get("/health")
+def health() -> dict[str, Any]:
+    _scrub_admin_from_deny()
+    _sync_registry_from_files()
     return {"ok": True, "service": "zalo-api", "admin_users": len(_admin_users())}
 
 
@@ -1336,6 +1378,7 @@ def chat_command(
                 "!zalo schedule list — (admin) lịch chat này\n"
                 "!zalo schedule list all — (admin) mọi lịch\n"
                 "!zalo schedule add|show|update|remove — (admin) CRUD lịch\n"
+                "(NL: đặt lịch … gửi vào nhóm <Tên> — cần !zalo allow/label hoặc !zalo refresh trước)\n"
                 "!zalo learn | learn list | learn find | learn scan docs\n"
                 "!zalo learn approve|reject <id|*>\n"
                 "!zalo learn delete — reply tin bot: xem list (chưa xóa). Rồi delete <id|tên> hoặc delete all\n"
@@ -1866,13 +1909,23 @@ def chat_command(
             if nm:
                 u["name"] = nm
                 u_ok += 1
+            try:
+                channel_upsert("zalo", u["id"], name=u.get("name") or "", kind="user")
+            except Exception:
+                pass
         _write_allowed_users(users)
         for e in entries:
             nm = _fetch_group_name(e["id"])
             if nm:
                 e["name"] = nm
                 g_ok += 1
+            try:
+                channel_upsert("zalo", e["id"], name=e.get("name") or "", kind="group")
+            except Exception:
+                pass
         _write_entries(entries)
+        contacts_n = _sync_registry_from_bridge_contacts()
+        _sync_registry_from_files()
         return {
             "ok": True,
             "handled": True,
@@ -1880,6 +1933,7 @@ def chat_command(
                 f"refresh tên:\n"
                 f"• users: {u_ok}/{len(users)} có tên\n"
                 f"• groups: {g_ok}/{len(entries)} có tên\n"
+                f"• contacts→registry: {contacts_n}\n"
                 f"!zalo users | !zalo list"
             ),
         }

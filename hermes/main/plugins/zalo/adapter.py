@@ -1311,18 +1311,12 @@ class ZaloAdapter(BasePlatformAdapter):
         if not isinstance(plan, dict):
             plan = classify_text(text)
         if plan.get("ok") is False:
-            logger.info(f"[zalo] classify failed error={plan.get('error')}")
-            try:
-                msg = self._as_ux_line(
-                    "ZALO_CLASSIFY_FAILED_MSG",
-                    ("classify", "failed"),
-                    "Could not classify this request. Please send it again.",
-                    user_text=text,
-                )
-                await self._as_gate_announce(thread_id, thread_type, msg)
-            except Exception:
-                pass
-            return True
+            # Omni/classify outages must not dead-end chat. Fall through to Hermes.
+            logger.info(
+                "[zalo] classify failed error=%s — fall through to Hermes",
+                plan.get("error"),
+            )
+            return False
         if plan_is_knowledge(plan):
             await self._as_knowledge_cite_reply(
                 {"text": text},
@@ -1349,6 +1343,35 @@ class ZaloAdapter(BasePlatformAdapter):
             "plan": plan,
         }
         if plan.get("task_hint") == "schedule" and not schedule_fire:
+            try:
+                from .channels_client import apply_schedule_delivery_target
+            except ImportError:
+                from channels_client import apply_schedule_delivery_target  # type: ignore
+            origin, context, target_note = apply_schedule_delivery_target(
+                text=text,
+                plan=plan,
+                origin=origin,
+                context=context,
+                current_thread_type=thread_type,
+            )
+            if target_note and str(target_note).startswith("group_not_found:"):
+                ref = target_note.split(":", 1)[-1]
+                try:
+                    msg = self._as_ux_line(
+                        "ZALO_SCHEDULE_GROUP_NOT_FOUND_MSG",
+                        ("schedule", "group_not_found"),
+                        (
+                            f"Chưa biết nhóm '{ref}'. Vào nhóm đó gửi !zalo allow / "
+                            f"!zalo label, hoặc !zalo refresh rồi đặt lịch lại."
+                        ),
+                        user_text=text,
+                    )
+                    await self._as_gate_announce(thread_id, thread_type, msg)
+                except Exception:
+                    pass
+                return True
+            if target_note:
+                logger.info("[zalo] schedule %s", target_note)
             fire_text = fire_text_from_plan(plan, text)
             if schedule_enabled():
                 data = go_create_schedule(
@@ -1371,10 +1394,18 @@ class ZaloAdapter(BasePlatformAdapter):
             if data.get("ok"):
                 logger.info("[zalo] schedule stored")
                 try:
+                    dest = str(origin.get("chat_name") or origin.get("thread_id") or "")
+                    base_msg = (
+                        "Schedule saved. When it is due, each item runs on its own (not as one LLM turn)."
+                    )
+                    if dest and str(context.get("thread_type") or "") == "group" and str(
+                        origin.get("thread_id") or ""
+                    ) != str(thread_id):
+                        base_msg = f"Schedule saved → nhóm {dest}. When due, each item runs on its own."
                     msg = self._as_ux_line(
                         "ZALO_SCHEDULE_SAVED_MSG",
                         ("schedule", "saved"),
-                        "Schedule saved. When it is due, each item runs on its own (not as one LLM turn).",
+                        base_msg,
                         user_text=text,
                     )
                     await self._as_gate_announce(thread_id, thread_type, msg)
@@ -2506,6 +2537,19 @@ class ZaloAdapter(BasePlatformAdapter):
         self._thread_types[thread_id] = "group" if thread_type == "group" else "user"
         self._as_mark_recv(thread_id)  # ASSISTANT_TIMING_FOOTER_v6
         self._as_autosend_remember_turn(thread_id, thread_type)  # ASSISTANT_AUTOSEND_v3
+        try:
+            from .channels_client import remember_inbound
+        except ImportError:
+            from channels_client import remember_inbound  # type: ignore
+        try:
+            remember_inbound(
+                thread_id=thread_id,
+                thread_type=thread_type,
+                sender_id=sender_id,
+                sender_name=str(sender_name or ""),
+            )
+        except Exception:
+            pass
 
 
 
