@@ -1,5 +1,12 @@
 # Change history
 
+## 2026-08-20 20:35 +07 — Schedule-by-group: classify failover + cold registry sync
+
+- **Classify**: when combo `classifier` returns HTTP 401/403/empty, retry with chat combo (`hermes` / `OMNIROUTER_DEFAULT_COMBO`) so schedule JSON (`target_channel`, cron) still succeeds.
+- **zalo-api**: startup + resolve-miss sync bridge `/contacts` into channel registry; resolve matches platform-prefixed names (`Zalo LC group` → `LC group`) and reverse containment.
+- Schedule skill: never ask for raw chat ID when group unknown — use `!zalo allow` / `!zalo refresh`.
+- Unit: `channels_schedule_target_unit.py` covers prefixed group names.
+
 ## 2026-08-20 20:20 +07 — Remove legacy check-medium/high + High deploy wrappers
 
 - Deleted unused `scripts/main/check-medium.sh` / `check-high.sh` (were thin wrappers to `check-media` / `check-security`).

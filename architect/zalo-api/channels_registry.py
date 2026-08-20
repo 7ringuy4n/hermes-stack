@@ -96,6 +96,32 @@ def list_channels(platform: Optional[str] = None) -> list[dict[str, Any]]:
     return out
 
 
+_PLATFORM_NAME_PREFIXES = (
+    "zalo",
+    "telegram",
+    "lark",
+    "discord",
+    "slack",
+    "whatsapp",
+)
+
+
+def _ref_variants(ref: str) -> list[str]:
+    """Deterministic name variants (strip known platform prefixes)."""
+    base = (ref or "").strip()
+    if not base:
+        return []
+    out: list[str] = [base]
+    low = base.lower()
+    for prefix in _PLATFORM_NAME_PREFIXES:
+        token = prefix + " "
+        if low.startswith(token):
+            stripped = base[len(token) :].strip()
+            if stripped and stripped not in out:
+                out.append(stripped)
+    return out
+
+
 def resolve(platform: str, ref: str) -> Optional[dict[str, Any]]:
     """Resolve channel by exact id or diacritic-insensitive name match."""
     plat = (platform or "").strip().lower()
@@ -106,22 +132,46 @@ def resolve(platform: str, ref: str) -> Optional[dict[str, Any]]:
     for ch in channels:
         if str(ch.get("external_id") or "") == needle:
             return ch
-    low = needle.lower()
-    norm = norm_text(needle)
-    exact = [
-        ch
-        for ch in channels
-        if str(ch.get("name") or "").lower() == low or norm_text(str(ch.get("name") or "")) == norm
-    ]
-    if len(exact) == 1:
-        return exact[0]
-    partial = [
-        ch
-        for ch in channels
-        if low in str(ch.get("name") or "").lower() or (norm and norm in norm_text(str(ch.get("name") or "")))
-    ]
-    if len(partial) == 1:
-        return partial[0]
+
+    def _pick(matches: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            groups = [ch for ch in matches if str(ch.get("kind") or "").lower() in {"group", "g"}]
+            if len(groups) == 1:
+                return groups[0]
+        return None
+
+    for variant in _ref_variants(needle):
+        low = variant.lower()
+        norm = norm_text(variant)
+        exact = [
+            ch
+            for ch in channels
+            if str(ch.get("name") or "").lower() == low
+            or norm_text(str(ch.get("name") or "")) == norm
+        ]
+        hit = _pick(exact)
+        if hit:
+            return hit
+        partial = []
+        for ch in channels:
+            name = str(ch.get("name") or "")
+            name_low = name.lower()
+            name_norm = norm_text(name)
+            if not name_low:
+                continue
+            # Either side may contain the other ("Zalo LC group" ↔ "LC group").
+            if (
+                low in name_low
+                or name_low in low
+                or (norm and norm in name_norm)
+                or (name_norm and name_norm in norm)
+            ):
+                partial.append(ch)
+        hit = _pick(partial)
+        if hit:
+            return hit
     return None
 
 

@@ -188,6 +188,19 @@ HERMES_SESSION_DIRS = (
 app = FastAPI(title="assistant-zalo-api", version="1.3.0")
 
 
+@app.on_event("startup")
+def _startup_sync_channels() -> None:
+    """Seed id↔name registry from allowlists + bridge contacts (best-effort)."""
+    try:
+        _sync_registry_from_files()
+    except Exception:
+        pass
+    try:
+        _sync_registry_from_bridge_contacts()
+    except Exception:
+        pass
+
+
 def _read_admin_file() -> list[dict[str, str]]:
     """Exactly one admin line preferred: `uid` or `uid | name`."""
     out: list[dict[str, str]] = []
@@ -1147,6 +1160,13 @@ def channels_resolve(
 ) -> dict[str, Any]:
     _auth(authorization, x_admin_token)
     hit = resolve(body.platform, body.ref)
+    if not hit:
+        # Registry may be cold until an admin runs !zalo refresh — pull contacts once.
+        try:
+            _sync_registry_from_bridge_contacts()
+        except Exception:
+            pass
+        hit = resolve(body.platform, body.ref)
     if not hit:
         return {"ok": False, "error": "not_found", "platform": body.platform, "ref": body.ref}
     return {"ok": True, "channel": hit}
