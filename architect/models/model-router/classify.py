@@ -34,6 +34,16 @@ TASK_TYPES = (
 RESPONSE_MODES = ("direct", "ack_then_deliver", "confirm")
 ATTACHMENT_TYPES = ("image", "file", "audio", "video")
 SKILLS = ("media_file", "web_search", "schedule", "security", "knowledge")
+# Prefer final answer first; then provider-specific chain-of-thought fields when content is empty.
+MESSAGE_TEXT_KEYS = (
+    "content",
+    "reasoning_content",  # DeepSeek / Qwen / Moonshot / Zhipu
+    "reasoning",  # Groq gpt-oss / OpenRouter / vLLM convention
+    "thinking",  # some OpenAI-compat / Claude-style shims
+    "thinking_content",
+    "thought",
+    "reasoning_text",
+)
 HINT_SKILL = {
     "search": ("web_search", "search"),
     "schedule": ("schedule", "create"),
@@ -211,6 +221,49 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
     return True
 
 
+def _default_chat_combo_alias() -> str:
+    """Chat/outbound combo alias (``hermes`` by default — not a vendor model id)."""
+    for key in ("OMNIROUTER_DEFAULT_COMBO", "N9ROUTER_DEFAULT_COMBO"):
+        val = (os.environ.get(key) or "").strip()
+        if val:
+            return val
+    return "hermes"
+
+
+def _default_classify_combo_alias() -> str:
+    """Classify combo alias — dedicated OpenCode ``classifier`` combo by default."""
+    for key in ("MODEL_ROUTER_CLASSIFY_MODEL", "OMNIROUTER_CLASSIFY_COMBO"):
+        val = (os.environ.get(key) or "").strip()
+        if val:
+            return val
+    return "classifier"
+
+
+def _router_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
+    """Resolve classify LLM id — must be a combo alias or real provider/model id."""
+    for candidate in (
+        override,
+        os.environ.get("MODEL_ROUTER_CLASSIFY_MODEL"),
+        str(cfg.get("model") or "").strip() or None,
+        _default_classify_combo_alias(),
+    ):
+        if candidate and str(candidate).strip():
+            return str(candidate).strip()
+    return _default_classify_combo_alias()
+
+
+def _outbound_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
+    for candidate in (
+        override,
+        os.environ.get("MODEL_ROUTER_OUTBOUND_MODEL"),
+        str(cfg.get("model") or "").strip() or None,
+        _default_chat_combo_alias(),
+    ):
+        if candidate and str(candidate).strip():
+            return str(candidate).strip()
+    return _default_chat_combo_alias()
+
+
 def _load_cfg() -> dict[str, Any]:
     try:
         return json.loads(CFG_PATH.read_text(encoding="utf-8"))
@@ -233,27 +286,52 @@ def valid_cron(expr: str) -> str | None:
     return " ".join(parts)
 
 
+def _coerce_message_field(val: Any) -> str:
+    """Turn a message field (str / list parts / reasoning_details) into text."""
+    if isinstance(val, str) and val.strip():
+        return val.strip()
+    if isinstance(val, list):
+        parts: list[str] = []
+        for item in val:
+            if isinstance(item, str) and item.strip():
+                parts.append(item.strip())
+            elif isinstance(item, dict):
+                for sub in ("text", "content", "reasoning", "reasoning_text"):
+                    t = item.get(sub)
+                    if isinstance(t, str) and t.strip():
+                        parts.append(t.strip())
+                        break
+        if parts:
+            return "\n".join(parts)
+    return ""
+
+
+def _message_field_keys(msg: dict[str, Any]) -> list[str]:
+    """Known CoT keys first, then any other message keys that look like reasoning."""
+    keys = list(MESSAGE_TEXT_KEYS)
+    known = set(MESSAGE_TEXT_KEYS)
+    for k in msg:
+        if not isinstance(k, str) or k in known:
+            continue
+        kl = k.lower()
+        if "reason" in kl or "think" in kl or kl.endswith("_thought"):
+            keys.append(k)
+    # OpenRouter may put structured CoT under reasoning_details
+    if "reasoning_details" in msg and "reasoning_details" not in known:
+        keys.append("reasoning_details")
+    return keys
+
+
 def _message_text(data: dict[str, Any]) -> str:
     choices = data.get("choices") if isinstance(data, dict) else None
     if not isinstance(choices, list) or not choices:
         return ""
     ch = choices[0] if isinstance(choices[0], dict) else {}
     msg = ch.get("message") if isinstance(ch.get("message"), dict) else {}
-    for key in ("content", "reasoning_content"):
-        val = msg.get(key)
-        if isinstance(val, str) and val.strip():
-            return val
-        if isinstance(val, list):
-            parts: list[str] = []
-            for item in val:
-                if isinstance(item, str) and item.strip():
-                    parts.append(item.strip())
-                elif isinstance(item, dict):
-                    t = item.get("text")
-                    if isinstance(t, str) and t.strip():
-                        parts.append(t.strip())
-            if parts:
-                return "\n".join(parts)
+    for key in _message_field_keys(msg):
+        text = _coerce_message_field(msg.get(key))
+        if text:
+            return text
     text = ch.get("text")
     if isinstance(text, str) and text.strip():
         return text
@@ -420,15 +498,18 @@ async def classify_with_llm(
     blob = (text or "").strip()
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
+    # Ultra-short probes (e.g. "ê", "hi") — skip LLM; weak models misclassify these.
+    if len(blob) <= 4:
+        plan = normalize_plan(
+            {"task_hint": "normal", "instructions": [blob], "process_original_message": True},
+            blob,
+            tz,
+        )
+        if plan_schema_ok(plan):
+            return plan
     tmpl = str(cfg.get("user_template") or "Timezone: {timezone}\nMessage:\n{text}")
     payload = {
-        "model": (
-            model
-            or str(cfg.get("model") or "").strip()
-            or os.environ.get("MODEL_ROUTER_CLASSIFY_MODEL")
-            or "hermes"
-        ).strip()
-        or "hermes",
+        "model": _router_llm_model(cfg, model),
         "stream": False,
         "temperature": float(cfg.get("temperature") or 0),
         "messages": [
@@ -518,7 +599,7 @@ async def outbound_with_llm(
         return {"ok": True, "action": "drop"}
     tmpl = str(cfg.get("user_template") or "Line:\n{text}")
     payload = {
-        "model": (model or os.environ.get("MODEL_ROUTER_CLASSIFY_MODEL") or "hermes").strip() or "hermes",
+        "model": _outbound_llm_model(cfg, model),
         "stream": False,
         "temperature": float(cfg.get("temperature") or 0),
         "max_tokens": int(cfg.get("max_tokens") or 64),

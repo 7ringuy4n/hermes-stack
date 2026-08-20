@@ -2864,13 +2864,29 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
             )
             if bare:
-                text = (
-                    f"[Tin kèm file: {fn}]\n"
-                    "Sau OCR/đọc: tóm tắt 3–6 ý chính (bullet ngắn). "
-                    "Hỏi user muốn tìm thông tin gì trong tài liệu. "
-                    "Cấm trích dài, cấm liệt kê từng section, cấm APA/MLA, cấm SKILL.md."
+                kind_l = str(media.get("kind") or "").lower()
+                mime_l = str(media.get("mime") or "").lower()
+                is_image = (
+                    message_type == MessageType.PHOTO
+                    or kind_l in {"image", "photo", "gif", "sticker"}
+                    or mime_l.startswith("image/")
+                    or fn.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"))
                 )
-                logger.info("Zalo: file-only prompt %s", fn)
+                if is_image:
+                    # Do not force document-OCR Q&A on photos (that caused "OCR/tài liệu?" spam).
+                    text = (
+                        f"[Tin kèm ảnh: {fn}]\n"
+                        "Mô tả nội dung ảnh và trả lời trực tiếp. "
+                        "Chỉ OCR/đọc chữ trong ảnh khi user yêu cầu."
+                    )
+                else:
+                    text = (
+                        f"[Tin kèm file: {fn}]\n"
+                        "Sau OCR/đọc: tóm tắt 3–6 ý chính (bullet ngắn). "
+                        "Hỏi user muốn tìm thông tin gì trong tài liệu. "
+                        "Cấm trích dài, cấm liệt kê từng section, cấm APA/MLA, cấm SKILL.md."
+                    )
+                logger.info("Zalo: file-only prompt %s image=%s", fn, is_image)
         elif isinstance(media, dict) and media.get("url") and not media_urls:
             logger.warning("Zalo: media download empty %s", media.get("fileName") or "file")
             try:
