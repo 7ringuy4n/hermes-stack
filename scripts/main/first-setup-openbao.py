@@ -2,9 +2,9 @@
 """High first-setup: seed API keys from .env into OpenBao (+ export .env.openbao).
 
 SoT after this script: OpenBao KV at secret/assistant/api-keys (UI on :8200).
-Host .env stays for profile/paths/OpenBao bootstrap token and Compose interpolate.
+Host .env stays for worker/component flags, paths, OpenBao bootstrap token, and Compose interpolate.
 
-Usage (stack already up with ASSISTANT_PROFILE=high):
+Usage (stack already up with the security/OpenBao components enabled):
   python3 scripts/main/first-setup-openbao.py
 """
 from __future__ import annotations

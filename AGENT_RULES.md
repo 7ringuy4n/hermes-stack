@@ -45,7 +45,7 @@ You are an AI/DevOps/Developer with 10+ years experience across AI Agent and aut
 | 27 | Same as (2): PowerShell escaping / special characters. |
 | 28 | After installation, report current admin credentials (from env/docs — never invent secrets). |
 | 29 | While deploying, if an error is caused by source, fix and update the source. |
-| 30 | Verify all services before finishing installation; Hermes must connect to 9Router. |
+| 30 | Verify all services before finishing installation; Hermes must connect to **OmniRouter** (default) or **9Router** when that optional component is enabled. |
 | 31 | Avoid Hermes crash-loops and edge ports going down. |
 | 32 | Make/update history notes with timestamps in `docs/CHANGELOG.md`. |
 | 33 | **No lab identity in product source.** Committed files under `scripts/`, `test/`, `docs/`, and the rest of the tree must not contain VPS IPs, hostnames, login names, or server secrets. Use env vars (`ASSISTANT_SSH_*`) and generic placeholders (`USER@HOST`). |

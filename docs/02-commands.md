@@ -1,63 +1,81 @@
-# 02b — Commands by profile (detail)
+# 02b — Commands (workers runtime)
 
 > **Prefer the combined page:** [02-components-and-commands.md](./02-components-and-commands.md) (components + commands).
 
 All commands go through the repo root:
 
 ```bash
-cd /opt/assistant   # or D:\Onedrive\Work\assistant on Windows via Git Bash / WSL
-export ASSISTANT_PROFILE=low   # or medium|high
+cd /opt/assistant
 bash run.sh <command> [args…]
 ```
 
-Set secrets in `.env` **before** `up`. Use `sudo` on the VPS when writing under `/data/assistant` or installing systemd timers.
-
-**Legend:** ✅ available · ⬜ not in this profile (command refuses with a short hint) · ◐ optional if you attach a social-app / override flag
+Set secrets in `.env` **before** `up`. On a clean host, copy `.env.example` to `.env`, fill every `CHANGE_ME_*`, then activate only the workers you need.
 
 ---
 
 ## Quick matrix
 
-| Command | Low | Medium | High | What it does |
-|---|---|---|---|---|
-| `up` / `down` / `ps` / `logs` | ✅ | ✅ | ✅ | Compose lifecycle |
-| `destroy` | ✅ | ✅ | ✅ | Backup+verify, then remove this project's containers + networks (volumes/data kept) |
-| `update` | ✅ | ✅ | ✅ | Backup+verify, then after `git pull`: rebuild stack, refresh LLM wiring, prune disk |
-| `profile` | ✅ | ✅ | ✅ | Show `ASSISTANT_PROFILE` + optional flags |
-| `switch-profile <tier>` | ✅ | ✅ | ✅ | Backup+verify, set `ASSISTANT_PROFILE`, `up` (upgrade/downgrade) |
-| `add-components KEY=VAL` | ✅ | ✅ | ✅ | Backup+verify, set option flags, `up` |
-| `backup` | ✅ | ✅ | ✅ | DR stamp → `/data/assistant/backups` |
-| `restore [stamp]` | ✅ | ✅ | ✅ | Restore LATEST or stamp |
-| `verify [stamp]` | ✅ | ✅ | ✅ | Check backup manifest + live pings |
-| `migrate` | ✅ | ✅ | ✅ | Pack stamp tarball for a new host |
-| `auto-learn` | ✅ | ✅ | ✅ | Index eligible docs → Qdrant (**no approve**) |
-| `learn-status` | ✅ | ✅ | ✅ | Health + document count hint from ingest |
-| `compact` | ⬜ | ✅ | ✅ | Slim skills / memory drafts (silent) |
-| `optimize-memory` | ⬜ | ✅ | ✅ | Alias: memory compact hooks + Valkey ping |
-| `install-timers` | ✅* | ✅† | ✅† | Systemd: auto-learn 00:00; +compact 00:00 on Med+; backup 00:30 |
-| `backup-sync-clouddrive` | ⬜ | ⬜ | ✅ | Copy latest stamp to CloudDrive mirror |
-| `channel-status` | ◐ | ◐ | ◐ | Show attached social-app flags (Zalo/Telegram) |
-
-\* Low timers: **auto-learn + backup** only (no compact) — run manually.  
-† Medium/High: installed automatically by `run.sh up` / `update` (compact included).
+| Command | Availability | What it does |
+|---|---|---|
+| `up` / `down` / `ps` / `logs` | all installs | Compose lifecycle |
+| `destroy` | all installs | Backup+verify, then remove this project's containers + networks (volumes/data kept) |
+| `update` | all installs | Backup+verify, rebuild stack, refresh router bootstrap, prune disk |
+| `workers` / `profile` | all installs | Show worker activation + core flags |
+| `add-components KEY=VAL…` | all installs | Backup+verify, update worker / component flags, then `up` |
+| `switch-profile <…>` | removed | Fails fast with a worker hint |
+| `backup` / `restore` / `verify` / `migrate` | all installs | DR stamp lifecycle |
+| `auto-learn` / `learn-status` | all installs | Knowledge ingest status / one-shot run |
+| `compact` / `optimize-memory` | Media\|File worker | Memory housekeeping |
+| `check-media` | Media\|File worker | Dispatcher / OCR / Jobs / SearXNG smoke |
+| `check-security` | Security / Monitor / OpenBao components | Security stack smoke |
+| `install-timers` | all installs | systemd timers: auto-learn, backup, stack-watch, and worker-specific extras |
+| `backup-sync-clouddrive` | when `ENABLE_CLOUDDRIVE=1` | Copy latest stamp to CloudDrive mirror |
+| `channel-status` | all installs | Show attached social-app flags |
 
 ---
 
-## Stack lifecycle (all profiles)
+## First setup (clean OS)
 
 ```bash
-bash run.sh up              # start Must (+ profile optionals when compose overlays exist)
-bash run.sh down
-bash run.sh destroy         # backup+verify, then remove project containers + networks
-bash run.sh ps
-bash run.sh logs [service]  # e.g. bash run.sh logs ingest
-bash run.sh profile         # ASSISTANT_PROFILE=low|medium|high
-bash run.sh switch-profile medium   # backup+verify → set tier → up (--dry-run / --no-up)
-bash run.sh add-components ENABLE_ZALO=1   # backup+verify → flags → up
-bash run.sh update          # backup+verify, then after git pull: rebuild + LLM refresh + disk prune
+git clone <your-repo-url> /opt/assistant
+cd /opt/assistant
+cp .env.example .env
+python3 scripts/temp/generate_env_secrets.py --out .env --force   # optional local helper
+# edit .env: replace remaining values, choose WORKER_*=active as needed
+sudo bash scripts/main/install-docker.sh   # if Docker is missing
+bash run.sh up
+bash run.sh first-setup-omnirouter
 ```
 
-Full recreate (backup+verify first; containers/networks only; keeps `/data/assistant` and named volumes):
+For Zalo:
+
+```bash
+# .env:
+# WORKER_MESSAGE=active
+# ENABLE_ZALO=1
+bash run.sh up
+bash scripts/main/setup-zalo.sh
+bash scripts/main/login-zalo.sh   # manual QR step
+```
+
+`first-setup-llm` is **optional** and only used when `ENABLE_9ROUTER=1`.
+
+---
+
+## Stack lifecycle
+
+```bash
+bash run.sh up
+bash run.sh down
+bash run.sh destroy
+bash run.sh ps
+bash run.sh logs [service]
+bash run.sh workers
+bash run.sh add-components WORKER_MEDIA_FILE=active WORKER_SCHEDULE=active
+bash run.sh update
+```
+
+Full recreate:
 
 ```bash
 bash run.sh destroy
@@ -67,78 +85,81 @@ bash run.sh up
 Typical source update on a deployed host:
 
 ```bash
-cd /opt/assistant   # git clone of this repo
+cd /opt/assistant
 git pull
 bash run.sh update
 ```
 
 ---
 
-## Backup / restore / migrate (Must — all profiles)
+## Worker changes
 
-Stamps land in `BACKUP_DIR` (default **`/data/assistant/backups`**). High may also sync to CloudDrive (separate command).
+Optional workers are off by default:
+
+```env
+WORKER_SCHEDULE=inactive
+WORKER_MEDIA_FILE=inactive
+WORKER_SECURITY=inactive
+WORKER_NOTIFY=inactive
+WORKER_MESSAGE=inactive
+WORKER_MONITOR=inactive
+```
+
+Turn them on with `.env` edits or `add-components`:
 
 ```bash
-bash run.sh backup                    # create stamp + LATEST
-bash run.sh verify                    # verify LATEST
-bash run.sh verify 20260815_003000    # verify one stamp
-bash run.sh restore                   # restore LATEST
+bash run.sh add-components WORKER_MEDIA_FILE=active
+bash run.sh add-components WORKER_SCHEDULE=active WORKER_MESSAGE=active ENABLE_ZALO=1
+bash run.sh add-components WORKER_SECURITY=active WORKER_MONITOR=active
+```
+
+Every worker change runs **backup + verify first** and aborts on failure.
+
+---
+
+## Backup / restore / migrate
+
+Stamps land in `BACKUP_DIR` (default **`/data/assistant/backups`**).
+
+```bash
+bash run.sh backup
+bash run.sh verify
+bash run.sh verify 20260815_003000
+bash run.sh restore
 bash run.sh restore 20260815_003000
-bash run.sh migrate                   # tarball of LATEST for a new server
+bash run.sh migrate
 ```
 
-| Profile | Extra |
-|---------|-------|
-| Low / Medium | Local disk only |
-| High | After backup: `bash run.sh backup-sync-clouddrive` (needs `ENABLE_CLOUDDRIVE=1`) |
-
-**Change profile / add components (all tiers):** backup + verify current options + stores, then apply. Aborts if verify fails.
+CloudDrive mirror is separate and optional:
 
 ```bash
-bash run.sh switch-profile high            # Low/Medium → High
-bash run.sh switch-profile low             # High → Low (orphans removed; data kept)
-bash run.sh add-components ENABLE_ZALO=1
-bash run.sh restore "$(cat /data/assistant/backups/PRE_CHANGE)"
+bash run.sh backup-sync-clouddrive   # only when ENABLE_CLOUDDRIVE=1
 ```
 
-Details: [00-profiles.md](./00-profiles.md). Stamps include `config/profile-options.env` (non-secret flags) and `config/env.sealed`.
-
-**Lab-tested (2026-08-16):** High · Hermes×2 · monitor off · stamp `20260816_195940` — backup, verify, restore + canary, gateway/Zalo/DB healthy. Details: [architect/backup-restore/README.md](../architect/backup-restore/README.md). Hardware + extra RAM/disk/CPU when Grafana/Prometheus/Loki are on: [HARDWARE.md](./HARDWARE.md).
+Stamps include `config/env.sealed` (full `.env`) and `config/profile-options.env` (non-secret runtime flags).
 
 ---
 
-## Knowledge: auto-learn (Must — all profiles)
-
-**Auto-learn ≠ compact.** Auto-learn writes **documents** into Qdrant `knowledge_chunks`. No admin approve (`LEARN_REQUIRE_APPROVE=0`).
+## Knowledge + maintenance
 
 ```bash
-bash run.sh auto-learn        # one-shot: scan media/docs (+ CloudDrive on High) → ingest
-bash run.sh learn-status      # ingest /health and short catalog hint
+bash run.sh auto-learn
+bash run.sh learn-status
 ```
 
-Sources:
-
-| Profile | Sources |
-|---|---|
-| Low / Medium | `/data/assistant` media + docs; channel inbound if social-app attached |
-| High | Above + CloudDrive mirror |
-
-Scheduled: **00:00** via `install-timers`.
-
-Cite/list from chat still uses skills → ingest `list`/`search` (top 5 + rest count). That is not a `run.sh` command.
-
----
-
-## Memory compact / optimize (Medium + High only)
+`compact` / `optimize-memory` require the Media\|File worker path (`ENABLE_MEDIA_FILE=1` or bundled OCR / Jobs flags).
 
 ```bash
-bash run.sh compact              # slim skill drafts / memory housekeeping (silent)
-bash run.sh optimize-memory      # memory compact endpoints + Valkey ping
+bash run.sh compact
+bash run.sh optimize-memory
+bash run.sh check-media
 ```
 
-On **Low**, these print: `compact/optimize-memory require ASSISTANT_PROFILE=medium|high`.
+Security / monitor checks:
 
-Scheduled compact: **00:00** on Medium/High (second midnight job next to auto-learn).
+```bash
+bash run.sh check-security
+```
 
 ---
 
@@ -148,66 +169,21 @@ Scheduled compact: **00:00** on Medium/High (second midnight job next to auto-le
 sudo bash run.sh install-timers
 ```
 
-| Timer | Low | Medium / High |
-|---|---|---|
-| `assistant-auto-learn.timer` 00:00 | ✅ | ✅ |
-| `assistant-compact.timer` 00:00 | — | ✅ |
-| `assistant-backup.timer` 00:30 | ✅ | ✅ |
+Installed timers depend on enabled components:
 
----
-
-## High-only / attachable
-
-```bash
-bash run.sh backup-sync-clouddrive   # High + CloudDrive
-bash run.sh channel-status       # ENABLE_ZALO / TELEGRAM / HTTP
-```
-
-Social-app **admin chat commands** (e.g. Zalo `!zalo …`) are documented inside `architect/social-app/<app>/` — they are not `run.sh` verbs and disappear when the pack is detached.
-
----
-
-## Profile cheat-sheet
-
-### Low
-
-```bash
-export ASSISTANT_PROFILE=low
-bash run.sh up
-bash run.sh backup && bash run.sh verify
-bash run.sh auto-learn
-sudo bash run.sh install-timers   # auto-learn + backup only
-```
-
-### Medium
-
-```bash
-export ASSISTANT_PROFILE=medium
-bash run.sh up                # also installs timers (auto-learn + compact + backup)
-bash run.sh check-medium
-bash run.sh compact           # optional manual run
-bash run.sh auto-learn
-bash run.sh backup
-```
-
-### High
-
-```bash
-export ASSISTANT_PROFILE=high
-# .env: OPENBAO_DEV_ROOT_TOKEN, GRAFANA_ADMIN_PASSWORD, ZALO_API_TOKEN
-bash run.sh up                # medium+high overlays, timers, seed OpenBao
-bash run.sh first-setup-llm   # if needed
-bash run.sh check-high
-bash run.sh backup && bash run.sh backup-sync-clouddrive   # CloudDrive when rclone ready
-# optional notify:
-#   ENABLE_NOTIFY=1 bash run.sh up
-```
+| Timer | When |
+|---|---|
+| `assistant-auto-learn.timer` | all installs |
+| `assistant-backup.timer` | all installs |
+| `assistant-stack-watch.timer` | all installs |
+| `assistant-compact.timer` | when Media\|File worker is enabled |
+| `assistant-zalo-watch.timer` | when `ENABLE_ZALO=1` |
 
 ---
 
 ## See also
 
 - [02-components-and-commands.md](./02-components-and-commands.md) — components + commands  
-- [00-profiles.md](./00-profiles.md)  
-- [architect/backup-restore/README.md](../architect/backup-restore/README.md)  
-- [01-workflow.md](./01-workflow.md) — Low chat path (not ops)
+- [00-workers.md](./00-workers.md)  
+- [config/DEFAULTS.md](./config/DEFAULTS.md)  
+- [architect/backup-restore/README.md](../architect/backup-restore/README.md)
