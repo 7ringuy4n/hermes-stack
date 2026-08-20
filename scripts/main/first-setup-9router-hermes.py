@@ -208,10 +208,10 @@ def recreate_services() -> None:
         f"--project-directory {ROOT}",
         f"-f {ROOT}/docker/docker-compose.yml",
     ]
-    if env.get("ENABLE_MEDIA_FILE") == "1" or env.get("ENABLE_OCR") == "1" or env.get("ENABLE_JOBS") == "1":
-        files.append(f"-f {ROOT}/docker/docker-compose.medium.yml")
+    if env.get("ENABLE_MEDIA_FILE") == "1" or env.get("ENABLE_OCR") == "1" or env.get("ENABLE_JOBS") == "1" or env.get("ENABLE_SEARXNG") == "1":
+        files.append(f"-f {ROOT}/docker/docker-compose.media.yml")
     if any(env.get(k) == "1" for k in ("ENABLE_SECURITY", "ENABLE_MONITOR", "ENABLE_NOTIFY", "ENABLE_OPENBAO", "ENABLE_SIEM", "ENABLE_AUTHZ", "ENABLE_CLOUDDRIVE")):
-        files.append(f"-f {ROOT}/docker/docker-compose.high.yml")
+        files.append(f"-f {ROOT}/docker/docker-compose.security.yml")
     files_s = " ".join(files)
     # Drop leftover force-recreate aliases (hexprefix_assistant-hermes-N) that collide.
     subprocess.call(

@@ -51,8 +51,8 @@ cd /opt/assistant
 set -a; . ./.env; set +a
 export COMPOSE_PROGRESS=plain
 files="-f /opt/assistant/docker/docker-compose.yml"
-[[ "${ASSISTANT_PROFILE}" == "medium" || "${ASSISTANT_PROFILE}" == "high" ]] && files="$files -f /opt/assistant/docker/docker-compose.medium.yml"
-[[ "${ASSISTANT_PROFILE}" == "high" ]] && files="$files -f /opt/assistant/docker/docker-compose.high.yml"
+[[ -f /opt/assistant/docker/docker-compose.media.yml ]] && files="$files -f /opt/assistant/docker/docker-compose.media.yml"
+[[ -f /opt/assistant/docker/docker-compose.security.yml ]] && files="$files -f /opt/assistant/docker/docker-compose.security.yml"
 [[ "${ENABLE_TRAEFIK:-0}" == "1" || "${ENABLE_API_GATEWAY:-0}" == "1" ]] && files="$files -f /opt/assistant/docker/docker-compose.edge.yml"
 [[ "${HERMES_REPLICAS:-1}" == "1" ]] && files="$files -f /opt/assistant/docker/docker-compose.hermes-hostports.yml"
 profiles=""

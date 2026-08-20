@@ -19,6 +19,34 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-20 20:10 +07 — Learn pending silent; schedule inject 404; legacy medium/high compose
+
+### Symptom
+
+1. Zalo file/OCR reached ingest pending but admin never got approve (`!zalo learn approve …`).
+2. Saved schedules did not run; `schedule-worker` logged `inject 404` / `EOF` on `zalo-proxy:8787/inject-event`.
+3. Bridge restarted on `127.0.0.1` only → Docker Hermes SSE / socat could not reach host `:8787`.
+4. File pipeline: `Permission denied: /opt/data/media/inbound`.
+5. Ops still referenced obsolete `docker-compose.medium.yml` / `high.yml` while runtime used workers + `media`/`security`.
+
+### Root cause
+
+1. Ingest notify posted only to Notification Worker; with Notify inactive, `notified=false` and no bridge fallback; admin file not wired on ingest.
+2. Host `hermes-zalo-plugin` lacked `POST /inject-event`; wrong bind after restart dropped Docker reachability.
+3. Shared media dirs missing / root-owned so Hermes could not stage inbound files.
+4. Duplicate legacy profile overlays drifted from `run.sh` (media/security) and confused backup/stack-watch/first-setup.
+
+### Fix
+
+- Ingest: notify → bridge `/send` fallback to sole admin; compose wires `ZALO_BRIDGE_URL` + `ZALO_ADMIN_USERS_FILE`.
+- `patch_zalo_bridge_inject.py`: keep `ZALO_PLUGIN_HOST=0.0.0.0` on restart; document firewall risk (do not publish 8787 publicly; use `ZALO_PLUGIN_TOKEN`).
+- `setup-zalo.sh`: create `media/inbound` + `media/out` owned by Hermes UID.
+- Remove `docker-compose.medium.yml` / `docker-compose.high.yml`; point backup, stack-watch, and first-setup at `media.yml` / `security.yml` like `run.sh`.
+
+### Prevent recurrence
+
+Do not reintroduce ASSISTANT_PROFILE overlays. Learn pending must never depend on Notify Worker alone. After any bridge restart, verify listen is `0.0.0.0:8787` and `/inject-event` returns `{"ok":true}` from the schedule network.
+
 ## 2026-08-20 15:45 +07 — Classify dead-end + schedule by group name
 
 ### Symptom

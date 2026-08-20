@@ -12,7 +12,7 @@ Must (all profiles).
 
 | Endpoint / job | Function |
 |---|---|
-| `POST /v1/learn/submit` | Stage or directly learn content (auto-learn path when approve not required) |
+| `POST /v1/learn/submit` | Always stage **pending**; notify sole Zalo admin (notify worker or bridge `/send` fallback). Admin: `!zalo learn approve` |
 | `GET /v1/learn/list` | Catalog documents; `?q=&limit=5` |
 | `POST /v1/search` | Vector search over chunks (`top_k` default 5) |
 | `POST /v1/ingest` | Break-glass sync ingest |
@@ -35,7 +35,9 @@ Public list/cite uses short **titles** (content/product label), never `inbound/â
 
 ## Env
 
-`REDIS_URL` (Valkey; env name kept for RQ compatibility), `QDRANT_URL`, `EMBED_URL`, `LEARN_LIST_LIMIT`, `LEARN_REQUIRE_APPROVE`, `LEARN_NOTIFY_PATH`, media roots under `/data/assistant`.
+`REDIS_URL` (Valkey; env name kept for RQ compatibility), `QDRANT_URL`, `EMBED_URL`, `LEARN_LIST_LIMIT`, `LEARN_REQUIRE_APPROVE` (scan/midnight auto-ingest when `0`; Zalo file submit always pending), `LEARN_NOTIFY_PATH`, `NOTIFY_URL`, `ZALO_BRIDGE_URL`, `ZALO_ADMIN_USERS_FILE`, media roots under `/data/assistant`.
+
+Pending learn notify order: Notification Worker â†’ bridge DM to sole admin (`zalo_admin_users.txt`). Do not leave pending silent when Notify Worker is inactive.
 
 ## Related
 
