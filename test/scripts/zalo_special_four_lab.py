@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-"""Lab: 4-item English Zalo lịch in 2 minutes. Watch plugin for 4 replies.
+﻿# -*- coding: utf-8 -*-
+"""Lab: 4-item English Zalo lá»‹ch in 2 minutes. Watch plugin for 4 replies.
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 Reports: test/reports/run-zalo-special-four/ (no host/account)
@@ -15,7 +15,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import connect, sudo_bash  # noqa: E402
+from deploy_stack import connect, sudo_bash  # noqa: E402
 from sanitize import sanitize as _sanitize  # noqa: E402
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
@@ -357,3 +357,4 @@ echo WATCH_DONE
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

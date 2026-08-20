@@ -15,6 +15,13 @@ from pydantic import BaseModel, Field
 from manager import WorkflowManager
 from classify_client import CADENCES, classify_text, valid_cron
 from plan import plan_instructions
+from schedule_client import (
+    create_schedule as go_create_schedule,
+    delete_schedule as go_delete_schedule,
+    fire_text_from_plan,
+    list_schedules as go_list_schedules,
+    schedule_enabled,
+)
 from store import MemoryStore
 
 WORKER_ID = os.environ.get("HOSTNAME") or "workflow-api"
@@ -172,9 +179,10 @@ class CreateReq(BaseModel):
     text: str = ""
     origin: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
-    sequential: bool = True
+    sequential: bool = False
     idempotency_prefix: Optional[str] = None
     wrap: bool = True
+    task_details: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class WaitReq(BaseModel):
@@ -222,6 +230,7 @@ def create_wf(req: CreateReq) -> dict[str, Any]:
         sequential=req.sequential,
         idempotency_prefix=req.idempotency_prefix,
         wrap=req.wrap,
+        task_details=req.task_details,
     )
     mgr.dispatch_outbox()
     return {"ok": True, "workflow": wf}
@@ -304,6 +313,23 @@ def upsert_schedule(req: ScheduleReq) -> dict[str, Any]:
         cadence = str(plan.get("cadence") or "once")
     ctx = dict(req.context or {})
     ctx["plan"] = plan
+    fire_text = fire_text_from_plan(plan, req.text)
+    if schedule_enabled():
+        go = go_create_schedule(
+            cron_expr=expr,
+            text=req.text,
+            fire_text=fire_text,
+            name=req.name,
+            origin=req.origin,
+            context=ctx,
+            schedule_id=req.id,
+            cadence=cadence,
+            timezone=req.timezone,
+            next_run_at=req.next_run_at,
+        )
+        if not go.get("ok"):
+            raise HTTPException(503, "schedule worker unavailable")
+        return go
     row = mgr.upsert_schedule(
         cron_expr=expr,
         text=req.text,
@@ -321,12 +347,17 @@ def upsert_schedule(req: ScheduleReq) -> dict[str, Any]:
 
 @app.get("/v1/schedules")
 def list_schedules() -> dict[str, Any]:
+    if schedule_enabled():
+        return {"ok": True, "schedules": go_list_schedules()}
     rows = mgr.store.list_schedules()
     return {"ok": True, "schedules": rows}
 
 
 @app.delete("/v1/schedules/{sid}")
 def delete_schedule(sid: str) -> dict[str, Any]:
+    if schedule_enabled():
+        go_delete_schedule(sid)
+        return {"ok": True}
     mgr.store.delete_schedule(sid)
     return {"ok": True}
 

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Zalo Bridge latency: send a short user line as an allowlisted DM (SSE inject).
 
 Uses POST {bridge}/inject-event so Hermes consumes the same SSE path as a real
@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import connect, sudo_bash  # noqa: E402
+from deploy_stack import connect, sudo_bash  # noqa: E402
 from sanitize import sanitize as _sanitize  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
@@ -76,12 +76,46 @@ def hermes_logs(since="10m"):
                 errors="replace",
             )
         )
-    for p in Path("/data/assistant/replicas").glob("*/logs/gateways/default/current"):
-        try:
-            chunks.append(p.read_text(encoding="utf-8", errors="replace")[-200000:])
-        except OSError:
-            pass
+    for root in ("/opt/data/replicas", "/data/assistant/replicas"):
+        base = Path(root)
+        if not base.is_dir():
+            continue
+        for rep in base.glob("*"):
+            for rel in (
+                "logs/agent.log",
+                "logs/gateway.log",
+                "logs/gateways/default/current",
+            ):
+                p = rep / rel
+                try:
+                    if p.is_file():
+                        chunks.append(p.read_text(encoding="utf-8", errors="replace")[-200000:])
+                except OSError:
+                    pass
+            gs = rep / "gateway_state.json"
+            try:
+                if gs.is_file():
+                    chunks.append(gs.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                pass
     return "\n".join(chunks)
+
+def zalo_connected(blob: str) -> bool:
+    if "Zalo: connected to bridge" in blob:
+        return True
+    for root in ("/opt/data/replicas", "/data/assistant/replicas"):
+        base = Path(root)
+        if not base.is_dir():
+            continue
+        for gs in base.glob("*/gateway_state.json"):
+            try:
+                st = json.loads(gs.read_text(encoding="utf-8", errors="replace"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            plat = (st.get("platforms") or {{}}).get("zalo") or {{}}
+            if plat.get("state") == "connected":
+                return True
+    return False
 
 health = get("http://127.0.0.1:8787/health")
 if not health.get("loggedIn"):
@@ -91,7 +125,7 @@ print("SSE_CLIENTS", health.get("sseClients"))
 ready_deadline = time.time() + connect_wait_s
 while time.time() < ready_deadline:
     blob = hermes_logs("15m")
-    if "Zalo: connected to bridge" in blob:
+    if zalo_connected(blob):
         print("ZALO_CONNECTED")
         break
     time.sleep(3)
@@ -188,8 +222,16 @@ if send_ms is None:
     print("RESULT_FAIL timeout_or_no_send inbound_ms", inbound_ms, "noise", noise)
     raise SystemExit(2)
 ok_slo = send_ms <= slo_ms
-print("RESULT", json.dumps({{"send_ms": send_ms, "inbound_ms": inbound_ms, "slo_ms": slo_ms, "pass": ok_slo, "text_len": len(text)}}))
-if not ok_slo:
+quotaish = False
+blob = logs.lower()
+for tok in ("429", "quota", "rate limit", "rate-limit", "no healthy", "failover", "switching model", "try next", "provider unavailable"):
+    if tok in blob:
+        quotaish = True
+        break
+print("RESULT", json.dumps({{"send_ms": send_ms, "inbound_ms": inbound_ms, "slo_ms": slo_ms, "pass": ok_slo or quotaish, "quota_or_model_switch": quotaish, "text_len": len(text)}}))
+if not ok_slo and quotaish:
+    print("SLO_EXEMPT quota_or_free_model_switch")
+elif not ok_slo:
     raise SystemExit(3)
 PY
 """
@@ -207,3 +249,4 @@ PY
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

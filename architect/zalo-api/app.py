@@ -16,6 +16,7 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from channels_registry import list_channels, resolve, sync_from_allowlist, upsert as channel_upsert
 from schedule_list import fmt_hermes_cron_list
 from schedule_crud import (
     USAGE as SCHEDULE_USAGE,
@@ -1073,7 +1074,61 @@ class ChatCmd(BaseModel):
 @app.get("/health")
 def health() -> dict[str, Any]:
     _scrub_admin_from_deny()
+    try:
+        sync_from_allowlist("zalo", _read_entries(), kind="group")
+    except Exception:
+        pass
     return {"ok": True, "service": "zalo-api", "admin_users": len(_admin_users())}
+
+
+class ChannelResolveReq(BaseModel):
+    platform: str = "zalo"
+    ref: str = Field(..., min_length=1)
+
+
+@app.get("/v1/channels")
+def channels_list(
+    platform: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    rows = list_channels(platform)
+    return {"ok": True, "channels": rows, "count": len(rows)}
+
+
+@app.post("/v1/channels/resolve")
+def channels_resolve(
+    body: ChannelResolveReq,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    hit = resolve(body.platform, body.ref)
+    if not hit:
+        return {"ok": False, "error": "not_found", "platform": body.platform, "ref": body.ref}
+    return {"ok": True, "channel": hit}
+
+
+@app.post("/v1/channels/upsert")
+def channels_upsert(
+    body: dict[str, Any],
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    plat = str(body.get("platform") or "zalo")
+    eid = str(body.get("external_id") or body.get("id") or "").strip()
+    if not eid:
+        raise HTTPException(400, "external_id required")
+    row = channel_upsert(
+        plat,
+        eid,
+        name=str(body.get("name") or ""),
+        kind=str(body.get("kind") or "group"),
+        meta=body.get("meta") if isinstance(body.get("meta"), dict) else None,
+    )
+    return {"ok": True, "channel": row}
 
 
 @app.post("/v1/sessions/reset-all")
@@ -2435,6 +2490,10 @@ def _write_entries(entries: list[dict[str, str]]) -> None:
                 f.write(f"{e['id']} | {e['name']}\n")
             else:
                 f.write(f"{e['id']}\n")
+    try:
+        sync_from_allowlist("zalo", entries, kind="group")
+    except Exception:
+        pass
 
 
 USERS_MODE_FILE = os.environ.get(

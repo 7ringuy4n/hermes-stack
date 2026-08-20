@@ -20,6 +20,31 @@ def main() -> int:
     failed = normalize_plan({"ok": False, "error": "classify_llm_failed"}, "1. a\n2. b", "Asia/Ho_Chi_Minh")
     assert failed["ok"] is False
     assert failed["instructions"] == []
+    assert failed["response_mode"] == "confirm"
+    no_cron = normalize_plan(
+        {"task_hint": "schedule", "instructions": ["hello"], "cadence": "once"},
+        "hello at 17:57",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert no_cron["ok"] is False
+    details = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "instructions": ["chào", "tóm tắt thời tiết", "vẽ ảnh theo thời tiết"],
+            "cadence": "once",
+            "cron_expr": "57 17 * * *",
+            "task_details": [
+                {"execution_class": "interactive", "task_type": "chat", "depends_on": []},
+                {"execution_class": "async", "task_type": "search", "depends_on": []},
+                {"execution_class": "async", "task_type": "media_generation", "depends_on": [1]},
+            ],
+        },
+        "ignored",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert details["cron_expr"] == "57 17 * * *"
+    assert details["task_details"][2]["depends_on"] == [1]
+    assert details["task_details"][2]["task_type"] == "media_generation"
     poster = normalize_plan(
         {
             "task_hint": "tool",
@@ -88,6 +113,26 @@ def main() -> int:
     assert len(once["instructions"]) == 3
     assert "E10 RON95" in once["instructions"][1]
     assert "thời tiết" in once["instructions"][2]
+    four = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "instructions": [
+                "Gửi tin nhắn chào",
+                "Tìm và tóm tắt giá xăng E5 RON92 và E10 RON95 mới nhất",
+                "Tìm và tóm tắt thời tiết TP.HCM hiện tại",
+                "Vẽ tranh TP.HCM phản ánh đúng thời tiết lúc đó và gửi ảnh",
+            ],
+            "cadence": "once",
+            "cron_expr": "35 20 * * *",
+        },
+        "ignored",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert len(four["instructions"]) == 4
+    assert "chào" in four["instructions"][0]
+    assert "E10 RON95" in four["instructions"][1]
+    assert "thời tiết" in four["instructions"][2]
+    assert "Vẽ" in four["instructions"][3] or "ảnh" in four["instructions"][3]
     know = normalize_plan(
         {"task_hint": "knowledge", "instructions": ["labsolution"]},
         "cite labsolution",
@@ -95,6 +140,41 @@ def main() -> int:
     )
     assert know["task_hint"] == "knowledge"
     assert know["instructions"] == ["labsolution"]
+    once_2113 = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "instructions": [
+                "Gửi một tin nhắn chào đến mọi người.",
+                "Tóm tắt ngắn gọn giá xăng E5 RON92 và E10 RON95 mới nhất",
+                "Tóm tắt ngắn gọn thông tin tình hình thời tiết hiện tại",
+                "Vẽ hình Thành phố Hồ Chí Minh dựa trên tình hình thời tiết thực tế hiện tại",
+            ],
+            "cadence": "once",
+            "cron_expr": "13 21 * * *",
+            "task_details": [
+                {"execution_class": "interactive", "task_type": "chat", "depends_on": []},
+                {"execution_class": "async", "task_type": "search", "depends_on": []},
+                {"execution_class": "async", "task_type": "search", "depends_on": []},
+                {"execution_class": "async", "task_type": "media_generation", "depends_on": [2]},
+            ],
+        },
+        "ignored",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert once_2113["ok"] is True
+    assert once_2113["cron_expr"] == "13 21 * * *"
+    assert once_2113["cadence"] == "once"
+    assert len(once_2113["instructions"]) == 4
+    assert once_2113["task_details"][3]["depends_on"] == [2]
+    assert sched["skill"] == "schedule"
+    assert sched["process_original_message"] is False
+    search = normalize_plan(
+        {"task_hint": "search", "instructions": ["Tìm giá xăng"]},
+        "Tìm giá xăng",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert search["skill"] == "web_search"
+    assert search["process_original_message"] is True
     print("llm_classify_unit OK")
     return 0
 

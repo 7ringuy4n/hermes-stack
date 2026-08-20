@@ -1,11 +1,12 @@
-# Case: once lịch with numbered tasks must not hit knowledge-cite
+# Case: once-schedule with numbered tasks must not hit knowledge-cite
 
-A one-shot Zalo lịch whose numbered items include “không trích dẫn nguồn”
+A one-shot Zalo schedule whose numbered items include “không trích dẫn nguồn”
 must become a **schedule**, not a knowledge-catalog refuse.
 
 **Architect:** Secret Probe → LLM classify (`task_hint=schedule`, `cadence=once`,
-three `instructions[]`) → Schedule Manager. Knowledge-cite intercept must not
-run. Tick creates **one job per numbered item**.
+three `instructions[]`) → Schedule skill → Go schedule worker. Knowledge-cite
+intercept must not run. Tick injects inner work; Hermes creates **one job per
+numbered item**.
 
 ## Fixture
 

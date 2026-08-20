@@ -73,10 +73,12 @@ def _plugin_uid() -> int | None:
 def restart_plugin() -> str:
     """Restart the host Node bridge without a second SSE login (cookies stay on disk)."""
     uid = _plugin_uid()
-    if uid is None:
+    if uid is None or uid == 0:
         try:
             uid = int((os.environ.get("ZALO_PLUGIN_UID") or "1000").strip())
         except ValueError:
+            uid = 1000
+        if uid == 0:
             uid = 1000
     try:
         subprocess.run(

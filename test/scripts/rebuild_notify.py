@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Backup+verify, sync, rebuild notify + zalo-api (no Hermes restart, no destroy).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import connect, sudo_bash, sync_tree  # noqa: E402
+from deploy_stack import connect, sudo_bash, sync_tree  # noqa: E402
 
 
 def main() -> int:
@@ -122,3 +122,4 @@ echo REBUILD_NOTIFY_DONE
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
