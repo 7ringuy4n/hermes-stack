@@ -4,9 +4,10 @@ One lịch with **four English numbered tasks** must create **four jobs** at
 tick time and deliver **four Zalo replies** (text and/or file) to the
 logged-in bot’s thread. Isolated parallel sessions; no `/busy` tip.
 
-**Architect:** Input Secret Probe → LLM classify (`task_hint` + `instructions`)
-→ Schedule Manager stores structured `context.plan` → tick creates one job per
-instruction. `SECRET` is never a task type.
+**Architect:** LLM classify (`task_hint` + `instructions`) → Schedule skill →
+Go schedule worker (SQLite). At tick the worker injects the **inner** message
+back into Hermes (not the đặt lịch wrapper). Hermes classifies again and
+creates one workflow job per instruction. `SECRET` is never a task type.
 
 ## Fixture (English payload)
 

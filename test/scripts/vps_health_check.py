@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-"""Post-deploy health: Hermes, 9router, Traefik, Zalo — no host/secrets in output."""
+﻿# -*- coding: utf-8 -*-
+"""Post-deploy health: Hermes, 9router, Traefik, Zalo â€” no host/secrets in output."""
 from __future__ import annotations
 
 import io
@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import connect, sudo_bash  # noqa: E402
+from deploy_stack import connect, sudo_bash  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -52,3 +52,4 @@ echo HEALTH_DONE
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

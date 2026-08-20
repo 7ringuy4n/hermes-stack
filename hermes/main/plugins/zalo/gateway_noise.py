@@ -1,14 +1,22 @@
 """Drop Hermes outbound that must not reach Zalo users.
 
-Known Hermes agent protocol lines (413 / compaction / session reset) are
-dropped from editable ``messages/ux.json`` ``outbound_protocol_drop``.
-Other lines use LLM outbound classify (`action=send|drop`).
-Tests inject set_outbound_planner. Empty lines are not sent.
+Layers (fail-closed for status frames):
+1. Empty → drop
+2. Deterministic Hermes *agent status frames* (progress / tool iteration / provider
+   failure envelopes) — protocol shapes the gateway emits, not user NLU
+3. Editable markers in ``messages/ux.json`` ``outbound_protocol_drop`` (legacy)
+4. LLM ``POST /v1/outbound`` for residual lines
+5. If LLM unavailable: drop status-like frames; otherwise send
+
+Do not grow large keyword lists for natural language. Prefer skills
+(``quiet-delivery``, ``zalo-channel``, ``media-out``) so Hermes does not emit
+process chatter. Code only strips what the agent still leaks.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -28,6 +36,27 @@ PROTOCOL_DROP_DEFAULT = (
     "Session auto-reset",
     "compression attempt",
     "vars() argument must have __dict__",
+)
+
+# Hermes agent status envelopes (deterministic gateway protocol shapes).
+_AGENT_STATUS_RE = re.compile(
+    r"(?is)^(?:"
+    r"[\u23f3\u26a0\ufe0f\u2757\u23f1]|"  # hourglass / warning / heavy / stopwatch
+    r"working\b|"
+    r"iteration\s+\d+\s*/\s*\d+|"
+    r"receiving\s+stream|"
+    r"model\s+provider\s+failed|"
+    r"kept\s+raw\s+provider|"
+    r"check\s+gateway\s+logs|"
+    r"first-time\s+tip|"
+    r"interrupting\s+current\s+task|"
+    r"/busy\b"
+    r")"
+)
+_ITERATION_RE = re.compile(r"(?i)\biteration\s+\d+\s*/\s*\d+")
+_WORKING_LINE_RE = re.compile(r"(?i)^\s*(?:[\u23f3\u26a0\ufe0f]+\s*)?working\b")
+_PROVIDER_FAIL_RE = re.compile(
+    r"(?i)model\s+provider\s+failed|raw\s+provider\s+details|check\s+gateway\s+logs\s+for\s+diagnostics"
 )
 
 
@@ -64,10 +93,28 @@ def protocol_drop_markers() -> list[str]:
     return markers
 
 
+def is_agent_status_frame(content: str) -> bool:
+    """True for Hermes progress / tool-iteration / provider-failure envelopes."""
+    t = (content or "").strip()
+    if not t:
+        return True
+    if _ITERATION_RE.search(t):
+        return True
+    if _WORKING_LINE_RE.search(t):
+        return True
+    if _PROVIDER_FAIL_RE.search(t):
+        return True
+    if _AGENT_STATUS_RE.search(t) and len(t) < 400:
+        return True
+    return False
+
+
 def is_protocol_drop(content: str) -> bool:
     """True when the line is a Hermes agent protocol status, not a user answer."""
     t = (content or "").strip()
     if not t:
+        return True
+    if is_agent_status_frame(t):
         return True
     for mark in protocol_drop_markers():
         if mark and mark in t:
@@ -81,7 +128,12 @@ def drop_outbound(content: str) -> bool:
         return True
     if is_protocol_drop(t):
         return True
-    return str(classify_outbound(t).get("action") or "send").strip().lower() == "drop"
+    got = classify_outbound(t)
+    action = str(got.get("action") or "send").strip().lower()
+    if got.get("ok") is False:
+        # Fail closed for status-like residual; do not invent user-facing errors.
+        return is_agent_status_frame(t) or action == "drop"
+    return action == "drop"
 
 
 def is_busy_interrupt_notice(content: str) -> bool:

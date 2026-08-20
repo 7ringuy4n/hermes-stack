@@ -41,12 +41,23 @@ def test_plan() -> None:
     print("PASS plan_instructions + cron extract")
 
 
+def test_plan_from_stored_prefers_live_split() -> None:
+    from plan import plan_from_stored  # noqa: E402
+    from classify_fixtures import FIXTURE_ONCE_FOUR  # noqa: E402
+
+    sch = {"context": {"plan": {"ok": True, "instructions": [FIXTURE_ONCE_FOUR]}}}
+    parts = plan_from_stored(sch, FIXTURE_ONCE_FOUR)
+    assert len(parts) == 4, parts
+    print("PASS plan_from_stored uses live 4-way split over one stored blob")
+
+
 def test_three_jobs_complete() -> None:
     mgr = WorkflowManager(MemoryStore())
     wf = mgr.create(
         ["alpha", "beta", "gamma"],
         context={"execute": "record_only"},
         wrap=False,
+        sequential=True,
     )
     assert len(wf["jobs"]) == 3
     mgr.dispatch_outbox()
@@ -86,9 +97,42 @@ def test_parallel_jobs_all_queued() -> None:
     print("PASS parallel 3 jobs no deps")
 
 
+def test_dag_depends_on() -> None:
+    mgr = WorkflowManager(MemoryStore())
+    details = [
+        {"execution_class": "interactive", "task_type": "chat", "depends_on": []},
+        {"execution_class": "async", "task_type": "search", "depends_on": []},
+        {"execution_class": "async", "task_type": "media_generation", "depends_on": [1]},
+    ]
+    wf = mgr.create(
+        ["hello", "weather", "draw"],
+        context={"execute": "record_only"},
+        wrap=False,
+        sequential=False,
+        task_details=details,
+    )
+    jobs = sorted(wf["jobs"], key=lambda j: int(j["seq"]))
+    assert jobs[0]["status"] == "QUEUED" and not jobs[0]["dependencies"]
+    assert jobs[1]["status"] == "QUEUED" and not jobs[1]["dependencies"]
+    assert jobs[2]["status"] == "PENDING"
+    assert jobs[2]["dependencies"] == [jobs[1]["id"]]
+    mgr.dispatch_outbox()
+    first = mgr.claim("w1", execute="record_only")
+    second = mgr.claim("w1", execute="record_only")
+    assert {first["instruction"], second["instruction"]} == {"hello", "weather"}
+    assert mgr.claim("w1", execute="record_only") is None
+    mgr.complete(first["id"], {"ok": True})
+    mgr.complete(second["id"], {"ok": True})
+    mgr.dispatch_outbox()
+    draw = mgr.claim("w1", execute="record_only")
+    assert draw and draw["instruction"] == "draw"
+    mgr.complete(draw["id"], {"ok": True})
+    print("PASS DAG depends_on without sequential")
+
+
 def test_partial_failure_and_no_rerun() -> None:
     mgr = WorkflowManager(MemoryStore(), lease_s=30)
-    wf = mgr.create(["ok-a", "fail-b", "ok-c"], context={"execute": "record_only"}, wrap=False)
+    wf = mgr.create(["ok-a", "fail-b", "ok-c"], context={"execute": "record_only"}, wrap=False, sequential=True)
     mgr.dispatch_outbox()
     a = mgr.claim("w1", execute="record_only")
     mgr.complete(a["id"], {"ok": True})
@@ -181,6 +225,26 @@ def test_once_schedule_refire_same_day() -> None:
     print("PASS once cadence re-fire same day creates a new workflow")
 
 
+def test_schedule_url_skips_workflow_tick() -> None:
+    import os
+
+    mgr = WorkflowManager(MemoryStore())
+    past = datetime.now(timezone.utc) - timedelta(minutes=1)
+    mgr.upsert_schedule(
+        cron_expr="0 8 * * *",
+        text="hello",
+        cadence="once",
+        next_run_at=past,
+        context={"execute": "record_only", "plan": {"ok": True, "instructions": ["hello"]}},
+    )
+    os.environ["SCHEDULE_URL"] = "http://schedule-worker:8110"
+    try:
+        assert mgr.fire_due_schedules() == []
+    finally:
+        os.environ.pop("SCHEDULE_URL", None)
+    print("PASS SCHEDULE_URL disables workflow cron tick")
+
+
 def test_timezone_default_gmt7() -> None:
     now = datetime(2026, 8, 18, 22, 30, tzinfo=timezone.utc)
     nxt = next_daily_cron("0 6 * * *", "Asia/Ho_Chi_Minh", now)
@@ -207,12 +271,15 @@ def test_same_minute_grace_1354() -> None:
 def main() -> int:
     try:
         test_plan()
+        test_plan_from_stored_prefers_live_split()
         test_three_jobs_complete()
         test_parallel_jobs_all_queued()
+        test_dag_depends_on()
         test_partial_failure_and_no_rerun()
         test_idempotency_and_stale_lease()
         test_schedule_tick_creates_jobs()
         test_once_schedule_refire_same_day()
+        test_schedule_url_skips_workflow_tick()
         test_timezone_default_gmt7()
         test_same_minute_grace_1354()
     except AssertionError as e:

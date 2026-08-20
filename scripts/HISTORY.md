@@ -19,6 +19,122 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-20 07:35 +07 — profiles mixed optional workers into core
+
+### Symptom
+
+A fresh Low install started schedule/media/security-shaped services, and classify sent `max_tokens` that truncated long JSON.
+
+### Root cause
+
+`ASSISTANT_PROFILE=low|medium|high` turned whole overlays on. Schedule worker was always-on in compose. Classify always set `max_tokens`.
+
+### Fix
+
+Core is Hermes + Memory + Router Worker + Traefik local + watchdog. Other workers are `ENABLE_*=0` / compose profiles. Lab host `.env` can still turn Zalo/schedule/media on for tests. Classify omits `max_tokens` unless configured.
+
+### Prevent recurrence
+
+Do not map a profile name to a secret bundle of workers. Do not `depends_on` optional workers from Hermes.
+
+---
+
+## 2026-08-20 07:10 +07 — classify hit 9router; workflow owned cron ticks
+
+### Symptom
+
+Numbered once-lịch still classified slowly or failed closed. Schedules could re-enter classify as “đặt lịch” and create another lịch.
+
+### Root cause
+
+Classify/outbound preferred 9router (`prefer_omni=False`) and `model=hermes` chat skipped Omni even when Omni was healthy. Workflow `fire_due` executed cron inside Hermes/workflow instead of a dedicated worker, and fired the wrapper text.
+
+### Fix
+
+OmniRouter is the default general router. A Go SQLite schedule worker stores when-to-run and injects inner `fire_text` back into Hermes. Workflow tick is disabled when `SCHEDULE_URL` is set.
+
+### Prevent recurrence
+
+Do not put a cron ticker in Hermes. Do not fire the original “đặt lịch lúc HH:MM” wrapper. Do not force classify onto 9router when Omni is the default.
+
+---
+
+## 2026-08-19 21:25 +07 — once lịch still classify.failed at 21:21
+
+### Symptom
+
+The same numbered once lịch (21:21) still got the classify.failed Zalo line.
+
+### Root cause
+
+Length-based timeouts were a heuristic, not a fix. Both LLM attempts still ReadTimeout at 14s because the classify system prompt and required task_details JSON were too large for the first provider. Zalo then treated ok=false as “did not understand.”
+
+### Fix
+
+One classify timeout from `classify.json` (no character-count routing). Compact JSON contract; task_details optional. Fail over to the next model-router provider on timeout. Zalo HTTP classify wait is 70s. Workflows remain sequential=false.
+
+### Prevent recurrence
+
+Do not branch classify wait on message length. Make the LLM contract small enough to finish, and fail over providers.
+
+---
+
+
+### Symptom
+
+A once lịch at 21:13 with four numbered tasks got “please send again” and was not stored.
+
+### Root cause
+
+Classify fail-closed on timeout. The payload was shorter than 400 characters so the LLM hop used the 3s hello budget. Two ReadTimeouts plus a 5s Zalo HTTP client timeout never returned JSON. Workflow then 503’d if anything reached `/v1/schedules`.
+
+### Fix
+
+Length-based classify budget (medium ≥120 chars → 14s, long ≥400 → 18s). HTTP client waits budget + 8s. Hello stays 3s. Workflows remain sequential=false.
+
+### Prevent recurrence
+
+Do not reuse the hello classify timeout for a multi-instruction lịch JSON payload.
+
+---
+
+
+### Symptom
+
+Numbered cron jobs were forced sequential. Classify timeout was treated as a normal interactive plan. Multi-task schedules had no per-task execution class or dependencies.
+
+### Root cause
+
+Workflow create defaulted sequential=true (and fire_due used sequential when N>1). `/v1/classify` fail-opened to `task_hint=normal`. Schema had only a wrapper `execution_class`.
+
+### Fix
+
+LLM returns `task_details` + 0-based `depends_on`. Schema validation + retry, then unknown/confirm. Workflows stay async; DAG only when depends_on is set. Zalo/gateway announce classify failure instead of running the user text as chat.
+
+### Prevent recurrence
+
+Do not fail-open classify. Do not set sequential=true unless an operator/data dependency requires it. Keep `classify_outbound` on the shared classify_client copies. Never restart hermes-zalo-plugin as uid 0.
+
+---
+
+## 2026-08-19 20:50 +07 — cron briefing returned only one picture
+
+### Symptom
+
+A once lịch at 20:35 asked for a greeting, fuel summary, weather summary, and an HCMC weather image. Zalo received only the picture.
+
+### Root cause
+
+The job stayed on Hermes native cron (`jobs.json` `run_at`, no 5-field `expr`) so migrate skipped it. One agent turn ran the whole prompt and mostly produced media. Classify timeout on long text also fail-opened. Overlay-merge wording in classify.json encouraged collapsing text+image. Root-owned `hcm_weather.jpg` failed chmod for the bridge.
+
+### Fix
+
+Keep numbered text tasks separate from a later draw. Re-classify at tick when stored instructions are a single blob. Sequential workflow jobs. Migrate once `run_at`. Copy media when chmod is denied. Longer classify timeout for long payloads.
+
+### Prevent recurrence
+
+Do not run a numbered briefing as one Hermes cron agent turn. Explode at tick through workflow.
+
 ## 2026-08-19 20:25 +07 — hi >15s; cron TypeError vars() on Zalo
 
 ### Symptom
