@@ -19,6 +19,28 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-20 20:45 +07 — Recurring media Permission denied; dual Hermes lab
+
+### Symptom
+
+Hermes repeatedly hit `Permission denied` on `/opt/data/media/inbound` or `media/out` after redeploys / root-owned mkdir. Operators asked for durable prevention and a dual-Hermes concurrent isolation check (hello / web / txt / OCR mix).
+
+### Root cause
+
+Media dirs were only created in `setup-zalo` (or one-off lab chown). Fresh volumes or root tools left dirs non-writable for Hermes UID 1000. Replica entry did not heal media ownership on start.
+
+### Fix
+
+- Ensure media dirs + ownership in `run.sh` (up/update), `setup-zalo.sh`, `hermes-replica-entry.sh`, and `stack-watch.sh` (setgid + ug+rwX).
+- AGENT_RULES #50: fix in source, pull on host — no hotpatch-only “fixes.”
+- Case 30 + `hermes_dual_isolation_lab.py` for HERMES_REPLICAS=2 concurrent admin injects.
+
+### Prevent recurrence
+
+Do not mkdir media as root without chown to `HERMES_UID`. Prefer entrypoint + stack-watch heal over manual SSH chown.
+
+---
+
 ## 2026-08-20 20:35 +07 — DM schedule into named group asked for chat ID
 
 ### Symptom
