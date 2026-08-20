@@ -211,6 +211,49 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
     return True
 
 
+def _default_chat_combo_alias() -> str:
+    """Chat/outbound combo alias (``hermes`` by default — not a vendor model id)."""
+    for key in ("OMNIROUTER_DEFAULT_COMBO", "N9ROUTER_DEFAULT_COMBO"):
+        val = (os.environ.get(key) or "").strip()
+        if val:
+            return val
+    return "hermes"
+
+
+def _default_classify_combo_alias() -> str:
+    """Classify combo alias — dedicated OpenCode ``classifier`` combo by default."""
+    for key in ("MODEL_ROUTER_CLASSIFY_MODEL", "OMNIROUTER_CLASSIFY_COMBO"):
+        val = (os.environ.get(key) or "").strip()
+        if val:
+            return val
+    return "classifier"
+
+
+def _router_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
+    """Resolve classify LLM id — must be a combo alias or real provider/model id."""
+    for candidate in (
+        override,
+        os.environ.get("MODEL_ROUTER_CLASSIFY_MODEL"),
+        str(cfg.get("model") or "").strip() or None,
+        _default_classify_combo_alias(),
+    ):
+        if candidate and str(candidate).strip():
+            return str(candidate).strip()
+    return _default_classify_combo_alias()
+
+
+def _outbound_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
+    for candidate in (
+        override,
+        os.environ.get("MODEL_ROUTER_OUTBOUND_MODEL"),
+        str(cfg.get("model") or "").strip() or None,
+        _default_chat_combo_alias(),
+    ):
+        if candidate and str(candidate).strip():
+            return str(candidate).strip()
+    return _default_chat_combo_alias()
+
+
 def _load_cfg() -> dict[str, Any]:
     try:
         return json.loads(CFG_PATH.read_text(encoding="utf-8"))
@@ -420,15 +463,18 @@ async def classify_with_llm(
     blob = (text or "").strip()
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
+    # Ultra-short probes (e.g. "ê", "hi") — skip LLM; weak models misclassify these.
+    if len(blob) <= 4:
+        plan = normalize_plan(
+            {"task_hint": "normal", "instructions": [blob], "process_original_message": True},
+            blob,
+            tz,
+        )
+        if plan_schema_ok(plan):
+            return plan
     tmpl = str(cfg.get("user_template") or "Timezone: {timezone}\nMessage:\n{text}")
     payload = {
-        "model": (
-            model
-            or str(cfg.get("model") or "").strip()
-            or os.environ.get("MODEL_ROUTER_CLASSIFY_MODEL")
-            or "hermes"
-        ).strip()
-        or "hermes",
+        "model": _router_llm_model(cfg, model),
         "stream": False,
         "temperature": float(cfg.get("temperature") or 0),
         "messages": [
@@ -518,7 +564,7 @@ async def outbound_with_llm(
         return {"ok": True, "action": "drop"}
     tmpl = str(cfg.get("user_template") or "Line:\n{text}")
     payload = {
-        "model": (model or os.environ.get("MODEL_ROUTER_CLASSIFY_MODEL") or "hermes").strip() or "hermes",
+        "model": _outbound_llm_model(cfg, model),
         "stream": False,
         "temperature": float(cfg.get("temperature") or 0),
         "max_tokens": int(cfg.get("max_tokens") or 64),

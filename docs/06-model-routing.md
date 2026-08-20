@@ -37,6 +37,23 @@ Do not classify user prose with split/join/regex/keyword lists in application co
 
 Hermes must always reach **model-router**. **OmniRouter** is the default general path. **9Router** is optional and should be enabled only when the coding/fallback component is wanted. Tests: [test/cases/21-defaults-routers-connected.md](../test/cases/21-defaults-routers-connected.md). Grafana pairing: [test/cases/20-grafana-component-integration.md](../test/cases/20-grafana-component-integration.md).
 
+### Combo aliases (`hermes` chat, `classifier` classify)
+
+There is no standalone vendor model id `hermes` or `classifier` — both are **combo aliases**.
+
+| Who | What to set |
+|-----|-------------|
+| Hermes Agent `model.default` | chat combo (`OMNIROUTER_DEFAULT_COMBO`, default `hermes`) |
+| `MODEL_ROUTER_OUTBOUND_MODEL` | same chat combo |
+| `MODEL_ROUTER_CLASSIFY_MODEL` / `OMNIROUTER_CLASSIFY_COMBO` | classify combo (default `classifier`) |
+| OmniRouter Combos UI | Chat members for `hermes` are operator-managed; **`classifier` is filled with all OpenCode Free `oc/*` models by `first-setup-omnirouter`** |
+
+`first-setup-omnirouter` ensures:
+- chat combo **name** `hermes` exists (does not overwrite chat members)
+- classify combo **`classifier`** exists and is updated with the current OpenCode Free catalog
+
+If Omni logs show **PROVIDER=HERMES** and **503**, the chat combo was not resolved. Add working members in the Combos UI (and connect providers), then retry.
+
 **Health:** `GET /v1/models` without an API key returns **401** while 9router is up (UI `/` is **307**). Stack-watch treats 200/401/307 as healthy — do not use `curl -f` on that URL or every heal tick will restart 9router.
 
 ## Memory (unchanged story)
