@@ -1,5 +1,9 @@
 # Change history
 
+## 2026-08-20 18:55 +07 — Classify reads provider CoT fields when content empty
+
+- `_message_text` checks `content`, `reasoning_content`, `reasoning`, `thinking`, `thinking_content`, `thought`, `reasoning_text`, plus any other message key containing reason/think, and `reasoning_details`.
+
 ## 2026-08-20 18:50 +07 — Classifier combo uses Omni `oc/*` catalog + unblock
 
 - `first-setup-omnirouter` clears `blockedProviders` for OpenCode, loads all `oc/*` from `/api/models`, and writes combo members with `connectionId` (Omni object shape).
