@@ -202,24 +202,144 @@ install_adapter() {
   $SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "${HERMES_DATA}/plugins" 2>/dev/null || true
 }
 
+ensure_shared_config() {
+  local cfg="${HERMES_DATA}/config.yaml"
+  if $SUDO test -f "$cfg"; then
+    return 0
+  fi
+
+  local seed
+  seed="$($SUDO bash -lc "ls -1dt '${HERMES_DATA}'/replicas/*/config.yaml 2>/dev/null | head -n 1" || true)"
+  if [[ -z "$seed" ]]; then
+    echo "ERROR: missing ${cfg} and no replica config.yaml found under ${HERMES_DATA}/replicas" >&2
+    return 1
+  fi
+
+  log "seed shared config.yaml from ${seed}"
+  $SUDO cp -a "$seed" "$cfg"
+  $SUDO chown "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "$cfg" 2>/dev/null || true
+  $SUDO chmod 600 "$cfg" 2>/dev/null || true
+}
+
 enable_plugin() {
   local cfg="${HERMES_DATA}/config.yaml"
-  if ! $SUDO test -f "$cfg"; then
-    echo "WARN: missing ${cfg}" >&2
-    return 0
-  fi
-  if $SUDO grep -qE '^\s*-\s*zalo-platform\s*$' "$cfg"; then
-    log "zalo-platform already enabled"
-    return 0
-  fi
-  if $SUDO grep -qE 'enabled:\s*\[\s*\]' "$cfg"; then
-    $SUDO sed -i 's/enabled: \[\]/enabled:\n    - zalo-platform/' "$cfg"
-  elif $SUDO grep -qE '^\s*enabled:' "$cfg"; then
-    $SUDO sed -i '/^\s*enabled:/a\    - zalo-platform' "$cfg"
-  else
-    printf '\nplugins:\n  enabled:\n    - zalo-platform\n' | $SUDO tee -a "$cfg" >/dev/null
-  fi
+  ensure_shared_config
+  $SUDO python3 - "$cfg" <<'PY'
+from pathlib import Path
+import sys
+
+cfg = Path(sys.argv[1])
+lines = cfg.read_text(encoding="utf-8", errors="replace").splitlines()
+# Remove any stray/misplaced prior insertions before re-adding correctly.
+lines = [line for line in lines if line.strip() != "- zalo-platform"]
+
+plugins_idx = None
+for i, line in enumerate(lines):
+    if line.strip() == "plugins:" and not line.startswith(" "):
+        plugins_idx = i
+        break
+
+if plugins_idx is None:
+    lines.extend(["", "plugins:", "  enabled:", "    - zalo-platform"])
+else:
+    end = len(lines)
+    for j in range(plugins_idx + 1, len(lines)):
+        line = lines[j]
+        if line and not line.startswith((" ", "#")):
+            end = j
+            break
+
+    enabled_idx = None
+    for j in range(plugins_idx + 1, end):
+        if lines[j].strip().startswith("enabled:"):
+            enabled_idx = j
+            break
+
+    if enabled_idx is None:
+        lines[plugins_idx + 1:plugins_idx + 1] = ["  enabled:", "    - zalo-platform"]
+    else:
+        stripped = lines[enabled_idx].strip()
+        if stripped == "enabled: []":
+            lines[enabled_idx] = "  enabled:"
+            lines.insert(enabled_idx + 1, "    - zalo-platform")
+        else:
+            insert_at = enabled_idx + 1
+            while insert_at < end and (not lines[insert_at].strip() or lines[insert_at].startswith("    - ")):
+                insert_at += 1
+            lines.insert(insert_at, "    - zalo-platform")
+
+# Ensure gateway.platforms.zalo is enabled on clean hosts.
+gateway_idx = None
+for i, line in enumerate(lines):
+    if line.strip() == "gateway:" and not line.startswith(" "):
+        gateway_idx = i
+        break
+
+if gateway_idx is None:
+    lines.extend(["", "gateway:", "  platforms:", "    zalo:", "      enabled: true"])
+else:
+    gateway_end = len(lines)
+    for j in range(gateway_idx + 1, len(lines)):
+        line = lines[j]
+        if line and not line.startswith((" ", "#")):
+            gateway_end = j
+            break
+
+    platforms_idx = None
+    for j in range(gateway_idx + 1, gateway_end):
+        if lines[j].strip() == "platforms:":
+            platforms_idx = j
+            break
+
+    if platforms_idx is None:
+        lines[gateway_idx + 1:gateway_idx + 1] = ["  platforms:", "    zalo:", "      enabled: true"]
+    else:
+        zalo_idx = None
+        for j in range(platforms_idx + 1, gateway_end):
+            stripped = lines[j].strip()
+            if stripped == "zalo:":
+                zalo_idx = j
+                break
+            if stripped and not lines[j].startswith("    "):
+                break
+
+        if zalo_idx is None:
+            lines[platforms_idx + 1:platforms_idx + 1] = ["    zalo:", "      enabled: true"]
+        else:
+            zalo_end = gateway_end
+            for j in range(zalo_idx + 1, gateway_end):
+                line = lines[j]
+                if line.strip() and not line.startswith("      "):
+                    zalo_end = j
+                    break
+            enabled_line = None
+            for j in range(zalo_idx + 1, zalo_end):
+                if lines[j].strip().startswith("enabled:"):
+                    enabled_line = j
+                    break
+            if enabled_line is None:
+                lines.insert(zalo_idx + 1, "      enabled: true")
+            else:
+                lines[enabled_line] = "      enabled: true"
+
+cfg.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+print("OK: enabled zalo-platform")
+PY
   log "enabled zalo-platform in ${cfg}"
+}
+
+resolve_hermes_container() {
+  local project="${COMPOSE_PROJECT_NAME:-assistant}"
+  local exact="${HERMES_CONTAINER:-hermes}"
+  local name=""
+  name="$($SUDO docker ps --format '{{.Names}}' 2>/dev/null | awk -v w="$exact" '$0==w {print; exit}')"
+  if [[ -z "$name" ]]; then
+    name="$($SUDO docker ps --format '{{.Names}}' 2>/dev/null | awk -v w="${project}-hermes-1" '$0==w {print; exit}')"
+  fi
+  if [[ -z "$name" ]]; then
+    name="$($SUDO docker ps --format '{{.Names}}' 2>/dev/null | awk '/hermes/ {print; exit}')"
+  fi
+  printf '%s' "${name:-$exact}"
 }
 
 wire_env() {
@@ -243,6 +363,7 @@ wire_env() {
   upsert ZALO_GROUP_MODE "${ZALO_GROUP_MODE:-mention}"
   upsert ZALO_HOST_DATA_DIR "$HERMES_DATA"
   upsert GATEWAY_ALLOW_ALL_USERS "${GATEWAY_ALLOW_ALL_USERS:-true}"
+  $SUDO chown "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "$local_env" 2>/dev/null || true
   $SUDO chmod 600 "$local_env" || true
   if [[ -f "${ROOT}/.env" ]]; then
     if grep -q '^ENABLE_ZALO=' "${ROOT}/.env"; then
@@ -299,14 +420,16 @@ main() {
   cd "$ROOT"
   set -a && source ./.env && set +a
   export ENABLE_ZALO=1
+  local hermes_ctr
+  hermes_ctr="$(resolve_hermes_container)"
   if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
     printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S bash -lc \
       "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=1 && bash run.sh up" || true
-    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker restart hermes zalo-proxy 2>/dev/null \
-      || printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker restart hermes || true
+    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker restart "$hermes_ctr" zalo-proxy 2>/dev/null \
+      || printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker restart "$hermes_ctr" || true
   else
     $SUDO bash -lc "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=1 && bash run.sh up" || true
-    $SUDO docker restart hermes zalo-proxy 2>/dev/null || $SUDO docker restart hermes || true
+    $SUDO docker restart "$hermes_ctr" zalo-proxy 2>/dev/null || $SUDO docker restart "$hermes_ctr" || true
   fi
   print_next
 }
