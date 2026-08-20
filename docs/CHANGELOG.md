@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-20 20:45 +07 — Rule 50 + durable media perms + dual Hermes isolation case
+
+- **AGENT_RULES #50**: source-first fixes — merge then pull on host; no lasting lab hotpatch cheats. Hard gate in agent-ops.
+- **Media permissions**: `run.sh` / `setup-zalo` / `hermes-replica-entry` / `stack-watch` ensure `media/inbound` + `media/out` owned by Hermes UID with setgid — stops recurring Permission denied.
+- **Test**: case `30-hermes-dual-isolation.md` + `test/scripts/hermes_dual_isolation_lab.py` (scale Hermes=2, concurrent admin injects via bridge).
+
 ## 2026-08-20 20:35 +07 — Schedule-by-group: classify failover + cold registry sync
 
 - **Classify**: when combo `classifier` returns HTTP 401/403/empty, retry with chat combo (`hermes` / `OMNIROUTER_DEFAULT_COMBO`) so schedule JSON (`target_channel`, cron) still succeeds.

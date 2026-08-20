@@ -74,6 +74,7 @@ You are an AI/DevOps/Developer with 10+ years experience across AI Agent and aut
 | 47| Test Integrity & Architecture Alignment — NEVER cheat by changing test cases only to obtain a passing result. Every test must represent the CURRENT architecture, component responsibilities, APIs, workflows, security boundaries, concurrency model, and realistic user behavior. Before modifying a test, inspect the current implementation and architecture. If the architecture intentionally changed, update the test accordingly; otherwise, fix the implementation instead of weakening the test. Never remove assertions, reduce coverage, bypass validation, mock away the behavior under test, skip real integration paths, or change expected results without architectural justification. Tests must prove that the system works according to its intended architecture, not that the implementation can satisfy an artificially modified test.
 | 48 | Test Cases Must Follow the Current Architecture — After any rearchitecture, refactoring, component replacement, workflow change, responsibility change, or API change, review ALL affected test cases and update them to match the CURRENT architecture. Do not preserve outdated test assumptions, obsolete component paths, deprecated APIs, old worker responsibilities, or previous request flows merely to keep tests passing. Tests must validate the system as it is architected now. When a test is no longer applicable, replace it with an equivalent test that validates the intended behavior through the current architecture rather than simply deleting it. Re-run the updated tests and ensure they still represent realistic user requests and end-to-end behavior.
 | 49 | Social-App Test Routing — When a supported social app such as **Zalo** is available and already authenticated/configured, ALL applicable end-to-end test cases MUST simulate requests through that real social-app channel (e.g., Zalo → bridge/proxy → Hermes) rather than bypassing the social-app layer. Tests must use realistic user requests, message types, attachments, and interaction flows supported by the current architecture. If the social app is unavailable, not authenticated, or not configured, simulate the request directly against Hermes while preserving the same expected user behavior. Never modify or weaken test cases simply to avoid using the available social-app integration.
+| 50 | **Source-first fixes — no lab hotpatch cheats.** When a lab/VPS bug is found, fix it in the **original repository source**, commit/merge through the normal git path (`feature|fix/*` → `develop` → …), then **pull that revision on the host** and rebuild/recreate affected services. Do **not** “fix” by shipping one-off local scripts, hand-edited files, or temporary patches onto the test server while leaving the bug in source. Temporary probes under gitignored `scripts/temp/` / `hermes/temp/` are for diagnosis only; lasting behavior must land in committed product/test code.
 
 
 *(Number 9 is intentionally unused in the operator list.)*
@@ -94,7 +95,7 @@ exclude:
 ## How Cursor should apply this
 
 1. Load this document (via `.cursor/rules/agent-ops.mdc` and/or skill `agent-ops`).
-2. Treat **22 / 23 / 24 / 25 / 32 / 33 / 34 / 35 / 36 / 38 / 40 / 41** as hard gates every turn.
+2. Treat **22 / 23 / 24 / 25 / 32 / 33 / 34 / 35 / 36 / 38 / 40 / 41 / 50** as hard gates every turn.
 3. Prefer skills + editable config over new hardcoded keyword tables (12, 17, 19).
 4. When syncing to a host, use `Update-StackRemote.ps1` only after the operator grants deploy/test permission (3, 5, 23).
 5. Lab procedure and case index: [`test/RULES.md`](./test/RULES.md).
@@ -142,3 +143,4 @@ exclude:
 | Daily schedule of one weather+fuel infographic | `test/cases/27-zalo-weather-fuel-daily.md` |
 | Zalo media gen + schedule delivery (video send, leftover claim, quiet) | `test/cases/28-zalo-media-cron-delivery.md` |
 | Zalo once-schedule numbered tasks (no cite intercept) | `test/cases/29-zalo-once-numbered-nocite.md` |
+| Dual Hermes isolation (admin concurrent mix) | `test/cases/30-hermes-dual-isolation.md` |

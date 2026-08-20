@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Agent ops (hermes-stack)
 
-Follow **[docs/AGENT_RULES.md](../../docs/AGENT_RULES.md)** as the editable source of truth (role + numbered rules). Git details: **[docs/GIT.md](../../docs/GIT.md)**.
+Follow **[AGENT_RULES.md](../../AGENT_RULES.md)** as the editable source of truth (role + numbered rules). Git details: **[docs/GIT.md](../../docs/GIT.md)**.
 
 ## Hard gates (every turn)
 
@@ -13,6 +13,7 @@ Follow **[docs/AGENT_RULES.md](../../docs/AGENT_RULES.md)** as the editable sour
 - Switch to **`develop`**, then `feature/*`, before new work.
 - **No** VPS deploy / remote test scripts without explicit permission.
 - **No** push or MR without explicit permission.
+- **Source-first (#50):** fix bugs in repo source, merge, then pull/rebuild on the host — never leave lasting “fixes” as only lab hotpatches.
 - After a test run finishes, **restore product defaults** (no leftover lab-only config).
 - Update **`docs/CHANGELOG.md`** (top entry + timestamp) for product/ops changes.
 - Prefer **skills + editable config/messages** over hardcoded keywords or chat strings.

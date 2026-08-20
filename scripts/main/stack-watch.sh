@@ -287,12 +287,27 @@ heal_by_health() {
   fi
 }
 
+ensure_media_writable() {
+  # Silent heal: OCR / file-gen / Zalo attach need Hermes UID on media/*.
+  local uid="${HERMES_UID:-1000}"
+  local gid="${HERMES_GID:-1000}"
+  $SUDO mkdir -p "${_data_root}/media/inbound" "${_data_root}/media/out" 2>/dev/null || true
+  $SUDO chown -R "${uid}:${gid}" "${_data_root}/media" 2>/dev/null || true
+  $SUDO chmod -R ug+rwX "${_data_root}/media" 2>/dev/null || true
+  $SUDO chmod g+s \
+    "${_data_root}/media" \
+    "${_data_root}/media/inbound" \
+    "${_data_root}/media/out" \
+    2>/dev/null || true
+}
+
 main() {
   cd "$ROOT"
   if boot_grace_active; then
     log "boot grace (${BOOT_GRACE_S}s) — skip heals (uptime still warming)"
     exit 0
   fi
+  ensure_media_writable
   restart_bad_containers
   heal_by_health
   log "done profile=${PROFILE} project=${PROJECT}"
