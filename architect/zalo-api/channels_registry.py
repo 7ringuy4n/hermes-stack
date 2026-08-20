@@ -1,12 +1,13 @@
 """Message Worker channel registry — durable platform id/name lookup.
 
 Stores social channel metadata (Zalo/Telegram/Lark/…) for later resolution by name or id.
-Populated from allowlists, inbound traffic, and admin label commands.
+Populated from allowlists, inbound traffic, bridge contacts, and admin label commands.
 """
 from __future__ import annotations
 
 import json
 import os
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -18,6 +19,13 @@ REGISTRY_FILE = Path(
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def norm_text(s: str) -> str:
+    """Lowercase + strip Vietnamese diacritics for forgiving name search."""
+    blob = unicodedata.normalize("NFD", str(s or ""))
+    blob = "".join(c for c in blob if unicodedata.category(c) != "Mn")
+    return blob.replace("đ", "d").replace("Đ", "D").lower().strip()
 
 
 def _load() -> dict[str, Any]:
@@ -35,6 +43,10 @@ def _save(data: dict[str, Any]) -> None:
     data["updated_at"] = _now_iso()
     REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
     REGISTRY_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        os.chmod(REGISTRY_FILE, 0o664)
+    except OSError:
+        pass
 
 
 def upsert(
@@ -85,7 +97,7 @@ def list_channels(platform: Optional[str] = None) -> list[dict[str, Any]]:
 
 
 def resolve(platform: str, ref: str) -> Optional[dict[str, Any]]:
-    """Resolve channel by exact id or case-insensitive name match."""
+    """Resolve channel by exact id or diacritic-insensitive name match."""
     plat = (platform or "").strip().lower()
     needle = (ref or "").strip()
     if not plat or not needle:
@@ -95,10 +107,19 @@ def resolve(platform: str, ref: str) -> Optional[dict[str, Any]]:
         if str(ch.get("external_id") or "") == needle:
             return ch
     low = needle.lower()
-    exact = [ch for ch in channels if str(ch.get("name") or "").lower() == low]
+    norm = norm_text(needle)
+    exact = [
+        ch
+        for ch in channels
+        if str(ch.get("name") or "").lower() == low or norm_text(str(ch.get("name") or "")) == norm
+    ]
     if len(exact) == 1:
         return exact[0]
-    partial = [ch for ch in channels if low in str(ch.get("name") or "").lower()]
+    partial = [
+        ch
+        for ch in channels
+        if low in str(ch.get("name") or "").lower() or (norm and norm in norm_text(str(ch.get("name") or "")))
+    ]
     if len(partial) == 1:
         return partial[0]
     return None
@@ -111,5 +132,39 @@ def sync_from_allowlist(platform: str, entries: list[dict[str, str]], *, kind: s
         if not tid:
             continue
         upsert(platform, tid, name=str(e.get("name") or ""), kind=kind)
+        n += 1
+    return n
+
+
+def sync_contacts(platform: str, groups: list[dict[str, Any]], friends: list[dict[str, Any]]) -> int:
+    """Seed registry from bridge /contacts payload."""
+    n = 0
+    for g in groups or []:
+        if not isinstance(g, dict):
+            continue
+        gid = str(g.get("id") or g.get("groupId") or "").strip()
+        if not gid:
+            continue
+        upsert(
+            platform,
+            gid,
+            name=str(g.get("name") or g.get("groupName") or ""),
+            kind="group",
+            meta={"source": "contacts"},
+        )
+        n += 1
+    for f in friends or []:
+        if not isinstance(f, dict):
+            continue
+        uid = str(f.get("id") or f.get("userId") or f.get("uid") or "").strip()
+        if not uid:
+            continue
+        upsert(
+            platform,
+            uid,
+            name=str(f.get("name") or f.get("displayName") or f.get("zaloName") or ""),
+            kind="user",
+            meta={"source": "contacts"},
+        )
         n += 1
     return n
