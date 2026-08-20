@@ -19,6 +19,33 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-20 14:20 +07 — clean Ubuntu first setup blocked
+
+### Symptom
+
+Fresh host: `run.sh up` failed missing secrets; `destroy` failed backup (postgres not running); `zalo-api` crash-looped; `setup-zalo` waited forever on 9Router / “Low core”.
+
+### Root cause
+
+1. `.env` not seeded with required `CHANGE_ME_*` / compose required vars.  
+2. `do_destroy` always ran `backup_first` even with zero containers.  
+3. `zalo-api` Dockerfile omitted `channels_registry.py`.  
+4. `setup-zalo.sh` still branched on `ASSISTANT_PROFILE` and waited for 9Router on “low”.
+
+### Fix
+
+- Reorder `.env.example` (secrets first); local `scripts/temp/generate_env_secrets.py`.  
+- Skip backup on destroy when no project containers.  
+- COPY `channels_registry.py` in zalo-api Dockerfile.  
+- `wait_core_ready`: model-router + OmniRouter + zalo-api.  
+- Docs/scripts updated to workers + OmniRouter default.
+
+### Prevent recurrence
+
+Keep Dockerfile COPY list in sync with `app.py` imports. First-setup docs must not mention PROFILE/low/9Router-as-default.
+
+---
+
 ## 2026-08-20 07:35 +07 — profiles mixed optional workers into core
 
 ### Symptom

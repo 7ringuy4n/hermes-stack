@@ -1,4 +1,4 @@
-# Case: media disabled (Medium / High)
+# Case: media disabled (Media|File worker off)
 
 Negative: `IMAGE_BACKENDS` empty.
 
