@@ -1,14 +1,15 @@
-# 02 — Components & commands by profile
+# 02 — Components & commands
 
 **Before anything else:** copy `.env.example` → `.env` and set every `CHANGE_ME` secret.
 
 ```bash
 cd /opt/assistant
-export ASSISTANT_PROFILE=low    # or medium | high
 bash run.sh <command>
 ```
 
-Legend: **Yes** = included · **No** = not in this profile · **Opt** = attach / optional flag
+**Runtime note:** `ASSISTANT_PROFILE=low|medium|high` is legacy. Runtime now uses **workers** (`WORKER_*=active|inactive`) and component flags. Prefer [00-workers.md](./00-workers.md), [config/DEFAULTS.md](./config/DEFAULTS.md), and [02-commands.md](./02-commands.md).
+
+Legend: **Yes** = included · **No** = not enabled by default · **Opt** = attach / optional flag
 
 ---
 
@@ -260,6 +261,8 @@ Legend: **Yes** = included · **No** = not in this profile · **Opt** = attach /
 
 ## Commands by profile
 
+> Legacy matrix below. For current runtime commands, use [02-commands.md](./02-commands.md). `switch-profile` is removed; use `bash run.sh add-components ...`.
+
 ```bash
 export ASSISTANT_PROFILE=low|medium|high
 bash run.sh <command>
@@ -458,47 +461,40 @@ bash run.sh <command>
 
 ---
 
-## Profile cheat-sheets
+## Worker quick examples (current runtime)
 
 <table>
   <colgroup>
-    <col style="width:18%" />
-    <col style="width:82%" />
+    <col style="width:22%" />
+    <col style="width:78%" />
   </colgroup>
   <thead>
     <tr style="background:#1a1a1a;color:#fff;">
-      <th style="padding:12px;text-align:left;">Profile</th>
+      <th style="padding:12px;text-align:left;">Setup</th>
       <th style="padding:12px;text-align:left;">Commands to run</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td style="padding:14px 12px;vertical-align:top;background:#e8f4ea;"><b>Low</b></td>
-      <td style="padding:14px 12px;"><pre style="margin:0;white-space:pre-wrap;">export ASSISTANT_PROFILE=low
+      <td style="padding:14px 12px;vertical-align:top;background:#e8f4ea;"><b>Core only</b></td>
+      <td style="padding:14px 12px;"><pre style="margin:0;white-space:pre-wrap;"># in .env keep WORKER_*=inactive
 bash run.sh up
 bash run.sh backup &amp;&amp; bash run.sh verify
 bash run.sh auto-learn
 sudo bash run.sh install-timers</pre></td>
     </tr>
     <tr>
-      <td style="padding:14px 12px;vertical-align:top;background:#e8eef8;"><b>Medium</b></td>
-      <td style="padding:14px 12px;"><pre style="margin:0;white-space:pre-wrap;">export ASSISTANT_PROFILE=medium
-bash run.sh up                # timers auto (learn + compact + backup)
-bash run.sh check-medium
-bash run.sh auto-learn
-bash run.sh backup</pre></td>
+      <td style="padding:14px 12px;vertical-align:top;background:#e8eef8;"><b>Media|File worker</b></td>
+      <td style="padding:14px 12px;"><pre style="margin:0;white-space:pre-wrap;">bash run.sh add-components WORKER_MEDIA_FILE=active
+bash run.sh up                # start/recreate stack with overlays
+bash run.sh check-media      # dispatcher / OCR / jobs / SearXNG smoke
+bash run.sh auto-learn</pre></td>
     </tr>
     <tr>
-      <td style="padding:14px 12px;vertical-align:top;background:#f8e8e8;"><b>High</b></td>
-      <td style="padding:14px 12px;"><pre style="margin:0;white-space:pre-wrap;">export ASSISTANT_PROFILE=high
-# optional: ENABLE_GRAFANA=0 ENABLE_LOKI=0 ENABLE_PROMETHEUS=0 ENABLE_ALLOY=0
+      <td style="padding:14px 12px;vertical-align:top;background:#f8e8e8;"><b>Security (+ optional Monitor/OpenBao)</b></td>
+      <td style="padding:14px 12px;"><pre style="margin:0;white-space:pre-wrap;">bash run.sh add-components WORKER_SECURITY=active WORKER_MONITOR=active
 bash run.sh up
-bash run.sh backup &amp;&amp; bash run.sh verify
-# bash run.sh restore   # DR — see architect/backup-restore/README.md (lab-tested)
-bash run.sh backup-sync-clouddrive   # when ENABLE_CLOUDDRIVE=1
-bash run.sh auto-learn
-bash run.sh channel-status
-# sizing + extras: docs/HARDWARE.md (Grafana+Prom ~1.5GiB/10GB/0.5vCPU, Loki ~1.5GiB/20GB/0.5vCPU, all optionals ~5GiB/40GB/2vCPU)</pre></td>
+bash run.sh check-security</pre></td>
     </tr>
   </tbody>
 </table>

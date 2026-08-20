@@ -15,7 +15,7 @@ test/
     └── run-02/
 ```
 
-Each run covers Low / Medium / High × Traefik `local` and `public`. High stays running after the last cycle.
+Each run covers the target worker sets × Traefik `local` and `public`. Keep the final full-worker run available for follow-up inspection when needed.
 
 Summary grids in `reports/*/SUMMARY.md` use **HTML tables**. Every capability must include a **fail event** (see `RULES.md` §13 and `cases/07-fail-events.md`).
 
@@ -33,7 +33,7 @@ Two-pass lab summary (latest): [reports/run-05-two-pass/SUMMARY.md](./reports/ru
 Worker add/remove (existing options): [cases/11-worker-switch.md](./cases/11-worker-switch.md) ·
 [scripts/worker_switch.py](./scripts/worker_switch.py).
 
-Skills lab (Medium destroy/redeploy + auto-learn + text-poster): [cases/12-skills-auto-learn.md](./cases/12-skills-auto-learn.md) ·
+Skills lab (Media|File worker destroy/redeploy + auto-learn + text-poster): [cases/12-skills-auto-learn.md](./cases/12-skills-auto-learn.md) ·
 [cases/13-image-text-poster.md](./cases/13-image-text-poster.md) ·
 [cases/14-knowledge-internal-rag.md](./cases/14-knowledge-internal-rag.md) ·
 [scripts/skills_lab.py](./scripts/skills_lab.py) ·
