@@ -1,10 +1,10 @@
 # 03 — System architecture & workflows
 
-Whole-product view of **assistant**: Hermes Agent + Memory, optional social apps, profile layers (Low / Medium / High).
+Whole-product view of **assistant**: Hermes Agent + Memory, optional social apps, and optional workers (`WORKER_*=active|inactive`).
 
 Each section: **Brief view** = HTML architecture panel · **Workflow** = HTML steps.
 
-Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Components: [04-component-flows.md](./04-component-flows.md) · Low: [01-workflow.md](./01-workflow.md)
+Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers: [00-workers.md](./00-workers.md) · Components: [04-component-flows.md](./04-component-flows.md) · Core chat path: [01-workflow.md](./01-workflow.md)
 
 ---
 
@@ -37,7 +37,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Compone
   </tr>
   <tr>
     <td style="width:34%;padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;vertical-align:top;">
-      <div style="font-weight:700;margin-bottom:6px;">Must (all profiles)</div>
+      <div style="font-weight:700;margin-bottom:6px;">Core (always on)</div>
       memory · session · ingest · embed<br/>dispatcher · 9Router · model-router · backup
     </td>
     <td style="width:33%;padding:12px;background:#fff8e6;border:1px solid #f0e0b0;vertical-align:top;">

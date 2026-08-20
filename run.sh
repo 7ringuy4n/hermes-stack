@@ -425,8 +425,14 @@ do_channel_status() {
 
 do_destroy() {
   # Tear down this compose project: containers + networks. Named volumes /data kept.
-  do_backup_first "destroy" || return 1
   local project="${COMPOSE_PROJECT_NAME:-assistant}"
+  local existing
+  existing="$(docker ps -aq --filter "label=com.docker.compose.project=${project}" 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "${existing:-0}" -eq 0 ]]; then
+    echo "==> no project containers — skip backup before destroy (clean / first-setup host)"
+  else
+    do_backup_first "destroy" || return 1
+  fi
   echo "==> destroy stack project=${project} (containers + networks; volumes kept)"
   compose down --remove-orphans || true
 
@@ -640,7 +646,7 @@ DR (all):
 
 Knowledge (all):
   auto-learn | learn-status
-  post-ready-learn        # after Hermes+9Router: sync hermes/main/skills|docs → ingest
+  post-ready-learn        # after Hermes+router: sync hermes/main/skills|docs → ingest
 
 Memory (media worker):
   compact | optimize-memory
@@ -651,8 +657,8 @@ Timers:
 
 First setup:
   install-docker [user]   # if docker missing; default = SSH login user (not a hardcoded name)
-  first-setup-llm         # 9Router Default Key → combo hermes (oc/* round-robin)
-  first-setup-omnirouter  # OmniRoute Default Key → combo hermes (OpenCode Free oc/*)
+  first-setup-omnirouter  # OmniRoute Default Key → combo hermes (OpenCode Free oc/*) [default]
+  first-setup-llm         # 9Router Default Key → combo hermes (only when ENABLE_9ROUTER=1)
 
 Security overlay:
   first-setup-openbao     # seed API keys → OpenBao UI (:8200); also on up|update
@@ -731,11 +737,11 @@ case "$cmd" in
   optimize-memory|optimize) do_optimize_memory ;;
   check-media|check-medium|smoke-medium)
     need_med check-media || exit 1
-    bash "${SCRIPTS_DIR}/check-medium.sh"
+    bash "${SCRIPTS_DIR}/check-media.sh"
     ;;
   check-security|check-high|smoke-high)
     need_high check-security || exit 1
-    bash "${SCRIPTS_DIR}/check-high.sh"
+    bash "${SCRIPTS_DIR}/check-security.sh"
     ;;
   install-timers|timers) do_install_timers ;;
   install-docker)
