@@ -26,7 +26,7 @@ from video_summary import health_fields, register_video_summary
 app = FastAPI(title="assistant dispatcher", version="1.1.0")
 
 SESSION_URL = os.environ.get("SESSION_URL", "http://session:8107").rstrip("/")
-N9_UPSTREAM = os.environ.get("OPENAI_BASE_URL", "http://9router:20128/v1").rstrip("/")
+N9_UPSTREAM = os.environ.get("OPENAI_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
 _MSG_PATH = Path(
     os.environ.get(
         "DISPATCHER_MESSAGES_FILE",
@@ -142,24 +142,26 @@ async def openai_proxy(path: str, request: Request):
 MEDIA_DIR = Path(os.environ.get("MEDIA_CACHE_DIR", "/data/media"))
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Empty WEB_BACKENDS = web search off (Low). Medium profile.sh sets tavily,firecrawl.
+# Empty WEB_BACKENDS = web search off. When enabled: tavily,firecrawl,searxng (fixed order).
 _web_raw = os.environ.get("WEB_BACKENDS")
 if _web_raw is None:
-    BACKENDS = ["tavily", "firecrawl"]
+    BACKENDS = ["tavily", "firecrawl", "searxng"]
 else:
     BACKENDS = [b.strip().lower() for b in _web_raw.split(",") if b.strip()]
+SEARCH_MAX = int(os.environ.get("WEB_SEARCH_MAX_RESULTS", "3"))
 SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://searxng:8080").rstrip("/")
-SEARXNG_MAX = int(os.environ.get("SEARXNG_MAX_RESULTS", "5"))
-
-_lock = threading.Lock()
-_cycle = itertools.cycle(BACKENDS) if BACKENDS else None
+SEARXNG_MAX = int(os.environ.get("SEARXNG_MAX_RESULTS", str(SEARCH_MAX)))
 
 
-def next_backend() -> str:
-    if not _cycle:
-        raise HTTPException(503, _msg("web_search_disabled", "Web search is unavailable (no search backends configured)."))
-    with _lock:
-        return next(_cycle)
+def _search_order(preferred: Optional[str] = None) -> list[str]:
+    """Fixed combo order: Tavily → Firecrawl → SearXNG (no round-robin)."""
+    if preferred:
+        p = preferred.strip().lower()
+        return [p] + [b for b in BACKENDS if b != p] + (["searxng"] if "searxng" not in BACKENDS else [])
+    order = list(BACKENDS)
+    if SEARXNG_URL and "searxng" not in order:
+        order.append("searxng")
+    return order
 
 
 def _key(name: str) -> str:
@@ -168,8 +170,8 @@ def _key(name: str) -> str:
 
 class SearchReq(BaseModel):
     query: str
-    max_results: int = 5
-    backend: Optional[str] = None  # force; else RR
+    max_results: int = SEARCH_MAX
+    backend: Optional[str] = None  # force; else combo chain
 
 
 class ExtractReq(BaseModel):
@@ -249,7 +251,8 @@ def health() -> dict[str, Any]:
 
 @app.get("/v1/backends/next")
 def backends_next() -> dict[str, str]:
-    return {"backend": next_backend()}
+    order = _search_order()
+    return {"backend": order[0] if order else ""}
 
 
 async def _tavily_search(query: str, max_results: int) -> dict[str, Any]:
@@ -362,50 +365,59 @@ async def _firecrawl_extract(url: str) -> dict[str, Any]:
 
 @app.post("/v1/search")
 async def search(req: SearchReq) -> dict[str, Any]:
-    n = max(1, min(int(req.max_results or 5), 10))
-    order = [req.backend.lower()] if req.backend else []
-    if not order:
-        if not BACKENDS:
-            raise HTTPException(503, _msg("web_search_disabled", "Web search is unavailable (no search backends configured)."))
-        first = next_backend()
-        order = [first] + [b for b in BACKENDS if b != first]
-    # Medium+: after paid vendors, fall back to local SearXNG (top 5).
-    if BACKENDS and "searxng" not in order:
-        order.append("searxng")
+    n = max(1, min(int(req.max_results or SEARCH_MAX), 10))
+    if not BACKENDS and not SEARXNG_URL:
+        raise HTTPException(503, _msg("web_search_disabled", "Web search is unavailable (no search backends configured)."))
+    order = _search_order(req.backend)
     errors: list[str] = []
+    merged: list[Any] = []
+    answer: Any = None
+    used: list[str] = []
     for b in order:
         try:
             if b == "tavily":
-                return await _tavily_search(req.query, n)
-            if b == "firecrawl":
-                return await _firecrawl_search(req.query, n)
-            if b == "exa":
-                return await _exa_search(req.query, n)
-            if b == "searxng":
-                return await _searxng_search(req.query, n)
-            errors.append(f"unknown backend {b}")
+                hit = await _tavily_search(req.query, n)
+            elif b == "firecrawl":
+                hit = await _firecrawl_search(req.query, n)
+            elif b == "exa":
+                hit = await _exa_search(req.query, n)
+            elif b == "searxng":
+                hit = await _searxng_search(req.query, n)
+            else:
+                errors.append(f"unknown backend {b}")
+                continue
+            used.append(str(hit.get("backend") or b))
+            if answer is None and hit.get("answer"):
+                answer = hit.get("answer")
+            rows = hit.get("results") if isinstance(hit.get("results"), list) else []
+            for row in rows:
+                if len(merged) >= n:
+                    break
+                merged.append(row)
+            if len(merged) >= n:
+                break
         except Exception as e:  # noqa: BLE001
             errors.append(f"{b}: {e}")
             continue
+    if merged or answer is not None:
+        return {"backend": "+".join(used) if used else "combo", "answer": answer, "results": merged[:n], "errors": errors or None}
     raise HTTPException(502, {"error": "all backends failed", "detail": errors})
 
 
 @app.post("/v1/extract")
 async def extract(req: ExtractReq) -> dict[str, Any]:
-    order = [req.backend.lower()] if req.backend else []
-    if not order:
-        if not BACKENDS:
-            raise HTTPException(503, "web extract disabled (WEB_BACKENDS empty)")
-        first = next_backend()
-        order = [first] + [b for b in BACKENDS if b != first]
+    if not BACKENDS:
+        raise HTTPException(503, "web extract disabled (WEB_BACKENDS empty)")
+    order = _search_order(req.backend)
     errors: list[str] = []
     for b in order:
+        if b not in {"tavily", "firecrawl"}:
+            continue
         try:
             if b == "tavily":
                 return await _tavily_extract(req.url)
             if b == "firecrawl":
                 return await _firecrawl_extract(req.url)
-            errors.append(f"unsupported extract backend {b}")
         except Exception as e:  # noqa: BLE001
             errors.append(f"{b}: {e}")
             continue

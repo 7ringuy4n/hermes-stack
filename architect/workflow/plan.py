@@ -63,10 +63,24 @@ def plan_instructions(text: str) -> List[str]:
     return items or [raw]
 
 
-def plan_from_stored(sch: dict[str, Any], text: str) -> List[str]:
+def plan_graph_from_stored(sch: dict[str, Any], text: str) -> tuple[List[str], List[dict[str, Any]]]:
     ctx = sch.get("context") if isinstance(sch.get("context"), dict) else {}
     stored = ctx.get("plan") if isinstance(ctx.get("plan"), dict) else {}
-    items = [str(x).strip() for x in (stored.get("instructions") or []) if str(x).strip()]
-    if items:
-        return items
-    return plan_instructions(text)
+    stored_items = [str(x).strip() for x in (stored.get("instructions") or []) if str(x).strip()]
+    live = classify_text((text or "").strip()) if (text or "").strip() else {}
+    live_items = [str(x).strip() for x in (live.get("instructions") or []) if str(x).strip()]
+    live_details = live.get("task_details") if isinstance(live.get("task_details"), list) else []
+    stored_details = stored.get("task_details") if isinstance(stored.get("task_details"), list) else []
+    if len(live_items) > len(stored_items):
+        return live_items, [d for d in live_details if isinstance(d, dict)]
+    if stored_items:
+        return stored_items, [d for d in stored_details if isinstance(d, dict)]
+    if live_items:
+        return live_items, [d for d in live_details if isinstance(d, dict)]
+    fallback = [(text or "").strip()] if (text or "").strip() else []
+    return fallback, []
+
+
+def plan_from_stored(sch: dict[str, Any], text: str) -> List[str]:
+    parts, _details = plan_graph_from_stored(sch, text)
+    return parts

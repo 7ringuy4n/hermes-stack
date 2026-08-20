@@ -1,5 +1,6 @@
-# assistant — Must stack (Low default). Plain container names (hermes, redis, …).
-# Medium/High: run.sh merges docker-compose.medium.yml (OCR, Jobs, SearXNG).
+# assistant — core stack. Plain container names (hermes, valkey, …).
+# Optional workers: compose profiles + WORKER_*=active (schedule, zalo, omnirouter, …).
+# Media overlay: docker-compose.media.yml. Security/notify overlay: docker-compose.security.yml.
 name: assistant
 
 networks:
@@ -32,9 +33,9 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
+  valkey:
     image: valkey/valkey:8-alpine
-    container_name: redis
+    container_name: valkey
     restart: unless-stopped
     command: ["valkey-server", "--appendonly", "yes"]
     volumes:
@@ -61,14 +62,15 @@ services:
     container_name: memory
     restart: unless-stopped
     environment:
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - VALKEY_URL=${VALKEY_URL:-redis://valkey:6379/0}
+      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
       - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      valkey:
         condition: service_healthy
       qdrant:
         condition: service_started
@@ -81,11 +83,12 @@ services:
     container_name: session
     restart: unless-stopped
     environment:
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - VALKEY_URL=${VALKEY_URL:-redis://valkey:6379/0}
+      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
       - SESSION_MAX_MESSAGES=${SESSION_MAX_MESSAGES:-16}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     depends_on:
-      redis:
+      valkey:
         condition: service_healthy
     ports:
       - "127.0.0.1:${SESSION_PORT:-8107}:8107"
@@ -97,16 +100,18 @@ services:
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
-      - VALKEY_URL=${VALKEY_URL:-${REDIS_URL:-valkey://redis:6379/0}}
+      - VALKEY_URL=${VALKEY_URL:-redis://valkey:6379/0}
       - HERMES_API_URL=${HERMES_API_URL:-http://hermes:8642/v1/chat/completions}
       - HERMES_API_KEY=${API_SERVER_KEY:-}
       - HERMES_WORKFLOW_TIMEOUT_S=${HERMES_WORKFLOW_TIMEOUT_S:-90}
       - MODEL_ROUTER_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
+      - SCHEDULE_URL=${SCHEDULE_URL:-}
+      - SCHEDULE_WORKER=${SCHEDULE_WORKER:-0}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      valkey:
         condition: service_healthy
     ports:
       - "127.0.0.1:${WORKFLOW_PORT:-8108}:8108"
@@ -123,12 +128,43 @@ services:
       retries: 12
     networks: [internal]
 
+  schedule-worker:
+    profiles: ["schedule"]
+    build: ./architect/schedule-worker
+    container_name: schedule-worker
+    restart: unless-stopped
+    environment:
+      - SQLITE_PATH=/data/schedules.db
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+      - ZALO_INJECT_URL=${ZALO_INJECT_URL:-http://zalo-proxy:8787/inject-event}
+      - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
+      - HERMES_FIRE_URL=${HERMES_API_URL:-http://hermes:8642/v1/chat/completions}
+      - HERMES_API_KEY=${API_SERVER_KEY:-}
+      - TICK_MS=${SCHEDULE_TICK_MS:-2000}
+      - GRACE_S=${SCHEDULE_GRACE_S:-120}
+    volumes:
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}/schedule:/data
+    ports:
+      - "127.0.0.1:${SCHEDULE_PORT:-8110}:8110"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://127.0.0.1:8110/health",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    networks: [internal]
+
   embedding:
     build: ./architect/tools/embedding
     container_name: embedding
     restart: unless-stopped
     environment:
-      - EMBED_UPSTREAM=${EMBED_UPSTREAM:-http://9router:20128/v1}
+      - EMBED_UPSTREAM=${EMBED_UPSTREAM:-http://omni-router:20129/v1}
       - EMBED_API_KEY=${EMBED_API_KEY:-${N9ROUTER_API_KEY:-}}
       - OPENAI_API_KEY=${N9ROUTER_API_KEY:-}
       - EMBED_MODEL=${EMBED_MODEL:-openai/text-embedding-3-small}
@@ -136,8 +172,6 @@ services:
       - EMBED_LOCAL_FALLBACK=${EMBED_LOCAL_FALLBACK:-1}
       - EMBED_LOCAL_MODEL=${EMBED_LOCAL_MODEL:-BAAI/bge-small-en-v1.5}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
-    depends_on:
-      - 9router
     ports:
       - "127.0.0.1:${EMBED_PORT:-8094}:8094"
     networks: [internal]
@@ -147,7 +181,8 @@ services:
     container_name: ingest
     restart: unless-stopped
     environment:
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - VALKEY_URL=${VALKEY_URL:-redis://valkey:6379/0}
+      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
       - OCR_URL=${OCR_URL:-http://ocr:8091}
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
@@ -163,7 +198,7 @@ services:
       - ${ASSISTANT_DATA_DIR:-/data/assistant}:/data/assistant
       - ./hermes/main/messages/learn-notify.json:/app/learn-notify.json:ro
     depends_on:
-      - redis
+      - valkey
       - embedding
       - qdrant
     ports:
@@ -171,23 +206,25 @@ services:
     networks: [internal]
 
   dispatcher:
+    profiles: ["media"]
     build: ./architect/models/dispatcher
     container_name: dispatcher
     restart: unless-stopped
     environment:
-      # Low: leave empty. Medium+: profile.sh sets WEB_BACKENDS=tavily,firecrawl
+      # Media|File Worker: vendors first; SearXNG last when ENABLE_SEARXNG=1
       - WEB_BACKENDS=${WEB_BACKENDS:-}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
       - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
-      - SEARXNG_MAX_RESULTS=${SEARXNG_MAX_RESULTS:-5}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://9router:20128/v1}
-      - OPENAI_API_KEY=${N9ROUTER_API_KEY:-}
+      - SEARXNG_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
+      - WEB_SEARCH_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://omni-router:20129/v1}
+      - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
       - WHISPER_ENABLED=${WHISPER_ENABLED:-0}
       - WHISPER_MODEL=${WHISPER_MODEL:-tiny}
       - OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-0}
       - MEDIA_CACHE_DIR=/data/media
-      # Image gen (Low: empty). Medium+: profile sets llm,vendor,comfy-cpu,comfy-gpu
+      # Image gen (empty = off). Media worker sets llm,vendor,comfy-cpu,comfy-gpu
       - IMAGE_BACKENDS=${IMAGE_BACKENDS:-}
       - IMAGE_LLM_PROVIDER=${IMAGE_LLM_PROVIDER:-openai}
       - IMAGE_LLM_API_KEY=${IMAGE_LLM_API_KEY:-${IMAGE_PAID1_API_KEY:-}}
@@ -220,16 +257,15 @@ services:
       - AV_SCAN=${AV_SCAN:-0}
     volumes:
       - ${ASSISTANT_DATA_DIR:-/data/assistant}/media:/data/media
-    depends_on:
-      - 9router
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${DISPATCHER_PORT:-8090}:8090"
     networks: [internal]
 
-  # Low Must: LLM gateway + Hermes agent (console / IDE). Social apps attach separately.
+  # Low Must: optional LLM gateway (ENABLE_9ROUTER=1). Default path is OmniRouter via router-worker.
   9router:
+    profiles: ["9router"]
     image: ${N9ROUTER_IMAGE:-decolua/9router:latest}
     container_name: 9router
     restart: unless-stopped
@@ -238,22 +274,23 @@ services:
       - PORT=20128
       - HOSTNAME=0.0.0.0
       - REQUIRE_API_KEY=true
-      - INITIAL_PASSWORD=${N9ROUTER_INITIAL_PASSWORD:?set N9ROUTER_INITIAL_PASSWORD in .env}
+      - INITIAL_PASSWORD=${N9ROUTER_INITIAL_PASSWORD:-unused}
     volumes:
       - nine_router_data:/app/data
     ports:
       - "127.0.0.1:${N9ROUTER_HOST_PORT:-20128}:20128"
     networks: [internal]
 
-  # v0.5.0 — task-aware LLM proxy (coding → 9router, general → OmniRouter when enabled)
-  model-router:
+  # Router Worker — task-aware LLM proxy (coding → 9router, general → OmniRouter)
+  router-worker:
     build: ./architect/models/model-router
-    container_name: model-router
+    container_name: router-worker
     restart: unless-stopped
     environment:
       - N9ROUTER_BASE_URL=${N9ROUTER_BASE_URL:-http://9router:20128/v1}
       - OMNIROUTER_BASE_URL=${OMNIROUTER_BASE_URL:-http://omni-router:20129/v1}
-      - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-0}
+      - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-1}
+      - ENABLE_9ROUTER=${ENABLE_9ROUTER:-0}
       - N9ROUTER_API_KEY=${N9ROUTER_API_KEY:-}
       - OMNIROUTER_API_KEY=${OMNIROUTER_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
@@ -266,9 +303,10 @@ services:
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     ports:
       - "127.0.0.1:${MODEL_ROUTER_HOST_PORT:-8096}:8096"
-    depends_on:
-      - 9router
-    networks: [internal]
+    networks:
+      internal:
+        aliases:
+          - model-router
 
   # Optional OmniRouter — ENABLE_OMNIROUTER=1 (compose profile omnirouter)
   # Dedicated image (not 9router). Override with OMNIROUTER_IMAGE in .env.
@@ -282,7 +320,9 @@ services:
       - PORT=20129
       - HOSTNAME=0.0.0.0
       - REQUIRE_API_KEY=true
-      - INITIAL_PASSWORD=${OMNIROUTER_INITIAL_PASSWORD:-${N9ROUTER_INITIAL_PASSWORD}}
+      - INITIAL_PASSWORD=${OMNIROUTER_INITIAL_PASSWORD:-${N9ROUTER_INITIAL_PASSWORD:-unused}}
+      - ENABLE_MEMORY=${OMNIROUTER_ENABLE_MEMORY:-1}
+      - MEMORY_ENABLED=${OMNIROUTER_ENABLE_MEMORY:-1}
     volumes:
       - omni_router_data:/app/data
     ports:
@@ -291,7 +331,7 @@ services:
 
   hermes:
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
-    # No container_name — required for HERMES_REPLICAS > 1 (Medium/High default 2)
+    # No container_name — required for HERMES_REPLICAS > 1
     restart: unless-stopped
     pull_policy: missing
     # Per-replica HERMES_HOME under /opt/data/replicas/<hostname> (avoids gateway.lock race).
@@ -327,7 +367,8 @@ services:
       - INGEST_URL=${INGEST_URL:-http://ingest:8099}
       - SESSION_URL=${SESSION_URL:-http://session:8107}
       - HERMES_SESSION_BACKEND=redis
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - VALKEY_URL=${VALKEY_URL:-redis://valkey:6379/0}
+      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_COLLECTION_KNOWLEDGE=${QDRANT_COLLECTION_KNOWLEDGE:-knowledge_chunks}
       - QDRANT_COLLECTION_MEMORY=${QDRANT_COLLECTION_MEMORY:-conversational_memory}
@@ -337,10 +378,12 @@ services:
       - HERMES_MAX_ANSWERING=${HERMES_MAX_ANSWERING:-3}
       - HERMES_MAX_INFLIGHT=${HERMES_MAX_INFLIGHT:-3}
       - HERMES_CONTEXT_BUDGET=${HERMES_CONTEXT_BUDGET:-24000}
-      # Medium+ URLs (services only up when overlay is loaded)
+      # Media worker URLs (services only up when overlay is loaded)
       - OCR_URL=${OCR_URL:-http://ocr:8091}
       - JOBS_URL=${JOBS_URL:-http://jobs:8104}
       - WORKFLOW_URL=${WORKFLOW_URL:-http://workflow:8108}
+      - SCHEDULE_URL=${SCHEDULE_URL:-}
+      - SCHEDULE_WORKER=${SCHEDULE_WORKER:-0}
       - HERMES_WORKFLOW=${HERMES_WORKFLOW:-1}
       - ZALO_WORKFLOW=${ZALO_WORKFLOW:-1}
       - ZALO_WORKFLOW_TURN_TIMEOUT_S=${ZALO_WORKFLOW_TURN_TIMEOUT_S:-420}
@@ -349,7 +392,7 @@ services:
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       # Zalo (used when ENABLE_ZALO=1 + host bridge + zalo-proxy profile)
       # Only replica hermes-1 keeps ZALO_PLUGIN_URL (see hermes-replica-entry.sh).
-      - ZALO_PLUGIN_URL=${ZALO_PLUGIN_URL:-http://zalo-proxy:8787}
+      - ZALO_PLUGIN_URL=${ZALO_PLUGIN_URL:-http://host.docker.internal:8787}
       - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
       - ZALO_GROUP_MODE=${ZALO_GROUP_MODE:-mention}
       - ZALO_ALLOWED_THREADS=${ZALO_ALLOWED_THREADS:-}
@@ -373,7 +416,7 @@ services:
       - SECRET_PROBE_POLICY=/opt/data/secret-probe.json
     volumes:
       - ${HERMES_DATA_DIR:-/data/assistant}:/opt/data
-      # Repo SoT for Low; durable runtime state stays on HERMES_DATA_DIR
+      # Durable runtime state stays on HERMES_DATA_DIR
       - ./hermes/main/skills:/opt/data/skills:ro
       - ./hermes/main/plugins:/opt/data/plugins:ro
       - ./hermes/main/messages:/opt/data/messages:ro
@@ -381,11 +424,8 @@ services:
       - ./hermes/main/docker/hermes-replica-entry.sh:/opt/stack/hermes-replica-entry.sh:ro
       - ./config/agent/secret-probe.json:/opt/data/secret-probe.json:ro
     depends_on:
-      - 9router
-      - model-router
-      - dispatcher
+      - router-worker
       - memory
-      - redis
       - workflow
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -432,6 +472,7 @@ services:
       - HERMES_GID=${HERMES_GID:-1000}
       - HERMES_CONTAINER=${HERMES_CONTAINER:-hermes}
       - WORKFLOW_URL=${WORKFLOW_URL:-http://workflow:8108}
+      - CHANNELS_REGISTRY_FILE=/data/assistant/channels/registry.json
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     volumes:
       - ${ASSISTANT_DATA_DIR:-/data/assistant}:/data/assistant

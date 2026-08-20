@@ -1,10 +1,10 @@
-# assistant — Medium profile overlay (merged on top of docker-compose.yml)
-# Used when ASSISTANT_PROFILE=medium|high via run.sh compose helper.
+# assistant — media/file overlay (OCR, Jobs, SearXNG, ComfyUI CPU).
+# Merged when ENABLE_MEDIA_FILE / ENABLE_OCR / ENABLE_JOBS / ENABLE_SEARXNG is 1.
 #
 # Adds: OCR, Jobs (+ worker), SearXNG, ComfyUI CPU (image gen).
 # Optional ComfyUI GPU via compose profile comfy-gpu when COMFYUI_HAS_GPU=1.
 # File-gen lives in dispatcher (office_file.py). Web backends come from
-# WEB_BACKENDS in the environment (profile.sh sets tavily,firecrawl on Medium+).
+# WEB_BACKENDS (vendors first, SearXNG last when enabled).
 #
 # Do NOT re-list hermes/dispatcher environment here — Compose list-merge would
 # replace the base env and drop Must keys.

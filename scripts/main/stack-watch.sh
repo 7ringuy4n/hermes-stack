@@ -128,15 +128,12 @@ compose() {
   PROFILE="${ASSISTANT_PROFILE:-$PROFILE}"
   HERMES_REPLICAS="${HERMES_REPLICAS:-1}"
   local existing=(--project-directory "${ROOT}" -f "${ROOT}/docker/docker-compose.yml")
-  case "$PROFILE" in
-    medium)
-      [[ -f "${ROOT}/docker/docker-compose.medium.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.medium.yml")
-      ;;
-    high)
-      [[ -f "${ROOT}/docker/docker-compose.medium.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.medium.yml")
-      [[ -f "${ROOT}/docker/docker-compose.high.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.high.yml")
-      ;;
-  esac
+  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-0}" == "1" ]]; then
+    [[ -f "${ROOT}/docker/docker-compose.medium.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.medium.yml")
+  fi
+  if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
+    [[ -f "${ROOT}/docker/docker-compose.high.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.high.yml")
+  fi
   case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
     *1*)
       [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.edge.yml")
@@ -152,6 +149,7 @@ compose() {
   [[ "${SECURITY_SANDBOX:-0}" == "1" ]] && profiles+=(--profile sandbox)
   [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles+=(--profile clouddrive)
   [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles+=(--profile comfy-gpu)
+  [[ "${ENABLE_SCHEDULE:-0}" == "1" ]] && profiles+=(--profile schedule)
   assistant_append_monitor_profiles profiles
   if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
     case "${TRAEFIK_ACME_ENABLED:-0}" in
@@ -231,19 +229,13 @@ heal_by_health() {
     probe gateway "http://127.0.0.1:${GATEWAY_HOST_PORT:-8088}/health" || failed=1
   fi
 
-  case "$PROFILE" in
-    medium|high)
-      probe ocr "http://127.0.0.1:${OCR_PORT:-8091}/health" || failed=1
-      probe jobs "http://127.0.0.1:${JOBS_PORT:-8104}/health" || failed=1
-      ;;
-  esac
-  case "$PROFILE" in
-    high)
-      case "${ENABLE_GRAFANA:-0}" in
-        1) probe grafana "http://127.0.0.1:${GRAFANA_HOST_PORT:-23000}/api/health" || failed=1 ;;
-      esac
-      ;;
-  esac
+  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_MEDIA_FILE:-0}" == "1" ]]; then
+    probe ocr "http://127.0.0.1:${OCR_PORT:-8091}/health" || failed=1
+    probe jobs "http://127.0.0.1:${JOBS_PORT:-8104}/health" || failed=1
+  fi
+  if [[ "${ENABLE_GRAFANA:-0}" == "1" ]]; then
+    probe grafana "http://127.0.0.1:${GRAFANA_HOST_PORT:-23000}/api/health" || failed=1
+  fi
   if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
     if ! $SUDO docker ps --format '{{.Names}}' | grep -qx zalo-api; then
       log "zalo-api missing while ENABLE_ZALO=1 — starting zalo combo"

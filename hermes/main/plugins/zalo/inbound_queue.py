@@ -64,6 +64,7 @@ def make_item(
     media_urls: Optional[List[str]] = None,
     media_types: Optional[List[str]] = None,
     message_type: str = "TEXT",
+    schedule_fire: bool = False,
 ) -> Dict[str, Any]:
     return {
         "kind": kind,
@@ -77,6 +78,7 @@ def make_item(
         "media_urls": list(media_urls or []),
         "media_types": list(media_types or []),
         "message_type": str(message_type or "TEXT"),
+        "schedule_fire": bool(schedule_fire),
     }
 
 
