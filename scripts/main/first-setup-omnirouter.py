@@ -3,11 +3,14 @@
 
 1) Login with OMNIROUTER_INITIAL_PASSWORD (else N9ROUTER_INITIAL_PASSWORD)
 2) Read/create Default Key → OMNIROUTER_API_KEY
-3) Create/update combo `hermes` from all OpenCode Free `oc/*` models
-4) Set combo strategy to round-robin
-5) Recreate model-router so it picks up the key
+3) Ensure chat combo alias exists (OMNIROUTER_DEFAULT_COMBO, default ``hermes``)
+   — do NOT hardcode chat member models; OmniRouter / UI choose models
+4) Ensure classify combo ``classifier`` with all OpenCode Free (``oc/*``) models
+5) Set combo strategy preference (round-robin)
+6) Point Hermes at model-router; recreate router-worker for the key
 
-OpenCode Free (`oc/`) needs no upstream API key.
+Stack code sends combo *names* as OpenAI ``model``. Chat uses ``hermes``;
+classify uses ``classifier`` (OpenCode members refreshed by this script).
 """
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
@@ -26,15 +30,19 @@ ROOT = Path(os.environ.get("STACK_ROOT", "/opt/assistant"))
 PORT = int(os.environ.get("OMNIROUTER_HOST_PORT", "20129"))
 BASE = f"http://127.0.0.1:{PORT}"
 COMBO_NAME = os.environ.get("OMNIROUTER_DEFAULT_COMBO", "hermes")
+CLASSIFY_COMBO_NAME = os.environ.get("OMNIROUTER_CLASSIFY_COMBO", "classifier")
 COMBO_STRATEGY = os.environ.get("OMNIROUTER_COMBO_STRATEGY", "round-robin")
 COMBO_STICKY_LIMIT = int(os.environ.get("OMNIROUTER_COMBO_STICKY_LIMIT", "1"))
 
+OPENCODE_MODELS_URL = "https://opencode.ai/zen/v1/models"
 OPENCODE_FREE_FALLBACK = [
     "oc/big-pickle",
     "oc/deepseek-v4-flash-free",
     "oc/mimo-v2.5-free",
     "oc/hy3-free",
     "oc/nemotron-3-ultra-free",
+    "oc/nemotron-3.5-lightning-free",
+    "oc/laguna-s-2.1-free",
     "oc/north-mini-code-free",
 ]
 
@@ -117,27 +125,6 @@ def fetch_default_key(opener, password: str, existing: str = "") -> str:
     return key
 
 
-def list_oc_models(opener) -> list[str]:
-    """OpenCode Free models already published on OmniRoute /v1/models as oc/*."""
-    try:
-        _, data = http_json(opener, "GET", f"{BASE}/v1/models")
-        ids = [
-            m.get("id")
-            for m in (data.get("data") or [])
-            if isinstance(m, dict) and isinstance(m.get("id"), str)
-        ]
-        oc = [i for i in ids if i.startswith("oc/")]
-    except Exception as e:
-        print(f"WARN /v1/models failed ({e}); using fallback list")
-        oc = list(OPENCODE_FREE_FALLBACK)
-    if not oc:
-        print("WARN no oc/* on /v1/models; using fallback list")
-        oc = list(OPENCODE_FREE_FALLBACK)
-    oc = list(dict.fromkeys(oc))
-    oc.sort(key=lambda x: (0 if x == "oc/big-pickle" else 1, x))
-    return oc
-
-
 def drop_probe_combos(opener) -> None:
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     for c in data.get("combos") or []:
@@ -151,37 +138,210 @@ def drop_probe_combos(opener) -> None:
                 print(f"WARN delete {name}: {e}")
 
 
-def ensure_opencode_combo(opener) -> str:
+def _combo_member_count(combo: dict) -> int:
+    models = combo.get("models") or combo.get("members") or []
+    return len(models) if isinstance(models, list) else 0
+
+
+def ensure_opencode_provider(opener) -> None:
+    """Ensure an OpenCode Free connection exists so ``oc/*`` models can route."""
+    try:
+        _, data = http_json(opener, "GET", f"{BASE}/api/providers")
+    except Exception as e:
+        print(f"WARN providers list failed: {e}")
+        return
+    conns = data.get("connections") or []
+    for c in conns:
+        if str(c.get("provider") or "").lower() == "opencode":
+            print(f"==> keep OpenCode provider connection id={c.get('id')}")
+            return
+    print("==> create OpenCode Free provider connection")
+    for payload in (
+        {"provider": "opencode", "authType": "apikey", "name": "opencode-free", "isActive": True},
+        {"provider": "opencode", "name": "opencode-free", "isActive": True},
+    ):
+        try:
+            status, body = http_json(opener, "POST", f"{BASE}/api/providers", payload)
+        except urllib.error.HTTPError as e:
+            print(f"WARN create opencode provider HTTP {e.code}: {e.read()[:200]!r}")
+            continue
+        if status in (200, 201):
+            print(f"==> OpenCode provider created: {body}")
+            return
+        print(f"WARN create opencode provider rejected: {body}")
+
+
+def list_oc_models(opener) -> list[str]:
+    """All OpenCode Free model ids (``oc/...``). Catalog is not always on /v1/models."""
+    oc: list[str] = []
+
+    # 1) Omni/9Router suggested-models helper (when present)
+    q = urllib.parse.urlencode({"url": OPENCODE_MODELS_URL, "type": "opencode-free"})
+    try:
+        _, data = http_json(opener, "GET", f"{BASE}/api/providers/suggested-models?{q}")
+        rows = data.get("data") or []
+        oc = [
+            f"oc/{m['id']}" if not str(m["id"]).startswith("oc/") else str(m["id"])
+            for m in rows
+            if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]
+        ]
+    except Exception as e:
+        print(f"WARN suggested-models unavailable ({e})")
+
+    # 2) Direct OpenCode Zen catalog
+    if not oc:
+        try:
+            req = urllib.request.Request(
+                OPENCODE_MODELS_URL,
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode() or "{}")
+            rows = data.get("data") or data.get("models") or []
+            for m in rows:
+                if not isinstance(m, dict):
+                    continue
+                mid = m.get("id") or m.get("name")
+                if not isinstance(mid, str) or not mid.strip():
+                    continue
+                mid = mid.strip()
+                oc.append(mid if mid.startswith("oc/") else f"oc/{mid}")
+        except Exception as e:
+            print(f"WARN OpenCode zen catalog failed ({e})")
+
+    # 3) Already-published oc/* on /v1/models
+    if not oc:
+        try:
+            _, data = http_json(opener, "GET", f"{BASE}/v1/models")
+            for m in data.get("data") or []:
+                mid = (m or {}).get("id") if isinstance(m, dict) else None
+                if isinstance(mid, str) and mid.startswith("oc/"):
+                    oc.append(mid)
+        except Exception as e:
+            print(f"WARN /v1/models oc scan failed ({e})")
+
+    if not oc:
+        print("WARN OpenCode catalog empty; using fallback list")
+        oc = list(OPENCODE_FREE_FALLBACK)
+
+    # Dedupe preserve order; prefer big-pickle first
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for mid in oc:
+        if mid in seen:
+            continue
+        seen.add(mid)
+        uniq.append(mid)
+    uniq.sort(key=lambda x: (0 if x == "oc/big-pickle" else 1, x))
+    return uniq
+
+
+def ensure_classifier_combo(opener) -> str:
+    """Create/update combo ``classifier`` with all current OpenCode Free models."""
+    ensure_opencode_provider(opener)
     oc = list_oc_models(opener)
     if not oc:
-        raise SystemExit("no oc/* OpenCode Free models from omni-router")
-    print(f"==> OpenCode Free models ({len(oc)}): {oc}")
+        raise SystemExit("no oc/* OpenCode Free models for classifier combo")
+    print(f"==> classifier OpenCode models ({len(oc)}): {oc}")
+
+    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    combos = data.get("combos") or []
+    existing = next((c for c in combos if (c.get("name") or "") == CLASSIFY_COMBO_NAME), None)
+    payload = {
+        "name": CLASSIFY_COMBO_NAME,
+        "models": oc,
+        "strategy": COMBO_STRATEGY,
+        "description": "Classify/intent combo — all OpenCode Free (oc/*) models",
+    }
+    if existing and existing.get("id"):
+        cid = existing["id"]
+        print(f"==> update combo {CLASSIFY_COMBO_NAME} ({cid}) members={len(oc)}")
+        status, body = http_json(opener, "PUT", f"{BASE}/api/combos/{cid}", payload)
+        if status not in (200, 201):
+            raise SystemExit(f"classifier combo update failed: {body}")
+    else:
+        print(f"==> create combo {CLASSIFY_COMBO_NAME} members={len(oc)}")
+        status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
+        if status not in (200, 201):
+            raise SystemExit(f"classifier combo create failed: {body}")
+
+    # Per-combo strategy (Omni/9Router Combos UI shape)
+    try:
+        http_json(
+            opener,
+            "PATCH",
+            f"{BASE}/api/settings",
+            {
+                "comboStrategies": {
+                    CLASSIFY_COMBO_NAME: {"fallbackStrategy": COMBO_STRATEGY},
+                },
+            },
+        )
+    except Exception as e:
+        print(f"WARN classifier comboStrategies patch: {e}")
+    return CLASSIFY_COMBO_NAME
+
+
+def ensure_combo_alias(opener) -> str:
+    """Ensure combo *name* exists. Never overwrite member models — Omni chooses."""
     drop_probe_combos(opener)
 
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = data.get("combos") or []
     existing = next((c for c in combos if (c.get("name") or "") == COMBO_NAME), None)
-    payload = {
-        "name": COMBO_NAME,
-        "models": oc,
-        "strategy": COMBO_STRATEGY,
-        "description": "OpenCode Free (oc/*) round-robin",
-    }
 
     if existing and existing.get("id"):
         cid = existing["id"]
-        print(f"==> update combo {COMBO_NAME} ({cid})")
+        n = _combo_member_count(existing)
+        # Strategy/description only — omit "models" so Omni keeps operator membership.
+        payload = {
+            "name": COMBO_NAME,
+            "strategy": COMBO_STRATEGY,
+            "description": "Stack combo alias — member models managed in OmniRouter UI",
+        }
+        print(f"==> keep combo {COMBO_NAME} ({cid}) members={n} (not overwriting models)")
         status, body = http_json(opener, "PUT", f"{BASE}/api/combos/{cid}", payload)
         if status not in (200, 201):
-            raise SystemExit(f"combo update failed: {body}")
-    else:
-        print(f"==> create combo {COMBO_NAME}")
-        status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
-        if status not in (200, 201):
-            raise SystemExit(f"combo create failed: {body}")
+            print(f"WARN combo metadata update failed: {body}")
+        ensure_combo_round_robin(opener)
+        if n == 0:
+            print(
+                f"WARN combo {COMBO_NAME!r} has no members — add models in OmniRouter Combos UI"
+            )
+        return COMBO_NAME
 
-    ensure_combo_round_robin(opener)
-    return COMBO_NAME
+    # Create alias shell only. Prefer empty members; Omni/UI fills models.
+    print(f"==> create combo alias {COMBO_NAME} (no hardcoded members)")
+    for payload in (
+        {
+            "name": COMBO_NAME,
+            "models": [],
+            "strategy": COMBO_STRATEGY,
+            "description": "Stack combo alias — member models managed in OmniRouter UI",
+        },
+        {
+            "name": COMBO_NAME,
+            "strategy": COMBO_STRATEGY,
+            "description": "Stack combo alias — member models managed in OmniRouter UI",
+        },
+    ):
+        try:
+            status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
+        except urllib.error.HTTPError as e:
+            print(f"WARN create attempt failed HTTP {e.code}: {e.read()[:200]!r}")
+            continue
+        if status in (200, 201):
+            ensure_combo_round_robin(opener)
+            print(
+                f"NOTE: add member models for combo {COMBO_NAME!r} in OmniRouter Combos UI "
+                "(do not hardcode in stack)"
+            )
+            return COMBO_NAME
+        print(f"WARN create attempt rejected: {body}")
+
+    raise SystemExit(
+        f"could not create combo alias {COMBO_NAME!r} — create it in OmniRouter UI"
+    )
 
 
 def ensure_combo_round_robin(opener) -> None:
@@ -201,11 +361,25 @@ def ensure_combo_round_robin(opener) -> None:
         print(f"WARN comboStrategy verify: expected {COMBO_STRATEGY!r}, got {got!r}")
 
 
+def patch_hermes_model_router(key: str, model: str) -> None:
+    print("==> patch Hermes config → model-router")
+    env = os.environ.copy()
+    env.setdefault("STACK_ROOT", str(ROOT))
+    env.setdefault("HERMES_DATA_DIR", os.environ.get("HERMES_DATA_DIR", "/data/assistant"))
+    rc = subprocess.call(
+        [sys.executable, str(ROOT / "scripts" / "main" / "patch-hermes-model-router.py")],
+        env=env,
+    )
+    if rc != 0:
+        print("WARN: patch-hermes-model-router failed")
+
+
 def recreate_model_router() -> None:
     print("==> recreate router-worker (model-router)")
-    # Prefer container restart — bare compose file lacks active profiles and fails when 9router is off.
     for name in ("router-worker", "model-router", "assistant-router-worker-1"):
-        rc = subprocess.call(["docker", "restart", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        rc = subprocess.call(
+            ["docker", "restart", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         if rc == 0:
             print(f"==> restarted {name}")
             return
@@ -236,7 +410,7 @@ def enable_omni_memory(opener: urllib.request.OpenerDirector) -> None:
     print("NOTE: omni memory API not found — using OMNIROUTER_ENABLE_MEMORY container env")
 
 
-def verify(key: str, model: str) -> None:
+def verify(key: str, combo: str) -> None:
     req = urllib.request.Request(
         f"{BASE}/v1/models",
         headers={"Authorization": f"Bearer {key}"},
@@ -249,11 +423,11 @@ def verify(key: str, model: str) -> None:
         return
     ids = [m.get("id") for m in data.get("data") or []]
     print(f"==> omni-router /v1/models ok ({len(ids)})")
-    if model not in ids:
-        print(f"WARN combo model {model!r} not listed yet")
+    if combo not in ids:
+        print(f"WARN combo alias {combo!r} not listed on /v1/models yet")
     body = json.dumps(
         {
-            "model": model,
+            "model": combo,
             "messages": [{"role": "user", "content": "ping"}],
             "max_tokens": 8,
         }
@@ -269,9 +443,9 @@ def verify(key: str, model: str) -> None:
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            print(f"==> smoke chat {model} HTTP {resp.status}")
+            print(f"==> smoke chat combo={combo} HTTP {resp.status}")
     except urllib.error.HTTPError as e:
-        print(f"WARN smoke chat {model} HTTP {e.code}: {e.read()[:200]!r}")
+        print(f"WARN smoke chat combo={combo} HTTP {e.code}: {e.read()[:200]!r}")
 
 
 def main() -> int:
@@ -288,16 +462,24 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_API_KEY", key)
     print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
 
-    model = ensure_opencode_combo(opener)
+    combo = ensure_combo_alias(opener)
+    classify_combo = ensure_classifier_combo(opener)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
+    set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
+    set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
     set_env_key(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
     set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "1"))
     enable_omni_memory(opener)
 
     recreate_model_router()
     time.sleep(3)
-    verify(key, model)
-    print("OK: first-setup omni-router complete (OpenCode Free combo, round-robin)")
+    patch_hermes_model_router(key, combo)
+    verify(key, combo)
+    verify(key, classify_combo)
+    print(
+        f"OK: first-setup omni-router complete "
+        f"(chat combo={combo!r}; classify combo={classify_combo!r} with OpenCode oc/*)"
+    )
     return 0
 
 

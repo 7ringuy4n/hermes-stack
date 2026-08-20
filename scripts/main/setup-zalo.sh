@@ -340,6 +340,17 @@ PY
   log "enabled zalo-platform in ${cfg}"
 }
 
+ensure_hermes_model_router() {
+  log "point Hermes shared config at model-router (OmniRouter default)"
+  local stack_env="${ROOT}/.env"
+  STACK_ROOT="${ROOT}" \
+    HERMES_DATA_DIR="${HERMES_SHARED_DATA}" \
+    ASSISTANT_DATA_DIR="${HERMES_SHARED_DATA}" \
+    python3 "${ROOT}/scripts/main/patch-hermes-model-router.py" || {
+    echo "WARN: patch-hermes-model-router failed — Hermes may still use openrouter.ai" >&2
+  }
+}
+
 resolve_hermes_container() {
   local project="${COMPOSE_PROJECT_NAME:-assistant}"
   local exact="${HERMES_CONTAINER:-hermes}"
@@ -470,6 +481,7 @@ main() {
   install_bridge
   install_adapter
   enable_plugin
+  ensure_hermes_model_router
   wire_env
   cd "$ROOT"
   set -a && source ./.env && set +a
