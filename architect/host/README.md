@@ -22,11 +22,11 @@
 
 Host-level setup for the assistant stack: OS prep, Docker, directories under `/data/assistant` and `/opt/assistant`, timezone, and systemd timers that call `bash run.sh` / backup-restore. This layer does **not** run inside Docker as an app service; it documents and holds scripts that prepare the machine.
 
-## Profile
+## Scope
 
-| Profile | Role |
+| Scope | Role |
 |---|---|
-| Low / Medium / High | Always needed to install and run the stack |
+| Any worker set | Always needed to install and run the stack |
 
 ## What lives here
 

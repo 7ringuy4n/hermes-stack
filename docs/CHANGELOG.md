@@ -1,5 +1,15 @@
 # Change history
 
+## 2026-08-20 14:35 +07 — clean-OS first-setup; retire profile smoke names
+
+- **zalo-api Dockerfile** copies `channels_registry.py` (fixes `ModuleNotFoundError` on first build).
+- **setup-zalo.sh** waits for model-router + OmniRouter + zalo-api (not PROFILE/low/9Router).
+- **destroy** skips backup when no project containers (clean host).
+- **`.env.example`** reordered: section A = first-setup secrets; Omni default / 9Router optional; `MODEL_ROUTER_OUTBOUND_TIMEOUT_S=30`.
+- Local helper (gitignored): `scripts/temp/generate_env_secrets.py` fills `CHANGE_ME_*`.
+- Smoke scripts: `check-media.sh` / `check-security.sh` (worker names); `check-medium.sh` / `check-high.sh` are thin wrappers.
+- Docs/scripts: workers over profiles (`README`, `00-profiles` redirect, `DEFAULTS`, `02-commands`, `docker/README`, `scripts/main/README`, `run.sh` help, AGENT_RULES #30).
+
 ## 2026-08-20 13:10 +07 — VPS rolling deploy (worker components)
 
 - Destroy + clear stale cron; redeploy with Schedule, Media|File, Notify, Message workers (`WORKER_*=active`, security/monitor inactive).

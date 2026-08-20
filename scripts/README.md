@@ -13,8 +13,8 @@
 sudo bash scripts/main/install-docker.sh
 bash run.sh first-setup-llm
 bash run.sh update
-bash run.sh check-medium
-bash run.sh check-high
+bash run.sh check-media
+bash run.sh check-security
 bash run.sh first-setup-openbao
 bash run.sh post-ready-learn
 
