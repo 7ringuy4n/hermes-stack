@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import calendar
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -14,7 +15,7 @@ from plan import (
     CADENCE_WEEKLY,
     CADENCE_YEARLY,
     CADENCES,
-    plan_from_stored,
+    plan_graph_from_stored,
     plan_instructions,
     wrap_instruction,
 )
@@ -139,9 +140,10 @@ class WorkflowManager:
         *,
         origin: dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
-        sequential: bool = True,
+        sequential: bool = False,
         idempotency_prefix: str | None = None,
         wrap: bool = True,
+        task_details: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         texts = [str(x).strip() for x in instructions if str(x).strip()]
         if not texts:
@@ -165,15 +167,29 @@ class WorkflowManager:
         job_rows: list[dict[str, Any]] = []
         outbox_rows: list[dict[str, Any]] = []
         total = len(texts)
+        details = [d for d in (task_details or []) if isinstance(d, dict)]
         for i, raw in enumerate(texts):
             jid = _id("job_")
             job_ids.append(jid)
-            deps = [job_ids[i - 1]] if sequential and i > 0 else []
+            deps: list[str] = []
+            if sequential and i > 0:
+                deps = [job_ids[i - 1]]
+            elif details and i < len(details):
+                for idx in details[i].get("depends_on") or []:
+                    try:
+                        n = int(idx)
+                    except (TypeError, ValueError):
+                        continue
+                    if 0 <= n < i:
+                        deps.append(job_ids[n])
             instruction = wrap_instruction(i + 1, total, raw) if wrap else raw
             key = None
             if idempotency_prefix:
                 key = f"{idempotency_prefix}:job_{i+1:03d}"
             status = QUEUED if not deps else PENDING
+            job_ctx = dict(context or {})
+            if details and i < len(details):
+                job_ctx["task"] = details[i]
             job_rows.append(
                 {
                     "id": jid,
@@ -181,7 +197,7 @@ class WorkflowManager:
                     "seq": i + 1,
                     "parent_job_id": deps[0] if deps else None,
                     "instruction": instruction,
-                    "context": dict(context or {}),
+                    "context": job_ctx,
                     "dependencies": deps,
                     "status": status,
                     "attempts": 0,
@@ -385,6 +401,8 @@ class WorkflowManager:
         return self.store.get_schedule(sid) or row
 
     def fire_due_schedules(self, now: Optional[datetime] = None) -> list[str]:
+        if (os.getenv("SCHEDULE_URL") or "").strip():
+            return []
         now = now or utcnow()
         created: list[str] = []
         seen: set[str] = set()
@@ -400,11 +418,13 @@ class WorkflowManager:
             else:
                 prefix = f"{sid}:{day}"
             try:
+                parts, details = plan_graph_from_stored(sch, str(sch.get("text") or ""))
                 wf = self.create(
-                    plan_from_stored(sch, str(sch.get("text") or "")),
+                    parts,
                     origin=sch.get("origin") or {},
                     context=sch.get("context") or {},
                     sequential=False,
+                    task_details=details,
                     idempotency_prefix=prefix,
                 )
             except (ValueError, KeyError):

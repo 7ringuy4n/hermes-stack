@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Recover Hermes jobs.json, restart replicas, rebuild zalo-api (no destroy)."""
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import connect, sudo_bash, sync_tree  # noqa: E402
+from deploy_stack import connect, sudo_bash, sync_tree  # noqa: E402
 
 
 def main() -> int:
@@ -105,7 +105,7 @@ with urllib.request.urlopen(req, timeout=20) as resp:
     data = json.loads(resp.read().decode())
 reply = str(data.get("reply") or "")
 low = reply.lower()
-print("schedule_list_ok", ("lịch" in low or "lich" in low or "trống" in low or "wakeup" in low or "giá" in low))
+print("schedule_list_ok", ("lá»‹ch" in low or "lich" in low or "trá»‘ng" in low or "wakeup" in low or "giÃ¡" in low))
 print("schedule_list_chars", len(reply))
 print("schedule_list_handled", bool(data.get("handled")))
 PY
@@ -123,3 +123,4 @@ echo RECOVER_SCHEDULES_DONE
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

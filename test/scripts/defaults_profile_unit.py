@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Local unit: profile.sh defaults for routers and Grafana (no VPS)."""
+"""Local unit: worker defaults (no VPS)."""
 from __future__ import annotations
 
 import io
@@ -8,7 +8,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PROFILE = ROOT / "architect" / "backup-restore" / "lib" / "profile.sh"
+WORKERS = ROOT / "architect" / "backup-restore" / "lib" / "workers.sh"
+CLASSIFY = ROOT / "architect" / "models" / "model-router" / "config" / "classify.json"
+COMPOSE = ROOT / "docker" / "docker-compose.yml"
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
@@ -18,50 +20,61 @@ def _default(text: str, key: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _case_blob(text: str, name: str) -> str:
-    m = re.search(rf"\n    {re.escape(name)}\)\n(.*?)(?:\n    [a-z]+\)|\n  esac)", text, re.S)
-    return m.group(1) if m else ""
-
-
 def main() -> int:
-    text = PROFILE.read_text(encoding="utf-8")
+    text = WORKERS.read_text(encoding="utf-8")
+    compose = COMPOSE.read_text(encoding="utf-8")
+    classify = CLASSIFY.read_text(encoding="utf-8")
     fails = 0
-    high = _case_blob(text, "high")
-    low = _case_blob(text, "low")
-    medium = _case_blob(text, "medium")
-    if not high:
-        print("FAIL could not isolate high) case in profile.sh")
-        return 1
-    profile_checks = [
-        ("low", low, "ENABLE_OMNIROUTER", "1"),
-        ("medium", medium, "ENABLE_OMNIROUTER", "1"),
-        ("high", high, "ENABLE_OMNIROUTER", "0"),
-        ("high", high, "ENABLE_MODEL_ROUTER", "1"),
-        ("high", high, "ENABLE_GRAFANA", "0"),
-        ("high", high, "ENABLE_PROMETHEUS", "0"),
-    ]
-    for profile, blob, key, want in profile_checks:
-        if not blob and profile in {"low", "medium"}:
-            print(f"FAIL could not isolate {profile}) case")
+    for banned in ("ASSISTANT_PROFILE", "low|medium|high"):
+        if banned in text and "case \"$ASSISTANT_PROFILE\"" in text:
+            print(f"FAIL workers.sh still maps {banned}")
             fails += 1
-            continue
-        got = _default(blob, key)
+    if 'WORKER_SCHEDULE="${WORKER_SCHEDULE:-inactive}"' not in text:
+        print("FAIL WORKER_SCHEDULE default missing")
+        fails += 1
+    else:
+        print("PASS WORKER_SCHEDULE default inactive")
+    checks = [
+        ("ENABLE_OMNIROUTER", "1"),
+        ("ENABLE_MODEL_ROUTER", "1"),
+        ("ENABLE_OPENVPN", "0"),
+        ("ENABLE_API_GATEWAY", "1"),
+        ("ZALO_INBOUND_QUEUE", "1"),
+        ("TRAEFIK_MODE", "local"),
+        ("HERMES_REPLICAS", "1"),
+    ]
+    for key, want in checks:
+        got = _default(text, key)
         if got != want:
-            print(f"FAIL {profile} {key} default={got!r} want={want!r}")
+            print(f"FAIL {key} default={got!r} want={want!r}")
             fails += 1
         else:
-            print(f"PASS {profile} {key} default={want}")
-    if "ENABLE_9ROUTER" in text:
-        print("FAIL unexpected ENABLE_9ROUTER (9router must always be on)")
+            print(f"PASS {key} default={want}")
+    if "container_name: valkey" not in compose:
+        print("FAIL valkey container name missing")
         fails += 1
     else:
-        print("PASS no ENABLE_9ROUTER (always-on must)")
-    global_mr = _default(text, "ENABLE_MODEL_ROUTER")
-    if global_mr != "1":
-        print(f"FAIL global ENABLE_MODEL_ROUTER default={global_mr!r}")
+        print("PASS valkey container name")
+    if 'profiles: ["media"]' not in compose and "profiles: [\"media\"]" not in compose:
+        print("FAIL dispatcher missing media compose profile")
         fails += 1
     else:
-        print("PASS global ENABLE_MODEL_ROUTER default=1")
+        print("PASS dispatcher media compose profile")
+    if "profiles: [\"schedule\"]" not in compose:
+        print("FAIL schedule-worker missing compose profile")
+        fails += 1
+    else:
+        print("PASS schedule-worker compose profile")
+    if "container_name: router-worker" not in compose:
+        print("FAIL router-worker rename missing")
+        fails += 1
+    else:
+        print("PASS router-worker container name")
+    if '"max_tokens"' in classify:
+        print("FAIL classify.json still has max_tokens")
+        fails += 1
+    else:
+        print("PASS classify.json has no max_tokens")
     return 1 if fails else 0
 
 

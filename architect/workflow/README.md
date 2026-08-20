@@ -6,7 +6,7 @@ Jobs are **instructions** (natural language), not hardcoded types like GET_FUEL_
 
 ## Delivery policy (numbered lists)
 
-A numbered list is **N jobs**, whether the user asked for it **now** or as a **lịch/schedule**. Immediate and scheduled use the same job engine. The schedule row is only the clock; at tick time it creates one workflow with one job per item.
+A numbered list is **N jobs**, whether the user asked for it **now** or as a **schedule**. Immediate and scheduled use the same job engine. **Schedule Worker** is only the clock; at tick time it creates one workflow with one job per item. This service is the async job runner — it is not Schedule Worker.
 
 **Each job may send its own Zalo (or Hermes) response.** There is no aggregator that folds four results into one bubble. Image files, fuel text, weather text, and a hello each go out as their own delivery. Job count is not tied to “one final message.”
 

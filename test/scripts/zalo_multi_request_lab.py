@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
-"""Lab: case 16 compound message — classify + Zalo-origin workflow (admin DM).
+﻿# -*- coding: utf-8 -*-
+"""Lab: case 16 compound message â€” classify + Zalo-origin workflow (admin DM).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 Reports: test/reports/run-zalo-multi-request/ (no host/account)
@@ -13,18 +13,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import connect, sudo_bash  # noqa: E402
+from deploy_stack import connect, sudo_bash  # noqa: E402
 from sanitize import sanitize as _sanitize  # noqa: E402
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-zalo-multi-request"
-WAIT_S = int(os.environ.get("ZALO_MULTI_WAIT_S", "480"))
+WAIT_S = int(os.environ.get("ZALO_MULTI_WAIT_S", "720"))
 
 FIXTURE = (
-    "yêu cầu:\n"
-    "1 vẽ hình thời tiết hiện tại ở thành phố hồ chi minh ở thời gian hiện tại, "
-    "góc nhìn từ trên cao xuống phải thấy rõ khung cảnh thành phố và gửi lên cho user\n"
-    "2.Sau đó cập nhật giá xăng E5 RON92 và E5 RON95"
+    "yÃªu cáº§u:\n"
+    "1 váº½ hÃ¬nh thá»i tiáº¿t hiá»‡n táº¡i á»Ÿ thÃ nh phá»‘ há»“ chi minh á»Ÿ thá»i gian hiá»‡n táº¡i, "
+    "gÃ³c nhÃ¬n tá»« trÃªn cao xuá»‘ng pháº£i tháº¥y rÃµ khung cáº£nh thÃ nh phá»‘ vÃ  gá»­i lÃªn cho user\n"
+    "2.Sau Ä‘Ã³ cáº­p nháº­t giÃ¡ xÄƒng E5 RON92 vÃ  E5 RON95"
 )
 
 
@@ -163,3 +163,4 @@ echo WATCH_DONE
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

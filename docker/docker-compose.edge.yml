@@ -60,7 +60,7 @@ services:
       - GATEWAY_RATE_LIMIT_REQUESTS=${GATEWAY_RATE_LIMIT_REQUESTS:-60}
       - GATEWAY_RATE_LIMIT_WINDOW_S=${GATEWAY_RATE_LIMIT_WINDOW_S:-60}
       - GATEWAY_RATE_KEY_PREFIX=${GATEWAY_RATE_KEY_PREFIX:-rate:gw}
-      - GATEWAY_SKIP_RL_PATHS=${GATEWAY_SKIP_RL_PATHS:-/coding,/v1/coding,/skills/coding}
+      - GATEWAY_SKIP_RL_PATHS=${GATEWAY_SKIP_RL_PATHS:-/coding,/v1/coding,/skills/coding,/schedule,/v1/schedule,/skills/schedule,/v1/schedules}
       - GATEWAY_PROXY_TIMEOUT_S=${GATEWAY_PROXY_TIMEOUT_S:-120}
       - GATEWAY_MAX_BODY_BYTES=${GATEWAY_MAX_BODY_BYTES:-33554432}
       - GATEWAY_API_KEYS=${GATEWAY_API_KEYS:-}
@@ -82,7 +82,7 @@ services:
     ports:
       - "127.0.0.1:${GATEWAY_HOST_PORT:-8088}:8088"
     depends_on:
-      redis:
+      valkey:
         condition: service_healthy
       workflow:
         condition: service_started

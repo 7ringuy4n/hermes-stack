@@ -30,8 +30,8 @@ Isolation risks: [cases/10-security-isolation-risks.md](./cases/10-security-isol
 
 Two-pass lab summary (latest): [reports/run-05-two-pass/SUMMARY.md](./reports/run-05-two-pass/SUMMARY.md).
 
-Profile upgrade/downgrade (existing / add / remove options): [cases/11-profile-switch.md](./cases/11-profile-switch.md) ·
-[scripts/profile_switch.py](./scripts/profile_switch.py).
+Worker add/remove (existing options): [cases/11-worker-switch.md](./cases/11-worker-switch.md) ·
+[scripts/worker_switch.py](./scripts/worker_switch.py).
 
 Skills lab (Medium destroy/redeploy + auto-learn + text-poster): [cases/12-skills-auto-learn.md](./cases/12-skills-auto-learn.md) ·
 [cases/13-image-text-poster.md](./cases/13-image-text-poster.md) ·

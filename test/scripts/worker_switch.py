@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Upgrade/downgrade + existing/add/remove options. Backup+verify first.
+"""Worker add/remove via add-components. Backup+verify first.
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
-Reports: test/reports/run-profile-switch/ (no host/account)
+Reports: test/reports/run-worker-switch/ (no host/account)
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ HOST = os.environ["ASSISTANT_SSH_HOST"]
 USER = os.environ["ASSISTANT_SSH_USER"]
 PW = os.environ["ASSISTANT_SSH_PASSWORD"]
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
-OUT = ROOT / "test" / "reports" / "run-profile-switch"
+OUT = ROOT / "test" / "reports" / "run-worker-switch"
 esc = PW.replace("'", "'\\''")
 ROWS: list[dict] = []
 
@@ -77,39 +77,36 @@ def main() -> None:
     c = connect()
     out = sudo_bash(
         c,
-        rf'''
+        r'''
 set -euo pipefail
 cd /opt/assistant
 set -a; . ./.env; set +a
 export COMPOSE_PROGRESS=plain
-export ASSISTANT_PROFILE="${{ASSISTANT_PROFILE:-high}}"
-export ENABLE_ZALO="${{ENABLE_ZALO:-1}}"
+export ENABLE_ZALO="${ENABLE_ZALO:-1}"
 
-echo "=== PROFILE_BEFORE ==="
-bash run.sh profile || true
-echo "=== DRY_SWITCH ==="
-bash run.sh switch-profile high --dry-run
-echo "=== DRY_ADD ==="
-bash run.sh add-components ENABLE_NOTIFY=1 --dry-run
+echo "=== WORKERS_BEFORE ==="
+bash run.sh workers || true
+echo "=== DRY_ADD_NOTIFY ==="
+bash run.sh add-components WORKER_NOTIFY=active --dry-run
 
-echo "=== FAIL_SWITCH_BOGUS ==="
+echo "=== FAIL_SWITCH_PROFILE ==="
 set +e
-bash run.sh switch-profile bogus; echo "SWITCH_BOGUS_RC=$?"
+bash run.sh switch-profile high; echo "SWITCH_PROFILE_RC=$?"
 bash run.sh add-components NOT_A_REAL_FLAG=1; echo "ADD_BOGUS_RC=$?"
 set -e
 
 echo "=== EXISTING_FLAGS ==="
-grep -E '^(ASSISTANT_PROFILE|ENABLE_ZALO|ENABLE_ANTIVIRUS|SECURITY_SANDBOX|SECURITY_LLM_JUDGE|TRAEFIK_MODE)=' .env || true
+grep -E '^(WORKER_|ENABLE_ZALO|ENABLE_ANTIVIRUS|SECURITY_SANDBOX|SECURITY_LLM_JUDGE|TRAEFIK_MODE)=' .env || true
 
 echo "=== ADD_NOTIFY ==="
-bash run.sh add-components ENABLE_NOTIFY=1 --no-up
-grep -E '^ENABLE_NOTIFY=' .env || true
-test -f "${{BACKUP_DIR:-/data/assistant/backups}}/PRE_CHANGE" && echo PRE_CHANGE_OK || echo PRE_CHANGE_MISS
-STAMP=$(cat "${{BACKUP_DIR:-/data/assistant/backups}}/PRE_CHANGE" 2>/dev/null || true)
+bash run.sh add-components WORKER_NOTIFY=active --no-up
+grep -E '^WORKER_NOTIFY=' .env || true
+test -f "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" && echo PRE_CHANGE_OK || echo PRE_CHANGE_MISS
+STAMP=$(cat "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null || true)
 echo "STAMP=$STAMP"
 if [[ -n "$STAMP" ]]; then
-  test -f "${{BACKUP_DIR:-/data/assistant/backups}}/$STAMP/config/profile-options.env" && echo OPTIONS_FILE_OK || echo OPTIONS_FILE_MISS
-  test -f "${{BACKUP_DIR:-/data/assistant/backups}}/$STAMP/config/env.sealed" && echo ENV_SEALED_OK || echo ENV_SEALED_MISS
+  test -f "${BACKUP_DIR:-/data/assistant/backups}/$STAMP/config/profile-options.env" && echo OPTIONS_FILE_OK || echo OPTIONS_FILE_MISS
+  test -f "${BACKUP_DIR:-/data/assistant/backups}/$STAMP/config/env.sealed" && echo ENV_SEALED_OK || echo ENV_SEALED_MISS
 fi
 echo "=== UP_AFTER_ADD ==="
 bash run.sh up
@@ -118,46 +115,20 @@ docker ps --format '{{{{.Names}}}}' | grep -E 'notify' && echo NOTIFY_UP || echo
 docker ps --format '{{{{.Names}}}}' | grep -E 'zalo' | head -5
 
 echo "=== REMOVE_NOTIFY ==="
-bash run.sh add-components ENABLE_NOTIFY=0 --no-up
+bash run.sh add-components WORKER_NOTIFY=inactive --no-up
 bash run.sh up
 sleep 8
 if docker ps --format '{{{{.Names}}}}' | grep -qE '^notify$'; then echo NOTIFY_STILL_UP; else echo NOTIFY_GONE; fi
-docker ps --format '{{{{.Names}}}}' | grep -qE '^alert-watch$' && echo ALERT_STILL || echo ALERT_GONE
 grep -E '^ENABLE_ZALO=' .env || true
+grep -E '^WORKER_SCHEDULE=' .env || true
 
-echo "=== DOWNGRADE_MEDIUM ==="
-bash run.sh switch-profile medium --no-up
-grep -E '^ASSISTANT_PROFILE=' .env
-bash run.sh up
-sleep 10
-echo "=== MEDIUM_PS ==="
-docker ps --format '{{{{.Names}}}}' | sort
-docker ps --format '{{{{.Names}}}}' | grep -qE '^openbao$' && echo OPENBAO_STILL || echo OPENBAO_GONE
-docker ps --format '{{{{.Names}}}}' | grep -qE '^authz$' && echo AUTHZ_STILL || echo AUTHZ_GONE
-docker ps --format '{{{{.Names}}}}' | grep -qE '^ocr$' && echo OCR_OK || echo OCR_MISS
-docker ps --format '{{{{.Names}}}}' | grep -qE '^zalo-api$' && echo ZALO_OK || echo ZALO_MISS
-grep -E '^ENABLE_ZALO=' .env || true
-hermes_n=$(docker ps --format '{{{{.Names}}}}' | grep -c hermes || true)
-echo "HERMES_N=$hermes_n"
-
-echo "=== UPGRADE_HIGH ==="
-bash run.sh switch-profile high --no-up
-grep -E '^ASSISTANT_PROFILE=' .env
-bash run.sh up
-sleep 12
-echo "=== HIGH_PS ==="
-docker ps --format '{{{{.Names}}}}' | sort
-docker ps --format '{{{{.Names}}}}' | grep -qE '^openbao$' && echo OPENBAO_BACK || echo OPENBAO_MISS
-docker ps --format '{{{{.Names}}}}' | grep -qE '^authz$' && echo AUTHZ_BACK || echo AUTHZ_MISS
-docker ps --format '{{{{.Names}}}}' | grep -qE '^security-manager$' && echo SEC_BACK || echo SEC_MISS
-hermes_n=$(docker ps --format '{{{{.Names}}}}' | grep -c hermes || true)
-echo "HERMES_N=$hermes_n"
-grep -E '^(ASSISTANT_PROFILE|ENABLE_ZALO|ENABLE_NOTIFY|ENABLE_ANTIVIRUS|SECURITY_SANDBOX|SECURITY_LLM_JUDGE|TRAEFIK_MODE)=' .env || true
-curl -fsS -m 8 http://127.0.0.1:8787/health || echo '{{"ok":false}}'
+echo "=== WORKERS_AFTER ==="
+bash run.sh workers || true
+curl -fsS -m 8 http://127.0.0.1:8787/health || echo '{"ok":false}'
 echo
 curl -fsS -m 8 http://127.0.0.1:8088/health || echo GW_FAIL
 echo
-echo PROFILE_SWITCH_DONE
+echo WORKER_SWITCH_DONE
 ''',
         timeout=3600,
     )
@@ -167,43 +138,25 @@ echo PROFILE_SWITCH_DONE
         return token in out
 
     checks = [
-        ("dry_switch", has("DRY_RUN") and has("=== DRY_SWITCH ===")),
-        ("fail_bogus_profile", has("SWITCH_BOGUS_RC=") and not has("SWITCH_BOGUS_RC=0")),
+        ("dry_add", has("DRY_RUN") and has("=== DRY_ADD_NOTIFY ===")),
+        ("fail_switch_profile", has("SWITCH_PROFILE_RC=") and not has("SWITCH_PROFILE_RC=0")),
         ("fail_bogus_flag", has("ADD_BOGUS_RC=") and not has("ADD_BOGUS_RC=0")),
         ("archive_options", has("OPTIONS_FILE_OK") or has("PRE_CHANGE_OK")),
         ("add_notify", has("NOTIFY_UP")),
         ("remove_notify", has("NOTIFY_GONE")),
         ("existing_zalo", has("ENABLE_ZALO=1")),
-        ("downgrade_openbao_gone", has("OPENBAO_GONE")),
-        ("downgrade_ocr", has("OCR_OK")),
-        ("downgrade_zalo", has("ZALO_OK")),
-        ("upgrade_openbao", has("OPENBAO_BACK")),
-        ("upgrade_authz", has("AUTHZ_BACK")),
-        ("upgrade_security", has("SEC_BACK")),
+        ("profile_removed_msg", has("Profile upgrade/downgrade is removed") or has("Enable workers with")),
     ]
     fails = 0
     for name, ok in checks:
-        # dry_switch: script prints DRY_RUN from run.sh
         status = "pass" if ok else "fail"
         if not ok:
             fails += 1
         note(name, status, "ok" if ok else "missing marker")
 
-    # Hermes×2 after upgrade: HERMES_N last occurrence
-    hermes_ns = [ln for ln in out.splitlines() if ln.startswith("HERMES_N=")]
-    last_h = hermes_ns[-1] if hermes_ns else "HERMES_N=0"
-    h_ok = last_h.strip() in {"HERMES_N=2", "HERMES_N=3"}  # 2 replicas; allow stray name
-    if last_h.strip() == "HERMES_N=2":
-        note("upgrade_hermes_x2", "pass", last_h)
-    else:
-        # assistant-hermes-1/2 counts as 2
-        note("upgrade_hermes_x2", "pass" if last_h.endswith("=2") else "fail", last_h)
-        if not last_h.endswith("=2"):
-            fails += 1
-
     (OUT / "raw.txt").write_text(sanitize(out)[-12000:], encoding="utf-8")
     (OUT / "raw.json").write_text(json.dumps(ROWS, indent=2), encoding="utf-8")
-    lines = ["# Profile switch (upgrade/downgrade + options)", "", f"- Timestamp: `{ts()}`", ""]
+    lines = ["# Worker switch (add/remove)", "", f"- Timestamp: `{ts()}`", ""]
     for r in ROWS:
         lines.append(f"- **{r['name']}**: {r['status']} — {r['detail'][:180]}")
     lines += ["", f"Final: **{'PASS' if fails == 0 else 'FAIL'}** ({fails} fail)"]

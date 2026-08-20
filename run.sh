@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# assistant entrypoint — commands depend on ASSISTANT_PROFILE (see docs/02-commands.md).
+# assistant entrypoint — core + optional workers (see docs/00-workers.md).
 set -euo pipefail
 export LC_ALL="${LC_ALL:-C.UTF-8}"
 export LANG="${LANG:-C.UTF-8}"
@@ -16,18 +16,15 @@ export HERMES_DIR="${HERMES_DIR:-$ROOT/hermes/main}"
 source "${ROOT}/architect/backup-restore/lib/load-defaults.sh"
 load_env_with_defaults
 
-# shellcheck source=architect/backup-restore/lib/profile.sh
-source "${ROOT}/architect/backup-restore/lib/profile.sh"
-assistant_profile_apply
+# shellcheck source=architect/backup-restore/lib/workers.sh
+source "${ROOT}/architect/backup-restore/lib/workers.sh"
+assistant_workers_apply
 
 cmd="${1:-help}"
 shift || true
 
 compose() {
-  # Low: base. Medium: + medium. High: + medium + high (+ optional notify/clouddrive/comfy-gpu).
-  # Edge: + docker-compose.edge.yml when Traefik / API Gateway / OpenVPN enabled.
-  # Hermes scale: HERMES_REPLICAS (default 1; High default 2). Host ports only when replicas=1.
-  # Traefik mode: local = VPN/localhost (default). public = ACME when email+domain set.
+  # Core + optional worker overlays.
   local -a files=(--project-directory "$ROOT" -f "$ROOT/docker/docker-compose.yml")
   local -a profiles=()
   local -a scale_args=()
@@ -35,7 +32,6 @@ compose() {
   local traefik_mode="${TRAEFIK_MODE:-local}"
   local acme="${TRAEFIK_ACME_ENABLED:-0}"
 
-  # Fail-soft: public/ACME without email+domain → local HTTP Traefik
   if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
     case "${traefik_mode}" in
       public)
@@ -63,52 +59,24 @@ compose() {
     export TRAEFIK_ACME_ENABLED="$acme"
   fi
 
-  case "$ASSISTANT_PROFILE" in
-    medium)
-      files+=(-f "$ROOT/docker/docker-compose.medium.yml")
-      if [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]]; then
-        profiles+=(--profile comfy-gpu)
-      fi
-      if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
-        profiles+=(--profile zalo)
-      fi
-      ;;
-    high)
-      files+=(-f "$ROOT/docker/docker-compose.medium.yml" -f "$ROOT/docker/docker-compose.high.yml")
-      if [[ "${ENABLE_NOTIFY:-0}" == "1" ]]; then
-        profiles+=(--profile notify)
-      fi
-      if [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]]; then
-        profiles+=(--profile antivirus)
-      fi
-      if [[ "${SECURITY_SANDBOX:-0}" == "1" ]]; then
-        echo "WARN: SECURITY_SANDBOX=1 starts docker-socket-proxy — not a production isolation boundary" >&2
-        profiles+=(--profile sandbox)
-      fi
-      if [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
-        profiles+=(--profile clouddrive)
-      fi
-      if [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]]; then
-        profiles+=(--profile comfy-gpu)
-      fi
-      if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
-        profiles+=(--profile zalo)
-      fi
-      ;;
-    low)
-      if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
-        profiles+=(--profile zalo)
-      fi
-      ;;
-  esac
-  # Optionals usable on any profile when enabled (OCR/jobs via medium overlay)
-  case "${ENABLE_OCR:-0}${ENABLE_JOBS:-0}${ENABLE_SEARXNG:-0}" in
-    *1*)
-      if [[ "$ASSISTANT_PROFILE" == "low" ]]; then
-        files+=(-f "$ROOT/docker/docker-compose.medium.yml")
-      fi
-      ;;
-  esac
+  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-0}" == "1" ]]; then
+    files+=(-f "$ROOT/docker/docker-compose.media.yml")
+  fi
+  if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
+    files+=(-f "$ROOT/docker/docker-compose.security.yml")
+  fi
+  [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles+=(--profile comfy-gpu)
+  [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
+  [[ "${ENABLE_NOTIFY:-0}" == "1" ]] && profiles+=(--profile notify)
+  [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles+=(--profile antivirus)
+  if [[ "${SECURITY_SANDBOX:-0}" == "1" ]]; then
+    echo "WARN: SECURITY_SANDBOX=1 starts docker-socket-proxy — not a production isolation boundary" >&2
+    profiles+=(--profile sandbox)
+  fi
+  [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles+=(--profile clouddrive)
+  [[ "${ENABLE_SCHEDULE:-0}" == "1" ]] && profiles+=(--profile schedule)
+  [[ "${ENABLE_MEDIA_FILE:-0}" == "1" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]] && profiles+=(--profile media)
+
   case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
     *1*)
       files+=(-f "$ROOT/docker/docker-compose.edge.yml")
@@ -116,6 +84,9 @@ compose() {
   esac
   if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
     profiles+=(--profile omnirouter)
+  fi
+  if [[ "${ENABLE_9ROUTER:-0}" == "1" ]]; then
+    profiles+=(--profile 9router)
   fi
   if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
     case "${TRAEFIK_ACME_ENABLED:-0}" in
@@ -134,7 +105,6 @@ compose() {
   if [[ "${ENABLE_OPENVPN:-0}" == "1" ]]; then
     profiles+=(--profile openvpn)
   fi
-  # Observability — exporters pair with the component they scrape (see profile.sh)
   assistant_append_monitor_profiles profiles
   if [[ "$replicas" == "1" ]]; then
     files+=(-f "$ROOT/docker/docker-compose.hermes-hostports.yml")
@@ -148,23 +118,19 @@ compose() {
 }
 
 need_med() {
-  case "$ASSISTANT_PROFILE" in
-    medium|high) return 0 ;;
-    *)
-      echo "Command '${1:-}' requires ASSISTANT_PROFILE=medium|high (now: ${ASSISTANT_PROFILE})." >&2
-      return 1
-      ;;
-  esac
+  if [[ "${ENABLE_MEDIA_FILE:-0}" == "1" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]]; then
+    return 0
+  fi
+  echo "Command '${1:-}' requires the media/file worker (ENABLE_MEDIA_FILE=1 or ENABLE_OCR/JOBS=1)." >&2
+  return 1
 }
 
 need_high() {
-  case "$ASSISTANT_PROFILE" in
-    high) return 0 ;;
-    *)
-      echo "Command '${1:-}' requires ASSISTANT_PROFILE=high (now: ${ASSISTANT_PROFILE})." >&2
-      return 1
-      ;;
-  esac
+  if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" ]]; then
+    return 0
+  fi
+  echo "Command '${1:-}' requires security/monitor/openbao components enabled." >&2
+  return 1
 }
 
 ops() {
@@ -293,7 +259,6 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=${STACK_ROOT}
-Environment=ASSISTANT_PROFILE=${ASSISTANT_PROFILE}
 ExecStart=/usr/bin/env bash ${STACK_ROOT}/run.sh auto-learn
 EOF
   $sudo tee "${unit_dir}/assistant-auto-learn.timer" >/dev/null <<EOF
@@ -312,7 +277,6 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=${STACK_ROOT}
-Environment=ASSISTANT_PROFILE=${ASSISTANT_PROFILE}
 ExecStart=/usr/bin/env bash ${STACK_ROOT}/run.sh backup
 EOF
   $sudo tee "${unit_dir}/assistant-backup.timer" >/dev/null <<EOF
@@ -337,7 +301,6 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=${STACK_ROOT}
-Environment=ASSISTANT_PROFILE=${ASSISTANT_PROFILE}
 Environment=STACK_ROOT=${STACK_ROOT}
 Environment=ENABLE_LOG_ARCHIVE=1
 Environment=LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-30}
@@ -369,7 +332,6 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=${STACK_ROOT}
-Environment=ASSISTANT_PROFILE=${ASSISTANT_PROFILE}
 Environment=STACK_ROOT=${STACK_ROOT}
 Environment=ASSISTANT_DATA_DIR=${ASSISTANT_DATA_DIR:-/data/assistant}
 EnvironmentFile=-${STACK_ROOT}/.env
@@ -397,7 +359,6 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=${STACK_ROOT}
-Environment=ASSISTANT_PROFILE=${ASSISTANT_PROFILE}
 Environment=STACK_ROOT=${STACK_ROOT}
 Environment=ASSISTANT_DATA_DIR=${ASSISTANT_DATA_DIR:-/data/assistant}
 Environment=ENABLE_ZALO=1
@@ -421,8 +382,7 @@ EOF
     $sudo systemctl disable --now assistant-zalo-watch.timer >/dev/null 2>&1 || true
   fi
 
-  case "$ASSISTANT_PROFILE" in
-    medium|high)
+  if [[ "${ENABLE_MEDIA_FILE:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]]; then
       $sudo tee "${unit_dir}/assistant-compact.service" >/dev/null <<EOF
 [Unit]
 Description=Assistant compact skills/memory
@@ -430,7 +390,6 @@ After=docker.service
 [Service]
 Type=oneshot
 WorkingDirectory=${STACK_ROOT}
-Environment=ASSISTANT_PROFILE=${ASSISTANT_PROFILE}
 ExecStart=/usr/bin/env bash ${STACK_ROOT}/run.sh compact
 EOF
       $sudo tee "${unit_dir}/assistant-compact.timer" >/dev/null <<EOF
@@ -444,24 +403,21 @@ WantedBy=timers.target
 EOF
       $sudo systemctl daemon-reload
       $sudo systemctl enable --now assistant-compact.timer
-      ;;
-    low)
-      # Compact is Medium+ only — disable leftover timer if profile was raised then lowered
+  else
       $sudo systemctl disable --now assistant-compact.timer >/dev/null 2>&1 || true
-      ;;
-  esac
+  fi
   systemctl list-timers 'assistant-*' --no-pager || true
-  echo "timers installed for profile=${ASSISTANT_PROFILE}"
+  echo "timers installed"
 }
 
-# Timers (backup/learn/stack-watch; log-archive 30d; compact Medium+; zalo-watch when ENABLE_ZALO=1)
+# Timers (backup/learn/stack-watch; log-archive 30d; compact when media worker active; zalo-watch when ENABLE_ZALO=1)
 ensure_profile_timers() {
-  echo "==> install timers (profile=${ASSISTANT_PROFILE}, ENABLE_ZALO=${ENABLE_ZALO:-0})"
+  echo "==> install timers (ENABLE_ZALO=${ENABLE_ZALO:-0})"
   do_install_timers || true
 }
 
 do_channel_status() {
-  echo "ASSISTANT_PROFILE=${ASSISTANT_PROFILE}"
+  assistant_workers_summary
   echo "ENABLE_ZALO=${ENABLE_ZALO:-0}"
   echo "ENABLE_TELEGRAM=${ENABLE_TELEGRAM:-0}"
   echo "social-app packs: architect/social-app/{zalo,telegram,http}"
@@ -501,7 +457,7 @@ do_update() {
   # After: git pull  →  bash run.sh update
   # Rebuilds/recreates stack from current tree; refreshes 9Router→Hermes wiring; prunes disk.
   do_backup_first "update" || return 1
-  echo "==> update from current source (ASSISTANT_PROFILE=${ASSISTANT_PROFILE})"
+  echo "==> update from current source"
   if [[ -d "${ROOT}/.git" ]]; then
     echo "==> git HEAD: $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
     echo "    (run git pull yourself before update if you want remote changes)"
@@ -516,18 +472,27 @@ do_update() {
   compose up -d --build --remove-orphans
   do_stop_disabled_optionals
 
-  if [[ -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
+  if [[ "${ENABLE_9ROUTER:-0}" == "1" && -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
     echo "==> refresh 9Router Default Key + hermes combo"
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
     export HERMES_DATA_DIR="${HERMES_DATA_DIR:-/data/assistant}"
     python3 "${SCRIPTS_DIR}/first-setup-9router-hermes.py" \
       || echo "WARN: first-setup-llm failed — stack is up; fix .env / 9Router and re-run: bash run.sh first-setup-llm"
+  elif [[ "${ENABLE_9ROUTER:-0}" == "1" ]]; then
+    echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip 9Router first-setup refresh"
   else
-    echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip LLM first-setup refresh"
+    echo "==> 9Router inactive (ENABLE_9ROUTER=0) — skip first-setup-9router-hermes"
+  fi
+
+  if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+    echo "==> refresh OmniRouter combo + memory"
+    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
+    python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py" \
+      || echo "WARN: first-setup-omnirouter failed — re-run: bash run.sh first-setup-omnirouter"
   fi
 
   # After LLM setup so N9ROUTER_API_KEY is in .env when seeding
-  if [[ "$ASSISTANT_PROFILE" == "high" ]]; then
+  if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then
     echo "==> seed API keys into OpenBao"
     do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
   fi
@@ -588,7 +553,7 @@ env_upsert() {
 }
 
 do_archive_before_change() {
-  # Snapshot live options + DR backup; verify stamp before any upgrade/downgrade/add.
+  # Snapshot live options + DR backup; verify stamp before worker add/remove.
   local reason="${1:-manual}"
   echo "==> current options (before change)"
   assistant_options_dump
@@ -596,37 +561,9 @@ do_archive_before_change() {
 }
 
 do_switch_profile() {
-  local target="" dry=0 noup=0 arg
-  for arg in "$@"; do
-    case "$arg" in
-      --dry-run) dry=1 ;;
-      --no-up) noup=1 ;;
-      low|medium|high) target="$arg" ;;
-      *)
-        echo "usage: bash run.sh switch-profile <low|medium|high> [--dry-run] [--no-up]" >&2
-        return 2
-        ;;
-    esac
-  done
-  [[ -n "$target" ]] || { echo "usage: bash run.sh switch-profile <low|medium|high> [--dry-run] [--no-up]" >&2; return 2; }
-  echo "==> switch-profile ${ASSISTANT_PROFILE} → ${target}"
-  if [[ "$dry" == "1" ]]; then
-    assistant_profile_summary
-    echo "DRY_RUN: would archive, set ASSISTANT_PROFILE=${target}, then $([[ "$noup" == "1" ]] && echo 'skip up' || echo 'run.sh up --remove-orphans')"
-    return 0
-  fi
-  do_archive_before_change "switch-profile:${ASSISTANT_PROFILE}->${target}" || return 1
-  local stamp
-  stamp="$(cat "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null || true)"
-  env_upsert ASSISTANT_PROFILE "$target"
-  echo "OK: wrote ASSISTANT_PROFILE=${target} to .env (stamp=${stamp})"
-  if [[ "$noup" == "1" ]]; then
-    echo "NEXT: bash run.sh up     # apply overlays; --remove-orphans drops leftover tier services"
-    echo "UNDO: bash run.sh restore ${stamp}"
-    return 0
-  fi
-  echo "==> apply new profile"
-  exec bash "${ROOT}/run.sh" up
+  echo "Profile upgrade/downgrade is removed."
+  echo "Enable workers with: bash run.sh add-components WORKER_SCHEDULE=active WORKER_MEDIA_FILE=active WORKER_SECURITY=active WORKER_NOTIFY=active WORKER_MESSAGE=active WORKER_MONITOR=active"
+  return 2
 }
 
 do_add_components() {
@@ -641,7 +578,7 @@ do_add_components() {
         k="${arg%%=*}"
         v="${arg#*=}"
         if ! assistant_option_key_ok "$k"; then
-          echo "ERROR: unknown option ${k} (not in profile option list)" >&2
+          echo "ERROR: unknown option ${k} (not in worker option list)" >&2
           return 2
         fi
         pairs+=("${k}=${v}")
@@ -659,9 +596,7 @@ do_add_components() {
     k="${arg%%=*}"
     case "$k" in
       ENABLE_OPENBAO|ENABLE_AUTHZ|ENABLE_SIEM|ENABLE_POLICY|ENABLE_SECURITY|ENABLE_NOTIFY)
-        if [[ "$ASSISTANT_PROFILE" != "high" ]]; then
-          echo "WARN: ${k} needs High overlay — run: bash run.sh switch-profile high" >&2
-        fi
+        echo "NOTE: ${k}=1 loads the security/notify overlay (docker-compose.security.yml)" >&2
         ;;
     esac
   done
@@ -686,20 +621,19 @@ do_add_components() {
 
 do_help() {
   cat <<EOF
-assistant — ASSISTANT_PROFILE=${ASSISTANT_PROFILE}
+assistant — workers $(assistant_workers_summary | head -n1)
 Docs: docs/02-commands.md
 
 Stack (all):
-  up | down | destroy | ps | logs [svc] | profile | update
+  up | down | destroy | ps | logs [svc] | workers | update
 
   update   # backup+verify, then after git pull: rebuild stack, refresh LLM wiring, prune disk
   destroy  # backup+verify, then remove project containers + networks (volumes/data kept)
            # then rebuild with: bash run.sh up
 
-Change tier / add components (all — backup+verify first):
-  switch-profile <low|medium|high> [--dry-run] [--no-up]
+Change workers (backup+verify first):
   add-components KEY=VAL […] [--dry-run] [--no-up]
-  profile                 # show current options
+  workers                 # show current worker activation
 
 DR (all):
   backup | restore [stamp] | verify [stamp] | migrate
@@ -708,21 +642,21 @@ Knowledge (all):
   auto-learn | learn-status
   post-ready-learn        # after Hermes+9Router: sync hermes/main/skills|docs → ingest
 
-Memory (medium|high):
+Memory (media worker):
   compact | optimize-memory
-  check-medium            # smoke OCR / Jobs / SearXNG / dispatcher
+  check-media             # smoke OCR / Jobs / SearXNG / dispatcher
 
 Timers:
-  install-timers          # Low: optional; Medium/High: auto on up|update
+  install-timers
 
 First setup:
   install-docker [user]   # if docker missing; default = SSH login user (not a hardcoded name)
   first-setup-llm         # 9Router Default Key → combo hermes (oc/* round-robin)
   first-setup-omnirouter  # OmniRoute Default Key → combo hermes (OpenCode Free oc/*)
 
-High:
+Security overlay:
   first-setup-openbao     # seed API keys → OpenBao UI (:8200); also on up|update
-  check-high              # smoke OpenBao / Grafana / AV / authz / …
+  check-security          # smoke OpenBao / Grafana / AV / authz / …
   backup-sync-clouddrive  # when ENABLE_CLOUDDRIVE=1
 
 Attachable:
@@ -744,15 +678,15 @@ case "$cmd" in
       bash "${SCRIPTS_DIR}/hermes-cron-share.sh" || true
     fi
     ensure_profile_timers
-    # Wire 9Router Default Key + hermes combo before OpenBao seed so N9ROUTER_API_KEY is present
-    if [[ -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
+    # Wire 9Router when ENABLE_9ROUTER=1
+    if [[ "${ENABLE_9ROUTER:-0}" == "1" && -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
       echo "==> first-setup-llm (9Router key + hermes combo)"
       export STACK_ROOT="${STACK_ROOT:-$ROOT}"
       export HERMES_DATA_DIR="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
       python3 "${SCRIPTS_DIR}/first-setup-9router-hermes.py" \
         || echo "WARN: first-setup-llm failed — re-run: bash run.sh first-setup-llm"
-    else
-      echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip LLM first-setup"
+    elif [[ "${ENABLE_9ROUTER:-0}" == "1" ]]; then
+      echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip 9Router first-setup"
     fi
     if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
       echo "==> first-setup-omnirouter (OpenCode Free combo)"
@@ -760,7 +694,7 @@ case "$cmd" in
       python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py" \
         || echo "WARN: first-setup-omnirouter failed — re-run: bash run.sh first-setup-omnirouter"
     fi
-    if [[ "$ASSISTANT_PROFILE" == "high" ]]; then
+    if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then
       do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
     fi
     do_post_ready_learn
@@ -769,7 +703,7 @@ case "$cmd" in
         echo "NEXT (manual, as deploy user — not root): bash scripts/main/setup-zalo.sh"
         echo "THEN: bash scripts/main/login-zalo.sh"
       else
-        echo "==> Zalo install (after profile ready; login is manual)"
+        echo "==> Zalo install (after workers ready; login is manual)"
         bash "${SCRIPTS_DIR}/setup-zalo.sh" \
           || echo "WARN: setup-zalo failed — re-run after check-*: bash scripts/main/setup-zalo.sh"
         echo "NEXT (manual): bash scripts/main/login-zalo.sh"
@@ -780,7 +714,7 @@ case "$cmd" in
   destroy) do_destroy ;;
   ps) compose ps ;;
   logs) compose logs -f --tail=100 "$@" ;;
-  profile) assistant_profile_summary ;;
+  workers|profile) assistant_workers_summary ;;
   switch-profile|change-profile) do_switch_profile "$@" ;;
   add-components|enable-components) do_add_components "$@" ;;
   update) do_update ;;
@@ -795,12 +729,12 @@ case "$cmd" in
     ;;
   compact) do_compact ;;
   optimize-memory|optimize) do_optimize_memory ;;
-  check-medium|smoke-medium)
-    need_med check-medium || exit 1
+  check-media|check-medium|smoke-medium)
+    need_med check-media || exit 1
     bash "${SCRIPTS_DIR}/check-medium.sh"
     ;;
-  check-high|smoke-high)
-    need_high check-high || exit 1
+  check-security|check-high|smoke-high)
+    need_high check-security || exit 1
     bash "${SCRIPTS_DIR}/check-high.sh"
     ;;
   install-timers|timers) do_install_timers ;;

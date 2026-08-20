@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Run schedule TZ or multi-request unit tests on the VPS (one case per process).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import connect, sudo_bash  # noqa: E402
+from deploy_stack import connect, sudo_bash  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -48,3 +48,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

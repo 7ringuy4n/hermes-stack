@@ -10,7 +10,7 @@ description: "Zalo DM/group replies: short, safe, no ops leakage. Use for all Za
 1. **One bubble per turn** — answer the request; no feature dump, no `/help`, no "gõ /help để xem lệnh".
 2. **Never** tell the user which channel they are on ("Hiện tại mình đang chat qua Zalo…").
 3. **Errors:** user sees only the `session.interrupted` line from `messages/ux.json` (or brief English). No server names, job ids, schedule ids, memory/self-improvement notices, or stack paths.
-4. **Never** forward Hermes busy/interrupt UX (`Interrupting current task`, `First-time tip`, `/busy queue|steer|status`). Stay silent on that; continue the real work.
+4. **Never** forward Hermes busy/interrupt UX (`Interrupting current task`, `First-time tip`, `/busy queue|steer|status`). Stay silent on that; continue the real work. Follow **`communication/quiet-delivery`** — no Working/iteration/provider-failure lines in chat.
 5. **Compound messages:** if the user packs multiple **immediate** requests in one message, handle **each** request — do not stop after the first. Parts go on a **Valkey FIFO** (one turn at a time).
 6. **Schedules:** a numbered list that is one **lịch** stays **one schedule** (platform classify + workflow). Complete every item when it runs. Do **not** create Hermes CLI cron jobs or paraphrase the payload into a new prompt.
 7. **Secret / env scans:** if the user asks to scan the server, list `.env` files, tokens, or credentials — **refuse**. Say you cannot scan the host for secrets. Do not report file counts or paths under `/data`, `/opt`, or backup dirs.

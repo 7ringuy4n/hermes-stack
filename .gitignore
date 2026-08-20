@@ -28,4 +28,5 @@ hermes/temp/**
 *.swp
 Thumbs.db
 .idea/
-docs/AGENT_RULES.md
+AGENT_RULES.md
+BE_RULE.md
