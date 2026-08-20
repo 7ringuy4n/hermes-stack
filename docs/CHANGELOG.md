@@ -1,5 +1,42 @@
 # Change history
 
+## 2026-08-20 19:00 +07 — [RELEASE] v0.5.13
+
+- Classify combo `classifier` (OpenCode Free `oc/*`); chat stays on `hermes`.
+- Classify reads provider CoT fields when `content` is empty.
+- alert-watch skips 9Router when disabled; bare Zalo images no longer force document-OCR Q&A.
+
+## 2026-08-20 18:55 +07 — Classify reads provider CoT fields when content empty
+
+- `_message_text` checks `content`, `reasoning_content`, `reasoning`, `thinking`, `thinking_content`, `thought`, `reasoning_text`, plus any other message key containing reason/think, and `reasoning_details`.
+
+## 2026-08-20 18:50 +07 — Classifier combo uses Omni `oc/*` catalog + unblock
+
+- `first-setup-omnirouter` clears `blockedProviders` for OpenCode, loads all `oc/*` from `/api/models`, and writes combo members with `connectionId` (Omni object shape).
+- Note: host may still see OpenCode upstream HTTP 403 (quota/block); classify fails open until upstream recovers.
+
+## 2026-08-20 18:40 +07 — Classify combo `classifier` (OpenCode Free)
+
+- Dedicated Omni combo **`classifier`**: `first-setup-omnirouter` ensures OpenCode provider + fills combo with all current `oc/*` models; default `MODEL_ROUTER_CLASSIFY_MODEL=classifier`.
+- Chat/outbound stay on combo **`hermes`** (members still UI-managed).
+- Skipped promoting Groq `message.reasoning` into empty `content` (operator preference).
+- alert-watch: skip 9Router `/api/auth/login` when `ENABLE_9ROUTER=0`; Zalo bare images no longer inject document-OCR Q&A prompt.
+
+## 2026-08-20 16:35 +07 — Omni combo members not hardcoded by first-setup
+
+- `first-setup-omnirouter` only ensures combo alias `hermes` exists; it no longer writes a fixed `oc/*` (or any) member list. OmniRouter UI / combo routing chooses models.
+- Docs: stack sends combo name only; operators manage members in Omni Combos.
+
+## 2026-08-20 16:25 +07 — Clarify hermes is a combo alias (not a vendor model)
+
+- Docs/env: `hermes` is OmniRouter/9Router **combo** name used in the OpenAI `model` field; there is no standalone model id `hermes`.
+- Classify/outbound defaults resolve from `OMNIROUTER_DEFAULT_COMBO` / `N9ROUTER_DEFAULT_COMBO`.
+
+## 2026-08-20 16:15 +07 — Classify model via env; Hermes → model-router patch
+
+- **Classify/outbound** no longer hardcode LLM model in `classify.json`; use `MODEL_ROUTER_CLASSIFY_MODEL` / `MODEL_ROUTER_OUTBOUND_MODEL` (default `hermes` combo).
+- **`patch-hermes-model-router.py`** + `setup-zalo.sh` / `first-setup-omnirouter.py` point shared `config.yaml` at `http://model-router:8096/v1` (fixes OpenRouter 401 on Zalo chat).
+
 ## 2026-08-20 16:05 +07 — Harden classify + stop dropping !zalo admin replies
 
 - **Classify** pins default model to `oc/north-mini-code-free`, caps `max_tokens`, maps invalid `task_hint: chat` → `normal`, dedupes instruction spam, and uses a local hello heuristic when Omni returns garbage JSON.
