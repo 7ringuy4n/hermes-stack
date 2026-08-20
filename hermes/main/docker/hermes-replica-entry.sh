@@ -9,6 +9,18 @@ RID="$(hostname)"
 export HERMES_HOME="${SHARED}/replicas/${RID}"
 mkdir -p "${HERMES_HOME}"
 
+# Shared media dirs must stay writable by Hermes UID across restarts/replicas.
+# Root-owned or missing inbound/out causes Permission denied on OCR / file-gen / attach.
+ensure_shared_media() {
+  uid="${HERMES_UID:-1000}"
+  gid="${HERMES_GID:-1000}"
+  mkdir -p "${SHARED}/media/inbound" "${SHARED}/media/out"
+  chown -R "${uid}:${gid}" "${SHARED}/media" 2>/dev/null || true
+  chmod -R ug+rwX "${SHARED}/media" 2>/dev/null || true
+  chmod g+s "${SHARED}/media" "${SHARED}/media/inbound" "${SHARED}/media/out" 2>/dev/null || true
+}
+ensure_shared_media
+
 # Link shared SoT into replica home (config/env/skills/messages/plugins)
 link_shared() {
   name="$1"

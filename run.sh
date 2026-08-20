@@ -23,6 +23,18 @@ assistant_workers_apply
 cmd="${1:-help}"
 shift || true
 
+# Host-side media dirs (Hermes UID). Prevents Permission denied on inbound/out after
+# fresh data volumes or root-owned mkdir from other tools.
+ensure_hermes_media_dirs() {
+  local data="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
+  local uid="${HERMES_UID:-1000}"
+  local gid="${HERMES_GID:-1000}"
+  mkdir -p "${data}/media/inbound" "${data}/media/out" 2>/dev/null || true
+  chown -R "${uid}:${gid}" "${data}/media" 2>/dev/null || true
+  chmod -R ug+rwX "${data}/media" 2>/dev/null || true
+  chmod g+s "${data}/media" "${data}/media/inbound" "${data}/media/out" 2>/dev/null || true
+}
+
 compose() {
   # Core + optional worker overlays.
   local -a files=(--project-directory "$ROOT" -f "$ROOT/docker/docker-compose.yml")
@@ -479,6 +491,7 @@ do_update() {
   compose pull || true
 
   echo "==> rebuild + recreate"
+  ensure_hermes_media_dirs
   compose up -d --build --remove-orphans
   do_stop_disabled_optionals
 
@@ -681,6 +694,7 @@ EOF
 case "$cmd" in
   up)
     assistant_profile_summary
+    ensure_hermes_media_dirs
     compose up -d --remove-orphans
     do_stop_disabled_optionals
     if [[ -f "${SCRIPTS_DIR}/hermes-cron-share.sh" ]]; then
