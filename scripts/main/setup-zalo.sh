@@ -14,9 +14,12 @@ ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 # shellcheck disable=SC1091
 [[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
 
-HERMES_DATA="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
+# Host path mounted into Hermes as /opt/data (see docker-compose hermes volumes).
+# Do NOT use bare host /opt/data — that is a different directory from ASSISTANT_DATA_DIR.
+ZALO_HOST_DATA_DIR="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
+HERMES_SHARED_DATA="${HERMES_SHARED_DATA_DIR:-${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}}"
 PLUGIN_SRC="${ROOT}/hermes/main/plugins/zalo"
-PLUGIN_DIR="${HERMES_DATA}/plugins/zalo"
+PLUGIN_DIR="${HERMES_SHARED_DATA}/plugins/zalo"
 PORT="${ZALO_PLUGIN_PORT:-8787}"
 HOST_BIND="${ZALO_PLUGIN_HOST:-0.0.0.0}"
 ZALO_REPO_URL="${ZALO_REPO_URL:-https://github.com/cuongdev/hermes-zalo-plugin.git}"
@@ -199,30 +202,39 @@ install_adapter() {
     echo "WARN: missing ${PLUGIN_SRC}" >&2
     return 1
   fi
-  $SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "${HERMES_DATA}/plugins" 2>/dev/null || true
+  $SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "${HERMES_SHARED_DATA}/plugins" 2>/dev/null || true
 }
 
 ensure_shared_config() {
-  local cfg="${HERMES_DATA}/config.yaml"
+  local cfg="${HERMES_SHARED_DATA}/config.yaml"
   if $SUDO test -f "$cfg"; then
     return 0
   fi
 
   local seed
-  seed="$($SUDO bash -lc "ls -1dt '${HERMES_DATA}'/replicas/*/config.yaml 2>/dev/null | head -n 1" || true)"
+  seed="$($SUDO bash -lc "ls -1dt '${HERMES_SHARED_DATA}'/replicas/*/config.yaml 2>/dev/null | head -n 1" || true)"
   if [[ -z "$seed" ]]; then
-    echo "ERROR: missing ${cfg} and no replica config.yaml found under ${HERMES_DATA}/replicas" >&2
-    return 1
+    log "WARN: missing ${cfg} (and no replica config.yaml found under ${HERMES_SHARED_DATA}/replicas) — creating minimal config"
+    $SUDO tee "$cfg" >/dev/null <<'EOF'
+_config_version: 13
+plugins:
+  enabled:
+    - zalo-platform
+gateway:
+  platforms:
+    zalo:
+      enabled: true
+EOF
+  else
+    log "seed shared config.yaml from ${seed}"
+    $SUDO cp -a "$seed" "$cfg"
   fi
-
-  log "seed shared config.yaml from ${seed}"
-  $SUDO cp -a "$seed" "$cfg"
   $SUDO chown "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "$cfg" 2>/dev/null || true
   $SUDO chmod 600 "$cfg" 2>/dev/null || true
 }
 
 enable_plugin() {
-  local cfg="${HERMES_DATA}/config.yaml"
+  local cfg="${HERMES_SHARED_DATA}/config.yaml"
   ensure_shared_config
   $SUDO python3 - "$cfg" <<'PY'
 from pathlib import Path
@@ -342,9 +354,42 @@ resolve_hermes_container() {
   printf '%s' "${name:-$exact}"
 }
 
+ensure_aiohttp_in_hermes() {
+  local ctr="$1"
+  # Hermes gateway runs inside /opt/hermes/.venv; use that interpreter if present.
+  local py_bin="/opt/hermes/.venv/bin/python"
+  $SUDO docker exec "$ctr" /bin/sh -lc "test -x '${py_bin}'" >/dev/null 2>&1 || py_bin="python3"
+
+  if $SUDO docker exec "$ctr" /bin/sh -lc "${py_bin} -c 'import aiohttp' >/dev/null 2>&1"; then
+    log "aiohttp already present in ${ctr}"
+    return 0
+  fi
+  log "install aiohttp into ${ctr} (required for zalo-platform SSE)"
+  $SUDO docker exec "$ctr" /bin/sh -lc "${py_bin} -m pip --version" >/dev/null 2>&1 || \
+    $SUDO docker exec "$ctr" /bin/sh -lc "${py_bin} -m ensurepip --upgrade" >/dev/null 2>&1 || true
+
+  $SUDO docker exec "$ctr" /bin/sh -lc "${py_bin} -m pip install --no-cache-dir aiohttp" || {
+    echo "ERROR: failed to install aiohttp in ${ctr}" >&2
+    return 1
+  }
+  return 0
+}
+
+sync_replica_config_from_shared() {
+  local ctr="$1"
+  log "sync replica config.yaml from /opt/data/config.yaml in ${ctr}"
+  $SUDO docker exec "$ctr" /bin/sh -lc '
+    for f in /opt/data/replicas/*/config.yaml; do
+      [ -f "$f" ] || continue
+      cp -f /opt/data/config.yaml "$f" 2>/dev/null || true
+      chmod 600 "$f" 2>/dev/null || true
+    done
+  ' || true
+}
+
 wire_env() {
-  local local_env="${HERMES_DATA}/.env"
-  $SUDO mkdir -p "$HERMES_DATA"
+  local local_env="${HERMES_SHARED_DATA}/.env"
+  $SUDO mkdir -p "$HERMES_SHARED_DATA"
   $SUDO touch "$local_env"
   upsert() {
     local k="$1" v="$2"
@@ -361,7 +406,7 @@ wire_env() {
   upsert ZALO_PLUGIN_URL "$bridge"
   upsert ZALO_BRIDGE_URL "$bridge"
   upsert ZALO_GROUP_MODE "${ZALO_GROUP_MODE:-mention}"
-  upsert ZALO_HOST_DATA_DIR "$HERMES_DATA"
+  upsert ZALO_HOST_DATA_DIR "$ZALO_HOST_DATA_DIR"
   upsert GATEWAY_ALLOW_ALL_USERS "${GATEWAY_ALLOW_ALL_USERS:-true}"
   $SUDO chown "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "$local_env" 2>/dev/null || true
   $SUDO chmod 600 "$local_env" || true
@@ -410,7 +455,7 @@ EOF
 }
 
 main() {
-  log "setup-zalo (install only) HERMES_DATA=${HERMES_DATA}"
+  log "setup-zalo (install only) ZALO_HOST_DATA_DIR=${ZALO_HOST_DATA_DIR} HERMES_SHARED_DATA=${HERMES_SHARED_DATA}"
   log "credit: Cường Tuấn Nguyễn / cuongdev — hermes-zalo-plugin (MIT)"
   wait_core_ready
   install_bridge
@@ -425,10 +470,19 @@ main() {
   if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
     printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S bash -lc \
       "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=1 && bash run.sh up" || true
+  else
+    $SUDO bash -lc "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=1 && bash run.sh up" || true
+  fi
+
+  # run.sh up may recreate containers; re-resolve and ensure Python deps after it.
+  hermes_ctr="$(resolve_hermes_container)"
+  ensure_aiohttp_in_hermes "$hermes_ctr"
+  sync_replica_config_from_shared "$hermes_ctr"
+
+  if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
     printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker restart "$hermes_ctr" zalo-proxy 2>/dev/null \
       || printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker restart "$hermes_ctr" || true
   else
-    $SUDO bash -lc "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=1 && bash run.sh up" || true
     $SUDO docker restart "$hermes_ctr" zalo-proxy 2>/dev/null || $SUDO docker restart "$hermes_ctr" || true
   fi
   print_next

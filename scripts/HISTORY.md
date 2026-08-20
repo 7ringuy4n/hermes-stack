@@ -19,6 +19,28 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-20 15:25 +07 — Zalo connected but no bot replies (claim + normal chat)
+
+### Symptom
+
+Bridge `loggedIn=true` and `sseClients=1`, but `!zalo claim` / normal Zalo messages got no useful reply.
+
+### Root cause
+
+1. `!zalo claim` had already succeeded (`zalo_admin_users.txt` had a sole admin); re-claim only returns “already has admin”.
+2. Hermes `OPENAI_API_KEY` was wired only to `N9ROUTER_API_KEY` while OmniRouter is the default → empty key on Omni-only installs.
+3. Model path returned `omni-router:429` (OpenCode Free rate-limit / credential exhaustion) so LLM chat could not complete.
+
+### Fix
+
+- Compose: Hermes `OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}`.
+- `setup-zalo.sh`: use `ASSISTANT_DATA_DIR` as the host shared Hermes data dir.
+- Operator: wait out Omni free-tier cooldown, or enable an alternate provider (9Router / paid fallback).
+
+### Prevent recurrence
+
+Keep Hermes API key wiring aligned with the default router (Omni first). First-setup docs should note OpenCode Free 429 as a no-reply cause distinct from Zalo SSE attach failures.
+
 ## 2026-08-20 15:05 +07 — clean-host Zalo bridge logged in but Hermes never attached
 
 ### Symptom
