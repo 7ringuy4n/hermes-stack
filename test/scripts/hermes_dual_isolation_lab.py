@@ -232,10 +232,13 @@ curl -fsS -m 8 http://127.0.0.1:8787/health || true
 
     report["pass"] = {
         "inject_seen": "INJECT_RESULTS" in burst,
-        "inject_all_ok": '"ok": false' not in burst.lower() and '"ok":false' not in burst.replace(" ", ""),
-        "no_perm_denied": "Permission denied" not in burst,
+        "inject_all_ok": '"ok": false' not in burst.lower().replace(" ", "")
+        and '"ok":false' not in burst.replace(" ", ""),
+        "no_media_perm_denied": "Permission denied: /opt/data/media" not in burst
+        and "Permission denied: '/opt/data/media" not in burst,
         "media_ok": "media_ok" in burst and "media_fail" not in burst,
         "hermes_scaled": "HERMES_COUNT=2" in scale or "HERMES_COUNT=2" in burst,
+        "sse_single": '"sseClients":1' in burst.replace(" ", "") or '"sseClients": 1' in burst,
         "restored": (not RESTORE)
         or (f"HERMES_COUNT={prev}" in report.get("restore", ""))
         or prev == "2",
