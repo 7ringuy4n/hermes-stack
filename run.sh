@@ -118,7 +118,7 @@ compose() {
   docker compose "${files[@]}" "${profiles[@]}" "$@" "${scale_args[@]}"
 }
 
-need_med() {
+need_media() {
   if [[ "${ENABLE_MEDIA_FILE:-0}" == "1" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]]; then
     return 0
   fi
@@ -126,7 +126,7 @@ need_med() {
   return 1
 }
 
-need_high() {
+need_security() {
   if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" ]]; then
     return 0
   fi
@@ -212,7 +212,7 @@ do_learn_status() {
 }
 
 do_compact() {
-  need_med compact || return 1
+  need_media compact || return 1
   echo "==> compact (skills drafts / memory hooks) — silent"
   local mem="${MEMORY_URL:-http://127.0.0.1:8095}"
   curl -fsS -m 30 -X POST "${mem}/v1/compact" >/dev/null 2>&1 || true
@@ -224,12 +224,12 @@ do_compact() {
 }
 
 do_optimize_memory() {
-  need_med optimize-memory || return 1
+  need_media optimize-memory || return 1
   do_compact
 }
 
 do_backup_sync_clouddrive() {
-  need_high backup-sync-clouddrive || return 1
+  need_security backup-sync-clouddrive || return 1
   case "${ENABLE_CLOUDDRIVE:-0}" in
     1) ;;
     *)
@@ -534,7 +534,7 @@ do_update() {
 }
 
 do_first_setup_openbao() {
-  need_high first-setup-openbao || return 1
+  need_security first-setup-openbao || return 1
   export STACK_ROOT="${STACK_ROOT:-$ROOT}"
   export ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-/data/assistant}"
   export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$ASSISTANT_DATA_DIR}"
@@ -739,12 +739,12 @@ case "$cmd" in
     ;;
   compact) do_compact ;;
   optimize-memory|optimize) do_optimize_memory ;;
-  check-media|check-medium|smoke-medium)
-    need_med check-media || exit 1
+  check-media|smoke-media)
+    need_media check-media || exit 1
     bash "${SCRIPTS_DIR}/check-media.sh"
     ;;
-  check-security|check-high|smoke-high)
-    need_high check-security || exit 1
+  check-security|smoke-security)
+    need_security check-security || exit 1
     bash "${SCRIPTS_DIR}/check-security.sh"
     ;;
   install-timers|timers) do_install_timers ;;

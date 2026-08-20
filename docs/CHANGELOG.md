@@ -1,5 +1,12 @@
 # Change history
 
+## 2026-08-20 20:20 +07 — Remove legacy check-medium/high + High deploy wrappers
+
+- Deleted unused `scripts/main/check-medium.sh` / `check-high.sh` (were thin wrappers to `check-media` / `check-security`).
+- `run.sh`: only `check-media` / `check-security` (plus `smoke-media` / `smoke-security`); renamed `need_med`/`need_high` → `need_media`/`need_security`.
+- Removed broken legacy `Deploy-High.ps1` / `Deploy-V050-Test.ps1` (pointed at missing `scripts/main/*.py`; lab helpers live under gitignored `scripts/temp/`).
+- Callers/docs retargeted to worker smoke names.
+
 ## 2026-08-20 20:10 +07 — Learn pending bridge fallback; drop legacy medium/high compose
 
 - **Ingest** learn pending: notify via Notification Worker, then **bridge `/send`** to sole admin when Notify is down; compose wires bridge + admin file.
