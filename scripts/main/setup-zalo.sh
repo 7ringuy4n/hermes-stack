@@ -408,8 +408,17 @@ wire_env() {
   upsert ZALO_GROUP_MODE "${ZALO_GROUP_MODE:-mention}"
   upsert ZALO_HOST_DATA_DIR "$ZALO_HOST_DATA_DIR"
   upsert GATEWAY_ALLOW_ALL_USERS "${GATEWAY_ALLOW_ALL_USERS:-true}"
-  $SUDO chown "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "$local_env" 2>/dev/null || true
+  $SUDO mkdir -p "${HERMES_SHARED_DATA}/channels"
+  $SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" \
+    "$local_env" \
+    "${HERMES_SHARED_DATA}/config.yaml" \
+    "${HERMES_SHARED_DATA}/channels" \
+    "${HERMES_SHARED_DATA}/zalo_admin_users.txt" \
+    "${HERMES_SHARED_DATA}/zalo_allowed_threads.txt" \
+    2>/dev/null || true
   $SUDO chmod 600 "$local_env" || true
+  # Hermes may rewrite shared .env / config.yaml — keep the parent writable by HERMES_UID.
+  $SUDO chmod u+w "$HERMES_SHARED_DATA" 2>/dev/null || true
   if [[ -f "${ROOT}/.env" ]]; then
     if grep -q '^ENABLE_ZALO=' "${ROOT}/.env"; then
       sed -i 's/^ENABLE_ZALO=.*/ENABLE_ZALO=1/' "${ROOT}/.env"

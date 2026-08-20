@@ -227,6 +227,7 @@ def failed_plan(timezone: str, error: str = "classify_unavailable") -> dict[str,
         "skill": None,
         "skill_action": None,
         "tasks": [],
+        "target_channel": None,
     }
 
 
@@ -296,6 +297,16 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "skill": skill,
         "skill_action": skill_action,
         "tasks": normalize_tasks(src.get("tasks"), len(instructions)),
+        "target_channel": (
+            str(
+                src.get("target_channel")
+                or src.get("deliver_to")
+                or src.get("target_group")
+                or src.get("group_name")
+                or ""
+            ).strip()
+            or None
+        ),
     }
     if not plan_schema_ok(plan):
         return failed_plan(tz, "classify_invalid")
@@ -369,7 +380,7 @@ def classify_outbound(text: str) -> dict[str, Any]:
             return normalize_outbound(_outbound_planner(blob, timezone="Asia/Ho_Chi_Minh"))
     base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
     payload = json.dumps({"text": blob}, ensure_ascii=False).encode("utf-8")
-    timeout = float(os.environ.get("MODEL_ROUTER_OUTBOUND_TIMEOUT_S") or 2.0)
+    timeout = float(os.environ.get("MODEL_ROUTER_OUTBOUND_TIMEOUT_S") or 30.0)
     try:
         req = urllib.request.Request(
             base + "/v1/outbound",
@@ -383,4 +394,4 @@ def classify_outbound(text: str) -> dict[str, Any]:
             return normalize_outbound(data)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
         pass
-    return {"ok": False, "action": "send", "error": "outbound_unavailable"}
+    return {"ok": False, "action": "drop", "error": "outbound_unavailable"}
