@@ -104,6 +104,9 @@ def restart_plugin() -> str:
         pw = pwd.getpwuid(uid)
         env["HOME"] = pw.pw_dir
         env["USER"] = pw.pw_name
+    # Docker zalo-proxy (socat → host.docker.internal:8787) needs a non-loopback bind.
+    env.setdefault("ZALO_PLUGIN_HOST", "0.0.0.0")
+    env.setdefault("ZALO_PLUGIN_PORT", "8787")
     try:
         subprocess.Popen(
             argv,

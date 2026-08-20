@@ -1,5 +1,27 @@
 # Change history
 
+## 2026-08-20 20:10 +07 — Learn pending bridge fallback; drop legacy medium/high compose
+
+- **Ingest** learn pending: notify via Notification Worker, then **bridge `/send`** to sole admin when Notify is down; compose wires bridge + admin file.
+- `setup-zalo.sh`: `media/inbound` + `media/out` for Hermes UID; bridge bind docs (`ZALO_PLUGIN_HOST=0.0.0.0` + firewall / token).
+- `patch_zalo_bridge_inject.py` restart keeps non-loopback bind for Docker inject/SSE.
+- **Removed** unused `docker-compose.medium.yml` / `docker-compose.high.yml`; backup, stack-watch, first-setup use `media.yml` / `security.yml` like `run.sh`.
+- Zalo README: schedule-by-group-name + bridge security notes. `scripts/HISTORY.md` ops entry.
+
+## 2026-08-20 20:05 +07 — Learn pending notify without Notify Worker; media inbound; bridge bind docs
+
+- **Ingest** `POST /v1/learn/submit`: notify sole Zalo admin via Notification Worker, then **bridge `/send` fallback** when Notify is down/`ENABLE_NOTIFY=0` (pending approve no longer silent).
+- Ingest compose gets `ZALO_BRIDGE_URL`, admin file/env, optional `ZALO_PLUGIN_TOKEN`.
+- `setup-zalo.sh` creates `media/inbound` + `media/out` owned by Hermes UID; documents `ZALO_PLUGIN_HOST=0.0.0.0` firewall risk.
+- Zalo README: schedule-by-group-name, `!zalo list` / `schedule list all`, bridge bind security.
+- `patch_zalo_bridge_inject.py` restart keeps `ZALO_PLUGIN_HOST=0.0.0.0` so Docker can reach `/inject-event`.
+
+## 2026-08-20 19:35 +07 — Security services gated by compose profile `security`
+
+- `openbao`, `security-manager`, `authz`, `siem`, `policy-center` use `--profile security` only when `WORKER_SECURITY` / `ENABLE_SECURITY` is active.
+- Notification Worker no longer starts those containers; `run.sh` removes them when Security is inactive.
+- Removed hermes/ingest hard `depends_on` onto profiled security services from the security overlay.
+
 ## 2026-08-20 19:00 +07 — [RELEASE] v0.5.13
 
 - Classify combo `classifier` (OpenCode Free `oc/*`); chat stays on `hermes`.
