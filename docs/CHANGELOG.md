@@ -1,5 +1,10 @@
 # Change history
 
+## 2026-08-20 16:05 +07 — Harden classify + stop dropping !zalo admin replies
+
+- **Classify** pins default model to `oc/north-mini-code-free`, caps `max_tokens`, maps invalid `task_hint: chat` → `normal`, dedupes instruction spam, and uses a local hello heuristic when Omni returns garbage JSON.
+- **Zalo outbound** no longer LLM-filters `!zalo …` admin help (`zalo_admin_reply` bypass + gateway_noise guard).
+
 ## 2026-08-20 15:45 +07 — Zalo classify fail-open + schedule-by-group-name registry
 
 - **Classify outage** no longer dead-ends Zalo chat with “Could not classify…” — Hermes falls through to normal reply when `/v1/classify` fails (Omni free-tier 429 / empty JSON).

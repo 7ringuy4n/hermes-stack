@@ -50,6 +50,8 @@ HINT_EXECUTION = {
     "unknown": ("interactive", "chat", "direct"),
     "tool": ("interactive", "tool", "direct"),
 }
+HINT_ALIASES = {"chat": "normal", "qna": "normal", "question": "normal", "general": "normal"}
+MAX_INSTRUCTIONS = 32
 CRON_CHARS = set("0123456789*,/-")
 
 
@@ -282,23 +284,76 @@ def _loads_first(raw: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+def sanitize_instructions(raw: Any, fallback: str) -> list[str]:
+    """Dedupe/cap instruction spam from weak classify models."""
+    items: list[str] = []
+    if isinstance(raw, list):
+        for item in raw:
+            s = str(item).strip()
+            if s:
+                items.append(s)
+    if len(items) > 3 and len(set(items)) == 1:
+        items = [items[0]]
+    out: list[str] = []
+    seen: set[str] = set()
+    for s in items:
+        if s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+        if len(out) >= MAX_INSTRUCTIONS:
+            break
+    fb = (fallback or "").strip()
+    if not out and fb:
+        return [fb]
+    return out
+
+
+def heuristic_plan(text: str) -> dict[str, Any] | None:
+    """Local fallback when classify LLM returns garbage (Omni free-tier weak models)."""
+    blob = (text or "").strip()
+    if not blob or len(blob) > 400:
+        return None
+    low = blob.lower()
+    if any(
+        tok in low
+        for tok in (
+            "đặt lịch",
+            "dat lich",
+            "schedule",
+            "cron",
+            "hằng ngày",
+            "hang ngay",
+            "daily at",
+            "mỗi sáng",
+            "moi sang",
+        )
+    ):
+        return None
+    if any(tok in low for tok in ("vẽ", "ve ", "draw", "image", "hình", "poster", "ocr", "pdf")):
+        return None
+    numbered = [ln.strip() for ln in blob.splitlines() if ln.strip()]
+    if len(numbered) >= 2 and all(
+        __import__("re").match(r"^\d+[.)]\s+", ln) for ln in numbered[: min(4, len(numbered))]
+    ):
+        return None
+    return {
+        "task_hint": "normal",
+        "instructions": [blob],
+        "process_original_message": True,
+    }
+
+
 def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dict[str, Any]:
     src = data if isinstance(data, dict) else {}
     hint = str(src.get("task_hint") or "").strip().lower()
     if hint in {"secret", "blocked", "sensitive"}:
         hint = "unknown"
+    hint = HINT_ALIASES.get(hint, hint)
     if hint not in TASK_HINTS:
         hint = "unknown"
-    instructions: list[str] = []
-    raw_inst = src.get("instructions")
-    if isinstance(raw_inst, list):
-        for item in raw_inst:
-            s = str(item).strip()
-            if s:
-                instructions.append(s)
     fallback = (text or "").strip()
-    if not instructions and fallback:
-        instructions = [fallback]
+    instructions = sanitize_instructions(src.get("instructions"), fallback)
     cadence = str(src.get("cadence") or "").strip().lower()
     if cadence not in CADENCES:
         cadence = "daily" if hint == "schedule" else "once"
@@ -367,7 +422,13 @@ async def classify_with_llm(
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
     tmpl = str(cfg.get("user_template") or "Timezone: {timezone}\nMessage:\n{text}")
     payload = {
-        "model": (model or os.environ.get("MODEL_ROUTER_CLASSIFY_MODEL") or "hermes").strip() or "hermes",
+        "model": (
+            model
+            or str(cfg.get("model") or "").strip()
+            or os.environ.get("MODEL_ROUTER_CLASSIFY_MODEL")
+            or "hermes"
+        ).strip()
+        or "hermes",
         "stream": False,
         "temperature": float(cfg.get("temperature") or 0),
         "messages": [
@@ -375,7 +436,7 @@ async def classify_with_llm(
             {"role": "user", "content": tmpl.replace("{timezone}", tz).replace("{text}", blob)},
         ],
     }
-    if "max_tokens" in cfg and cfg.get("max_tokens") not in (None, ""):
+    if cfg.get("max_tokens") not in (None, ""):
         payload["max_tokens"] = int(cfg["max_tokens"])
     headers = {"Content-Type": "application/json"}
     if n9_key:
@@ -414,6 +475,11 @@ async def classify_with_llm(
         if plan_schema_ok(plan):
             return plan
         last_err = "classify_invalid"
+    guess = heuristic_plan(blob)
+    if guess:
+        plan = normalize_plan(guess, blob, tz)
+        if plan_schema_ok(plan):
+            return plan
     return failed_plan(tz, last_err)
 
 
