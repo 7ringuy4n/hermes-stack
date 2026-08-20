@@ -7,7 +7,7 @@ Routing:
 
 Providers:
   coding  → 9router (if healthy) else OmniRouter if only that exists → fallback pool
-  general → OmniRouter (if enabled+healthy) else 9router → fallback pool
+  general / classify / outbound → OmniRouter (default) else 9router → fallback pool
 
 Missing API keys skip that provider. Ollama optional. Nothing left → clear error.
 Admin-editable messages: messages/en.json
@@ -25,7 +25,7 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from classify import TASK_HINTS, classify_with_llm, outbound_with_llm, normalize_plan  # noqa: E402
+from classify import TASK_HINTS, classify_with_llm, failed_plan, outbound_with_llm  # noqa: E402
 from chat_norm import normalize_chat_completion, sanitize_chat_payload
 
 ROOT = Path(__file__).resolve().parent
@@ -33,7 +33,8 @@ MESSAGES_PATH = Path(os.environ.get("MODEL_ROUTER_MESSAGES", str(ROOT / "message
 
 N9_BASE = os.environ.get("N9ROUTER_BASE_URL", "http://9router:20128/v1").rstrip("/")
 OMNI_BASE = os.environ.get("OMNIROUTER_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
-ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "0").strip() in {"1", "true", "yes", "on"}
+ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "1").strip() in {"1", "true", "yes", "on"}
+ENABLE_9ROUTER = os.environ.get("ENABLE_9ROUTER", "0").strip() in {"1", "true", "yes", "on"}
 N9_KEY = (os.environ.get("N9ROUTER_API_KEY") or "").strip()
 OMNI_KEY = (os.environ.get("OMNIROUTER_API_KEY") or os.environ.get("N9ROUTER_API_KEY") or "").strip()
 OLLAMA_BASE = (os.environ.get("OLLAMA_BASE_URL") or "").rstrip("/")
@@ -139,7 +140,11 @@ def _auth_headers(key: str) -> dict[str, str]:
 async def _candidates(task: str, *, prefer_omni: bool | None = None) -> list[tuple[str, str, dict[str, str], Optional[str]]]:
     """Return ordered (name, base_url, headers, default_model_override)."""
     out: list[tuple[str, str, dict[str, str], Optional[str]]] = []
-    n9_ok = await _probe("9router", N9_BASE, _auth_headers(N9_KEY)) if N9_BASE else False
+    n9_ok = (
+        ENABLE_9ROUTER
+        and N9_BASE
+        and await _probe("9router", N9_BASE, _auth_headers(N9_KEY))
+    )
     omni_ok = False
     if ENABLE_OMNI and OMNI_BASE:
         omni_ok = await _probe("omni", OMNI_BASE, _auth_headers(OMNI_KEY))
@@ -217,9 +222,8 @@ async def classify_endpoint(request: Request) -> dict[str, Any]:
     text = str(body.get("text") or "")
     timezone = str(body.get("timezone") or os.environ.get("TZ") or "Asia/Ho_Chi_Minh")
     last: dict[str, Any] = {}
-    candidates = await _candidates("normal", prefer_omni=False)
-    if candidates:
-        _name, base, headers, model = candidates[0]
+    candidates = await _candidates("normal")
+    for _name, base, headers, model in candidates:
         last = await classify_with_llm(
             text,
             timezone=timezone,
@@ -230,9 +234,7 @@ async def classify_endpoint(request: Request) -> dict[str, Any]:
         )
         if last.get("ok"):
             return last
-    opened = normalize_plan({"task_hint": "normal", "instructions": [text] if text.strip() else []}, text, timezone)
-    opened["error"] = last.get("error") or "classify_llm_failed"
-    return opened
+    return last or failed_plan(timezone, "classify_llm_failed")
 
 
 @app.post("/v1/outbound")
@@ -246,7 +248,7 @@ async def outbound_endpoint(request: Request) -> dict[str, Any]:
             body = {}
     text = str(body.get("text") or "")
     last: dict[str, Any] = {}
-    candidates = await _candidates("normal", prefer_omni=False)
+    candidates = await _candidates("normal")
     if candidates:
         _name, base, headers, model = candidates[0]
         last = await outbound_with_llm(
@@ -258,7 +260,7 @@ async def outbound_endpoint(request: Request) -> dict[str, Any]:
         )
         if last.get("ok") and str(last.get("action") or "") in {"send", "drop"}:
             return last
-    return last or {"ok": False, "action": "send", "error": "outbound_llm_failed"}
+    return last or {"ok": False, "action": "drop", "error": "outbound_llm_failed"}
 
 
 @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
@@ -274,10 +276,7 @@ async def proxy(path: str, request: Request) -> Response:
 
     is_chat = path.rstrip("/").endswith("chat/completions") or path == "chat/completions"
     task = _classify(request, body) if is_chat or body else "normal"
-    want_omni = True
-    if is_chat and str((body or {}).get("model") or "").strip().lower() == "hermes":
-        want_omni = False
-    candidates = await _candidates(task, prefer_omni=want_omni)
+    candidates = await _candidates(task)
     if not candidates:
         return JSONResponse(
             status_code=503,

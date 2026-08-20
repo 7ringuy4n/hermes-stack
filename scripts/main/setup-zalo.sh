@@ -233,8 +233,12 @@ wire_env() {
       echo "${k}=${v}" | $SUDO tee -a "$local_env" >/dev/null
     fi
   }
-  upsert ZALO_PLUGIN_URL "http://zalo-proxy:8787"
-  upsert ZALO_BRIDGE_URL "http://zalo-proxy:8787"
+  local bridge="http://host.docker.internal:8787"
+  if [[ "${HERMES_REPLICAS:-1}" != "1" ]]; then
+    bridge="http://zalo-proxy:8787"
+  fi
+  upsert ZALO_PLUGIN_URL "$bridge"
+  upsert ZALO_BRIDGE_URL "$bridge"
   upsert ZALO_GROUP_MODE "${ZALO_GROUP_MODE:-mention}"
   upsert ZALO_HOST_DATA_DIR "$HERMES_DATA"
   upsert GATEWAY_ALLOW_ALL_USERS "${GATEWAY_ALLOW_ALL_USERS:-true}"
@@ -246,9 +250,9 @@ wire_env() {
       echo 'ENABLE_ZALO=1' >> "${ROOT}/.env"
     fi
     if grep -q '^ZALO_PLUGIN_URL=' "${ROOT}/.env"; then
-      sed -i 's|^ZALO_PLUGIN_URL=.*|ZALO_PLUGIN_URL=http://zalo-proxy:8787|' "${ROOT}/.env"
+      sed -i "s|^ZALO_PLUGIN_URL=.*|ZALO_PLUGIN_URL=${bridge}|" "${ROOT}/.env"
     else
-      echo 'ZALO_PLUGIN_URL=http://zalo-proxy:8787' >> "${ROOT}/.env"
+      echo "ZALO_PLUGIN_URL=${bridge}" >> "${ROOT}/.env"
     fi
   fi
 }

@@ -28,7 +28,7 @@ from secret_probe import is_blocked as _secret_blocked
 from classify_client import classify_text
 
 # ── constants (env-overridable) ─────────────────────────────────────────────
-VALKEY_URL = os.environ.get("VALKEY_URL") or os.environ.get("REDIS_URL", "valkey://redis:6379/0")
+VALKEY_URL = os.environ.get("VALKEY_URL") or os.environ.get("REDIS_URL", "redis://valkey:6379/0")
 UPSTREAM_URL = os.environ.get(
     "GATEWAY_UPSTREAM_URL", "http://traefik:80"
 ).rstrip("/")
@@ -41,7 +41,7 @@ RATE_KEY_PREFIX = os.environ.get("GATEWAY_RATE_KEY_PREFIX", "rate:gw")
 SKIP_RL_PATH_PREFIXES = tuple(
     p.strip()
     for p in os.environ.get(
-        "GATEWAY_SKIP_RL_PATHS", "/coding,/v1/coding,/skills/coding"
+        "GATEWAY_SKIP_RL_PATHS", "/coding,/v1/coding,/skills/coding,/schedule,/v1/schedule,/skills/schedule,/v1/schedules"
     ).split(",")
     if p.strip()
 )
@@ -112,6 +112,7 @@ def _load_messages() -> dict:
             "body_too_large": "Request body too large.",
             "health_ok": "ok",
             "secret_blocked": "Cannot provide secrets or confidential documents.",
+            "classify_failed": "Could not classify this request. Please send it again.",
         }
 
 
@@ -405,6 +406,27 @@ async def proxy(full_path: str, request: Request) -> Response:
     if HERMES_WORKFLOW_ENABLED and isinstance(payload, dict) and text:
         model = str(payload.get("model") or "hermes-workflow")
         plan = classify_text(text, timezone=os.environ.get("TZ") or "Asia/Ho_Chi_Minh")
+        if plan.get("ok") is False:
+            content = MESSAGES.get(
+                "classify_failed",
+                "Could not classify this request. Please send it again.",
+            )
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "id": "classify-failed",
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": str(payload.get("model") or "hermes-workflow"),
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": content},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                },
+            )
         context = {
             "execute": "hermes_http",
             "model": model,
@@ -441,8 +463,9 @@ async def proxy(full_path: str, request: Request) -> Response:
                     "instructions": instructions,
                     "origin": {"platform": "hermes-api", "path": path},
                     "context": context,
-                    "sequential": True,
+                    "sequential": False,
                     "wrap": True,
+                    "task_details": plan.get("task_details") if isinstance(plan.get("task_details"), list) else [],
                 },
             )
             workflow = data.get("workflow") if isinstance(data, dict) else None

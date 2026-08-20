@@ -404,7 +404,7 @@ Every capability must include at least one **fail event**, not only success.
 When re-testing a live High/Zalo lab:
 
 1. **Pass 1 — source allowed.** Sync tree, destroy leftovers, `bash run.sh up` (High + Zalo + edge). If deploy hits a **source** defect, fix the repo, changelog, rebuild, rerun the failed step. Then run cases 08–11 and fail-events.
-2. **Pass 2 — script only.** No source edits. Follow README **Quick start** on the already-synced tree: `bash run.sh down` then `bash run.sh up`, `bash run.sh first-setup-llm`, `bash run.sh ps`. Re-probe health (Traefik **`/health`**, not `/`), Zalo SSE, isolation risks (`security_risks.py`), a **smaller** mixed media burst (e.g. N≤4 via `ZALO_MEDIA_MAX=4`), and profile-switch **dry-run** (`switch-profile --dry-run` / `profile`).
+2. **Pass 2 — script only.** No source edits. Follow README **Quick start** on the already-synced tree: `bash run.sh down` then `bash run.sh up`, `bash run.sh first-setup-llm`, `bash run.sh ps`. Re-probe health (Traefik **`/health`**, not `/`), Zalo SSE, isolation risks (`security_risks.py`), a **smaller** mixed media burst (e.g. N≤4 via `ZALO_MEDIA_MAX=4`), and worker **dry-run** (`add-components WORKER_NOTIFY=active --dry-run` / `workers`).
 3. Leave High running. Do not put hostnames, IPs, or account names in reports.
 4. After the run, add any new cases to this file (this section and the case index under `test/cases/`).
 5. Record summary in `test/reports/run-NN-two-pass/SUMMARY.md` with an **HTML** profile×mode table (see §11).
@@ -427,7 +427,7 @@ When re-testing a live High/Zalo lab:
 | Zalo concurrent text | `cases/08-zalo-concurrent.md` |
 | Zalo concurrent text + media gen + delay | `cases/09-zalo-concurrent-media.md` |
 | Isolation risks (sock, judge, VPN-only) | `cases/10-security-isolation-risks.md` |
-| Profile upgrade/downgrade + add/remove options | `cases/11-profile-switch.md` |
+| Worker add/remove | `cases/11-worker-switch.md` |
 | Skills mount + auto-learn (Medium+) | `cases/12-skills-auto-learn.md` |
 | Exact text poster (text-poster backend) | `cases/13-image-text-poster.md` |
 | Internal docs knowledge-first | `cases/14-knowledge-internal-rag.md` |

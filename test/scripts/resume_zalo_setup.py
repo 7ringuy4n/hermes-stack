@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Sync source and finish Zalo setup after partial deploy_high (no destroy)."""
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import connect, sudo_bash, sync_tree  # noqa: E402
+from deploy_stack import connect, sudo_bash, sync_tree  # noqa: E402
 
 PW = os.environ["ASSISTANT_SSH_PASSWORD"]
 esc = PW.replace("'", "'\\''")
@@ -75,3 +75,4 @@ echo RESUME_DONE
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

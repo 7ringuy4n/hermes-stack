@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Load non-secret defaults from docs/config/DEFAULTS.md, then .env, then profile.
+# Load non-secret defaults from docs/config/DEFAULTS.md, then .env, then workers.
 set -euo pipefail
 
 _assistant_defaults_md() {

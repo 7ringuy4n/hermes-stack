@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Grafana integration lab (SSH). Skip when ENABLE_GRAFANA=0.
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import connect, sudo_bash  # noqa: E402
+from deploy_stack import connect, sudo_bash  # noqa: E402
 from sanitize import sanitize
 
 if hasattr(sys.stdout, "buffer"):
@@ -161,3 +161,4 @@ echo GRAFANA_LAB_DONE
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

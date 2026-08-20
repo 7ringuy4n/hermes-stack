@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Sync SOUL.md + answering skill to VPS and restart Hermes."""
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import ROOT, connect, sftp_put, sudo_bash, _file_bytes  # noqa: E402
+from deploy_stack import ROOT, connect, sftp_put, sudo_bash, _file_bytes  # noqa: E402
 
 
 def main() -> int:
@@ -49,3 +49,4 @@ echo SOUL_SYNC_DONE
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

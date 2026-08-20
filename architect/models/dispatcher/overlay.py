@@ -158,3 +158,7 @@ def apply_overlay(path: Path, lines: Sequence[str]) -> None:
         out.save(path, quality=90)
     else:
         out.save(path)
+    try:
+        path.chmod(0o664)
+    except OSError:
+        pass

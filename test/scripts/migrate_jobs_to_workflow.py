@@ -10,7 +10,9 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 BASE = "http://127.0.0.1:8108"
 JOBS = Path("/data/assistant/cron/jobs.json")
@@ -28,15 +30,37 @@ def _req(method: str, path: str, payload=None) -> dict:
         method=method,
         headers={"Content-Type": "application/json"} if data else {},
     )
-    with urllib.request.urlopen(r, timeout=8) as resp:
-        return json.loads(resp.read().decode("utf-8") or "{}")
+    try:
+        with urllib.request.urlopen(r, timeout=20) as resp:
+            return json.loads(resp.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")[:500]
+        return {"ok": False, "error": body or str(e.code)}
 
 
 def _expr(job: dict) -> str:
     sch = job.get("schedule")
     if isinstance(sch, dict):
-        return str(sch.get("expr") or "")
+        expr = str(sch.get("expr") or "")
+        if expr:
+            return expr
+        run_at = str(sch.get("run_at") or "").strip()
+        if run_at:
+            try:
+                dt = datetime.fromisoformat(run_at.replace("Z", "+00:00"))
+            except ValueError:
+                return ""
+            return f"{dt.minute} {dt.hour} * * *"
     return str(job.get("schedule_display") or job.get("cron") or "")
+
+
+def _once_next_run(job: dict) -> str:
+    sch = job.get("schedule")
+    if not isinstance(sch, dict):
+        return ""
+    if str(sch.get("kind") or "").lower() != "once":
+        return ""
+    return str(sch.get("run_at") or "").strip()
 
 
 def main() -> int:
@@ -74,6 +98,14 @@ def main() -> int:
             continue
         origin = job.get("origin") if isinstance(job.get("origin"), dict) else {}
         tid = str(origin.get("thread_id") or origin.get("chat_id") or "")
+        once_at = _once_next_run(job)
+        if once_at:
+            # Never replay leftover once jobs into the live ticker.
+            job["no_agent"] = True
+            n += 1
+            continue
+        if "::job::" in tid:
+            continue
         body = {
             "id": jid,
             "name": name or jid,
@@ -91,14 +123,17 @@ def main() -> int:
             },
             "enabled": True,
         }
+        if once_at:
+            body["cadence"] = "once"
+            body["next_run_at"] = once_at
         try:
             out = _req("POST", "/v1/schedules", body)
         except (urllib.error.URLError, TimeoutError):
             print("FAIL upsert")
             return 1
         if not out.get("ok"):
-            print("FAIL upsert")
-            return 1
+            print("FAIL upsert", jid[:12], (out.get("error") or out)[:200])
+            continue
         job["no_agent"] = True
         n += 1
     JOBS.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

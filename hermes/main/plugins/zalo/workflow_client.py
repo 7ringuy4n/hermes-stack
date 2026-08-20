@@ -42,6 +42,7 @@ def create_workflow(
     instructions: list[str],
     origin: dict[str, Any],
     context: dict[str, Any],
+    task_details: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return _req(
         "POST",
@@ -52,6 +53,7 @@ def create_workflow(
             "context": context,
             "sequential": False,
             "wrap": True,
+            "task_details": task_details or [],
         },
     )
 
