@@ -357,7 +357,8 @@ services:
       - HERMES_DISABLE_LAZY_INSTALLS=0
       - HERMES_LAZY_INSTALL_TARGET=/opt/data/lazy-packages
       - PYTHONPATH=/opt/data/lazy-packages
-      - OPENAI_API_KEY=${N9ROUTER_API_KEY:-}
+      # OmniRouter is default; 9Router optional. Empty key breaks Hermes→model-router auth on some paths.
+      - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
       # v0.5.0: prefer model-router; set HERMES_OPENAI_BASE_URL to override (e.g. dispatcher)
       - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://model-router:8096/v1}
       - DISPATCHER_URL=http://dispatcher:8090
