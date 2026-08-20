@@ -19,6 +19,28 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-20 15:45 +07 — Classify dead-end + schedule by group name
+
+### Symptom
+
+First Zalo message returned “Could not classify this request. Please send it again.”; later messages had no reply. Operator wanted schedules that deliver to a named Zalo group.
+
+### Root cause
+
+1. `model-router` `/v1/classify` returned `ok:false` (`classify_llm_failed`) while chat completions still worked — Zalo adapter **consumed** the turn with an error instead of falling through to Hermes.
+2. Channel registry was never populated (`NO_CHANNELS_DIR`), so there was no durable id↔name map for “gửi vào nhóm X”.
+3. Schedule `origin` always used the **current** thread, so DM-created schedules could not retarget a group.
+
+### Fix
+
+- Adapter: classify failure → fall through to Hermes (fail-open).
+- Persist Zalo users/groups in `channels/registry.json` (inbound upsert, allowlist/admin sync, bridge contacts via `!zalo refresh`).
+- On schedule create, resolve `target_channel` / “nhóm …” and rewrite `origin.thread_id` to the group id (requester stays `user_id`).
+
+### Prevent recurrence
+
+Keep Hermes API key + Omni/fallback healthy for classify, but never block interactive chat on classify failure. Seed group names with `!zalo allow` / `!zalo label` / `!zalo refresh` before scheduling by name.
+
 ## 2026-08-20 15:25 +07 — Zalo connected but no bot replies (claim + normal chat)
 
 ### Symptom
