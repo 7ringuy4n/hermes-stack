@@ -403,7 +403,7 @@ systemctl list-timers 'assistant-*' --all --no-pager 2>/dev/null | head -20 || t
 
 echo "=== CHECK HIGH ==="
 set +e
-bash run.sh check-high
+bash run.sh check-security
 check_rc=$?
 set -e
 docker ps --format '{{{{.Names}}}} {{{{.Status}}}}' | sort
