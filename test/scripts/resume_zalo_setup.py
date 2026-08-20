@@ -34,7 +34,7 @@ sudo -u {USER} -H env \\
   ENABLE_ZALO=1 \\
   bash /opt/assistant/scripts/main/setup-zalo.sh
 echo "=== CHECK HIGH ==="
-bash run.sh check-high
+bash run.sh check-security
 echo "=== ROUTER ==="
 set +e
 set -a; . ./.env; set +a

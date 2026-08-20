@@ -19,6 +19,24 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-20 20:20 +07 — Legacy check-medium/high wrappers and High deploy PS1
+
+### Symptom
+
+`scripts/main/check-medium.sh` and `check-high.sh` still existed after workers renamed smokes to `check-media` / `check-security`. `Deploy-High.ps1` / `Deploy-V050-Test.ps1` referenced Python entrypoints that are not in `scripts/main`.
+
+### Root cause
+
+Compatibility aliases left after the medium/high → media/security rename; PowerShell deploy wrappers never moved with the Python helpers into `scripts/temp/`.
+
+### Fix
+
+Delete the wrappers and broken PS1 entrypoints. Keep only `check-media.sh` / `check-security.sh` and `run.sh` worker command names.
+
+### Prevent recurrence
+
+Do not add profile-tier smoke aliases. New smoke scripts must use worker names (`media`, `security`, …).
+
 ## 2026-08-20 20:10 +07 — Learn pending silent; schedule inject 404; legacy medium/high compose
 
 ### Symptom

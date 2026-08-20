@@ -198,7 +198,7 @@ Admin (exactly one user): after login, DM the bot `!zalo claim`, then
 |-----|----------|
 | [docs/README.md](./docs/README.md) | Full doc index |
 | [docs/HARDWARE.md](./docs/HARDWARE.md) | Tested lab + extra RAM/disk/CPU when Grafana/Prometheus/Loki/OmniRouter are on |
-| [docs/00-profiles.md](./docs/00-profiles.md) | Low / Medium / High + Traefik modes |
+| [docs/00-workers.md](./docs/00-workers.md) | Workers + Traefik modes |
 | [docs/02-commands.md](./docs/02-commands.md) | `run.sh` commands |
 | [docs/03-architecture.md](./docs/03-architecture.md) | System architecture (HTML panels) |
 | [docs/04-component-flows.md](./docs/04-component-flows.md) | Per-component flows |
