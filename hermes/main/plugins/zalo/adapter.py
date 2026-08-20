@@ -1011,7 +1011,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 await self.send(
                     chat_id=str(sender_id),
                     content=reply or "(empty)",
-                    metadata={"thread_type": "user"},
+                    metadata={"thread_type": "user", "zalo_admin_reply": True},
                 )
                 logger.info("Zalo admin: DM → %s (%s)", sender_id, raw.split()[:3])
             except Exception as e:
@@ -1021,13 +1021,16 @@ class ZaloAdapter(BasePlatformAdapter):
                     await self.send(
                         chat_id=str(thread_id),
                         content=group_ack,
-                        metadata={"thread_type": "group"},
+                        metadata={"thread_type": "group", "zalo_admin_reply": True},
                     )
                 except Exception as e:
                     logger.warning("Zalo admin group_ack failed: %s", type(e).__name__)
         elif reply:
             try:
-                meta = {"thread_type": "group" if thread_type == "group" else "user"}
+                meta = {
+                    "thread_type": "group" if thread_type == "group" else "user",
+                    "zalo_admin_reply": True,
+                }
                 await self.send(chat_id=str(thread_id), content=reply, metadata=meta)
             except Exception as e:
                 logger.warning("Zalo admin reply failed: %s", type(e).__name__)
@@ -4285,13 +4288,17 @@ class ZaloAdapter(BasePlatformAdapter):
         _trim = getattr(self, "_as_knowledge_trim", None)
         if callable(_trim):
             content = _trim(content)  # ASSISTANT_KNOWLEDGE_CITE_v7
-        notice = self._rewrite_gateway_user_notice(content)  # ASSISTANT_QUIET_SEND_v6
-        if notice is not None:
-            if notice == "":
-                logger.info("Zalo: drop approval/resume chatter")
-                return SendResult(success=True, message_id=None)
-            content = notice
-        if self._is_gateway_noise(content):  # ASSISTANT_QUIET_SEND_v6
+        skip_noise = isinstance(metadata, dict) and (
+            metadata.get("zalo_admin_reply") or metadata.get("skip_outbound_filter")
+        )
+        if not skip_noise:
+            notice = self._rewrite_gateway_user_notice(content)  # ASSISTANT_QUIET_SEND_v6
+            if notice is not None:
+                if notice == "":
+                    logger.info("Zalo: drop approval/resume chatter")
+                    return SendResult(success=True, message_id=None)
+                content = notice
+        if not skip_noise and self._is_gateway_noise(content):  # ASSISTANT_QUIET_SEND_v6
             logger.info("Zalo: drop gateway noise: %s", (content or "")[:100].replace("\n", " "))
             return SendResult(success=True, message_id=None)
         if self._as_is_media_ack_only(content):
@@ -4304,7 +4311,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 return SendResult(success=True, message_id=None)
         content = self._apply_timing_footer(content, chat_id, metadata)  # ASSISTANT_TIMING_FOOTER_v6
         # Re-check after autosend caption swap
-        if self._is_gateway_noise(content):
+        if not skip_noise and self._is_gateway_noise(content):
             return SendResult(success=True, message_id=None)
         if not (content or "").strip():
             return SendResult(success=True, message_id=None)
