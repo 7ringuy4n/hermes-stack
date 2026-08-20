@@ -59,12 +59,25 @@ assistant_backup_fail() {
 }
 
 assistant_container() {
-  local want="$1" name
-  # Exact name first (postgres, redis, …); then Compose scale aliases (assistant-hermes-1).
+  local want="$1" name alt
+  case "$want" in
+    redis)
+      want="valkey"
+      alt="redis"
+      ;;
+  esac
+  # Exact name first (postgres, valkey, …); then Compose scale aliases (assistant-hermes-1).
   name="$(docker ps --format '{{.Names}}' 2>/dev/null | awk -v w="$want" '$0==w {print; exit}')"
   if [[ -n "$name" ]]; then
     echo "$name"
     return 0
+  fi
+  if [[ -n "${alt:-}" ]]; then
+    name="$(docker ps --format '{{.Names}}' 2>/dev/null | awk -v w="$alt" '$0==w {print; exit}')"
+    if [[ -n "$name" ]]; then
+      echo "$name"
+      return 0
+    fi
   fi
   if [[ "$want" == "hermes" ]]; then
     docker ps --format '{{.Names}}' 2>/dev/null | awk '/hermes/ {print; exit}'
@@ -350,7 +363,7 @@ PY
 assistant_backup_valkey() {
   local dir="$1" c
   c="$(assistant_container redis)"
-  [[ -n "$c" ]] || { assistant_backup_fail "valkey redis not running"; return 1; }
+  [[ -n "$c" ]] || { assistant_backup_fail "valkey not running"; return 1; }
   $SUDO mkdir -p "${dir}/valkey"
   docker exec "$c" valkey-cli SAVE || docker exec "$c" redis-cli SAVE
   docker cp "${c}:/data/dump.rdb" "${dir}/valkey/dump.rdb"

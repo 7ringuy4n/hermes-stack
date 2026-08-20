@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Rolling VPS deploy: backup+verify, sync source, rebuild workflow + gateway + zalo-api, restart Hermes.
 
 Does not destroy the stack. Does not run login-zalo / QR.
@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_high import connect, sudo_bash, sync_tree  # noqa: E402
+from deploy_stack import connect, sudo_bash, sync_tree  # noqa: E402
 from sanitize import sanitize as _sanitize  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
@@ -126,7 +126,7 @@ echo BACKUP_VERIFY_OK
                 timeout=900,
             )
         if "BACKUP_VERIFY_OK" not in bak:
-            note("backup", "fail", "verify did not succeed — abort deploy")
+            note("backup", "fail", "verify did not succeed â€” abort deploy")
             write_report()
             return 1
         note("backup", "pass", "BACKUP_VERIFY_OK")
@@ -143,14 +143,65 @@ set -euo pipefail
 export LC_ALL=C.UTF-8
 cd /opt/assistant
 set -a; . ./.env; set +a
+python3 - <<'PY'
+from pathlib import Path
+p = Path("/opt/assistant/.env")
+lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+want = {
+    "ENABLE_OMNIROUTER": "1",
+    "ENABLE_SCHEDULE": "1",
+    "SCHEDULE_WORKER": "1",
+    "SCHEDULE_URL": "http://schedule-worker:8110",
+}
+cur = {}
+for line in lines:
+    if "=" in line and not line.strip().startswith("#"):
+        k, v = line.split("=", 1)
+        cur[k.strip()] = v.strip().strip('"').strip("'")
+if cur.get("ENABLE_ZALO") == "1":
+    want["ENABLE_MESSAGE"] = "1"
+if cur.get("ENABLE_OCR") == "1" or cur.get("ENABLE_JOBS") == "1" or cur.get("ENABLE_MEDIA_FILE") == "1":
+    want["ENABLE_MEDIA_FILE"] = "1"
+if cur.get("ENABLE_SEARXNG") == "1" and not cur.get("WEB_BACKENDS"):
+    want["WEB_BACKENDS"] = "tavily,firecrawl,searxng"
+keys = set(want)
+out, seen = [], set()
+changed = False
+for line in lines:
+    k = line.split("=", 1)[0] if "=" in line else ""
+    if k in want:
+        seen.add(k)
+        if line.split("=", 1)[1].strip().strip('"').strip("'") != want[k]:
+            out.append(f"{k}={want[k]}")
+            changed = True
+            print(f"UPSERT_{k}")
+        else:
+            out.append(line)
+            print(f"KEEP_{k}")
+    else:
+        out.append(line)
+for k, v in want.items():
+    if k not in seen:
+        out.append(f"{k}={v}")
+        changed = True
+        print(f"ADD_{k}")
+if changed:
+    p.write_text("\n".join(out) + "\n", encoding="utf-8")
+    print("ENV_WRITTEN")
+PY
+set -a; . ./.env; set +a
 export COMPOSE_PROGRESS=plain
 chmod +x /opt/assistant/scripts/main/stack-watch.sh || true
 sed -i 's/\r$//' /opt/assistant/scripts/main/stack-watch.sh /opt/assistant/run.sh || true
 
-# Keep edge/hostports: use run.sh compose via targeted recreate
+# Component overlays â€” not ASSISTANT_PROFILE
 files="-f /opt/assistant/docker/docker-compose.yml"
-[[ "${ASSISTANT_PROFILE}" == "medium" || "${ASSISTANT_PROFILE}" == "high" ]] && files="$files -f /opt/assistant/docker/docker-compose.medium.yml"
-[[ "${ASSISTANT_PROFILE}" == "high" ]] && files="$files -f /opt/assistant/docker/docker-compose.high.yml"
+if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-0}" == "1" ]]; then
+  files="$files -f /opt/assistant/docker/docker-compose.media.yml"
+fi
+if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
+  files="$files -f /opt/assistant/docker/docker-compose.security.yml"
+fi
 [[ "${ENABLE_TRAEFIK:-0}" == "1" || "${ENABLE_API_GATEWAY:-0}" == "1" ]] && files="$files -f /opt/assistant/docker/docker-compose.edge.yml"
 [[ "${HERMES_REPLICAS:-1}" == "1" ]] && files="$files -f /opt/assistant/docker/docker-compose.hermes-hostports.yml"
 
@@ -165,10 +216,22 @@ profiles=""
 [[ "${ENABLE_PROMETHEUS:-0}" == "1" ]] && profiles="$profiles --profile prometheus"
 [[ "${ENABLE_LOKI:-0}" == "1" ]] && profiles="$profiles --profile loki"
 [[ "${ENABLE_ALLOY:-0}" == "1" ]] && profiles="$profiles --profile alloy"
+[[ "${ENABLE_SCHEDULE:-0}" == "1" ]] && profiles="$profiles --profile schedule"
+[[ "${ENABLE_MEDIA_FILE:-0}" == "1" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]] && profiles="$profiles --profile media"
+[[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles="$profiles --profile clouddrive"
+[[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles="$profiles --profile comfy-gpu"
 
-docker compose --project-directory /opt/assistant $files $profiles build workflow model-router
+docker compose --project-directory /opt/assistant $files $profiles build workflow router-worker
+docker rm -f model-router >/dev/null 2>&1 || true
 docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate workflow
-docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate model-router
+docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate router-worker
+if [[ "${ENABLE_SCHEDULE:-0}" == "1" ]]; then
+  docker compose --project-directory /opt/assistant $files $profiles build schedule-worker
+  docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate schedule-worker
+fi
+if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+  docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps omni-router
+fi
 wf_ok=0
 for _ in $(seq 1 30); do
   if curl -fsS -m 3 http://127.0.0.1:8108/health >/dev/null 2>&1; then
@@ -189,6 +252,20 @@ for _ in $(seq 1 30); do
 done
 echo "model_router_health=$mr_ok"
 test "$mr_ok" = "1"
+sw_ok=0
+for _ in $(seq 1 40); do
+  if curl -fsS -m 3 http://127.0.0.1:8110/health >/dev/null 2>&1; then
+    sw_ok=1
+    break
+  fi
+  sleep 2
+done
+echo "schedule_worker_health=$sw_ok"
+if [[ "${ENABLE_SCHEDULE:-0}" == "1" ]]; then
+  test "$sw_ok" = "1"
+else
+  echo SCHEDULE_SKIPPED
+fi
 python3 /opt/assistant/test/scripts/migrate_jobs_to_workflow.py || true
 echo SKIP_WORKFLOW_VPS
 
@@ -249,7 +326,7 @@ curl -sS -m 45 -X POST http://127.0.0.1:8090/v1/image \
   -d '{"prompt":"fill in 1 line \"IMGTEST\"","filename":"imgtest-poster.png","refine":false}' \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print('poster', {k:d.get(k) for k in ('ok','backend','error','detail','file')})"
 
-# Cron file must be group-readable: zalo-api wrote 0600 as root; Hermes could not tick lịch.
+# Cron file must be group-readable: zalo-api wrote 0600 as root; Hermes could not tick lá»‹ch.
 chown 1000:1000 /data/assistant/cron /data/assistant/cron/jobs.json 2>/dev/null || true
 chmod 775 /data/assistant/cron 2>/dev/null || true
 chmod 664 /data/assistant/cron/jobs.json 2>/dev/null || true
@@ -312,8 +389,17 @@ if [[ -d /opt/assistant/hermes/main/plugins ]]; then
   done < <(find /data/assistant /opt/data -name adapter.py 2>/dev/null | grep -Ei 'zalo|zalo_platform' || true)
 fi
 
-# Hermes Zalo owner probes the host bridge at boot. Wait until it is logged in
-# so adapter creation does not fail while inject-event is being patched.
+# Patch inject-event before Hermes recreate so a plugin restart does not drop owner SSE.
+python3 /opt/assistant/scripts/main/patch_zalo_bridge_inject.py || echo INJECT_PATCH_FAIL
+for _ in $(seq 1 20); do
+  code=$(curl -sS -m 3 -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8787/inject-event -H 'Content-Type: application/json' -d '{}' || echo 000)
+  echo "inject_http=$code"
+  case "$code" in
+    200|400|401|403) echo INJECT_ROUTE_OK; break ;;
+  esac
+  sleep 1
+done
+# Hermes Zalo owner probes the host bridge at boot. Wait until it is logged in.
 for _ in $(seq 1 30); do
   if curl -fsS -m 5 http://127.0.0.1:8787/health | grep -q '"loggedIn":true'; then
     echo BRIDGE_READY_BEFORE_HERMES
@@ -333,30 +419,20 @@ for _ in $(seq 1 24); do
   fi
 done
 echo "hermes_probe_container=${hname:-none}"
-
-# Patch the host Node bridge after Hermes recreate. Restart only when newly patched
-# so an existing inject-event route is not dropped (8787 Connection refused).
-python3 /opt/assistant/scripts/main/patch_zalo_bridge_inject.py || echo INJECT_PATCH_FAIL
-for _ in $(seq 1 20); do
-  code=$(curl -sS -m 3 -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8787/inject-event -H 'Content-Type: application/json' -d '{}' || echo 000)
-  echo "inject_http=$code"
-  case "$code" in
-    200|400|401|403) echo INJECT_ROUTE_OK; break ;;
-  esac
-  sleep 1
-done
-for _ in $(seq 1 30); do
-  if curl -fsS -m 5 http://127.0.0.1:8787/health | grep -q '"loggedIn":true'; then
-    echo BRIDGE_LOGGED_IN
+owner=$(docker ps --filter name=hermes-1 --filter status=running --format '{{.Names}}' | head -1 || true)
+[[ -n "$owner" ]] || owner="$hname"
+for _ in $(seq 1 24); do
+  if [[ -n "$owner" ]] && docker logs --since 4m "$owner" 2>&1 | grep -q 'Zalo: connected to bridge'; then
+    echo ZALO_SSE_CONNECTED
     break
   fi
-  sleep 2
+  sleep 5
 done
 
 echo "=== POST HEALTH ==="
 ok=1
 n9c=$(curl -sS -m 8 -o /dev/null -w '%{http_code}' http://127.0.0.1:20128/ || echo 000)
-# 9router UI: / is 307, /health is 404, /v1/models is 401 — any of these means the process is up
+# 9router UI: / is 307, /health is 404, /v1/models is 401 â€” any of these means the process is up
 case "$n9c" in
   200|307|401|404) echo "9router_http=$n9c" ;;
   *) echo 9ROUTER_DOWN; ok=0 ;;
@@ -375,6 +451,7 @@ if [[ "$tr_ok" != "1" ]]; then
   ok=0
 fi
 curl -fsS -m 8 http://127.0.0.1:8108/health >/dev/null || { echo WORKFLOW_DOWN; ok=0; }
+curl -fsS -m 8 http://127.0.0.1:8110/health >/dev/null || { echo SCHEDULE_WORKER_DOWN; ok=0; }
 if [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]]; then
   curl -fsS -m 8 http://127.0.0.1:8088/health >/dev/null || { echo GATEWAY_DOWN; ok=0; }
 fi
@@ -399,12 +476,22 @@ if [[ -n "$hname" ]]; then
 else
   echo fail; ok=0
 fi
+echo -n "hermes_to_schedule_worker="
+if [[ "${ENABLE_SCHEDULE:-0}" != "1" ]]; then
+  echo skipped
+elif [[ -n "$hname" ]]; then
+  docker exec "$hname" python3 -c "import urllib.request; urllib.request.urlopen('http://schedule-worker:8110/health', timeout=5); print('ok')" 2>/dev/null || { echo fail; ok=0; }
+else
+  echo fail; ok=0
+fi
 docker ps --filter name=hermes --format '{{.Names}} {{.Status}}'
 docker ps --filter name=workflow --format '{{.Names}} {{.Status}}'
 test -f /opt/assistant/hermes/main/plugins/zalo/multi_request.py && echo files_multi=ok || echo files_multi=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/inbound_queue.py && echo files_queue=ok || echo files_queue=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/autosend.py && echo files_autosend=ok || echo files_autosend=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/workflow_client.py && echo files_workflow=ok || echo files_workflow=missing
+test -f /opt/assistant/hermes/main/plugins/zalo/schedule_client.py && echo files_schedule_client=ok || { echo files_schedule_client=missing; ok=0; }
+test -f /opt/assistant/architect/schedule-worker/main.go && echo files_schedule_worker=ok || { echo files_schedule_worker=missing; ok=0; }
 test -f /opt/assistant/hermes/main/plugins/zalo/turn_wait.py && echo files_turn_wait=ok || echo files_turn_wait=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/knowledge_cite.py && echo files_knowledge_cite=ok || { echo files_knowledge_cite=missing; ok=0; }
 if grep -q 'not a knowledge-base lookup' /opt/assistant/architect/models/model-router/config/classify.json && grep -q 'task_hint=knowledge' /opt/assistant/architect/models/model-router/config/classify.json; then
@@ -418,6 +505,12 @@ if grep -q 'execution_class' /opt/assistant/architect/models/model-router/config
 else
   echo files_fast_dispatcher=missing
   ok=0
+fi
+if grep -q 'max_tokens' /opt/assistant/architect/models/model-router/config/classify.json; then
+  echo files_classify_no_max_tokens=fail
+  ok=0
+else
+  echo files_classify_no_max_tokens=ok
 fi
 test -f /opt/assistant/hermes/main/plugins/zalo/classify_client.py && echo files_classify_client=ok || { echo files_classify_client=missing; ok=0; }
 test -f /opt/assistant/hermes/main/plugins/zalo/gateway_noise.py && echo files_gateway_noise=ok || { echo files_gateway_noise=missing; ok=0; }
@@ -484,7 +577,7 @@ PY
 echo "HERMES_9ROUTER_OK=$ok"
 echo APPLY_DONE
 """,
-            timeout=900,
+            timeout=1800,
         )
         if "APPLY_DONE" not in apply:
             note("apply", "fail", "missing APPLY_DONE")
@@ -497,7 +590,7 @@ echo APPLY_DONE
         if "PASS workflow vps" in apply:
             note("workflow_vps", "pass", "health + 3-job drain + plan")
         if "PASS migrate" in apply:
-            note("migrate_schedules", "pass", "jobs.json → workflow")
+            note("migrate_schedules", "pass", "jobs.json â†’ workflow")
         if "WORKFLOW_DOWN" in apply:
             note("workflow_health", "fail", "8108 down after apply")
         note("apply", "pass", "APPLY_DONE")
@@ -548,3 +641,4 @@ PY
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

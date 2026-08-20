@@ -21,6 +21,11 @@
       "en": "Schedule saved!",
       "vi": "Đã lưu lịch!"
     },
+    "failed": {
+      "default": "en",
+      "en": "Could not save this schedule. Please send it again.",
+      "vi": "Không lưu được lịch. Bạn gửi lại giúp mình."
+    },
     "job_failed": {
       "default": "en",
       "en": "Scheduled job failed. Please try again later.",
@@ -32,6 +37,13 @@
       "default": "en",
       "en": "This session was interrupted. Please try again later.",
       "vi": "Phiên làm việc bị gián đoạn, vui lòng thử lại sau."
+    }
+  },
+  "classify": {
+    "failed": {
+      "default": "en",
+      "en": "Could not classify this request. Please send it again.",
+      "vi": "Chưa nhận diện được yêu cầu. Bạn gửi lại giúp mình."
     }
   },
   "async": {
@@ -47,5 +59,6 @@
     "Session auto-reset",
     "compression attempt",
     "vars() argument must have __dict__"
-  ]
+  ],
+  "outbound_note": "Agent status frames (Working / iteration N/M / model provider failed) are dropped by structural rules in gateway_noise.py plus LLM /v1/outbound. Do not grow this list for every new phrase — improve quiet-delivery skill and outbound.json instead."
 }

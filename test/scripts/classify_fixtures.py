@@ -113,6 +113,32 @@ _ONCE_NOCITE = [
     "Tóm tắt ngắn gọn giá xăng E5 RON92 và E10 RON95 mới nhất không trích dẫn nguồn",
     "Tóm tắt ngắn gọn thông tin tình hình thời tiết Hồ Chí Minh hiện tại",
 ]
+FIXTURE_ONCE_FOUR = (
+    "đặt lịch chạy một lần lúc 20:35\n"
+    "1. Gửi tin nhắn chào\n"
+    "2. Tìm và tóm tắt giá xăng E5 RON92 và E10 RON95 mới nhất\n"
+    "3. Tìm và tóm tắt thời tiết TP.HCM hiện tại\n"
+    "4. Vẽ tranh TP.HCM phản ánh đúng thời tiết lúc đó và gửi ảnh"
+)
+_ONCE_FOUR = [
+    "Gửi tin nhắn chào",
+    "Tìm và tóm tắt giá xăng E5 RON92 và E10 RON95 mới nhất",
+    "Tìm và tóm tắt thời tiết TP.HCM hiện tại",
+    "Vẽ tranh TP.HCM phản ánh đúng thời tiết lúc đó và gửi ảnh",
+]
+FIXTURE_ONCE_2113 = (
+    "đặt lịch chạy một lần lúc 21:13\n"
+    "1. Gửi một tin nhắn chào đến mọi người.\n"
+    "2. Tóm tắt ngắn gọn giá xăng E5 RON92 và E10 RON95 mới nhất\n"
+    "3. Tóm tắt ngắn gọn thông tin tình hình thời tiết hiện tại\n"
+    "4. Vẽ hình Thành phố Hồ Chí Minh dựa trên tình hình thời tiết thực tế hiện tại"
+)
+_ONCE_2113 = [
+    "Gửi một tin nhắn chào đến mọi người.",
+    "Tóm tắt ngắn gọn giá xăng E5 RON92 và E10 RON95 mới nhất",
+    "Tóm tắt ngắn gọn thông tin tình hình thời tiết hiện tại",
+    "Vẽ hình Thành phố Hồ Chí Minh dựa trên tình hình thời tiết thực tế hiện tại",
+]
 
 _PLANS = {
     "Thực hiện: 1. Tìm giá USD hiện tại 2. Vẽ hình HCM 3. Cập nhật giá xăng": {
@@ -146,6 +172,24 @@ _PLANS = {
         "instructions": _ONCE_NOCITE,
         "cadence": "once",
         "cron_expr": "24 11 * * *",
+    },
+    FIXTURE_ONCE_FOUR: {
+        "task_hint": "schedule",
+        "instructions": _ONCE_FOUR,
+        "cadence": "once",
+        "cron_expr": "35 20 * * *",
+    },
+    FIXTURE_ONCE_2113: {
+        "task_hint": "schedule",
+        "instructions": _ONCE_2113,
+        "cadence": "once",
+        "cron_expr": "13 21 * * *",
+        "task_details": [
+            {"execution_class": "interactive", "task_type": "chat", "depends_on": []},
+            {"execution_class": "async", "task_type": "search", "depends_on": []},
+            {"execution_class": "async", "task_type": "search", "depends_on": []},
+            {"execution_class": "async", "task_type": "media_generation", "depends_on": [2]},
+        ],
     },
     "Hello": {
         "task_hint": "normal",
