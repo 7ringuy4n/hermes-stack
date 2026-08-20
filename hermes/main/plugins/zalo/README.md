@@ -30,7 +30,7 @@ This tree **reuses** that work (via assistant) and **optimizes** it for assistan
 
 ## Attach order
 
-1. Worker stack healthy (\ash run.sh check-media\ / \check-security\)
+1. Worker stack healthy (`bash run.sh check-media` / `check-security`)
 2. `ENABLE_ZALO=1 bash scripts/main/setup-zalo.sh` — install only (no QR)
 3. **You:** `bash scripts/main/login-zalo.sh` — QR / re-login
 
