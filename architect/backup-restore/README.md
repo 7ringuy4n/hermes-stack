@@ -5,7 +5,7 @@
 | | |
 |--|--|
 | **Sits between** | Operator / timers ↔ Must stores + Hermes data |
-| **Owns** | Stamp backup/restore/verify, `profile.sh` defaults, post-restore heals |
+| **Owns** | Stamp backup/restore/verify, worker/default expansion, post-restore heals |
 | **Does not own** | Live app services (compose brings them back after restore) |
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -20,18 +20,19 @@
 
 ## Purpose
 
-Disaster recovery and profile helpers: stamp backups of Must stores, restore, verify, and expand `ASSISTANT_PROFILE` into optional flags. Local stamps always; High may sync to CloudDrive.
+Disaster recovery and runtime helpers: stamp backups of Must stores, restore, verify, and expand worker / component defaults from `.env`. Local stamps always; optional CloudDrive sync stays opt-in.
 
-## Profile
+## Scope
 
-Must (all profiles).
+Must layer for every install.
 
 ## What lives here
 
 | Path | Function |
 |------|----------|
 | `ops.sh` | `backup` / `restore` / `verify` entry |
-| `lib/profile.sh` | `ASSISTANT_PROFILE` → optional `ENABLE_*` |
+| `lib/profile.sh` | Compatibility shim to `workers.sh` |
+| `lib/workers.sh` | `WORKER_*` / `ENABLE_*` → runtime flags |
 | `lib/load-defaults.sh` | Load `docs/config/DEFAULTS.md` then `.env` |
 | `lib/backup.sh` | Component backup/restore (Postgres, Qdrant, Valkey, Hermes data, …) |
 | `lib/backup_qdrant.py` | Qdrant snapshot helpers |
@@ -39,20 +40,20 @@ Must (all profiles).
 
 ## Backup locations
 
-| Profile | Where |
+| Setup | Where |
 |---------|-------|
-| Low / Medium | `/data/assistant/backups` |
-| High | Same + optional CloudDrive sync |
+| Default | `/data/assistant/backups` |
+| With CloudDrive | Same + optional CloudDrive sync |
 
 Defaults: `BACKUP_DIR=/data/assistant/backups`, `HERMES_DATA_DIR=/data/assistant` (see [docs/config/DEFAULTS.md](../../docs/config/DEFAULTS.md)). Hermes tarball excludes `./backups`, `./replicas`, `./zalo_owner` / `./zalo_owner.lock`, and (unless opted in) `./lazy-packages` / `./media`.
 
 ## Timers (target)
 
-| Job | Time | Layer | Profiles |
+| Job | Time | Layer | When |
 |-----|------|-------|----------|
-| auto-learn | 00:00 | tools/ingest | all |
-| compact | 00:00 | memory hooks | medium+ |
-| backup | 00:30 | this layer | all |
+| auto-learn | 00:00 | tools/ingest | all installs |
+| compact | 00:00 | memory hooks | when Media\|File worker is enabled |
+| backup | 00:30 | this layer | all installs |
 
 ## Operator commands
 
@@ -61,11 +62,11 @@ bash run.sh backup              # stamp → $BACKUP_DIR (default /data/assistant
 bash run.sh verify [stamp]      # manifest + live postgres/Valkey/qdrant probes
 bash run.sh restore [stamp]     # restore stores then compose up (uses HERMES_REPLICAS)
 bash run.sh migrate             # pack LATEST stamp for moving hosts
-bash run.sh switch-profile high # backup+verify current options+stores, then change tier + up
-bash run.sh add-components ENABLE_ZALO=1
+bash run.sh workers             # show current worker activation
+bash run.sh add-components WORKER_MESSAGE=active ENABLE_ZALO=1
 ```
 
-Stamps include `config/env.sealed` (full `.env`) and `config/profile-options.env` (non-secret `ENABLE_*`). Destroy, `switch-profile`, `add-components`, and `update` **backup then verify** and abort if verify fails. A tier change writes `PRE_CHANGE` in `BACKUP_DIR` for undo: `bash run.sh restore "$(cat /data/assistant/backups/PRE_CHANGE)"`.
+Stamps include `config/env.sealed` (full `.env`) and `config/profile-options.env` (non-secret runtime flags). Destroy, `add-components`, and `update` **backup then verify** and abort if verify fails. `switch-profile` is now a removed compatibility command that returns a worker hint.
 
 ### Restore behavior (important)
 
@@ -80,7 +81,7 @@ Full command index: [docs/02-commands.md](../../docs/02-commands.md).
 
 ## Tested successfully (lab)
 
-Date: **2026-08-17** · Host: Ubuntu **24.04.4 LTS** · Profile: **High** · `HERMES_REPLICAS=2` · monitor off · Zalo logged in.
+Date: **2026-08-17** · Host: Ubuntu **24.04.4 LTS** · Workers: Message active, monitor off · `HERMES_REPLICAS=2` · Zalo logged in.
 
 | Step | Result | Notes |
 |------|--------|-------|
@@ -100,5 +101,5 @@ Prior lab stamp: `20260816_195940`. Hardware: **4 vCPU / 16 GiB RAM / ~200 GB di
 ## Related
 
 - [host](../host/README.md)
-- [docs/00-profiles.md](../../docs/00-profiles.md)
+- [docs/00-workers.md](../../docs/00-workers.md)
 - [docs/HARDWARE.md](../../docs/HARDWARE.md)
