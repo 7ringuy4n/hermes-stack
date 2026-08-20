@@ -126,6 +126,9 @@ def drop_outbound(content: str) -> bool:
     t = (content or "").strip()
     if not t:
         return True
+    # Admin command help from zalo-api must never be LLM-filtered away.
+    if t.startswith("!zalo ") or "\n!zalo " in t:
+        return False
     if is_protocol_drop(t):
         return True
     got = classify_outbound(t)

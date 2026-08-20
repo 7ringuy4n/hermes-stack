@@ -17,6 +17,13 @@ def main() -> int:
     assert valid_cron("0 6 * * * extra") is None
     blocked = normalize_plan({"task_hint": "SECRET", "instructions": ["x"]}, "x", "Asia/Ho_Chi_Minh")
     assert blocked["task_hint"] == "unknown"
+    chat_alias = normalize_plan(
+        {"task_hint": "chat", "instructions": ["hi"] * 50, "process_original_message": True},
+        "hi",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert chat_alias["task_hint"] == "normal"
+    assert chat_alias["instructions"] == ["hi"]
     failed = normalize_plan({"ok": False, "error": "classify_llm_failed"}, "1. a\n2. b", "Asia/Ho_Chi_Minh")
     assert failed["ok"] is False
     assert failed["instructions"] == []

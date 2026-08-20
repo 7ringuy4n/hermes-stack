@@ -46,9 +46,35 @@ HINT_EXECUTION = {
     "unknown": ("interactive", "chat", "direct"),
     "tool": ("interactive", "tool", "direct"),
 }
+HINT_ALIASES = {"chat": "normal", "qna": "normal", "question": "normal", "general": "normal"}
+MAX_INSTRUCTIONS = 32
 CRON_CHARS = set("0123456789*,/-")
 DEFAULT_TIMEOUT_S = 70.0
 HTTP_ATTEMPTS = 1
+
+
+def sanitize_instructions(raw: Any, fallback: str) -> list[str]:
+    items: list[str] = []
+    if isinstance(raw, list):
+        for item in raw:
+            s = str(item).strip()
+            if s:
+                items.append(s)
+    if len(items) > 3 and len(set(items)) == 1:
+        items = [items[0]]
+    out: list[str] = []
+    seen: set[str] = set()
+    for s in items:
+        if s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+        if len(out) >= MAX_INSTRUCTIONS:
+            break
+    fb = (fallback or "").strip()
+    if not out and fb:
+        return [fb]
+    return out
 
 
 def set_planner(fn: Planner | None) -> None:
@@ -246,18 +272,11 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     hint = str(src.get("task_hint") or "").strip().lower()
     if hint in {"secret", "blocked", "sensitive"}:
         hint = "unknown"
+    hint = HINT_ALIASES.get(hint, hint)
     if hint not in TASK_HINTS:
         hint = "unknown"
-    instructions: list[str] = []
-    raw_inst = src.get("instructions")
-    if isinstance(raw_inst, list):
-        for item in raw_inst:
-            s = str(item).strip()
-            if s:
-                instructions.append(s)
     fallback = (text or "").strip()
-    if not instructions and fallback:
-        instructions = [fallback]
+    instructions = sanitize_instructions(src.get("instructions"), fallback)
     cadence = str(src.get("cadence") or "").strip().lower()
     if cadence not in CADENCES:
         cadence = "daily" if hint == "schedule" else "once"

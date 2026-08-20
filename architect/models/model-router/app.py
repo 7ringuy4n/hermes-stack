@@ -25,7 +25,15 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from classify import TASK_HINTS, classify_with_llm, failed_plan, outbound_with_llm  # noqa: E402
+from classify import (  # noqa: E402
+    TASK_HINTS,
+    classify_with_llm,
+    failed_plan,
+    heuristic_plan,
+    normalize_plan,
+    outbound_with_llm,
+    plan_schema_ok,
+)
 from chat_norm import normalize_chat_completion, sanitize_chat_payload
 
 ROOT = Path(__file__).resolve().parent
@@ -234,6 +242,11 @@ async def classify_endpoint(request: Request) -> dict[str, Any]:
         )
         if last.get("ok"):
             return last
+    guess = heuristic_plan(text)
+    if guess:
+        plan = normalize_plan(guess, text, timezone)
+        if plan_schema_ok(plan):
+            return plan
     return last or failed_plan(timezone, "classify_llm_failed")
 
 
