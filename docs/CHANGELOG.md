@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-20 19:00 +07 — [RELEASE] v0.5.13
+
+- Classify combo `classifier` (OpenCode Free `oc/*`); chat stays on `hermes`.
+- Classify reads provider CoT fields when `content` is empty.
+- alert-watch skips 9Router when disabled; bare Zalo images no longer force document-OCR Q&A.
+
 ## 2026-08-20 18:55 +07 — Classify reads provider CoT fields when content empty
 
 - `_message_text` checks `content`, `reasoning_content`, `reasoning`, `thinking`, `thinking_content`, `thought`, `reasoning_text`, plus any other message key containing reason/think, and `reasoning_details`.
