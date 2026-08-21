@@ -53,16 +53,12 @@ MEDIA_SNIPPET = r"""
 // ASSISTANT_MEDIA_PROXY_v1 — Hermes downloads Zalo CDN media through the
 // logged-in bridge session (cookies + user-agent). Without this, POST
 // /media/fetch 404s and images/files never reach OCR.
-const _mediaFs = require("fs");
-const _mediaPath = require("path");
-const _mediaHttps = require("https");
-const _mediaHttp = require("http");
-const _mediaCrypto = require("crypto");
-const MEDIA_CACHE_DIR = _mediaPath.join(
+// Uses top-level ESM imports (fs/path/http/https/crypto/os) — see patch imports.
+const MEDIA_CACHE_DIR = path.join(
   process.env.ZALO_MEDIA_CACHE_DIR ||
-    _mediaPath.join(require("os").homedir(), ".hermes-zalo", "media-cache")
+    path.join(os.homedir(), ".hermes-zalo", "media-cache")
 );
-try { _mediaFs.mkdirSync(MEDIA_CACHE_DIR, { recursive: true }); } catch (_) {}
+try { fs.mkdirSync(MEDIA_CACHE_DIR, { recursive: true }); } catch (_) {}
 
 function _mediaMagicOk(buf) {
   if (!buf || buf.length < 4) return false;
@@ -84,7 +80,7 @@ function _mediaSessionHeaders() {
     Accept: "*/*",
   };
   try {
-    const raw = _mediaFs.readFileSync(CREDENTIALS_PATH, "utf8");
+    const raw = fs.readFileSync(CREDENTIALS_PATH, "utf8");
     const cred = JSON.parse(raw);
     if (cred && cred.userAgent) headers["User-Agent"] = String(cred.userAgent);
     let cookie = cred && cred.cookie;
@@ -117,7 +113,7 @@ function _mediaFetchUrl(url, headers) {
       reject(e);
       return;
     }
-    const lib = parsed.protocol === "http:" ? _mediaHttp : _mediaHttps;
+    const lib = parsed.protocol === "http:" ? http : https;
     const req = lib.get(
       url,
       { headers, timeout: 120000 },
@@ -159,9 +155,9 @@ app.post("/media/fetch", async (req, res) => {
   }
   try {
     const buf = await _mediaFetchUrl(url, _mediaSessionHeaders());
-    const id = _mediaCrypto.randomBytes(16).toString("hex");
-    const dest = _mediaPath.join(MEDIA_CACHE_DIR, id);
-    _mediaFs.writeFileSync(dest, buf);
+    const id = crypto.randomBytes(16).toString("hex");
+    const dest = path.join(MEDIA_CACHE_DIR, id);
+    fs.writeFileSync(dest, buf);
     res.json({
       ok: true,
       id,
@@ -180,12 +176,19 @@ app.get("/media/:id", (req, res) => {
   if (!checkAuth(req, res)) return;
   const id = String(req.params.id || "").replace(/[^a-fA-F0-9]/g, "");
   if (!id) return res.status(400).json({ error: "id required" });
-  const dest = _mediaPath.join(MEDIA_CACHE_DIR, id);
-  if (!_mediaFs.existsSync(dest)) return res.status(404).json({ error: "not found" });
-  res.sendFile(dest);
+  const dest = path.join(MEDIA_CACHE_DIR, id);
+  if (!fs.existsSync(dest)) return res.status(404).json({ error: "not found" });
+  res.sendFile(path.resolve(dest));
 });
 
 """
+
+MEDIA_IMPORTS = (
+    ('import http from "node:http";\n', 'from "node:http"'),
+    ('import https from "node:https";\n', 'from "node:https"'),
+    ('import crypto from "node:crypto";\n', 'from "node:crypto"'),
+    ('import os from "node:os";\n', 'from "node:os"'),
+)
 
 
 def _strip_all_inject(text: str) -> str:
@@ -193,6 +196,34 @@ def _strip_all_inject(text: str) -> str:
     pattern = re.compile(
         r"\n?// assistant-stack: synthetic inbound[^\n]*\n"
         r"app\.post\(\"/inject-event\", \(req, res\) => \{.*?\n\}\);\n?",
+        re.S,
+    )
+    return pattern.sub("\n", text)
+
+
+def _ensure_media_imports(text: str) -> tuple[str, list[str]]:
+    """Add ESM imports required by the media proxy (server.js is type=module)."""
+    added: list[str] = []
+    for stmt, needle in MEDIA_IMPORTS:
+        if needle in text:
+            continue
+        lines = text.splitlines(keepends=True)
+        last_import = -1
+        for i, line in enumerate(lines):
+            if line.startswith("import "):
+                last_import = i
+        if last_import < 0:
+            continue
+        lines.insert(last_import + 1, stmt)
+        text = "".join(lines)
+        added.append(needle)
+    return text, added
+
+
+def _strip_broken_media(text: str) -> str:
+    """Remove a previous media proxy block (incl. CommonJS require form)."""
+    pattern = re.compile(
+        r"\n?// ASSISTANT_MEDIA_PROXY_v1.*?app\.get\(\"/media/:id\".*?\n\}\);\n?",
         re.S,
     )
     return pattern.sub("\n", text)
@@ -221,6 +252,14 @@ def patch_server() -> dict[str, str]:
             out["inject"] = "PATCHED"
     else:
         out["inject"] = "ALREADY"
+
+    # Replace broken CommonJS media blocks; ensure ESM imports exist.
+    if MEDIA_MARKER in text and "require(" in text[text.find(MEDIA_MARKER) : text.find(MEDIA_MARKER) + 800]:
+        text = _strip_broken_media(text)
+        out["media_strip"] = "removed_commonjs"
+    text, added_imports = _ensure_media_imports(text)
+    if added_imports:
+        out["media_imports"] = ",".join(added_imports)
 
     if MEDIA_MARKER not in text:
         needle = "_httpServer = app.listen("
@@ -267,9 +306,16 @@ def _plugin_uid() -> int:
 
 def _systemctl_user(uid: int, *args: str) -> subprocess.CompletedProcess[str]:
     user = pwd.getpwuid(uid).pw_name
-    # Root can target the user bus with -M user@
-    cmd = ["systemctl", "--user", "-M", f"{user}@", *args]
-    if os.geteuid() != 0:
+    runtime = f"/run/user/{uid}"
+    if os.geteuid() == 0:
+        # Prefer sudo -u + XDG_RUNTIME_DIR; -M user@ needs systemd-machined.
+        cmd = [
+            "sudo", "-u", user, "env",
+            f"XDG_RUNTIME_DIR={runtime}",
+            f"DBUS_SESSION_BUS_ADDRESS=unix:path={runtime}/bus",
+            "systemctl", "--user", *args,
+        ]
+    else:
         cmd = ["systemctl", "--user", *args]
     return subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=30)
 
