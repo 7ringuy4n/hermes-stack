@@ -19,6 +19,36 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 14:05 +07 — Second photo after OCR ack got no reply
+
+### Symptom
+
+User sent two bare images. The first got `Đã đọc chữ trong ảnh (OCR): …`.
+The second was downloaded and OCR’d (Paddle returned glyph noise) but Zalo
+never showed a second bot message.
+
+### Root cause
+
+1. SSE handler **awaited** the full inbound path (AV + OCR). While the first
+   photo blocked the reader for tens of seconds, follow-up events were at risk
+   and ordering/backpressure became fragile.
+2. OCR-ack `send()` did not set `as_skip_autosend`, so autosend could hang the
+   second ack; `as_skip_inflight` also skipped clearing the Valkey answering slot.
+
+### Fix
+
+- Background `_on_inbound_guarded` + per-thread lock (SSE keeps reading).
+- OCR ack: `as_skip_autosend` / `skip_outbound_filter`, explicit `answering_done`,
+  queue kick, part-delivered signal.
+- Glyph-noise OCR treated as empty for the user-facing ack.
+
+### Prevent recurrence
+
+Never block the Zalo SSE loop on OCR/AV. Deterministic OCR replies must not
+enter autosend or leave the answering slot held.
+
+---
+
 ## 2026-08-21 13:45 +07 — OCR succeeded; user still got silence (Omni 403)
 
 ### Symptom

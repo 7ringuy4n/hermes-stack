@@ -1,3 +1,9 @@
+## 2026-08-21 14:05 +07 — Second photo silent: SSE blocked + OCR-ack send hung
+
+- Two bare photos: first got OCR ack, second was OCR’d (incl. glyph-noise) but Zalo showed no second reply.
+- **Root cause:** `_handle_sse_event` awaited full OCR/AV, so the SSE reader stalled; OCR-ack `send()` also ran autosend (no `as_skip_autosend`) and skipped inflight clear (`as_skip_inflight`).
+- **Fix:** schedule inbound on a background task with a per-thread lock; OCR ack skips autosend/filters, clears answering slot, kicks the inbound queue; glyph-noise OCR → empty ack. Units updated (case 37).
+
 ## 2026-08-21 13:45 +07 — Photo OCR ok but Zalo silent: Omni 403 + agent tools
 
 - Bare Zalo photos with successful PaddleOCR still got **no reply** when OmniRouter round-robin hit `ollama-cloud/deepseek-v4-pro` (subscription 403). Hermes streamed that error through model-router and the agent died after retries; compound part waits then timed out.
