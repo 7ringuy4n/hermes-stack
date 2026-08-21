@@ -18,6 +18,7 @@ from attachment import (  # noqa: E402
     context_encode,
     context_merge,
     context_newest,
+    stage_shared_media,
     worker_media_path,
 )
 from autosend import ATTACH_CAPTION_FALLBACK  # noqa: E402
@@ -53,6 +54,37 @@ def test_worker_path() -> None:
     assert worker_media_path("/data/media/in/a.pdf") == "/data/media/in/a.pdf"
     assert worker_media_path("/tmp/x.png") == "/tmp/x.png"
     print("PASS worker media path mapping")
+
+
+def test_stage_shared_media(tmp_path: Path | None = None) -> None:
+    import tempfile
+
+    root = Path(tempfile.mkdtemp(prefix="zalo-stage-"))
+    try:
+        src = root / "replica-cache" / "img_abc.jpg"
+        src.parent.mkdir(parents=True)
+        src.write_bytes(b"\xff\xd8\xfffakejpeg")
+        inbound = root / "inbound"
+        staged = stage_shared_media(
+            str(src), "image.jpg", thread_id="2337", inbound_root=str(inbound)
+        )
+        assert staged, "expected staged path"
+        sp = Path(staged)
+        assert sp.is_file(), staged
+        inbound_n = str(inbound).replace("\\", "/")
+        staged_n = str(sp).replace("\\", "/")
+        assert inbound_n in staged_n, (inbound_n, staged_n)
+        assert sp.read_bytes() == src.read_bytes()
+        # Already under shared media — no second copy.
+        again = stage_shared_media(
+            staged, "image.jpg", thread_id="2337", inbound_root=str(inbound)
+        )
+        assert again.replace("\\", "/") == staged.replace("\\", "/")
+        print("PASS stage_shared_media copies replica cache into inbound")
+    finally:
+        import shutil
+
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def test_caption() -> None:
@@ -118,6 +150,7 @@ def main() -> int:
     try:
         test_kind()
         test_worker_path()
+        test_stage_shared_media()
         test_caption()
         test_context_pack()
         test_context_blocks()

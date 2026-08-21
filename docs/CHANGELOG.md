@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-21 11:40 +07 — Photo arrived, OCR 404 on replica cache, no Zalo reply
+
+- Inbound Zalo images were cached under `/opt/data/replicas/.../cache/images/`, which OCR/ingest/dispatcher do **not** mount. `POST /v1/ocr` returned 404, extract text was empty, and the bare-image prompt told the agent to “open the image” while vision tools were unavailable — so the turn produced LLM outbound calls but **no bridge send**.
+- Fix: `stage_shared_media` copies the download onto `/opt/data/media/inbound/{thread}/` before workers run; empty-OCR image prompt no longer demands opening the file or calling missing vision tools.
+- Unit: `zalo_attachment_unit.py` covers the staging copy.
+
 ## 2026-08-21 11:20 +07 — Zalo bridge EADDRINUSE crash-loop + media/fetch 404
 
 - **Bridge ownership:** `patch_zalo_bridge_inject.py` used to `pkill` + `runuser`/`Popen` a second Node listener while the user systemd unit `com.hermes.zaloplugin` stayed enabled. The orphan held `:8787`, systemd failed with `EADDRINUSE` every 5s (restart counter past 9500), and journal spam drowned real signal. Restart now clears orphans, then enables/restarts the systemd unit; `setup-zalo.sh` no longer `nohup`s a competing process; `zalo-watch` heals through the same path.
