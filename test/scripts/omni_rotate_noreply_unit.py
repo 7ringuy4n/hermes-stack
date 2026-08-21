@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
 from chat_norm import chat_body_should_failover, completion_to_sse  # noqa: E402
 from route_expand import expand_chat_candidates  # noqa: E402
-from attachment import image_ocr_ack_message  # noqa: E402
+from attachment import image_ocr_ack_message, ocr_excerpt_for_ack  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -71,6 +71,11 @@ def test_ocr_ack() -> None:
     long = image_ocr_ack_message("x" * 5000, max_chars=100)
     if "…" not in long or len(long) > 250:
         raise SystemExit(f"FAIL truncate={long!r}")
+    noise = "\n".join(list("naotoeeeeeeie"))
+    if ocr_excerpt_for_ack(noise) != "":
+        raise SystemExit(f"FAIL noise excerpt={noise!r}")
+    if "OCR không đọc được" not in image_ocr_ack_message(noise):
+        raise SystemExit("FAIL noise should empty-ack")
     print("OK OCR image ack")
 
 

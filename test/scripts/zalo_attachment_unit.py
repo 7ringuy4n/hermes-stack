@@ -19,6 +19,7 @@ from attachment import (  # noqa: E402
     context_merge,
     context_newest,
     image_ocr_ack_message,
+    ocr_excerpt_for_ack,
     stage_shared_media,
     worker_media_path,
 )
@@ -152,6 +153,9 @@ def test_image_ocr_ack() -> None:
     assert "OCR không đọc được" in empty, empty
     full = image_ocr_ack_message("HOA DON 1250000 VND")
     assert "HOA DON 1250000 VND" in full and "Đã đọc chữ" in full, full
+    noise = "\n".join(list("naotoeeeeeeie"))
+    assert ocr_excerpt_for_ack(noise) == "", noise
+    assert "OCR không đọc được" in image_ocr_ack_message(noise)
     print("PASS bare-image OCR ack never silent")
 
 

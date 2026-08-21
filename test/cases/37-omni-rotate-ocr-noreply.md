@@ -15,8 +15,8 @@
 3. Lab: rebuild `router-worker`; confirm env
    `MODEL_ROUTER_TIMEOUT_S=180`, `OMNIROUTER_ROTATE_ATTEMPTS=3`,
    `OMNIROUTER_FAILOVER_MODELS=auto/best-free`
-4. Send a bare photo with readable text → Zalo reply starts with
-   `Đã đọc chữ trong ảnh (OCR):` and includes the glyphs (no agent/tool turn required)
+4. Send **two** bare photos back-to-back → each gets an OCR ack (second must not
+   be silent). Glyph-noise OCR should empty-ack, not dump single letters.
 5. `POST /v1/chat/completions` with `stream:true` still returns content when the
    first Omni member is slow/blocked (router logs `[route] failover ...`)
 
