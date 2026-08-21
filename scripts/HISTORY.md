@@ -19,6 +19,33 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 18:50 +07 — PDF/txt “created” but never sent on Zalo
+
+### Symptom
+
+User asked to create a PDF and a text file with content `1`. Bot replied that
+files were created; Zalo never received an attachment.
+
+### Root cause
+
+1. Hermes tried ambiguous skill name `pdf` (3 collisions) then `pip`/`uv`
+   install of `pypdf` failed (externally managed Python). No file in `media/out`.
+2. Model still answered as if creation succeeded.
+3. Omni combos were filled with OpenCode Free by first-setup (unwanted; 503s).
+
+### Fix
+
+- Skills `file-gen` / `documents` / `media-out`: use Dispatcher
+  `POST /v1/office-file` only; never local pdf skill / pip.
+- Compose default `OFFICE_FILE_GEN=1`; empty Zalo caption on office deliver.
+- first-setup clears `hermes` and `classifier` to empty member lists.
+
+### Prevent recurrence
+
+Office create must go through Media Worker office API. Never claim success
+without `"ok":true` / autosend. Do not auto-populate OpenCode into chat combos.
+
+
 ## 2026-08-21 18:20 +07 — Web search hang locked next Zalo message
 
 ### Symptom
