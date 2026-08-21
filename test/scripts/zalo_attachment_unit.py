@@ -18,6 +18,7 @@ from attachment import (  # noqa: E402
     context_encode,
     context_merge,
     context_newest,
+    file_extract_ack_message,
     image_ocr_ack_message,
     ocr_excerpt_for_ack,
     stage_shared_media,
@@ -159,6 +160,24 @@ def test_image_ocr_ack() -> None:
     print("PASS bare-image OCR ack never silent")
 
 
+def test_file_extract_ack() -> None:
+    csv_ack = file_extract_ack_message(
+        "usage.csv", "col_a,col_b\n1,2", kind="text"
+    )
+    assert "usage.csv" in csv_ack and "col_a" in csv_ack, csv_ack
+    xlsx_ack = file_extract_ack_message(
+        "report.xlsx", "Sheet1\nA B", kind="office"
+    )
+    assert "report.xlsx" in xlsx_ack and "Sheet1" in xlsx_ack, xlsx_ack
+    empty_av = file_extract_ack_message("clip.mp4", "", kind="av")
+    assert "Chưa lấy được transcript" in empty_av, empty_av
+    mp3 = file_extract_ack_message("song.mp3", "lyrics line", kind="av")
+    assert "song.mp3" in mp3 and "lyrics line" in mp3, mp3
+    empty_txt = file_extract_ack_message("note.txt", "", kind="text")
+    assert "Chưa đọc được nội dung" in empty_txt, empty_txt
+    print("PASS bare-file extract ack never silent")
+
+
 def main() -> int:
     try:
         test_kind()
@@ -168,6 +187,7 @@ def main() -> int:
         test_context_pack()
         test_context_blocks()
         test_image_ocr_ack()
+        test_file_extract_ack()
     except AssertionError as e:
         print(f"FAIL {e}")
         return 1
