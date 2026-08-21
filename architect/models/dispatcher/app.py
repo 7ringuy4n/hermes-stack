@@ -1,13 +1,15 @@
-"""assistant dispatcher — round-robin web backends + media download/convert.
+"""assistant Media/File worker — media download, convert, image/video, ASR, OCR text.
 
-Backends: tavily, firecrawl (and optional exa). Hermes calls this instead of
-picking a single vendor. See Exa vs Tavily / Firecrawl competitor notes in docs.
+Web search moved to the Router Worker (`model-router /v1/search`) so vendor HTTP
+never competes with media work here. Heavy endpoints stay sync (threadpool);
+`/health` is async so probes cannot flap while media jobs run.
 """
 from __future__ import annotations
 
 import itertools
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -142,41 +144,17 @@ async def openai_proxy(path: str, request: Request):
 MEDIA_DIR = Path(os.environ.get("MEDIA_CACHE_DIR", "/data/media"))
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Empty WEB_BACKENDS = web search off. When enabled: tavily,firecrawl,searxng (fixed order).
-_web_raw = os.environ.get("WEB_BACKENDS")
-if _web_raw is None:
-    BACKENDS = ["tavily", "firecrawl", "searxng"]
-else:
-    BACKENDS = [b.strip().lower() for b in _web_raw.split(",") if b.strip()]
-SEARCH_MAX = int(os.environ.get("WEB_SEARCH_MAX_RESULTS", "3"))
-SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://searxng:8080").rstrip("/")
-SEARXNG_MAX = int(os.environ.get("SEARXNG_MAX_RESULTS", str(SEARCH_MAX)))
-
-
-def _search_order(preferred: Optional[str] = None) -> list[str]:
-    """Fixed combo order: Tavily → Firecrawl → SearXNG (no round-robin)."""
-    if preferred:
-        p = preferred.strip().lower()
-        return [p] + [b for b in BACKENDS if b != p] + (["searxng"] if "searxng" not in BACKENDS else [])
-    order = list(BACKENDS)
-    if SEARXNG_URL and "searxng" not in order:
-        order.append("searxng")
-    return order
+# Web search lives on the Router Worker (model-router /v1/search) so the media
+# worker never blocks on vendor HTTP. Kept only to advertise the route.
+WEB_SEARCH_URL = (
+    os.environ.get("WEB_SEARCH_URL")
+    or os.environ.get("MODEL_ROUTER_URL")
+    or "http://model-router:8096"
+).rstrip("/")
 
 
 def _key(name: str) -> str:
     return os.environ.get(f"{name.upper()}_API_KEY", "").strip()
-
-
-class SearchReq(BaseModel):
-    query: str
-    max_results: int = SEARCH_MAX
-    backend: Optional[str] = None  # force; else combo chain
-
-
-class ExtractReq(BaseModel):
-    url: str
-    backend: Optional[str] = None
 
 
 class MediaReq(BaseModel):
@@ -218,14 +196,12 @@ class VideoReq(BaseModel):
 
 
 @app.get("/health")
-def health() -> dict[str, Any]:
+async def health() -> dict[str, Any]:
+    """Async so a saturated media threadpool cannot flap the health probe."""
     return {
         "ok": True,
-        "backends": BACKENDS,
+        "web_search": WEB_SEARCH_URL,
         "keys": {
-            "tavily": bool(_key("tavily")),
-            "firecrawl": bool(_key("firecrawl")),
-            "exa": bool(_key("exa")),
             "deepseek": bool(
                 os.environ.get("DEEPSEEK_API_KEY")
                 or os.environ.get("DEEPSEEK_OCR_API_KEY")
@@ -244,184 +220,8 @@ def health() -> dict[str, Any]:
         "zalo_bridge": bool(os.environ.get("ZALO_BRIDGE_URL", "").strip()),
         "whisper_model": os.environ.get("WHISPER_MODEL", "tiny"),
         "whisper_enabled": os.environ.get("WHISPER_ENABLED", "1") != "0",
-        "searxng": bool(SEARXNG_URL),
         **health_fields(MEDIA_DIR),
     }
-
-
-@app.get("/v1/backends/next")
-def backends_next() -> dict[str, str]:
-    order = _search_order()
-    return {"backend": order[0] if order else ""}
-
-
-async def _tavily_search(query: str, max_results: int) -> dict[str, Any]:
-    key = _key("tavily")
-    if not key:
-        raise HTTPException(503, "TAVILY_API_KEY missing")
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        r = await client.post(
-            "https://api.tavily.com/search",
-            json={
-                "api_key": key,
-                "query": query,
-                "max_results": max_results,
-                "include_answer": True,
-            },
-        )
-        r.raise_for_status()
-        data = r.json()
-        return {"backend": "tavily", "answer": data.get("answer"), "results": data.get("results", [])}
-
-
-async def _firecrawl_search(query: str, max_results: int) -> dict[str, Any]:
-    key = _key("firecrawl")
-    if not key:
-        raise HTTPException(503, "FIRECRAWL_API_KEY missing")
-    async with httpx.AsyncClient(timeout=90.0) as client:
-        # Firecrawl search/scrape — adjust path if your plan uses /v1/search
-        r = await client.post(
-            "https://api.firecrawl.dev/v1/search",
-            headers={"Authorization": f"Bearer {key}"},
-            json={"query": query, "limit": max_results},
-        )
-        if r.status_code == 404:
-            # fallback: map → scrape first result via extract pattern not available
-            raise HTTPException(502, f"firecrawl search unavailable: {r.text[:200]}")
-        r.raise_for_status()
-        data = r.json()
-        return {"backend": "firecrawl", "results": data.get("data") or data.get("results") or data}
-
-
-async def _exa_search(query: str, max_results: int) -> dict[str, Any]:
-    key = _key("exa")
-    if not key:
-        raise HTTPException(503, "EXA_API_KEY missing")
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        r = await client.post(
-            "https://api.exa.ai/search",
-            headers={"x-api-key": key, "Content-Type": "application/json"},
-            json={"query": query, "numResults": max_results, "type": "auto"},
-        )
-        r.raise_for_status()
-        data = r.json()
-        return {"backend": "exa", "results": data.get("results", [])}
-
-
-async def _searxng_search(query: str, max_results: int) -> dict[str, Any]:
-    """Local SearXNG JSON — last-resort web search (top N, default 5)."""
-    if not SEARXNG_URL:
-        raise HTTPException(503, "SEARXNG_URL missing")
-    n = max(1, min(int(max_results or SEARXNG_MAX), SEARXNG_MAX, 10))
-    async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
-        r = await client.get(
-            f"{SEARXNG_URL}/search",
-            params={"q": query, "format": "json", "language": "all"},
-        )
-        r.raise_for_status()
-        data = r.json()
-    raw = data.get("results") or []
-    results = []
-    for item in raw[:n]:
-        results.append(
-            {
-                "title": item.get("title") or "",
-                "url": item.get("url") or item.get("link") or "",
-                "content": (item.get("content") or item.get("snippet") or "")[:500],
-                "engine": item.get("engine") or "",
-            }
-        )
-    if not results:
-        raise RuntimeError("searxng returned no results")
-    return {"backend": "searxng", "results": results, "answer": None}
-
-
-async def _tavily_extract(url: str) -> dict[str, Any]:
-    key = _key("tavily")
-    if not key:
-        raise HTTPException(503, "TAVILY_API_KEY missing")
-    async with httpx.AsyncClient(timeout=90.0) as client:
-        r = await client.post(
-            "https://api.tavily.com/extract",
-            json={"api_key": key, "urls": [url]},
-        )
-        r.raise_for_status()
-        return {"backend": "tavily", "data": r.json()}
-
-
-async def _firecrawl_extract(url: str) -> dict[str, Any]:
-    key = _key("firecrawl")
-    if not key:
-        raise HTTPException(503, "FIRECRAWL_API_KEY missing")
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        r = await client.post(
-            "https://api.firecrawl.dev/v1/scrape",
-            headers={"Authorization": f"Bearer {key}"},
-            json={"url": url, "formats": ["markdown"]},
-        )
-        r.raise_for_status()
-        return {"backend": "firecrawl", "data": r.json()}
-
-
-@app.post("/v1/search")
-async def search(req: SearchReq) -> dict[str, Any]:
-    n = max(1, min(int(req.max_results or SEARCH_MAX), 10))
-    if not BACKENDS and not SEARXNG_URL:
-        raise HTTPException(503, _msg("web_search_disabled", "Web search is unavailable (no search backends configured)."))
-    order = _search_order(req.backend)
-    errors: list[str] = []
-    merged: list[Any] = []
-    answer: Any = None
-    used: list[str] = []
-    for b in order:
-        try:
-            if b == "tavily":
-                hit = await _tavily_search(req.query, n)
-            elif b == "firecrawl":
-                hit = await _firecrawl_search(req.query, n)
-            elif b == "exa":
-                hit = await _exa_search(req.query, n)
-            elif b == "searxng":
-                hit = await _searxng_search(req.query, n)
-            else:
-                errors.append(f"unknown backend {b}")
-                continue
-            used.append(str(hit.get("backend") or b))
-            if answer is None and hit.get("answer"):
-                answer = hit.get("answer")
-            rows = hit.get("results") if isinstance(hit.get("results"), list) else []
-            for row in rows:
-                if len(merged) >= n:
-                    break
-                merged.append(row)
-            if len(merged) >= n:
-                break
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"{b}: {e}")
-            continue
-    if merged or answer is not None:
-        return {"backend": "+".join(used) if used else "combo", "answer": answer, "results": merged[:n], "errors": errors or None}
-    raise HTTPException(502, {"error": "all backends failed", "detail": errors})
-
-
-@app.post("/v1/extract")
-async def extract(req: ExtractReq) -> dict[str, Any]:
-    if not BACKENDS:
-        raise HTTPException(503, "web extract disabled (WEB_BACKENDS empty)")
-    order = _search_order(req.backend)
-    errors: list[str] = []
-    for b in order:
-        if b not in {"tavily", "firecrawl"}:
-            continue
-        try:
-            if b == "tavily":
-                return await _tavily_extract(req.url)
-            if b == "firecrawl":
-                return await _firecrawl_extract(req.url)
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"{b}: {e}")
-            continue
-    raise HTTPException(502, {"error": "all extract backends failed", "detail": errors})
 
 
 @app.post("/v1/mode")
@@ -566,6 +366,105 @@ def transcribe(req: TranscribeReq) -> dict[str, Any]:
         return {"ok": True, "source": "whisper", "transcript": text, "file": str(src)}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, str(e)) from e
+
+
+VIDEO_TEXT_EXTS = {".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi"}
+AUDIO_TEXT_EXTS = {".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".flac"}
+MEDIA_TEXT_FRAMES = int(os.environ.get("MEDIA_TEXT_FRAMES", "4"))
+MEDIA_TEXT_FRAME_TIMEOUT_S = float(os.environ.get("MEDIA_TEXT_FRAME_TIMEOUT_S", "40"))
+OCR_URL = (os.environ.get("OCR_URL") or "http://ocr:8091").rstrip("/")
+
+
+class MediaTextReq(BaseModel):
+    """Readable text for audio/video so the agent can summarize before replying."""
+
+    path: str
+    language: Optional[str] = None
+    frames: int = MEDIA_TEXT_FRAMES
+
+
+def _video_keyframes(src: Path, frames: int) -> list[Path]:
+    """Evenly sampled JPEG stills next to the source (ffmpeg thumbnail filter)."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return []
+    n = max(1, min(int(frames or MEDIA_TEXT_FRAMES), 8))
+    out_dir = src.parent / f".frames-{src.stem}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    pattern = str(out_dir / "frame-%02d.jpg")
+    try:
+        subprocess.run(
+            [
+                ffmpeg, "-y", "-i", str(src),
+                "-vf", f"thumbnail,fps=1/{max(1, 30 // n)}",
+                "-frames:v", str(n),
+                "-q:v", "4", pattern,
+            ],
+            check=True,
+            capture_output=True,
+            timeout=MEDIA_TEXT_FRAME_TIMEOUT_S,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    return sorted(p for p in out_dir.iterdir() if p.is_file() and p.suffix == ".jpg")
+
+
+def _ocr_file(path: Path) -> str:
+    try:
+        with httpx.Client(timeout=90.0) as client:
+            r = client.post(
+                f"{OCR_URL}/v1/ocr",
+                json={"path": str(path), "prompt": "Extract all visible text as markdown."},
+            )
+            if r.status_code >= 300:
+                return ""
+            data = r.json()
+    except Exception:  # noqa: BLE001
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("text") or data.get("markdown") or "").strip()
+
+
+@app.post("/v1/media/text")
+def media_text(req: MediaTextReq) -> dict[str, Any]:
+    """Transcript (audio track) + on-screen text (keyframe OCR) for one media file."""
+    src = Path(req.path)
+    if not src.is_file():
+        raise HTTPException(400, f"path not found: {req.path}")
+    ext = src.suffix.lower()
+    if ext not in VIDEO_TEXT_EXTS | AUDIO_TEXT_EXTS:
+        raise HTTPException(415, f"unsupported media type: {ext or 'unknown'}")
+    transcript = ""
+    transcript_error = ""
+    try:
+        transcript = _whisper_transcribe(src, req.language)
+    except Exception as e:  # noqa: BLE001 — ASR is optional (WHISPER_ENABLED)
+        transcript_error = str(e)[:200]
+    frame_text: list[str] = []
+    if ext in VIDEO_TEXT_EXTS:
+        for frame in _video_keyframes(src, req.frames):
+            hit = _ocr_file(frame)
+            if hit:
+                frame_text.append(hit)
+            try:
+                frame.unlink()
+            except OSError:
+                pass
+    parts: list[str] = []
+    if transcript:
+        parts.append(f"## Transcript\n{transcript}")
+    if frame_text:
+        parts.append("## On-screen text\n" + "\n\n".join(frame_text))
+    text = "\n\n".join(parts).strip()
+    return {
+        "ok": bool(text),
+        "file": str(src),
+        "text": text,
+        "transcript": transcript,
+        "frames_with_text": len(frame_text),
+        "error": transcript_error if not text else "",
+    }
 
 
 

@@ -1,5 +1,16 @@
 # Change history
 
+## 2026-08-21 09:40 +07 — Attachment workers, web search on Router Worker, bulk schedule remove
+
+- **Every inbound file goes to a worker that can read it** (`attachment.py` + Zalo adapter): text read locally, image/PDF → OCR, `.docx/.xlsx/.pptx/.csv` → Ingest `POST /v1/extract-text` (new), audio/video → Media Worker `POST /v1/media/text` (new: Whisper ASR + ffmpeg keyframe OCR). Extraction runs **concurrently** with the AV gate, so small `.txt` replies stop waiting on the scan.
+- Office/CSV no longer answer with only “Knowledge — pending approval”: the summary is produced from extracted text in the same turn.
+- Attachment recall keeps the **last 5 files per thread** (was 1) and the inbound FIFO cap is 16 (was 8), so a mixed media pack survives and “tóm tắt các file vừa gửi” works.
+- `.txt` send fixed at the source: Zalo rejects document attachments carrying a blank caption, so the `caption` field is now omitted (`ATTACH_CAPTION_FALLBACK = ""`).
+- **Web search moved off Dispatcher to Router Worker** (`model-router`): `/v1/search`, `/v1/extract`, `/v1/backends/next` with Tavily → SearXNG fallback; Hermes skills retargeted. Dispatcher `/health` is now async, which stops the up/down flap while media jobs run.
+- Classifier: deliverables joined by conjunctions (`và`, `kèm theo`) split into separate async instructions; items inside one deliverable (E5 RON92 + E10 RON95) stay together.
+- **Admin schedule remove**: `remove 1 3 5`, `remove 1-3`, `remove all`, `remove group <name>`, `remove group <name> 1-2`; deletes from `cron/jobs.json` and the workflow service, replies with count + labels. Messages live in `hermes/main/messages/zalo-admin.json`.
+- Case 34 + `zalo_attachment_unit.py`; `schedule_crud_unit.py` / `multi_request_unit.py` / `inbound_queue_unit.py` extended.
+
 ## 2026-08-21 08:20 +07 — Remove adapter EICAR cheat; fix OCR path, image/PDF/txt/queue
 
 - Remove local `_as_eicar_hit` from Zalo adapter — AV only via Security Worker / av-gateway.

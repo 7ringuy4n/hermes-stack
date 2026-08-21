@@ -127,6 +127,13 @@ class IngestReq(BaseModel):
     async_mode: bool = True
 
 
+class ExtractTextReq(BaseModel):
+    """Read office/CSV text now (agent turn), independent of the learn queue."""
+
+    path: str
+    max_chars: int = 0
+
+
 class SearchReq(BaseModel):
     query: str
     workspace_id: Optional[str] = None
@@ -489,33 +496,77 @@ def _resolve_media_path(path: str) -> Path:
     return MEDIA_ROOT / rel
 
 
+SPREADSHEET_EXTS = {".xlsx", ".xlsm", ".xls"}
+PLAIN_TEXT_EXTS = {".csv", ".tsv", ".md", ".txt", ".json", ".rst", ".html", ".xml", ".log", ".yaml", ".yml"}
+DOC_EXTS = {".docx"}
+SLIDE_EXTS = {".pptx"}
+TEXT_EXTRACT_CHARS = 500000
+SHEET_ROW_CAP = 2000
+
+
+def _xlsx_text(p: Path) -> str:
+    import openpyxl
+
+    wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+    parts: list[str] = []
+    for ws in wb.worksheets:
+        parts.append(f"## Sheet: {ws.title}")
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i >= SHEET_ROW_CAP:
+                parts.append("...(truncated)")
+                break
+            parts.append("\t".join("" if c is None else str(c) for c in row))
+    return "\n".join(parts)
+
+
+def _docx_text(p: Path) -> str:
+    import docx
+
+    doc = docx.Document(str(p))
+    parts = [para.text.strip() for para in doc.paragraphs if para.text and para.text.strip()]
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells]
+            if any(cells):
+                parts.append("\t".join(cells))
+    return "\n".join(parts)
+
+
+def _pptx_text(p: Path) -> str:
+    """Slide text straight from the OOXML parts (no extra dependency)."""
+    import re as _re
+    import zipfile
+
+    parts: list[str] = []
+    with zipfile.ZipFile(p) as zf:
+        slides = sorted(n for n in zf.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml"))
+        for i, name in enumerate(slides, start=1):
+            xml = zf.read(name).decode("utf-8", "replace")
+            runs = _re.findall(r"<a:t>(.*?)</a:t>", xml, flags=_re.S)
+            lines = [_re.sub(r"\s+", " ", r).strip() for r in runs]
+            body = "\n".join(line for line in lines if line)
+            if body:
+                parts.append(f"## Slide {i}\n{body}")
+    return "\n\n".join(parts)
+
+
 def _extract_text_from_path(path: str) -> str:
-    """Best-effort text for spreadsheets/CSV before OCR."""
+    """Best-effort text for office/CSV files before OCR."""
     p = _resolve_media_path(path)
     if not p.is_file():
         return ""
     ext = p.suffix.lower()
-    if ext in {".xlsx", ".xlsm", ".xls"}:
-        try:
-            import openpyxl
-
-            wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
-            parts: list[str] = []
-            for ws in wb.worksheets:
-                parts.append(f"## Sheet: {ws.title}")
-                for i, row in enumerate(ws.iter_rows(values_only=True)):
-                    if i >= 2000:
-                        parts.append("...(truncated)")
-                        break
-                    parts.append("\t".join("" if c is None else str(c) for c in row))
-            return "\n".join(parts)
-        except Exception:
-            return ""
-    if ext in {".csv", ".tsv", ".md", ".txt", ".json", ".rst", ".html", ".xml"}:
-        try:
-            return p.read_text(encoding="utf-8", errors="replace")[:500000]
-        except Exception:
-            return ""
+    try:
+        if ext in SPREADSHEET_EXTS:
+            return _xlsx_text(p)
+        if ext in DOC_EXTS:
+            return _docx_text(p)
+        if ext in SLIDE_EXTS:
+            return _pptx_text(p)
+        if ext in PLAIN_TEXT_EXTS:
+            return p.read_text(encoding="utf-8", errors="replace")[:TEXT_EXTRACT_CHARS]
+    except Exception:
+        return ""
     return ""
 
 
@@ -1129,6 +1180,24 @@ def health() -> dict[str, Any]:
     except Exception:
         return {"ok": False, "error": "redis_unavailable"}
     return {"ok": True, "queue": q, "pending": pending, "collection": COLLECTION, "memory_queue": MEMORY_QUEUE}
+
+
+@app.post("/v1/extract-text")
+def extract_text(req: ExtractTextReq) -> dict[str, Any]:
+    """Synchronous office/CSV text so the agent can summarize in the same turn."""
+    p = _resolve_media_path(req.path)
+    text = _extract_text_from_path(req.path)
+    limit = max(1000, min(int(req.max_chars or TEXT_EXTRACT_CHARS), TEXT_EXTRACT_CHARS))
+    _flow(
+        "extract_text",
+        path=req.path,
+        found=p.is_file(),
+        chars=len(text),
+        kind=p.suffix.lower(),
+    )
+    if not p.is_file():
+        raise HTTPException(404, "file not found")
+    return {"ok": bool(text), "path": str(p), "chars": len(text), "text": text[:limit]}
 
 
 @app.post("/v1/ingest")

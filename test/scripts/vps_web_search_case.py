@@ -1,5 +1,5 @@
-﻿# -*- coding: utf-8 -*-
-"""Case 18: probe dispatcher web search backends on VPS (SSH).
+# -*- coding: utf-8 -*-
+"""Case 18: probe Router Worker web search combo on VPS (SSH).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 """
@@ -28,10 +28,10 @@ cd /opt/assistant
 set -a; . ./.env; set +a
 echo "WEB_BACKENDS=${WEB_BACKENDS:-empty}"
 echo "SEARXNG_URL=${SEARXNG_URL:-unset}"
-curl -sS -m 10 http://127.0.0.1:8090/health || echo HEALTH_FAIL
+curl -sS -m 10 http://127.0.0.1:8096/health || echo HEALTH_FAIL
 echo
 code=$(curl -sS -m 45 -o /tmp/search.json -w "%{http_code}" \
-  -X POST http://127.0.0.1:8090/v1/search \
+  -X POST http://127.0.0.1:8096/v1/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"weather Ho Chi Minh","max_results":3}' || echo 000)
 echo "SEARCH_HTTP=$code"

@@ -1,4 +1,4 @@
-﻿# Vendored packs (main)
+# Vendored packs (main)
 
 | Pack | Upstream | Role |
 |---|---|---|
@@ -10,8 +10,8 @@
 | `vendor/superpowers/` | [obra/superpowers](https://github.com/obra/superpowers) | Debugging, verification, TDD, git workflows |
 | `vendor/trailofbits/` | [trailofbits/skills](https://github.com/trailofbits/skills) | Audit context, diff review, insecure defaults |
 
-**Not vendored:** Anthropic `canvas-design` (art-first; bad for exact text posters). Kodus/VoltAgent awesome lists are catalogs only — see `docs/hermes_skill_sources.txt` (plan) for curation targets.
+**Not vendored:** Anthropic `canvas-design` (art-first; bad for exact text posters). Kodus/VoltAgent awesome lists are catalogs only � see `docs/hermes_skill_sources.txt` (plan) for curation targets.
 
-Prefer dispatcher `http://dispatcher:8090/v1/search|extract|image` over inventing tool flows.
+Prefer dispatcher `http://model-router:8096/v1/search|extract|image` over inventing tool flows.
 
 Live-matched media packs live under `hermes/temp/skills/vendor/` (gitignored).
