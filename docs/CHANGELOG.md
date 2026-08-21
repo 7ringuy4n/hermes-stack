@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-21 11:50 +07 — Photo staged OK but agent greeted; OCR empty ≠ failure
+
+- Resent photo was staged (`…/inbound/…/image.jpg`) and OCR path was no longer 404, but vision was in a 900s cooldown and tesseract found no glyphs → `ocr_failed`. Hermes still ran an agent turn after recreate and sent a generic `/help` greeting instead of an image ack.
+- OCR: after a successful local scan with no text, return `ok:true, empty:true` (not `ocr_failed`); reject body with neither path nor `image_b64` as 400; label cooldown path as `via=tesseract`.
+- Zalo adapter: bare image + empty OCR → immediate deterministic ack, skip agent; OCR path miss retries with `image_b64`.
+
 ## 2026-08-21 11:40 +07 — Photo arrived, OCR 404 on replica cache, no Zalo reply
 
 - Inbound Zalo images were cached under `/opt/data/replicas/.../cache/images/`, which OCR/ingest/dispatcher do **not** mount. `POST /v1/ocr` returned 404, extract text was empty, and the bare-image prompt told the agent to “open the image” while vision tools were unavailable — so the turn produced LLM outbound calls but **no bridge send**.
