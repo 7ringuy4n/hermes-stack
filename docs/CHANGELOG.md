@@ -1,5 +1,14 @@
 # Change history
 
+## 2026-08-21 08:20 +07 — Remove adapter EICAR cheat; fix OCR path, image/PDF/txt/queue
+
+- Remove local `_as_eicar_hit` from Zalo adapter — AV only via Security Worker / av-gateway.
+- OCR: map `/opt/data/media` → `/data/media` (fixes 404); quick OCR excerpt before agent for PDF summary.
+- Image bare prompt: describe attached image; do not ask user for a caption.
+- `.txt` send: if Zalo rejects attachment, fall back to message body.
+- Per-thread FIFO queue: announce when another message is already waiting.
+- Cases 32 (updated) + 33.
+
 ## 2026-08-21 07:45 +07 — Secret path refuse + EICAR before knowledge learn
 
 - **secret-probe**: skip empty/corrupt policy files; expand protected paths (`/opt/data`, `/data/assistant`, `.env`, `/etc/shadow`, …); bundled defaults if no policy loads.
