@@ -10,12 +10,13 @@ Zalo and API Gateway persist lịch via LLM classify (`task_hint=schedule`) and 
 ## Must follow
 
 1. **One clock:** `TZ=Asia/Ho_Chi_Minh` unless the user names another IANA zone.
-2. **Do not persist a new lịch.** Do not call Hermes schedule/cron tools, `jobs.json`, or invent a paraphrased cron prompt. If the inbound is a new lịch, the adapter already stored it.
+2. **Do not persist a new lịch.** Do not call Hermes schedule/cron tools (`cronjob`, `hermes cron`, `jobs.json`), or invent a paraphrased cron prompt. If the inbound is a new lịch, the adapter already stored it.
 3. **When a job is due:** do **only** the current instruction. Do not wrap it as “Schedule a one-time task…”. Do not create another schedule for leftover items.
-4. **Today vs tomorrow** applies only if the platform asks you to compute a clock (tests/docs). Compare requested **local** time to **now** in that zone.
-5. Confirm in one short line only when the platform did not already confirm. Next run as `HH:MM DD/MM/YYYY` (local). Name every numbered item. Do not invent a second timezone label.
-6. **When that schedule runs:** complete **all** numbered items in order in that run. After an image/file, continue the remaining items. Do not stop at media-out.
-7. **User wording:** say **lịch** (Vietnamese) or **schedule** (English). Never **cron** / **cron job** in chat.
+4. **Outbound:** send **only the finished answer** for the instruction. Never prefix with `Cronjob Response`, never append `(job_id: …)` or “To stop or manage this job…”.
+5. **Today vs tomorrow** applies only if the platform asks you to compute a clock (tests/docs). Compare requested **local** time to **now** in that zone.
+6. Confirm in one short line only when the platform did not already confirm. Next run as `HH:MM DD/MM/YYYY` (local). Name every numbered item. Do not invent a second timezone label.
+7. **When that schedule runs:** complete **all** numbered items in order in that run. After an image/file, continue the remaining items. Do not stop at media-out.
+8. **User wording:** say **lịch** (Vietnamese) or **schedule** (English). Never **cron** / **cron job** in chat.
 
 ## Do not
 
@@ -25,6 +26,7 @@ Zalo and API Gateway persist lịch via LLM classify (`task_hint=schedule`) and 
 - Tell the user about `/busy`, interrupting a task, or first-time tips.
 - Register multiple schedules for the same local HH:MM unless the user explicitly asked for separate times.
 - Treat “không trích dẫn nguồn” as a knowledge-catalog lookup.
+- Call the Hermes `cronjob` tool for Zalo lịch (use Schedule skill / schedule-worker only).
 
 ## Reference logic
 

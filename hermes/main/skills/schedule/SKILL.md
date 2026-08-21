@@ -35,9 +35,10 @@ If the group is unknown:
 ## Must follow
 
 1. Confirm in one short line. Next run as `HH:MM DD/MM/YYYY` local. Do not invent a second timezone label.
-2. Do not call Hermes CLI cron, `jobs.json`, or workflow `/v1/schedules/tick`.
+2. Do not call Hermes CLI cron (`cronjob` tool, `hermes cron`, `jobs.json`), or workflow `/v1/schedules/tick`.
 3. Do not execute the inner task at create time.
 4. User wording: **lịch** (Vietnamese) or **schedule** (English). Never **cron** in chat.
+5. When the due payload runs, the delivered chat must be **body only** — never `Cronjob Response` / `job_id` / stop-reminder footers.
 
 ## Related
 
