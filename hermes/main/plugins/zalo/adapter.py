@@ -32,6 +32,7 @@ import logging
 import os
 import socket
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -288,6 +289,29 @@ from gateway.config import Platform
 ZALO_AUTO_SETHOME_ENV = "ZALO_AUTO_SETHOME"
 ZALO_AUTO_SETHOME_DM_ONLY_ENV = "ZALO_AUTO_SETHOME_DM_ONLY"
 ZALO_HOME_CHANNEL_ENV = "ZALO_HOME_CHANNEL"
+
+# Inbound attachment reading: worker routing + recall memory live in attachment.py.
+from attachment import (  # noqa: E402
+    PROMPT_CHARS as ATTACHMENT_PROMPT_CHARS,
+    TEXT_CHARS as ATTACHMENT_TEXT_CHARS,
+    attachment_kind,
+    caption_payload,
+    context_blocks,
+    context_decode,
+    context_encode,
+    context_merge,
+    context_newest,
+    worker_media_path,
+)
+
+ATTACHMENT_OCR_TIMEOUT_S = 90.0
+ATTACHMENT_OFFICE_TIMEOUT_S = 45.0
+ATTACHMENT_AV_TIMEOUT_S = 240.0
+
+# AV readiness polling: fast first tick, exponential backoff, same total budget.
+AV_POLL_MIN_S = 0.1
+AV_POLL_MAX_S = 1.0
+AV_POLL_BUDGET_S = 20.0
 
 
 def _truthy(v) -> bool:
@@ -2874,15 +2898,20 @@ class ZaloAdapter(BasePlatformAdapter):
                 media_urls.append(local_path)
                 media_types.append(media.get("mime") or "")
                 message_type = mtype
-        # ASSISTANT_FILE_PROMPT_v4 — filename-only / empty caption still reaches the agent
+        # ASSISTANT_FILE_PROMPT_v5 — read the attachment while AV scans it, then
+        # hand the agent real text instead of asking the user to describe/paste.
+        extract_task = None
+        attach_name = ""
+        attach_is_image = False
+        attach_bare = False
         if isinstance(media, dict) and media_urls:
-            fn = str(media.get("fileName") or "file")
+            attach_name = str(media.get("fileName") or "file")
             raw = (text or "").strip()
             low = raw.lower()
-            bare = (
+            attach_bare = (
                 (not raw)
-                or raw == fn
-                or raw.strip("`") == fn
+                or raw == attach_name
+                or raw.strip("`") == attach_name
                 or (raw.startswith("{") and "fileExt" in raw)
                 or (
                     len(raw) < 96
@@ -2893,43 +2922,19 @@ class ZaloAdapter(BasePlatformAdapter):
                     and "tóm tắt" not in low
                 )
             )
-            if bare:
-                kind_l = str(media.get("kind") or "").lower()
-                mime_l = str(media.get("mime") or "").lower()
-                is_image = (
-                    message_type == MessageType.PHOTO
-                    or kind_l in {"image", "photo", "gif", "sticker"}
-                    or mime_l.startswith("image/")
-                    or fn.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff"))
+            kind_l = str(media.get("kind") or "").lower()
+            mime_l = str(media.get("mime") or "").lower()
+            attach_is_image = (
+                message_type == MessageType.PHOTO
+                or kind_l in {"image", "photo", "gif", "sticker"}
+                or mime_l.startswith("image/")
+                or attach_name.lower().endswith(
+                    (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
                 )
-                if is_image:
-                    # Do not force document-OCR Q&A on photos (that caused "OCR/tài liệu?" spam).
-                    # Include local path so the agent can open the attached image; never ask the user to describe it.
-                    local = media_urls[0] if media_urls else ""
-                    text = (
-                        f"[Attached image: {fn}"
-                        + (f" path={local}" if local else "")
-                        + "]\n"
-                        "Open the attached image file and describe what you see, then answer. "
-                        "Do NOT ask the user to describe the image. "
-                        "Only OCR/read text in the image when the user asks."
-                    )
-                else:
-                    text = (
-                        f"[Tin kèm file: {fn}]\n"
-                        "Sau OCR/đọc: tóm tắt 3–6 ý chính (bullet ngắn) ngay trong tin trả lời này. "
-                        "Nếu hệ thống đã gửi hỏi duyệt học knowledge, vẫn phải gửi tóm tắt trước. "
-                        "Hỏi user muốn tìm thông tin gì thêm trong tài liệu. "
-                        "Cấm trích dài, cấm liệt kê từng section, cấm APA/MLA, cấm SKILL.md."
-                    )
-                    if media_urls:
-                        excerpt = await self._as_quick_ocr_excerpt(media_urls[0], fn)
-                        if excerpt:
-                            text = (
-                                f"{text}\n\n[Document text excerpt — summarize from this]\n"
-                                f"{excerpt[:6000]}"
-                            )
-                logger.info("Zalo: file-only prompt %s image=%s", fn, is_image)
+            )
+            extract_task = asyncio.create_task(
+                self._as_attachment_text(media_urls[0], attach_name)
+            )
         elif isinstance(media, dict) and media.get("url") and not media_urls:
             logger.warning("Zalo: media download empty %s", media.get("fileName") or "file")
             try:
@@ -2955,7 +2960,38 @@ class ZaloAdapter(BasePlatformAdapter):
                     thread_id, sender_id, media_urls[0], media if isinstance(media, dict) else {}
                 )
                 if _blocked:
+                    if extract_task is not None:
+                        extract_task.cancel()
                     return
+
+        if extract_task is not None:
+            try:
+                excerpt = await extract_task
+            except asyncio.CancelledError:
+                excerpt = ""
+            except Exception as e:
+                logger.warning("Zalo: attachment read failed: %s", type(e).__name__)
+                excerpt = ""
+            if excerpt:
+                self._as_attachment_remember(str(thread_id), attach_name, excerpt)
+            if attach_bare:
+                text = self._as_attachment_prompt(
+                    attach_name, excerpt, is_image=attach_is_image, local_path=media_urls[0]
+                )
+            elif excerpt:
+                text = (
+                    f"{text}\n\n[Attachment text — {attach_name}]\n"
+                    f"{excerpt[:ATTACHMENT_PROMPT_CHARS]}"
+                )
+            logger.info(
+                "Zalo: attachment prompt %s image=%s bare=%s chars=%s",
+                attach_name,
+                attach_is_image,
+                attach_bare,
+                len(excerpt),
+            )
+        elif not media_urls and str(text or "").strip():
+            text = self._as_attachment_followup(str(thread_id), text)
 
         event = MessageEvent(
             text=text,
@@ -4008,64 +4044,197 @@ class ZaloAdapter(BasePlatformAdapter):
         v = (os.getenv("ZALO_FILE_PIPELINE") or "1").strip().lower()
         return v in {"1", "true", "yes", "on"}
 
-    async def _as_quick_ocr_excerpt(self, local_path: str, file_name: str = "") -> str:
-        """OCR excerpt for the agent turn. Uses /data/media path OCR understands."""
+    async def _as_worker_text(self, url: str, payload: dict, *, timeout_s: float) -> str:
+        import aiohttp
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=timeout_s)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, json=payload) as resp:
+                    body = await resp.text()
+                    if resp.status >= 300:
+                        self._as_flow("attach_worker_fail", url=url, status=resp.status)
+                        return ""
+            data = json.loads(body or "{}")
+        except Exception as e:
+            self._as_flow("attach_worker_error", url=url, error=type(e).__name__)
+            return ""
+        if not isinstance(data, dict):
+            return ""
+        return str(data.get("text") or data.get("markdown") or data.get("transcript") or "").strip()
+
+    async def _as_attachment_text(self, local_path: str, file_name: str = "") -> str:
+        """Readable text for one inbound file, routed to the worker that owns it.
+
+        text  → read locally · ocr → OCR worker · office → Ingest worker
+        av    → Media worker `/v1/media/text` (transcript + keyframe OCR)
+        """
         import os
         from pathlib import Path
-
-        import aiohttp
 
         src = Path(str(local_path or ""))
         if not src.is_file():
             return ""
-        low = (file_name or src.name).lower()
-        if not low.endswith((".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff")):
-            if low.endswith((".txt", ".md", ".csv", ".log", ".json")):
+        name = file_name or src.name
+        kind = attachment_kind(name)
+        worker_path = worker_media_path(str(src))
+        match kind:
+            case "text":
                 try:
-                    return src.read_text(encoding="utf-8", errors="replace")[:6000]
+                    text = src.read_text(encoding="utf-8", errors="replace")[:ATTACHMENT_TEXT_CHARS]
                 except OSError:
-                    return ""
-            return ""
-        ocr_url = (os.getenv("OCR_URL") or "http://ocr:8091").rstrip("/")
-        # Map hermes /opt/data/media/... → OCR /data/media/...
-        cont = str(src).replace("\\", "/")
-        ocr_path = cont
-        for prefix in ("/opt/data/media/", "/data/assistant/media/"):
-            if cont.startswith(prefix):
-                ocr_path = "/data/media/" + cont[len(prefix) :]
-                break
-        try:
-            timeout = aiohttp.ClientTimeout(total=90)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
+                    text = ""
+            case "ocr":
+                ocr_url = (os.getenv("OCR_URL") or "http://ocr:8091").rstrip("/")
+                text = await self._as_worker_text(
                     f"{ocr_url}/v1/ocr",
-                    json={"path": ocr_path, "prompt": "Extract all text as markdown."},
-                ) as resp:
-                    body = await resp.text()
-                    if resp.status >= 300:
-                        self._as_flow(
-                            "ocr_quick_fail",
-                            file=file_name or src.name,
-                            status=resp.status,
-                            path=ocr_path[:160],
-                        )
-                        return ""
-                    try:
-                        data = json.loads(body or "{}")
-                    except Exception:
-                        data = {}
-                    text = str((data or {}).get("text") or (data or {}).get("markdown") or "").strip()
-                    if text:
-                        self._as_flow(
-                            "ocr_quick_ok",
-                            file=file_name or src.name,
-                            chars=len(text),
-                            path=ocr_path[:160],
-                        )
-                    return text
+                    {"path": worker_path, "prompt": "Extract all text as markdown."},
+                    timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
+                )
+            case "office":
+                ingest_url = (os.getenv("INGEST_URL") or "http://ingest:8099").rstrip("/")
+                text = await self._as_worker_text(
+                    f"{ingest_url}/v1/extract-text",
+                    {"path": worker_path, "max_chars": ATTACHMENT_TEXT_CHARS},
+                    timeout_s=ATTACHMENT_OFFICE_TIMEOUT_S,
+                )
+            case "av":
+                media_url = (
+                    os.getenv("DISPATCHER_URL") or "http://dispatcher:8090"
+                ).rstrip("/")
+                text = await self._as_worker_text(
+                    f"{media_url}/v1/media/text",
+                    {"path": worker_path},
+                    timeout_s=ATTACHMENT_AV_TIMEOUT_S,
+                )
+            case _:
+                text = ""
+        self._as_flow(
+            "attach_text",
+            file=name,
+            kind=kind,
+            chars=len(text),
+            path=worker_path[:160],
+        )
+        return text
+
+    async def _as_quick_ocr_excerpt(self, local_path: str, file_name: str = "") -> str:
+        """Kept for callers that only want the document excerpt."""
+        return await self._as_attachment_text(local_path, file_name)
+
+    def _as_attachment_ttl_s(self) -> int:
+        import os
+
+        try:
+            return max(60, int(os.getenv("ZALO_ATTACHMENT_CONTEXT_TTL_S") or "900"))
+        except ValueError:
+            return 900
+
+    def _as_attachment_remember(self, thread_id: str, file_name: str, text: str) -> None:
+        """Keep recent attachment text so follow-up turns need no re-upload.
+
+        A mixed media pack arrives as one event per file, so several files are
+        kept — see ``attachment.context_merge``.
+        """
+        tid = str(thread_id or "").strip()
+        if not tid or not (text or "").strip():
+            return
+        store = self._as_gate_store()
+        if store is None or not hasattr(store, "attachment_put"):
+            return
+        items = context_merge(self._as_attachment_items(tid), file_name, text)
+        try:
+            store.attachment_put(
+                tid, context_encode(items), self._as_attachment_ttl_s()
+            )
+            self._as_flow(
+                "attach_remember",
+                thread_id=tid,
+                file=file_name,
+                chars=len(text),
+                items=len(items),
+            )
         except Exception as e:
-            self._as_flow("ocr_quick_error", file=file_name or src.name, error=type(e).__name__)
-            return ""
+            logger.debug("Zalo attachment remember failed: %s", type(e).__name__)
+
+    def _as_attachment_items(self, thread_id: str) -> list[dict]:
+        """Recent attachments for this thread, oldest first."""
+        tid = str(thread_id or "").strip()
+        if not tid:
+            return []
+        store = self._as_gate_store()
+        if store is None or not hasattr(store, "attachment_get"):
+            return []
+        try:
+            return context_decode(store.attachment_get(tid))
+        except Exception:
+            return []
+
+    def _as_attachment_prompt(
+        self,
+        file_name: str,
+        excerpt: str,
+        *,
+        is_image: bool,
+        local_path: str = "",
+    ) -> str:
+        """Bare-attachment prompt. Extracted text wins; never ask the user to paste it."""
+        kind = attachment_kind(file_name)
+        body = (excerpt or "").strip()
+        if body:
+            head = (
+                f"[Attached {kind} file: {file_name}]\n"
+                "Tóm tắt 3–6 ý chính (bullet ngắn) từ nội dung dưới đây ngay trong tin trả lời này. "
+                "Nếu hệ thống có gửi hỏi duyệt học knowledge, vẫn phải gửi tóm tắt trước. "
+                "Cấm trích dài, cấm liệt kê từng section, cấm hỏi user dán lại nội dung."
+            )
+            if is_image:
+                head = (
+                    f"[Attached image: {file_name}]\n"
+                    "Ảnh có chữ — đã OCR sẵn. Tóm tắt nội dung chữ trong ảnh (bullet ngắn) "
+                    "và nói rõ ảnh nói về cái gì. Không hỏi user mô tả ảnh."
+                )
+            return f"{head}\n\n[Extracted text — summarize from this]\n{body[:ATTACHMENT_PROMPT_CHARS]}"
+        if is_image:
+            return (
+                f"[Attached image: {file_name}"
+                + (f" path={local_path}" if local_path else "")
+                + "]\n"
+                "Ảnh không có chữ đọc được (OCR trống). Mở file ảnh và mô tả nội dung ảnh, "
+                "rồi trả lời. Không hỏi user mô tả ảnh."
+            )
+        if kind == "av":
+            return (
+                f"[Attached media: {file_name}]\n"
+                "Không lấy được transcript/khung hình có chữ từ file này. "
+                "Nói thẳng một dòng là chưa đọc được nội dung media và hỏi user muốn xử lý gì "
+                "(tóm tắt khi bật transcript, tách âm thanh, lấy khung hình). "
+                "Cấm nói đã tóm tắt, cấm hỏi user dán nội dung."
+            )
+        return (
+            f"[Tin kèm file: {file_name}]\n"
+            "Chưa đọc được nội dung file (OCR/đọc trống). Nói thẳng một dòng là chưa đọc được, "
+            "hỏi user gửi lại hoặc đổi định dạng. Cấm hỏi user dán nội dung, cấm bịa tóm tắt."
+        )
+
+    def _as_attachment_followup(self, thread_id: str, text: str) -> str:
+        """Text-only turn: re-attach recent file text so nothing is re-uploaded."""
+        items = self._as_attachment_items(thread_id)
+        if not items:
+            return text
+        blocks = context_blocks(items, budget=ATTACHMENT_PROMPT_CHARS)
+        if not blocks:
+            return text
+        self._as_flow("attach_followup", thread_id=thread_id, files=len(blocks))
+        joined = "\n\n".join(reversed(blocks))
+        return (
+            f"{text}\n\n[Recent attachments in this chat — use them if the request refers to "
+            f"those files, otherwise ignore]\n{joined}"
+        )
+
+    def _as_attachment_recall(self, thread_id: str) -> tuple[str, str]:
+        """(file_name, text) of the newest remembered attachment in this thread."""
+        return context_newest(self._as_attachment_items(thread_id))
 
     def _as_av_activated(self) -> bool:  # ASSISTANT_FILE_PIPELINE_v6
         """True when antivirus is on and reachable (ENABLE_ANTIVIRUS / AV_SCAN)."""
@@ -4220,21 +4389,25 @@ class ZaloAdapter(BasePlatformAdapter):
                         return False
                 ready = False
                 blocked = False
-                for _ in range(40):
+                # Small files are usually clean within one tick — poll fast first,
+                # then back off so a slow scan still gets the full budget.
+                delay = AV_POLL_MIN_S
+                waited = 0.0
+                while waited < AV_POLL_BUDGET_S:
                     async with session.get(f"{av_url}/v1/sessions/{session_id}/ready") as r2:
                         if r2.status == 404:
                             break
-                        if r2.status >= 300:
-                            await asyncio.sleep(0.5)
-                            continue
-                        st = await r2.json(content_type=None)
-                        if st.get("blocked"):
-                            blocked = True
-                            break
-                        if st.get("ready"):
-                            ready = True
-                            break
-                    await asyncio.sleep(0.5)
+                        if r2.status < 300:
+                            st = await r2.json(content_type=None)
+                            if st.get("blocked"):
+                                blocked = True
+                                break
+                            if st.get("ready"):
+                                ready = True
+                                break
+                    await asyncio.sleep(delay)
+                    waited += delay
+                    delay = min(AV_POLL_MAX_S, delay * 2)
             elapsed = time.monotonic() - t0
             done = getattr(self, "_as_mark_lookup_done", None)
             if callable(done):
@@ -4626,7 +4799,7 @@ class ZaloAdapter(BasePlatformAdapter):
         payload = {
             "threadId": self._as_zalo_api_chat_id(chat_id),
             "threadType": thread_type,
-            "caption": caption or "",
+            **caption_payload(caption),
         }
         p = str(file_path or "")
         try:

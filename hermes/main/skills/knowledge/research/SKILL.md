@@ -14,7 +14,7 @@ description: "Research workflow: compare sources, synthesize evidence. Use for t
 
 ## Tools
 
-- Prefer `http://dispatcher:8090/v1/search|extract` and vendored `vendor/tavily/*`, `vendor/firecrawl/*`.
+- Prefer `http://model-router:8096/v1/search|extract` and vendored `vendor/tavily/*`, `vendor/firecrawl/*`.
 - Low profile: local knowledge only unless operator enables web.
 
 ## Confidential/internal technical docs

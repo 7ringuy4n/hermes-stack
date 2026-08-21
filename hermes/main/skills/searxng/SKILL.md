@@ -12,7 +12,7 @@ Official upstream: [NousResearch/hermes-agent `optional-skills/research/searxng-
 Medium compose runs SearXNG; dispatcher uses it when Tavily/Firecrawl miss or as last backend:
 
 ```bash
-curl -sS -X POST http://dispatcher:8090/v1/search \
+curl -sS -X POST http://model-router:8096/v1/search \
   -H 'content-type: application/json' \
   -d '{"q":"<query>","limit":5}'
 ```
