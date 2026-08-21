@@ -114,12 +114,26 @@ CREATE TABLE IF NOT EXISTS schedules (
 );`); err != nil {
 		log.Fatal(err)
 	}
+	if _, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS schedule_fire_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  schedule_id TEXT NOT NULL,
+  thread_id TEXT,
+  status TEXT NOT NULL,
+  detail TEXT,
+  fired_unix INTEGER NOT NULL
+);`); err != nil {
+		log.Fatal(err)
+	}
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_fire_log_sched ON schedule_fire_log(schedule_id, fired_unix DESC);`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_fire_log_thread ON schedule_fire_log(thread_id, fired_unix DESC);`)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true, "service": "schedule-worker"})
 	})
 	mux.HandleFunc("/v1/schedules", schedulesHandler)
+	mux.HandleFunc("/v1/schedules/history", scheduleHistoryHandler)
 	mux.HandleFunc("/v1/schedules/", scheduleItemHandler)
 	mux.HandleFunc("/v1/schedules/tick", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -179,19 +193,107 @@ func schedulesHandler(w http.ResponseWriter, r *http.Request) {
 func scheduleItemHandler(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/v1/schedules/")
 	id = strings.Trim(id, "/")
-	if id == "" || id == "tick" {
+	if id == "" || id == "tick" || id == "history" {
 		http.NotFound(w, r)
 		return
 	}
-	if r.Method != http.MethodDelete {
+	if strings.HasSuffix(id, "/history") {
+		sid := strings.TrimSuffix(id, "/history")
+		sid = strings.Trim(sid, "/")
+		rows, err := listFireLog(sid, "", 50)
+		if err != nil {
+			writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "schedule_id": sid, "history": rows})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		row, err := getSchedule(id)
+		if err != nil {
+			writeJSON(w, 404, map[string]any{"ok": false, "error": "not_found"})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "schedule": row})
+	case http.MethodDelete:
+		if _, err := db.Exec(`DELETE FROM schedules WHERE id=?`, id); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "deleted": id})
+	default:
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+	}
+}
+
+func scheduleHistoryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
 		http.Error(w, "method", http.StatusMethodNotAllowed)
 		return
 	}
-	if _, err := db.Exec(`DELETE FROM schedules WHERE id=?`, id); err != nil {
-		http.Error(w, err.Error(), 500)
+	q := r.URL.Query()
+	sid := strings.TrimSpace(q.Get("schedule_id"))
+	thread := strings.TrimSpace(q.Get("thread_id"))
+	limit := 50
+	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 && n <= 200 {
+		limit = n
+	}
+	rows, err := listFireLog(sid, thread, limit)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true})
+	writeJSON(w, 200, map[string]any{"ok": true, "history": rows, "count": len(rows)})
+}
+
+func recordFire(sch scheduleRow, status, detail string) {
+	threadID := firstNonEmpty(strMap(sch.Origin, "thread_id"), strMap(sch.Origin, "chat_id"), strMap(sch.Context, "thread_id"))
+	_, err := db.Exec(
+		`INSERT INTO schedule_fire_log (schedule_id, thread_id, status, detail, fired_unix) VALUES (?,?,?,?,?)`,
+		sch.ID, threadID, status, detail, time.Now().UTC().Unix(),
+	)
+	if err != nil {
+		log.Printf("fire_log %s %v", sch.ID, err)
+	}
+}
+
+func listFireLog(scheduleID, threadID string, limit int) ([]map[string]any, error) {
+	q := `SELECT id, schedule_id, thread_id, status, detail, fired_unix FROM schedule_fire_log WHERE 1=1`
+	args := []any{}
+	if scheduleID != "" {
+		q += ` AND schedule_id=?`
+		args = append(args, scheduleID)
+	}
+	if threadID != "" {
+		q += ` AND thread_id=?`
+		args = append(args, threadID)
+	}
+	q += ` ORDER BY fired_unix DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		var id int64
+		var sid, tid, status, detail string
+		var fired int64
+		if err := rows.Scan(&id, &sid, &tid, &status, &detail, &fired); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{
+			"id":          id,
+			"schedule_id": sid,
+			"thread_id":   tid,
+			"status":      status,
+			"detail":      detail,
+			"fired_at":    time.Unix(fired, 0).UTC().Format(time.RFC3339),
+		})
+	}
+	return out, rows.Err()
 }
 
 func upsert(req upsertReq) (scheduleRow, error) {
@@ -339,8 +441,10 @@ func fireDue(now time.Time) []string {
 		}
 		if err := sendBack(sch); err != nil {
 			log.Printf("fire %s err %v", sch.ID, err)
+			recordFire(sch, "error", err.Error())
 			continue
 		}
+		recordFire(sch, "ok", "")
 		mu.Lock()
 		if strings.EqualFold(sch.Cadence, "once") {
 			if _, err := db.Exec(`DELETE FROM schedules WHERE id=?`, sch.ID); err != nil {
