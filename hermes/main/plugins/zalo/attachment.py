@@ -158,6 +158,56 @@ def context_newest(items: List[Dict[str, Any]]) -> Tuple[str, str]:
     return str(last.get("file") or ""), str(last.get("text") or "")
 
 
+def quoted_context_snip(quote: Any, *, max_chars: int = 2000) -> str:
+    """Plain text / file title from a Zalo quote payload for the agent prompt."""
+    if not isinstance(quote, dict):
+        return ""
+    qc = quote.get("content")
+    if isinstance(qc, str) and qc.strip():
+        body = qc.strip()
+    elif isinstance(qc, dict):
+        title = str(qc.get("title") or "").strip()
+        desc = str(qc.get("description") or "").strip()
+        href = str(qc.get("href") or "").strip()
+        parts = [p for p in (title, desc) if p]
+        body = "\n".join(parts) if parts else (href[:180] if href else "")
+    else:
+        body = str(quote.get("msg") or quote.get("text") or "").strip()
+    if not body:
+        return ""
+    if len(body) > max_chars:
+        body = body[:max_chars].rstrip() + "…"
+    return body
+
+
+def song_hint_from_filename(file_name: str) -> str:
+    """Best-effort song/artist hint from an audio/video filename."""
+    name = (file_name or "").strip()
+    if not name:
+        return ""
+    low = name.lower()
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    for noise in (
+        "official lyric video",
+        "official music video",
+        "lyric video",
+        "official audio",
+        "audio",
+        "lyrics",
+        "mv",
+    ):
+        # case-insensitive remove
+        idx = stem.lower().find(noise)
+        if idx >= 0:
+            stem = (stem[:idx] + stem[idx + len(noise) :]).strip(" -_[](){}")
+    stem = " ".join(stem.replace("_", " ").replace("  ", " ").split())
+    if not stem:
+        return name
+    if low.endswith(AV_EXTS):
+        return stem
+    return ""
+
+
 def image_ocr_ack_message(excerpt: str, *, max_chars: int = 1800) -> str:
     """Deterministic Zalo reply for a bare image after OCR (empty or with text)."""
     body = ocr_excerpt_for_ack(excerpt)

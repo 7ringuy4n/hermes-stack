@@ -301,8 +301,10 @@ from attachment import (  # noqa: E402
     context_encode,
     context_merge,
     context_newest,
-    image_ocr_ack_message,
     file_extract_ack_message,
+    image_ocr_ack_message,
+    quoted_context_snip,
+    song_hint_from_filename,
     stage_shared_media,
     worker_media_path,
 )
@@ -3018,6 +3020,14 @@ class ZaloAdapter(BasePlatformAdapter):
                 excerpt = ""
             if excerpt:
                 self._as_attachment_remember(str(thread_id), attach_name, excerpt)
+            else:
+                # Still remember the filename so follow-ups ("tìm lời bài hát")
+                # can web-search without asking which song when the title is clear.
+                self._as_attachment_remember(
+                    str(thread_id),
+                    attach_name,
+                    f"[Attached file: {attach_name}]",
+                )
             if attach_bare:
                 text = self._as_attachment_prompt(
                     attach_name, excerpt, is_image=attach_is_image, local_path=media_urls[0]
@@ -3093,6 +3103,19 @@ class ZaloAdapter(BasePlatformAdapter):
                 return
         elif not media_urls and str(text or "").strip():
             text = self._as_attachment_followup(str(thread_id), text)
+
+        # Quoted reply: inject quoted text/title so the agent can resolve
+        # "tìm lời bài hát" against Multo / Cup of Joe without re-asking.
+        try:
+            raw_q = m.get("quoted") if isinstance(m.get("quoted"), dict) else None
+            if not isinstance(raw_q, dict):
+                raw_q = m.get("quote") if isinstance(m.get("quote"), dict) else {}
+            qsnip = quoted_context_snip(raw_q)
+            if qsnip and str(text or "").strip() and qsnip not in str(text):
+                text = f"{text}\n\n[Quoted message]\n{qsnip}"
+                self._as_flow("quote_context", thread_id=thread_id, chars=len(qsnip))
+        except Exception:
+            pass
 
         event = MessageEvent(
             text=text,
@@ -4094,11 +4117,16 @@ class ZaloAdapter(BasePlatformAdapter):
 
 
     def _as_redact_internal(self, content: str) -> str:  # ASSISTANT_PATH_REDACT_v1
-        """Strip server paths / secrets from outbound chat. Always on."""
+        """Strip server paths / secrets / Hermes cron wrappers from outbound chat."""
         import re as _re
         t = content or ""
         if not t.strip():
             return t
+        try:
+            from .gateway_noise import strip_cron_delivery
+        except ImportError:
+            from gateway_noise import strip_cron_delivery  # type: ignore
+        t = strip_cron_delivery(t)
 
         def _path_sub(m):
             raw = m.group(0).strip("`'")
@@ -4359,9 +4387,30 @@ class ZaloAdapter(BasePlatformAdapter):
             return text
         self._as_flow("attach_followup", thread_id=thread_id, files=len(blocks))
         joined = "\n\n".join(reversed(blocks))
+        extra = ""
+        low = str(text or "").lower()
+        if any(
+            k in low
+            for k in (
+                "lời bài hát",
+                "loi bai hat",
+                "lyrics",
+                "lyric",
+                "lời nhạc",
+            )
+        ):
+            newest_name, _ = context_newest(items)
+            hint = song_hint_from_filename(newest_name) or newest_name
+            if hint:
+                extra = (
+                    f"\n\n[Lyric request] Newest attachment looks like `{newest_name}`. "
+                    f"Treat song as: {hint}. "
+                    "Web-search for the lyrics now (Router Worker /v1/search). "
+                    "Do not ask which song if the title/artist is already clear from the filename."
+                )
         return (
             f"{text}\n\n[Recent attachments in this chat — use them if the request refers to "
-            f"those files, otherwise ignore]\n{joined}"
+            f"those files, otherwise ignore]\n{joined}{extra}"
         )
 
     def _as_attachment_recall(self, thread_id: str) -> tuple[str, str]:

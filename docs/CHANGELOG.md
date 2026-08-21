@@ -1,3 +1,12 @@
+## 2026-08-21 15:35 +07 — Cron wrappers + lyric follow-up no web search
+
+- Hermes native cron deliveries showed `Cronjob Response` / `job_id` / stop-reminder
+  footers on Zalo; “tìm lời bài hát” after Multo.mp3 asked which song instead of searching.
+- **Zalo**: strip cron wrappers on outbound; remember bare filenames even when AV
+  extract is empty; inject quoted context; lyric follow-ups hint web-search from
+  filename. Skills: quiet-delivery / scheduling / web-search / schedule.
+- Unit: `test/scripts/cron_lyric_unit.py`.
+
 ## 2026-08-21 14:25 +07 — Bare files silent / mp4 “no video”: agent + Omni busy
 
 - Bare mp3/txt only showed Knowledge-pending; csv/xlsx got no Zalo reply; mp4
