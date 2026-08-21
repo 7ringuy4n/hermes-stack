@@ -71,26 +71,33 @@ def _pool_get() -> ThreadPoolExecutor:
 def _build_engine() -> Any:
     from paddleocr import PaddleOCR
 
-    kwargs: dict[str, Any] = {
+    base = {
         "use_doc_orientation_classify": False,
         "use_doc_unwarping": False,
         "use_textline_orientation": False,
     }
+    attempts: list[dict[str, Any]] = []
     if MOBILE:
-        # Prefer mobile weights when the installed paddleocr accepts the names.
-        kwargs["text_detection_model_name"] = "PP-OCRv5_mobile_det"
-        kwargs["text_recognition_model_name"] = "PP-OCRv5_mobile_rec"
-    try:
-        return PaddleOCR(**kwargs)
-    except TypeError:
-        # Older 3.x builds may not take model name kwargs.
-        kwargs.pop("text_detection_model_name", None)
-        kwargs.pop("text_recognition_model_name", None)
+        attempts.append(
+            {
+                **base,
+                "text_detection_model_name": "PP-OCRv5_mobile_det",
+                "text_recognition_model_name": "PP-OCRv5_mobile_rec",
+            }
+        )
+    attempts.append(dict(base))
+    attempts.append({})
+    # 2.x-compatible last resort (no show_log — rejected by 3.x).
+    attempts.append({"use_angle_cls": True, "lang": "en"})
+
+    last: Exception | None = None
+    for kwargs in attempts:
         try:
             return PaddleOCR(**kwargs)
-        except TypeError:
-            # 2.x API
-            return PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+        except (TypeError, ValueError) as e:
+            last = e
+            continue
+    raise RuntimeError(f"PaddleOCR init failed: {last}")
 
 
 def _get_engine() -> Any:
