@@ -15,6 +15,32 @@ from typing import Any, Literal
 
 Status = Literal["SAFE", "BLOCKED", "REVIEW"]
 
+# Last-resort defaults if every policy file is missing/empty (fail closed for common paths).
+_DEFAULT_INPUT = (
+    "secret",
+    "password",
+    "passwd",
+    "credentials",
+    ".env",
+    "api_key",
+    "private key",
+    "private_key",
+    "/opt/assistant",
+    "/opt/data",
+    "/data/assistant",
+    "/etc/shadow",
+    "openbao",
+)
+_DEFAULT_OUTPUT = (
+    "sk-",
+    "tvly-",
+    "BEGIN PRIVATE KEY",
+    "BEGIN OPENSSH PRIVATE KEY",
+    "OPENBAO_DEV_ROOT_TOKEN",
+    "HERMES_DASHBOARD_PASSWORD",
+    "N9ROUTER_INITIAL_PASSWORD",
+)
+
 
 def _policy_candidates() -> list[Path]:
     out: list[Path] = []
@@ -25,13 +51,14 @@ def _policy_candidates() -> list[Path]:
         (
             Path("/opt/data/secret-probe.json"),
             Path("/opt/assistant/config/agent/secret-probe.json"),
+            Path("/opt/stack/config/agent/secret-probe.json"),
         )
     )
     here = Path(__file__).resolve().parent
     for p in [here, *here.parents]:
         cand = p / "config" / "agent" / "secret-probe.json"
         out.append(cand)
-        if len(out) > 12:
+        if len(out) > 16:
             break
     return out
 
@@ -48,6 +75,26 @@ def _compile_list(items: list[str]) -> re.Pattern[str] | None:
     return re.compile("|".join(parts), re.I)
 
 
+def _read_policy_file(path: Path) -> dict[str, Any] | None:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not raw.strip():
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    inputs = data.get("input_block_patterns") or []
+    outputs = data.get("output_block_patterns") or []
+    if not inputs and not outputs:
+        return None
+    return data
+
+
 def _load_policy() -> dict[str, Any]:
     global _policy, _input_re, _output_re
     if _policy is not None:
@@ -56,15 +103,29 @@ def _load_policy() -> dict[str, Any]:
     for p in _policy_candidates():
         if not p.is_file():
             continue
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            break
-        except (OSError, json.JSONDecodeError):
+        loaded = _read_policy_file(p)
+        if loaded is None:
             continue
+        data = loaded
+        break
+    if not data:
+        data = {
+            "schema": "assistant-secret-probe-v1",
+            "input_block_patterns": list(_DEFAULT_INPUT),
+            "output_block_patterns": list(_DEFAULT_OUTPUT),
+        }
     _policy = data
     _input_re = _compile_list(list(data.get("input_block_patterns") or []))
     _output_re = _compile_list(list(data.get("output_block_patterns") or []))
     return data
+
+
+def reload_policy() -> None:
+    """Clear cache (tests / after admin edits)."""
+    global _policy, _input_re, _output_re
+    _policy = None
+    _input_re = None
+    _output_re = None
 
 
 def probe(text: str, *, direction: Literal["input", "output"] = "input") -> dict[str, Any]:

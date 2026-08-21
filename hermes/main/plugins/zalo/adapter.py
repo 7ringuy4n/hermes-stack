@@ -3997,6 +3997,26 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception:
             return False
 
+    @staticmethod
+    def _as_eicar_hit(data: bytes) -> bool:
+        """Deterministic EICAR test signature (protocol marker, not NLU)."""
+        if not data:
+            return False
+        # Standard EICAR-TEST-FILE marker used by AV products.
+        return b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" in data or (
+            b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR" in data
+        )
+
+    def _as_av_required(self) -> bool:
+        """When antivirus is enabled, refuse files if the scanner is down (fail closed)."""
+        import os
+        flag = (os.getenv("AV_SCAN") or os.getenv("ENABLE_ANTIVIRUS") or "1").strip().lower()
+        av_on = flag not in {"0", "false", "no", "off"}
+        raw = (os.getenv("AV_REQUIRED") or "").strip().lower()
+        if raw == "":
+            return av_on
+        return raw in {"1", "true", "yes", "on"}
+
     async def _as_av_gate(  # ASSISTANT_FILE_PIPELINE_v6
         self, thread_id, sender_id, local_path: str, media: dict
     ) -> bool:
@@ -4023,6 +4043,42 @@ class ZaloAdapter(BasePlatformAdapter):
         mark = getattr(self, "_as_mark_lookup_start", None)
         if callable(mark):
             mark(thread_id)
+
+        # Always resolve bytes early for local EICAR (works even when Security Worker is off).
+        src = Path(local_path)
+        if not src.is_file():
+            alt = Path("/opt/data") / "cache" / src.name
+            src = alt if alt.is_file() else src
+        file_bytes = b""
+        try:
+            if src.is_file():
+                file_bytes = await asyncio.to_thread(src.read_bytes)
+        except OSError:
+            file_bytes = b""
+        if self._as_eicar_hit(file_bytes):
+            self._as_flow("av_block", reason="eicar", file=fn, thread_id=thread_id)
+            done = getattr(self, "_as_mark_lookup_done", None)
+            if callable(done):
+                done(thread_id)
+            try:
+                msg = self._as_ux_line(
+                    "ZALO_AV_BLOCKED_MSG",
+                    ("security", "av_blocked"),
+                    "File bị chặn (malware/test virus). Không học vào knowledge.",
+                )
+                await self.send(
+                    chat_id=str(thread_id),
+                    content=msg,
+                    metadata={
+                        "thread_type": "user",
+                        "as_skip_timing": True,
+                        "as_skip_inflight": True,
+                    },
+                )
+            except Exception:
+                pass
+            return True
+
         if not self._as_file_pipeline_enabled():
             self._as_flow("av_skip", reason="pipeline_off", file=fn, thread_id=thread_id)
             done = getattr(self, "_as_mark_lookup_done", None)
@@ -4031,15 +4087,20 @@ class ZaloAdapter(BasePlatformAdapter):
             return False
         if not self._as_av_activated():
             self._as_flow("av_skip", reason="unavailable", file=fn, thread_id=thread_id)
-            required = (os.getenv("AV_REQUIRED") or "0").strip().lower() in {"1", "true", "yes", "on"}
+            required = self._as_av_required()
             done = getattr(self, "_as_mark_lookup_done", None)
             if callable(done):
                 done(thread_id)
             if required:
                 try:
+                    msg = self._as_ux_line(
+                        "ZALO_AV_UNAVAILABLE_MSG",
+                        ("security", "av_unavailable"),
+                        "Chưa quét được file (antivirus chưa sẵn sàng). Gửi lại sau nhé.",
+                    )
                     await self.send(
                         chat_id=str(thread_id),
-                        content="Chưa quét được file (antivirus chưa sẵn sàng). Gửi lại sau nhé.",
+                        content=msg,
                         metadata={
                             "thread_type": "user",
                             "as_skip_timing": True,
@@ -4056,11 +4117,7 @@ class ZaloAdapter(BasePlatformAdapter):
         session_id = f"zalo-{thread_id}"
         t0 = time.monotonic()
         try:
-            src = Path(local_path)
-            if not src.is_file():
-                alt = Path("/opt/data") / "cache" / src.name
-                src = alt if alt.is_file() else src
-            data = await asyncio.to_thread(src.read_bytes) if src.is_file() else b""
+            data = file_bytes
             if not data:
                 self._as_flow("av_skip", reason="empty_bytes", file=fn, thread_id=thread_id)
                 done = getattr(self, "_as_mark_lookup_done", None)
@@ -4086,6 +4143,25 @@ class ZaloAdapter(BasePlatformAdapter):
                         done = getattr(self, "_as_mark_lookup_done", None)
                         if callable(done):
                             done(thread_id, time.monotonic() - t0)
+                        if self._as_av_required():
+                            try:
+                                msg = self._as_ux_line(
+                                    "ZALO_AV_UNAVAILABLE_MSG",
+                                    ("security", "av_unavailable"),
+                                    "Chưa quét được file (antivirus chưa sẵn sàng). Gửi lại sau nhé.",
+                                )
+                                await self.send(
+                                    chat_id=str(thread_id),
+                                    content=msg,
+                                    metadata={
+                                        "thread_type": "user",
+                                        "as_skip_timing": True,
+                                        "as_skip_inflight": True,
+                                    },
+                                )
+                            except Exception:
+                                pass
+                            return True
                         self._as_enqueue_file_pipeline(thread_id, sender_id, local_path, media)
                         return False
                 ready = False
