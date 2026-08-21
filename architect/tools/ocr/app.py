@@ -79,9 +79,20 @@ def health() -> dict[str, Any]:
 def _resolve_path(raw: Optional[str]) -> Optional[Path]:
     if not raw:
         return None
-    p = Path(raw)
+    s = str(raw).strip()
+    # Hermes writes under /opt/data/media; OCR mounts the same volume at /data/media.
+    for prefix in (
+        "/opt/data/media/",
+        "/data/assistant/media/",
+        "opt/data/media/",
+        "data/assistant/media/",
+    ):
+        if s.startswith(prefix) or s.replace("\\", "/").startswith(prefix):
+            s = str(MEDIA_ROOT / Path(s[len(prefix) :]).as_posix())
+            break
+    p = Path(s)
     if not p.is_absolute():
-        p = MEDIA_ROOT / raw.lstrip("/")
+        p = MEDIA_ROOT / s.lstrip("/")
     return p if p.is_file() else None
 
 
