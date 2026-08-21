@@ -1,2 +1,4 @@
 # Installed only when the image is built with INSTALL_WHISPER=1 (WHISPER_ENABLED=1 stacks).
 faster-whisper==1.1.1
+# faster_whisper.utils imports requests, and huggingface_hub 1.x no longer pulls it in.
+requests==2.32.4
