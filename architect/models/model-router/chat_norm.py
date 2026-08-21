@@ -84,10 +84,26 @@ def chat_body_should_failover(status: int, data: Any) -> bool:
             "payment required",
             "insufficient_quota",
             "model not found",
+            "capacity is busy",
+            "retry shortly",
+            "structurally heavy",
         )
     ):
         return True
     return normalize_chat_completion(data) is None
+
+
+def chat_busy_capacity(status: int, data: Any) -> bool:
+    """Omni free-tier capacity busy — worth sleeping before the next rotate hop."""
+    if status not in {429, 503} and not (
+        isinstance(data, dict) and data.get("error")
+    ):
+        return False
+    msg = _error_text(data).lower()
+    return any(
+        needle in msg
+        for needle in ("capacity is busy", "retry shortly", "structurally heavy")
+    )
 
 
 def completion_to_sse(data: dict[str, Any]) -> bytes:

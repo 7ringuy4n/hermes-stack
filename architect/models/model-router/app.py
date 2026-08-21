@@ -15,6 +15,7 @@ Classify prompt: config/classify.json
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -36,6 +37,7 @@ from classify import (  # noqa: E402
 )
 from chat_norm import (  # noqa: E402
     chat_body_should_failover,
+    chat_busy_capacity,
     completion_to_sse,
     normalize_chat_completion,
     sanitize_chat_payload,
@@ -66,8 +68,10 @@ OMNI_FAILOVER_MODELS = [
 ]
 # Retry the primary combo so Omni round-robin can land on an alive free member.
 OMNI_ROTATE_ATTEMPTS = max(
-    1, min(int(os.environ.get("OMNIROUTER_ROTATE_ATTEMPTS") or "3"), 8)
+    1, min(int(os.environ.get("OMNIROUTER_ROTATE_ATTEMPTS") or "5"), 8)
 )
+# Sleep between hops when Omni says capacity is busy (free-tier throttle).
+OMNI_BUSY_BACKOFF_S = float(os.environ.get("OMNIROUTER_BUSY_BACKOFF_S") or "3")
 OLLAMA_BASE = (os.environ.get("OLLAMA_BASE_URL") or "").rstrip("/")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
 FALLBACK_OPENAI = (os.environ.get("FALLBACK_OPENAI_BASE_URL") or "").rstrip("/")
@@ -406,6 +410,8 @@ async def proxy(path: str, request: Request) -> Response:
                 if chat_body_should_failover(upstream.status_code, parsed):
                     last_err = f"{name}:{upstream.status_code}:{str((parsed or {}).get('error') or 'bad_chat')[:80]}"
                     print(f"[route] failover {last_err} model={payload.get('model')}", flush=True)
+                    if chat_busy_capacity(upstream.status_code, parsed) and OMNI_BUSY_BACKOFF_S > 0:
+                        await asyncio.sleep(OMNI_BUSY_BACKOFF_S)
                     continue
                 norm = normalize_chat_completion(parsed)
                 if norm is None:
