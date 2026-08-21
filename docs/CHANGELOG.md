@@ -1,5 +1,20 @@
 # Change history
 
+## 2026-08-21 07:20 +07 — Schedule group fire + worker-routing + install/remove workers
+
+- **Root cause:** `scheduleFire` into groups was dropped by `ZALO_GROUP_MODE=mention` (no @bot). Bypass mention/rate/inflight for schedule fires.
+- Schedule Worker: `schedule_fire_log` + `GET /v1/schedules/history`; create ack includes id/next run.
+- Classify: skip dead `classifier` combo briefly after 401/403 so schedule acks stay fast.
+- Alert-watch: `HEALTH_FAIL_STREAK` (default 3) before CRITICAL DOWN (dispatcher flap).
+- Add `worker-routing` skill (Dispatcher deprecated for new work). `run.sh` `install-workers` / `remove-workers`.
+- Case 31 + `schedule_group_fire_lab.py`.
+
+## 2026-08-20 21:00 +07 — docs: backfill ops HISTORY for 2026-08-12…18
+
+- `scripts/HISTORY.md`: added missing issue notes for **2026-08-15…18** (schedule TZ, stack-watch backoff, inbound queue, Omni/schedule-list, isolation, check-medium corruption, DR/SSE, backup role/Qdrant, replica entrypoint, office silent `.txt`, first-setup combo, disk full).
+- **2026-08-12…14**: no product CHANGELOG/HISTORY in this tree (clean rebuild starts 2026-08-15).
+- Expanded HISTORY Quick index for those symptoms.
+
 ## 2026-08-20 20:50 +07 — Dual Hermes .env Permission denied on auto-sethome
 
 - Replica entry + `run.sh` also chown shared `.env` / `config.yaml` / data root to Hermes UID (scaled replicas rewrite home channel).

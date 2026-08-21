@@ -144,3 +144,4 @@ exclude:
 | Zalo media gen + schedule delivery (video send, leftover claim, quiet) | `test/cases/28-zalo-media-cron-delivery.md` |
 | Zalo once-schedule numbered tasks (no cite intercept) | `test/cases/29-zalo-once-numbered-nocite.md` |
 | Dual Hermes isolation (admin concurrent mix) | `test/cases/30-hermes-dual-isolation.md` |
+| Schedule fire into named Zalo group | `test/cases/31-schedule-group-fire.md` |
