@@ -49,6 +49,45 @@ def worker_media_path(local_path: str) -> str:
     return cont
 
 
+def stage_shared_media(
+    local_path: str,
+    file_name: str = "",
+    *,
+    thread_id: str = "",
+    inbound_root: str = "/opt/data/media/inbound",
+) -> str:
+    """Copy a file into the shared media volume so OCR/ingest/dispatcher can read it.
+
+    Hermes ``cache_image_from_bytes`` writes under ``/opt/data/replicas/.../cache/``,
+    which workers do not mount. Without this copy, ``POST /v1/ocr`` returns 404 and
+    the agent is asked to "open the image" with no vision tools — no Zalo reply.
+    """
+    import re
+    import shutil
+    import uuid
+    from pathlib import Path
+
+    src = Path(str(local_path or ""))
+    if not src.is_file():
+        return ""
+    cont = str(src).replace("\\", "/")
+    # Already on the shared volume — workers can see it after prefix rewrite.
+    for prefix in _MEDIA_PREFIXES:
+        if cont.startswith(prefix):
+            return cont
+    try:
+        src.resolve().relative_to(Path(inbound_root).resolve())
+        return cont
+    except ValueError:
+        pass
+    safe = re.sub(r"[^\w.\-() ]", "_", (file_name or src.name))[:120].strip() or "file.bin"
+    dest_dir = Path(inbound_root) / (str(thread_id or "dm").strip() or "dm")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{uuid.uuid4().hex[:8]}_{safe}"
+    shutil.copy2(src, dest)
+    return str(dest)
+
+
 def caption_payload(caption: Any) -> Dict[str, str]:
     """Zalo rejects document sends whose caption is blank, so omit it entirely."""
     text = str(caption or "")

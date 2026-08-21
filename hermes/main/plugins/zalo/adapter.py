@@ -301,6 +301,7 @@ from attachment import (  # noqa: E402
     context_encode,
     context_merge,
     context_newest,
+    stage_shared_media,
     worker_media_path,
 )
 
@@ -2895,6 +2896,21 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             local_path, mtype = await self._download_media(media)
             if local_path:
+                # Replica cache is invisible to OCR/ingest/dispatcher — stage onto
+                # the shared media volume before workers run (see stage_shared_media).
+                staged = stage_shared_media(
+                    local_path,
+                    str(media.get("fileName") or ""),
+                    thread_id=str(thread_id or ""),
+                )
+                if staged:
+                    self._as_flow(
+                        "attach_staged",
+                        file=media.get("fileName") or "",
+                        from_path=str(local_path)[:120],
+                        to_path=str(staged)[:120],
+                    )
+                    local_path = staged
                 media_urls.append(local_path)
                 media_types.append(media.get("mime") or "")
                 message_type = mtype
@@ -4197,11 +4213,13 @@ class ZaloAdapter(BasePlatformAdapter):
             return f"{head}\n\n[Extracted text — summarize from this]\n{body[:ATTACHMENT_PROMPT_CHARS]}"
         if is_image:
             return (
-                f"[Attached image: {file_name}"
-                + (f" path={local_path}" if local_path else "")
-                + "]\n"
-                "Ảnh không có chữ đọc được (OCR trống). Mở file ảnh và mô tả nội dung ảnh, "
-                "rồi trả lời. Không hỏi user mô tả ảnh."
+                f"[Attached image: {file_name}]\n"
+                "OCR không đọc được chữ trong ảnh (file đã nhận). "
+                "Trả lời ngắn: mô tả những gì nhìn thấy được từ tên file / ngữ cảnh "
+                "hoặc nói rõ ảnh không có chữ đọc được, rồi hỏi user muốn làm gì tiếp "
+                "(tóm tắt, dịch, lưu knowledge). "
+                "Cấm hỏi user mô tả lại ảnh, cấm bảo user mở/gửi lại file trừ khi "
+                "download thất bại, cấm gọi tool vision/browser không có sẵn."
             )
         if kind == "av":
             return (
