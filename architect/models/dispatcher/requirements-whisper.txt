@@ -1,0 +1,2 @@
+# Installed only when the image is built with INSTALL_WHISPER=1 (WHISPER_ENABLED=1 stacks).
+faster-whisper==1.1.1
