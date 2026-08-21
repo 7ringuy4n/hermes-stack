@@ -19,6 +19,38 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 11:50 +07 — Staged photo still greets; empty OCR treated as failure
+
+### Symptom
+
+After the shared-media staging fix, a resent `chat.photo` wrote
+`/data/media/inbound/…/image.jpg`. Bridge later sent a Zalo reply, but it was only
+“Chào bạn, tôi là Hermes… /help”. Hermes logs showed the usual tool/SOUL warnings;
+OCR logged `vision_cooldown` then `ocr_failed` with empty tesseract output.
+
+### Root cause
+
+1. Vision cooldown (blind model) forced tesseract; the photo had no readable text, so
+   OCR returned **`ocr_failed`** instead of an empty success — Hermes treated that like
+   a hard miss.
+2. After `hermes` recreate the agent session was fresh; with an empty excerpt the model
+   ignored the attachment prompt and introduced itself.
+3. Residual OCR 404s / empty-path probes still appeared from path races; b64 retry covers
+   that class of miss.
+
+### Fix
+
+- OCR: empty local scan → `ok:true, empty:true`; require `path` or `image_b64`.
+- Adapter: bare image + empty OCR → deterministic ack and **no agent turn**; OCR 404/empty
+  retries with `image_b64`.
+
+### Prevent recurrence
+
+Never send a bare inbound image into a full agent turn when OCR returned no text —
+ack first. Never report “ocr_failed” when the local scanner finished and found nothing.
+
+---
+
 ## 2026-08-21 11:40 +07 — Zalo photo: bridge OK, media-proxy OK, OCR 404, no reply
 
 ### Symptom
