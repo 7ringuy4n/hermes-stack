@@ -1955,14 +1955,34 @@ class ZaloAdapter(BasePlatformAdapter):
             return False
         return self._as_gate_store() is not None
 
+    def _as_queue_turn_timeout_s(self) -> float:
+        """Max seconds for one queued Hermes turn (handle_message + late files + wait)."""
+        return self._as_env_float("ZALO_QUEUE_TURN_TIMEOUT_S", 150.0, 30.0, 600.0)
+
+    def _as_queue_drain_max_s(self) -> float:
+        """Max seconds one drain task may hold the per-thread worker lock."""
+        return self._as_env_float("ZALO_QUEUE_DRAIN_MAX_S", 600.0, 60.0, 3600.0)
+
     def _as_queue_kick(self, thread_id: str) -> None:
         tid = str(thread_id or "")
         if not tid:
             return
         prev = self._as_queue_tasks.get(tid)
         if prev is not None and not prev.done():
-            return
-        self._as_queue_tasks[tid] = asyncio.create_task(self._as_queue_drain(tid))
+            # Stuck drain: cancel after drain-max so a new kick can restart.
+            started = float(getattr(prev, "_as_drain_started", 0.0) or 0.0)
+            age = (__import__("time").time() - started) if started > 0 else 0.0
+            if age < self._as_queue_drain_max_s():
+                return
+            logger.warning(
+                "Zalo: cancel stuck queue drain thread=%s age=%.0fs",
+                tid,
+                age,
+            )
+            prev.cancel()
+        task = asyncio.create_task(self._as_queue_drain(tid))
+        task._as_drain_started = __import__("time").time()  # type: ignore[attr-defined]
+        self._as_queue_tasks[tid] = task
 
     async def _as_enqueue_inbound(
         self,
@@ -2103,8 +2123,16 @@ class ZaloAdapter(BasePlatformAdapter):
             from .multi_request import split_compound_requests
         except ImportError:
             split_compound_requests = lambda t: [t]  # type: ignore[misc, assignment]
+        loop = asyncio.get_running_loop()
+        drain_deadline = loop.time() + self._as_queue_drain_max_s()
         try:
             while True:
+                if loop.time() >= drain_deadline:
+                    logger.warning(
+                        "Zalo: queue drain max exceeded thread=%s — release for next kick",
+                        tid,
+                    )
+                    break
                 try:
                     raw = store.queue_pop(tid)
                 except Exception:
@@ -2157,6 +2185,9 @@ class ZaloAdapter(BasePlatformAdapter):
                         except Exception:
                             pass
                 await self._as_run_queued_part(item)
+        except asyncio.CancelledError:
+            logger.warning("Zalo: queue drain cancelled thread=%s", tid)
+            raise
         finally:
             try:
                 store.worker_done(tid)
@@ -2222,19 +2253,42 @@ class ZaloAdapter(BasePlatformAdapter):
                 parts_after = int(store.queue_len(tid) or 0)
             except Exception:
                 parts_after = 0
-        self._as_compound_set_after(
-            tid,
-            parts_after,
-            str(item.get("thread_type") or "user"),
-        )
+        thread_type = str(item.get("thread_type") or "user")
+        self._as_compound_set_after(tid, parts_after, thread_type)
         self._as_compound_begin(tid)
+        turn_timeout = self._as_queue_turn_timeout_s()
         try:
-            await self.handle_message(event)
-            await self._as_autosend_late_files(tid, str(item.get("thread_type") or "user"))
-            await self._as_compound_wait_part(tid)
+            async def _run_turn() -> None:
+                await self.handle_message(event)
+                await self._as_autosend_late_files(tid, thread_type)
+                await self._as_compound_wait_part(tid)
+
+            try:
+                await asyncio.wait_for(_run_turn(), timeout=turn_timeout)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Zalo: queue turn timeout thread=%s after %.0fs — release for next message",
+                    tid,
+                    turn_timeout,
+                )
+                # Unblock compound waiters / outbound paths that key off delivery.
+                try:
+                    self._as_compound_mark_delivered(tid)
+                except Exception:
+                    pass
+                msg = self._as_ux_line(
+                    "ZALO_QUEUE_TURN_TIMEOUT_MSG",
+                    ("queue", "turn_timeout"),
+                    "Xin lỗi, tin trước xử lý quá lâu nên mình dừng lại. Bạn gửi tin tiếp theo nhé.",
+                )
+                try:
+                    await self._as_gate_announce(tid, thread_type, msg)
+                except Exception:
+                    pass
         except Exception:
             logger.exception("Zalo: queued part failed thread=%s", tid)
         finally:
+            # Always release answering + hold so the next FIFO item can run.
             self._as_compound_end(tid)
             self._as_compound_after.pop(tid, None)
             if parts_after <= 0:

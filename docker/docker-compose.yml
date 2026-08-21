@@ -1,5 +1,5 @@
-# assistant — core stack. Plain container names (hermes, valkey, …).
-# Optional workers: compose profiles + WORKER_*=active (schedule, zalo, omnirouter, …).
+# assistant — core stack. Plain container names (hermes, valkey, â€¦).
+# Optional workers: compose profiles + WORKER_*=active (schedule, zalo, omnirouter, â€¦).
 # Media overlay: docker-compose.media.yml. Security/notify overlay: docker-compose.security.yml.
 name: assistant
 
@@ -318,9 +318,11 @@ services:
       - MODEL_ROUTER_CLASSIFY_MODEL=${MODEL_ROUTER_CLASSIFY_MODEL:-${OMNIROUTER_CLASSIFY_COMBO:-classifier}}
       - MODEL_ROUTER_OUTBOUND_MODEL=${MODEL_ROUTER_OUTBOUND_MODEL:-${OMNIROUTER_DEFAULT_COMBO:-hermes}}
       - MODEL_ROUTER_PORT=8096
-      # Web search combo (OmniRouter-style failover on Router Worker — not Omni chat).
-      # Order from WEB_BACKENDS or model-router config/web-search-combo.json (tavily,searxng).
-      - WEB_BACKENDS=${WEB_BACKENDS:-tavily,searxng}
+      # Web search: default omni proxies to Omni UI (Tavily → Firecrawl → SearXNG).
+      # Override WEB_BACKENDS=tavily,firecrawl,searxng only when Omni is off.
+      - WEB_BACKENDS=${WEB_BACKENDS:-omni}
+      - OMNIROUTER_SEARCH_PROVIDERS=${OMNIROUTER_SEARCH_PROVIDERS:-tavily-search,firecrawl-search,searxng-search}
+      - WEB_SEARCH_PROVIDER_TIMEOUT_S=${WEB_SEARCH_PROVIDER_TIMEOUT_S:-20}
       - WEB_EXTRACT_BACKENDS=${WEB_EXTRACT_BACKENDS:-tavily,firecrawl}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
@@ -417,8 +419,13 @@ services:
       - ZALO_WORKFLOW=${ZALO_WORKFLOW:-1}
       - ZALO_WORKFLOW_TURN_TIMEOUT_S=${ZALO_WORKFLOW_TURN_TIMEOUT_S:-420}
       - ZALO_WORKFLOW_PARALLEL=${ZALO_WORKFLOW_PARALLEL:-4}
-      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
-      # Web search + media text extraction endpoints used by skills
+      # Native Hermes web_search uses SEARXNG_URL → {base}/search?format=json.
+      # Point at Router Worker SearXNG-compat shim (Omni-backed), not the raw
+      # SearXNG container (datacenter CAPTCHA / empty results).
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      - SEARXNG_URL=${HERMES_SEARXNG_URL:-http://model-router:8096/v1/searxng-compat}
+      # Skill/HTTP path: Router Worker → Omni search gateway
       - WEB_SEARCH_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
       - ZALO_ATTACHMENT_CONTEXT_TTL_S=${ZALO_ATTACHMENT_CONTEXT_TTL_S:-900}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
@@ -432,6 +439,9 @@ services:
       - ZALO_INBOUND_QUEUE=${ZALO_INBOUND_QUEUE:-1}
       - ZALO_INBOUND_QUEUE_MAX=${ZALO_INBOUND_QUEUE_MAX:-16}
       - ZALO_INBOUND_QUEUE_TTL_S=${ZALO_INBOUND_QUEUE_TTL_S:-3600}
+      # Hung Hermes turn must not block the next Zalo message forever.
+      - ZALO_QUEUE_TURN_TIMEOUT_S=${ZALO_QUEUE_TURN_TIMEOUT_S:-150}
+      - ZALO_QUEUE_DRAIN_MAX_S=${ZALO_QUEUE_DRAIN_MAX_S:-600}
       - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
       - ZALO_ADMIN_USERS_FILE=/opt/data/zalo_admin_users.txt
       - ZALO_HOST_DATA_DIR=${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}
