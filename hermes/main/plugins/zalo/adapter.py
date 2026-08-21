@@ -2749,7 +2749,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         logger.info("Zalo: attached buffered media for %s", pending_key)
             # group_mode == "all" → respond to everything (subject to A+B above)
         elif schedule_fire and chat_type == "group":
-            logger.info(
+            logger.warning(
                 "Zalo: scheduleFire bypass mention-gate thread=%s",
                 thread_id,
             )
