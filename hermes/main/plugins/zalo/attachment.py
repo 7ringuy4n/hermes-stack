@@ -156,3 +156,20 @@ def context_newest(items: List[Dict[str, Any]]) -> Tuple[str, str]:
         return "", ""
     last = items[-1]
     return str(last.get("file") or ""), str(last.get("text") or "")
+
+
+def image_ocr_ack_message(excerpt: str, *, max_chars: int = 1800) -> str:
+    """Deterministic Zalo reply for a bare image after OCR (empty or with text)."""
+    body = (excerpt or "").strip()
+    if not body:
+        return (
+            "Đã nhận ảnh. OCR không đọc được chữ rõ trong ảnh. "
+            "Gửi ảnh có chữ nét hơn, hoặc nói rõ bạn muốn mình làm gì với ảnh này."
+        )
+    if len(body) > max_chars:
+        body = body[:max_chars].rstrip() + "…"
+    return (
+        "Đã đọc chữ trong ảnh (OCR):\n"
+        f"{body}\n\n"
+        "Bạn muốn mình tóm tắt / dịch / lưu knowledge không?"
+    )

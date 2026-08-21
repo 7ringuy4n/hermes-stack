@@ -473,6 +473,7 @@ When re-testing a live High/Zalo lab:
 | Attachment workers, mixed pack, compound split, schedule remove | `cases/34-zalo-attachment-workers-schedule-remove.md` |
 | Image / video text really read (OCR fallback, ASR) | `cases/35-image-video-text-really-read.md` |
 | PaddleOCR primary for images | `cases/36-paddleocr-primary.md` |
+| Omni rotate + OCR never silent | `cases/37-omni-rotate-ocr-noreply.md` |
 
 **Unit scripts (no VPS, run in small batches):**
 
@@ -493,6 +494,7 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/secret_probe_path_unit.py` | 32 |
 | `test/scripts/ocr_refuse_unit.py` | 35 (blind model reply must not pass as OCR text) |
 | `test/scripts/paddle_ocr_unit.py` | 36 (PaddleOCR primary; vision opt-in) |
+| `test/scripts/omni_rotate_noreply_unit.py` | 37 (Omni rotate free models; OCR image always acks) |
 
 **Lab scripts (SSH, one case per invocation — AGENT_RULES §17 / §18: explicit permission required):**
 

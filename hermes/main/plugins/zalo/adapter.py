@@ -301,6 +301,7 @@ from attachment import (  # noqa: E402
     context_encode,
     context_merge,
     context_newest,
+    image_ocr_ack_message,
     stage_shared_media,
     worker_media_path,
 )
@@ -3006,14 +3007,17 @@ class ZaloAdapter(BasePlatformAdapter):
                 attach_bare,
                 len(excerpt),
             )
-            # Bare image + no OCR text: ack immediately. After a Hermes recreate the
-            # agent often ignores the attachment prompt and sends a /help greeting.
-            if attach_bare and attach_is_image and not (excerpt or "").strip():
-                ack = (
-                    "Đã nhận ảnh. OCR không đọc được chữ rõ trong ảnh. "
-                    "Gửi ảnh có chữ nét hơn, hoặc nói rõ bạn muốn mình làm gì với ảnh này."
+            # Bare image: always send a deterministic OCR ack (empty or with text).
+            # Do not wait on the agent/tool loop — Omni 403 / slow free-model rotation
+            # previously left users with silence after PaddleOCR already succeeded.
+            if attach_bare and attach_is_image:
+                ack = image_ocr_ack_message(excerpt or "")
+                self._as_flow(
+                    "attach_image_ocr_ack" if (excerpt or "").strip() else "attach_image_empty_ocr_ack",
+                    file=attach_name,
+                    thread_id=thread_id,
+                    chars=len(excerpt or ""),
                 )
-                self._as_flow("attach_image_empty_ocr_ack", file=attach_name, thread_id=thread_id)
                 try:
                     await self.send(
                         chat_id=str(thread_id),
@@ -3025,7 +3029,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         },
                     )
                 except Exception as e:
-                    logger.warning("Zalo: empty-OCR image ack failed: %s", type(e).__name__)
+                    logger.warning("Zalo: OCR image ack failed: %s", type(e).__name__)
                 return
         elif not media_urls and str(text or "").strip():
             text = self._as_attachment_followup(str(thread_id), text)
