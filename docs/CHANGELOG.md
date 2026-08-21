@@ -71,6 +71,16 @@ Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting 
 - scheduleFire bypasses inbound FIFO; SCHEDULE_URL / SCHEDULE_WORKER defaults on so fires reach Hermes.
 - Classified tasks keep using Router Worker to Omni model=classifier (Qwen via combo).
 
+## 2026-08-21 19:30 +07 — PDF skill collision → fake send + gpt-oss spam
+
+- Zalo “tạo 1 file pdf…” still answered “file gửi kèm” with no attachment:
+  agent called `skill_view('pdf')` (3 clones), then `pip`/`reportlab` loops;
+  each tool turn re-hit Omni `gpt-oss-120b` with full tool schemas.
+- Rename SoT `pdf`/`docx`/`xlsx` (+ official) to `*-tools-local` with
+  create-and-send deferred to `file-gen` / `POST /v1/office-file`.
+- Replica entry purges `productivity|documents/{pdf,docx,xlsx}` clones.
+- Unit: `office_skill_collision_unit.py`.
+
 ## 2026-08-21 18:50 +07 — Empty Omni combos; office files via Dispatcher
 
 - first-setup no longer fills OpenCode into hermes / classifier; both combos

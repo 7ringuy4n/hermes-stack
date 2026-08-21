@@ -98,6 +98,16 @@ elif [ -d "$_src_skills" ] && [ -d "$_dst_skills" ]; then
   # cp -n would leave stale image-gen / media-out after a rolling deploy.
   cp -a "$_src_skills"/. "$_dst_skills"/ 2>/dev/null || true
 fi
+# Drop Hermes category clones of office skills. They re-registered as name:pdf|docx|xlsx
+# alongside SoT copies → skill_view collisions → reportlab/pip tool loops → Omni spam
+# and fake "file sent" replies with nothing in media/out. Chat create uses file-gen.
+if [ -d "$_dst_skills" ]; then
+  for _cat in productivity documents; do
+    for _n in pdf docx xlsx; do
+      rm -rf "${_dst_skills}/${_cat}/${_n}" 2>/dev/null || true
+    done
+  done
+fi
 link_shared messages
 # Plugins: overlay SoT so new modules (classify_client, gateway_noise) land on
 # existing replica dirs. A leftover directory is not replaced by link_shared.

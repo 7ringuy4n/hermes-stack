@@ -165,6 +165,40 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 19:30 +07 — PDF claim + gpt-oss-120b request storm
+
+### Symptom
+
+User: “tạo 1 file pdf và điền vào số 1”. Bot: “Đây là file PDF… (File được
+gửi kèm)” but Zalo had no attachment. OmniRouter showed many
+`openrouter/openai/gpt-oss-120b` (and groq) turns with huge tool lists.
+
+### Root cause
+
+1. Three skills still registered as `name: pdf` (SoT + official + Hermes
+   `productivity/` clone). `skill_view('pdf')` refused (ambiguous).
+2. Agent fell back to local pdf scripts → missing `reportlab` → pip/uv
+   install loops. Each failure = another chat.completions call (~20+ tools
+   in the body) → Omni “plenty of requests” to gpt-oss-120b.
+3. Model narrated success without `"ok":true` / file in `media/out`.
+4. `file-gen` already pointed at Dispatcher office-file, but the skill
+   index still advertised “Create… PDF files” under name `pdf`.
+
+### Fix
+
+- Rename office SoT skills to `pdf-tools-local` / `docx-tools-local` /
+  `xlsx-tools-local` (and `official-*`); descriptions defer to `file-gen`.
+- `hermes-replica-entry.sh` deletes category clones under
+  `productivity|documents/{pdf,docx,xlsx}` after skill overlay.
+- Unit `office_skill_collision_unit.py` forbids reserved names `pdf|docx|xlsx`.
+
+### Prevent recurrence
+
+Never ship multiple skills with the same frontmatter `name`. Chat
+create-and-send must only go through Dispatcher `/v1/office-file`. Do not
+claim delivery without `"ok":true` or autosend of a real `media/out` file.
+
+
 ## 2026-08-21 18:50 +07 — PDF/txt “created” but never sent on Zalo
 
 ### Symptom
