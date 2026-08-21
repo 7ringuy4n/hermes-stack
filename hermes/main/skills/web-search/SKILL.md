@@ -8,10 +8,13 @@ description: "Search the public web through the Router Worker web-search combo (
 Stack:
 
 ```text
-Hermes → this skill → Router Worker (OmniRouter side) → combo: Tavily → SearXNG
+Hermes → this skill → Router Worker → combo: Tavily → SearXNG
 ```
 
-Search runs on the **Router Worker**, next to the LLM combos — not on the Media/File worker. The combo fails over in order; SearXNG is the local last resort so answers still work without vendor keys.
+Search runs on the **Router Worker** (`model-router /v1/search`) — not on OmniRouter
+chat combos and not on the Media/File worker. OmniRouter only routes LLM models.
+The search combo fails over in order; SearXNG is the local last resort so answers
+still work when vendor keys are missing (if SearXNG engines are healthy).
 
 ## Endpoints
 

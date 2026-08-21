@@ -1,7 +1,8 @@
-"""Web search combo for Router Worker (OmniRouter side).
+"""Web search combo for Router Worker (not OmniRouter chat combos).
 
-Fallback order is a combo like the LLM combos: paid vendor first, local
-SearXNG last. Default chain: tavily -> searxng.
+OmniRouter routes LLM completions only. Web search is a separate combo on
+model-router: paid vendor first, local SearXNG last.
+Default chain: tavily -> searxng.
 
 Endpoints (mounted before the OpenAI proxy catch-all):
   POST /v1/search    { query, max_results?, backend? }
@@ -143,9 +144,11 @@ async def _searxng_search(query: str, max_results: int) -> dict[str, Any]:
         raise HTTPException(503, "SEARXNG_URL missing")
     n = max(1, min(int(max_results or SEARXNG_MAX), SEARXNG_MAX, SEARCH_RESULT_CAP))
     async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+        # Do not pass language=all — some engines return empty for that token.
         r = await client.get(
             f"{SEARXNG_URL}/search",
-            params={"q": query, "format": "json", "language": "all"},
+            params={"q": query, "format": "json"},
+            headers={"User-Agent": "hermes-router-worker/websearch"},
         )
         r.raise_for_status()
         data = r.json()
@@ -160,7 +163,18 @@ async def _searxng_search(query: str, max_results: int) -> dict[str, Any]:
             }
         )
     if not results:
-        raise RuntimeError("searxng returned no results")
+        unresp = data.get("unresponsive_engines") or []
+        hint = ""
+        if unresp:
+            # Keep short: [['brave','CAPTCHA'], ...]
+            parts = []
+            for row in unresp[:4]:
+                if isinstance(row, (list, tuple)) and len(row) >= 2:
+                    parts.append(f"{row[0]}:{row[1]}")
+                else:
+                    parts.append(str(row))
+            hint = f" unresponsive={{{', '.join(parts)}}}"
+        raise RuntimeError(f"searxng returned no results{hint}")
     return {"backend": "searxng", "results": results, "answer": None}
 
 

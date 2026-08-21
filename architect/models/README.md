@@ -37,7 +37,7 @@ Model gateway and tool bus: **Model Router** (task_hint → providers), **9Route
 |---|---|
 | [model-router/](./model-router/README.md) | Hybrid task class → 9router / Omni / fallback |
 | [omni-router/](./omni-router/README.md) | Optional general-task router (separate image) |
-| [dispatcher/](./dispatcher/README.md) | `/v1/search`, image/office helpers, tool HTTP APIs |
+| [dispatcher/](./dispatcher/README.md) | Media helpers; points Hermes to model-router for `/v1/search` |
 
 ## How it works
 
@@ -51,9 +51,13 @@ Hermes needs a completion
     → OUTPUT Secret Probe
 
 Hermes / skill needs web search (Medium+)
-    → dispatcher /v1/search
-    → Tavily → Firecrawl → SearXNG (top 5)
+    → model-router /v1/search  (Router Worker combo)
+    → Tavily → SearXNG (default WEB_BACKENDS)
+    → extract via Tavily/Firecrawl only (SearXNG cannot extract)
 ```
+
+**Note:** OmniRouter does **not** host web search. Its combos are LLM models only.
+SearXNG is a sibling container called by Router Worker, not an OmniRouter plugin.
 
 On **Low**, do not use dispatcher for internet answers to knowledge questions — knowledge stays in ingest/Qdrant.
 

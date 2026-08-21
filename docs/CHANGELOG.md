@@ -1,3 +1,14 @@
+## 2026-08-21 16:05 +07 — Web search status: Router Worker combo, not OmniRouter
+
+- Lab check: SearXNG container healthy; OmniRouter has **no** search/tavily/searx
+  integration (LLM combos only). Search combo is **Router Worker**
+  `POST /v1/search` with default `WEB_BACKENDS=tavily,searxng`.
+- Lab broken: `TAVILY_API_KEY` empty; SearXNG engines CAPTCHA/rate-limited →
+  `/v1/search` 502. Hermes `web_extract` wrongly tried SearXNG for extract.
+- Hardening: clearer “Omni ≠ search” docs/skill; SearXNG settings prefer
+  engines that work from datacenter IPs; searx call drops `language=all` and
+  reports unresponsive engines. Unit: `websearch_combo_unit.py`.
+
 ## 2026-08-21 15:35 +07 — Cron wrappers + lyric follow-up no web search
 
 - Hermes native cron deliveries showed `Cronjob Response` / `job_id` / stop-reminder

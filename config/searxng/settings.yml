@@ -1,4 +1,5 @@
 # SearXNG — Medium+ web search fallback (mounted read-only into searxng container)
+# Used by Router Worker combo WEB_BACKENDS=tavily,searxng — NOT by OmniRouter chat combos.
 use_default_settings: true
 
 general:
@@ -8,6 +9,7 @@ general:
 search:
   safe_search: 0
   autocomplete: ""
+  default_lang: "auto"
   formats:
     - html
     - json
@@ -19,3 +21,24 @@ server:
   image_proxy: false
   bind_address: "0.0.0.0"
   base_url: "http://searxng:8080/"
+
+# Prefer engines that usually work from datacenter IPs (major web engines often CAPTCHA).
+engines:
+  - name: wikipedia
+    disabled: false
+  - name: wikidata
+    disabled: false
+  - name: wiktionary
+    disabled: false
+  - name: currency
+    disabled: false
+  - name: duckduckgo
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: startpage
+    disabled: false
+  - name: google
+    disabled: true
+  - name: google cse
+    disabled: true
