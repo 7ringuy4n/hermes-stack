@@ -19,6 +19,38 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 11:40 +07 — Zalo photo: bridge OK, media-proxy OK, OCR 404, no reply
+
+### Symptom
+
+User sent a `chat.photo`. Bridge logged the RAW message and `/media/fetch` wrote a JPEG into
+`~/.hermes-zalo/media-cache`. Hermes started a turn (tool-registry warnings + `SOUL.md`
+blocked). OCR logged `POST /v1/ocr 404`. Classify/outbound returned 200. No bridge `send`
+followed — the user got silence. The SOUL/kanban warnings were unrelated noise.
+
+### Root cause
+
+1. `_download_media` stores bytes via `cache_image_from_bytes` under
+   `/opt/data/replicas/<id>/cache/images/…`. Workers mount only `/data/media`
+   (shared with `/opt/data/media`). `worker_media_path` left the replica path unchanged,
+   so OCR correctly answered **file not found / 404**.
+2. With an empty OCR excerpt, the bare-image prompt told the agent to **open the image
+   file and describe it**. Vision/browser tools were unavailable (`check_* returned False`),
+   so the turn burned model calls without a deliverable Zalo send.
+
+### Fix
+
+Stage every inbound download onto `/opt/data/media/inbound/{thread_id}/` before OCR/AV
+workers run (`attachment.stage_shared_media`). Soften the empty-OCR image prompt so the
+agent replies without calling missing vision tools.
+
+### Prevent recurrence
+
+Anything Hermes asks a worker to read must live on the shared media volume. Replica cache
+paths are for the gateway only — never pass them to OCR/ingest/dispatcher.
+
+---
+
 ## 2026-08-21 11:20 +07 — Bridge crash-loop on :8787; Hermes cannot POST /media/fetch
 
 ### Symptom
