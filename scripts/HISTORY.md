@@ -19,6 +19,40 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 11:20 +07 — Bridge crash-loop on :8787; Hermes cannot POST /media/fetch
+
+### Symptom
+
+`journalctl --user -u com.hermes.zaloplugin -f` showed a continuous `EADDRINUSE
+0.0.0.0:8787` restart storm (counter past 9500). At the same time
+`docker logs assistant-hermes-1` logged `Zalo: media-proxy fetch HTTP 404 Cannot
+POST /media/fetch`, so inbound images never reached OCR.
+
+### Root cause
+
+1. An orphan Node bridge started via `runuser` (from `patch_zalo_bridge_inject.py`
+   / historical `nohup`) already owned `:8787`. The user systemd unit stayed
+   enabled with `Restart=always`, so it kept failing to bind.
+2. Hermes expects `POST /media/fetch` on the host bridge (`ASSISTANT_MEDIA_PROXY_v1`),
+   but upstream `hermes-zalo-plugin` 1.0.9 never shipped that route. The inject
+   patcher's marker was also wrong (`POST /inject-event` vs `app.post("/inject-event"`),
+   so `/inject-event` was inserted three times.
+
+### Fix
+
+- Patcher installs `/media/fetch` + `/media/:id` (CDN GET with session cookies),
+  dedupes inject handlers, and restarts via the systemd user unit after clearing
+  orphans — never a competing `nohup`/`runuser` listener while the unit is enabled.
+- `setup-zalo.sh` and `zalo-watch.sh` use that path for heal/setup.
+
+### Prevent recurrence
+
+One process must own the bridge port. Prefer the systemd user unit; any helper that
+starts Node directly must stop or disable the unit first. Adapter ↔ bridge contracts
+(`ASSISTANT_MEDIA_PROXY_v1`) need a matching route in the patcher when upstream omits them.
+
+---
+
 ## 2026-08-21 11:10 +07 — Images “read” but the text was the model asking for the image
 
 ### Symptom
