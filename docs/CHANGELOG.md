@@ -1,3 +1,9 @@
+## 2026-08-21 12:10 +07 — PaddleOCR is the primary OCR engine (Media Worker)
+
+- OCR service (separate container under the Media Worker profile) now runs **PaddleOCR first** for images and scanned PDF pages. Vision LLM is opt-in (`OCR_VISION=0` by default) so text-only routers no longer burn a round trip or invent “please upload the image” as OCR text.
+- Paddle inference runs on a dedicated thread pool inside the OCR container so dispatcher ASR / other Media Worker ops are not blocked. Tesseract remains the secondary fallback; pymupdf still handles PDF text layers.
+- Build: `INSTALL_PADDLE=1` installs CPU `paddlepaddle` + `paddleocr` (mobile PP-OCRv5 when available). Model cache on the media volume. Unit: `test/scripts/paddle_ocr_unit.py`.
+
 ## 2026-08-21 11:52 +07 — OCR image must COPY result.py
 
 - `empty_scan_result` lived in `result.py` but the OCR Dockerfile only copied `app.py`/`refuse.py`, so the rebuilt container crash-looped on import after PR #93.

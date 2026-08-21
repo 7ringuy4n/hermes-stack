@@ -13,6 +13,7 @@ Hard gates that always apply to lab work (see AGENT_RULES):
 | No deploy / push / MR without permission | §17 Deployment Safety |
 | Remote SSH / script send needs permission | §18 Remote Operations |
 | Restore defaults after testing | §19 Test Configuration Cleanup |
+| Post-test / post-patch crash-loop log watch | §18.1 / §19 (HISTORY 2026-08-21 11:20) |
 | Source-first fixes (no lab hotpatch) | §15 Source-First Fixes |
 
 ## Cases not to run (AGENT_RULES §28)
@@ -42,6 +43,10 @@ For every run and every target worker set:
 7. Record all results with timestamps.
 8. Do not reuse artifacts from a previous profile unless the test explicitly requires persistence.
 9. **Restore defaults (AGENT_RULES §19):** when the run is finished, revert test-only source and config to product defaults. Do not leave lab timeouts, cache-bust keys, host identities, or worker/component flags that were only for that run.
+10. **Monitor abnormal logs after the run (and while patching):** test cases / heal / bridge patches may leave a crash-loop on the Zalo bridge or other services. Before calling the run done, watch at least:
+    - `docker logs -f assistant-hermes-1 2>&1` (live Hermes container name if different)
+    - `journalctl --user -u com.hermes.zaloplugin -f`
+    Fail the run if you see `EADDRINUSE` restart storms, repeated unit `auto-restart`, media-proxy `/media/fetch` 404 spam, or unrelated worker flap. Reference: [`../scripts/HISTORY.md`](../scripts/HISTORY.md) **2026-08-21 11:20 +07 — Bridge crash-loop on :8787**. Same watch applies whenever patching the bridge or Hermes Zalo path (AGENT_RULES §18.1).
 
 Destroy and config changes (`destroy`, `add-components`, `update`) **abort** if backup or verify fails. `switch-profile` is legacy and must fail fast.
 
@@ -54,6 +59,7 @@ When Zalo is requested:
 3. Stop before QR scanning.
 4. Ask the user to manually scan the QR code.
 5. Continue testing only after the user confirms the QR login is complete.
+6. After setup, patch, or heal: keep `journalctl --user -u com.hermes.zaloplugin -f` and Hermes `docker logs` open long enough to catch an `EADDRINUSE` crash-loop or media-proxy 404 (AGENT_RULES §18.1; HISTORY **2026-08-21 11:20 +07**).
 
 ## 3. All Worker Sets — Basic Tests
 
@@ -466,6 +472,7 @@ When re-testing a live High/Zalo lab:
 | Zalo image / PDF / txt send / queue | `cases/33-zalo-image-pdf-txt-queue.md` |
 | Attachment workers, mixed pack, compound split, schedule remove | `cases/34-zalo-attachment-workers-schedule-remove.md` |
 | Image / video text really read (OCR fallback, ASR) | `cases/35-image-video-text-really-read.md` |
+| PaddleOCR primary for images | `cases/36-paddleocr-primary.md` |
 
 **Unit scripts (no VPS, run in small batches):**
 
@@ -485,6 +492,7 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/schedule_crud_unit.py` | 34 (remove list / range / group / all) |
 | `test/scripts/secret_probe_path_unit.py` | 32 |
 | `test/scripts/ocr_refuse_unit.py` | 35 (blind model reply must not pass as OCR text) |
+| `test/scripts/paddle_ocr_unit.py` | 36 (PaddleOCR primary; vision opt-in) |
 
 **Lab scripts (SSH, one case per invocation — AGENT_RULES §17 / §18: explicit permission required):**
 

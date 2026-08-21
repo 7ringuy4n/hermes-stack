@@ -23,7 +23,10 @@ services:
     networks: [internal]
 
   ocr:
-    build: ./architect/tools/ocr
+    build:
+      context: ./architect/tools/ocr
+      args:
+        INSTALL_PADDLE: ${INSTALL_PADDLE:-1}
     container_name: ocr
     restart: unless-stopped
     environment:
@@ -32,12 +35,18 @@ services:
       - OCR_MODEL=${OCR_MODEL:-hermes}
       - OCR_MEDIA_ROOT=/data/media
       - OCR_FALLBACK=${OCR_FALLBACK:-1}
+      - OCR_PADDLE=${OCR_PADDLE:-1}
+      - OCR_VISION=${OCR_VISION:-0}
+      - OCR_PADDLE_MOBILE=${OCR_PADDLE_MOBILE:-1}
+      - OCR_PADDLE_TIMEOUT_S=${OCR_PADDLE_TIMEOUT_S:-90}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     volumes:
       - ${ASSISTANT_DATA_DIR:-/data/assistant}/media:/data/media
+      - ${ASSISTANT_DATA_DIR:-/data/assistant}/media/.cache/paddleocr:/tmp/.paddlex
     ports:
       - "127.0.0.1:${OCR_PORT:-8091}:8091"
     networks: [internal]
+    mem_limit: ${OCR_MEM_LIMIT:-3g}
 
   jobs:
     build: ./architect/tools/jobs

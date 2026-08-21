@@ -2,20 +2,58 @@
 
 ## Purpose
 
-Extract text from PDFs and images so ingest and upload skills can index or summarize. Uses vision/upstream then fallbacks (e.g. pymupdf/tesseract) inside the service.
+Extract text from PDFs and images so Hermes and Media Worker skills can summarize
+without a vision-capable LLM.
+
+**Primary engine: PaddleOCR** (separate OCR container under the Media Worker
+profile). Vision LLM is opt-in (`OCR_VISION=1`) and is never the first hop.
 
 ## Profile
 
-Medium+ (`ENABLE_OCR=1`). Off on Low.
+Medium+ (`ENABLE_OCR=1` / `WORKER_MEDIA_FILE=active`). Off on Low.
+
+## Flow
+
+```
+image / scanned PDF
+        │
+        ▼
+   PaddleOCR (thread pool)
+        │
+   ┌────┴────┐
+success    failure / empty
+   │            │
+   ▼            ▼
+ text      tesseract / pymupdf
+   │            │
+   └─────┬──────┘
+         ▼
+   Hermes receives text
+         ▼
+   any LLM interprets
+```
+
+PDF with an embedded text layer still uses pymupdf directly (no raster OCR).
 
 ## Main functions
 
 | Function | Detail |
 |---|---|
-| `POST /v1/ocr` | `{ path }` or image → text/markdown |
-| Fail soft | Empty text → caller reports "could not read", no invented quotes |
+| `POST /v1/ocr` | `{ path }` or `{ image_b64 }` → `{ ok, text, via }` |
+| `via` | `paddle` \| `pymupdf` \| `tesseract` \| `9router` (only when `OCR_VISION=1`) |
+| Empty scan | `{ ok:true, empty:true, text:"" }` — not a hard failure |
+
+## Env
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `OCR_PADDLE` | `1` | Use PaddleOCR when wheels are installed |
+| `OCR_VISION` | `0` | Opt-in vision LLM after paddle/tesseract |
+| `OCR_PADDLE_MOBILE` | `1` | Prefer PP-OCRv5 mobile det/rec |
+| `INSTALL_PADDLE` | `1` | Build-arg: install paddlepaddle + paddleocr |
 
 ## Related
 
-- [ingest](../ingest/README.md)  
-- [hermes/main/skills/upload](../../../hermes/main/skills/upload/SKILL.md)
+- [ingest](../ingest/README.md)
+- Media Worker dispatcher (`/v1/media/text` keyframe OCR also calls this service)
+- `hermes/main/skills/core/worker-routing/SKILL.md`

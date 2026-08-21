@@ -11,7 +11,7 @@ Hermes receives structured JSON from the model-router `/v1/classify` hop (or equ
 |---|---|---|---|
 | `normal` | `null` | `null` | Answer directly. **No** workflow queue for simple chat. |
 | `search` | `web_search` | `search` | **Web Search skill** → Router Worker `POST /v1/search` (combo Tavily → SearXNG). |
-| `file` / `tool` (media) | `media_file` | `process_file`, `process_image`, `generate_media`, `create_file` | **Media/File skill** → media worker / OCR / ComfyUI (`/v1/media/text` for audio-video). |
+| `file` / `tool` (media) | `media_file` | `process_file`, `process_image`, `generate_media`, `create_file` | **Media/File skill** → media worker / OCR (**PaddleOCR first** on `ocr:8091`) / ComfyUI (`/v1/media/text` for audio-video). |
 | `schedule` | `schedule` | `create` | **Schedule skill** → Go schedule worker (`SCHEDULE_URL`). Store inner `fire_text` only. |
 | `knowledge` | `knowledge` | `lookup` | Knowledge catalog (top 5). Not live web search. |
 | `coding` | `null` or coding skills | — | Router worker → 9router (coding path). Gateway skips rate limit on coding paths. |
