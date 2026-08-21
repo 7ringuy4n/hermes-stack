@@ -18,6 +18,7 @@ from attachment import (  # noqa: E402
     context_encode,
     context_merge,
     context_newest,
+    image_ocr_ack_message,
     stage_shared_media,
     worker_media_path,
 )
@@ -146,6 +147,14 @@ def test_context_blocks() -> None:
     print("PASS recall blocks newest-first within budget")
 
 
+def test_image_ocr_ack() -> None:
+    empty = image_ocr_ack_message("")
+    assert "OCR không đọc được" in empty, empty
+    full = image_ocr_ack_message("HOA DON 1250000 VND")
+    assert "HOA DON 1250000 VND" in full and "Đã đọc chữ" in full, full
+    print("PASS bare-image OCR ack never silent")
+
+
 def main() -> int:
     try:
         test_kind()
@@ -154,6 +163,7 @@ def main() -> int:
         test_caption()
         test_context_pack()
         test_context_blocks()
+        test_image_ocr_ack()
     except AssertionError as e:
         print(f"FAIL {e}")
         return 1
