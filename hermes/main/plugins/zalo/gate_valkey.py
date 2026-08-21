@@ -272,6 +272,33 @@ class GateStore:
         except Exception:
             pass
 
+    def attachment_put(self, chat_id: str, payload: str, ttl_s: int) -> None:
+        """Remember the last extracted attachment text for follow-up turns."""
+        key = self._k("attach", chat_id)
+        try:
+            self._r.call("SET", key, payload, "EX", str(max(30, int(ttl_s))))
+        except Exception:
+            pass
+
+    def attachment_get(self, chat_id: str) -> Optional[str]:
+        key = self._k("attach", chat_id)
+        try:
+            raw = self._r.call("GET", key)
+        except Exception:
+            return None
+        if raw is None:
+            return None
+        if isinstance(raw, bytes):
+            return raw.decode("utf-8", "replace")
+        return str(raw)
+
+    def attachment_clear(self, chat_id: str) -> None:
+        key = self._k("attach", chat_id)
+        try:
+            self._r.call("DEL", key)
+        except Exception:
+            pass
+
 
 def get_store() -> Optional[GateStore]:
     return GateStore.from_env()

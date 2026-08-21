@@ -8,7 +8,9 @@ from typing import Any, Dict, List, Optional
 QUEUE_ENV = "ZALO_INBOUND_QUEUE"
 QUEUE_MAX_ENV = "ZALO_INBOUND_QUEUE_MAX"
 QUEUE_TTL_ENV = "ZALO_INBOUND_QUEUE_TTL_S"
-DEFAULT_MAX = 8
+# A mixed media pack (txt+md+docx+xlsx+mp3+mp4+image…) arrives as one event per
+# file, so the per-thread FIFO must hold a whole pack without dropping items.
+DEFAULT_MAX = 16
 DEFAULT_TTL = 3600
 KIND_INBOUND = "inbound"
 KIND_PART = "part"

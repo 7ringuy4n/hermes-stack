@@ -177,6 +177,27 @@ def main() -> int:
         print(f"FAIL once-lịch ingest must stay whole, got {once_kept!r}")
         return 1
     print("PASS once-lịch 3 numbered tasks stay schedule PLAN_N 3")
+
+    from classify_fixtures import FIXTURE_CONJ_THREE  # noqa: E402
+
+    conj = split_compound_requests(FIXTURE_CONJ_THREE)
+    if len(conj) != 3:
+        print(f"FAIL conjunction compound expected 3 parts, got {conj!r}")
+        return 1
+    if "chào" not in conj[0] or "xăng" not in conj[1] or "thời tiết" not in conj[2]:
+        print(f"FAIL conjunction content: {conj!r}")
+        return 1
+    if "E10 RON95" not in conj[1]:
+        print(f"FAIL both fuel grades must stay in one part: {conj!r}")
+        return 1
+    conj_plan = classify_text(FIXTURE_CONJ_THREE)
+    if conj_plan.get("execution_class") != "async":
+        print(f"FAIL conjunction compound must run async: {conj_plan!r}")
+        return 1
+    if any((d.get("depends_on") or []) for d in (conj_plan.get("task_details") or [])):
+        print(f"FAIL conjunction parts must be independent: {conj_plan!r}")
+        return 1
+    print("PASS conjunction-joined request splits into 3 async parts")
     return 0
 
 

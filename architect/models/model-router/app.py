@@ -35,6 +35,8 @@ from classify import (  # noqa: E402
     plan_schema_ok,
 )
 from chat_norm import normalize_chat_completion, sanitize_chat_payload
+from websearch import health_fields as websearch_health
+from websearch import router as websearch_router
 
 ROOT = Path(__file__).resolve().parent
 MESSAGES_PATH = Path(os.environ.get("MODEL_ROUTER_MESSAGES", str(ROOT / "messages" / "en.json")))
@@ -61,6 +63,8 @@ def _failover_status(code: int) -> bool:
     return code >= 500 or code in FAILOVER_HTTP
 
 app = FastAPI(title="assistant-model-router", version="0.5.0")
+# Web search combo must be registered before the OpenAI proxy catch-all below.
+app.include_router(websearch_router)
 _http: httpx.AsyncClient | None = None
 _health_cache: dict[str, tuple[float, bool]] = {}
 
@@ -215,6 +219,8 @@ async def health() -> dict[str, Any]:
         "task_hints": list(TASK_HINTS),
         "classify": "/v1/classify",
         "outbound": "/v1/outbound",
+        "search": "/v1/search",
+        **websearch_health(),
     }
 
 

@@ -25,6 +25,8 @@ from channels_registry import (
 )
 from schedule_list import fmt_hermes_cron_list
 from schedule_crud import (
+    SCOPE_GLOBAL as SCHEDULE_SCOPE_GLOBAL,
+    SCOPE_GROUP as SCHEDULE_SCOPE_GROUP,
     USAGE as SCHEDULE_USAGE,
     apply_schedule_update,
     fmt_list as fmt_schedule_list,
@@ -32,8 +34,10 @@ from schedule_crud import (
     jobs_file as schedule_jobs_file,
     load_bundle as load_schedule_bundle,
     new_job as new_schedule_job,
+    parse_remove_request as parse_schedule_remove,
     parse_update_args as parse_schedule_update,
     resolve_job as resolve_schedule_job,
+    resolve_jobs as resolve_schedule_jobs,
     save_bundle as save_schedule_bundle,
     split_add_args,
     take_all_flag as take_schedule_all_flag,
@@ -143,6 +147,44 @@ def _workflow_upsert_schedule(job: dict[str, Any], expr: str, prompt: str, tz_na
 def _workflow_delete_schedule(sid: str) -> None:
     if sid:
         _workflow_http("DELETE", f"/v1/schedules/{sid}")
+
+
+ADMIN_MESSAGES_PATH = os.environ.get("ZALO_ADMIN_MESSAGES", "/app/zalo-admin.json")
+SCHEDULE_LABEL_PREVIEW = 10
+
+
+def _admin_msg(path: tuple[str, ...], default: str, **fields: Any) -> str:
+    """Admin reply copy from the editable messages file (never hardcoded prose)."""
+    node: Any = {}
+    try:
+        with open(ADMIN_MESSAGES_PATH, encoding="utf-8") as f:
+            node = json.load(f)
+    except (OSError, ValueError):
+        node = {}
+    for key in path:
+        node = node.get(key) if isinstance(node, dict) else None
+        if node is None:
+            break
+    if isinstance(node, dict):
+        node = node.get(str(node.get("default") or "vi")) or node.get("vi") or node.get("en")
+    template = str(node or default)
+    try:
+        return template.format(**fields)
+    except (KeyError, IndexError):
+        return template
+
+
+def _schedule_group_pool(
+    jobs: list[dict[str, Any]], group_ref: str
+) -> tuple[list[dict[str, Any]], Optional[str]]:
+    """Jobs delivered into a named group. None thread id = group unknown."""
+    tid = _resolve_thread_ref(group_ref, _read_entries())
+    if not tid:
+        hit = resolve("zalo", group_ref)
+        tid = str((hit or {}).get("id") or "") or None
+    if not tid:
+        return [], None
+    return schedule_jobs_for_thread(jobs, tid), tid
 # Sole operator admin (exactly one uid). File wins over env when present.
 ADMIN_USERS_FILE = os.environ.get(
     "ZALO_ADMIN_USERS_FILE",
@@ -1767,20 +1809,85 @@ def chat_command(
             }
 
         if sub in {"remove", "rm", "delete", "del"}:
-            want_all, sel = take_schedule_all_flag(rest)
+            req = parse_schedule_remove(rest)
             vis = visible_schedule_jobs(jobs)
-            pool = vis if want_all else schedule_jobs_for_thread(jobs, thread)
-            job, err = resolve_schedule_job(pool, sel)
-            if (err or job is None) and not want_all and sel and not sel.split()[0].isdigit():
-                job, err = resolve_schedule_job(vis, sel)
-            if err or job is None:
-                return {"ok": True, "handled": True, "reply": err or SCHEDULE_USAGE}
-            jid = str(job.get("id") or "")
-            file_jobs = [j for j in file_jobs if str(j.get("id") or "") != jid]
+            errors: list[str] = []
+            if req["scope"] == SCHEDULE_SCOPE_GROUP:
+                if not req["group_ref"]:
+                    return {"ok": True, "handled": True, "reply": SCHEDULE_USAGE}
+                pool, gid = _schedule_group_pool(jobs, req["group_ref"])
+                if gid is None:
+                    return {
+                        "ok": True,
+                        "handled": True,
+                        "reply": _admin_msg(
+                            ("schedule", "remove_group_unknown"),
+                            "Chưa biết nhóm “{group}”.",
+                            group=req["group_ref"],
+                        ),
+                    }
+                if not pool:
+                    return {
+                        "ok": True,
+                        "handled": True,
+                        "reply": _admin_msg(
+                            ("schedule", "remove_group_empty"),
+                            "Nhóm “{group}” chưa có lịch nào.",
+                            group=req["group_ref"],
+                        ),
+                    }
+            elif req["scope"] == SCHEDULE_SCOPE_GLOBAL:
+                pool = vis
+            else:
+                pool = schedule_jobs_for_thread(jobs, thread)
+            if req["every"]:
+                targets = visible_schedule_jobs(pool)
+            else:
+                targets, errors = resolve_schedule_jobs(pool, req["selectors"])
+                if not targets and req["scope"] not in {
+                    SCHEDULE_SCOPE_GLOBAL,
+                    SCHEDULE_SCOPE_GROUP,
+                }:
+                    # Names may live outside this chat — retry against every schedule.
+                    named = [s for s in req["selectors"] if not s.isdigit()]
+                    if named:
+                        targets, errors = resolve_schedule_jobs(vis, named)
+            if not targets:
+                reply = errors[0] if errors else _admin_msg(
+                    ("schedule", "remove_none"), "Không có lịch nào khớp để xóa."
+                )
+                return {"ok": True, "handled": True, "reply": reply}
+            ids = [str(j.get("id") or "") for j in targets if j.get("id")]
+            labels = [fmt_schedule_show(j).splitlines()[0] for j in targets]
+            file_jobs = [j for j in file_jobs if str(j.get("id") or "") not in set(ids)]
             save_schedule_bundle(path, file_jobs, tz_name)
-            _workflow_delete_schedule(jid)
-            label = fmt_schedule_show(job).splitlines()[0]
-            return {"ok": True, "handled": True, "reply": f"Đã xóa lịch: {label}"}
+            for jid in ids:
+                _workflow_delete_schedule(jid)
+            if len(labels) == 1:
+                reply = _admin_msg(
+                    ("schedule", "removed_one"), "Đã xóa lịch: {label}", label=labels[0]
+                )
+            else:
+                shown = labels[:SCHEDULE_LABEL_PREVIEW]
+                reply = _admin_msg(
+                    ("schedule", "removed_many"),
+                    "Đã xóa {count} lịch:\n{labels}",
+                    count=len(labels),
+                    labels="\n".join(f"- {x}" for x in shown),
+                )
+                if len(labels) > len(shown):
+                    reply += "\n" + _admin_msg(
+                        ("schedule", "removed_more"),
+                        "… và {rest} lịch khác.",
+                        rest=len(labels) - len(shown),
+                    )
+            if errors:
+                reply += "\n" + _admin_msg(
+                    ("schedule", "remove_partial"),
+                    "Bỏ qua: {errors}",
+                    errors="; ".join(errors[:3]),
+                )
+            return {"ok": True, "handled": True, "reply": reply}
 
         return {
             "ok": True,

@@ -2,7 +2,7 @@
 """Run schedule TZ or multi-request unit tests on the VPS (one case per process).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
-     CASE=15|16|22|23|24
+     CASE=15|16|22|23|24|34
 """
 from __future__ import annotations
 
@@ -22,18 +22,19 @@ CASE = os.environ.get("CASE", "").strip()
 
 
 def main() -> int:
-    if CASE not in {"15", "16", "22", "23", "24"}:
-        print("FAIL: set CASE=15, 16, 22, 23, or 24")
+    scripts = {
+        "15": "/opt/assistant/test/scripts/schedule_timezone_unit.py",
+        "16": "/opt/assistant/test/scripts/multi_request_unit.py",
+        "22": "/opt/assistant/test/scripts/gateway_noise_unit.py",
+        "23": "/opt/assistant/test/scripts/inbound_queue_unit.py",
+        "24": "/opt/assistant/test/scripts/workflow_schedule_concurrency_unit.py",
+        "34": "/opt/assistant/test/scripts/zalo_attachment_unit.py",
+    }
+    if CASE not in scripts:
+        print("FAIL: set CASE=" + "|".join(sorted(scripts)))
         return 2
     c = connect()
     try:
-        scripts = {
-            "15": "/opt/assistant/test/scripts/schedule_timezone_unit.py",
-            "16": "/opt/assistant/test/scripts/multi_request_unit.py",
-            "22": "/opt/assistant/test/scripts/gateway_noise_unit.py",
-            "23": "/opt/assistant/test/scripts/inbound_queue_unit.py",
-            "24": "/opt/assistant/test/scripts/workflow_schedule_concurrency_unit.py",
-        }
         script = scripts[CASE]
         out = sudo_bash(
             c,
