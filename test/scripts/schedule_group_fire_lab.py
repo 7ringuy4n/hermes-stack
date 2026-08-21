@@ -68,7 +68,15 @@ def main() -> int:
     tag = uuid.uuid4().hex[:8]
     py = f"""
 import json, subprocess, time
-admin = open("/data/assistant/zalo_admin_users.txt", encoding="utf-8").readline().split("|")[0].strip()
+from pathlib import Path
+admin=None
+for ln in Path('/data/assistant/zalo_admin_users.txt').read_text(encoding='utf-8').splitlines():
+  s=ln.strip()
+  if not s or s.startswith('#'):
+    continue
+  admin=s.split('|')[0].strip()
+  break
+assert admin and not admin.startswith('#'), admin
 gid = {LC_GID!r}
 tag = {tag!r}
 body = {{
@@ -79,6 +87,7 @@ body = {{
   "fire_text": f"xin chào từ schedule lab {{tag}}",
   "origin": {{"platform":"zalo","thread_id":gid,"chat_id":gid,"user_id":admin,"chat_name":"LC group"}},
   "context": {{"thread_id":gid,"thread_type":"group","chat_type":"group","sender_id":admin,"sender_name":"admin"}},
+  "next_run_at": "2020-01-01T00:00:00Z",
 }}
 raw = subprocess.check_output([
   "docker","exec","-i","schedule-worker","wget","-qO-","-T","15",
@@ -87,26 +96,12 @@ raw = subprocess.check_output([
   "http://127.0.0.1:8110/v1/schedules",
 ], text=True)
 print("CREATE", raw[:600])
-inj = {{
-  "type":"message",
-  "payload":{{
-    "threadId": gid,
-    "threadType": "group",
-    "senderId": admin,
-    "senderName": "admin",
-    "text": f"xin chào từ schedule lab {{tag}}",
-    "isSelf": False,
-    "scheduleFire": True,
-  }},
-}}
-inj_raw = subprocess.check_output([
-  "docker","exec","-i","schedule-worker","wget","-qO-","-T","15",
-  "--header=Content-Type: application/json",
-  "--post-data="+json.dumps(inj, ensure_ascii=False),
-  "http://zalo-proxy:8787/inject-event",
+tick = subprocess.check_output([
+  "docker","exec","schedule-worker","wget","-qO-","-T","15",
+  "--post-data=","http://127.0.0.1:8110/v1/schedules/tick",
 ], text=True)
-print("INJECT", inj_raw[:200])
-time.sleep(20)
+print("TICK", tick[:400])
+time.sleep(25)
 hist = subprocess.check_output([
   "docker","exec","schedule-worker","wget","-qO-","-T","15",
   f"http://127.0.0.1:8110/v1/schedules/history?thread_id={{gid}}&limit=10",
@@ -114,7 +109,7 @@ hist = subprocess.check_output([
 print("HISTORY", hist[:1000])
 names = subprocess.check_output(["docker","ps","--format","{{{{.Names}}}}"], text=True).splitlines()
 h = [n for n in names if "hermes" in n][0]
-logs = subprocess.check_output(["docker","logs","--since","3m",h], stderr=subprocess.STDOUT, text=True, errors="replace")
+logs = subprocess.check_output(["docker","logs","--since","5m",h], stderr=subprocess.STDOUT, text=True, errors="replace")
 hits = [ln for ln in logs.splitlines() if tag in ln or "scheduleFire bypass" in ln]
 print("LOG_HITS", len(hits))
 for ln in hits[-15:]:
@@ -133,15 +128,15 @@ for ln in hits[-15:]:
         "out": sanitize(out)[-5000:],
         "pass": {
             "create": "CREATE" in out and "ok" in out,
-            "inject": "INJECT" in out and "ok" in out.lower(),
+            "tick": "TICK" in out and "fired" in out,
+            "history_ok": ('"status":"ok"' in out.replace(" ", "")) or ('"status": "ok"' in out),
             "bypass_log": "scheduleFire bypass" in out or "LOG_HITS" in out,
-            "history": "HISTORY" in out,
         },
     }
     (OUT / "raw.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(report["pass"], indent=2))
     c.close()
-    return 0 if report["pass"]["create"] and report["pass"]["inject"] else 1
+    return 0 if report["pass"]["create"] and report["pass"]["tick"] and report["pass"]["history_ok"] else 1
 
 
 if __name__ == "__main__":
