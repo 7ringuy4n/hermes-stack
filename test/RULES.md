@@ -451,6 +451,7 @@ When re-testing a live High/Zalo lab:
 | Secret-probe paths + AV via Security Worker | `cases/32-secret-probe-path-eicar.md` |
 | Zalo image / PDF / txt send / queue | `cases/33-zalo-image-pdf-txt-queue.md` |
 | Attachment workers, mixed pack, compound split, schedule remove | `cases/34-zalo-attachment-workers-schedule-remove.md` |
+| Image / video text really read (OCR fallback, ASR) | `cases/35-image-video-text-really-read.md` |
 
 **Unit scripts (no VPS, run in small batches):**
 
@@ -469,6 +470,7 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/zalo_attachment_unit.py` | 34 (worker routing, blank caption, mixed-pack recall) |
 | `test/scripts/schedule_crud_unit.py` | 34 (remove list / range / group / all) |
 | `test/scripts/secret_probe_path_unit.py` | 32 |
+| `test/scripts/ocr_refuse_unit.py` | 35 (blind model reply must not pass as OCR text) |
 
 **Lab scripts (SSH, one case per invocation — rule §23):**
 
