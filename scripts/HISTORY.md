@@ -19,6 +19,55 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 08:20 +07 — Image asks for caption; PDF learn without summary; txt “sent” but missing; adapter EICAR cheat
+
+### Symptom
+
+Photos got “cần mô tả”. PDF triggered learn-approve but no summary. Creating a text file claimed sent but Zalo showed nothing (`Tham số không hợp lệ`). Concurrent messages felt stuck. Operator forbade local EICAR matching in the Zalo adapter.
+
+### Root cause
+
+1. OCR called with Hermes path `/opt/data/media/...` while OCR mounts `/data/media` → HTTP 404 → empty excerpt.
+2. Learn pipeline ran async; agent turn had no OCR text.
+3. Zalo rejects some `.txt` attachments; autosend still reported success from LLM copy.
+4. Local `_as_eicar_hit` duplicated Security Worker AV.
+
+### Fix
+
+- Remove adapter EICAR; keep AV gateway fail-closed.
+- OCR path mapping + quick excerpt before agent summary.
+- Text-attachment fallback to chat body; clearer image prompts; queue ack when FIFO depth > 1.
+
+### Prevent recurrence
+
+Never put virus signatures in channel adapters. Always pass media paths OCR/ingest containers can resolve.
+
+---
+
+## 2026-08-21 07:45 +07 — `/opt/data` probe not refused; EICAR file asked to learn
+
+### Symptom
+
+User asked to find `/opt/data` — Hermes used terminal and returned path info instead of a refuse. Sending `question.txt` with EICAR still prompted knowledge learn. Security Worker was inactive; no clamav.
+
+### Root cause
+
+1. Secret-probe patterns lacked `/opt/data` / common host paths; empty data-volume policy could disable blocking.
+2. When antivirus gateway was down, AV gate skipped and still enqueued learn (`AV_REQUIRED` defaulted off).
+3. No local EICAR check without Security Worker.
+
+### Fix
+
+- Expand secret-probe policy; skip empty files; default path patterns.
+- Local EICAR block; fail closed when antivirus enabled but unavailable.
+- Enable Security Worker (+ antivirus) on lab when deploying this fix.
+
+### Prevent recurrence
+
+Never learn untrusted files without AV/EICAR gate. Keep secret-probe patterns in editable JSON; do not leave empty `secret-probe.json` on the data volume.
+
+---
+
 ## 2026-08-21 07:20 +07 — LC group schedule fired but no group reply; dispatcher CRITICAL flap
 
 ### Symptom

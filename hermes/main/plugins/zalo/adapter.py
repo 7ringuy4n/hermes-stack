@@ -2003,7 +2003,21 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception:
                 pass
             return
-        if rate_over and rate_notify:
+        # Per-thread FIFO: one worker drains; later messages wait in Valkey queue.
+        if n > 1 or rate_over:
+            msg = self._as_ux_line(
+                "ZALO_QUEUE_QUEUED_MSG",
+                ("queue", "queued"),
+                "Mình đang trả lời tin trước. Vui lòng chờ — tin mới đã vào hàng chờ.",
+            )
+            try:
+                if rate_over and rate_notify:
+                    await self._as_gate_announce(thread_id, thread_type, msg)
+                elif n > 1:
+                    await self._as_gate_announce(thread_id, thread_type, msg)
+            except Exception as e:
+                logger.warning("Zalo: queue announce failed: %s", type(e).__name__)
+        elif rate_over and rate_notify:
             msg = self._as_ux_line(
                 "ZALO_RATE_LIMIT_MSG",
                 ("queue", "rate_limited"),
@@ -2360,8 +2374,8 @@ class ZaloAdapter(BasePlatformAdapter):
             )
         except Exception:
             pass
-        logger.info("Zalo: secret-probe deny sender=%s thread=%s", sid, thread_id)
-        logger.info(f"[zalo] secret-probe deny sender={sid} thread={thread_id}")
+        logger.warning("Zalo: secret-probe deny sender=%s thread=%s", sid, thread_id)
+        logger.warning("[zalo] secret-probe deny sender=%s thread=%s", sid, thread_id)
         return True
 
 
@@ -2890,18 +2904,31 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
                 if is_image:
                     # Do not force document-OCR Q&A on photos (that caused "OCR/tài liệu?" spam).
+                    # Include local path so the agent can open the attached image; never ask the user to describe it.
+                    local = media_urls[0] if media_urls else ""
                     text = (
-                        f"[Tin kèm ảnh: {fn}]\n"
-                        "Mô tả nội dung ảnh và trả lời trực tiếp. "
-                        "Chỉ OCR/đọc chữ trong ảnh khi user yêu cầu."
+                        f"[Attached image: {fn}"
+                        + (f" path={local}" if local else "")
+                        + "]\n"
+                        "Open the attached image file and describe what you see, then answer. "
+                        "Do NOT ask the user to describe the image. "
+                        "Only OCR/read text in the image when the user asks."
                     )
                 else:
                     text = (
                         f"[Tin kèm file: {fn}]\n"
-                        "Sau OCR/đọc: tóm tắt 3–6 ý chính (bullet ngắn). "
-                        "Hỏi user muốn tìm thông tin gì trong tài liệu. "
+                        "Sau OCR/đọc: tóm tắt 3–6 ý chính (bullet ngắn) ngay trong tin trả lời này. "
+                        "Nếu hệ thống đã gửi hỏi duyệt học knowledge, vẫn phải gửi tóm tắt trước. "
+                        "Hỏi user muốn tìm thông tin gì thêm trong tài liệu. "
                         "Cấm trích dài, cấm liệt kê từng section, cấm APA/MLA, cấm SKILL.md."
                     )
+                    if media_urls:
+                        excerpt = await self._as_quick_ocr_excerpt(media_urls[0], fn)
+                        if excerpt:
+                            text = (
+                                f"{text}\n\n[Document text excerpt — summarize from this]\n"
+                                f"{excerpt[:6000]}"
+                            )
                 logger.info("Zalo: file-only prompt %s image=%s", fn, is_image)
         elif isinstance(media, dict) and media.get("url") and not media_urls:
             logger.warning("Zalo: media download empty %s", media.get("fileName") or "file")
@@ -3981,6 +4008,65 @@ class ZaloAdapter(BasePlatformAdapter):
         v = (os.getenv("ZALO_FILE_PIPELINE") or "1").strip().lower()
         return v in {"1", "true", "yes", "on"}
 
+    async def _as_quick_ocr_excerpt(self, local_path: str, file_name: str = "") -> str:
+        """OCR excerpt for the agent turn. Uses /data/media path OCR understands."""
+        import os
+        from pathlib import Path
+
+        import aiohttp
+
+        src = Path(str(local_path or ""))
+        if not src.is_file():
+            return ""
+        low = (file_name or src.name).lower()
+        if not low.endswith((".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff")):
+            if low.endswith((".txt", ".md", ".csv", ".log", ".json")):
+                try:
+                    return src.read_text(encoding="utf-8", errors="replace")[:6000]
+                except OSError:
+                    return ""
+            return ""
+        ocr_url = (os.getenv("OCR_URL") or "http://ocr:8091").rstrip("/")
+        # Map hermes /opt/data/media/... → OCR /data/media/...
+        cont = str(src).replace("\\", "/")
+        ocr_path = cont
+        for prefix in ("/opt/data/media/", "/data/assistant/media/"):
+            if cont.startswith(prefix):
+                ocr_path = "/data/media/" + cont[len(prefix) :]
+                break
+        try:
+            timeout = aiohttp.ClientTimeout(total=90)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    f"{ocr_url}/v1/ocr",
+                    json={"path": ocr_path, "prompt": "Extract all text as markdown."},
+                ) as resp:
+                    body = await resp.text()
+                    if resp.status >= 300:
+                        self._as_flow(
+                            "ocr_quick_fail",
+                            file=file_name or src.name,
+                            status=resp.status,
+                            path=ocr_path[:160],
+                        )
+                        return ""
+                    try:
+                        data = json.loads(body or "{}")
+                    except Exception:
+                        data = {}
+                    text = str((data or {}).get("text") or (data or {}).get("markdown") or "").strip()
+                    if text:
+                        self._as_flow(
+                            "ocr_quick_ok",
+                            file=file_name or src.name,
+                            chars=len(text),
+                            path=ocr_path[:160],
+                        )
+                    return text
+        except Exception as e:
+            self._as_flow("ocr_quick_error", file=file_name or src.name, error=type(e).__name__)
+            return ""
+
     def _as_av_activated(self) -> bool:  # ASSISTANT_FILE_PIPELINE_v6
         """True when antivirus is on and reachable (ENABLE_ANTIVIRUS / AV_SCAN)."""
         import os
@@ -3997,10 +4083,20 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception:
             return False
 
+    def _as_av_required(self) -> bool:
+        """When antivirus is enabled, refuse files if the scanner is down (fail closed)."""
+        import os
+        flag = (os.getenv("AV_SCAN") or os.getenv("ENABLE_ANTIVIRUS") or "1").strip().lower()
+        av_on = flag not in {"0", "false", "no", "off"}
+        raw = (os.getenv("AV_REQUIRED") or "").strip().lower()
+        if raw == "":
+            return av_on
+        return raw in {"1", "true", "yes", "on"}
+
     async def _as_av_gate(  # ASSISTANT_FILE_PIPELINE_v6
         self, thread_id, sender_id, local_path: str, media: dict
     ) -> bool:
-        """Scan before LLM. True = abort turn (infected / required-and-failed)."""
+        """Scan before LLM via AV gateway / Security Worker. True = abort turn."""
         import asyncio
         import os
         import time
@@ -4023,6 +4119,18 @@ class ZaloAdapter(BasePlatformAdapter):
         mark = getattr(self, "_as_mark_lookup_start", None)
         if callable(mark):
             mark(thread_id)
+
+        src = Path(local_path)
+        if not src.is_file():
+            alt = Path("/opt/data") / "cache" / src.name
+            src = alt if alt.is_file() else src
+        file_bytes = b""
+        try:
+            if src.is_file():
+                file_bytes = await asyncio.to_thread(src.read_bytes)
+        except OSError:
+            file_bytes = b""
+
         if not self._as_file_pipeline_enabled():
             self._as_flow("av_skip", reason="pipeline_off", file=fn, thread_id=thread_id)
             done = getattr(self, "_as_mark_lookup_done", None)
@@ -4031,15 +4139,20 @@ class ZaloAdapter(BasePlatformAdapter):
             return False
         if not self._as_av_activated():
             self._as_flow("av_skip", reason="unavailable", file=fn, thread_id=thread_id)
-            required = (os.getenv("AV_REQUIRED") or "0").strip().lower() in {"1", "true", "yes", "on"}
+            required = self._as_av_required()
             done = getattr(self, "_as_mark_lookup_done", None)
             if callable(done):
                 done(thread_id)
             if required:
                 try:
+                    msg = self._as_ux_line(
+                        "ZALO_AV_UNAVAILABLE_MSG",
+                        ("security", "av_unavailable"),
+                        "Chưa quét được file (antivirus chưa sẵn sàng). Gửi lại sau nhé.",
+                    )
                     await self.send(
                         chat_id=str(thread_id),
-                        content="Chưa quét được file (antivirus chưa sẵn sàng). Gửi lại sau nhé.",
+                        content=msg,
                         metadata={
                             "thread_type": "user",
                             "as_skip_timing": True,
@@ -4056,11 +4169,9 @@ class ZaloAdapter(BasePlatformAdapter):
         session_id = f"zalo-{thread_id}"
         t0 = time.monotonic()
         try:
-            src = Path(local_path)
-            if not src.is_file():
-                alt = Path("/opt/data") / "cache" / src.name
-                src = alt if alt.is_file() else src
-            data = await asyncio.to_thread(src.read_bytes) if src.is_file() else b""
+            data = file_bytes
+            if not data and src.is_file():
+                data = await asyncio.to_thread(src.read_bytes)
             if not data:
                 self._as_flow("av_skip", reason="empty_bytes", file=fn, thread_id=thread_id)
                 done = getattr(self, "_as_mark_lookup_done", None)
@@ -4086,6 +4197,25 @@ class ZaloAdapter(BasePlatformAdapter):
                         done = getattr(self, "_as_mark_lookup_done", None)
                         if callable(done):
                             done(thread_id, time.monotonic() - t0)
+                        if self._as_av_required():
+                            try:
+                                msg = self._as_ux_line(
+                                    "ZALO_AV_UNAVAILABLE_MSG",
+                                    ("security", "av_unavailable"),
+                                    "Chưa quét được file (antivirus chưa sẵn sàng). Gửi lại sau nhé.",
+                                )
+                                await self.send(
+                                    chat_id=str(thread_id),
+                                    content=msg,
+                                    metadata={
+                                        "thread_type": "user",
+                                        "as_skip_timing": True,
+                                        "as_skip_inflight": True,
+                                    },
+                                )
+                            except Exception:
+                                pass
+                            return True
                         self._as_enqueue_file_pipeline(thread_id, sender_id, local_path, media)
                         return False
                 ready = False
@@ -4218,10 +4348,12 @@ class ZaloAdapter(BasePlatformAdapter):
                 ocr_text = ""
                 if low.endswith((".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff")):
                     self._as_flow("ocr_start", thread_id=thread_id, file=file_name, path=ingest_rel)
+                    # OCR container mounts ASSISTANT media at /data/media — not /opt/data/media.
+                    ocr_path = f"/data/media/{ingest_rel}"
                     try:
                         async with session.post(
                             f"{ocr_url}/v1/ocr",
-                            json={"path": str(dest), "prompt": "Extract all text as markdown."},
+                            json={"path": ocr_path, "prompt": "Extract all text as markdown."},
                         ) as ocr_resp:
                             ocr_body = await ocr_resp.text()
                             try:
@@ -4652,6 +4784,28 @@ class ZaloAdapter(BasePlatformAdapter):
                         logger.info("Zalo: send-attachment path %s", host_path)
                         self._as_compound_mark_delivered(chat_id)
                         return SendResult(success=True)
+            # Plain text attachments are often rejected by Zalo ("Tham số không hợp lệ").
+            text_exts = (".txt", ".md", ".csv", ".log", ".json")
+            if looks_invalid_param(err) and any(str(file_path).lower().endswith(ext) for ext in text_exts):
+                from pathlib import Path as _Path
+                try:
+                    raw = _Path(str(file_path)).read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    raw = ""
+                name = file_name or _Path(str(file_path)).name or "file.txt"
+                body = (raw or "").strip()
+                if len(body) > 3500:
+                    body = body[:3500] + "\n…"
+                msg = f"{name}\n\n{body}" if body else f"{name} (empty file)"
+                logger.warning(
+                    "Zalo: text attachment rejected — sending body as message name=%s",
+                    name,
+                )
+                return await self.send(
+                    chat_id,
+                    msg,
+                    metadata={**(meta or {}), "as_skip_autosend": True},
+                )
             return SendResult(success=False, error=err)
         host_path = str(payload.get("path") or "")
         logger.info(f"[zalo] send-attachment path {host_path}")
