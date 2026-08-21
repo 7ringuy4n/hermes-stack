@@ -1,3 +1,7 @@
+## 2026-08-21 12:15 +07 — PaddleOCR works only with matching paddlex minor
+
+- Lab rebuilds initially fell back to tesseract: paddleocr 3.1.1 + paddlex 3.7 broke `PaddlePredictorOption`; pinning paddlex 3.1.1 then broke import (`langchain.docstore`). Aligned to **paddleocr 3.7.0 + paddlex 3.7.2** per upstream table; still returns `via=paddle` for `HOA DON 1250000 VND`.
+
 ## 2026-08-21 12:10 +07 — PaddleOCR is the primary OCR engine (Media Worker)
 
 - OCR service (separate container under the Media Worker profile) now runs **PaddleOCR first** for images and scanned PDF pages. Vision LLM is opt-in (`OCR_VISION=0` by default) so text-only routers no longer burn a round trip or invent “please upload the image” as OCR text.
