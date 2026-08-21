@@ -19,6 +19,31 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 08:20 +07 — Image asks for caption; PDF learn without summary; txt “sent” but missing; adapter EICAR cheat
+
+### Symptom
+
+Photos got “cần mô tả”. PDF triggered learn-approve but no summary. Creating a text file claimed sent but Zalo showed nothing (`Tham số không hợp lệ`). Concurrent messages felt stuck. Operator forbade local EICAR matching in the Zalo adapter.
+
+### Root cause
+
+1. OCR called with Hermes path `/opt/data/media/...` while OCR mounts `/data/media` → HTTP 404 → empty excerpt.
+2. Learn pipeline ran async; agent turn had no OCR text.
+3. Zalo rejects some `.txt` attachments; autosend still reported success from LLM copy.
+4. Local `_as_eicar_hit` duplicated Security Worker AV.
+
+### Fix
+
+- Remove adapter EICAR; keep AV gateway fail-closed.
+- OCR path mapping + quick excerpt before agent summary.
+- Text-attachment fallback to chat body; clearer image prompts; queue ack when FIFO depth > 1.
+
+### Prevent recurrence
+
+Never put virus signatures in channel adapters. Always pass media paths OCR/ingest containers can resolve.
+
+---
+
 ## 2026-08-21 07:45 +07 — `/opt/data` probe not refused; EICAR file asked to learn
 
 ### Symptom
