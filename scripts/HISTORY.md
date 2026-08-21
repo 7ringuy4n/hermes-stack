@@ -19,6 +19,30 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 10:40 +07 — “Service recovered: dispatcher” every 2 minutes; media text always empty
+
+### Symptom
+
+Notify alternated dispatcher DOWN/UP roughly every two minutes, and it looked like media work was crashing the service. Verifying the new `POST /v1/media/text` on the lab returned `text: ""` for both an mp4 with on-screen text and an mp3, and long calls to dispatcher or ingest sometimes died mid-request with a connection reset.
+
+### Root cause
+
+1. `stack-watch` probed 9Router unconditionally. This lab runs OmniRouter only, so the probe failed on every tick (`fail_count` had reached 577), and the heal branch then ran a blanket `docker restart dispatcher` — every 2 minutes, regardless of dispatcher's own health. In-flight OCR and media requests died with it.
+2. `faster-whisper` was listed only as a comment in the media worker requirements, so ASR raised `ModuleNotFoundError` and the transcript was always empty. After installing it, `faster_whisper.utils` still failed on `import requests`, because `huggingface_hub` 1.x dropped that dependency.
+3. Keyframes were sampled with `fps=1/7`, so a clip shorter than the interval produced no frame and OCR never ran.
+
+### Fix
+
+- stack-watch probes optional components only when enabled or running, and restarts only the containers whose own probe failed.
+- ASR wheels install behind the `INSTALL_WHISPER` build arg with `requests` pinned; `HF_HOME` lives on the media volume.
+- Keyframes are taken by seeking to evenly spaced timestamps, and the endpoint reports `frames_read`.
+
+### Prevent recurrence
+
+A watchdog must restart only what it proved unhealthy, and must not probe components the stack does not run. When a capability is optional at build time, verify the import inside the built image — a commented-out requirement looks enabled from the outside.
+
+---
+
 ## 2026-08-21 09:40 +07 — Files answered without being read; dispatcher flap; schedules only removable one at a time
 
 ### Symptom

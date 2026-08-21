@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-21 10:40 +07 — Dispatcher flap was the watchdog; media text extraction now real
+
+- **stack-watch**: probe 9Router / dispatcher / OCR / jobs only when that component is enabled or running, and restart **only** the containers whose own probe failed. A disabled 9Router used to fail every tick, and the heal then blanket-restarted `dispatcher` every 2 minutes — killing in-flight OCR and media jobs and producing the “Service recovered: dispatcher” alerts.
+- **Media worker ASR**: `faster-whisper` was only a comment in `requirements.txt`, so `/v1/media/text` always failed ASR. It now installs behind the `INSTALL_WHISPER` build arg (compose feeds it from `WHISPER_ENABLED`), with `requests` pinned because `huggingface_hub` 1.x no longer pulls it in, and `HF_HOME` on the media volume so the model is fetched once.
+- **Keyframe OCR**: frames were sampled with an fps filter whose interval exceeded a short clip, so no frame reached OCR. Frames are now taken by seeking to evenly spaced timestamps; the response reports `frames_read`.
+
 ## 2026-08-21 09:40 +07 — Attachment workers, web search on Router Worker, bulk schedule remove
 
 - **Every inbound file goes to a worker that can read it** (`attachment.py` + Zalo adapter): text read locally, image/PDF → OCR, `.docx/.xlsx/.pptx/.csv` → Ingest `POST /v1/extract-text` (new), audio/video → Media Worker `POST /v1/media/text` (new: Whisper ASR + ffmpeg keyframe OCR). Extraction runs **concurrently** with the AV gate, so small `.txt` replies stop waiting on the scan.

@@ -206,6 +206,19 @@ probe() {
   return 1
 }
 
+FAILED_NAMES=""
+
+mark_failed() {
+  case " ${FAILED_NAMES} " in
+    *" $1 "*) ;;
+    *) FAILED_NAMES="${FAILED_NAMES} $1" ;;
+  esac
+}
+
+component_running() {
+  $SUDO docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$1"
+}
+
 # 9router /v1/models is 401 without a key (process up). curl -f treated that as DOWN
 # and restarted 9router on every stack-watch tick.
 probe_9router() {
@@ -221,8 +234,16 @@ probe_9router() {
 
 heal_by_health() {
   local failed=0
-  probe_9router || failed=1
-  probe dispatcher "http://127.0.0.1:${DISPATCHER_PORT:-8090}/health" || failed=1
+  FAILED_NAMES=""
+  # Only probe optional components this stack actually runs: a disabled 9Router
+  # used to fail every tick, and the heal then bounced dispatcher every 2 min.
+  if [[ "${ENABLE_9ROUTER:-0}" == "1" ]] || component_running 9router; then
+    probe_9router || { failed=1; mark_failed 9router; }
+  fi
+  if [[ "${ENABLE_MEDIA_FILE:-0}" == "1" ]] || component_running dispatcher; then
+    probe dispatcher "http://127.0.0.1:${DISPATCHER_PORT:-8090}/health" \
+      || { failed=1; mark_failed dispatcher; }
+  fi
   # Host-published Hermes dashboard only exists when replicas=1
   if [[ "${HERMES_REPLICAS}" == "1" ]]; then
     probe hermes_dash "http://127.0.0.1:${HERMES_DASHBOARD_PORT:-29119}/" || true
@@ -231,9 +252,11 @@ heal_by_health() {
     probe gateway "http://127.0.0.1:${GATEWAY_HOST_PORT:-8088}/health" || failed=1
   fi
 
-  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_MEDIA_FILE:-0}" == "1" ]]; then
-    probe ocr "http://127.0.0.1:${OCR_PORT:-8091}/health" || failed=1
-    probe jobs "http://127.0.0.1:${JOBS_PORT:-8104}/health" || failed=1
+  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_MEDIA_FILE:-0}" == "1" ]] || component_running ocr; then
+    probe ocr "http://127.0.0.1:${OCR_PORT:-8091}/health" || { failed=1; mark_failed ocr; }
+  fi
+  if [[ "${ENABLE_JOBS:-0}" == "1" ]] || component_running jobs; then
+    probe jobs "http://127.0.0.1:${JOBS_PORT:-8104}/health" || { failed=1; mark_failed jobs; }
   fi
   if [[ "${ENABLE_GRAFANA:-0}" == "1" ]]; then
     probe grafana "http://127.0.0.1:${GRAFANA_HOST_PORT:-23000}/api/health" || failed=1
@@ -244,7 +267,8 @@ heal_by_health() {
       compose up -d --no-deps zalo-api zalo-proxy >/dev/null 2>&1 || true
       failed=1
     fi
-    probe zalo-api "http://127.0.0.1:${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}/health" || failed=1
+    probe zalo-api "http://127.0.0.1:${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}/health" \
+      || { failed=1; mark_failed zalo-api; }
   fi
 
   if [[ "$failed" -ne 0 ]]; then
@@ -262,8 +286,15 @@ heal_by_health() {
       log "healing after failed probes (fail_count=${fails}, hermes restart=${RESTART_HERMES_ON_PROBE})"
       ensure_core_up
       restart_bad_containers
-      $SUDO docker restart 9router 2>/dev/null || $SUDO docker restart nh-9router 2>/dev/null || true
-      $SUDO docker restart dispatcher 2>/dev/null || $SUDO docker restart nh-dispatcher 2>/dev/null || true
+      # Restart only what actually failed its own probe. A blanket restart of
+      # 9router/dispatcher killed in-flight OCR and media jobs on every tick.
+      local name
+      for name in ${FAILED_NAMES}; do
+        log "restart ${name} (probe failed)"
+        $SUDO docker restart "$name" >/dev/null 2>&1 \
+          || $SUDO docker restart "nh-${name}" >/dev/null 2>&1 \
+          || true
+      done
       if [[ "$RESTART_HERMES_ON_PROBE" == "1" ]]; then
         local ids
         ids="$($SUDO docker ps -aq --filter "name=hermes" 2>/dev/null || true)"
