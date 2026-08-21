@@ -21,6 +21,14 @@ Send **only the final answer** (and a generated file if the user asked for one).
    4. If the user asked for an **image** of that result, call `image-gen` / dispatcher `POST /v1/image` with the OCR facts in the prompt. Do not overlay with local PIL/pip in the chat turn.
 5. **Answer** — lead with the finding; note date/locale if relevant. No “want me to resend?”.
 
+## Lyrics / “tìm lời bài hát”
+
+When the user asks for lyrics and a recent audio/video attachment (or a quoted message) already names the song/artist (e.g. `Multo - Cup of Joe ….mp3`):
+
+1. Use that title/artist as the search query immediately.
+2. Do **not** ask “which song?” when the filename or quoted context is clear.
+3. Search via Router Worker `/v1/search`, then answer with the lyrics (or a short failure if none found).
+
 ## Note
 
 This skill controls **behavior**; execution uses Router Worker search + OCR. Media generation stays on the Media/File worker. See `vendor/tavily/tavily-best-practices`.
