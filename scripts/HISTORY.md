@@ -19,6 +19,31 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 12:15 +07 — PaddleOCR init failed until version line matched
+
+### Symptom
+
+OCR health reported `primary=paddle` but every image returned `via=tesseract`
+(or `paddle_not_installed`) after the first Paddle rebuilds.
+
+### Root cause
+
+paddleocr and paddlex majors must stay on the same minor line. 3.1.1 + 3.7.x
+broke `PaddlePredictorOption`; forcing paddlex 3.1.1 then failed on a removed
+langchain import path.
+
+### Fix
+
+Pin `paddleocr==3.7.0` with `paddlex==3.7.2`. Lab verify: still text extracted
+with `via=paddle`.
+
+### Prevent recurrence
+
+When bumping either package, follow the official paddleocr↔paddlex table; do not
+mix 3.1.x OCR with 3.7.x paddlex.
+
+---
+
 ## 2026-08-21 12:10 +07 — Vision-first OCR kept failing on text-only routers
 
 ### Symptom
