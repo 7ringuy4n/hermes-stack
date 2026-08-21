@@ -318,8 +318,10 @@ services:
       - MODEL_ROUTER_CLASSIFY_MODEL=${MODEL_ROUTER_CLASSIFY_MODEL:-${OMNIROUTER_CLASSIFY_COMBO:-classifier}}
       - MODEL_ROUTER_OUTBOUND_MODEL=${MODEL_ROUTER_OUTBOUND_MODEL:-${OMNIROUTER_DEFAULT_COMBO:-hermes}}
       - MODEL_ROUTER_PORT=8096
-      # Web search combo: paid vendor first, local SearXNG last (empty = search off)
+      # Web search combo (OmniRouter-style failover on Router Worker — not Omni chat).
+      # Order from WEB_BACKENDS or model-router config/web-search-combo.json (tavily,searxng).
       - WEB_BACKENDS=${WEB_BACKENDS:-tavily,searxng}
+      - WEB_EXTRACT_BACKENDS=${WEB_EXTRACT_BACKENDS:-tavily,firecrawl}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
       - EXA_API_KEY=${EXA_API_KEY:-}
