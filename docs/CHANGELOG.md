@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-21 11:10 +07 — OCR no longer passes off a blind model's excuse as text
+
+- **OCR worker**: the routed model has no vision on this stack, so it answered 200 OK with “I don’t see an image — please upload it”. That reply was longer than the minimum length and matched no refusal pattern, so it was returned as *extracted text* — which is why an image came back as a generic description and a video's on-screen text was nonsense. Refusal detection now covers those chat replies (curly apostrophes included), so tesseract (`eng+vie`, already in the image) provides the text instead.
+- **Vision cooldown**: after three consecutive blind replies the worker skips the vision round trip for 15 minutes and goes straight to local OCR, which also cuts the latency users saw on image and file turns.
+- Refusal detection moved to `architect/tools/ocr/refuse.py` so it is unit tested without the service stack (`test/scripts/ocr_refuse_unit.py`, case 35).
+
 ## 2026-08-21 10:40 +07 — Dispatcher flap was the watchdog; media text extraction now real
 
 - **stack-watch**: probe 9Router / dispatcher / OCR / jobs only when that component is enabled or running, and restart **only** the containers whose own probe failed. A disabled 9Router used to fail every tick, and the heal then blanket-restarted `dispatcher` every 2 minutes — killing in-flight OCR and media jobs and producing the “Service recovered: dispatcher” alerts.

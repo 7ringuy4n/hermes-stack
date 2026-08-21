@@ -19,6 +19,39 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 11:10 +07 — Images “read” but the text was the model asking for the image
+
+### Symptom
+
+An image sent to Zalo came back as a generic description instead of its text, and video
+keyframe OCR returned paragraphs like “I'd be happy to help extract text as markdown, but
+you haven't provided any source material”. OCR logs said `stage=ocr ok=True chars=472`, so
+from the outside the worker looked healthy.
+
+### Root cause
+
+OCR sends the picture to the router as an `image_url` part, but the model behind the alias
+on this stack is text-only, so it replied 200 OK asking the user to upload an image. That
+reply was over `OCR_MIN_CHARS` and matched none of the refusal patterns — “don’t see an
+image” was absent, and the model's curly apostrophe would have defeated the `don't`
+patterns anyway — so the excuse was returned as extracted text and the tesseract fallback
+(already installed with `eng+vie`) never ran.
+
+### Fix
+
+Refusal detection now recognises the “no image attached / please upload / once you share”
+family after normalising smart quotes, and lives in `refuse.py` with a unit test. After
+three consecutive blind replies the worker stops calling vision for 15 minutes and uses
+local OCR directly, which also removes a pointless round trip from every image turn.
+
+### Prevent recurrence
+
+A worker that forwards an upstream answer must validate that the answer is the *kind* of
+thing it asked for. Length alone is not evidence, and `ok=True` in a log line is only as
+honest as that check.
+
+---
+
 ## 2026-08-21 10:40 +07 — “Service recovered: dispatcher” every 2 minutes; media text always empty
 
 ### Symptom
