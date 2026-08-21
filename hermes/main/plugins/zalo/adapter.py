@@ -2360,8 +2360,8 @@ class ZaloAdapter(BasePlatformAdapter):
             )
         except Exception:
             pass
-        logger.info("Zalo: secret-probe deny sender=%s thread=%s", sid, thread_id)
-        logger.info(f"[zalo] secret-probe deny sender={sid} thread={thread_id}")
+        logger.warning("Zalo: secret-probe deny sender=%s thread=%s", sid, thread_id)
+        logger.warning("[zalo] secret-probe deny sender=%s thread=%s", sid, thread_id)
         return True
 
 
