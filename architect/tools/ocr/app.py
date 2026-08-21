@@ -4,13 +4,14 @@ from __future__ import annotations
 import base64
 import io
 import os
-import re
+import time
 from pathlib import Path
 from typing import Any, Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from refuse import llm_refused as _llm_refused
 
 API_KEY = (
     os.environ.get("OPENAI_API_KEY")
@@ -28,13 +29,10 @@ FALLBACK = (os.environ.get("OCR_FALLBACK") or "1").strip().lower() not in {
     "off",
 }
 MIN_TEXT = int(os.environ.get("OCR_MIN_CHARS", "24"))
-
-_REFUSE_RE = re.compile(
-    r"can't|cannot|unable to|don't support|do not support|not (?:able|supported)|"
-    r"no vision|image not|refuse|i'm just a language|text-only|"
-    r"model_not_found|was retired|request too large|oneOf at",
-    re.I,
-)
+# When the routed model has no vision, every image costs a useless round trip.
+# Stop asking for a while after it keeps handing back "please upload the image".
+VISION_TRIP_AFTER = int(os.environ.get("OCR_VISION_TRIP_AFTER", "3"))
+VISION_COOLDOWN_S = float(os.environ.get("OCR_VISION_COOLDOWN_S", "900"))
 
 app = FastAPI(title="assistant-ocr", version="1.2.0")
 
@@ -96,15 +94,6 @@ def _resolve_path(raw: Optional[str]) -> Optional[Path]:
     return p if p.is_file() else None
 
 
-def _llm_refused(status: int, body: str, text: str) -> bool:
-    if status in {400, 404, 410, 413, 415, 422, 429, 500, 502, 503}:
-        return True
-    blob = f"{body}\n{text}"
-    if _REFUSE_RE.search(blob):
-        return True
-    return False
-
-
 def _pymupdf_text(path: Path) -> str:
     import pymupdf
 
@@ -147,6 +136,25 @@ def _tesseract_bytes(data: bytes) -> str:
     if im.mode not in {"RGB", "L"}:
         im = im.convert("RGB")
     return (pytesseract.image_to_string(im, lang="vie+eng") or "").strip()
+
+
+_vision_state: dict[str, float] = {"refusals": 0.0, "blind_until": 0.0}
+
+
+def _vision_ready() -> bool:
+    return time.time() >= _vision_state["blind_until"]
+
+
+def _vision_note(refused: bool) -> None:
+    if not refused:
+        _vision_state["refusals"] = 0.0
+        _vision_state["blind_until"] = 0.0
+        return
+    _vision_state["refusals"] += 1
+    if _vision_state["refusals"] >= VISION_TRIP_AFTER:
+        _vision_state["blind_until"] = time.time() + VISION_COOLDOWN_S
+        _vision_state["refusals"] = 0.0
+        _flow("vision_cooldown", model=MODEL, seconds=int(VISION_COOLDOWN_S))
 
 
 def _vision(b64: str, mime: str, prompt: str) -> tuple[int, str, str]:
@@ -239,21 +247,24 @@ def ocr(req: OcrReq) -> dict[str, Any]:
         except Exception:
             jpegs = []
         pages: list[str] = []
-        refused = False
+        refused = not _vision_ready()
         for jpeg in jpegs:
+            if refused:
+                break
             b64 = base64.b64encode(jpeg).decode("ascii")
             st, bd, tx = _vision(b64, "image/jpeg", req.prompt)
             status, body = st, bd
             if _llm_refused(st, bd, tx) or not tx:
                 refused = True
+                _vision_note(True)
                 break
             pages.append(tx)
         if pages and not refused:
+            _vision_note(False)
             text = "\n\n".join(pages)
-            used = "9router"
         else:
             text = ""
-            used = "9router"
+        used = "9router"
     elif req.image_b64 or (path and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp"}):
         if req.image_b64:
             b64, mime = req.image_b64, "image/jpeg"
@@ -261,9 +272,14 @@ def ocr(req: OcrReq) -> dict[str, Any]:
             raw = path.read_bytes()  # type: ignore[union-attr]
             mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"  # type: ignore[union-attr]
             b64 = base64.b64encode(raw).decode("ascii")
-        _flow("ocr_start", path=str(path or ""), mime=mime, model=MODEL, via="9router")
-        status, body, text = _vision(b64, mime, req.prompt)
         used = "9router"
+        if _vision_ready():
+            _flow("ocr_start", path=str(path or ""), mime=mime, model=MODEL, via="9router")
+            status, body, text = _vision(b64, mime, req.prompt)
+            _vision_note(_llm_refused(status, body, text) or not text)
+        else:
+            status, body, text = 0, "vision_cooldown", ""
+            _flow("ocr_start", path=str(path or ""), mime=mime, model=MODEL, via="tesseract")
     else:
         # unknown type — try pymupdf then vision skip
         status, body, text = 0, "unsupported", ""
