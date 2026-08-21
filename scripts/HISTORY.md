@@ -165,6 +165,33 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 20:40 +07 — Classifier 400: CF models want prompt/text/audio
+
+### Symptom
+
+Classify `model=classifier` with OpenAI `messages` returned CF AiError 400:
+required `prompt` / `text` / `audio`. Logs showed Cloudflare AI, not Codex chat.
+
+### Root cause
+
+1. Combo `classifier` members were (or remapped to) Workers AI models that are
+   not chat/completions-capable; Omni RR tried several and each 400’d.
+2. Our classify only skipped 401/403/502/503 — not 400 — so it waited on the
+   dead combo longer than needed.
+3. Valkey `[Prior conversation]` was prepended before classify, so the current
+   ask (and schedule wording) was buried under older PDF/image turns.
+
+### Fix
+
+- Skip classify combo on HTTP 400 and AiError schema bodies; failover to `hermes`.
+- `strip_prior_for_classify` before LLM/heuristic.
+
+### Prevent recurrence
+
+Keep only **chat** models in the `classifier` combo (same class as `hermes`).
+Do not add CF translation / ASR / vision-only / prompt-only models.
+
+
 ## 2026-08-21 20:25 +07 — Đặt lịch no reply (classifier 503 + queue timeout)
 
 ### Symptom

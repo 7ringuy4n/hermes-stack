@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ## 2026-08-22 16:30 +07 — Release v0.5.17
 
 Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting fixes, searxng-compat web search + Tavily cascade docs, weather/queue timeouts, mixed đặt-lịch+fuel+weather schedule guard, Tn inject lab suites.
@@ -71,6 +70,14 @@ Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting 
 - Reject allow-status phrases as schedule group names (status text like da allow (N)).
 - scheduleFire bypasses inbound FIFO; SCHEDULE_URL / SCHEDULE_WORKER defaults on so fires reach Hermes.
 - Classified tasks keep using Router Worker to Omni model=classifier (Qwen via combo).
+
+## 2026-08-21 20:40 +07 — Classifier 400 AiError (prompt/text/audio) + prior hydrate
+
+- Omni `classifier` combo members resolved to Cloudflare AI non-chat models
+  (need `prompt` / `text` / `audio`); chat/completions `messages` → HTTP 400.
+- Classify now skips 400 + AiError schema bodies (mark combo bad → try `hermes`).
+- Strip `[Prior conversation]` before classify so Valkey hydrate does not hide
+  schedule/intent of the current message.
 
 ## 2026-08-21 20:25 +07 — Schedule create silent: classify 503 + 150s queue timeout
 
