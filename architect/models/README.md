@@ -51,9 +51,10 @@ Hermes needs a completion
     → OUTPUT Secret Probe
 
 Hermes / skill needs web search (Medium+)
-    → model-router /v1/search  (Router Worker combo)
-    → Tavily → SearXNG (default WEB_BACKENDS)
-    → extract via Tavily/Firecrawl only (SearXNG cannot extract)
+    → model-router /v1/search  (Router Worker combo "websearch")
+    → failover from config/web-search-combo.json or WEB_BACKENDS
+      (default tavily → searxng)
+    → extract via WEB_EXTRACT_BACKENDS / config (not SearXNG)
 ```
 
 **Note:** OmniRouter does **not** host web search. Its combos are LLM models only.

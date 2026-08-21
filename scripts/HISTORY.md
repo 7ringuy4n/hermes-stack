@@ -19,6 +19,30 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 16:30 +07 — Web search order must not be hardcoded in .py
+
+### Symptom
+
+Requirement: web-search skill → Router Worker; default combo failover
+Tavily → local SearXNG like OmniRouter combos; do not hardcode order in Python.
+
+### Root cause
+
+`websearch.py` kept `DEFAULT_CHAIN = ("tavily", "searxng")` and reshuffled
+SearXNG to the end in code, which duplicated/overrode operator config.
+
+### Fix
+
+- Combo file `architect/models/model-router/config/web-search-combo.json`.
+- Order from `WEB_BACKENDS` or that JSON only; adapters remain a registry.
+- Skills document Router Worker path and config sources.
+
+### Prevent recurrence
+
+Change search failover by editing the JSON/env — never add a Python default tuple.
+
+---
+
 ## 2026-08-21 16:05 +07 — Web search combo vs OmniRouter; SearXNG empty
 
 ### Symptom

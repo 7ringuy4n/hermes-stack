@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Unit: Router Worker web search combo order (Tavily -> SearXNG)."""
+"""Unit: web search combo order from config/env (no hardcoded DEFAULT_CHAIN)."""
 from __future__ import annotations
 
 import importlib
@@ -12,30 +12,59 @@ sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
 
 
 def main() -> int:
-    os.environ["WEB_BACKENDS"] = "tavily,searxng"
+    try:
+        import httpx  # noqa: F401
+    except ImportError:
+        print("SKIP websearch_combo_unit (httpx not installed on host)")
+        return 0
+
+    combo = ROOT / "architect" / "models" / "model-router" / "config" / "web-search-combo.json"
+    if not combo.is_file():
+        print("FAIL missing", combo)
+        return 1
+
+    os.environ["WEB_SEARCH_COMBO_PATH"] = str(combo)
     os.environ["SEARXNG_URL"] = "http://searxng:8080"
     os.environ.pop("TAVILY_API_KEY", None)
+
+    # 1) Env override wins
+    os.environ["WEB_BACKENDS"] = "tavily,searxng"
     if "websearch" in sys.modules:
         del sys.modules["websearch"]
     import websearch as ws
 
     importlib.reload(ws)
+    if "DEFAULT_CHAIN" in dir(ws):
+        print("FAIL DEFAULT_CHAIN must not exist in websearch.py")
+        return 1
     order = ws.search_order()
     if order != ["tavily", "searxng"]:
-        print("FAIL order", order)
+        print("FAIL env order", order)
         return 1
-    forced = ws.search_order("searxng")
-    if forced[0] != "searxng" or "tavily" not in forced:
-        print("FAIL preferred", forced)
+
+    # 2) JSON file when WEB_BACKENDS unset
+    os.environ.pop("WEB_BACKENDS", None)
+    importlib.reload(ws)
+    order2 = ws.search_order()
+    if order2 != ["tavily", "searxng"]:
+        print("FAIL json order", order2)
         return 1
     health = ws.health_fields()
-    if health.get("searxng") is not True:
-        print("FAIL health", health)
+    if health.get("web_combo") != "websearch":
+        print("FAIL combo name", health)
         return 1
-    if health.get("web_keys", {}).get("tavily") is not False:
-        print("FAIL empty tavily key should be false", health)
+    if health.get("web_backends") != ["tavily", "searxng"]:
+        print("FAIL health backends", health)
         return 1
-    print("PASS websearch_combo_unit", order)
+
+    # 3) Explicit empty disables
+    os.environ["WEB_BACKENDS"] = ""
+    importlib.reload(ws)
+    if ws.search_order():
+        print("FAIL empty WEB_BACKENDS must disable", ws.search_order())
+        return 1
+
+    print("PASS websearch_combo_unit config/env driven")
     return 0
 
 
