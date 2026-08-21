@@ -129,10 +129,10 @@ compose() {
   HERMES_REPLICAS="${HERMES_REPLICAS:-1}"
   local existing=(--project-directory "${ROOT}" -f "${ROOT}/docker/docker-compose.yml")
   if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-0}" == "1" ]]; then
-    [[ -f "${ROOT}/docker/docker-compose.medium.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.medium.yml")
+    [[ -f "${ROOT}/docker/docker-compose.media.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.media.yml")
   fi
   if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
-    [[ -f "${ROOT}/docker/docker-compose.high.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.high.yml")
+    [[ -f "${ROOT}/docker/docker-compose.security.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.security.yml")
   fi
   case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
     *1*)
@@ -145,11 +145,13 @@ compose() {
   local profiles=()
   [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
   [[ "${ENABLE_NOTIFY:-0}" == "1" ]] && profiles+=(--profile notify)
+  [[ "${ENABLE_SECURITY:-0}" == "1" ]] && profiles+=(--profile security)
   [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles+=(--profile antivirus)
   [[ "${SECURITY_SANDBOX:-0}" == "1" ]] && profiles+=(--profile sandbox)
   [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles+=(--profile clouddrive)
   [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles+=(--profile comfy-gpu)
   [[ "${ENABLE_SCHEDULE:-0}" == "1" ]] && profiles+=(--profile schedule)
+  [[ "${ENABLE_MEDIA_FILE:-0}" == "1" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]] && profiles+=(--profile media)
   assistant_append_monitor_profiles profiles
   if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
     case "${TRAEFIK_ACME_ENABLED:-0}" in
@@ -285,12 +287,27 @@ heal_by_health() {
   fi
 }
 
+ensure_media_writable() {
+  # Silent heal: OCR / file-gen / Zalo attach need Hermes UID on media/*.
+  local uid="${HERMES_UID:-1000}"
+  local gid="${HERMES_GID:-1000}"
+  $SUDO mkdir -p "${_data_root}/media/inbound" "${_data_root}/media/out" 2>/dev/null || true
+  $SUDO chown -R "${uid}:${gid}" "${_data_root}/media" 2>/dev/null || true
+  $SUDO chmod -R ug+rwX "${_data_root}/media" 2>/dev/null || true
+  $SUDO chmod g+s \
+    "${_data_root}/media" \
+    "${_data_root}/media/inbound" \
+    "${_data_root}/media/out" \
+    2>/dev/null || true
+}
+
 main() {
   cd "$ROOT"
   if boot_grace_active; then
     log "boot grace (${BOOT_GRACE_S}s) — skip heals (uptime still warming)"
     exit 0
   fi
+  ensure_media_writable
   restart_bad_containers
   heal_by_health
   log "done profile=${PROFILE} project=${PROJECT}"

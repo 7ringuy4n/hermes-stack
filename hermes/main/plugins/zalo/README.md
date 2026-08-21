@@ -30,7 +30,7 @@ This tree **reuses** that work (via assistant) and **optimizes** it for assistan
 
 ## Attach order
 
-1. Profile stack healthy (`bash run.sh check-medium` / `check-high`)
+1. Worker stack healthy (`bash run.sh check-media` / `check-security`)
 2. `ENABLE_ZALO=1 bash scripts/main/setup-zalo.sh` — install only (no QR)
 3. **You:** `bash scripts/main/login-zalo.sh` — QR / re-login
 
@@ -69,7 +69,24 @@ Cron jobs with `deliver: origin` reply in the **same Zalo thread that created th
 | `!zalo schedule list all` | current admin | List **all** user lịch (every DM/group) |
 | `!zalo schedule show\|add\|update\|remove` | current admin | CRUD. `--time` / `--timer HH:MM` change the clock. List/show prints `HH:MM`. Index numbers follow the current chat list; `show all 1` / `update all 1` / `remove all 1` use the global list. |
 
+### Schedule delivery to another group (by name)
+
+Natural language (classify `target_channel` + channel registry):
+
+1. Ensure the group is known: `!zalo allow` in that group (or `!zalo allow <Tên>`), optional `!zalo label <Tên>`, then `!zalo refresh` so names sync.
+2. List groups you can see: `!zalo list` (allowed groups by name).
+3. Create from any DM/group: e.g. `đặt lịch mỗi ngày 8:00 gửi vào nhóm Family: chào buổi sáng` — Hermes stores `origin.thread_id` as that group; fires inject into the group.
+4. List/update/delete for another group: open that group and run `!zalo schedule list` / `update` / `remove`, **or** from DM use `!zalo schedule list all` then `!zalo schedule update all <n>` / `remove all <n>`.
+
+Registry file: `/data/assistant/channels/registry.json` (also `!zalo refresh`).
+
 Durable file: `zalo_admin_users.txt` under Hermes data (exactly one uid).
+
+## Bridge bind (`ZALO_PLUGIN_HOST`)
+
+Default **`0.0.0.0:8787`** so Docker containers reach the host Node bridge via `host.docker.internal` / `zalo-proxy` (socat). Binding **`127.0.0.1` only** breaks Hermes SSE and schedule `POST /inject-event`.
+
+**Internet risk:** `0.0.0.0` listens on all host interfaces. If the cloud security group / firewall leaves **8787 open to the world**, the bridge is exposed. Keep **8787 closed on the public NIC**; allow Docker bridge / RFC1918 only. Set **`ZALO_PLUGIN_TOKEN`** so unauthenticated clients cannot call `/send` or `/inject-event`. Prefer not publishing 8787 in compose (host listen + socat inside the Docker network is enough).
 
 ## Self-heal
 

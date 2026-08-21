@@ -55,9 +55,20 @@ assistant_workers_apply() {
   if _worker_active "${WORKER_SECURITY}" "${ENABLE_SECURITY:-0}"; then
     export WORKER_SECURITY=active
     export ENABLE_SECURITY=1
+    # Bundled with Security Worker (compose profile "security")
+    export ENABLE_OPENBAO="${ENABLE_OPENBAO:-1}"
+    export ENABLE_AUTHZ="${ENABLE_AUTHZ:-1}"
+    export ENABLE_SIEM="${ENABLE_SIEM:-1}"
+    export ENABLE_POLICY="${ENABLE_POLICY:-1}"
   else
     export WORKER_SECURITY=inactive
     export ENABLE_SECURITY=0
+    # Force off so leftover .env ENABLE_*=1 does not keep security intent
+    export ENABLE_OPENBAO=0
+    export ENABLE_OPENBAO_AGENT=0
+    export ENABLE_AUTHZ=0
+    export ENABLE_SIEM=0
+    export ENABLE_POLICY=0
   fi
 
   if _worker_active "${WORKER_NOTIFY}" "${ENABLE_NOTIFY:-0}"; then
@@ -103,12 +114,9 @@ assistant_workers_apply() {
 
   export ENABLE_SEARXNG="${ENABLE_SEARXNG:-0}"  # overridden active when media worker on
   export ENABLE_CLOUDDRIVE="${ENABLE_CLOUDDRIVE:-0}"
-  export ENABLE_OPENBAO="${ENABLE_OPENBAO:-0}"
+  # OpenBao / authz / SIEM / policy: set above from WORKER_SECURITY; keep agent flag default off
   export ENABLE_OPENBAO_AGENT="${ENABLE_OPENBAO_AGENT:-0}"
   export ENABLE_ANTIVIRUS="${ENABLE_ANTIVIRUS:-0}"
-  export ENABLE_SIEM="${ENABLE_SIEM:-0}"
-  export ENABLE_POLICY="${ENABLE_POLICY:-0}"
-  export ENABLE_AUTHZ="${ENABLE_AUTHZ:-0}"
   export ENABLE_TELEGRAM="${ENABLE_TELEGRAM:-0}"
   export ENABLE_OPENVPN="${ENABLE_OPENVPN:-0}"
   export ENABLE_WHATSAPP=0

@@ -24,7 +24,8 @@ _TARGET_GROUP_RE = re.compile(
     r")"
     r"(?::|=|-)?\s*"
     r"[\"“]?([^\"”\n,;:]+?)[\"”]?"
-    r"(?=\s*(?:lúc|luc|at|vào\s+\d|vao\s+\d|,|;|:|$|\n|hằng|hang|daily|mỗi|moi|chào|chao))",
+    r"(?=\s*(?:lúc|luc|at|vào\s+\d|vao\s+\d|,|;|:|$|\n|hằng|hang|daily|mỗi|moi|"
+    r"chào|chao|và\s+thực|va\s+thuc|and\s+do|và\s+làm|va\s+lam))",
     re.I,
 )
 _TARGET_GROUP_LOOSE_RE = re.compile(
