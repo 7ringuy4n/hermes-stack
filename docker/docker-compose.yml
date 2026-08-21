@@ -213,7 +213,11 @@ services:
 
   dispatcher:
     profiles: ["media"]
-    build: ./architect/models/dispatcher
+    build:
+      context: ./architect/models/dispatcher
+      args:
+        # ASR wheels are only baked in when the stack runs with WHISPER_ENABLED=1.
+        INSTALL_WHISPER: ${WHISPER_ENABLED:-0}
     container_name: dispatcher
     restart: unless-stopped
     environment:
@@ -225,6 +229,8 @@ services:
       - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
       - WHISPER_ENABLED=${WHISPER_ENABLED:-0}
       - WHISPER_MODEL=${WHISPER_MODEL:-tiny}
+      # Keep the downloaded ASR model on the media volume instead of re-fetching per recreate.
+      - HF_HOME=${WHISPER_CACHE_DIR:-/data/media/.cache/huggingface}
       - OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-0}
       - MEDIA_CACHE_DIR=/data/media
       # Image gen (empty = off). Media worker sets llm,vendor,comfy-cpu,comfy-gpu

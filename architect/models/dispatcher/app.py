@@ -383,30 +383,60 @@ class MediaTextReq(BaseModel):
     frames: int = MEDIA_TEXT_FRAMES
 
 
-def _video_keyframes(src: Path, frames: int) -> list[Path]:
-    """Evenly sampled JPEG stills next to the source (ffmpeg thumbnail filter)."""
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        return []
-    n = max(1, min(int(frames or MEDIA_TEXT_FRAMES), 8))
-    out_dir = src.parent / f".frames-{src.stem}"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    pattern = str(out_dir / "frame-%02d.jpg")
+def _media_duration_s(src: Path) -> float:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return 0.0
     try:
-        subprocess.run(
+        done = subprocess.run(
             [
-                ffmpeg, "-y", "-i", str(src),
-                "-vf", f"thumbnail,fps=1/{max(1, 30 // n)}",
-                "-frames:v", str(n),
-                "-q:v", "4", pattern,
+                ffprobe, "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=nw=1:nk=1", str(src),
             ],
             check=True,
             capture_output=True,
             timeout=MEDIA_TEXT_FRAME_TIMEOUT_S,
         )
+        return max(0.0, float((done.stdout or b"").decode("utf-8", "replace").strip() or 0))
     except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def _video_keyframes(src: Path, frames: int) -> list[Path]:
+    """Evenly spaced JPEG stills next to the source.
+
+    Seeks to explicit timestamps instead of an fps filter so that a clip
+    shorter than the sampling interval still yields a frame.
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
         return []
-    return sorted(p for p in out_dir.iterdir() if p.is_file() and p.suffix == ".jpg")
+    n = max(1, min(int(frames or MEDIA_TEXT_FRAMES), 8))
+    duration = _media_duration_s(src)
+    if duration <= 0:
+        stamps = [0.0]
+    else:
+        stamps = [duration * (i + 0.5) / n for i in range(n)]
+    out_dir = src.parent / f".frames-{src.stem}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out: list[Path] = []
+    for idx, ts in enumerate(stamps):
+        dest = out_dir / f"frame-{idx:02d}.jpg"
+        try:
+            subprocess.run(
+                [
+                    ffmpeg, "-y", "-ss", f"{ts:.3f}", "-i", str(src),
+                    "-frames:v", "1", "-q:v", "4", str(dest),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=MEDIA_TEXT_FRAME_TIMEOUT_S,
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        if dest.is_file() and dest.stat().st_size > 0:
+            out.append(dest)
+    return out
 
 
 def _ocr_file(path: Path) -> str:
@@ -442,13 +472,21 @@ def media_text(req: MediaTextReq) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001 — ASR is optional (WHISPER_ENABLED)
         transcript_error = str(e)[:200]
     frame_text: list[str] = []
+    frames_read = 0
     if ext in VIDEO_TEXT_EXTS:
-        for frame in _video_keyframes(src, req.frames):
+        keyframes = _video_keyframes(src, req.frames)
+        frames_read = len(keyframes)
+        for frame in keyframes:
             hit = _ocr_file(frame)
             if hit:
                 frame_text.append(hit)
             try:
                 frame.unlink()
+            except OSError:
+                pass
+        if keyframes:
+            try:
+                keyframes[0].parent.rmdir()
             except OSError:
                 pass
     parts: list[str] = []
@@ -462,6 +500,7 @@ def media_text(req: MediaTextReq) -> dict[str, Any]:
         "file": str(src),
         "text": text,
         "transcript": transcript,
+        "frames_read": frames_read,
         "frames_with_text": len(frame_text),
         "error": transcript_error if not text else "",
     }
