@@ -95,3 +95,19 @@ def list_schedules() -> list[dict[str, Any]]:
 
 def delete_schedule(sid: str) -> dict[str, Any]:
     return _req("DELETE", f"/v1/schedules/{sid}")
+
+
+def list_schedule_history(
+    *,
+    schedule_id: str = "",
+    thread_id: str = "",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    q = f"?limit={int(limit)}"
+    if schedule_id:
+        q += f"&schedule_id={schedule_id}"
+    if thread_id:
+        q += f"&thread_id={thread_id}"
+    data = _req("GET", f"/v1/schedules/history{q}")
+    rows = data.get("history") if isinstance(data, dict) else None
+    return rows if isinstance(rows, list) else []

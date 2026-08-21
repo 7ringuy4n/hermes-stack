@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Local unit: Grafana pairing files mention required exporters and 9router TCP target."""
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ if hasattr(sys.stdout, "buffer"):
 
 def main() -> int:
     fails = 0
-    compose = (ROOT / "docker" / "docker-compose.high.yml").read_text(encoding="utf-8")
+    compose = (ROOT / "docker" / "docker-compose.security.yml").read_text(encoding="utf-8")
     if "9router=9router:20128" not in compose:
         print("FAIL compose HEALTH_TARGETS missing 9router TCP")
         fails += 1

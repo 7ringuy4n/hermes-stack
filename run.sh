@@ -23,6 +23,26 @@ assistant_workers_apply
 cmd="${1:-help}"
 shift || true
 
+# Host-side media dirs (Hermes UID). Prevents Permission denied on inbound/out after
+# fresh data volumes or root-owned mkdir from other tools.
+ensure_hermes_media_dirs() {
+  local data="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
+  local uid="${HERMES_UID:-1000}"
+  local gid="${HERMES_GID:-1000}"
+  mkdir -p "${data}/media/inbound" "${data}/media/out" 2>/dev/null || true
+  chown -R "${uid}:${gid}" "${data}/media" 2>/dev/null || true
+  chmod -R ug+rwX "${data}/media" 2>/dev/null || true
+  chmod g+s "${data}/media" "${data}/media/inbound" "${data}/media/out" 2>/dev/null || true
+  for f in .env config.yaml; do
+    if [[ -f "${data}/${f}" ]]; then
+      chown "${uid}:${gid}" "${data}/${f}" 2>/dev/null || true
+      chmod u+rw "${data}/${f}" 2>/dev/null || true
+    fi
+  done
+  chown "${uid}:${gid}" "${data}" 2>/dev/null || true
+  chmod u+rwx "${data}" 2>/dev/null || true
+}
+
 compose() {
   # Core + optional worker overlays.
   local -a files=(--project-directory "$ROOT" -f "$ROOT/docker/docker-compose.yml")
@@ -68,6 +88,7 @@ compose() {
   [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles+=(--profile comfy-gpu)
   [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
   [[ "${ENABLE_NOTIFY:-0}" == "1" ]] && profiles+=(--profile notify)
+  [[ "${ENABLE_SECURITY:-0}" == "1" ]] && profiles+=(--profile security)
   [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles+=(--profile antivirus)
   if [[ "${SECURITY_SANDBOX:-0}" == "1" ]]; then
     echo "WARN: SECURITY_SANDBOX=1 starts docker-socket-proxy — not a production isolation boundary" >&2
@@ -117,7 +138,7 @@ compose() {
   docker compose "${files[@]}" "${profiles[@]}" "$@" "${scale_args[@]}"
 }
 
-need_med() {
+need_media() {
   if [[ "${ENABLE_MEDIA_FILE:-0}" == "1" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]]; then
     return 0
   fi
@@ -125,7 +146,7 @@ need_med() {
   return 1
 }
 
-need_high() {
+need_security() {
   if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" ]]; then
     return 0
   fi
@@ -166,6 +187,9 @@ do_stop_disabled_optionals() {
   local -a extra=()
   if [[ "${ENABLE_NOTIFY:-0}" != "1" ]]; then
     extra+=(notify alert-watch)
+  fi
+  if [[ "${ENABLE_SECURITY:-0}" != "1" ]]; then
+    extra+=(openbao security-manager authz siem policy-center)
   fi
   if [[ "${ENABLE_ANTIVIRUS:-0}" != "1" ]]; then
     extra+=(clamav av-gateway)
@@ -208,7 +232,7 @@ do_learn_status() {
 }
 
 do_compact() {
-  need_med compact || return 1
+  need_media compact || return 1
   echo "==> compact (skills drafts / memory hooks) — silent"
   local mem="${MEMORY_URL:-http://127.0.0.1:8095}"
   curl -fsS -m 30 -X POST "${mem}/v1/compact" >/dev/null 2>&1 || true
@@ -220,12 +244,12 @@ do_compact() {
 }
 
 do_optimize_memory() {
-  need_med optimize-memory || return 1
+  need_media optimize-memory || return 1
   do_compact
 }
 
 do_backup_sync_clouddrive() {
-  need_high backup-sync-clouddrive || return 1
+  need_security backup-sync-clouddrive || return 1
   case "${ENABLE_CLOUDDRIVE:-0}" in
     1) ;;
     *)
@@ -475,6 +499,7 @@ do_update() {
   compose pull || true
 
   echo "==> rebuild + recreate"
+  ensure_hermes_media_dirs
   compose up -d --build --remove-orphans
   do_stop_disabled_optionals
 
@@ -530,7 +555,7 @@ do_update() {
 }
 
 do_first_setup_openbao() {
-  need_high first-setup-openbao || return 1
+  need_security first-setup-openbao || return 1
   export STACK_ROOT="${STACK_ROOT:-$ROOT}"
   export ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-/data/assistant}"
   export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$ASSISTANT_DATA_DIR}"
@@ -570,6 +595,71 @@ do_switch_profile() {
   echo "Profile upgrade/downgrade is removed."
   echo "Enable workers with: bash run.sh add-components WORKER_SCHEDULE=active WORKER_MEDIA_FILE=active WORKER_SECURITY=active WORKER_NOTIFY=active WORKER_MESSAGE=active WORKER_MONITOR=active"
   return 2
+}
+
+do_remove_components() {
+  local dry=0 noup=0
+  local -a pairs=()
+  local arg k v
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry=1 ;;
+      --no-up) noup=1 ;;
+      *=*)
+        k="${arg%%=*}"
+        v="${arg#*=}"
+        if ! assistant_option_key_ok "$k"; then
+          echo "ERROR: unknown option ${k} (not in worker option list)" >&2
+          return 2
+        fi
+        # Normalize remove verbs to inactive/0
+        case "$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')" in
+          remove|off|inactive|0|false|no) v="inactive" ;;
+        esac
+        case "$k" in
+          ENABLE_*) v="0" ;;
+          WORKER_*) v="inactive" ;;
+        esac
+        pairs+=("${k}=${v}")
+        ;;
+      WORKER_*|ENABLE_*)
+        # bare key → deactivate
+        k="$arg"
+        if ! assistant_option_key_ok "$k"; then
+          echo "ERROR: unknown option ${k}" >&2
+          return 2
+        fi
+        case "$k" in
+          ENABLE_*) pairs+=("${k}=0") ;;
+          WORKER_*) pairs+=("${k}=inactive") ;;
+          *) pairs+=("${k}=0") ;;
+        esac
+        ;;
+      *)
+        echo "usage: bash run.sh remove-components KEY[=inactive|0] […] [--dry-run] [--no-up]" >&2
+        return 2
+        ;;
+    esac
+  done
+  [[ ${#pairs[@]} -gt 0 ]] || { echo "usage: bash run.sh remove-components KEY[=…] […] [--dry-run] [--no-up]" >&2; return 2; }
+  echo "==> remove-components ${pairs[*]}"
+  if [[ "$dry" == "1" ]]; then
+    echo "DRY_RUN: would archive then set: ${pairs[*]}"
+    return 0
+  fi
+  do_archive_before_change "remove-components:${pairs[*]}" || return 1
+  local stamp
+  stamp="$(cat "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null || true)"
+  for arg in "${pairs[@]}"; do
+    env_upsert "${arg%%=*}" "${arg#*=}"
+  done
+  echo "OK: wrote ${pairs[*]} (stamp=${stamp})"
+  if [[ "$noup" == "1" ]]; then
+    echo "NEXT: bash run.sh up"
+    echo "UNDO: bash run.sh restore ${stamp}"
+    return 0
+  fi
+  exec bash "${ROOT}/run.sh" up
 }
 
 do_add_components() {
@@ -639,7 +729,10 @@ Stack (all):
 
 Change workers (backup+verify first):
   add-components KEY=VAL […] [--dry-run] [--no-up]
-  workers                 # show current worker activation
+  remove-components KEY[=inactive|0] […] [--dry-run] [--no-up]
+  install-workers …             # alias of add-components
+  remove-workers …              # alias of remove-components
+  workers                       # show current worker activation
 
 DR (all):
   backup | restore [stamp] | verify [stamp] | migrate
@@ -677,6 +770,7 @@ EOF
 case "$cmd" in
   up)
     assistant_profile_summary
+    ensure_hermes_media_dirs
     compose up -d --remove-orphans
     do_stop_disabled_optionals
     if [[ -f "${SCRIPTS_DIR}/hermes-cron-share.sh" ]]; then
@@ -722,7 +816,8 @@ case "$cmd" in
   logs) compose logs -f --tail=100 "$@" ;;
   workers|profile) assistant_workers_summary ;;
   switch-profile|change-profile) do_switch_profile "$@" ;;
-  add-components|enable-components) do_add_components "$@" ;;
+  add-components|enable-components|install-workers) do_add_components "$@" ;;
+  remove-components|disable-components|remove-workers) do_remove_components "$@" ;;
   update) do_update ;;
   backup) ops backup "$@" ;;
   restore) ops restore "$@" ;;
@@ -735,12 +830,12 @@ case "$cmd" in
     ;;
   compact) do_compact ;;
   optimize-memory|optimize) do_optimize_memory ;;
-  check-media|check-medium|smoke-medium)
-    need_med check-media || exit 1
+  check-media|smoke-media)
+    need_media check-media || exit 1
     bash "${SCRIPTS_DIR}/check-media.sh"
     ;;
-  check-security|check-high|smoke-high)
-    need_high check-security || exit 1
+  check-security|smoke-security)
+    need_security check-security || exit 1
     bash "${SCRIPTS_DIR}/check-security.sh"
     ;;
   install-timers|timers) do_install_timers ;;

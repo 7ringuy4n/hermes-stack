@@ -1,5 +1,67 @@
 # Change history
 
+## 2026-08-21 07:20 +07 — Schedule group fire + worker-routing + install/remove workers
+
+- **Root cause:** `scheduleFire` into groups was dropped by `ZALO_GROUP_MODE=mention` (no @bot). Bypass mention/rate/inflight for schedule fires.
+- Schedule Worker: `schedule_fire_log` + `GET /v1/schedules/history`; create ack includes id/next run.
+- Classify: skip dead `classifier` combo briefly after 401/403 so schedule acks stay fast.
+- Alert-watch: `HEALTH_FAIL_STREAK` (default 3) before CRITICAL DOWN (dispatcher flap).
+- Add `worker-routing` skill (Dispatcher deprecated for new work). `run.sh` `install-workers` / `remove-workers`.
+- Case 31 + `schedule_group_fire_lab.py`.
+
+## 2026-08-20 21:00 +07 — docs: backfill ops HISTORY for 2026-08-12…18
+
+- `scripts/HISTORY.md`: added missing issue notes for **2026-08-15…18** (schedule TZ, stack-watch backoff, inbound queue, Omni/schedule-list, isolation, check-medium corruption, DR/SSE, backup role/Qdrant, replica entrypoint, office silent `.txt`, first-setup combo, disk full).
+- **2026-08-12…14**: no product CHANGELOG/HISTORY in this tree (clean rebuild starts 2026-08-15).
+- Expanded HISTORY Quick index for those symptoms.
+
+## 2026-08-20 20:50 +07 — Dual Hermes .env Permission denied on auto-sethome
+
+- Replica entry + `run.sh` also chown shared `.env` / `config.yaml` / data root to Hermes UID (scaled replicas rewrite home channel).
+- Dual isolation lab pass flag scopes to **media** Permission denied (not unrelated `.env` noise).
+
+## 2026-08-20 20:45 +07 — Rule 50 + durable media perms + dual Hermes isolation case
+
+- **AGENT_RULES #50**: source-first fixes — merge then pull on host; no lasting lab hotpatch cheats. Hard gate in agent-ops.
+- **Media permissions**: `run.sh` / `setup-zalo` / `hermes-replica-entry` / `stack-watch` ensure `media/inbound` + `media/out` owned by Hermes UID with setgid — stops recurring Permission denied.
+- **Test**: case `30-hermes-dual-isolation.md` + `test/scripts/hermes_dual_isolation_lab.py` (scale Hermes=2, concurrent admin injects via bridge).
+
+## 2026-08-20 20:35 +07 — Schedule-by-group: classify failover + cold registry sync
+
+- **Classify**: when combo `classifier` returns HTTP 401/403/empty, retry with chat combo (`hermes` / `OMNIROUTER_DEFAULT_COMBO`) so schedule JSON (`target_channel`, cron) still succeeds.
+- **zalo-api**: startup + resolve-miss sync bridge `/contacts` into channel registry; resolve matches platform-prefixed names (`Zalo LC group` → `LC group`) and reverse containment.
+- Schedule skill: never ask for raw chat ID when group unknown — use `!zalo allow` / `!zalo refresh`.
+- Unit: `channels_schedule_target_unit.py` covers prefixed group names.
+
+## 2026-08-20 20:20 +07 — Remove legacy check-medium/high + High deploy wrappers
+
+- Deleted unused `scripts/main/check-medium.sh` / `check-high.sh` (were thin wrappers to `check-media` / `check-security`).
+- `run.sh`: only `check-media` / `check-security` (plus `smoke-media` / `smoke-security`); renamed `need_med`/`need_high` → `need_media`/`need_security`.
+- Removed broken legacy `Deploy-High.ps1` / `Deploy-V050-Test.ps1` (pointed at missing `scripts/main/*.py`; lab helpers live under gitignored `scripts/temp/`).
+- Callers/docs retargeted to worker smoke names.
+
+## 2026-08-20 20:10 +07 — Learn pending bridge fallback; drop legacy medium/high compose
+
+- **Ingest** learn pending: notify via Notification Worker, then **bridge `/send`** to sole admin when Notify is down; compose wires bridge + admin file.
+- `setup-zalo.sh`: `media/inbound` + `media/out` for Hermes UID; bridge bind docs (`ZALO_PLUGIN_HOST=0.0.0.0` + firewall / token).
+- `patch_zalo_bridge_inject.py` restart keeps non-loopback bind for Docker inject/SSE.
+- **Removed** unused `docker-compose.medium.yml` / `docker-compose.high.yml`; backup, stack-watch, first-setup use `media.yml` / `security.yml` like `run.sh`.
+- Zalo README: schedule-by-group-name + bridge security notes. `scripts/HISTORY.md` ops entry.
+
+## 2026-08-20 20:05 +07 — Learn pending notify without Notify Worker; media inbound; bridge bind docs
+
+- **Ingest** `POST /v1/learn/submit`: notify sole Zalo admin via Notification Worker, then **bridge `/send` fallback** when Notify is down/`ENABLE_NOTIFY=0` (pending approve no longer silent).
+- Ingest compose gets `ZALO_BRIDGE_URL`, admin file/env, optional `ZALO_PLUGIN_TOKEN`.
+- `setup-zalo.sh` creates `media/inbound` + `media/out` owned by Hermes UID; documents `ZALO_PLUGIN_HOST=0.0.0.0` firewall risk.
+- Zalo README: schedule-by-group-name, `!zalo list` / `schedule list all`, bridge bind security.
+- `patch_zalo_bridge_inject.py` restart keeps `ZALO_PLUGIN_HOST=0.0.0.0` so Docker can reach `/inject-event`.
+
+## 2026-08-20 19:35 +07 — Security services gated by compose profile `security`
+
+- `openbao`, `security-manager`, `authz`, `siem`, `policy-center` use `--profile security` only when `WORKER_SECURITY` / `ENABLE_SECURITY` is active.
+- Notification Worker no longer starts those containers; `run.sh` removes them when Security is inactive.
+- Removed hermes/ingest hard `depends_on` onto profiled security services from the security overlay.
+
 ## 2026-08-20 19:00 +07 — [RELEASE] v0.5.13
 
 - Classify combo `classifier` (OpenCode Free `oc/*`); chat stays on `hermes`.

@@ -8,8 +8,8 @@ Runtime data stays on the host (`ASSISTANT_DATA_DIR`, default `/data/assistant`)
 |--------|--------|
 | **Schedule** | Timed runs (Go SQLite clock). Not the async compound-job runner. |
 | **Media\|File** | Dispatcher (search/image/office), OCR, Jobs, Comfy CPU |
-| **Security** | AV / judge / sandbox / YARA overlay |
-| **Notification** | SMS / email / Zalo notify channel |
+| **Security** | OpenBao, security-manager, authz, SIEM, policy-center (`--profile security`) |
+| **Notification** | SMS / email / Zalo notify + alert-watch (does **not** start Security services) |
 | **Message** | Zalo (proxy + zalo-api), Telegram, Lark |
 | **Monitor** | Grafana / Loki / Prometheus |
 
@@ -46,4 +46,6 @@ Activating or deactivating workers **backs up and verifies** first. If backup or
 bash run.sh add-components WORKER_MEDIA_FILE=active WORKER_SCHEDULE=active
 ```
 
-Overlays: `docker/docker-compose.media.yml` (media/file), `docker/docker-compose.security.yml` (security/notify/monitor), `docker/docker-compose.edge.yml` (Traefik / API Gateway / OpenVPN).
+Overlays: `docker/docker-compose.media.yml` (media/file), `docker/docker-compose.security.yml` (security/notify/monitor — security core gated by compose profile `security`), `docker/docker-compose.edge.yml` (Traefik / API Gateway / OpenVPN).
+
+When `WORKER_NOTIFY=active` alone, only `notify` / `alert-watch` start from that overlay. `openbao`, `security-manager`, `authz`, `siem`, and `policy-center` require `WORKER_SECURITY=active` (`ENABLE_SECURITY=1` → `--profile security`).

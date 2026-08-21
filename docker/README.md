@@ -7,11 +7,10 @@ Compose YAML lives here so the repo root stays clean. **`run.sh` always passes
 | File | Role |
 |------|------|
 | `docker-compose.yml` | Core + optional profiles (schedule, zalo, omnirouter, 9router, …) |
-| `docker-compose.media.yml` | Media\|File Worker overlay (dispatcher, OCR, Jobs, Comfy CPU) |
-| `docker-compose.security.yml` | Security / Notify / Monitor overlay |
+| `docker-compose.media.yml` | Media / File Worker overlay (dispatcher, OCR, Jobs, SearXNG, Comfy, …) |
+| `docker-compose.security.yml` | Security / Notify / Monitor overlay (`security` profile for OpenBao/authz/…) |
 | `docker-compose.edge.yml` | Traefik / API Gateway / OpenVPN |
 | `docker-compose.hermes-hostports.yml` | Host `:28642` / `:29119` when `HERMES_REPLICAS=1` |
-| `docker-compose.medium.yml` / `docker-compose.high.yml` | Legacy overlays (prefer workers + media/security) |
 
 ## Compose profiles (components)
 
@@ -23,6 +22,7 @@ Compose YAML lives here so the repo root stays clean. **`run.sh` always passes
 | `omnirouter` | `ENABLE_OMNIROUTER=1` (**default**) |
 | `9router` | `ENABLE_9ROUTER=1` (**optional**, off by default) |
 | `notify` | `WORKER_NOTIFY=active` / `ENABLE_NOTIFY=1` |
+| `security` | `WORKER_SECURITY=active` / `ENABLE_SECURITY=1` (openbao, security-manager, authz, siem, policy-center) |
 | `grafana` / `prometheus` / `loki` / `alloy` | Monitor worker / matching `ENABLE_*` |
 | `traefik` / `gateway` / `openvpn` | `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` |
 

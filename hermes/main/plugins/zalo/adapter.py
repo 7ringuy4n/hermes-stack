@@ -1398,13 +1398,21 @@ class ZaloAdapter(BasePlatformAdapter):
                 logger.info("[zalo] schedule stored")
                 try:
                     dest = str(origin.get("chat_name") or origin.get("thread_id") or "")
-                    base_msg = (
-                        "Schedule saved. When it is due, each item runs on its own (not as one LLM turn)."
+                    sid = str(data.get("id") or (data.get("schedule") or {}).get("id") or "")
+                    next_at = str(
+                        data.get("next_run_at")
+                        or (data.get("schedule") or {}).get("next_run_at")
+                        or ""
                     )
+                    base_msg = "Đã lưu lịch."
+                    if next_at:
+                        base_msg = f"Đã lưu lịch. Lần chạy tới: {next_at}."
+                    if sid:
+                        base_msg = f"{base_msg} id={sid}"
                     if dest and str(context.get("thread_type") or "") == "group" and str(
                         origin.get("thread_id") or ""
                     ) != str(thread_id):
-                        base_msg = f"Schedule saved → nhóm {dest}. When due, each item runs on its own."
+                        base_msg = f"{base_msg} → nhóm {dest}."
                     msg = self._as_ux_line(
                         "ZALO_SCHEDULE_SAVED_MSG",
                         ("schedule", "saved"),
@@ -2706,9 +2714,11 @@ class ZaloAdapter(BasePlatformAdapter):
 
         # ASSISTANT_MENTION_GATE_v1 — MUST run before rate / already-answering / secret-probe.
         # Otherwise normal group chat (no @bot) gets "Bot đang trả lời…" / "gửi hơi nhanh".
+        # Schedule fires inject into groups without @mention — must not be dropped here.
+        schedule_fire = bool(m.get("scheduleFire") or m.get("schedule_fire"))
         media = m.get("media") if isinstance(m.get("media"), dict) else None
         pending_key = f"{thread_id}:{sender_id}"
-        if chat_type == "group":
+        if chat_type == "group" and not schedule_fire:
             if self.group_mode == "off":
                 return
             if self.group_mode == "mention":
@@ -2738,11 +2748,16 @@ class ZaloAdapter(BasePlatformAdapter):
                             text = f"{text}\n{hint}".strip()
                         logger.info("Zalo: attached buffered media for %s", pending_key)
             # group_mode == "all" → respond to everything (subject to A+B above)
+        elif schedule_fire and chat_type == "group":
+            logger.warning(
+                "Zalo: scheduleFire bypass mention-gate thread=%s",
+                thread_id,
+            )
 
         # ASSISTANT_RATE_LIMIT_v4 — Valkey 1 / 10s; queue overflow instead of drop when enabled
         rate_over, rate_notify = self._zalo_rate_check(sender_id, thread_id)
         queue_on = self._as_inbound_queue_enabled()
-        if (not queue_on) and rate_over:
+        if (not schedule_fire) and (not queue_on) and rate_over:
             logger.info(
                 "Zalo: rate-limit drop sender=%s thread=%s type=%s via valkey",
                 sender_id, thread_id, thread_type,
@@ -2764,7 +2779,8 @@ class ZaloAdapter(BasePlatformAdapter):
             return
 
         # ASSISTANT_INFLIGHT_v6 — already answering; Valkey queue serializes when enabled
-        if (not queue_on) and await self._as_inflight_drop(sender_id, thread_id, thread_type):
+        # Schedule fires must not be dropped by thread lock (user may still be chatting).
+        if (not schedule_fire) and (not queue_on) and await self._as_inflight_drop(sender_id, thread_id, thread_type):
             return
 
         self._as_turn_handoff(thread_id)  # ASSISTANT_TIMING_FOOTER_v6
@@ -4270,6 +4286,13 @@ class ZaloAdapter(BasePlatformAdapter):
                         notified=meta.get("notified"),
                         path=ingest_rel,
                     )
+                    if meta.get("pending_id") and not meta.get("notified"):
+                        logger.error(
+                            "Zalo learn pending id=%s file=%s but admin notify failed "
+                            "(check notify worker / ZALO_BRIDGE_URL / zalo_admin_users.txt)",
+                            meta.get("pending_id"),
+                            file_name,
+                        )
         except Exception as e:
             logger.warning("Zalo file-pipeline error for %s: %s", file_name, e)
             self._as_flow("ingest_error", thread_id=thread_id, file=file_name, error=type(e).__name__)

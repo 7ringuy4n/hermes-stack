@@ -132,16 +132,13 @@ assistant_compose() {
   local -a files=(--project-directory "${ROOT}" -f "${ROOT}/docker/docker-compose.yml")
   local -a profiles=()
   local profile
-  case "${ASSISTANT_PROFILE:-high}" in
-    medium|high)
-      [[ -f "${ROOT}/docker/docker-compose.medium.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.medium.yml")
-      ;;
-  esac
-  case "${ASSISTANT_PROFILE:-high}" in
-    high)
-      [[ -f "${ROOT}/docker/docker-compose.high.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.high.yml")
-      ;;
-  esac
+  # Workers overlays (legacy ASSISTANT_PROFILE medium/high compose files removed).
+  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-0}" == "1" ]]; then
+    [[ -f "${ROOT}/docker/docker-compose.media.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.media.yml")
+  fi
+  if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
+    [[ -f "${ROOT}/docker/docker-compose.security.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.security.yml")
+  fi
   case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
     *1*)
       [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.edge.yml")
