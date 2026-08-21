@@ -231,7 +231,7 @@ services:
       - WHISPER_MODEL=${WHISPER_MODEL:-tiny}
       # Keep the downloaded ASR model on the media volume instead of re-fetching per recreate.
       - HF_HOME=${WHISPER_CACHE_DIR:-/data/media/.cache/huggingface}
-      - OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-0}
+      - OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-1}
       - MEDIA_CACHE_DIR=/data/media
       # Image gen (empty = off). Media worker sets llm,vendor,comfy-cpu,comfy-gpu
       - IMAGE_BACKENDS=${IMAGE_BACKENDS:-}

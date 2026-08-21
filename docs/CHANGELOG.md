@@ -1,3 +1,11 @@
+## 2026-08-21 18:50 +07 — Empty Omni combos; office files via Dispatcher
+
+- first-setup no longer fills OpenCode into `hermes` / `classifier`; both combos
+  are cleared to empty members (operator adds models in Omni UI).
+- Zalo “tạo file pdf/txt” claimed success but no upload: Hermes hit pdf skill
+  collision + failed pip/pypdf; nothing landed in `media/out`. Skills now require
+  `POST /v1/office-file`; default `OFFICE_FILE_GEN=1`; empty send caption.
+
 ## 2026-08-21 18:20 +07 — Queue turn timeout; Tavily → Firecrawl → SearXNG
 
 - Hung Hermes/web-search turn no longer blocks the next Zalo message: queued
