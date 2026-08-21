@@ -1,3 +1,14 @@
+## 2026-08-21 14:25 +07 — Bare files silent / mp4 “no video”: agent + Omni busy
+
+- Bare mp3/txt only showed Knowledge-pending; csv/xlsx got no Zalo reply; mp4
+  asked for a video that was already attached — agent turns died on Omni
+  **capacity-busy 503** after retries.
+- **Zalo**: bare office/text/av attachments now send a deterministic extract ack
+  (like image OCR ack) and skip the agent for that turn.
+- **Router Worker**: detect capacity-busy / retry-shortly; sleep
+  `OMNIROUTER_BUSY_BACKOFF_S` (default 3s) between rotate hops; default rotate
+  attempts **5**. Case **37** / attachment units updated.
+
 ## 2026-08-21 14:05 +07 — Second photo silent: SSE blocked + OCR-ack send hung
 
 - Two bare photos: first got OCR ack, second was OCR’d (incl. glyph-noise) but Zalo showed no second reply.

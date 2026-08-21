@@ -19,6 +19,37 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 14:25 +07 — Bare csv/xlsx/mp3/txt silent; mp4 “no video attached”
+
+### Symptom
+
+Zalo user sent bare files. Photo OCR-ack worked. mp3/txt only got
+`Knowledge — pending approval`. csv/xlsx produced no bot reply. mp4 reply was
+“I don't see a video file attached…” despite a staged `.mp4`. Hermes logged
+HTTP 503 `Structurally heavy chat request capacity is busy`.
+
+### Root cause
+
+1. Only **bare images** short-circuited to a deterministic OCR ack. Other bare
+   attachments still entered the agent/LLM path.
+2. Omni free capacity was busy; rotate exhausted without backoff → agent died →
+   no content reply (Knowledge-pending is learn notify, not a summary).
+3. With empty/failed extract in the agent prompt, the model hallucinated “no
+   video attached.”
+
+### Fix
+
+- Deterministic `file_extract_ack_message` for bare text/office/av (same send
+  path as image OCR ack: skip autosend, clear answering, kick queue).
+- Router: `chat_busy_capacity` + `OMNIROUTER_BUSY_BACKOFF_S`; rotate default 5.
+
+### Prevent recurrence
+
+Any bare attachment that workers can extract must reply without waiting on Omni.
+Knowledge-pending must never be the only user-visible outcome of a file send.
+
+---
+
 ## 2026-08-21 14:05 +07 — Second photo after OCR ack got no reply
 
 ### Symptom
