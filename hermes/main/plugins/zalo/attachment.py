@@ -160,7 +160,7 @@ def context_newest(items: List[Dict[str, Any]]) -> Tuple[str, str]:
 
 def image_ocr_ack_message(excerpt: str, *, max_chars: int = 1800) -> str:
     """Deterministic Zalo reply for a bare image after OCR (empty or with text)."""
-    body = (excerpt or "").strip()
+    body = ocr_excerpt_for_ack(excerpt)
     if not body:
         return (
             "Đã nhận ảnh. OCR không đọc được chữ rõ trong ảnh. "
@@ -173,3 +173,22 @@ def image_ocr_ack_message(excerpt: str, *, max_chars: int = 1800) -> str:
         f"{body}\n\n"
         "Bạn muốn mình tóm tắt / dịch / lưu knowledge không?"
     )
+
+
+def ocr_excerpt_for_ack(excerpt: str) -> str:
+    """Drop glyph-noise OCR (single-letter lines) so users get a clear empty ack."""
+    body = (excerpt or "").strip()
+    if not body:
+        return ""
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    if len(lines) >= 3:
+        short = sum(1 for ln in lines if len(ln) <= 1)
+        if short / len(lines) >= 0.6:
+            return ""
+    # Mostly punctuation / isolated chars with almost no words
+    words = [w for w in body.replace("\n", " ").split() if len(w) >= 2]
+    if len(body) >= 12 and len(words) <= 1 and len(lines) >= 4:
+        return ""
+    return body

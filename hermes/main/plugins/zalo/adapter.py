@@ -428,6 +428,8 @@ class ZaloAdapter(BasePlatformAdapter):
         self._auto_sethome_done: bool = bool(_existing_home)
         self._as_hold_inflight: set[str] = set()
         self._as_part_delivered: Dict[str, asyncio.Event] = {}
+        self._as_inbound_locks: Dict[str, asyncio.Lock] = {}
+        self._as_inbound_tasks: set[asyncio.Task] = set()
         self._as_queue_tasks: Dict[str, asyncio.Task] = {}
         self._as_compound_after: Dict[str, int] = {}
         self._as_compound_defer_ack: set[str] = set()
@@ -787,7 +789,11 @@ class ZaloAdapter(BasePlatformAdapter):
             await self._on_session_dead(data)
             return
         if event_type == "message":
-            await self._on_inbound_message(data)
+            # Do not await OCR/AV here — blocking the SSE reader drops follow-up
+            # photos while the first image is still being scanned.
+            task = asyncio.create_task(self._on_inbound_guarded(data))
+            self._as_inbound_tasks.add(task)
+            task.add_done_callback(self._as_inbound_tasks.discard)
             return
         # Reaction / undo / friend / group events: surface as a synthetic
         # context line for the agent (no media). These don't trigger a turn by
@@ -795,6 +801,26 @@ class ZaloAdapter(BasePlatformAdapter):
         if event_type in ("reaction", "undo", "friend_event", "group_event"):
             logger.info("Zalo: %s event %s", event_type, data)
             return
+
+    async def _on_inbound_guarded(self, data: Dict[str, Any]) -> None:
+        """Serialize per-thread inbound work; never raise into the SSE loop."""
+        tid = str((data or {}).get("threadId") or "")
+        locks = getattr(self, "_as_inbound_locks", None)
+        if not isinstance(locks, dict):
+            self._as_inbound_locks = {}
+            locks = self._as_inbound_locks
+        lock = locks.get(tid) if tid else None
+        if tid and lock is None:
+            lock = asyncio.Lock()
+            locks[tid] = lock
+        try:
+            if lock is not None:
+                async with lock:
+                    await self._on_inbound_message(data)
+            else:
+                await self._on_inbound_message(data)
+        except Exception:
+            logger.exception("Zalo: inbound message failed thread=%s", tid or "?")
 
     async def _on_session_dead(self, data: Dict[str, Any]) -> None:
         """Zalo session ended (logout / kicked / cookie expired)."""
@@ -3025,11 +3051,31 @@ class ZaloAdapter(BasePlatformAdapter):
                         metadata={
                             "thread_type": "group" if thread_type == "group" else "user",
                             "as_skip_timing": True,
-                            "as_skip_inflight": True,
+                            # Clear answering slot — this ack IS the whole turn.
+                            # Skip autosend/filters so a second photo cannot hang
+                            # inside send() after the first OCR reply.
+                            "as_skip_autosend": True,
+                            "as_skip_dest": True,
+                            "skip_outbound_filter": True,
                         },
                     )
                 except Exception as e:
                     logger.warning("Zalo: OCR image ack failed: %s", type(e).__name__)
+                # Ensure Valkey answering slot is free for the next photo.
+                try:
+                    self._as_inflight_done(str(thread_id), {})
+                except Exception:
+                    pass
+                try:
+                    ev = self._as_part_delivered.get(str(thread_id))
+                    if ev is not None:
+                        ev.set()
+                except Exception:
+                    pass
+                try:
+                    self._as_queue_kick(str(thread_id))
+                except Exception:
+                    pass
                 return
         elif not media_urls and str(text or "").strip():
             text = self._as_attachment_followup(str(thread_id), text)
