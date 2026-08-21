@@ -1,0 +1,12 @@
+{
+  "combo": "websearch",
+  "description": "Router Worker web-search combo (OmniRouter-style failover). Skill routes here via model-router /v1/search — not OmniRouter chat combos.",
+  "backends": ["tavily", "searxng"],
+  "extract_backends": ["tavily", "firecrawl"],
+  "max_results": 3,
+  "notes": [
+    "Order is failover order: first available wins.",
+    "Override with env WEB_BACKENDS / WEB_EXTRACT_BACKENDS (comma-separated).",
+    "searxng requires SEARXNG_URL; vendor backends require *_API_KEY."
+  ]
+}
