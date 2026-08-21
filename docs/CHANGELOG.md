@@ -1,5 +1,11 @@
 # Change history
 
+## 2026-08-21 11:20 +07 — Zalo bridge EADDRINUSE crash-loop + media/fetch 404
+
+- **Bridge ownership:** `patch_zalo_bridge_inject.py` used to `pkill` + `runuser`/`Popen` a second Node listener while the user systemd unit `com.hermes.zaloplugin` stayed enabled. The orphan held `:8787`, systemd failed with `EADDRINUSE` every 5s (restart counter past 9500), and journal spam drowned real signal. Restart now clears orphans, then enables/restarts the systemd unit; `setup-zalo.sh` no longer `nohup`s a competing process; `zalo-watch` heals through the same path.
+- **`/media/fetch`:** Hermes `ASSISTANT_MEDIA_PROXY_v1` POSTs CDN URLs to the bridge, but upstream `hermes-zalo-plugin` 1.0.9 has no such route (`Cannot POST /media/fetch`), so images never reached OCR. The patcher now installs `POST /media/fetch` + `GET /media/:id` (session cookies from `~/.hermes-zalo/credentials.json`) and dedupes the thrice-applied `/inject-event` handlers left by the old marker.
+- Unit: `test/scripts/zalo_bridge_patch_unit.py`.
+
 ## 2026-08-21 11:10 +07 — OCR no longer passes off a blind model's excuse as text
 
 - **OCR worker**: the routed model has no vision on this stack, so it answered 200 OK with “I don’t see an image — please upload it”. That reply was longer than the minimum length and matched no refusal pattern, so it was returned as *extracted text* — which is why an image came back as a generic description and a video's on-screen text was nonsense. Refusal detection now covers those chat replies (curly apostrophes included), so tesseract (`eng+vie`, already in the image) provides the text instead.
