@@ -197,6 +197,11 @@ def _parse_health_targets(raw: str) -> list[tuple[str, str, str, int, str]]:
     return out
 
 
+_fail_streak: dict[str, int] = {}
+# Require N consecutive failed probes before DOWN (stops flap from brief restarts).
+HEALTH_FAIL_STREAK = max(1, int(os.environ.get("HEALTH_FAIL_STREAK") or "3"))
+
+
 def check_services() -> None:
     for name, kind, host, port, path in _parse_health_targets(HEALTH_TARGETS):
         if not host_expected(host):
@@ -211,22 +216,34 @@ def check_services() -> None:
                 continue
             ok = False
         prev = _prev_up.get(name)
-        _prev_up[name] = ok
+        if ok:
+            streak = _fail_streak.get(name, 0)
+            _fail_streak[name] = 0
+            _prev_up[name] = True
+            if prev is False or streak >= HEALTH_FAIL_STREAK:
+                # Only announce recovery if we had previously fired DOWN
+                if prev is False:
+                    _fire(
+                        f"service_up:{name}",
+                        f"Service recovered: {name}",
+                        f"{name} is UP again.",
+                        "info",
+                    )
+            continue
+        # failing
+        streak = int(_fail_streak.get(name, 0)) + 1
+        _fail_streak[name] = streak
         if prev is None:
-            continue  # warm-up: no alert on first sample
-        if prev and not ok:
+            # warm-up: accumulate streak but no alert on first samples
+            if streak < HEALTH_FAIL_STREAK:
+                continue
+        _prev_up[name] = False
+        if streak == HEALTH_FAIL_STREAK:
             _fire(
                 f"service_down:{name}",
                 f"Service DOWN: {name}",
-                f"{name} failed health ({kind} {host}:{port}{path}). Check Grafana Stack health.",
+                f"{name} failed health ({kind} {host}:{port}{path}) for {HEALTH_FAIL_STREAK} probes. Check Grafana Stack health.",
                 "critical",
-            )
-        elif (not prev) and ok:
-            _fire(
-                f"service_up:{name}",
-                f"Service recovered: {name}",
-                f"{name} is UP again.",
-                "info",
             )
 
 
