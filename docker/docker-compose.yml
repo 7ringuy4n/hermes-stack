@@ -217,13 +217,10 @@ services:
     container_name: dispatcher
     restart: unless-stopped
     environment:
-      # Media|File Worker: vendors first; SearXNG last when ENABLE_SEARXNG=1
-      - WEB_BACKENDS=${WEB_BACKENDS:-}
-      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
-      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
-      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
-      - SEARXNG_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
-      - WEB_SEARCH_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
+      # Web search lives on router-worker (/v1/search) — media worker only links to it
+      - WEB_SEARCH_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
+      - OCR_URL=${OCR_URL:-http://ocr:8091}
+      - MEDIA_TEXT_FRAMES=${MEDIA_TEXT_FRAMES:-4}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://omni-router:20129/v1}
       - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
       - WHISPER_ENABLED=${WHISPER_ENABLED:-0}
@@ -312,6 +309,14 @@ services:
       - MODEL_ROUTER_CLASSIFY_MODEL=${MODEL_ROUTER_CLASSIFY_MODEL:-${OMNIROUTER_CLASSIFY_COMBO:-classifier}}
       - MODEL_ROUTER_OUTBOUND_MODEL=${MODEL_ROUTER_OUTBOUND_MODEL:-${OMNIROUTER_DEFAULT_COMBO:-hermes}}
       - MODEL_ROUTER_PORT=8096
+      # Web search combo: paid vendor first, local SearXNG last (empty = search off)
+      - WEB_BACKENDS=${WEB_BACKENDS:-tavily,searxng}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      - EXA_API_KEY=${EXA_API_KEY:-}
+      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
+      - SEARXNG_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
+      - WEB_SEARCH_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     ports:
       - "127.0.0.1:${MODEL_ROUTER_HOST_PORT:-8096}:8096"
@@ -402,6 +407,9 @@ services:
       - ZALO_WORKFLOW_TURN_TIMEOUT_S=${ZALO_WORKFLOW_TURN_TIMEOUT_S:-420}
       - ZALO_WORKFLOW_PARALLEL=${ZALO_WORKFLOW_PARALLEL:-4}
       - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
+      # Web search + media text extraction endpoints used by skills
+      - WEB_SEARCH_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
+      - ZALO_ATTACHMENT_CONTEXT_TTL_S=${ZALO_ATTACHMENT_CONTEXT_TTL_S:-900}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       # Zalo (used when ENABLE_ZALO=1 + host bridge + zalo-proxy profile)
       # Only replica hermes-1 keeps ZALO_PLUGIN_URL (see hermes-replica-entry.sh).
@@ -411,7 +419,7 @@ services:
       - ZALO_ALLOWED_THREADS=${ZALO_ALLOWED_THREADS:-}
       - ZALO_HOME_CHANNEL=${ZALO_HOME_CHANNEL:-}
       - ZALO_INBOUND_QUEUE=${ZALO_INBOUND_QUEUE:-1}
-      - ZALO_INBOUND_QUEUE_MAX=${ZALO_INBOUND_QUEUE_MAX:-8}
+      - ZALO_INBOUND_QUEUE_MAX=${ZALO_INBOUND_QUEUE_MAX:-16}
       - ZALO_INBOUND_QUEUE_TTL_S=${ZALO_INBOUND_QUEUE_TTL_S:-3600}
       - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
       - ZALO_ADMIN_USERS_FILE=/opt/data/zalo_admin_users.txt
@@ -486,9 +494,11 @@ services:
       - HERMES_CONTAINER=${HERMES_CONTAINER:-hermes}
       - WORKFLOW_URL=${WORKFLOW_URL:-http://workflow:8108}
       - CHANNELS_REGISTRY_FILE=/data/assistant/channels/registry.json
+      - ZALO_ADMIN_MESSAGES=/app/zalo-admin.json
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     volumes:
       - ${ASSISTANT_DATA_DIR:-/data/assistant}:/data/assistant
+      - ./hermes/main/messages/zalo-admin.json:/app/zalo-admin.json:ro
       # No docker.sock — host timers (stack-watch / zalo-watch) restart Hermes.
     ports:
       - "127.0.0.1:${ZALO_API_PORT:-8100}:8100"

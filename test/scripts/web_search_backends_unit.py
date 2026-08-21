@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Probe dispatcher web search backends (local HTTP, no SSH)."""
+"""Probe Router Worker web search combo (local HTTP, no SSH)."""
 from __future__ import annotations
 
 import json
@@ -8,7 +8,7 @@ import sys
 import urllib.error
 import urllib.request
 
-BASE = os.environ.get("DISPATCHER_URL", "http://127.0.0.1:8090").rstrip("/")
+BASE = os.environ.get("MODEL_ROUTER_URL", "http://127.0.0.1:8096").rstrip("/")
 
 
 def get_json(path: str, method: str = "GET", body: dict | None = None) -> dict:
@@ -27,9 +27,9 @@ def main() -> int:
     try:
         health = get_json("/health")
     except Exception as e:
-        print(f"SKIP dispatcher not reachable at {BASE}: {e}")
+        print(f"SKIP router-worker not reachable at {BASE}: {e}")
         return 0
-    backends = health.get("backends") or []
+    backends = health.get("web_backends") or []
     print(f"backends={backends}")
     if not backends:
         print("NOTE Low profile or WEB_BACKENDS empty — search disabled by design")

@@ -12,8 +12,8 @@ Send **only the final answer** (and a generated file if the user asked for one).
 ## Strategy
 
 1. **Query shaping** — keywords + site/time hints; Vietnamese and English variants if needed.
-2. **Search** — prefer dispatcher `POST http://dispatcher:8090/v1/search` (Tavily when configured; Firecrawl; SearXNG fallback).
-3. **Extract** — `POST http://dispatcher:8090/v1/extract` on the best URL. Do **not** use SearXNG for extract (it cannot). If extract fails, try Tavily extract or Firecrawl, then stop with a short failure line.
+2. **Search** — Router Worker combo `POST http://model-router:8096/v1/search` (combo order Tavily → SearXNG; SearXNG is the local last resort). Never call the media worker for search.
+3. **Extract** — `POST http://model-router:8096/v1/extract` on the best URL. Do **not** use SearXNG for extract (it cannot). If extract fails, stop with a short failure line.
 4. **Page images** — if the useful content is in **images** (tables, posted prices, charts):
    1. Download the image to `/opt/data/media/in/<safe>.jpg` (same volume as OCR).
    2. `POST http://ocr:8091/v1/ocr` with `{ "path": "/data/media/in/<safe>.jpg" }`.
@@ -23,7 +23,7 @@ Send **only the final answer** (and a generated file if the user asked for one).
 
 ## Note
 
-This skill controls **behavior**; execution uses dispatcher / OCR. See `vendor/tavily/tavily-best-practices`.
+This skill controls **behavior**; execution uses Router Worker search + OCR. Media generation stays on the Media/File worker. See `vendor/tavily/tavily-best-practices`.
 
 ## Confidential/internal docs (hard rule)
 

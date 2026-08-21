@@ -10,7 +10,7 @@ Upstream pack: [`tavily-ai/skills`](https://github.com/tavily-ai/skills) vendore
 ## Prefer dispatcher (keys in compose)
 
 ```bash
-curl -sS -X POST http://dispatcher:8090/v1/search \
+curl -sS -X POST http://model-router:8096/v1/search \
   -H 'content-type: application/json' \
   -d '{"q":"<query>","limit":5}'
 ```
