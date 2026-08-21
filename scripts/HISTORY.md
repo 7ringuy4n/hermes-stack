@@ -19,6 +19,93 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 11:10 +07 — Images “read” but the text was the model asking for the image
+
+### Symptom
+
+An image sent to Zalo came back as a generic description instead of its text, and video
+keyframe OCR returned paragraphs like “I'd be happy to help extract text as markdown, but
+you haven't provided any source material”. OCR logs said `stage=ocr ok=True chars=472`, so
+from the outside the worker looked healthy.
+
+### Root cause
+
+OCR sends the picture to the router as an `image_url` part, but the model behind the alias
+on this stack is text-only, so it replied 200 OK asking the user to upload an image. That
+reply was over `OCR_MIN_CHARS` and matched none of the refusal patterns — “don’t see an
+image” was absent, and the model's curly apostrophe would have defeated the `don't`
+patterns anyway — so the excuse was returned as extracted text and the tesseract fallback
+(already installed with `eng+vie`) never ran.
+
+### Fix
+
+Refusal detection now recognises the “no image attached / please upload / once you share”
+family after normalising smart quotes, and lives in `refuse.py` with a unit test. After
+three consecutive blind replies the worker stops calling vision for 15 minutes and uses
+local OCR directly, which also removes a pointless round trip from every image turn.
+
+### Prevent recurrence
+
+A worker that forwards an upstream answer must validate that the answer is the *kind* of
+thing it asked for. Length alone is not evidence, and `ok=True` in a log line is only as
+honest as that check.
+
+---
+
+## 2026-08-21 10:40 +07 — “Service recovered: dispatcher” every 2 minutes; media text always empty
+
+### Symptom
+
+Notify alternated dispatcher DOWN/UP roughly every two minutes, and it looked like media work was crashing the service. Verifying the new `POST /v1/media/text` on the lab returned `text: ""` for both an mp4 with on-screen text and an mp3, and long calls to dispatcher or ingest sometimes died mid-request with a connection reset.
+
+### Root cause
+
+1. `stack-watch` probed 9Router unconditionally. This lab runs OmniRouter only, so the probe failed on every tick (`fail_count` had reached 577), and the heal branch then ran a blanket `docker restart dispatcher` — every 2 minutes, regardless of dispatcher's own health. In-flight OCR and media requests died with it.
+2. `faster-whisper` was listed only as a comment in the media worker requirements, so ASR raised `ModuleNotFoundError` and the transcript was always empty. After installing it, `faster_whisper.utils` still failed on `import requests`, because `huggingface_hub` 1.x dropped that dependency.
+3. Keyframes were sampled with `fps=1/7`, so a clip shorter than the interval produced no frame and OCR never ran.
+
+### Fix
+
+- stack-watch probes optional components only when enabled or running, and restarts only the containers whose own probe failed.
+- ASR wheels install behind the `INSTALL_WHISPER` build arg with `requests` pinned; `HF_HOME` lives on the media volume.
+- Keyframes are taken by seeking to evenly spaced timestamps, and the endpoint reports `frames_read`.
+
+### Prevent recurrence
+
+A watchdog must restart only what it proved unhealthy, and must not probe components the stack does not run. When a capability is optional at build time, verify the import inside the built image — a commented-out requirement looks enabled from the outside.
+
+---
+
+## 2026-08-21 09:40 +07 — Files answered without being read; dispatcher flap; schedules only removable one at a time
+
+### Symptom
+
+Sending an image got a generic “fluffy kitten” description instead of its text. A `.txt` with `123` replied slowly, and asking again still felt slow. A video got “what should I do with it?”, then “paste the content you want summarized”. `.docx/.xlsx/.pptx/.csv` only produced “Knowledge — pending approval”. Asking for a text file said it was sent but nothing arrived. `gửi tin chào buổi sáng và tóm tắt giá xăng … kèm theo thời tiết …` ran as one job. Notify kept alternating dispatcher DOWN/UP while OCR and media jobs ran. Admins could only remove one schedule per command.
+
+### Root cause
+
+1. No worker owned most extensions: office/CSV went only to the async learn pipeline, audio/video went nowhere, so the agent answered from the filename alone.
+2. Text extraction waited behind the AV gate instead of running alongside it, and the AV poll started with a long sleep.
+3. Attachment recall stored a single file, so a mixed pack lost everything but the last item, and the inbound FIFO capped at 8 dropped the tail of a pack.
+4. Zalo rejects a document attachment whose `caption` is present but blank (`Tham số không hợp lệ`); the fallback caption was a single space.
+5. Dispatcher served web search **and** blocking media work behind a synchronous `/health`, so probes timed out under load and looked like a crash.
+6. The classifier prompt only split numbered lists, not conjunction-joined deliverables.
+7. `schedule remove` resolved exactly one selector, with no group or range support.
+
+### Fix
+
+- `attachment.py` routes each extension to its worker (local read / OCR / Ingest `POST /v1/extract-text` / Media `POST /v1/media/text`), runs concurrently with the AV gate, and keeps 5 files of recall per thread; FIFO cap 16.
+- Omit the `caption` field entirely when blank.
+- Move web search to Router Worker (`model-router`) with Tavily → SearXNG fallback; make dispatcher `/health` async.
+- Classify prompt: conjunction-joined deliverables become separate async instructions; grouped items (E5 RON92 + E10 RON95) stay in one.
+- `schedule remove` accepts index lists, ranges, `all`, and `group <name>`, deleting from `cron/jobs.json` and the workflow service.
+
+### Prevent recurrence
+
+Never answer about a file the stack has not read — add an extension to a worker route or say plainly it could not be read. Keep long-running work off the same event loop path as `/health`, and keep one search implementation (Router Worker) so skills cannot drift to a second one.
+
+---
+
 ## 2026-08-21 08:20 +07 — Image asks for caption; PDF learn without summary; txt “sent” but missing; adapter EICAR cheat
 
 ### Symptom

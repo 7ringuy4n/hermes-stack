@@ -446,6 +446,12 @@ When re-testing a live High/Zalo lab:
 | Daily lịch of one weather+fuel infographic | `cases/27-zalo-weather-fuel-daily.md` |
 | Zalo media gen + lịch delivery | `cases/28-zalo-media-cron-delivery.md` |
 | Zalo once-lịch numbered tasks (no cite) | `cases/29-zalo-once-numbered-nocite.md` |
+| Hermes dual-replica isolation | `cases/30-hermes-dual-isolation.md` |
+| Schedule fire into a group | `cases/31-schedule-group-fire.md` |
+| Secret-probe paths + AV via Security Worker | `cases/32-secret-probe-path-eicar.md` |
+| Zalo image / PDF / txt send / queue | `cases/33-zalo-image-pdf-txt-queue.md` |
+| Attachment workers, mixed pack, compound split, schedule remove | `cases/34-zalo-attachment-workers-schedule-remove.md` |
+| Image / video text really read (OCR fallback, ASR) | `cases/35-image-video-text-really-read.md` |
 
 **Unit scripts (no VPS, run in small batches):**
 
@@ -461,6 +467,10 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/grafana_pairing_unit.py` | 20 |
 | `test/scripts/defaults_profile_unit.py` | 21 |
 | `test/scripts/ux_copy_unit.py` | schedule-saved locale map |
+| `test/scripts/zalo_attachment_unit.py` | 34 (worker routing, blank caption, mixed-pack recall) |
+| `test/scripts/schedule_crud_unit.py` | 34 (remove list / range / group / all) |
+| `test/scripts/secret_probe_path_unit.py` | 32 |
+| `test/scripts/ocr_refuse_unit.py` | 35 (blind model reply must not pass as OCR text) |
 
 **Lab scripts (SSH, one case per invocation — rule §23):**
 

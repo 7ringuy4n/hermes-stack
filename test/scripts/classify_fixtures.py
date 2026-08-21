@@ -140,7 +140,52 @@ _ONCE_2113 = [
     "Vẽ hình Thành phố Hồ Chí Minh dựa trên tình hình thời tiết thực tế hiện tại",
 ]
 
+FIXTURE_QUEUE_NOW = (
+    "1. Chào buổi sáng trong DM\n"
+    "2. Vẽ hình thành phố hồ chí minh, dựa theo thời tiết thực tế\n"
+    "3. Cập nhật ngắn gọn nội dung giá xăng E5 RON92 và E10 RON95 gần nhất"
+)
+FIXTURE_QUEUE_SCHEDULE = (
+    "1. Send daily message to wakeup every in DM/group: * a 6:00 AM GMT +7\n"
+    "2. Vẽ hình thành phố hồ chí minh, dựa theo thời tiết thực tế\n"
+    "3. Cập nhật ngắn gọn nội dung giá xăng E5 RON92 và E10 RON95 gần nhất"
+)
+_QUEUE_NOW = [
+    "Chào buổi sáng trong DM",
+    "Vẽ hình thành phố hồ chí minh, dựa theo thời tiết thực tế",
+    "Cập nhật ngắn gọn nội dung giá xăng E5 RON92 và E10 RON95 gần nhất",
+]
+
+# No numbering, no clock: three deliverables joined by "và" / "kèm theo".
+FIXTURE_CONJ_THREE = (
+    "gửi tin chào buổi sáng và tóm tắt giá xăng E5 RON92 và E10 RON95 mới nhất "
+    "kèm theo thông tin thời tiết Hồ Chí Minh hiện tại"
+)
+_CONJ_THREE = [
+    "Gửi tin chào buổi sáng",
+    "Tóm tắt giá xăng E5 RON92 và E10 RON95 mới nhất",
+    "Tóm tắt thông tin thời tiết Hồ Chí Minh hiện tại",
+]
+
 _PLANS = {
+    FIXTURE_QUEUE_NOW: {"task_hint": "tool", "instructions": _QUEUE_NOW},
+    FIXTURE_QUEUE_SCHEDULE: {
+        "task_hint": "schedule",
+        "instructions": _QUEUE_NOW,
+        "cadence": "daily",
+        "cron_expr": "0 6 * * *",
+    },
+    FIXTURE_CONJ_THREE: {
+        "task_hint": "tool",
+        "execution_class": "async",
+        "response_mode": "ack_then_deliver",
+        "instructions": _CONJ_THREE,
+        "task_details": [
+            {"execution_class": "interactive", "task_type": "chat", "depends_on": []},
+            {"execution_class": "async", "task_type": "search", "depends_on": []},
+            {"execution_class": "async", "task_type": "search", "depends_on": []},
+        ],
+    },
     "Thực hiện: 1. Tìm giá USD hiện tại 2. Vẽ hình HCM 3. Cập nhật giá xăng": {
         "task_hint": "tool",
         "instructions": ["Tìm giá USD hiện tại", "Vẽ hình HCM", "Cập nhật giá xăng"],

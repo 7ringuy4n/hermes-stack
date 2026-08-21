@@ -13,13 +13,19 @@ sys.path.insert(0, str(ROOT / "architect" / "zalo-api"))
 
 from hermes_cron_share import promote_shared_cron  # noqa: E402
 from schedule_crud import (  # noqa: E402
+    SCOPE_GLOBAL,
+    SCOPE_GROUP,
+    SCOPE_THREAD,
     apply_schedule_update,
+    expand_index_selectors,
     fmt_show,
     jobs_for_thread,
     new_job,
     parse_hhmm_cron,
+    parse_remove_request,
     parse_update_args,
     resolve_job,
+    resolve_jobs,
     split_add_args,
     take_all_flag,
     visible_jobs,
@@ -143,6 +149,61 @@ def test_timer_flag_and_clock_label() -> None:
     print("PASS timer flag + clock label")
 
 
+def test_remove_request_parse() -> None:
+    one = parse_remove_request("3")
+    assert one["scope"] == SCOPE_THREAD and one["selectors"] == ["3"] and not one["every"]
+
+    for text in ("1 3 5", "1,3,5", "1, 3 ,5"):
+        listed = parse_remove_request(text)
+        assert listed["selectors"] == ["1", "3", "5"], (text, listed)
+
+    ranged = parse_remove_request("1-3 6")
+    assert ranged["selectors"] == ["1", "2", "3", "6"], ranged
+
+    every = parse_remove_request("all")
+    assert every["scope"] == SCOPE_GLOBAL and every["every"] is True
+
+    one_of_all = parse_remove_request("all 2")
+    assert one_of_all["scope"] == SCOPE_GLOBAL and one_of_all["selectors"] == ["2"]
+    assert one_of_all["every"] is False
+
+    named = parse_remove_request("buoi-sang-hcm")
+    assert named["scope"] == SCOPE_THREAD and named["selectors"] == ["buoi-sang-hcm"]
+
+    grp = parse_remove_request("group LC group")
+    assert grp["scope"] == SCOPE_GROUP and grp["group_ref"] == "LC group"
+    assert grp["every"] is True and grp["selectors"] == []
+
+    grp_sel = parse_remove_request("nhóm LC group 1-2")
+    assert grp_sel["scope"] == SCOPE_GROUP and grp_sel["group_ref"] == "LC group"
+    assert grp_sel["selectors"] == ["1", "2"] and grp_sel["every"] is False
+
+    assert expand_index_selectors(["1", "3,4", "6-8"]) == ["1", "3", "4", "6", "7", "8"]
+    assert expand_index_selectors(["3-1"]) == ["1", "2", "3"]
+    print("PASS remove parse: index list, range, all, group")
+
+
+def test_remove_resolve() -> None:
+    jobs = [
+        new_job(prompt="a", expr="0 6 * * *", name="job-a", sender="u1", thread="g9"),
+        new_job(prompt="b", expr="0 7 * * *", name="job-b", sender="u1", thread="g9"),
+        new_job(prompt="c", expr="0 8 * * *", name="job-c", sender="u1", thread="g9"),
+    ]
+    picked, errors = resolve_jobs(jobs, ["1", "3"])
+    assert [j["name"] for j in picked] == ["job-a", "job-c"], picked
+    assert errors == [], errors
+
+    picked, errors = resolve_jobs(jobs, ["2", "2"])
+    assert [j["name"] for j in picked] == ["job-b"], picked
+
+    picked, errors = resolve_jobs(jobs, ["9"])
+    assert picked == [] and errors and "9" in errors[0], (picked, errors)
+
+    picked, errors = resolve_jobs(jobs, ["job-c", "1"])
+    assert [j["name"] for j in picked] == ["job-c", "job-a"], picked
+    print("PASS remove resolve: bulk indexes, dedupe, name, out-of-range")
+
+
 def main() -> int:
     fails = 0
     try:
@@ -153,6 +214,8 @@ def main() -> int:
         test_crud_visible()
         test_thread_scope()
         test_timer_flag_and_clock_label()
+        test_remove_request_parse()
+        test_remove_resolve()
     except AssertionError as e:
         print(f"FAIL {e}")
         fails = 1

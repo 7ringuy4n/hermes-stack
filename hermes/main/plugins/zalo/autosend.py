@@ -8,8 +8,9 @@ DEFAULT_GRACE_S = 8.0
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 VIDEO_EXTS = (".mp4", ".webm", ".mov", ".m4v", ".mkv")
 ZALO_VIDEO_SUFFIX = ".zalo.mp4"
-# zca-js sendMessage drops some empty-msg attachment payloads; a space is not user copy.
-ATTACH_CAPTION_FALLBACK = " "
+# Zalo rejects a whitespace-only caption on document attachments
+# ("Tham số không hợp lệ"). Omit the caption instead of padding it.
+ATTACH_CAPTION_FALLBACK = ""
 
 
 def _bridge_catalog() -> dict:
