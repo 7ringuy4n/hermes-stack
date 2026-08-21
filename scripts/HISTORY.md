@@ -19,6 +19,34 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 12:10 +07 — Vision-first OCR kept failing on text-only routers
+
+### Symptom
+
+Inbound images either got a generic photo description, a blind-model “please upload”
+excuse, or an empty tesseract scan after vision cooldown — Hermes never reliably
+received the glyphs that were on the picture.
+
+### Root cause
+
+The OCR worker called a vision LLM first. On this stack the routed model has no
+vision, so every image paid for a failed round trip. Tesseract was only a fallback
+and is weak on UI screenshots / Vietnamese receipts.
+
+### Fix
+
+PaddleOCR is the primary engine in the OCR container (Media Worker boundary,
+separate from dispatcher). Vision is opt-in (`OCR_VISION=0`). Inference runs on a
+thread pool so ASR and other media jobs stay responsive. Tesseract stays as the
+secondary local fallback.
+
+### Prevent recurrence
+
+OCR answers “what text is there?”; the LLM answers “what does it mean?”. Do not
+put a vision chat model in front of deterministic OCR for screenshots and documents.
+
+---
+
 ## 2026-08-21 11:52 +07 — OCR crash-loop: result.py missing from image
 
 Dockerfile only copied `app.py`/`refuse.py`; after PR #93 the container imported
