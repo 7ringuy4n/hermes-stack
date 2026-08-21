@@ -165,6 +165,35 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 20:25 +07 — Đặt lịch no reply (classifier 503 + queue timeout)
+
+### Symptom
+
+User: “đặt lịch chạy một lần lúc 20:07/20:17 với nội dung…”. No Zalo reply;
+schedule never stored (`jobs.json` empty / no new rows).
+
+### Root cause
+
+1. Omni combo `classifier` returned 503 “all upstream accounts are inactive”
+   (~50ms) but was **not** skipped (only 401/403/404/429 were).
+2. Failover to `hermes` hit ReadTimeout (classify `timeout_s=60`).
+3. Hermes turn then hit Zalo queue turn timeout (150s) → no useful reply;
+   Valkey `gate:ans` / `gate:qwork` could stay occupied.
+4. Schedule heuristic explicitly returned `None` for “đặt lịch”, so LLM failure
+   did not fall back to a storeable cron plan.
+
+### Fix
+
+- Skip classify combos on 502/503; shorten classify timeout to 15s.
+- Deterministic schedule heuristic for once/daily `lúc HH:MM` (early + fallback).
+- Ops: clear stuck answering/queue keys for the thread when applying.
+
+### Prevent recurrence
+
+Dead Omni classify combos must not burn the full Zalo turn budget. Clocked
+“đặt lịch” must store via heuristic when LLM classify is unavailable.
+
+
 ## 2026-08-21 19:55 +07 — SOUL blocked; empty session; wrong PDF/image content
 
 ### Symptom
