@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -252,17 +253,35 @@ def _router_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
     return _default_classify_combo_alias()
 
 
+# model_id -> unix time until which we skip that classify combo after 401/403 storms
+_classify_skip_until: dict[str, float] = {}
+_CLASSIFY_SKIP_TTL_S = float(os.environ.get("CLASSIFY_SKIP_TTL_S") or "300")
+
+
+def _mark_classify_model_bad(model_id: str) -> None:
+    name = str(model_id or "").strip()
+    if not name:
+        return
+    _classify_skip_until[name] = time.time() + max(30.0, _CLASSIFY_SKIP_TTL_S)
+
+
 def _classify_model_candidates(cfg: dict[str, Any], override: str | None = None) -> list[str]:
-    """Primary classify combo, then chat combo when they differ (403/empty failover)."""
+    """Primary classify combo, then chat combo when they differ (403/empty failover).
+
+    When the dedicated classify combo recently returned auth/quota errors, prefer the
+    chat combo first so schedule/create acks stay fast.
+    """
+    primary = _router_llm_model(cfg, override)
+    chat = _default_chat_combo_alias()
     out: list[str] = []
-    for candidate in (
-        _router_llm_model(cfg, override),
-        _default_chat_combo_alias(),
-    ):
+    skip_until = float(_classify_skip_until.get(primary) or 0)
+    prefer_chat = skip_until > time.time() and primary != chat
+    ordered = (chat, primary) if prefer_chat else (primary, chat)
+    for candidate in ordered:
         name = str(candidate or "").strip()
         if name and name not in out:
             out.append(name)
-    return out or [_default_chat_combo_alias()]
+    return out or [chat]
 
 
 def _outbound_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
@@ -557,6 +576,7 @@ async def classify_with_llm(
                     last_err = "classify_llm_failed"
                     # Auth/quota on this combo → try next model immediately.
                     if resp.status_code in {401, 403, 404, 429}:
+                        _mark_classify_model_bad(model_id)
                         break
                     continue
                 data = _loads_first(raw) or {}

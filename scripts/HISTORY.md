@@ -19,6 +19,34 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 07:20 +07 — LC group schedule fired but no group reply; dispatcher CRITICAL flap
+
+### Symptom
+
+Schedules targeting Zalo group **LC group** showed `fired zalo` in schedule-worker but the group got no bot reply. Creating a lịch felt slow. Concurrent chat felt stuck. Notify spammed CRITICAL Dispatcher DOWN/UP. Operators asked for schedule history and `run.sh` install|remove workers; target architecture removes generic Dispatcher.
+
+### Root cause
+
+1. `ZALO_GROUP_MODE=mention` dropped inbound without @bot — including `scheduleFire` injects into groups.
+2. Classify always tried broken `classifier` combo first (401/403) before `hermes` → slow schedule ack.
+3. Thread inflight/rate-limit could drop fires when queue off.
+4. Alert-watch fired DOWN on a single failed probe during brief dispatcher restarts.
+5. No durable fire history API on Schedule Worker.
+
+### Fix
+
+- Bypass mention / rate / inflight for `scheduleFire`.
+- Classify skip TTL after auth failures; prefer chat combo while skipped.
+- Schedule Worker fire log + `/v1/schedules/history`.
+- `HEALTH_FAIL_STREAK=3` before CRITICAL DOWN.
+- `worker-routing` skill; `run.sh install-workers` / `remove-workers`.
+
+### Prevent recurrence
+
+Never apply group mention-gate to protocol injects (`scheduleFire`). Health alerts must require a failure streak. New routing goes through Hermes skills → workers, not Dispatcher.
+
+---
+
 ## 2026-08-20 20:45 +07 — Recurring media Permission denied; dual Hermes lab
 
 ### Symptom
@@ -1688,6 +1716,44 @@ Dest order: request thread → optional `NOTIFY_ZALO_THREAD` → admin file → 
 
 ---
 
+## 2026-08-18 09:34 +07 — inbound FIFO default cap 20 flooded threads
+
+### Symptom
+
+Busy threads queued too many deferred rate-limit / compound parts; users saw long backlog or `queue.full` late.
+
+### Fix
+
+`ZALO_INBOUND_QUEUE_MAX` default **3**. Copy in `ux.json` `queue.*`. Cap is inbound waiting items only — outbound still sends as each turn finishes.
+
+### Prevent recurrence
+
+Do not raise the default cap without measuring per-thread Valkey memory and user UX.
+
+---
+
+## 2026-08-18 09:25 +07 — zalo-api crash loop missing `schedule_list.py`; Omni off on Low/Medium
+
+### Symptom
+
+After first schedule-list deploy, zalo-api crash-looped. Low/Medium labs had no OmniRouter by default while docs expected it.
+
+### Root cause
+
+Docker image omitted new module. Profile defaults lagged product intent.
+
+### Fix
+
+- Include `schedule_list.py` in zalo-api image.
+- `ENABLE_OMNIROUTER` default **1** on Low/Medium; High stays **0** (later product flipped Omni default on everywhere — see Aug 20).
+- `!zalo schedule list` (alias cron list) filters internal optimize crons.
+
+### Prevent recurrence
+
+New zalo-api modules must be listed in the Dockerfile in the same change.
+
+---
+
 ## 2026-08-18 09:10 +07 — `Đã xong.` between compound parts
 
 ### Symptom
@@ -1731,6 +1797,29 @@ Do not start a second `handle_message` on a thread that is still running unless 
 
 ---
 
+## 2026-08-18 08:25 +07 — multi-task cron only ran item 1; busy tip on Zalo
+
+### Symptom
+
+Daily numbered wakeup + image + fuel ran only the first line. Users saw Interrupting / `/busy` tips.
+
+### Root cause
+
+Upstream Hermes injects busy UX on overlapping turns. Parallel crons at the same clock, or unsplit media-out “stop after file,” dropped later items.
+
+### Fix
+
+- Drop busy/interrupt copy on Zalo (`gateway_noise.py`).
+- Schedule-shaped lists stay **one** job (keep-whole); skills complete every item after media.
+- Immediate compound waits until part sent before next turn.
+- Case `22-zalo-busy-cron-multi`.
+
+### Prevent recurrence
+
+Do not register one cron per numbered line at the same HH:MM. Prefer workflow N jobs (later Aug 18 afternoon).
+
+---
+
 ## 2026-08-18 08:10 +07 — numbered style `1 vẽ` / `2.Sau đó` plus media-out dropped request 2
 
 ### Symptom
@@ -1740,6 +1829,67 @@ Live Zalo: `yêu cầu:` + `1 vẽ…` + `2.Sau đó …` ran **image + fuel in 
 ### Fix
 
 Splitter accepts `1 task` / `2.Sau đó` (indexes 1–20, must include 1 and 2). Media-out applies **per turn after split**.
+
+---
+
+## 2026-08-18 07:50 +07 — High lab force-enabled Omni/Grafana against profile defaults
+
+### Symptom
+
+`deploy_high.py` always turned on OmniRouter and the full monitor stack; labs disagreed with `profile.sh` defaults.
+
+### Fix
+
+Lab helper no longer force-enables Omni/Grafana/Prometheus/Loki/Alloy (opt-in env). Defaults match `profile.sh` at that time.
+
+### Prevent recurrence
+
+Lab deploy helpers must not override product defaults unless the operator passes explicit flags.
+
+---
+
+## 2026-08-18 07:45 +07 — simple chat >5s treated as pass; Grafana optional scrape noise
+
+### Symptom
+
+Lab p95 ~9s still “passed.” Monitor targets scraped 9Router HTTP `/health` (404) and Omni when Omni was off.
+
+### Root cause
+
+Latency SLO was soft. Health probes used wrong paths/targets for optional routers.
+
+### Fix
+
+- Case 17: simple host-side chat **> 5s is FAIL** (network latency excluded).
+- Case 20: Grafana integration — Prometheus jobs + `assistant_service_up`; 9Router via **TCP**; Omni scrape only if on.
+- Case 21: 9Router always on at that time; Omni/Grafana default off for High lab helpers.
+
+### Prevent recurrence
+
+Do not raise the SLO to match a slow free-model path. Fix routing/timeouts instead (later rule 43 / outbound 30s).
+
+---
+
+## 2026-08-18 07:35 +07 — stack-watch infinite restart after probe fail; compound Zalo not split
+
+### Symptom
+
+Rolling labs 15–19: stack-watch could loop restarts. Zalo compound `tin nhắn 1` / `tin nhắn 2` ran as one turn. User errors dumped `/help` or host paths.
+
+### Root cause
+
+No backoff on heal. Splitter missed mid-sentence labels. Safety policy not wired for Zalo user-facing errors.
+
+### Fix
+
+- stack-watch exponential backoff 90s→3600s; degraded after 5 fails; optional `NOTIFY_URL`.
+- Compound split in `multi_request.py`; sequential adapter runs.
+- User errors only `Phiên làm việc bị gián đoạn…` (no `/help`, channel dumps, secret scans).
+- Cases 15–19 + unit/SSH labs.
+
+### Prevent recurrence
+
+Never restart-storm on a single probe fail. Keep user-facing errors short and editable.
 
 ---
 
@@ -1757,6 +1907,16 @@ Comparison used UTC or already-passed logic without “still ahead today.”
 
 `architect/tools/schedule_tz.py` — `next_daily_run(hour, minute)`: if the local clock is still ahead, schedule **today**. Skill `core/scheduling` + zalo-api policy. Later reused by workflow `next_daily_cron` grace.
 
+### Prevent recurrence
+
+Always compare schedule clocks in the user’s IANA zone (default `Asia/Ho_Chi_Minh`), not UTC midnight rules.
+
+---
+
+## Note: 2026-08-12 … 2026-08-14
+
+No hermes-stack CHANGELOG or ops HISTORY entries for these dates. The clean rebuild that this tree documents starts **2026-08-15 09:45 +07**. Earlier lab history lived outside this repo.
+
 ---
 
 ## 2026-08-17 17:55 +07 — destroy / profile switch without a verified backup
@@ -1765,9 +1925,104 @@ Comparison used UTC or already-passed logic without “still ahead today.”
 
 A failed destroy left the lab with no rollback stamp.
 
+### Root cause
+
+Destroy / switch-profile / add-components / update did not require a verified backup first. Lab scripts sometimes used `destroy || true`.
+
 ### Fix
 
-`run.sh destroy`, `switch-profile`, `add-components`, and `update` run `backup` then `verify` and **abort** if either fails. Lab deploy scripts must not swallow destroy failure with `|| true`.
+`run.sh destroy`, `switch-profile`, `add-components`, and `update` run `backup` then `verify` and **abort** if either fails. Lab deploy scripts must not swallow destroy failure.
+
+### Prevent recurrence
+
+Rule 24 (backup first): never destroy without a verified stamp.
+
+---
+
+## 2026-08-17 17:35 +07 — skills lab: every SKILL.md treated as one doc; no embedding key
+
+### Symptom
+
+Medium skills learn indexed almost nothing useful; embedding failed without 9Router embedding credentials. Text-poster path still went through LLM refine.
+
+### Root cause
+
+Learn/scan keyed only on basename `SKILL.md`. Embedding had no local fallback. Exact text posters used diffusion/LLM.
+
+### Fix
+
+- Unique learn keys by relative path; UTF-8 read for markdown.
+- Local ONNX `BAAI/bge-small-en-v1.5` embedding fallback (16:50 same day).
+- Dispatcher `text-poster` (Pillow) for quoted text / N lines.
+- Cases 12–14 + `skills_lab.py`.
+
+### Prevent recurrence
+
+Never key knowledge docs only on filename. Exact text → text-poster, not art models.
+
+---
+
+## 2026-08-17 15:05 +07 — disabled Notify/AV containers stayed up after profile change
+
+### Symptom
+
+After turning `ENABLE_NOTIFY=0` (or similar), containers kept running. `--remove-orphans` did not remove them.
+
+### Root cause
+
+Compose services started with `--profile` are not orphans when the profile is later omitted. Leftover `hexprefix_*hermes*` names collided on `--force-recreate`.
+
+### Fix
+
+`run.sh up`/`update` explicitly `docker rm` disabled-profile containers. first-setup-llm removes colliding Hermes names. Do **not** pass `--remove-orphans` on a compose set that omits edge YAML (would drop Traefik/Gateway).
+
+### Prevent recurrence
+
+When disabling a profile, remove those containers by name/label — do not rely on `--remove-orphans` alone.
+
+---
+
+## 2026-08-17 14:15 +07 — sandbox/judge on by default; judge CLEAN allowed malware
+
+### Symptom
+
+High isolation expectations failed: docker.sock on security-manager, public Traefik, LLM judge CLEAN treated as allow.
+
+### Root cause
+
+Defaults were fail-open for sandbox/judge/AV. Judge path could short-circuit allow.
+
+### Fix
+
+- High defaults: sandbox/judge/AV **off**; YARA + size/static remain.
+- Judge may only add RISK; CLEAN/skip/errors never allow.
+- docker-socket-proxy only with profile `sandbox`; no raw sock on security-manager.
+- Traefik default `local` (VPN/localhost).
+- Product `.env` wins over leftover `/data/assistant/.env` in stack-watch.
+
+### Prevent recurrence
+
+Never let an LLM CLEAN verdict bypass static/YARA isolation. Keep public ACME opt-in only.
+
+---
+
+## 2026-08-17 12:15 +07 — `check-medium.sh` systematically corrupted
+
+### Symptom
+
+Medium smoke / Zalo setup gate failed with paths like `/oev/null` and `oispatcher`.
+
+### Root cause
+
+File had systematic `d`→`o` corruption (editor/encoding mishap).
+
+### Fix
+
+Restore `scripts/main/check-medium.sh` from a known-good copy. (Later renamed to worker `check-media` — Aug 20.)
+
+### Prevent recurrence
+
+Smoke scripts are gatekeepers — verify after any bulk encoding/line-ending pass.
 
 ---
 
@@ -1780,6 +2035,99 @@ Hermes×2 has **no** host `:29119`. post-ready-learn and stack-watch treated Her
 ### Fix
 
 When `HERMES_REPLICAS ≠ 1`, probe **Traefik / API Gateway** `/health` (root `/` is 404 by design).
+
+---
+
+## 2026-08-17 11:50 +07 — gateway open; zalo-api mounted docker.sock; SSRF on scan-url
+
+### Symptom
+
+Unauthenticated gateway, client RL bypass via headers, security-manager could scan arbitrary URLs, zalo-api could restart Hermes via host docker.sock.
+
+### Fix
+
+- Gateway: require `GATEWAY_API_KEYS`; drop header RL bypass; do not trust XFF by default; RL fail-closed.
+- security-manager: SSRF-safe scan-url; `SECURITY_FAIL_CLOSED` on High; sandbox via socket-proxy.
+- zalo-api: remove docker.sock (host watches restart Hermes).
+- Docs: `docs/SECURITY.md`.
+
+### Prevent recurrence
+
+No product service gets raw docker.sock unless explicitly designed (and documented) for it.
+
+---
+
+## 2026-08-17 09:45 +07 — zalo-proxy exited but heal skipped
+
+### Symptom
+
+Host bridge `/health` up while `zalo-proxy` container exited → bot silent; watch did not start the proxy.
+
+### Fix
+
+`zalo-watch` starts `zalo-proxy` when the container is exited (not only when SSE miss counters trip).
+
+### Prevent recurrence
+
+Bridge health alone is not enough — check proxy container state too (later rule 38: zalo-api + proxy).
+
+---
+
+## 2026-08-17 07:25 +07 — `/sethome` spam on first Zalo chat
+
+### Symptom
+
+Every new DM got Hermes “📬 No home channel… /sethome”.
+
+### Fix
+
+Silent auto-claim `ZALO_HOME_CHANNEL` from first allowed DM (`ZALO_AUTO_SETHOME=1` default; DM-only). Set `0` for manual `/sethome`.
+
+### Prevent recurrence
+
+Do not reintroduce home-channel nag in user-facing Zalo copy.
+
+---
+
+## 2026-08-17 07:15 +07 — restore dropped Traefik/Gateway/Zalo profiles; SSE 0 after DR
+
+### Symptom
+
+Backup→restore OK but edge/Zalo profiles missing. Pre-restore `sseClients=0`; post-restore still silent until heal.
+
+### Root cause
+
+Restore compose did not pass the same `--profile` flags as `run.sh`. Mem0 leftovers confused memory metrics. Backup included/excluded zalo_owner inconsistently.
+
+### Fix
+
+- Restore compose uses the same profiles as `run.sh`.
+- Purge Mem0; session metrics use `conversation_active:*`.
+- Backup excludes `zalo_owner*`; restore clears lock + `heal-zalo-sse.sh`.
+- stack-watch keeps Hermes scale (see 19:40).
+
+### Prevent recurrence
+
+DR path must mirror live `run.sh` compose files and profiles exactly.
+
+---
+
+## 2026-08-16 20:10 +07 — High backup/restore broke on Postgres role and Qdrant snaps
+
+### Symptom
+
+Restore failed DROP/CREATE ROLE for the session user; Qdrant snapshots incomplete; Hermes scale wrong; backup tar included huge `replicas/` / `backups/`.
+
+### Fix
+
+- Restore uses compose (not missing generate/deploy).
+- Postgres skips DROP/CREATE ROLE for session user; Qdrant per-collection snaps.
+- Hermes scale-aware; exclude `backups/` + `replicas/` from hermes tar.
+- Lab stamp verified backup + verify + restore OK with Hermes×2.
+
+### Prevent recurrence
+
+Backup excludes must stay in sync with shared cron (later moved out of replicas — Aug 18 10:45).
 
 ---
 
@@ -1826,6 +2174,62 @@ Bare Compose DNS `hermes` matched every replica. Empty `ZALO_PLUGIN_URL` fell ba
 
 ---
 
+## 2026-08-16 11:57 +07 — Hermes replica entrypoint ran `gateway` as a binary
+
+### Symptom
+
+Scaled Hermes replicas exited immediately; gateway never listened.
+
+### Root cause
+
+Entrypoint invoked `gateway` as if it were on PATH; Hermes expects `hermes gateway run` (or dispatch).
+
+### Fix
+
+`hermes-replica-entry.sh` runs gateway via the Hermes dispatch/`hermes gateway run` path. Per-replica home under `replicas/<id>` + Zalo singleton election (11:35).
+
+### Prevent recurrence
+
+Replica entry must match the same CLI the primary Hermes image uses.
+
+---
+
+## 2026-08-16 11:25 +07 — Traefik could not reach Hermes after scale
+
+### Symptom
+
+API/chat via Traefik failed after Hermes×2; direct container health OK.
+
+### Root cause
+
+Hermes API still bound for single-host dashboard path; Traefik service discovery expected the shared compose network bind.
+
+### Fix
+
+Hermes API bind for Traefik after scale; edge stubs (Traefik / API Gateway / OpenVPN) default off. Later High defaults Traefik on (Aug 20).
+
+### Prevent recurrence
+
+Any scale change must re-validate Traefik → `hermes:8642` health, not only host `:29119`.
+
+---
+
+## 2026-08-16 09:30 +07 — Mem0 leftovers; coding skills missing on Medium/High
+
+### Symptom
+
+Memory metrics pointed at removed Mem0. Medium/High lacked edge + coding skill packs expected by labs.
+
+### Fix
+
+Remove Mem0; edge on Med/High; ship coding skills. Session metrics use `conversation_active:*` (Aug 17).
+
+### Prevent recurrence
+
+Do not leave dead memory backends in compose or docs after a cutover.
+
+---
+
 ## 2026-08-16 08:15 +07 — zalo-watch + stack-watch Hermes restart storm
 
 ### Symptom
@@ -1842,6 +2246,10 @@ Hours of Hermes restart loops. Zalo SSE never stable.
 - SSE miss ≥ 15; cooldown 1800s.
 - `STACK_WATCH_RESTART_HERMES=0`; boot grace 600s; heal 9router/dispatcher without thrashing Hermes.
 
+### Prevent recurrence
+
+Default watches to **heal bridge / routers**, not bounce Hermes. Opt-in restart only.
+
 ---
 
 ## 2026-08-15 16:50 +07 — skill learn failed when 9router had no embedding models
@@ -1850,9 +2258,60 @@ Hours of Hermes restart loops. Zalo SSE never stable.
 
 Cases 12–14: learn/scan produced 0 vectors or quota errors.
 
+### Root cause
+
+Embedding depended on 9Router provider keys. No local fallback.
+
 ### Fix
 
 Embedding service uses local ONNX `BAAI/bge-small-en-v1.5` (fastembed) when 9Router has no embedding credentials. Ingest recreates `knowledge_chunks` if vector size changes. If the lab still hits **chat** quota, recreate router keys (operator caution).
+
+### Prevent recurrence
+
+Skill learn must work offline for embeddings even when chat uses free remote models.
+
+---
+
+## 2026-08-15 16:10 +07 — office files silently fell back to `.txt`
+
+### Symptom
+
+PDF/DOCX/XLSX requests produced plain text files; Vietnamese PDF glyphs broken.
+
+### Root cause
+
+Dispatcher lacked reportlab/openpyxl/python-docx and DejaVu fonts. Low defaulted `OFFICE_FILE_GEN=0`.
+
+### Fix
+
+Install office deps + `fonts-dejavu-core`; real `.pdf`/`.docx`/`.xlsx` generation. Low still defaults office gen off unless enabled.
+
+### Prevent recurrence
+
+Never ship a silent format downgrade without a user-visible error.
+
+---
+
+## 2026-08-15 14:55 +07 — combo round-robin + post-setup left stale provider state
+
+### Symptom
+
+First-setup LLM left wrong default combo / leftover vendor keys; 9Router Default Key not wired to Hermes.
+
+### Root cause
+
+Defaults still pointed at paid/OpenCode naming; post-setup cleanup incomplete.
+
+### Fix
+
+- Default LLM = OpenCode Free combo; rename default 9Router combo to `hermes`.
+- Combo round-robin + post-setup cleanup.
+- first-setup: Docker install + Default Key → Hermes.
+- Low Must: Hermes + 9Router in compose; `run.sh update` after git pull; scripts split `main/` vs `temp/`.
+
+### Prevent recurrence
+
+First-setup must leave a single documented default combo; no orphan provider env.
 
 ---
 
@@ -1862,9 +2321,17 @@ Embedding service uses local ONNX `BAAI/bge-small-en-v1.5` (fastembed) when 9Rou
 
 Hermes image extract failed on a small root volume.
 
+### Root cause
+
+Root filesystem too small for image layers; no prune after failed extract.
+
 ### Fix
 
 Extend the data LV before extract; prune builder/image after first-setup. See `docs/HARDWARE.md`.
+
+### Prevent recurrence
+
+Check free space / LV size before first Hermes pull (hardware doc gate).
 
 ---
 
@@ -1917,8 +2384,30 @@ Do not `gh pr create --base main` from `develop`. Do not commit `_tmp_` probes.
 | `readonly database` / Errno 30 skills | 15:05 permissions |
 | `NameError: n` in deploy_high | 15:07 f-string |
 | Schedules gone after destroy | 10:45 shared cron |
-| Busy / `/busy` tip on Zalo | 08:45 FIFO + noise filter |
+| Busy / `/busy` tip on Zalo | 08:45 FIFO + noise filter; 08:25 multi-task cron |
 | Only last numbered item answered | 12:45 inline split |
+| Daily 06:00 → tomorrow at 05:58 | 07:15 schedule_tz today |
+| Simple chat >5s still “pass” | 07:45 SLO 5s |
+| stack-watch restart loop / compound not split | 07:35 backoff + multi_request |
+| Inbound queue backlog | 09:34 queue max 3 |
+| zalo-api crash `schedule_list` / Omni default | 09:25 image + Omni |
+| Lab force Omni/Grafana on | 07:50 deploy_high defaults |
+| Destroy without backup stamp | 17 Aug 17:55 |
+| Notify/AV still up after disable | 17 Aug 15:05 drop profile containers |
+| Judge CLEAN allowed scan | 17 Aug 14:15 isolation |
+| `/oev/null` / check-medium broken | 17 Aug 12:15 corruption |
+| No `:29119` on Hermes×2 | 17 Aug 12:05 Traefik probe |
+| Gateway open / docker.sock on zalo-api | 17 Aug 11:50 P0 |
+| `/sethome` spam | 17 Aug 07:25 auto-sethome |
+| Restore missing Traefik/Zalo; SSE 0 | 17 Aug 07:15 DR profiles |
+| Backup DROP ROLE / fat tar | 16 Aug 20:10 |
 | Hermes ports vanish every ~2 min | 16 Aug stack-watch scale |
 | Dual Zalo SSE / silent bot after restore | 16 Aug Zalo owner lock |
+| Replica exits `gateway` not found | 16 Aug 11:57 entrypoint |
+| Traefik miss after scale | 16 Aug 11:25 API bind |
+| Watch restart storm | 16 Aug 08:15 |
 | Skill learn empty / embedding | 15 Aug ONNX fallback |
+| PDF silently becomes `.txt` | 15 Aug 16:10 office |
+| Wrong default combo after first-setup | 15 Aug 14:55 |
+| Disk full on Hermes extract | 15 Aug 14:20 |
+| No entries 12–14 Aug | note under 18 Aug 07:50 block |

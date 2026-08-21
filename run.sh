@@ -597,6 +597,71 @@ do_switch_profile() {
   return 2
 }
 
+do_remove_components() {
+  local dry=0 noup=0
+  local -a pairs=()
+  local arg k v
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry=1 ;;
+      --no-up) noup=1 ;;
+      *=*)
+        k="${arg%%=*}"
+        v="${arg#*=}"
+        if ! assistant_option_key_ok "$k"; then
+          echo "ERROR: unknown option ${k} (not in worker option list)" >&2
+          return 2
+        fi
+        # Normalize remove verbs to inactive/0
+        case "$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')" in
+          remove|off|inactive|0|false|no) v="inactive" ;;
+        esac
+        case "$k" in
+          ENABLE_*) v="0" ;;
+          WORKER_*) v="inactive" ;;
+        esac
+        pairs+=("${k}=${v}")
+        ;;
+      WORKER_*|ENABLE_*)
+        # bare key → deactivate
+        k="$arg"
+        if ! assistant_option_key_ok "$k"; then
+          echo "ERROR: unknown option ${k}" >&2
+          return 2
+        fi
+        case "$k" in
+          ENABLE_*) pairs+=("${k}=0") ;;
+          WORKER_*) pairs+=("${k}=inactive") ;;
+          *) pairs+=("${k}=0") ;;
+        esac
+        ;;
+      *)
+        echo "usage: bash run.sh remove-components KEY[=inactive|0] […] [--dry-run] [--no-up]" >&2
+        return 2
+        ;;
+    esac
+  done
+  [[ ${#pairs[@]} -gt 0 ]] || { echo "usage: bash run.sh remove-components KEY[=…] […] [--dry-run] [--no-up]" >&2; return 2; }
+  echo "==> remove-components ${pairs[*]}"
+  if [[ "$dry" == "1" ]]; then
+    echo "DRY_RUN: would archive then set: ${pairs[*]}"
+    return 0
+  fi
+  do_archive_before_change "remove-components:${pairs[*]}" || return 1
+  local stamp
+  stamp="$(cat "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null || true)"
+  for arg in "${pairs[@]}"; do
+    env_upsert "${arg%%=*}" "${arg#*=}"
+  done
+  echo "OK: wrote ${pairs[*]} (stamp=${stamp})"
+  if [[ "$noup" == "1" ]]; then
+    echo "NEXT: bash run.sh up"
+    echo "UNDO: bash run.sh restore ${stamp}"
+    return 0
+  fi
+  exec bash "${ROOT}/run.sh" up
+}
+
 do_add_components() {
   local dry=0 noup=0
   local -a pairs=()
@@ -664,7 +729,10 @@ Stack (all):
 
 Change workers (backup+verify first):
   add-components KEY=VAL […] [--dry-run] [--no-up]
-  workers                 # show current worker activation
+  remove-components KEY[=inactive|0] […] [--dry-run] [--no-up]
+  install-workers …             # alias of add-components
+  remove-workers …              # alias of remove-components
+  workers                       # show current worker activation
 
 DR (all):
   backup | restore [stamp] | verify [stamp] | migrate
@@ -748,7 +816,8 @@ case "$cmd" in
   logs) compose logs -f --tail=100 "$@" ;;
   workers|profile) assistant_workers_summary ;;
   switch-profile|change-profile) do_switch_profile "$@" ;;
-  add-components|enable-components) do_add_components "$@" ;;
+  add-components|enable-components|install-workers) do_add_components "$@" ;;
+  remove-components|disable-components|remove-workers) do_remove_components "$@" ;;
   update) do_update ;;
   backup) ops backup "$@" ;;
   restore) ops restore "$@" ;;
