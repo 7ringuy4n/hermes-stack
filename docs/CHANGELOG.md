@@ -1,3 +1,10 @@
+## 2026-08-21 16:30 +07 — Web search combo config-driven (no py DEFAULT_CHAIN)
+
+- Skill must hit Router Worker `/v1/search`. Failover **Tavily → SearXNG** lives in
+  `config/web-search-combo.json` / `WEB_BACKENDS` (OmniRouter-style combo), not a
+  hardcoded `DEFAULT_CHAIN` in Python. OmniRouter stays LLM-only.
+- Unit `websearch_combo_unit.py` asserts env + JSON order and no `DEFAULT_CHAIN`.
+
 ## 2026-08-21 16:05 +07 — Web search status: Router Worker combo, not OmniRouter
 
 - Lab check: SearXNG container healthy; OmniRouter has **no** search/tavily/searx
