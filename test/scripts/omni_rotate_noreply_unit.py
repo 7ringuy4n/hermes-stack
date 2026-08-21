@@ -10,9 +10,17 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
-from chat_norm import chat_body_should_failover, completion_to_sse  # noqa: E402
+from chat_norm import (  # noqa: E402
+    chat_body_should_failover,
+    chat_busy_capacity,
+    completion_to_sse,
+)
 from route_expand import expand_chat_candidates  # noqa: E402
-from attachment import image_ocr_ack_message, ocr_excerpt_for_ack  # noqa: E402
+from attachment import (  # noqa: E402
+    file_extract_ack_message,
+    image_ocr_ack_message,
+    ocr_excerpt_for_ack,
+)
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -53,12 +61,23 @@ def test_subscription_failover() -> None:
         200, {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
     ):
         raise SystemExit("FAIL good body")
+    busy = {
+        "error": {
+            "message": "Structurally heavy chat request capacity is busy; retry shortly."
+        }
+    }
+    if not chat_body_should_failover(503, busy):
+        raise SystemExit("FAIL busy 503 must failover")
+    if not chat_busy_capacity(503, busy):
+        raise SystemExit("FAIL busy capacity detect")
+    if chat_busy_capacity(200, {"choices": [{"message": {"content": "ok"}}]}):
+        raise SystemExit("FAIL good body not busy")
     sse = completion_to_sse(
         {"choices": [{"message": {"role": "assistant", "content": "hi"}}]}
     ).decode()
     if "hi" not in sse or "[DONE]" not in sse:
         raise SystemExit("FAIL sse")
-    print("OK subscription failover + sse")
+    print("OK subscription failover + busy + sse")
 
 
 def test_ocr_ack() -> None:
@@ -76,7 +95,13 @@ def test_ocr_ack() -> None:
         raise SystemExit(f"FAIL noise excerpt={noise!r}")
     if "OCR không đọc được" not in image_ocr_ack_message(noise):
         raise SystemExit("FAIL noise should empty-ack")
-    print("OK OCR image ack")
+    csv_ack = file_extract_ack_message("a.csv", "x,y\n1,2", kind="text")
+    if "a.csv" not in csv_ack or "x,y" not in csv_ack:
+        raise SystemExit(f"FAIL csv ack={csv_ack!r}")
+    empty_mp4 = file_extract_ack_message("v.mp4", "", kind="av")
+    if "Chưa lấy được transcript" not in empty_mp4:
+        raise SystemExit(f"FAIL empty av={empty_mp4!r}")
+    print("OK OCR/file extract ack")
 
 
 def main() -> int:
