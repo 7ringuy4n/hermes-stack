@@ -259,8 +259,43 @@ def _router_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
 # model_id -> unix time until which we skip that classify combo after auth/quota/503 storms
 _classify_skip_until: dict[str, float] = {}
 _CLASSIFY_SKIP_TTL_S = float(os.environ.get("CLASSIFY_SKIP_TTL_S") or "300")
-# Upstream dead / inactive / bad gateway — skip that combo for a while (same as 401/403).
-_CLASSIFY_SKIP_HTTP = {401, 403, 404, 429, 502, 503}
+# Upstream dead / inactive / bad gateway / wrong-schema members — skip that combo briefly.
+_CLASSIFY_SKIP_HTTP = {400, 401, 403, 404, 429, 502, 503}
+_PRIOR_BLOCK = re.compile(
+    r"\[Prior conversation\].*?\[/Prior conversation\]\s*",
+    re.I | re.S,
+)
+
+
+def strip_prior_for_classify(text: str) -> str:
+    """Classify must see the current user ask only — not Valkey hydrate wrappers."""
+    blob = (text or "").strip()
+    if not blob:
+        return ""
+    cleaned = _PRIOR_BLOCK.sub("", blob).strip()
+    return cleaned or blob
+
+
+def _classify_body_is_schema_dead(status: int, body: str) -> bool:
+    """True when Omni/upstream rejects chat/completions shape (CF AiError prompt/text/audio)."""
+    if status in _CLASSIFY_SKIP_HTTP:
+        return True
+    low = (body or "").lower()
+    if "aierror" in low and any(
+        tok in low
+        for tok in (
+            "required properties",
+            "missing field",
+            "'prompt'",
+            '"prompt"',
+            "'text'",
+            "'audio'",
+            "multipart",
+            "oneof",
+        )
+    ):
+        return True
+    return False
 
 
 def _mark_classify_model_bad(model_id: str) -> None:
@@ -667,7 +702,7 @@ async def classify_with_llm(
 ) -> dict[str, Any]:
     cfg = _load_cfg()
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
-    blob = (text or "").strip()
+    blob = strip_prior_for_classify((text or "").strip())
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
     # Ultra-short probes (e.g. "ê", "hi") — skip LLM; weak models misclassify these.
@@ -721,8 +756,8 @@ async def classify_with_llm(
                         flush=True,
                     )
                     last_err = "classify_llm_failed"
-                    # Auth/quota/upstream-dead on this combo → skip it briefly, try next.
-                    if resp.status_code in _CLASSIFY_SKIP_HTTP:
+                    # Auth/quota/upstream-dead/wrong-schema combo → skip briefly, try next.
+                    if _classify_body_is_schema_dead(resp.status_code, raw):
                         _mark_classify_model_bad(model_id)
                         break
                     continue

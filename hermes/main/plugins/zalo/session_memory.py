@@ -76,10 +76,19 @@ def load_messages(thread_id: str, thread_type: str = "user") -> List[Dict[str, A
 
 
 def hydrate_user_text(thread_id: str, thread_type: str, text: str, *, max_msgs: int = DEFAULT_MAX) -> str:
-    """Prepend compact prior turns from Valkey so a new replica still has context."""
+    """Prepend compact prior turns from Valkey so a new replica still has context.
+
+    Intended for the Hermes agent turn only. Classify must strip this wrapper
+    (see model-router ``strip_prior_for_classify``) so schedule/intent detection
+    is not polluted by older PDF/image asks.
+    """
     cur = str(text or "").strip()
     if not cur:
         return text or ""
+    # Never hydrate schedule-fire / admin / already-wrapped payloads
+    low = cur.lower()
+    if cur.startswith("[Prior conversation]") or low.startswith("!zalo"):
+        return cur
     msgs = load_messages(thread_id, thread_type)
     if not msgs:
         return cur
