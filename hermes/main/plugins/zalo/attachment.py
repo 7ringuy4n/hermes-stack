@@ -175,6 +175,43 @@ def image_ocr_ack_message(excerpt: str, *, max_chars: int = 1800) -> str:
     )
 
 
+def file_extract_ack_message(
+    file_name: str,
+    excerpt: str,
+    *,
+    kind: str = "",
+    max_chars: int = 1800,
+) -> str:
+    """Deterministic Zalo reply for a bare non-image attachment after extract."""
+    name = (file_name or "file").strip() or "file"
+    k = (kind or attachment_kind(name)).strip() or "none"
+    if k == "ocr" and name.lower().endswith(
+        (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
+    ):
+        return image_ocr_ack_message(excerpt, max_chars=max_chars)
+    body = (excerpt or "").strip()
+    if not body:
+        if k == "av":
+            return (
+                f"Đã nhận media `{name}`. Chưa lấy được transcript / chữ trên khung hình. "
+                "Gửi lại hoặc nói rõ bạn muốn mình làm gì tiếp."
+            )
+        return (
+            f"Đã nhận file `{name}`. Chưa đọc được nội dung. "
+            "Gửi lại hoặc đổi định dạng giúp mình."
+        )
+    if len(body) > max_chars:
+        body = body[:max_chars].rstrip() + "…"
+    if k == "av":
+        head = f"Đã đọc media `{name}` (transcript / chữ trên khung hình):"
+    else:
+        head = f"Đã đọc file `{name}`:"
+    return (
+        f"{head}\n{body}\n\n"
+        "Bạn muốn mình tóm tắt / dịch / lưu knowledge không?"
+    )
+
+
 def ocr_excerpt_for_ack(excerpt: str) -> str:
     """Drop glyph-noise OCR (single-letter lines) so users get a clear empty ack."""
     body = (excerpt or "").strip()

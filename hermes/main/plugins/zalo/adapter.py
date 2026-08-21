@@ -302,6 +302,7 @@ from attachment import (  # noqa: E402
     context_merge,
     context_newest,
     image_ocr_ack_message,
+    file_extract_ack_message,
     stage_shared_media,
     worker_media_path,
 )
@@ -3033,15 +3034,32 @@ class ZaloAdapter(BasePlatformAdapter):
                 attach_bare,
                 len(excerpt),
             )
-            # Bare image: always send a deterministic OCR ack (empty or with text).
-            # Do not wait on the agent/tool loop — Omni 403 / slow free-model rotation
-            # previously left users with silence after PaddleOCR already succeeded.
-            if attach_bare and attach_is_image:
-                ack = image_ocr_ack_message(excerpt or "")
+            # Bare attachment: deterministic extract ack (image/office/text/av).
+            # Do not wait on the agent — Omni capacity-busy 503 left users silent
+            # after Knowledge-pending while csv/xlsx/mp4 never got a content reply.
+            if attach_bare:
+                kind = attachment_kind(attach_name)
+                if attach_is_image:
+                    ack = image_ocr_ack_message(excerpt or "")
+                    flow_stage = (
+                        "attach_image_ocr_ack"
+                        if (excerpt or "").strip()
+                        else "attach_image_empty_ocr_ack"
+                    )
+                else:
+                    ack = file_extract_ack_message(
+                        attach_name, excerpt or "", kind=kind
+                    )
+                    flow_stage = (
+                        "attach_file_extract_ack"
+                        if (excerpt or "").strip()
+                        else "attach_file_empty_ack"
+                    )
                 self._as_flow(
-                    "attach_image_ocr_ack" if (excerpt or "").strip() else "attach_image_empty_ocr_ack",
+                    flow_stage,
                     file=attach_name,
                     thread_id=thread_id,
+                    kind=kind,
                     chars=len(excerpt or ""),
                 )
                 try:
@@ -3051,17 +3069,13 @@ class ZaloAdapter(BasePlatformAdapter):
                         metadata={
                             "thread_type": "group" if thread_type == "group" else "user",
                             "as_skip_timing": True,
-                            # Clear answering slot — this ack IS the whole turn.
-                            # Skip autosend/filters so a second photo cannot hang
-                            # inside send() after the first OCR reply.
                             "as_skip_autosend": True,
                             "as_skip_dest": True,
                             "skip_outbound_filter": True,
                         },
                     )
                 except Exception as e:
-                    logger.warning("Zalo: OCR image ack failed: %s", type(e).__name__)
-                # Ensure Valkey answering slot is free for the next photo.
+                    logger.warning("Zalo: extract ack failed: %s", type(e).__name__)
                 try:
                     self._as_inflight_done(str(thread_id), {})
                 except Exception:

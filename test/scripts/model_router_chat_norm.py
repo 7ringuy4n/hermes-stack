@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
 
 from chat_norm import (  # noqa: E402
     chat_body_should_failover,
+    chat_busy_capacity,
     completion_to_sse,
     normalize_chat_completion,
     openai_chat_ok,
@@ -50,6 +51,17 @@ def main() -> int:
         200, {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
     ):
         print("FAIL good chat must not failover")
+        return 1
+    busy = {
+        "error": {
+            "message": "Structurally heavy chat request capacity is busy; retry shortly."
+        }
+    }
+    if not chat_body_should_failover(503, busy):
+        print("FAIL capacity-busy 503 must failover")
+        return 1
+    if not chat_busy_capacity(503, busy):
+        print("FAIL chat_busy_capacity")
         return 1
     sse = completion_to_sse(
         {
