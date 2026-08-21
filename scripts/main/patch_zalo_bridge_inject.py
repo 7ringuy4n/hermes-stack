@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-"""Idempotent: add POST /inject-event on hermes-zalo-plugin (SSE fan-out).
+"""Idempotent patches for hermes-zalo-plugin (host bridge).
 
-Lab and product tests inject a synthetic inbound message onto the same SSE
-stream Hermes already consumes. Does not open a second SSE client.
-Does not interpret user language — payload is a known bridge protocol object.
+1. POST /inject-event — synthetic inbound onto the existing SSE fan-out (tests).
+2. POST /media/fetch + GET /media/:id — download Zalo CDN bytes with the
+   logged-in session cookies so Hermes can OCR / summarize attachments.
+
+Restart prefers the user systemd unit (com.hermes.zaloplugin /
+assistant-zalo). Orphan ``runuser`` / ``nohup`` processes that hold :8787
+are cleared first so the unit stops crash-looping on EADDRINUSE.
+
+Does not interpret user language — payloads are known bridge protocol objects.
 """
 from __future__ import annotations
 
 import os
 import pwd
+import re
 import shutil
 import subprocess
 import time
@@ -20,8 +27,13 @@ PLUGIN = Path(
         "/usr/lib/node_modules/hermes-zalo-plugin/server.js",
     )
 )
-MARKER = "POST /inject-event"
-SNIPPET = r"""
+PORT = (os.environ.get("ZALO_PLUGIN_PORT") or "8787").strip() or "8787"
+HOST_BIND = (os.environ.get("ZALO_PLUGIN_HOST") or "0.0.0.0").strip() or "0.0.0.0"
+
+INJECT_MARKER = 'app.post("/inject-event"'
+MEDIA_MARKER = "ASSISTANT_MEDIA_PROXY_v1"
+
+INJECT_SNIPPET = r"""
 // assistant-stack: synthetic inbound onto the existing SSE fan-out (tests).
 app.post("/inject-event", (req, res) => {
   if (!checkAuth(req, res)) return;
@@ -37,49 +49,250 @@ app.post("/inject-event", (req, res) => {
 
 """
 
+MEDIA_SNIPPET = r"""
+// ASSISTANT_MEDIA_PROXY_v1 — Hermes downloads Zalo CDN media through the
+// logged-in bridge session (cookies + user-agent). Without this, POST
+// /media/fetch 404s and images/files never reach OCR.
+const _mediaFs = require("fs");
+const _mediaPath = require("path");
+const _mediaHttps = require("https");
+const _mediaHttp = require("http");
+const _mediaCrypto = require("crypto");
+const MEDIA_CACHE_DIR = _mediaPath.join(
+  process.env.ZALO_MEDIA_CACHE_DIR ||
+    _mediaPath.join(require("os").homedir(), ".hermes-zalo", "media-cache")
+);
+try { _mediaFs.mkdirSync(MEDIA_CACHE_DIR, { recursive: true }); } catch (_) {}
 
-def patch_server() -> str:
+function _mediaMagicOk(buf) {
+  if (!buf || buf.length < 4) return false;
+  if (buf[0] === 0xff && buf[1] === 0xd8) return true; // jpeg
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true; // png
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return true; // gif
+  if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return true; // pdf
+  if (buf[0] === 0x50 && buf[1] === 0x4b) return true; // zip/office
+  if (buf.length >= 12 && buf.toString("ascii", 4, 8) === "ftyp") return true; // mp4/m4a
+  if (buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return true; // mp3/id3
+  if (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return true; // mp3 frame
+  return buf.length >= 64;
+}
+
+function _mediaSessionHeaders() {
+  const headers = {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    Accept: "*/*",
+  };
+  try {
+    const raw = _mediaFs.readFileSync(CREDENTIALS_PATH, "utf8");
+    const cred = JSON.parse(raw);
+    if (cred && cred.userAgent) headers["User-Agent"] = String(cred.userAgent);
+    let cookie = cred && cred.cookie;
+    if (Array.isArray(cookie)) {
+      cookie = cookie
+        .map((c) => {
+          if (!c) return "";
+          if (typeof c === "string") return c;
+          if (c.name && c.value !== undefined) return `${c.name}=${c.value}`;
+          return "";
+        })
+        .filter(Boolean)
+        .join("; ");
+    } else if (cookie && typeof cookie === "object") {
+      cookie = Object.entries(cookie)
+        .map(([k, v]) => `${k}=${v}`)
+        .join("; ");
+    }
+    if (cookie) headers.Cookie = String(cookie);
+  } catch (_) {}
+  return headers;
+}
+
+function _mediaFetchUrl(url, headers) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch (e) {
+      reject(e);
+      return;
+    }
+    const lib = parsed.protocol === "http:" ? _mediaHttp : _mediaHttps;
+    const req = lib.get(
+      url,
+      { headers, timeout: 120000 },
+      (resp) => {
+        if (
+          resp.statusCode >= 300 &&
+          resp.statusCode < 400 &&
+          resp.headers.location
+        ) {
+          resp.resume();
+          _mediaFetchUrl(resp.headers.location, headers).then(resolve, reject);
+          return;
+        }
+        if (resp.statusCode !== 200) {
+          resp.resume();
+          reject(new Error(`upstream HTTP ${resp.statusCode}`));
+          return;
+        }
+        const chunks = [];
+        resp.on("data", (c) => chunks.push(c));
+        resp.on("end", () => resolve(Buffer.concat(chunks)));
+        resp.on("error", reject);
+      }
+    );
+    req.on("error", reject);
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("upstream timeout"));
+    });
+  });
+}
+
+app.post("/media/fetch", async (req, res) => {
+  if (!checkAuth(req, res)) return;
+  const body = req.body || {};
+  const url = String(body.url || "").trim();
+  if (!url || !/^https?:\/\//i.test(url)) {
+    return res.status(400).json({ error: "url required" });
+  }
+  try {
+    const buf = await _mediaFetchUrl(url, _mediaSessionHeaders());
+    const id = _mediaCrypto.randomBytes(16).toString("hex");
+    const dest = _mediaPath.join(MEDIA_CACHE_DIR, id);
+    _mediaFs.writeFileSync(dest, buf);
+    res.json({
+      ok: true,
+      id,
+      path: `/media/${id}`,
+      size: buf.length,
+      magicOk: _mediaMagicOk(buf),
+      kind: body.kind || "",
+      fileName: body.fileName || "",
+    });
+  } catch (e) {
+    res.status(502).json({ error: String((e && e.message) || e) });
+  }
+});
+
+app.get("/media/:id", (req, res) => {
+  if (!checkAuth(req, res)) return;
+  const id = String(req.params.id || "").replace(/[^a-fA-F0-9]/g, "");
+  if (!id) return res.status(400).json({ error: "id required" });
+  const dest = _mediaPath.join(MEDIA_CACHE_DIR, id);
+  if (!_mediaFs.existsSync(dest)) return res.status(404).json({ error: "not found" });
+  res.sendFile(dest);
+});
+
+"""
+
+
+def _strip_all_inject(text: str) -> str:
+    """Remove every assistant-stack /inject-event block (comment + handler)."""
+    pattern = re.compile(
+        r"\n?// assistant-stack: synthetic inbound[^\n]*\n"
+        r"app\.post\(\"/inject-event\", \(req, res\) => \{.*?\n\}\);\n?",
+        re.S,
+    )
+    return pattern.sub("\n", text)
+
+
+def patch_server() -> dict[str, str]:
+    out: dict[str, str] = {}
     if not PLUGIN.is_file():
-        return "PLUGIN_MISSING"
+        return {"status": "PLUGIN_MISSING"}
     text = PLUGIN.read_text(encoding="utf-8", errors="replace")
-    if MARKER in text:
-        return "ALREADY"
-    needle = "_httpServer = app.listen("
-    idx = text.find(needle)
-    if idx < 0:
-        return "LISTEN_MISSING"
-    PLUGIN.write_text(text[:idx] + SNIPPET + text[idx:], encoding="utf-8")
-    return "PATCHED"
+    original = text
+
+    # Collapse duplicate inject handlers from prior buggy MARKER checks.
+    inj_count = text.count(INJECT_MARKER)
+    if inj_count > 1:
+        text = _strip_all_inject(text)
+        out["inject_dedupe"] = f"had={inj_count}"
+
+    if INJECT_MARKER not in text:
+        needle = "_httpServer = app.listen("
+        idx = text.find(needle)
+        if idx < 0:
+            out["inject"] = "LISTEN_MISSING"
+        else:
+            text = text[:idx] + INJECT_SNIPPET + text[idx:]
+            out["inject"] = "PATCHED"
+    else:
+        out["inject"] = "ALREADY"
+
+    if MEDIA_MARKER not in text:
+        needle = "_httpServer = app.listen("
+        idx = text.find(needle)
+        if idx < 0:
+            out["media"] = "LISTEN_MISSING"
+        else:
+            text = text[:idx] + MEDIA_SNIPPET + text[idx:]
+            out["media"] = "PATCHED"
+    else:
+        out["media"] = "ALREADY"
+
+    if text != original:
+        PLUGIN.write_text(text, encoding="utf-8")
+        out["status"] = "WRITTEN"
+    else:
+        out["status"] = "UNCHANGED"
+    return out
 
 
-def _plugin_uid() -> int | None:
+def _plugin_uid() -> int:
     try:
         out = subprocess.check_output(
             ["pgrep", "-f", "hermes-zalo-plugin/server.js"],
             text=True,
             timeout=5,
         )
+        for pid in out.split():
+            if not pid.isdigit():
+                continue
+            try:
+                uid = os.stat(f"/proc/{pid}").st_uid
+            except OSError:
+                continue
+            if uid != 0:
+                return uid
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return None
-    pid = (out.split() or [""])[0]
-    if not pid.isdigit():
-        return None
+        pass
     try:
-        return os.stat(f"/proc/{pid}").st_uid
-    except OSError:
-        return None
+        return int((os.environ.get("ZALO_PLUGIN_UID") or "1000").strip())
+    except ValueError:
+        return 1000
 
 
-def restart_plugin() -> str:
-    """Restart the host Node bridge without a second SSE login (cookies stay on disk)."""
-    uid = _plugin_uid()
-    if uid is None or uid == 0:
-        try:
-            uid = int((os.environ.get("ZALO_PLUGIN_UID") or "1000").strip())
-        except ValueError:
-            uid = 1000
-        if uid == 0:
-            uid = 1000
+def _systemctl_user(uid: int, *args: str) -> subprocess.CompletedProcess[str]:
+    user = pwd.getpwuid(uid).pw_name
+    # Root can target the user bus with -M user@
+    cmd = ["systemctl", "--user", "-M", f"{user}@", *args]
+    if os.geteuid() != 0:
+        cmd = ["systemctl", "--user", *args]
+    return subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=30)
+
+
+def _port_pids() -> list[int]:
+    pids: list[int] = []
+    try:
+        out = subprocess.check_output(
+            ["ss", "-ltnp"], text=True, timeout=5, stderr=subprocess.DEVNULL
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return pids
+    for line in out.splitlines():
+        if f":{PORT}" not in line:
+            continue
+        for m in re.finditer(r"pid=(\d+)", line):
+            pids.append(int(m.group(1)))
+    return pids
+
+
+def _clear_orphans() -> str:
+    """Stop non-systemd holders of the bridge port so the unit can bind."""
+    killed: list[str] = []
     try:
         subprocess.run(
             ["pkill", "-f", "hermes-zalo-plugin/server.js"],
@@ -91,54 +304,128 @@ def restart_plugin() -> str:
             check=False,
             timeout=10,
         )
+        killed.append("pkill_plugin")
     except (OSError, subprocess.TimeoutExpired):
-        return "PKILL_FAIL"
-    time.sleep(2)
+        killed.append("pkill_fail")
+    time.sleep(1)
+    for pid in _port_pids():
+        try:
+            cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(
+                "utf-8", "replace"
+            )
+        except OSError:
+            continue
+        if "hermes-zalo-plugin" in cmdline or "server.js" in cmdline:
+            try:
+                os.kill(pid, 9)
+                killed.append(f"kill:{pid}")
+            except OSError:
+                pass
+    time.sleep(1)
+    return ",".join(killed) or "none"
+
+
+def restart_plugin() -> str:
+    """Restart the host Node bridge; prefer systemd user unit over orphans."""
+    uid = _plugin_uid()
+    if uid == 0:
+        uid = 1000
+    user = pwd.getpwuid(uid).pw_name
+
+    # Ensure bind is reachable from Docker zalo-proxy.
+    drop = Path(pwd.getpwuid(uid).pw_dir) / ".config/systemd/user/com.hermes.zaloplugin.service.d"
+    try:
+        drop.mkdir(parents=True, exist_ok=True)
+        override = drop / "override.conf"
+        body = (
+            "[Service]\n"
+            f"Environment=ZALO_PLUGIN_HOST={HOST_BIND}\n"
+            f"Environment=ZALO_PLUGIN_PORT={PORT}\n"
+        )
+        # Preserve existing token/API env if present.
+        existing = override.read_text(encoding="utf-8", errors="replace") if override.is_file() else ""
+        if "ZALO_PLUGIN_HOST=" not in existing:
+            override.write_text(
+                (existing.rstrip() + "\n" if existing.strip() else "") + body,
+                encoding="utf-8",
+            )
+        else:
+            lines = []
+            for line in existing.splitlines():
+                if line.startswith("Environment=ZALO_PLUGIN_HOST="):
+                    lines.append(f"Environment=ZALO_PLUGIN_HOST={HOST_BIND}")
+                elif line.startswith("Environment=ZALO_PLUGIN_PORT="):
+                    lines.append(f"Environment=ZALO_PLUGIN_PORT={PORT}")
+                else:
+                    lines.append(line)
+            override.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        if os.geteuid() == 0:
+            os.chown(drop, uid, pwd.getpwuid(uid).pw_gid)
+            os.chown(override, uid, pwd.getpwuid(uid).pw_gid)
+    except OSError as e:
+        return f"OVERRIDE_FAIL:{e}"
+
+    cleared = _clear_orphans()
+    _systemctl_user(uid, "daemon-reload")
+
+    # Try primary unit, then assistant-zalo fallback.
+    for unit in ("com.hermes.zaloplugin.service", "assistant-zalo.service"):
+        listed = _systemctl_user(uid, "list-unit-files", unit)
+        if listed.returncode != 0 and unit not in (listed.stdout or ""):
+            # Still try restart — list-unit-files may need different args.
+            pass
+        r = _systemctl_user(uid, "enable", "--now", unit)
+        r2 = _systemctl_user(uid, "restart", unit)
+        time.sleep(2)
+        # Health check
+        try:
+            import urllib.request
+
+            with urllib.request.urlopen(f"http://127.0.0.1:{PORT}/health", timeout=5) as resp:
+                if resp.status == 200:
+                    return (
+                        f"RESTART_SYSTEMD unit={unit} uid={uid} user={user} "
+                        f"cleared={cleared} enable={r.returncode} restart={r2.returncode}"
+                    )
+        except Exception:  # noqa: BLE001
+            continue
+
+    # Last resort: single supervised start (still not a second competing unit).
     node = shutil.which("node") or "/usr/bin/node"
     argv = [node, str(PLUGIN)]
-    if os.geteuid() == 0 and uid is not None:
-        user = pwd.getpwuid(uid).pw_name
-        argv = ["runuser", "-u", user, "--"] + argv
     env = os.environ.copy()
-    if uid is not None:
-        pw = pwd.getpwuid(uid)
-        env["HOME"] = pw.pw_dir
-        env["USER"] = pw.pw_name
-    # Docker zalo-proxy (socat → host.docker.internal:8787) needs a non-loopback bind.
-    env.setdefault("ZALO_PLUGIN_HOST", "0.0.0.0")
-    env.setdefault("ZALO_PLUGIN_PORT", "8787")
-    try:
-        subprocess.Popen(
-            argv,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            env=env,
-        )
-    except OSError:
-        node = shutil.which("node") or "/usr/bin/node"
-        argv2 = [node, str(PLUGIN)]
-        if os.geteuid() == 0 and uid is not None:
-            user = pwd.getpwuid(uid).pw_name
-            argv2 = ["runuser", "-u", user, "--"] + argv2
-        subprocess.Popen(
-            argv2,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            env=env,
-        )
-    return f"RESTART_ISSUED uid={uid}"
+    pw = pwd.getpwuid(uid)
+    env["HOME"] = pw.pw_dir
+    env["USER"] = pw.pw_name
+    env["ZALO_PLUGIN_HOST"] = HOST_BIND
+    env["ZALO_PLUGIN_PORT"] = PORT
+    if os.geteuid() == 0:
+        argv = ["runuser", "-u", user, "--"] + argv
+    subprocess.Popen(
+        argv,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        env=env,
+    )
+    return f"RESTART_FALLBACK_POPEN uid={uid} cleared={cleared}"
 
 
 def main() -> int:
-    status = patch_server()
-    print(f"inject_patch={status}")
-    if status == "PATCHED":
-        print(f"inject_restart={restart_plugin()}")
-    elif status == "ALREADY":
-        print("inject_restart=SKIP")
-    return 0 if status in {"PATCHED", "ALREADY"} else 1
+    result = patch_server()
+    print(f"bridge_patch={result}")
+    need_restart = result.get("status") == "WRITTEN" or result.get("media") == "PATCHED"
+    # Always heal EADDRINUSE crash-loops when explicitly requested.
+    force = (os.environ.get("ZALO_BRIDGE_FORCE_RESTART") or "").strip() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if need_restart or force:
+        print(f"bridge_restart={restart_plugin()}")
+    else:
+        print("bridge_restart=SKIP")
+    return 0 if result.get("status") in {"WRITTEN", "UNCHANGED"} else 1
 
 
 if __name__ == "__main__":

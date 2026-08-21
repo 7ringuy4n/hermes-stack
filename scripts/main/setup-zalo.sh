@@ -185,10 +185,13 @@ EOF
   else
     systemctl --user enable --now assistant-zalo.service 2>/dev/null || true
   fi
+  # Install /media/fetch + /inject-event and ensure a single systemd-owned listener.
+  # Never nohup a second node process — that causes EADDRINUSE crash-loops.
+  if [[ -f "${ROOT}/scripts/main/patch_zalo_bridge_inject.py" ]]; then
+    ZALO_BRIDGE_FORCE_RESTART=1 $SUDO python3 "${ROOT}/scripts/main/patch_zalo_bridge_inject.py" || true
+  fi
   if ! curl -fsS -m 3 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
-    log "user systemd did not start bridge — launching hermes-zalo-plugin start"
-    nohup "$bin" start >/tmp/hermes-zalo-plugin.log 2>&1 &
-    sleep 2
+    log "WARN: bridge health still down on :${PORT} after systemd restart"
   fi
   loginctl enable-linger "${USER}" 2>/dev/null || true
   if command -v ufw >/dev/null 2>&1; then
