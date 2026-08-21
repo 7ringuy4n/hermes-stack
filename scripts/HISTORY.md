@@ -19,6 +19,35 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 16:05 +07 — Web search combo vs OmniRouter; SearXNG empty
+
+### Symptom
+
+Operators asked whether OmniRouter had a Tavily→SearXNG web-search combo.
+Lab `/v1/search` returned 502; Hermes `web_extract` errored that SearXNG
+cannot extract.
+
+### Root cause
+
+1. **Architecture:** web search is on **Router Worker** (`model-router`), not
+   OmniRouter. OmniRouter only routes chat completions.
+2. `TAVILY_API_KEY` was empty on lab.
+3. SearXNG was up but Brave/DDG/Google/Startpage were CAPTCHA / rate-limited
+   from the VPS IP → empty `results` → combo failed.
+
+### Fix
+
+- Document clearly; harden SearXNG engine list + searx client error detail.
+- Lab: `ENABLE_SEARXNG=1`, `WEB_BACKENDS=tavily,searxng`; recreate searxng +
+  router-worker. Operator must set a real `TAVILY_API_KEY` for primary.
+
+### Prevent recurrence
+
+Do not add web search as an OmniRouter LLM combo. Keep Tavily→SearXNG on
+Router Worker. Extract must use Tavily/Firecrawl only.
+
+---
+
 ## 2026-08-21 15:35 +07 — Cron body wrapped; lyric ask ignored Multo.mp3
 
 ### Symptom
