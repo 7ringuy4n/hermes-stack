@@ -1,5 +1,5 @@
 ---
-name: web-search
+name: web-search-strategy
 description: "Search strategy and source selection for current information. Use when facts may be stale in training data or user asks for latest/news/prices."
 ---
 
@@ -12,9 +12,9 @@ Send **only the final answer** (and a generated file if the user asked for one).
 ## Strategy
 
 1. **Query shaping** — keywords + site/time hints; Vietnamese and English variants if needed.
-2. **Search** — always `POST http://model-router:8096/v1/search` (Router Worker combo
-   `websearch`; failover order from `WEB_BACKENDS` / `config/web-search-combo.json`,
-   default Tavily → local SearXNG). Never call OmniRouter or the media worker for search.
+2. **Search** — always `POST http://model-router:8096/v1/search` (proxies to
+   OmniRoute `/v1/search`; Omni UI owns Tavily → Firecrawl → SearXNG). Never call Omni
+   chat completions or the media worker for search.
 3. **Extract** — `POST http://model-router:8096/v1/extract` on the best URL (extract
    backends from config; SearXNG cannot extract). If extract fails, stop with a short failure line.
 4. **Page images** — if the useful content is in **images** (tables, posted prices, charts):
@@ -30,11 +30,11 @@ When the user asks for lyrics and a recent audio/video attachment (or a quoted m
 
 1. Use that title/artist as the search query immediately.
 2. Do **not** ask “which song?” when the filename or quoted context is clear.
-3. Search via Router Worker `/v1/search`, then answer with the lyrics (or a short failure if none found).
+3. Search via Router Worker `/v1/search` (Omni-backed), then answer with the lyrics (or a short failure if none found).
 
 ## Note
 
-This skill controls **behavior**; execution uses Router Worker search + OCR. Media generation stays on the Media/File worker. See `vendor/tavily/tavily-best-practices`.
+This skill controls **behavior**; execution uses Omni search (via Router Worker) + OCR. Media generation stays on the Media/File worker. See `vendor/tavily/tavily-best-practices`.
 
 ## Confidential/internal docs (hard rule)
 

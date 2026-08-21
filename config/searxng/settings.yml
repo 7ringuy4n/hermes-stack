@@ -1,5 +1,6 @@
-# SearXNG — Medium+ web search fallback (mounted read-only into searxng container)
-# Used by Router Worker combo WEB_BACKENDS=tavily,searxng — NOT by OmniRouter chat combos.
+# SearXNG — Medium+ web search (mounted read-only into searxng container)
+# Omni UI Search provider (first-setup) + optional Router Worker direct adapter.
+# Hermes default path: model-router WEB_BACKENDS=omni → Omni /v1/search.
 use_default_settings: true
 
 general:

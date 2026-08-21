@@ -21,9 +21,7 @@ hermes/temp/**
 !hermes/temp/README.md
 
 # Editor / OS
-.cursor/*
-!.cursor/rules/
-!.cursor/rules/**
+.cursor
 .vscode/
 *.swp
 Thumbs.db
