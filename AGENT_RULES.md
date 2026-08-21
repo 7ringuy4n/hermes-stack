@@ -73,6 +73,11 @@ The following are mandatory and must be satisfied before finishing work:
 -   Never claim success without verifying the affected behavior.
 -   Never replace a root-cause fix with a workaround unless the
     workaround is explicitly architecturally justified and documented.
+-   Never finish a lab test run or bridge/host patch without monitoring
+    for crash-loops and abnormal logs (Hermes container + Zalo bridge
+    unit at minimum). See §18 / §19 and
+    [`scripts/HISTORY.md`](./scripts/HISTORY.md) entry
+    **2026-08-21 11:20 +07 — Bridge crash-loop on :8787**.
 
 ------------------------------------------------------------------------
 
@@ -574,6 +579,26 @@ When operating against a remote host:
 
 Never send scripts to the VPS for testing without explicit permission.
 
+### 18.1 Monitor while patching
+
+When patching the Zalo bridge, Hermes plugin, host units, or related
+services on a lab/host:
+
+1.  Keep abnormal-log streams open (or re-check immediately after the
+    patch) for at least one heal/restart cycle:
+    -   Hermes: `docker logs -f assistant-hermes-1 2>&1` (use the live
+        Hermes container name if it differs).
+    -   Zalo bridge: `journalctl --user -u com.hermes.zaloplugin -f`
+2.  Watch for `EADDRINUSE`, repeated exit/restart storms, `media-proxy`
+    / `/media/fetch` 404s, SSE drop (`sseClients=0` while logged in),
+    and unexpected `ERROR` / exception spam.
+3.  If a crash-loop or abnormal log appears, stop and fix the root cause
+    in repository source — do not leave an orphan listener competing
+    with the systemd unit. Reference:
+    [`scripts/HISTORY.md`](./scripts/HISTORY.md)
+    **2026-08-21 11:20 +07 — Bridge crash-loop on :8787; Hermes cannot
+    POST /media/fetch**.
+
 ------------------------------------------------------------------------
 
 ## 19. Test Configuration Cleanup
@@ -586,8 +611,19 @@ After testing:
 4.  Remove temporary files.
 5.  Verify no test-specific source/configuration remains.
 6.  Run a final repository/status check.
+7.  **Monitor for post-test crash-loops.** Test cases and heal scripts
+    may leave the Zalo bridge or other services restarting. Before
+    declaring the run finished, inspect abnormal logs:
+    -   `docker logs -f assistant-hermes-1 2>&1`
+    -   `journalctl --user -u com.hermes.zaloplugin -f`
+    Confirm the bridge unit is `active` (not `auto-restart`), Hermes is
+    not spamming media-proxy / SSE errors, and unrelated workers are not
+    flapping. See
+    [`scripts/HISTORY.md`](./scripts/HISTORY.md)
+    **2026-08-21 11:20 +07 — Bridge crash-loop on :8787**.
 
-A test is not complete until the environment is restored.
+A test is not complete until the environment is restored **and** no
+new crash-loop or abnormal log storm remains.
 
 ------------------------------------------------------------------------
 
@@ -606,6 +642,8 @@ Before finishing:
 7.  Verify services are healthy.
 8.  Verify architecture boundaries remain intact.
 9.  Update the changelog when required.
+10. Re-check Hermes and Zalo bridge logs for crash-loops or abnormal
+    spam after any patch or test (§18.1 / §19).
 
 For installation/deployment tasks, verify all services.
 
@@ -840,6 +878,9 @@ Before declaring any task complete:
 -   [ ] No lab credentials or host identity entered committed source.
 -   [ ] No unauthorized push/MR/deployment was performed.
 -   [ ] Services were verified when applicable.
+-   [ ] Post-test / post-patch logs checked for bridge or service
+    crash-loops (`docker logs` Hermes; `journalctl --user` Zalo
+    plugin) — see HISTORY **2026-08-21 11:20 +07**.
 -   [ ] Documentation was updated when required.
 -   [ ] `docs/CHANGELOG.md` was updated when required.
 -   [ ] Repository status was checked.

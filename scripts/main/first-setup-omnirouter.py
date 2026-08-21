@@ -7,10 +7,13 @@
    — do NOT hardcode chat member models; OmniRouter / UI choose models
 4) Ensure classify combo ``classifier`` with all OpenCode Free (``oc/*``) models
 5) Set combo strategy preference (round-robin)
-6) Point Hermes at model-router; recreate router-worker for the key
+6) Ensure Search providers: Tavily (1) → Firecrawl (2) → local SearXNG (3);
+   block ollama-search so Omni /v1/search owns web search
+7) Point Hermes at model-router; recreate router-worker for the key
 
 Stack code sends combo *names* as OpenAI ``model``. Chat uses ``hermes``;
 classify uses ``classifier`` (OpenCode members refreshed by this script).
+Web search: Hermes → model-router /v1/search → Omni /v1/search (UI failover).
 """
 from __future__ import annotations
 
@@ -393,6 +396,149 @@ def ensure_combo_alias(opener) -> str:
     )
 
 
+def ensure_search_providers(opener) -> None:
+    """Omni UI owns search: Tavily → Firecrawl → SearXNG; block ollama-search."""
+    searx_url = (
+        os.environ.get("OMNIROUTER_SEARXNG_URL")
+        or os.environ.get("SEARXNG_URL")
+        or "http://searxng:8080"
+    ).rstrip("/")
+    print(f"==> ensure Omni search providers (SearXNG base={searx_url})")
+
+    _, data = http_json(opener, "GET", f"{BASE}/api/providers")
+    connections = data.get("connections") or []
+    tavily = next((c for c in connections if c.get("provider") == "tavily-search"), None)
+    firecrawl = next((c for c in connections if c.get("provider") == "firecrawl-search"), None)
+    searx = next((c for c in connections if c.get("provider") == "searxng-search"), None)
+
+    if tavily and tavily.get("id"):
+        try:
+            http_json(
+                opener,
+                "PUT",
+                f"{BASE}/api/providers/{tavily['id']}",
+                {"isActive": True, "priority": 1},
+            )
+            print(f"==> tavily-search priority=1 id={tavily['id']}")
+        except Exception as e:
+            print(f"WARN tavily priority: {e}")
+    else:
+        print("NOTE: no tavily-search connection — add API key in Omni Providers → Search")
+
+    if firecrawl and firecrawl.get("id"):
+        try:
+            http_json(
+                opener,
+                "PUT",
+                f"{BASE}/api/providers/{firecrawl['id']}",
+                {"isActive": True, "priority": 2},
+            )
+            print(f"==> firecrawl-search priority=2 id={firecrawl['id']}")
+        except Exception as e:
+            print(f"WARN firecrawl priority: {e}")
+    else:
+        print("NOTE: no firecrawl-search connection — add API key in Omni Providers → Search")
+
+    # Omni stores local SearXNG URL in providerSpecificData.baseUrl (SSRF-aware path).
+    cid = None
+    searx_body = {
+        "provider": "searxng-search",
+        "name": "local-searxng",
+        "isActive": True,
+        "priority": 3,
+        "apiKey": "local",
+        "baseUrl": searx_url,
+        "providerSpecificData": {"baseUrl": searx_url},
+    }
+    if searx and searx.get("id"):
+        try:
+            http_json(opener, "PUT", f"{BASE}/api/providers/{searx['id']}", searx_body)
+            cid = searx["id"]
+            print(f"==> update searxng-search id={cid}")
+        except Exception as e:
+            print(f"WARN searxng update: {e}")
+            cid = searx.get("id")
+    else:
+        try:
+            status, body = http_json(opener, "POST", f"{BASE}/api/providers", searx_body)
+            cid = (body.get("connection") or body).get("id")
+            print(f"==> create searxng-search HTTP {status} id={cid}")
+            if cid:
+                http_json(
+                    opener,
+                    "PUT",
+                    f"{BASE}/api/providers/{cid}",
+                    {
+                        "apiKey": "local",
+                        "isActive": True,
+                        "priority": 3,
+                        "providerSpecificData": {"baseUrl": searx_url},
+                    },
+                )
+        except Exception as e:
+            print(f"WARN searxng create: {e}")
+            cid = None
+
+    if cid:
+        try:
+            status, body = http_json(opener, "POST", f"{BASE}/api/providers/{cid}/test")
+            print(f"==> searxng test valid={body.get('valid')} err={body.get('error')}")
+        except Exception as e:
+            print(f"WARN searxng test: {e}")
+
+    # Drop accidental chat combo named websearch that embeds search providers as models.
+    try:
+        _, combos = http_json(opener, "GET", f"{BASE}/api/combos")
+        for c in combos.get("combos") or []:
+            if (c.get("name") or "") != "websearch":
+                continue
+            models = c.get("models") or []
+            if any(
+                "search" in str(m.get("providerId") or m.get("model") or "").lower()
+                for m in models
+                if isinstance(m, dict)
+            ):
+                print(f"==> delete misleading chat combo websearch id={c.get('id')}")
+                http_json(opener, "DELETE", f"{BASE}/api/combos/{c['id']}")
+    except Exception as e:
+        print(f"WARN websearch combo cleanup: {e}")
+
+    # Prefer Tavily/SearXNG over built-in ollama-search for default /v1/search.
+    try:
+        _, settings = http_json(opener, "GET", f"{BASE}/api/settings")
+        blocked = list(settings.get("blockedProviders") or [])
+        if "ollama-search" not in blocked:
+            blocked.append("ollama-search")
+            http_json(opener, "PUT", f"{BASE}/api/settings", {"blockedProviders": blocked})
+            print("==> blockedProviders += ollama-search")
+        else:
+            print("==> ollama-search already blocked")
+    except Exception as e:
+        print(f"WARN blockedProviders: {e}")
+
+
+def smoke_omni_search(key: str) -> None:
+    body = json.dumps({"query": "Ho Chi Minh weather", "max_results": 2}).encode()
+    req = urllib.request.Request(
+        f"{BASE}/v1/search",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            data = json.loads(resp.read().decode() or "{}")
+        n = len(data.get("results") or [])
+        print(f"==> smoke Omni /v1/search provider={data.get('provider')} results={n}")
+    except urllib.error.HTTPError as e:
+        print(f"WARN smoke Omni /v1/search HTTP {e.code}: {e.read()[:200]!r}")
+    except Exception as e:
+        print(f"WARN smoke Omni /v1/search: {e}")
+
+
 def ensure_combo_round_robin(opener) -> None:
     payload = {
         "comboStrategy": COMBO_STRATEGY,
@@ -513,11 +659,15 @@ def main() -> int:
 
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
+    ensure_search_providers(opener)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
     set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
     set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
     set_env_key(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
     set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "1"))
+    # Hermes-facing Router Worker proxies search to Omni by default.
+    if env.get("WEB_BACKENDS") in (None, ""):
+        set_env_key(ROOT / ".env", "WEB_BACKENDS", "omni")
     enable_omni_memory(opener)
 
     recreate_model_router()
@@ -525,9 +675,11 @@ def main() -> int:
     patch_hermes_model_router(key, combo)
     verify(key, combo)
     verify(key, classify_combo)
+    smoke_omni_search(key)
     print(
         f"OK: first-setup omni-router complete "
-        f"(chat combo={combo!r}; classify combo={classify_combo!r} with OpenCode oc/*)"
+        f"(chat combo={combo!r}; classify combo={classify_combo!r} with OpenCode oc/*; "
+        f"search via Omni Tavily→SearXNG)"
     )
     return 0
 
