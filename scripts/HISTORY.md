@@ -19,6 +19,41 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 13:45 +07 — OCR succeeded; user still got silence (Omni 403)
+
+### Symptom
+
+Inbound `chat.photo` was staged and PaddleOCR returned text, but Zalo showed no
+bot reply. Hermes logged `[ollama-cloud/deepseek-v4-pro] [403] requires a
+subscription`, compound part wait timeouts, and occasional tool noise (`pdf`
+skill collision, missing `file` binary).
+
+### Root cause
+
+1. OmniRouter `hermes` combo round-robins into paid cloud models. Model-router
+   passed SSE streams through, so a subscription refuse reached Hermes as a hard
+   APIError and exhausted retries with no send.
+2. Bare-image turns with OCR text still entered the full agent/tool loop, which
+   can fail entirely when the LLM path dies — unlike the empty-OCR deterministic
+   ack path.
+
+### Fix
+
+- Router: sync chat upstream, failover on 403/subscription error bodies, **retry
+  the Omni combo several times** (free-member rotation) with a **180s** timeout,
+  then try `OMNIROUTER_FAILOVER_MODELS` (default `auto/best-free`), synthesize
+  SSE for streaming clients.
+- Adapter: bare image → send OCR ack immediately and skip agent (text or empty).
+- Regression: `test/scripts/omni_rotate_noreply_unit.py`, case 37.
+
+### Prevent recurrence
+
+Never stream opaque upstream errors past the router when another free Omni
+member or failover model can answer. Attachment OCR success must produce a
+user-visible Zalo message even if the agent cannot complete a tool turn.
+
+---
+
 ## 2026-08-21 12:15 +07 — PaddleOCR init failed until version line matched
 
 ### Symptom
