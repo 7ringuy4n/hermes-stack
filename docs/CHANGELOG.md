@@ -1,3 +1,9 @@
+## 2026-08-21 13:45 +07 — Photo OCR ok but Zalo silent: Omni 403 + agent tools
+
+- Bare Zalo photos with successful PaddleOCR still got **no reply** when OmniRouter round-robin hit `ollama-cloud/deepseek-v4-pro` (subscription 403). Hermes streamed that error through model-router and the agent died after retries; compound part waits then timed out.
+- **Router Worker**: chat completions always call upstream non-stream so error bodies can failover; **rotate** the primary Omni combo (`OMNIROUTER_ROTATE_ATTEMPTS`, default 3) so free members can answer; then try `OMNIROUTER_FAILOVER_MODELS` (default `auto/best-free`); wait longer (`MODEL_ROUTER_TIMEOUT_S` default **180**); rebuild client stream as one-shot SSE when requested.
+- **Zalo adapter**: bare image → immediate deterministic OCR ack (with or without text); skip agent/tool loop. Unit/case **37**.
+
 ## 2026-08-21 12:15 +07 — PaddleOCR works only with matching paddlex minor
 
 - Lab rebuilds initially fell back to tesseract: paddleocr 3.1.1 + paddlex 3.7 broke `PaddlePredictorOption`; pinning paddlex 3.1.1 then broke import (`langchain.docstore`). Aligned to **paddleocr 3.7.0 + paddlex 3.7.2** per upstream table; still returns `via=paddle` for `HOA DON 1250000 VND`.
