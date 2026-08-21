@@ -256,9 +256,11 @@ def _router_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
     return _default_classify_combo_alias()
 
 
-# model_id -> unix time until which we skip that classify combo after 401/403 storms
+# model_id -> unix time until which we skip that classify combo after auth/quota/503 storms
 _classify_skip_until: dict[str, float] = {}
 _CLASSIFY_SKIP_TTL_S = float(os.environ.get("CLASSIFY_SKIP_TTL_S") or "300")
+# Upstream dead / inactive / bad gateway — skip that combo for a while (same as 401/403).
+_CLASSIFY_SKIP_HTTP = {401, 403, 404, 429, 502, 503}
 
 
 def _mark_classify_model_bad(model_id: str) -> None:
@@ -493,32 +495,94 @@ def sanitize_instructions(raw: Any, fallback: str) -> list[str]:
     return out
 
 
+_SCHEDULE_HINT = re.compile(
+    r"đặt\s*lịch|dat\s*lich|\bschedule\b|\bcron\b|hằng\s*ngày|hang\s*ngay|"
+    r"daily\s+at|mỗi\s*sáng|moi\s*sang|chạy\s*một\s*lần|chay\s*mot\s*lan",
+    re.I,
+)
+_ONCE_AT = re.compile(
+    r"(?:một\s*lần|mot\s*lan|once|chạy)?\s*(?:lúc|luc|at)\s*(\d{1,2})\s*[:hH]\s*(\d{2})",
+    re.I,
+)
+_DAILY_AT = re.compile(
+    r"(?:hằng\s*ngày|hang\s*ngay|mỗi\s*ngày|moi\s*ngay|daily)\s*(?:lúc|luc|at)?\s*(\d{1,2})\s*[:hH]\s*(\d{2})",
+    re.I,
+)
+_CONTENT_AFTER = re.compile(
+    r"(?:với\s*nội\s*dung|voi\s*noi\s*dung|nội\s*dung|noi\s*dung)\s*[:\-]?\s*(.+)$",
+    re.I | re.S,
+)
+
+
+def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
+    """Deterministic once/daily schedule when LLM classify is down (503/timeout)."""
+    blob = (text or "").strip()
+    if not blob or len(blob) > 2000:
+        return None
+    if not _SCHEDULE_HINT.search(blob):
+        return None
+    cadence = "once"
+    hh = mm = None
+    m_daily = _DAILY_AT.search(blob)
+    m_once = _ONCE_AT.search(blob)
+    if m_daily:
+        cadence = "daily"
+        hh, mm = int(m_daily.group(1)), int(m_daily.group(2))
+    elif m_once:
+        hh, mm = int(m_once.group(1)), int(m_once.group(2))
+    if hh is None or mm is None or not (0 <= hh <= 23 and 0 <= mm <= 59):
+        return None
+    cron = f"{mm} {hh} * * *"
+    body = blob
+    m_body = _CONTENT_AFTER.search(blob)
+    if m_body:
+        body = m_body.group(1).strip()
+    else:
+        # Drop the schedule wrapper; keep work after the clock.
+        cut = m_daily or m_once
+        if cut:
+            body = blob[cut.end() :].strip(" ,.-:")
+            body = re.sub(
+                r"^(?:với\s*nội\s*dung|voi\s*noi\s*dung|nội\s*dung|noi\s*dung)\s*[:\-]?\s*",
+                "",
+                body,
+                flags=re.I,
+            ).strip()
+    if not body:
+        body = blob
+    return {
+        "task_hint": "schedule",
+        "execution_class": "schedule",
+        "task_type": "create_schedule",
+        "response_mode": "confirm",
+        "process_original_message": False,
+        "message": body,
+        "instructions": [body],
+        "cadence": cadence,
+        "cron_expr": cron,
+        "skill": "schedule",
+        "skill_action": "create",
+    }
+
+
 def heuristic_plan(text: str) -> dict[str, Any] | None:
     """Local fallback when classify LLM returns garbage (Omni free-tier weak models)."""
     blob = (text or "").strip()
-    if not blob or len(blob) > 400:
+    if not blob:
+        return None
+    sched = schedule_heuristic_plan(blob)
+    if sched:
+        return sched
+    if len(blob) > 400:
         return None
     low = blob.lower()
-    if any(
-        tok in low
-        for tok in (
-            "đặt lịch",
-            "dat lich",
-            "schedule",
-            "cron",
-            "hằng ngày",
-            "hang ngay",
-            "daily at",
-            "mỗi sáng",
-            "moi sang",
-        )
-    ):
+    if _SCHEDULE_HINT.search(blob):
         return None
     if any(tok in low for tok in ("vẽ", "ve ", "draw", "image", "hình", "poster", "ocr", "pdf")):
         return None
     numbered = [ln.strip() for ln in blob.splitlines() if ln.strip()]
     if len(numbered) >= 2 and all(
-        __import__("re").match(r"^\d+[.)]\s+", ln) for ln in numbered[: min(4, len(numbered))]
+        re.match(r"^\d+[.)]\s+", ln) for ln in numbered[: min(4, len(numbered))]
     ):
         return None
     return {
@@ -615,6 +679,13 @@ async def classify_with_llm(
         )
         if plan_schema_ok(plan):
             return plan
+    # Unambiguous schedule clock → store without waiting on dead Omni combos.
+    early = schedule_heuristic_plan(blob)
+    if early:
+        plan = normalize_plan(early, blob, tz)
+        if plan_schema_ok(plan):
+            print("[classify] ok via schedule heuristic", flush=True)
+            return plan
     tmpl = str(cfg.get("user_template") or "Timezone: {timezone}\nMessage:\n{text}")
     headers = {"Content-Type": "application/json"}
     if n9_key:
@@ -650,8 +721,8 @@ async def classify_with_llm(
                         flush=True,
                     )
                     last_err = "classify_llm_failed"
-                    # Auth/quota on this combo → try next model immediately.
-                    if resp.status_code in {401, 403, 404, 429}:
+                    # Auth/quota/upstream-dead on this combo → skip it briefly, try next.
+                    if resp.status_code in _CLASSIFY_SKIP_HTTP:
                         _mark_classify_model_bad(model_id)
                         break
                     continue

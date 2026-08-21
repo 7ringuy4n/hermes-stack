@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ## 2026-08-22 16:30 +07 — Release v0.5.17
 
 Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting fixes, searxng-compat web search + Tavily cascade docs, weather/queue timeouts, mixed đặt-lịch+fuel+weather schedule guard, Tn inject lab suites.
@@ -70,6 +71,15 @@ Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting 
 - Reject allow-status phrases as schedule group names (status text like da allow (N)).
 - scheduleFire bypasses inbound FIFO; SCHEDULE_URL / SCHEDULE_WORKER defaults on so fires reach Hermes.
 - Classified tasks keep using Router Worker to Omni model=classifier (Qwen via combo).
+
+## 2026-08-21 20:25 +07 — Schedule create silent: classify 503 + 150s queue timeout
+
+- Zalo “đặt lịch … lúc HH:MM” got no reply: Omni `classifier` 503 (inactive
+  accounts), failover `hermes` ReadTimeout 60s, then Zalo queue turn timeout 150s;
+  answering lock left stuck; cron jobs empty.
+- Classify marks 502/503 like 401/403 (skip dead combo briefly); classify timeout
+  15s; early/fallback **schedule heuristic** for once/daily `lúc HH:MM`.
+- Unit: `schedule_classify_heuristic_unit.py`.
 
 ## 2026-08-21 19:55 +07 — SOUL deception_hide; Valkey session; PDF/poster content
 
