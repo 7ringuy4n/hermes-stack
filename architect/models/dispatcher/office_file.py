@@ -27,7 +27,7 @@ class OfficeFileReq(BaseModel):
     prompt: str = ""
     thread_id: str = ""
     thread_type: str = "user"
-    caption: str = "Đây là file của bạn."
+    caption: str = ""
     filename: Optional[str] = None
 
 
@@ -187,7 +187,7 @@ def register_office_file(
             name = f"{Path(name).stem}{ext}"
         dest = media_dir / "out" / name
         dest = write_office(dest, ext, body)
-        caption = (req.caption or "Đây là file của bạn.").strip()
+        caption = (req.caption if req.caption is not None else "").strip()
         sent = deliver(
             path=str(dest),
             thread_id=req.thread_id,
