@@ -107,6 +107,25 @@ if [ -d "$_dst_skills" ]; then
       rm -rf "${_dst_skills}/${_cat}/${_n}" 2>/dev/null || true
     done
   done
+  # Force SoT office skills (renamed frontmatter) over any stale replica copy.
+  for _n in pdf docx xlsx; do
+    if [ -d "${_src_skills}/${_n}" ]; then
+      mkdir -p "${_dst_skills}/${_n}"
+      cp -a "${_src_skills}/${_n}/." "${_dst_skills}/${_n}/" 2>/dev/null || true
+    fi
+    if [ -d "${_src_skills}/official/${_n}" ]; then
+      mkdir -p "${_dst_skills}/official/${_n}"
+      cp -a "${_src_skills}/official/${_n}/." "${_dst_skills}/official/${_n}/" 2>/dev/null || true
+    fi
+  done
+  # Last resort: rewrite any leftover reserved frontmatter names under skills/.
+  find "${_dst_skills}" -type f -name SKILL.md 2>/dev/null | while read -r _sk; do
+    sed -i \
+      -e 's/^name: pdf$/name: pdf-tools-local/' \
+      -e 's/^name: docx$/name: docx-tools-local/' \
+      -e 's/^name: xlsx$/name: xlsx-tools-local/' \
+      "$_sk" 2>/dev/null || true
+  done
 fi
 link_shared messages
 # Plugins: overlay SoT so new modules (classify_client, gateway_noise) land on
