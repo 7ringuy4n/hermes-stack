@@ -1,15 +1,29 @@
 # Deployment & Worker Test Rules
 
-Numbered operator rules (source of truth): [`../AGENT_RULES.md`](../AGENT_RULES.md) section **Operator rules**.
+**Source of truth for agent/operator policy:** [`../AGENT_RULES.md`](../AGENT_RULES.md) (sections **1–31**).\
+**This file** is the lab methodology companion named in AGENT_RULES §28 / §30: how to run deployments, worker sets, and cases under [`cases/`](./cases/).
 
-## Rules (numbered)
+Hard gates that always apply to lab work (see AGENT_RULES):
+
+| Topic | AGENT_RULES |
+|-------|-------------|
+| Test integrity / no cheat passes | §3 Hard Gates, §5 Test Integrity |
+| Real Zalo path when available | §7 Real Integration Testing |
+| No lab identity in committed source | §16 Lab Isolation |
+| No deploy / push / MR without permission | §17 Deployment Safety |
+| Remote SSH / script send needs permission | §18 Remote Operations |
+| Restore defaults after testing | §19 Test Configuration Cleanup |
+| Source-first fixes (no lab hotpatch) | §15 Source-First Fixes |
+
+## Cases not to run (AGENT_RULES §28)
 
 Existing cases: [`cases/`](./cases/). Skip only:
 
-exclude:
-| Skills mount + auto-learn (Medium+) | `test/cases/12-skills-auto-learn.md` |
-| Exact text poster (text-poster backend) | `test/cases/13-image-text-poster.md` |
-| Internal docs knowledge-first | `test/cases/14-knowledge-internal-rag.md` |
+| Case | File |
+|------|------|
+| Skills mount + auto-learn (Medium+) | `cases/12-skills-auto-learn.md` |
+| Exact text poster (text-poster backend) | `cases/13-image-text-poster.md` |
+| Internal docs knowledge-first | `cases/14-knowledge-internal-rag.md` |
 
 ## 1. Test Runs
 
@@ -27,7 +41,7 @@ For every run and every target worker set:
    - `public`
 7. Record all results with timestamps.
 8. Do not reuse artifacts from a previous profile unless the test explicitly requires persistence.
-9. **Restore defaults (rule 41):** when the run is finished, revert test-only source and config to product defaults. Do not leave lab timeouts, cache-bust keys, host identities, or worker/component flags that were only for that run.
+9. **Restore defaults (AGENT_RULES §19):** when the run is finished, revert test-only source and config to product defaults. Do not leave lab timeouts, cache-bust keys, host identities, or worker/component flags that were only for that run.
 
 Destroy and config changes (`destroy`, `add-components`, `update`) **abort** if backup or verify fails. `switch-profile` is legacy and must fail fast.
 
@@ -472,7 +486,7 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/secret_probe_path_unit.py` | 32 |
 | `test/scripts/ocr_refuse_unit.py` | 35 (blind model reply must not pass as OCR text) |
 
-**Lab scripts (SSH, one case per invocation — rule §23):**
+**Lab scripts (SSH, one case per invocation — AGENT_RULES §17 / §18: explicit permission required):**
 
 | Script | Case |
 |--------|------|
