@@ -15,6 +15,8 @@ While a request is running, **do not** send any status, progress, tool, retry, o
 - Tool narration: `web_search`, `execute_code`, “let me…”, “now I…”
 - Provider failures / gateway diagnostics / stack traces / “check gateway logs”
 - Busy/interrupt tips, `/busy`, approval/resume, session-restored, compaction notices
+- Hermes cron wrappers: `Cronjob Response: …`, `(job_id: …)`, or
+  `To stop or manage this job…` — send **only the body** of a due lịch
 
 Those lines are **internal**. Stay silent until there is a real result.
 
@@ -26,5 +28,6 @@ Those lines are **internal**. Stay silent until there is a real result.
 ## Related
 
 - `communication/zalo-channel` — Zalo wording
+- `core/scheduling` / `schedule` — due payloads; never Hermes CLI cron wrappers
 - `media-out` / `image-gen` — file turns
-- Adapter drops residual agent status frames in code; this skill stops them at the source
+- Adapter strips residual cron wrappers and status frames in code; this skill stops them at the source

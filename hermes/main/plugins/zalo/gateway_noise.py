@@ -122,6 +122,54 @@ def is_protocol_drop(content: str) -> bool:
     return False
 
 
+def strip_cron_delivery(content: str) -> str:
+    """Keep only the cron/schedule body — drop Hermes wrapper header/footer.
+
+    Hermes ``cron/scheduler.py`` wraps deliveries as::
+
+        Cronjob Response: <task name>
+        (job_id: <id>)
+        -------------
+
+        <body>
+
+        To stop or manage this job, send me a new message (e.g. "stop reminder …").
+
+    Zalo users must see ``<body>`` only (case 15 / quiet-delivery).
+    """
+    raw = content or ""
+    t = raw.strip()
+    if not t:
+        return raw
+    if t.startswith("Cronjob Response:") or t.startswith("Cronjob Response："):
+        lines = t.splitlines()
+        i = 1
+        if i < len(lines) and "job_id" in lines[i].lower():
+            i += 1
+        while i < len(lines) and (
+            not lines[i].strip()
+            or set(lines[i].strip()) <= {"-", "—", "–", "="}
+        ):
+            i += 1
+        t = "\n".join(lines[i:]).strip()
+    foot_marks = (
+        "To stop or manage this job",
+        "to stop or manage this job",
+        "Để dừng hoặc quản lý job",
+        "de dung hoac quan ly job",
+    )
+    cut = -1
+    for mark in foot_marks:
+        pos = t.rfind(mark)
+        if pos >= 0 and (cut < 0 or pos < cut):
+            cut = pos
+    if cut >= 0:
+        t = t[:cut].rstrip()
+    t = re.sub(r"(?im)^\(?\s*job_id\s*:\s*[^)\n]+\)?\s*$", "", t).strip()
+    t = re.sub(r"\n{3,}", "\n\n", t).strip()
+    return t if t else raw
+
+
 def drop_outbound(content: str) -> bool:
     t = (content or "").strip()
     if not t:

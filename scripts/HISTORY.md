@@ -19,6 +19,36 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 15:35 +07 — Cron body wrapped; lyric ask ignored Multo.mp3
+
+### Symptom
+
+1. Due lịch on Zalo included `Cronjob Response: … (job_id: …)` and
+   `To stop or manage this job…` around the real answer.
+2. After Multo mp3, user said `tìm lời bài hát` (quote reply) and the bot asked
+   for song/artist instead of web-searching.
+
+### Root cause
+
+1. Agent created a **Hermes CLI cron** job; `cron/scheduler.py` wraps every
+   delivery. Schedule skill forbids this, but wrappers still reached Zalo.
+2. Empty Whisper transcript → attachment not remembered; quoted text not injected
+   into the agent prompt → model had no Multo context.
+
+### Fix
+
+- `strip_cron_delivery` on Zalo outbound (body only).
+- Always remember bare attachment filenames; inject `[Quoted message]`; lyric
+  follow-up hints Router `/v1/search` from filename.
+- Skills updated; lab: `hermes tools disable cronjob`.
+
+### Prevent recurrence
+
+Never surface Hermes cron envelopes on Zalo. Lyric intents must use recent
+audio filename / quote before clarifying.
+
+---
+
 ## 2026-08-21 14:25 +07 — Bare csv/xlsx/mp3/txt silent; mp4 “no video attached”
 
 ### Symptom
