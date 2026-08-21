@@ -145,3 +145,4 @@ exclude:
 | Zalo once-schedule numbered tasks (no cite intercept) | `test/cases/29-zalo-once-numbered-nocite.md` |
 | Dual Hermes isolation (admin concurrent mix) | `test/cases/30-hermes-dual-isolation.md` |
 | Schedule fire into named Zalo group | `test/cases/31-schedule-group-fire.md` |
+| Secret path refuse + EICAR before learn | `test/cases/32-secret-probe-path-eicar.md` |

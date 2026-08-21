@@ -8,7 +8,11 @@
     "rest": "{n} more."
   },
   "secret_probe": {
-    "refuse": "Cannot provide secrets or confidential documents."
+    "refuse": "Cannot provide secrets, credentials, or protected server paths."
+  },
+  "security": {
+    "av_blocked": "This file was blocked (malware or test virus). It will not be learned.",
+    "av_unavailable": "Antivirus is not ready. File was not accepted — try again later."
   },
   "queue": {
     "rate_limited": "Bạn gửi hơi nhanh — tin này đã vào hàng chờ, mình sẽ trả lời lần lượt.",

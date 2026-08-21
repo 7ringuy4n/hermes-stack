@@ -19,6 +19,30 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 07:45 +07 — `/opt/data` probe not refused; EICAR file asked to learn
+
+### Symptom
+
+User asked to find `/opt/data` — Hermes used terminal and returned path info instead of a refuse. Sending `question.txt` with EICAR still prompted knowledge learn. Security Worker was inactive; no clamav.
+
+### Root cause
+
+1. Secret-probe patterns lacked `/opt/data` / common host paths; empty data-volume policy could disable blocking.
+2. When antivirus gateway was down, AV gate skipped and still enqueued learn (`AV_REQUIRED` defaulted off).
+3. No local EICAR check without Security Worker.
+
+### Fix
+
+- Expand secret-probe policy; skip empty files; default path patterns.
+- Local EICAR block; fail closed when antivirus enabled but unavailable.
+- Enable Security Worker (+ antivirus) on lab when deploying this fix.
+
+### Prevent recurrence
+
+Never learn untrusted files without AV/EICAR gate. Keep secret-probe patterns in editable JSON; do not leave empty `secret-probe.json` on the data volume.
+
+---
+
 ## 2026-08-21 07:20 +07 — LC group schedule fired but no group reply; dispatcher CRITICAL flap
 
 ### Symptom
