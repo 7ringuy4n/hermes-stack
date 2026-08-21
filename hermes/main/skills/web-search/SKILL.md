@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: "Search the public web through the Router Worker websearch combo (config: Tavily → SearXNG). Do not invent backend API details."
+description: "Search the public web through OmniRoute (UI owns Tavily → Firecrawl → SearXNG). Hermes calls Router Worker which proxies to Omni."
 ---
 
 # Web search skill
@@ -8,52 +8,51 @@ description: "Search the public web through the Router Worker websearch combo (c
 Stack:
 
 ```text
-Hermes → this skill → Router Worker (model-router /v1/search)
-                    → combo "websearch" failover: Tavily → SearXNG (local)
+Hermes native tool web_search (toolset web)
+  → Tavily (TAVILY_API_KEY) → SearXNG shim (SEARXNG_URL) …
+OR skill/HTTP:
+Hermes → Router Worker POST /v1/search (backend omni)
+      → OmniRoute POST /v1/search (Omni UI: Tavily → Firecrawl → SearXNG)
 ```
 
-**Always** call Router Worker. Do **not** call OmniRouter for search (OmniRouter is LLM
-chat combos only). Do **not** call Media/File worker for search.
+Prefer the **native `web_search` tool**. On this stack Hermes `SEARXNG_URL`
+points at Router Worker `…/v1/searxng-compat` (Omni-backed). Optional:
+`TAVILY_API_KEY` in Hermes env for direct Tavily. Fallback HTTP:
+`POST http://model-router:8096/v1/search`.
 
-Failover order is **not** coded in the skill. It comes from:
-
-1. Env `WEB_BACKENDS` (comma list), or
-2. Router Worker file `config/web-search-combo.json` (`backends`: `tavily`, `searxng`)
+**Omni UI owns** Search provider connections for the Router Worker / Omni path.
+Do **not** call Omni chat `/v1/chat/completions` to “search”. Do **not** call
+Media/File worker.
 
 ## Endpoints
 
 | Purpose | Call |
 |---------|------|
-| Search | `POST http://model-router:8096/v1/search` `{ query, max_results?, backend? }` |
-| Extract page text | `POST http://model-router:8096/v1/extract` `{ url }` (extract backends from config; not SearXNG) |
+| Search | `POST http://model-router:8096/v1/search` `{ query, max_results? }` |
+| Direct Omni (ops) | `POST http://omni-router:20129/v1/search` Bearer `OMNIROUTER_API_KEY` `{ query, max_results? }` |
+| Extract page text | `POST http://model-router:8096/v1/extract` `{ url }` (Tavily/Firecrawl; not SearXNG) |
 | Current combo head | `GET http://model-router:8096/v1/backends/next` |
 
 ## Config (operators)
 
 | Env / file | Meaning |
 |------------|---------|
-| `config/web-search-combo.json` | Default combo name + backends + extract_backends |
-| `WEB_BACKENDS` | Override failover order (`tavily,searxng`); empty = search off |
-| `WEB_EXTRACT_BACKENDS` | Override extract order (`tavily,firecrawl`) |
-| `TAVILY_API_KEY` / `FIRECRAWL_API_KEY` / `EXA_API_KEY` | Vendor members |
-| `SEARXNG_URL` | Local SearXNG (default `http://searxng:8080`) |
-| `WEB_SEARCH_MAX_RESULTS` | Result cap |
+| Omni Providers → Search | Connect **Tavily** + **Firecrawl** + **SearXNG** (`providerSpecificData.baseUrl=http://searxng:8080`) |
+| `scripts/main/first-setup-omnirouter.sh` | Ensures SearXNG connection, priorities Tavily→Firecrawl→SearXNG, blocks `ollama-search` |
+| `OMNIROUTER_SEARCH_PROVIDERS` | Default `tavily-search,firecrawl-search,searxng-search` |
+| `WEB_SEARCH_PROVIDER_TIMEOUT_S` | Per-provider HTTP timeout (default 20s) for fast failover |
+| `WEB_BACKENDS` | Default `omni` (proxy). Use `tavily,firecrawl,searxng` only if Omni is off |
+| `config/web-search-combo.json` | Router Worker combo (`backends: ["omni"]`) |
+| `WEB_EXTRACT_BACKENDS` | Extract order (`tavily,firecrawl`) |
+| `OMNIROUTER_API_KEY` / `OMNIROUTER_BASE_URL` | Required for `omni` backend |
 
 ## Do
 
 1. Search only when classify `task_hint=search` or `skill=web_search`, or the instruction is clearly a live-web lookup (fuel, weather, FX, lyrics).
 2. Return short facts in the user's language. Do not dump raw JSON.
-3. If every combo member fails, say so in one line. Do not fake prices.
+3. If search returns empty, say so briefly — do not invent sources.
 
-## Do not
+## Don't
 
-- Call the Media/File worker (`dispatcher:8090`) for search or extract
-- Call OmniRouter `/v1/chat/completions` to “search”
-- Hardcode Tavily or SearXNG URLs / order in prompts
-- Browse GitHub/releases to “find an image URL” — that is media generation, not search
-
-## Related
-
-- `knowledge/web-search` — answer strategy and page-image OCR
-- `searxng-search` — direct `SEARXNG_URL` examples (ops only; prefer Router Worker)
-- `media-file` / `image-gen` — after facts are known, put them on a poster via `overlay`
+1. Do not hang the turn on one provider; Router Worker fails over with short timeouts.
+2. Do not use SearXNG for page extract.
