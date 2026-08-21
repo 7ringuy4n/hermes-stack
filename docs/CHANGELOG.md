@@ -1,3 +1,7 @@
+## 2026-08-21 11:52 +07 — OCR image must COPY result.py
+
+- `empty_scan_result` lived in `result.py` but the OCR Dockerfile only copied `app.py`/`refuse.py`, so the rebuilt container crash-looped on import after PR #93.
+
 # Change history
 
 ## 2026-08-21 11:50 +07 — Photo staged OK but agent greeted; OCR empty ≠ failure
