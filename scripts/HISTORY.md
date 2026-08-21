@@ -19,6 +19,14 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 11:52 +07 — OCR crash-loop: result.py missing from image
+
+Dockerfile only copied `app.py`/`refuse.py`; after PR #93 the container imported
+`result.empty_scan_result` and exited. COPY fixed; rebuild returns
+`{"ok":true,"empty":true}` for the staged no-text photo.
+
+---
+
 ## 2026-08-21 11:50 +07 — Staged photo still greets; empty OCR treated as failure
 
 ### Symptom
