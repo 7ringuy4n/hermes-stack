@@ -12,6 +12,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from refuse import llm_refused as _llm_refused
+from result import empty_scan_result as _empty_ok
 
 API_KEY = (
     os.environ.get("OPENAI_API_KEY")
@@ -228,6 +229,8 @@ def ocr(req: OcrReq) -> dict[str, Any]:
     path = _resolve_path(req.path)
     if req.path and path is None and not req.image_b64:
         raise HTTPException(404, "file not found")
+    if not req.path and not req.image_b64:
+        raise HTTPException(400, "path or image_b64 required")
 
     # PDF with a text layer: skip vision (avoids 413 / text-only model refuse).
     if path and path.suffix.lower() == ".pdf":
@@ -272,12 +275,13 @@ def ocr(req: OcrReq) -> dict[str, Any]:
             raw = path.read_bytes()  # type: ignore[union-attr]
             mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"  # type: ignore[union-attr]
             b64 = base64.b64encode(raw).decode("ascii")
-        used = "9router"
         if _vision_ready():
+            used = "9router"
             _flow("ocr_start", path=str(path or ""), mime=mime, model=MODEL, via="9router")
             status, body, text = _vision(b64, mime, req.prompt)
             _vision_note(_llm_refused(status, body, text) or not text)
         else:
+            used = "tesseract"
             status, body, text = 0, "vision_cooldown", ""
             _flow("ocr_start", path=str(path or ""), mime=mime, model=MODEL, via="tesseract")
     else:
@@ -307,5 +311,6 @@ def ocr(req: OcrReq) -> dict[str, Any]:
         )
         return {"ok": True, "text": fb, "via": via, "fallback": True}
 
-    _flow("ocr", ok=False, error="ocr_failed", path=str(path or ""), via=used)
-    return {"ok": False, "error": "ocr_failed", "via": used}
+    # Tesseract/pymupdf ran; photo simply has no readable text.
+    _flow("ocr", ok=True, empty=True, path=str(path or ""), via=via or used)
+    return _empty_ok(via or used)

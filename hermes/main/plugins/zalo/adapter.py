@@ -3006,6 +3006,27 @@ class ZaloAdapter(BasePlatformAdapter):
                 attach_bare,
                 len(excerpt),
             )
+            # Bare image + no OCR text: ack immediately. After a Hermes recreate the
+            # agent often ignores the attachment prompt and sends a /help greeting.
+            if attach_bare and attach_is_image and not (excerpt or "").strip():
+                ack = (
+                    "Đã nhận ảnh. OCR không đọc được chữ rõ trong ảnh. "
+                    "Gửi ảnh có chữ nét hơn, hoặc nói rõ bạn muốn mình làm gì với ảnh này."
+                )
+                self._as_flow("attach_image_empty_ocr_ack", file=attach_name, thread_id=thread_id)
+                try:
+                    await self.send(
+                        chat_id=str(thread_id),
+                        content=ack,
+                        metadata={
+                            "thread_type": "group" if thread_type == "group" else "user",
+                            "as_skip_timing": True,
+                            "as_skip_inflight": True,
+                        },
+                    )
+                except Exception as e:
+                    logger.warning("Zalo: empty-OCR image ack failed: %s", type(e).__name__)
+                return
         elif not media_urls and str(text or "").strip():
             text = self._as_attachment_followup(str(thread_id), text)
 
@@ -4069,7 +4090,14 @@ class ZaloAdapter(BasePlatformAdapter):
                 async with session.post(url, json=payload) as resp:
                     body = await resp.text()
                     if resp.status >= 300:
-                        self._as_flow("attach_worker_fail", url=url, status=resp.status)
+                        self._as_flow(
+                            "attach_worker_fail",
+                            url=url,
+                            status=resp.status,
+                        )
+                        # Sentinel so callers can distinguish 404 from empty OCR.
+                        if resp.status == 404:
+                            return "__AS_WORKER_404__"
                         return ""
             data = json.loads(body or "{}")
         except Exception as e:
@@ -4107,6 +4135,28 @@ class ZaloAdapter(BasePlatformAdapter):
                     {"path": worker_path, "prompt": "Extract all text as markdown."},
                     timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
                 )
+                # Path mismatch / race → 404; retry with bytes (not on empty OCR).
+                if text == "__AS_WORKER_404__" and src.is_file():
+                    import base64
+
+                    b64 = base64.b64encode(src.read_bytes()).decode("ascii")
+                    text = await self._as_worker_text(
+                        f"{ocr_url}/v1/ocr",
+                        {
+                            "image_b64": b64,
+                            "prompt": "Extract all text as markdown.",
+                        },
+                        timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
+                    )
+                    self._as_flow(
+                        "attach_ocr_b64_retry",
+                        file=name,
+                        chars=len(text) if text != "__AS_WORKER_404__" else 0,
+                        path=worker_path[:160],
+                    )
+                if text == "__AS_WORKER_404__":
+                    text = ""
+
             case "office":
                 ingest_url = (os.getenv("INGEST_URL") or "http://ingest:8099").rstrip("/")
                 text = await self._as_worker_text(
