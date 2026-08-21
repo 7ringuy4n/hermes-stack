@@ -165,6 +165,38 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 19:55 +07 — SOUL blocked; empty session; wrong PDF/image content
+
+### Symptom
+
+After Hermes recreate: canned “Chào bạn /help” intro (forgot chat). PDF “điền
+số 1” contained the instruction sentence. “5 dòng hello” image was an unrelated
+photo (sana diffusion), not five lines of hello.
+
+### Root cause
+
+1. Hermes threat scan matched SOUL “do not tell the user…” → `deception_hide`
+   → entire SOUL replaced with a BLOCKED placeholder.
+2. Gateway transcript lived under per-replica `sessions.json`; recreate →
+   msgs:0. Valkey session service was not hydrating the next turn.
+3. `parse_office` missed `chứa số 1`; agent-rewritten prompts became the PDF
+   body. Text-poster left “hello và gửi cho tôi”; agent skipped poster mode
+   and called diffusion.
+
+### Fix
+
+- Rewrite SOUL without the deception trigger phrase.
+- Zalo `session_memory`: hydrate inbound + append outbound via `SESSION_URL`.
+- Harden office/text-poster parsers; Zalo `media_shortcuts` for clear create
+  intents (Dispatcher only).
+
+### Prevent recurrence
+
+Never put “do not tell the user” in SOUL. Short-term chat SoT is Session/Valkey.
+Exact text posters and simple office creates must not depend on the LLM
+rewriting the prompt.
+
+
 ## 2026-08-21 19:30 +07 — PDF claim + gpt-oss-120b request storm
 
 ### Symptom

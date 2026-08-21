@@ -3205,6 +3205,76 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception:
             pass
 
+        # Deterministic office / text-poster via Dispatcher (skip agent rewrite).
+        bare_text = str(text or "").strip()
+        if bare_text and not media_urls:
+            try:
+                from .media_shortcuts import run_office_create, run_text_poster
+            except ImportError:
+                from media_shortcuts import run_office_create, run_text_poster  # type: ignore
+            shortcut = None
+            try:
+                shortcut = run_office_create(bare_text, str(thread_id), str(thread_type))
+                if shortcut:
+                    self._as_flow("office_shortcut", thread_id=thread_id, file=shortcut.get("file"))
+                else:
+                    shortcut = run_text_poster(bare_text, str(thread_id), str(thread_type))
+                    if shortcut:
+                        self._as_flow(
+                            "poster_shortcut",
+                            thread_id=thread_id,
+                            file=shortcut.get("file"),
+                            backend=shortcut.get("backend"),
+                            phrase=shortcut.get("phrase"),
+                            n=shortcut.get("n"),
+                        )
+            except Exception as e:
+                logger.warning("Zalo: media shortcut error: %s", type(e).__name__)
+                shortcut = None
+            if shortcut:
+                try:
+                    self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
+                    self._as_last_user_text[str(thread_id)] = bare_text
+                except Exception:
+                    pass
+                try:
+                    await self._as_autosend_late_files(
+                        str(thread_id),
+                        "group" if str(thread_type).lower() in {"group", "g"} else "user",
+                    )
+                except Exception:
+                    pass
+                try:
+                    from .session_memory import append_turn
+                except ImportError:
+                    from session_memory import append_turn  # type: ignore
+                try:
+                    append_turn(str(thread_id), str(thread_type), bare_text, "")
+                except Exception:
+                    pass
+                try:
+                    self._as_inflight_done(str(thread_id), {})
+                except Exception:
+                    pass
+                try:
+                    self._as_queue_kick(str(thread_id))
+                except Exception:
+                    pass
+                return
+
+        # Valkey short-term memory (SESSION_URL) — survive Hermes recreate.
+        try:
+            from .session_memory import hydrate_user_text
+        except ImportError:
+            from session_memory import hydrate_user_text  # type: ignore
+        try:
+            if bare_text and not media_urls:
+                self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
+                self._as_last_user_text[str(thread_id)] = bare_text
+                text = hydrate_user_text(str(thread_id), str(thread_type), bare_text)
+        except Exception as e:
+            logger.debug("Zalo: session hydrate skipped: %s", type(e).__name__)
+
         event = MessageEvent(
             text=text,
             message_type=message_type,
@@ -4928,6 +4998,21 @@ class ZaloAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=None)
         if not (content or "").strip():
             return SendResult(success=True, message_id=None)
+        # Persist turn to Valkey session SoT (not replica sessions.json).
+        try:
+            from .session_memory import append_turn
+            from .turn_wait import real_thread_id
+        except ImportError:
+            from session_memory import append_turn  # type: ignore
+            from turn_wait import real_thread_id  # type: ignore
+        try:
+            tid = real_thread_id(str(chat_id or ""))
+            last_map = getattr(self, "_as_last_user_text", None) or {}
+            user_prev = str(last_map.get(tid) or last_map.get(str(chat_id)) or "")
+            tt = "group" if str(self._thread_types.get(tid) or "").lower() in {"group", "g"} else "user"
+            append_turn(tid, tt, user_prev, str(content or ""))
+        except Exception:
+            pass
         if str(chat_id) not in self._as_hold_inflight:
             self._as_inflight_done(chat_id, metadata)  # ASSISTANT_INFLIGHT_v5
         dest_id = self._as_zalo_api_chat_id(chat_id)
