@@ -19,6 +19,36 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 
 ---
 
+## 2026-08-21 09:40 +07 — Files answered without being read; dispatcher flap; schedules only removable one at a time
+
+### Symptom
+
+Sending an image got a generic “fluffy kitten” description instead of its text. A `.txt` with `123` replied slowly, and asking again still felt slow. A video got “what should I do with it?”, then “paste the content you want summarized”. `.docx/.xlsx/.pptx/.csv` only produced “Knowledge — pending approval”. Asking for a text file said it was sent but nothing arrived. `gửi tin chào buổi sáng và tóm tắt giá xăng … kèm theo thời tiết …` ran as one job. Notify kept alternating dispatcher DOWN/UP while OCR and media jobs ran. Admins could only remove one schedule per command.
+
+### Root cause
+
+1. No worker owned most extensions: office/CSV went only to the async learn pipeline, audio/video went nowhere, so the agent answered from the filename alone.
+2. Text extraction waited behind the AV gate instead of running alongside it, and the AV poll started with a long sleep.
+3. Attachment recall stored a single file, so a mixed pack lost everything but the last item, and the inbound FIFO capped at 8 dropped the tail of a pack.
+4. Zalo rejects a document attachment whose `caption` is present but blank (`Tham số không hợp lệ`); the fallback caption was a single space.
+5. Dispatcher served web search **and** blocking media work behind a synchronous `/health`, so probes timed out under load and looked like a crash.
+6. The classifier prompt only split numbered lists, not conjunction-joined deliverables.
+7. `schedule remove` resolved exactly one selector, with no group or range support.
+
+### Fix
+
+- `attachment.py` routes each extension to its worker (local read / OCR / Ingest `POST /v1/extract-text` / Media `POST /v1/media/text`), runs concurrently with the AV gate, and keeps 5 files of recall per thread; FIFO cap 16.
+- Omit the `caption` field entirely when blank.
+- Move web search to Router Worker (`model-router`) with Tavily → SearXNG fallback; make dispatcher `/health` async.
+- Classify prompt: conjunction-joined deliverables become separate async instructions; grouped items (E5 RON92 + E10 RON95) stay in one.
+- `schedule remove` accepts index lists, ranges, `all`, and `group <name>`, deleting from `cron/jobs.json` and the workflow service.
+
+### Prevent recurrence
+
+Never answer about a file the stack has not read — add an extension to a worker route or say plainly it could not be read. Keep long-running work off the same event loop path as `/health`, and keep one search implementation (Router Worker) so skills cannot drift to a second one.
+
+---
+
 ## 2026-08-21 08:20 +07 — Image asks for caption; PDF learn without summary; txt “sent” but missing; adapter EICAR cheat
 
 ### Symptom

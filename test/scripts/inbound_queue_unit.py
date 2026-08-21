@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
+sys.path.insert(0, str(ROOT / "test" / "scripts"))
 
 from inbound_queue import (  # noqa: E402
     DEFAULT_MAX,
@@ -19,26 +20,22 @@ from inbound_queue import (  # noqa: E402
     queue_max,
 )
 from multi_request import split_compound_requests  # noqa: E402
+from classify_fixtures import (  # noqa: E402
+    FIXTURE_QUEUE_NOW as PLENTY_NOW,
+    FIXTURE_QUEUE_SCHEDULE as PLENTY_SCHEDULE,
+    install_unit_planner,
+)
+
+install_unit_planner()
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-PLENTY_SCHEDULE = (
-    "1. Send daily message to wakeup every in DM/group: * a 6:00 AM GMT +7\n"
-    "2. Vẽ hình thành phố hồ chí minh, dựa theo thời tiết thực tế\n"
-    "3. Cập nhật ngắn gọn nội dung giá xăng E5 RON92 và E10 RON95 gần nhất"
-)
-
-PLENTY_NOW = (
-    "1. Chào buổi sáng trong DM\n"
-    "2. Vẽ hình thành phố hồ chí minh, dựa theo thời tiết thực tế\n"
-    "3. Cập nhật ngắn gọn nội dung giá xăng E5 RON92 và E10 RON95 gần nhất"
-)
-
 
 def main() -> int:
-    if DEFAULT_MAX != 3 or queue_max() != 3:
-        print(f"FAIL default cap {DEFAULT_MAX} queue_max={queue_max()} want 3")
+    # Cap must fit a whole mixed media pack (one inbound event per file).
+    if DEFAULT_MAX < 16 or queue_max() != DEFAULT_MAX:
+        print(f"FAIL default cap {DEFAULT_MAX} queue_max={queue_max()} want >=16")
         return 1
     fifo = MemoryFifo(max_n=3)
     items = []

@@ -13,12 +13,12 @@ Official packs:
 
 ```bash
 # Search (RR: tavily → firecrawl → searxng)
-curl -sS -X POST http://dispatcher:8090/v1/search \
+curl -sS -X POST http://model-router:8096/v1/search \
   -H 'content-type: application/json' \
   -d '{"q":"<query>","limit":5}'
 
 # Extract / scrape when dispatcher exposes extract
-curl -sS -X POST http://dispatcher:8090/v1/extract \
+curl -sS -X POST http://model-router:8096/v1/extract \
   -H 'content-type: application/json' \
   -d '{"url":"https://example.com"}'
 ```

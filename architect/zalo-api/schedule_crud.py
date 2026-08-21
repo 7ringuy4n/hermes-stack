@@ -145,6 +145,129 @@ def take_all_flag(rest: str) -> tuple[bool, str]:
     return False, raw
 
 
+SCOPE_THREAD = "thread"
+SCOPE_GLOBAL = "global"
+SCOPE_GROUP = "group"
+_ALL_TOKENS = {"all", "*", "--all"}
+_GROUP_TOKENS = {"group", "nhom", "nhóm", "--group"}
+_INDEX_RANGE_RE = re.compile(r"^(\d+)\s*[-–]\s*(\d+)$")
+REMOVE_BULK_CAP = 100
+
+
+def parse_remove_request(rest: str) -> dict[str, Any]:
+    """Parse `!zalo schedule remove …` into a deterministic delete request.
+
+    | Input | scope | selectors | every |
+    |---|---|---|---|
+    | `3` | thread | `["3"]` | no |
+    | `1 3 5` / `1,3,5` / `1-3` | thread | expanded indexes | no |
+    | `all` | global | `[]` | yes |
+    | `all 2` | global | `["2"]` | no |
+    | `group LC group` | group | `[]` | yes |
+    | `group LC group 1-2` | group | expanded indexes | no |
+    """
+    raw = (rest or "").strip()
+    req: dict[str, Any] = {
+        "scope": SCOPE_THREAD,
+        "group_ref": "",
+        "selectors": [],
+        "every": False,
+    }
+    if not raw:
+        return req
+    tokens = raw.split()
+    head = tokens[0].lower()
+    if head in _GROUP_TOKENS:
+        rest_tokens = tokens[1:]
+        idx = len(rest_tokens)
+        while idx > 0 and _is_index_token(rest_tokens[idx - 1]):
+            idx -= 1
+        req["scope"] = SCOPE_GROUP
+        req["group_ref"] = " ".join(rest_tokens[:idx]).strip()
+        tail = rest_tokens[idx:]
+        req["selectors"] = expand_index_selectors(tail)
+        req["every"] = not tail
+        return req
+    if head in _ALL_TOKENS:
+        tail = tokens[1:]
+        req["scope"] = SCOPE_GLOBAL
+        if not tail:
+            req["every"] = True
+            return req
+        if all(_is_index_token(t) for t in tail):
+            req["selectors"] = expand_index_selectors(tail)
+        else:
+            req["selectors"] = [" ".join(tail).strip()]
+        return req
+    if all(_is_index_token(t) for t in tokens):
+        req["selectors"] = expand_index_selectors(tokens)
+        return req
+    req["selectors"] = [raw]
+    return req
+
+
+def _is_index_token(token: str) -> bool:
+    """True for `3`, `6-8`, and comma-joined forms such as `1,3,5`."""
+    raw = (token or "").strip()
+    if not raw:
+        return False
+    pieces = [p.strip() for p in raw.split(",")]
+    pieces = [p for p in pieces if p]
+    if not pieces:
+        return False
+    return all(p.isdigit() or _INDEX_RANGE_RE.match(p) for p in pieces)
+
+
+def expand_index_selectors(tokens: list[str]) -> list[str]:
+    """`['1', '3,4', '6-8']` → `['1','3','4','6','7','8']` (deduped, ordered)."""
+    out: list[str] = []
+    for token in tokens or []:
+        for piece in str(token).split(","):
+            item = piece.strip()
+            if not item:
+                continue
+            hit = _INDEX_RANGE_RE.match(item)
+            if hit:
+                lo, hi = int(hit.group(1)), int(hit.group(2))
+                if lo > hi:
+                    lo, hi = hi, lo
+                for n in range(lo, min(hi, lo + REMOVE_BULK_CAP) + 1):
+                    if str(n) not in out:
+                        out.append(str(n))
+                continue
+            if item not in out:
+                out.append(item)
+    return out[:REMOVE_BULK_CAP]
+
+
+def resolve_jobs(
+    pool: list[dict[str, Any]], selectors: list[str]
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Resolve several selectors at once. Indexes are 1-based on `pool` order."""
+    picked: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    errors: list[str] = []
+    visible = visible_jobs(pool)
+    for sel in selectors or []:
+        if sel.isdigit():
+            idx = int(sel)
+            if not 1 <= idx <= len(visible):
+                errors.append(f"Không có lịch số {idx} (đang có {len(visible)}).")
+                continue
+            job = visible[idx - 1]
+        else:
+            job, err = resolve_job(pool, sel)
+            if err or job is None:
+                errors.append(err or f"Không tìm thấy lịch “{sel}”.")
+                continue
+        jid = str(job.get("id") or "")
+        if jid and jid in seen:
+            continue
+        seen.add(jid)
+        picked.append(job)
+    return picked, errors
+
+
 def parse_hhmm_cron(text: str) -> Optional[str]:
     t = (text or "").strip().lower()
     m = _HHMM_RE.match(t)
@@ -466,5 +589,10 @@ USAGE = (
     "!zalo schedule update <tên> : <nội dung mới>\n"
     "!zalo schedule update all <số|tên> --time 7:00\n"
     "!zalo schedule remove <số|tên>\n"
-    "!zalo schedule remove all <số|tên>"
+    "!zalo schedule remove 1 3 5   (nhiều lịch)\n"
+    "!zalo schedule remove 1-4     (khoảng)\n"
+    "!zalo schedule remove all <số|tên>\n"
+    "!zalo schedule remove all     (xóa mọi lịch)\n"
+    "!zalo schedule remove group <tên nhóm>        (xóa mọi lịch của nhóm)\n"
+    "!zalo schedule remove group <tên nhóm> 1 2    (chọn trong nhóm)"
 )

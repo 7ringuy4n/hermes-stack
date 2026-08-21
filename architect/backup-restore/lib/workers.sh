@@ -42,7 +42,8 @@ assistant_workers_apply() {
     export ENABLE_JOBS="${ENABLE_JOBS:-1}"
     export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-1}"
     export ENABLE_SEARXNG="${ENABLE_SEARXNG:-1}"
-    [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,firecrawl,searxng
+    # Web search runs on router-worker; combo order = paid vendor then local SearXNG
+    [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,searxng
     [[ -n "${IMAGE_BACKENDS:-}" ]] || export IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
   else
     export WORKER_MEDIA_FILE=inactive
@@ -145,7 +146,7 @@ assistant_workers_apply() {
   export VALKEY_URL="${VALKEY_URL:-redis://valkey:6379/0}"
 
   if [[ "${ENABLE_SEARXNG}" == "1" ]]; then
-    [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,firecrawl,searxng
+    [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,searxng
   fi
   if [[ "${ENABLE_9ROUTER:-0}" != "1" ]]; then
     export N9ROUTER_BASE_URL=""
