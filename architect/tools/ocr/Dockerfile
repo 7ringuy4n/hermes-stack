@@ -17,7 +17,8 @@ RUN if [ "$INSTALL_PADDLE" = "1" ]; then \
       pip install --no-cache-dir \
         paddlepaddle==3.2.0 \
         -i https://www.paddlepaddle.org.cn/packages/stable/cpu/ \
-      && pip install --no-cache-dir -r requirements-paddle.txt ; \
+      && pip install --no-cache-dir -r requirements-paddle.txt \
+      && pip install --no-cache-dir --force-reinstall paddlex==3.1.1 ; \
     fi
 
 COPY app.py refuse.py result.py paddle_engine.py ./
