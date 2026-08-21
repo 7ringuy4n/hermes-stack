@@ -78,7 +78,8 @@ Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting 
   each tool turn re-hit Omni `gpt-oss-120b` with full tool schemas.
 - Rename SoT `pdf`/`docx`/`xlsx` (+ official) to `*-tools-local` with
   create-and-send deferred to `file-gen` / `POST /v1/office-file`.
-- Replica entry purges `productivity|documents/{pdf,docx,xlsx}` clones.
+- Replica entry purges `productivity|documents/{pdf,docx,xlsx}` clones,
+  force-overlays SoT office skills, and rewrites leftover `name: pdf|docx|xlsx`.
 - Unit: `office_skill_collision_unit.py`.
 
 ## 2026-08-21 18:50 +07 — Empty Omni combos; office files via Dispatcher
