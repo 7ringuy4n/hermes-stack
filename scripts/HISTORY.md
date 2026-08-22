@@ -1,3 +1,19 @@
+## 2026-08-22 16:10 +07 - Mixed schedule bubble: dup weather, missing fuel
+
+### Symptom
+User message: schedule once at 09:50 greeting + then fuel E5/E10 + HCMC weather. Saw duplicated weather replies; greeting/fuel seemed missing; 09:50 lịch did not behave as expected.
+
+### Root cause
+1. Classify sometimes demoted timed `đặt lịch … lúc HH:MM` (with sau/kèm theo fuel+weather) to immediate `async` workflow → 3 parallel jobs now.
+2. Fuel job (`tóm tắt giá xăng…`) answered with weather-like content while weather job also ran → two weather sends.
+3. Greeting job did send (~224 chars) but was easy to miss beside two weather bubbles; no schedule row for 09:50.
+
+### Fix
+Force schedule when schedule-trigger + clock present; cron from HH:MM; classify prompt + stronger per-job topic wraps (fuel/weather/greeting).
+
+### Prevent recurrence
+Smoke classify on mixed đặt-lịch text must return `task_hint=schedule` + 3 instructions. Tn inject store-only test must see `schedule stored` and not `workflow created jobs=3`.
+
 ## 2026-08-22 15:20 +07 - Omni unforced /v1/search always labels SearXNG
 
 ### Symptom
