@@ -1,30 +1,62 @@
 # Workers
 
-Optional workers are **inactive** by default. Core (Hermes, Memory, Router Worker, Traefik local, API Gateway, Valkey queue, watchdog) is always on.
+Optional workers are **inactive** until you install them. They are **not** in `.env.example` — use `bash run.sh install`.
+
+Core (always on): Hermes, Memory, Router Worker, Traefik local, API Gateway, Valkey queue, watchdog.
 
 Runtime data stays on the host (`ASSISTANT_DATA_DIR`, default `/data/assistant`).
 
-| Worker | Intent |
-|--------|--------|
-| **Schedule** | Timed runs (Go SQLite clock). Not the async compound-job runner. |
-| **Media\|File** | Dispatcher (search/image/office), OCR, Jobs, Comfy CPU |
-| **Security** | OpenBao, security-manager, authz, SIEM, policy-center (`--profile security`) |
-| **Notification** | SMS / email / Zalo notify + alert-watch (does **not** start Security services) |
-| **Message** | Zalo (proxy + zalo-api), Telegram, Lark |
-| **Monitor** | Grafana / Loki / Prometheus |
+| Worker | `run.sh install` | What starts |
+|--------|------------------|-------------|
+| **Schedule** | `schedule` | Go SQLite schedule worker (`schedule-worker`) |
+| **Media\|File** | `media` | Dispatcher, OCR, Jobs, Comfy CPU, SearXNG (bundled) |
+| **Security** | `security` | security-manager, authz, SIEM, policy-center + OpenBao |
+| **OpenBao only** | `openbao` | Same as `security` + `ENABLE_OPENBAO=1` |
+| **Notification** | `notify` | notify + alert-watch (does **not** start Security core) |
+| **Message / Zalo** | `message` or `zalo` | zalo-proxy + zalo-api (+ Telegram when configured) |
+| **Monitor** | `monitor` | Grafana, Prometheus, Loki, Alloy (bundled) |
+
+Attachable extras (also via `install`):
+
+| Name | Command | Notes |
+|------|---------|-------|
+| OCR / Jobs / SearXNG | `ocr`, `jobs`, `searxng` | Usually covered by `install media` |
+| Grafana / Prometheus / Loki | `grafana`, `prometheus`, `loki`, `alloy` | Usually covered by `install monitor` |
+| Antivirus | `antivirus` | ClamAV + av-gateway profile |
+| CloudDrive mirror | `clouddrive` | Backup sync to rclone remote |
+| OpenVPN | `openvpn` | Edge overlay |
+| Traefik / Gateway | `traefik`, `gateway` | Core defaults on; use to re-enable after `uninstall` |
+
+## First setup (clean OS)
 
 ```bash
-# Activate workers in .env, then:
-bash run.sh up
+cp .env.example .env
+python3 scripts/temp/generate_env_secrets.py --out .env --force   # optional
+sudo bash scripts/main/install-docker.sh                          # if Docker missing
+
+bash run.sh up                         # core only — all workers still inactive
+bash run.sh workers                    # confirm inactive
+
+# Install what you need (each runs backup+verify, writes .env, then up):
+bash run.sh install schedule
+bash run.sh install media
+bash run.sh install security           # or: bash run.sh install openbao
+bash run.sh install notify
+bash run.sh install message            # Zalo
+bash run.sh install monitor
+
+# Or several at once:
+bash run.sh install schedule media security notify message monitor
+
+bash run.sh install list               # full name catalog
+bash run.sh workers                    # confirm active
 ```
 
-```env
-WORKER_SCHEDULE=inactive
-WORKER_MEDIA_FILE=inactive
-WORKER_SECURITY=inactive
-WORKER_NOTIFY=inactive
-WORKER_MESSAGE=inactive
-WORKER_MONITOR=inactive
+### Zalo (Message worker)
+
+```bash
+bash scripts/main/setup-zalo.sh        # QR first → then bridge + zalo-api (deploy user, not sudo)
+bash scripts/main/login-zalo.sh        # re-login only when stack already installed
 ```
 
 ## Traefik modes
@@ -38,14 +70,30 @@ When `HERMES_REPLICAS>1`, host ports `:29119` / `:28642` are not published — u
 
 Grafana pairs with Prometheus. Loki pairs with Alloy. Extra usage: [HARDWARE.md](./HARDWARE.md).
 
-## Change workers
+## Change workers later
 
-Activating or deactivating workers **backs up and verifies** first. If backup or verify fails, the change is aborted.
+Every install/uninstall **backs up and verifies** first. On failure the change is aborted.
 
 ```bash
-bash run.sh add-components WORKER_MEDIA_FILE=active WORKER_SCHEDULE=active
+bash run.sh install media schedule
+bash run.sh uninstall zalo
+bash run.sh uninstall traefik          # turn Traefik off (not add-components ENABLE_TRAEFIK=0)
+bash run.sh uninstall gateway          # turn API Gateway off
+bash run.sh install traefik            # turn back on
 ```
 
-Overlays: `docker/docker-compose.media.yml` (media/file), `docker/docker-compose.security.yml` (security/notify/monitor — security core gated by compose profile `security`), `docker/docker-compose.edge.yml` (Traefik / API Gateway / OpenVPN).
+Runtime / core flags (Omni, 9Router, queue, Qwen, Ollama) — use `add-components` then **`update`** on a running host:
 
-When `WORKER_NOTIFY=active` alone, only `notify` / `alert-watch` start from that overlay. `openbao`, `security-manager`, `authz`, `siem`, and `policy-center` require `WORKER_SECURITY=active` (`ENABLE_SECURITY=1` → `--profile security`).
+```bash
+bash run.sh add-components ENABLE_9ROUTER=1 --update
+bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
+bash run.sh add-components ENABLE_QWEN=1 OLLAMA_BASE_URL=http://host.docker.internal:11434 OLLAMA_MODEL=qwen2.5:7b --update
+```
+
+First deploy only: `bash run.sh up` after editing `.env` secrets (before any workers installed).
+
+Advanced: raw `add-components KEY=VAL` without `--update` still runs `up` (fine for first boot).
+
+Overlays: `docker/docker-compose.media.yml`, `docker/docker-compose.security.yml`, `docker/docker-compose.edge.yml`.
+
+When `notify` alone is active, only `notify` / `alert-watch` start from the security overlay. OpenBao, authz, SIEM, and policy-center require `install security` or `install openbao`.
