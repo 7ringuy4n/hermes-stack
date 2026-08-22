@@ -789,7 +789,7 @@ case "$cmd" in
       echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip 9Router first-setup"
     fi
     if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
-      echo "==> first-setup-omnirouter (OpenCode Free combo)"
+      echo "==> first-setup-omnirouter (empty hermes/classifier; ENABLE_QWEN fills Qwen)"
       export STACK_ROOT="${STACK_ROOT:-$ROOT}"
       python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py" \
         || echo "WARN: first-setup-omnirouter failed — re-run: bash run.sh first-setup-omnirouter"

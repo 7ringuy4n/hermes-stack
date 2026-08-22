@@ -1,3 +1,33 @@
+## 2026-08-22 11:35 +07 - Zalo Postgres SoT + session backup (no second QR)
+
+### Symptom
+Admin/users/groups lived in text files; clean redeploy required a second QR scan; develop tests assumed Tn while main must accept any admin.
+
+### Root cause
+Allowlists were file-only; no durable credentials backup path; lab identity mixed into production assumptions.
+
+### Fix
+zalo_store (Postgres) + CRUD APIs; AGENT_RULES lab vs main language/identity; backup/restore-zalo-session under ASSISTANT_DATA_DIR/zalo-session-backup.
+
+### Prevent recurrence
+zalo_store_unit + zalo_admin_resolve_unit; round-2 restore credentials before stack up — do not ask to re-scan QR when backup exists.
+
+## 2026-08-22 18:20 +07 - !zalo claim from QR account (Tn) failed
+
+### Symptom
+Operator scanned Zalo QR as Tn then sent !zalo claim. No useful admin grant. Bridge health often loggedIn=false; zalo-api admin_users=0.
+
+### Root cause
+1. Chat QR image expired (~100s); scan did not persist a session.
+2. claim rejected sender==bot_id (same account as QR login).
+3. claim also required zalo-api bridge /health loggedIn, which can fail even when Hermes later receives DMs.
+
+### Fix
+Allow first-setup claim for the QR uid; skip extra health gate; seed admin from ownId on zalo-api start; pass ZALO_PLUGIN_TOKEN to the systemd override.
+
+### Prevent recurrence
+zalo_claim_unit.py. After QR: wait loggedIn=true, login-zalo seed, docker restart hermes, then !zalo claim.
+
 ﻿## 2026-08-22 17:10 +07 - Prod gap suite, SOUL multi-lang, ENABLE_QWEN empty combos
 
 ### Symptom
