@@ -59,14 +59,23 @@ assistant_backup_fail() {
 }
 
 assistant_container() {
-  local want="$1" name alt
+  local want="$1" name alt project
+  project="${COMPOSE_PROJECT_NAME:-assistant}"
   case "$want" in
     redis)
       want="valkey"
       alt="redis"
       ;;
   esac
-  # Exact name first (postgres, valkey, …); then Compose scale aliases (assistant-hermes-1).
+  # Compose service label (media worker no longer uses global container_name).
+  name="$(docker ps --filter "label=com.docker.compose.service=${want}" \
+    --filter "label=com.docker.compose.project=${project}" \
+    --format '{{.Names}}' 2>/dev/null | head -n1)"
+  if [[ -n "$name" ]]; then
+    echo "$name"
+    return 0
+  fi
+  # Exact legacy container_name (postgres, valkey, …).
   name="$(docker ps --format '{{.Names}}' 2>/dev/null | awk -v w="$want" '$0==w {print; exit}')"
   if [[ -n "$name" ]]; then
     echo "$name"
@@ -82,6 +91,14 @@ assistant_container() {
   if [[ "$want" == "hermes" ]]; then
     docker ps --format '{{.Names}}' 2>/dev/null | awk '/hermes/ {print; exit}'
   fi
+}
+
+assistant_stop_services() {
+  local svc c
+  for svc in "$@"; do
+    c="$(assistant_container "$svc" 2>/dev/null || true)"
+    [[ -n "$c" ]] && docker stop "$c" 2>/dev/null || true
+  done
 }
 
 assistant_stop_hermes() {
@@ -282,7 +299,8 @@ assistant_restore_postgres() {
   pg="$(assistant_container postgres)"
   [[ -n "$pg" ]] || { assistant_backup_fail "postgres not running for restore"; return 1; }
   # Drop app connections so DROP DATABASE / --clean can proceed.
-  docker stop memory session ingest embedding jobs jobs-worker 2>/dev/null || true
+  docker stop memory session ingest embedding 2>/dev/null || true
+  assistant_stop_services jobs jobs-worker
   assistant_stop_hermes
   for i in $(seq 1 30); do
     docker exec "$pg" pg_isready -U "$dbuser" >/dev/null 2>&1 && break
@@ -370,7 +388,7 @@ assistant_backup_valkey() {
 assistant_restore_valkey() {
   local dir="$1" rdb="${dir}/valkey/dump.rdb" vol img
   [[ -f "$rdb" ]] || { assistant_backup_fail "missing valkey dump.rdb"; return 1; }
-  docker stop session jobs jobs-worker ingest 2>/dev/null || true
+  assistant_stop_services session jobs jobs-worker ingest
   assistant_stop_hermes
   docker stop redis
   vol="$(as_volume valkey_data)"
