@@ -1,3 +1,7 @@
+## 2026-08-22 19:30 +07 — check-security: compose-scoped zalo-api detection
+
+- `check-security.sh`: detect zalo-api by compose service label (`assistant-zalo-api-1`), not legacy fixed name `zalo-api`.
+
 ## 2026-08-22 19:20 +07 — Fix setup-zalo infinite loop + light compose up
 
 - `setup-zalo.sh`: after QR, call `ASSISTANT_UP_LIGHT=1 run.sh up` (compose only — no timers, Omni/Ollama/learn re-run).

@@ -13,6 +13,17 @@ check() {
   fi
 }
 
+compose_service_running() {
+  # Optional workers use compose-scoped names (assistant-zalo-api-1), not legacy zalo-api.
+  local svc="$1" project="${COMPOSE_PROJECT_NAME:-assistant}"
+  [[ -n "$(docker ps -q \
+    --filter "label=com.docker.compose.service=${svc}" \
+    --filter "label=com.docker.compose.project=${project}" 2>/dev/null)" ]] && return 0
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$svc" && return 0
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${project}-${svc}-1" && return 0
+  return 1
+}
+
 echo "WORKER_SECURITY=${WORKER_SECURITY:-inactive} WORKER_MONITOR=${WORKER_MONITOR:-inactive} ENABLE_OPENBAO=${ENABLE_OPENBAO:-0}"
 check openbao   "http://127.0.0.1:${OPENBAO_PORT:-8200}/v1/sys/health"
 if [[ "${ENABLE_GRAFANA:-0}" == "1" ]]; then
@@ -23,8 +34,8 @@ fi
 check security  "http://127.0.0.1:${SECURITY_PORT:-8093}/health"
 check authz     "http://127.0.0.1:${AUTHZ_PORT:-8097}/health"
 if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
-  if ! docker ps --format '{{.Names}}' | grep -qx zalo-api; then
-    echo "FAIL zalo-api  container missing (ENABLE_ZALO=1 requires zalo-api)"
+  if ! compose_service_running zalo-api; then
+    echo "FAIL zalo-api  container missing (ENABLE_ZALO=1 requires zalo-api compose service)"
     fail=1
   fi
   check zalo-api "http://127.0.0.1:${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}/health"
