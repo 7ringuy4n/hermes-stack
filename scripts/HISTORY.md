@@ -1,3 +1,17 @@
+## 2026-08-22 12:30 +07 - Postgres pg_hba blocked Docker services on clean deploy
+
+### Symptom
+After round-2 wipe, workflow/authz/zalo-api crash-looped: `no pg_hba.conf entry for host … no encryption`; DB list lacked `hermes_memory`.
+
+### Root cause
+Postgres data volume initialized with localhost-only hba; Docker bridge IPs had no rule; POSTGRES_DB not applied on bad partial init.
+
+### Fix
+Mount `docker/postgres/pg_hba.conf` + `POSTGRES_HOST_AUTH_METHOD=scram-sha-256`; recreate postgres volume on clean deploy.
+
+### Prevent recurrence
+Document: after wipe, verify `\l` shows hermes_memory and zalo-api `/health` before tests.
+
 ## 2026-08-22 11:35 +07 - Zalo Postgres SoT + session backup (no second QR)
 
 ### Symptom

@@ -1,3 +1,17 @@
+## 2026-08-22 12:30 +07 — Postgres Docker network auth (pg_hba)
+
+- Fresh lab volumes could init with localhost-only `pg_hba.conf` and missing
+  `hermes_memory`, breaking workflow/authz/zalo-api (`no pg_hba.conf entry … no encryption`).
+- Mount `docker/postgres/pg_hba.conf` (scram for all hosts) and set
+  `POSTGRES_HOST_AUTH_METHOD=scram-sha-256`.
+
+## 2026-08-22 11:45 +07 — Agent session cleanup + round-2 clean main
+
+- AGENT_RULES Hard Gates: after a lab/patch session, delete generated one-off
+  scripts under `scripts/temp/` / `hermes/temp/` (keep only committed tooling).
+- Round-2: wipe stack/data (keep fail2ban + preserved Zalo credentials), redeploy
+  `main` with all workers; restore QR session — do not re-scan.
+
 ## 2026-08-22 11:35 +07 — Zalo entities in Postgres + lab/prod branch rules
 
 - AGENT_RULES §14: develop lab may use Tn + Vietnamese inject strings; main must
