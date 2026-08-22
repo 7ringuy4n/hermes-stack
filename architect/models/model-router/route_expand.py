@@ -24,14 +24,20 @@ def expand_chat_candidates(
     default_model: str = "hermes",
     failover_models: list[str] | None = None,
     rotate_attempts: int = 3,
+    has_tools: bool = False,
 ) -> list[tuple[str, str, dict[str, str], Optional[str]]]:
     """Build ordered upstream hops for chat/completions.
 
     OmniRouter combos (e.g. ``hermes``) round-robin free members. Retrying the
     same combo id several times lets alive free models answer before we switch
     to explicit failover ids such as ``auto/best-free``.
+
+    When the client sends ``tools``, skip ``auto/*`` failovers — those combos
+    do not support tool calling and only add noisy 400 hops.
     """
     failover = [m.strip() for m in (failover_models or []) if (m or "").strip()]
+    if has_tools:
+        failover = [m for m in failover if not m.lower().startswith("auto/")]
     rotate = max(1, min(int(rotate_attempts or 1), 8))
     out: list[tuple[str, str, dict[str, str], Optional[str]]] = []
     req = (requested_model or "").strip() or (default_model or "hermes")
