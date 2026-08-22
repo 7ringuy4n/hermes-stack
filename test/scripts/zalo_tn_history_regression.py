@@ -56,6 +56,7 @@ case = {case!r}
 tag = "hist-%s-%d" % (case, int(time.time()))
 
 uid = uname = ""
+first_uid = first_name = ""
 for path in ("/data/assistant/zalo_admin_users.txt", "/opt/data/zalo_admin_users.txt"):
     p = Path(path)
     if not p.is_file():
@@ -65,13 +66,21 @@ for path in ("/data/assistant/zalo_admin_users.txt", "/opt/data/zalo_admin_users
         if not raw or raw.startswith("#"):
             continue
         left, _, right = raw.partition("|")
+        if not left.strip():
+            continue
+        if not first_uid:
+            first_uid, first_name = left.strip(), right.strip() or "admin"
         if right.strip().lower() == want_name.lower():
             uid, uname = left.strip(), right.strip()
             break
     if uid:
         break
 if not uid:
-    raise SystemExit("NO_ADMIN_USER")
+    # main: any admin; develop suites set ZALO_REQUIRE_NAMED_ADMIN=1 (default)
+    _strict = (os.environ.get("ZALO_REQUIRE_NAMED_ADMIN") or "1").strip().lower() in ("1", "true", "yes")
+    if _strict or not first_uid:
+        raise SystemExit("NO_ADMIN_USER")
+    uid, uname = first_uid, first_name
 
 tz = ZoneInfo("Asia/Ho_Chi_Minh")
 hhmm = (datetime.now(tz) + timedelta(hours=3)).strftime("%H:%M")

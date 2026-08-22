@@ -465,6 +465,22 @@ A logged-in bridge alone is insufficient.
 Health checks and stack-watch must report failure when Zalo is enabled
 but `zalo-api` is missing or unhealthy.
 
+**Persistence:** Zalo admin, users, DMs, groups/threads (and deny list) are
+stored in PostgreSQL via `zalo-api` (CRUD under `/v1/zalo/...`). Text files
+such as `zalo_admin_users.txt` are migration/fallback only — never the
+long-term source of truth on `main`.
+
+**Branch language & test identity (lab vs production):**
+
+-   **`develop` (lab only):** Inject / bridge simulation tests may use the
+    lab Zalo identity **Tn** and Vietnamese user phrasing
+    (`ZALO_TEST_USER_NAME=Tn`, Vietnamese greeting/schedule strings). Do not
+    hardcode Tn’s numeric id or lab credentials in committed source.
+-   **`main` (production-ready):** Must work for **any** sole admin account
+    (no Tn-only assumption). Default product copy, SOUL, and operator-facing
+    docs/messages prefer **English**; Vietnamese (and other languages) remain
+    user-driven via reply-in-user-language rules — not lab identity.
+
 ------------------------------------------------------------------------
 
 ## 15. Source-First Fixes

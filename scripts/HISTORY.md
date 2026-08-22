@@ -1,3 +1,17 @@
+## 2026-08-22 11:35 +07 - Zalo Postgres SoT + session backup (no second QR)
+
+### Symptom
+Admin/users/groups lived in text files; clean redeploy required a second QR scan; develop tests assumed Tn while main must accept any admin.
+
+### Root cause
+Allowlists were file-only; no durable credentials backup path; lab identity mixed into production assumptions.
+
+### Fix
+zalo_store (Postgres) + CRUD APIs; AGENT_RULES lab vs main language/identity; backup/restore-zalo-session under ASSISTANT_DATA_DIR/zalo-session-backup.
+
+### Prevent recurrence
+zalo_store_unit + zalo_admin_resolve_unit; round-2 restore credentials before stack up — do not ask to re-scan QR when backup exists.
+
 ## 2026-08-22 18:20 +07 - !zalo claim from QR account (Tn) failed
 
 ### Symptom
