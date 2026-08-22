@@ -30,7 +30,9 @@ WANT_NAME = (os.environ.get("ZALO_TEST_USER_NAME") or "Tn").strip()
 TEXT = (
     os.environ.get("ZALO_GREETING_TEXT") or "chúc một buổi sáng tốt lành"
 ).strip() or "chúc một buổi sáng tốt lành"
-WAIT_S = int(os.environ.get("ZALO_GREETING_WAIT_S") or "90")
+# Local Ollama on CPU needs longer than cloud Qwen; override with ZALO_GREETING_WAIT_S.
+_default_wait = "180" if os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_MODEL") else "90"
+WAIT_S = int(os.environ.get("ZALO_GREETING_WAIT_S") or _default_wait)
 CONNECT_WAIT_S = int(os.environ.get("ZALO_CONNECT_WAIT_S") or "180")
 
 
@@ -269,11 +271,16 @@ while time.time() < deadline:
             )
         except Exception:
             rw = ""
-        if (
+        ollama_fallback = bool(
+            (os.environ.get("OLLAMA_BASE_URL") or "").strip()
+            or (os.environ.get("OLLAMA_MODEL") or "").strip()
+        )
+        hard_fail = (
             "Unable to determine provider for model 'hermes'" in rw
             or "[route] failover omni-router:400" in rw
             or "[classify] http=400 model=hermes" in rw
-        ):
+        )
+        if hard_fail and not ollama_fallback:
             print("FAIL_LLM_NOT_CONFIGURED")
             raise SystemExit("FAIL_LLM_NOT_CONFIGURED")
     time.sleep(1)

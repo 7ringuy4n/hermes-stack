@@ -14,6 +14,7 @@ RECOMMENDED = {
     (1, 2): 3,
     (2, 2): 4,
     (2, 4): 6,
+    (3, 6): 7,
     (4, 8): 8,
     (4, 16): 10,
     (8, 16): 12,
@@ -39,6 +40,7 @@ def main() -> int:
     assert recommend(4, 8) == 8, "product default profile"
     assert recommend(1, 1) == 2
     assert recommend(2, 4) == 6
+    assert recommend(3, 6) == 7
     assert recommend(8, 32) == 16
     assert 2 <= recommend(3, 6) <= 8
     # Product default in .env.example / compose must match 4c/8G recommendation

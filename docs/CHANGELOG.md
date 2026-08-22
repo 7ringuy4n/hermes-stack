@@ -1,3 +1,11 @@
+## 2026-08-22 14:00 +07 — Local Ollama Qwen + post-lab restore
+
+- Qwen active when `ENABLE_QWEN=1` and **either** cloud key **or** `OLLAMA_BASE_URL` + `OLLAMA_MODEL` (no DashScope required for lab).
+- `scripts/main/lab-enable-qwen-local.sh`, `post-lab-restore.sh`: enable Ollama qwen2.5:7b, restore Zalo, preflight + router smoke before stopping host.
+- `qwen_combo_preflight.py` (case 38): pass with local Ollama combos; `QWEN_COMBOS_EMPTY` when enabled but empty.
+- `zalo_tn_greeting_inject`: fix LLM-not-configured detection; default wait 180s when Ollama set (CPU 7B).
+- Docs: `QWEN_PERFORMANCE.md`, `.env.example`, `test/RULES.md` §15/§post-lab aligned with activatable Qwen component.
+
 ## 2026-08-22 13:05 +07 — Qwen preflight tests + no-reply diagnosis
 
 - Case 38 + `qwen_combo_preflight.py`: detect ENABLE_QWEN=1 with empty key / empty Omni combos.
