@@ -81,8 +81,21 @@ def main() -> int:
     ):
         print("FAIL python exception protocol must drop")
         return 1
-        print("FAIL price result must not be narration")
-        return 1
+    set_outbound_planner(None)
+    import gateway_noise as gn  # noqa: E402
+
+    def _fail(_t: str) -> dict:
+        return {"ok": False, "action": "drop", "error": "outbound_unavailable"}
+
+    _orig = gn.classify_outbound
+    gn.classify_outbound = _fail
+    try:
+        if drop_outbound("Chúc bạn một buổi sáng tốt lành!"):
+            print("FAIL greeting must send when outbound classify unavailable")
+            return 1
+    finally:
+        gn.classify_outbound = _orig
+    set_outbound_planner(_planner)
     if drop_outbound(""):
         pass
     else:

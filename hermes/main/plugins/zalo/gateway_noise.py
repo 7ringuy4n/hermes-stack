@@ -182,8 +182,9 @@ def drop_outbound(content: str) -> bool:
     got = classify_outbound(t)
     action = str(got.get("action") or "send").strip().lower()
     if got.get("ok") is False:
-        # Fail closed for status-like residual; do not invent user-facing errors.
-        return is_agent_status_frame(t) or action == "drop"
+        # Fail-open for user-facing replies when /v1/outbound is unavailable;
+        # still drop deterministic agent status frames.
+        return is_agent_status_frame(t)
     return action == "drop"
 
 
