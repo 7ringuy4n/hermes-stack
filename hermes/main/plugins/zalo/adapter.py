@@ -1719,15 +1719,24 @@ class ZaloAdapter(BasePlatformAdapter):
     async def _as_compound_wait_part(self, thread_id: str) -> None:
         """Wait until the current part sent something, then a short idle gap."""
         tid = str(thread_id or "")
-        timeout = self._as_env_float("ZALO_COMPOUND_PART_TIMEOUT_S", 180.0, 15.0, 600.0)
+        # Keep well under ZALO_QUEUE_TURN_TIMEOUT_S (default 150s). An empty
+        # model reply never marks delivered; waiting 180s here burns the turn
+        # and the user sees no message (including the timeout UX line).
+        timeout = self._as_env_float("ZALO_COMPOUND_PART_TIMEOUT_S", 35.0, 5.0, 120.0)
         gap = self._as_env_float("ZALO_COMPOUND_GAP_S", 4.0, 0.0, 30.0)
         ev = self._as_part_delivered.get(tid)
         if ev is not None:
-            try:
-                await asyncio.wait_for(ev.wait(), timeout=timeout)
-            except asyncio.TimeoutError:
-                logger.warning("Zalo: compound part wait timeout thread=%s", tid)
-            ev.clear()
+            if ev.is_set():
+                ev.clear()
+            else:
+                try:
+                    await asyncio.wait_for(ev.wait(), timeout=timeout)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Zalo: compound part wait timeout thread=%s — continue without delivery",
+                        tid,
+                    )
+                ev.clear()
         if gap > 0:
             await asyncio.sleep(gap)
 
@@ -2270,6 +2279,16 @@ class ZaloAdapter(BasePlatformAdapter):
             async def _run_turn() -> None:
                 await self.handle_message(event)
                 await self._as_autosend_late_files(tid, thread_type)
+                # If the model returned no user-visible text (e.g. think-only
+                # finish_reason=length), nothing calls mark_delivered — do not
+                # sit on the compound event for the rest of the queue budget.
+                ev = self._as_part_delivered.get(tid)
+                if ev is not None and not ev.is_set():
+                    logger.info(
+                        "Zalo: no outbound this part thread=%s — skip compound wait",
+                        tid,
+                    )
+                    self._as_compound_mark_delivered(tid)
                 await self._as_compound_wait_part(tid)
 
             try:

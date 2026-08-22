@@ -1,3 +1,9 @@
+## 2026-08-22 08:40 +07 — Greeting no-reply: Qwen3 think-only + compound wait
+
+- Root cause after Qwen-only combos: hermes lead model qwen3.6 burned max_tokens inside think tags (finish_reason=length, empty visible text). Zalo then waited on compound delivery until the 150s queue turn timeout — no reply.
+- omnirouter_qwen sort: prefer qwen2.5 / qwen-plus / instruct; penalize Qwen3.x thinking-style ids.
+- Zalo: if a part has no outbound, skip compound wait; lower compound part timeout default 180→35s.
+
 ## 2026-08-22 08:20 +07 — SOUL.md blocked by deception_hide (greeting no-reply)
 
 - Hermes threat pattern do not … tell … the user (FILLER up to 8 words) matched SOUL phrasing and blocked the whole SOUL.md context every turn.
