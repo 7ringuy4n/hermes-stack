@@ -64,11 +64,11 @@ Mitigations:
 | Knob | Meaning |
 |------|---------|
 | Hermes `SEARXNG_URL` / `HERMES_SEARXNG_URL` | Points at Router Worker **SearXNG-shaped shim** (`/v1/searxng-compat`). Hermes native `web_search` speaks that protocol; the shim still runs the Omni cascade. |
-| Router `SEARXNG_URL=http://searxng:8080` | Direct local SearXNG container — used only as Omni’s **fallback** adapter base URL. |
-| `OMNIROUTER_SEARCH_PROVIDERS` | Router Worker forced order when calling Omni: **tavily → firecrawl → searxng**. |
-| Omni provider **priority** | Unforced Omni `POST /v1/search` (UI / smoke). Must be Tavily=1, Firecrawl=2, SearXNG=3. |
+| Router `SEARXNG_URL=http://searxng:8080` | Direct local SearXNG container — used as Omni’s **fallback** adapter base URL (last hop). |
+| `OMNIROUTER_SEARCH_PROVIDERS` | Router Worker **forces** `provider` on each Omni call: **tavily → firecrawl → searxng**. This is the Hermes source of truth. |
+| Omni unforced `POST /v1/search` | OmniRoute product quirk: response often labels `provider=searxng-search` even when Tavily is the only healthy connection / SearXNG is blocked or deleted. Forced `provider=tavily-search` works. |
 
-If Omni shows Tavily active but `provider=searxng-search` on unforced search, both connections likely share **priority=1** (tie → SearXNG). Re-run `scripts/main/first-setup-omnirouter.py` (enforce pass) or `test/scripts/apply_omni_tavily_priority.py`. Hermes weather via shim should still report `backend=omni:tavily-search` when the router cascade is healthy.
+**Do not** treat Hermes env `SEARXNG_*` or Omni unforced smoke as “SearXNG is preferred.” Check `POST http://127.0.0.1:8096/v1/search` → `backend=omni:tavily-search`, and keep `grep -c searxng-compat` on `/app/websearch.py` > 0 after router-worker rebuilds.
 
 ## Tests
 

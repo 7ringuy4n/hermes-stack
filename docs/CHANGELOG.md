@@ -1,9 +1,14 @@
+## 2026-08-22 15:20 +07 — Omni unforced search always labels SearXNG
+
+- Deeper lab probe: Omni unforced `/v1/search` reports `searxng-search` even when that connection is blocked/deleted; priority PUT does not stick on GET.
+- Hermes remains Tavily-first via Router Worker forced `provider` cascade + searxng-compat shim.
+- first-setup smoke: forced-tavily success check; document Omni quirk (do not treat unforced smoke as Hermes default).
+
 ## 2026-08-22 14:50 +07 — Omni search: enforce Tavily priority over SearXNG
 
-- Lab: Tavily active but Omni unforced `/v1/search` returned `searxng-search` because both connections shared priority=1.
+- Lab: Tavily active but Omni unforced `/v1/search` returned `searxng-search` (initially suspected priority=1 tie).
 - Hermes path was already Tavily-first via router `OMNIROUTER_SEARCH_PROVIDERS` + searxng-compat shim (name ≠ engine).
-- first-setup: final priority-only enforce + verify (Tavily=1, Firecrawl=2, SearXNG=3); smoke warns if default is searxng.
-- Apply: `test/scripts/apply_omni_tavily_priority.py`; docs clarify SEARXNG_URL naming vs cascade.
+- first-setup: priority-only enforce attempt + apply/probe scripts; docs clarify SEARXNG_URL naming vs cascade.
 
 ## 2026-08-22 11:00 +07 — Weather no-reply: rebuild searxng-compat + longer queue turn
 
