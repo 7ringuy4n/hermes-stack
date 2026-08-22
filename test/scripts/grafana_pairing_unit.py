@@ -13,10 +13,17 @@ if hasattr(sys.stdout, "buffer"):
 
 def main() -> int:
     fails = 0
+    workers = (ROOT / "architect" / "backup-restore" / "lib" / "workers.sh").read_text(
+        encoding="utf-8"
+    )
+    nine_default_off = 'ENABLE_9ROUTER="${ENABLE_9ROUTER:-0}"' in workers
     compose = (ROOT / "docker" / "docker-compose.security.yml").read_text(encoding="utf-8")
     if "9router=9router:20128" not in compose:
-        print("FAIL compose HEALTH_TARGETS missing 9router TCP")
-        fails += 1
+        if nine_default_off:
+            print("PASS compose HEALTH_TARGETS omits 9router (ENABLE_9ROUTER default 0)")
+        else:
+            print("FAIL compose HEALTH_TARGETS missing 9router TCP")
+            fails += 1
     else:
         print("PASS compose HEALTH_TARGETS includes 9router")
 

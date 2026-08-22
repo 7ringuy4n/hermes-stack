@@ -5,9 +5,22 @@ instructions for isolated job execution.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, List, Optional
 
 from classify_client import CADENCES, classify_text, valid_cron
+
+_CADENCE_WEEKLY = re.compile(r"\bweekly\b|\bhàng tuần\b|\bhang tuan\b", re.I)
+_CADENCE_MONTHLY = re.compile(r"\bhàng tháng\b|\bhang thang\b|\bmonthly\b", re.I)
+_CADENCE_YEARLY = re.compile(r"\byearly\b|\bhàng năm\b|\bhang nam\b", re.I)
+_CADENCE_DAILY = re.compile(
+    r"hằng\s*ngày|hang\s*ngay|hàng\s*ngày|mỗi\s*ngày|moi\s*ngay|\bdaily\b",
+    re.I,
+)
+_CADENCE_ONCE = re.compile(
+    r"đặt\s*lịch|dat\s*lich|chạy\s*một\s*lần|chay\s*mot\s*lan|\bonce\b",
+    re.I,
+)
 
 CADENCE_ONCE = "once"
 CADENCE_DAILY = "daily"
@@ -38,6 +51,24 @@ def wrap_instruction(index: int, total: int, body: str) -> str:
     )
 
 
+def infer_cadence_heuristic(text: str) -> str | None:
+    """Offline cadence when classify LLM is down (unit tests + schedule worker)."""
+    blob = (text or "").strip()
+    if not blob:
+        return None
+    if _CADENCE_WEEKLY.search(blob):
+        return CADENCE_WEEKLY
+    if _CADENCE_MONTHLY.search(blob):
+        return CADENCE_MONTHLY
+    if _CADENCE_YEARLY.search(blob):
+        return CADENCE_YEARLY
+    if _CADENCE_DAILY.search(blob):
+        return CADENCE_DAILY
+    if _CADENCE_ONCE.search(blob):
+        return CADENCE_ONCE
+    return None
+
+
 def resolve_cadence(raw: str, text: str = "") -> str:
     kind = (raw or "").strip().lower()
     if kind in CADENCES:
@@ -47,6 +78,9 @@ def resolve_cadence(raw: str, text: str = "") -> str:
         cadence = str(plan.get("cadence") or "").strip().lower()
         if cadence in CADENCES:
             return cadence
+        guessed = infer_cadence_heuristic(text)
+        if guessed:
+            return guessed
     return CADENCE_ONCE
 
 

@@ -1,3 +1,11 @@
+## 2026-08-22 15:00 +07 — Lab §15 fixes (Omni-only + offline cadence)
+
+- `plan.infer_cadence_heuristic`: offline cadence when classify LLM unavailable (`workflow_cadence_unit`).
+- `classify.json`: drop `max_tokens` (router default 64; `defaults_profile_unit`).
+- `grafana_pairing_unit` / `defaults_routers_lab`: skip 9router when `ENABLE_9ROUTER=0`.
+- `zalo_latency_lab`: mark SLO exceed as **SLOW** (not FAIL) on local Ollama CPU lab.
+- `backup-zalo-lab-preserve.sh`, `seed-zalo-admin-from-postgres.sh`: fix corrupted allowlist restore.
+
 ## 2026-08-22 14:30 +07 — AGENT_RULES: full §15 + post-lab restore
 
 - §29.1: “run all test cases” = entire `test/RULES.md` §15 Case index (units + VPS).
