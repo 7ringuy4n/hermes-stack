@@ -214,6 +214,17 @@ For each service test:
 7. Re-enable/restart.
 8. Verify recovery.
 
+### Qwen (`ENABLE_QWEN=1`)
+
+Before Zalo reply tests (case 32) or manual Zalo chat on the lab:
+
+1. Run case **38** â€” `python test/scripts/qwen_combo_preflight.py`
+2. If `QWEN_KEY_MISSING`: set `QWEN_API_KEY` in host `.env`, then `bash run.sh first-setup-omnirouter`
+3. Re-run case 38 until `PASS_QWEN_READY`
+4. Optional: `qwen_parallel_recommend_unit.py`, `zalo_tn_qwen_perf.py` when sizing parallel load
+
+Without a Qwen key, inbound Zalo messages succeed but **Hermes sends no reply** (router 400 on empty `hermes` combo).
+
 ## 9. Infrastructure Tests
 
 Test all enabled infrastructure components, including where applicable:
@@ -506,7 +517,7 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/file_pipeline_security_lab.py` | 19 |
 | `test/scripts/grafana_integration_lab.py` | 20 (skip if Grafana off) |
 | `test/scripts/defaults_routers_lab.py` | 21 |
-## Production failure gap cases (40–74)
+## Production failure gap cases (40ï¿½74)
 
 See [cases/README-gap-cases.md](./cases/README-gap-cases.md). Zalo cases inject as **Tn**. On failure, fix source and retry only the failed case (ZALO_HISTORY_CASE=...).
 
