@@ -1,3 +1,17 @@
+## 2026-08-22 15:10 +07 — Release v0.5.24 lab: §15 fixes, Ollama ensure, Zalo SSE gate
+
+### Symptom
+Two-round main lab: 9 §15 fails; real Zalo (Tn) no-reply — model-router 503 (`ollama: All connection attempts failed`), Omni free-tier inactive, Hermes SSE thrash during bridge restart, Zalo send `Tham số không hợp lệ`.
+
+### Root cause
+Ollama bound localhost-only (containers could not reach `host.docker.internal:11434`); no stack-watch heal for Ollama/bridge; Hermes opened SSE before bridge `/health`; corrupted admin allowlist backup; unit tests assumed 9router when `ENABLE_9ROUTER=0`.
+
+### Fix
+`ensure-ollama.sh` (OLLAMA_HOST=0.0.0.0, stack-watch/run.sh/post-lab); model-router Ollama probe; adapter `_wait_for_bridge_ready`; §15 cadence heuristic + Omni-only skips; `seed-zalo-admin-from-postgres.sh`; AGENT_RULES §29 full §15 + post-lab restore.
+
+### Prevent recurrence
+stack-watch + zalo-watch timers; case 38 preflight; `run_case_index_lab.py` batch; post-lab-restore before stopping host.
+
 ## 2026-08-22 12:30 +07 - Postgres pg_hba blocked Docker services on clean deploy
 
 ### Symptom
