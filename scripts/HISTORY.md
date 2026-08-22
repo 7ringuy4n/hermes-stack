@@ -1,3 +1,18 @@
+## 2026-08-22 11:00 +07 - Weather HCMC: searxng-compat 404 + OpenRouter 402
+
+### Symptom
+User message asking current Ho Chi Minh weather took too long and got no useful Zalo reply.
+
+### Root cause
+1. Running router-worker websearch.py was stale (no searxng-compat route) while Hermes called that URL → 404.
+2. OpenRouter combo members hit 402 credits / 502 / 503; retries burned time inside the 150s Zalo queue turn budget.
+
+### Fix
+Rebuild/recreate router-worker; ensure WEB_BACKENDS=omni + HERMES_SEARXNG_URL shim; raise queue turn timeout default to 300s and per-provider search timeout to 30s; document Qwen lab performance.
+
+### Prevent recurrence
+After model-router websearch changes, rebuild router-worker (do not leave an old image). Smoke GET /v1/searxng-compat/search and POST /v1/search before weather tests. Monitor router-worker 404/402 and Hermes queue turn timeout lines.
+
 ## 2026-08-22 10:30 +07 - Compound wait burned queue; /help in greetings; Omni credential spam
 
 ### Symptom

@@ -1,3 +1,10 @@
+## 2026-08-22 11:00 +07 — Weather no-reply: rebuild searxng-compat + longer queue turn
+
+- Lab weather DM hung/no reply: router-worker image missing GET /v1/searxng-compat/search (Hermes SEARXNG_URL 404) while OpenRouter returned 402/502/503.
+- Rebuild router-worker from current model-router; keep WEB_BACKENDS=omni.
+- Raise ZALO_QUEUE_TURN_TIMEOUT_S default 150→300 and WEB_SEARCH_PROVIDER_TIMEOUT_S 20→30 for tool+LLM turns.
+- Docs: docs/QWEN_PERFORMANCE.md; Tn suite zalo_tn_weather_mixed_schedule.py (weather + mixed ≥3 + schedule).
+
 ## 2026-08-22 10:30 +07 — Qwen slim + queue release + SOUL greeting + Omni VPN
 
 - Zalo queue: default skip compound mark_delivered wait (ZALO_COMPOUND_WAIT_FOR_DELIVERY=0) so the next message can run after handle_message.
