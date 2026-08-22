@@ -1,3 +1,8 @@
+## 2026-08-22 12:50 +07 — Skip pre-change backup on clean host (add-components)
+
+- `run.sh add-components` / `remove-components` no longer require postgres backup when
+  no compose project containers exist (first-setup / clean redeploy after wipe).
+
 ## 2026-08-22 12:45 +07 — Release v0.5.21 Postgres pg_hba mount path
 
 - Fix compose bind mount: `./docker/postgres/pg_hba.conf` (project root), not
