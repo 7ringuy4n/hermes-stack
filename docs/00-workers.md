@@ -6,10 +6,12 @@ Core (always on): Hermes, Memory, Router Worker, Traefik local, API Gateway, Val
 
 Runtime data stays on the host (`ASSISTANT_DATA_DIR`, default `/data/assistant`).
 
+Optional workers use **compose-scoped container names** (no global `container_name`). `bash run.sh install …` removes legacy fixed-name orphans (e.g. old `searxng`) before `up`.
+
 | Worker | `run.sh install` | What starts |
 |--------|------------------|-------------|
 | **Schedule** | `schedule` | Go SQLite schedule worker (`schedule-worker`) |
-| **Media\|File** | `media` | Dispatcher, OCR, Jobs, Comfy CPU, SearXNG (bundled) |
+| **Media** | `media` | Dispatcher, OCR, Jobs, Comfy CPU, SearXNG (bundled) |
 | **Security** | `security` | security-manager, authz, SIEM, policy-center + OpenBao |
 | **OpenBao only** | `openbao` | Same as `security` + `ENABLE_OPENBAO=1` |
 | **Notification** | `notify` | notify + alert-watch (does **not** start Security core) |

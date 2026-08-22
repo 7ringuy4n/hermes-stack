@@ -1,3 +1,9 @@
+## 2026-08-22 18:45 +07 — All optional workers: compose-scoped names + orphan cleanup on install
+
+- Optional worker overlays (schedule, media, security, notify, monitor, antivirus, zalo): no global `container_name`.
+- `assistant_remove_stale_worker_containers`: before `up`/`install`, remove legacy fixed-name orphans per enabled worker.
+- `assistant_rm_container_by_service`: uninstall/stop works with compose-scoped or legacy names.
+
 ## 2026-08-22 18:35 +07 — Media worker: drop global container_name (avoid orphan conflicts)
 
 - `docker-compose.media.yml`: remove `container_name` on searxng/ocr/jobs/comfyui — compose-scoped names when installed via `run.sh install media`.
