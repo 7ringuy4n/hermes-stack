@@ -48,9 +48,26 @@ if ! command -v ollama >/dev/null 2>&1; then
 fi
 
 systemctl enable ollama 2>/dev/null || true
+
+# Docker reaches host via host.docker.internal — Ollama must listen beyond 127.0.0.1.
+OLLAMA_LISTEN="${OLLAMA_HOST:-0.0.0.0:11434}"
+dropin="/etc/systemd/system/ollama.service.d"
+if [[ "$(id -u)" -eq 0 ]]; then
+  mkdir -p "$dropin"
+  printf '[Service]\nEnvironment=OLLAMA_HOST=%s\n' "$OLLAMA_LISTEN" >"${dropin}/hermes-docker.conf"
+  systemctl daemon-reload 2>/dev/null || true
+elif command -v sudo >/dev/null 2>&1; then
+  sudo mkdir -p "$dropin"
+  printf '[Service]\nEnvironment=OLLAMA_HOST=%s\n' "$OLLAMA_LISTEN" | sudo tee "${dropin}/hermes-docker.conf" >/dev/null
+  sudo systemctl daemon-reload 2>/dev/null || true
+fi
+
 if ! systemctl is-active ollama >/dev/null 2>&1; then
-  log "start ollama.service"
-  systemctl start ollama 2>/dev/null || true
+  log "start ollama.service (OLLAMA_HOST=${OLLAMA_LISTEN})"
+  systemctl restart ollama 2>/dev/null || systemctl start ollama 2>/dev/null || true
+  sleep 2
+else
+  systemctl restart ollama 2>/dev/null || true
   sleep 2
 fi
 

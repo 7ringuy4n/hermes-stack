@@ -1,6 +1,7 @@
 ## 2026-08-22 15:10 +07 — Root-cause: Ollama ensure + Zalo SSE bridge gate
 
 - `ensure-ollama.sh`: start/pull/verify host Ollama + docker reachability (stack-watch, run.sh, post-lab).
+- `ensure-ollama.sh`: systemd `OLLAMA_HOST=0.0.0.0:11434` so router-worker can reach host Ollama.
 - `model-router`: probe Ollama before candidate pool; `/health` reports `ollama` status.
 - `stack-watch`: heal down Zalo bridge `:8787` and Ollama when `ENABLE_QWEN=1`.
 - `adapter.py`: wait for bridge `/health` before SSE connect (avoids thrash during bridge restart).
