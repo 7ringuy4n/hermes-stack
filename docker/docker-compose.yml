@@ -138,7 +138,6 @@ services:
   schedule-worker:
     profiles: ["schedule"]
     build: ./architect/schedule-worker
-    container_name: schedule-worker
     restart: unless-stopped
     environment:
       - SQLITE_PATH=/data/schedules.db
@@ -225,7 +224,6 @@ services:
       args:
         # ASR wheels are only baked in when the stack runs with WHISPER_ENABLED=1.
         INSTALL_WHISPER: ${WHISPER_ENABLED:-0}
-    container_name: dispatcher
     restart: unless-stopped
     environment:
       # Web search lives on router-worker (/v1/search) — media worker only links to it
@@ -491,7 +489,6 @@ services:
   zalo-proxy:
     profiles: ["zalo"]
     image: ${SOCAT_IMAGE:-alpine/socat:1.8.0.3}
-    container_name: zalo-proxy
     restart: unless-stopped
     command: TCP-LISTEN:8787,fork,reuseaddr TCP:host.docker.internal:8787
     extra_hosts:
@@ -504,7 +501,6 @@ services:
   zalo-api:
     profiles: ["zalo"]
     build: ./architect/zalo-api
-    container_name: zalo-api
     restart: unless-stopped
     environment:
       - ZALO_API_TOKEN=${ZALO_API_TOKEN:-}
