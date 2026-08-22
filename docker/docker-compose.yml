@@ -322,7 +322,7 @@ services:
       # Override WEB_BACKENDS=tavily,firecrawl,searxng only when Omni is off.
       - WEB_BACKENDS=${WEB_BACKENDS:-omni}
       - OMNIROUTER_SEARCH_PROVIDERS=${OMNIROUTER_SEARCH_PROVIDERS:-tavily-search,firecrawl-search,searxng-search}
-      - WEB_SEARCH_PROVIDER_TIMEOUT_S=${WEB_SEARCH_PROVIDER_TIMEOUT_S:-20}
+      - WEB_SEARCH_PROVIDER_TIMEOUT_S=${WEB_SEARCH_PROVIDER_TIMEOUT_S:-30}
       - WEB_EXTRACT_BACKENDS=${WEB_EXTRACT_BACKENDS:-tavily,firecrawl}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
@@ -444,7 +444,7 @@ services:
       - ZALO_INBOUND_QUEUE_MAX=${ZALO_INBOUND_QUEUE_MAX:-16}
       - ZALO_INBOUND_QUEUE_TTL_S=${ZALO_INBOUND_QUEUE_TTL_S:-3600}
       # Hung Hermes turn must not block the next Zalo message forever.
-      - ZALO_QUEUE_TURN_TIMEOUT_S=${ZALO_QUEUE_TURN_TIMEOUT_S:-150}
+      - ZALO_QUEUE_TURN_TIMEOUT_S=${ZALO_QUEUE_TURN_TIMEOUT_S:-300}
       - ZALO_QUEUE_DRAIN_MAX_S=${ZALO_QUEUE_DRAIN_MAX_S:-600}
       - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
       - ZALO_ADMIN_USERS_FILE=/opt/data/zalo_admin_users.txt
