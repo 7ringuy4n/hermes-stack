@@ -1,3 +1,7 @@
+## 2026-08-22 16:30 +07 — Release v0.5.17
+
+Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting fixes, searxng-compat web search + Tavily cascade docs, weather/queue timeouts, mixed đặt-lịch+fuel+weather schedule guard, Tn inject lab suites.
+
 ## 2026-08-22 16:10 +07 — Mixed đặt-lịch+fuel+weather ran as async (dup weather)
 
 - Lab: one bubble “đặt lịch lúc HH:MM + chào + giá xăng + thời tiết” was demoted to immediate workflow (3 parallel jobs); fuel job answered weather → duplicate weather; schedule not stored for 09:50.
