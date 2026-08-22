@@ -55,13 +55,28 @@ def parse_office(prompt: str) -> tuple[str, str]:
 
     body = raw
     m = re.search(
-        r"(?:đi[eề]n|dien|ghi|vi[eế]t|viet|n[oộ]i dung|noi dung)\s*(?:vào|vao|:)?\s*(.+)$",
+        r"(?:đi[eề]n|dien|ghi|vi[eế]t|viet|ch[uứ]a|chua|contain|n[oộ]i dung|noi dung)"
+        r"\s*(?:vào|vao|:)?\s*(.+)$",
         raw,
         re.I | re.S,
     )
     if m:
         body = m.group(1).strip()
-        body = re.sub(r"^(số|so)\s+", "", body, flags=re.I).strip()
+    else:
+        # "tạo file pdf chỉ số 1" / "... so 1" without điền/chứa
+        m_num = re.search(r"(?:ch[iỉ]\s+)?(?:số|so)\s+(.+)$", raw, re.I | re.S)
+        if m_num:
+            body = m_num.group(1).strip()
+
+    body = re.sub(r"^(số|so)\s+", "", body, flags=re.I).strip()
+    # Drop delivery tail so "1 gửi cho tôi" → "1"
+    body = re.sub(
+        r"\s*(?:và\s+)?(?:gửi|gui|send|gởi)\s+(?:cho\s+)?(?:tôi|toi|me)\s*$",
+        "",
+        body,
+        flags=re.I,
+    ).strip()
+    body = re.sub(r"\s+và\s*$", "", body, flags=re.I).strip()
 
     # "10 dòng in hoa ..." → expand lines
     m2 = re.search(

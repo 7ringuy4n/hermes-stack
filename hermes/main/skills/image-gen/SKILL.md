@@ -20,12 +20,13 @@ Only `/opt/data/media/out/<safe-slug>.png` (or `.jpg`). Never `/opt/data/<file>.
 When the user wants **readable exact text** on an image:
 
 - Quoted phrase plus **N lines / fill in / fill with / poster / text**
+- Unquoted: `5 dòng hello`, `điền vào 5 dòng hello`, `vẽ … 5 dòng hello`
 - **Black and white** typography
 - Example: `create a black and white image, fill in 10 lines "SAMPLE TEXT"`
 
-**Do not** use diffusion, ComfyUI, LLM prompt refine, or artistic/canvas-design skills for these — they rewrite text into illegible calligraphy.
+**Do not** use diffusion, ComfyUI, LLM prompt refine, or artistic/canvas-design skills for these — they rewrite text into illegible calligraphy / unrelated photos.
 
-Post the **verbatim user sentence** (keep quotes). Dispatcher auto-detects and renders with Pillow (`backend: text-poster`): N identical centered lines of the exact phrase.
+Post the **verbatim user sentence** (keep quotes). Dispatcher auto-detects and renders with Pillow (`backend: text-poster`): N identical centered lines of the exact phrase. Optional `"mode":"text-poster"`.
 
 ```bash
 mkdir -p /opt/data/media/out && curl -sS -X POST http://dispatcher:8090/v1/image \
