@@ -53,6 +53,7 @@ set -a; . ./.env; set +a
 echo "PROFILE=${{ASSISTANT_PROFILE:-unset}}"
 echo "MODEL_ROUTER=${{ENABLE_MODEL_ROUTER:-1}}"
 echo "OMNI=${{ENABLE_OMNIROUTER:-0}}"
+echo "N9=${{ENABLE_9ROUTER:-0}}"
 echo "GRAFANA=${{ENABLE_GRAFANA:-0}}"
 echo "n9=$(docker inspect -f '{{{{.State.Status}}}}' 9router 2>/dev/null || echo missing)"
 echo "mr=$(docker inspect -f '{{{{.State.Status}}}}' model-router 2>/dev/null || echo missing)"
@@ -83,7 +84,10 @@ echo DEFAULTS_LAB_DONE
         if "DEFAULTS_LAB_DONE" not in out:
             note("lab", "FAIL", "missing done marker")
             return 1
-        if "hermes_to_9router=ok" not in out:
+        nine_off = "N9=0" in out or "ENABLE_9ROUTER=0" in out
+        if nine_off:
+            note("9router", "SKIP", "ENABLE_9ROUTER=0 (Omni-only default)")
+        elif "hermes_to_9router=ok" not in out:
             note("9router", "FAIL", "Hermes cannot reach 9router")
             fails += 1
         else:

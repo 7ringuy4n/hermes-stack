@@ -32,39 +32,7 @@ for PRES in /home/tn/zalo-lab-preserve /home/tn/zalo-round3-preserve; do
   fi
 done
 bash scripts/main/restore-zalo-session.sh 2>/dev/null || true
-# Re-seed admin allowlist from postgres when text files missing/invalid
-python3 - <<'PY' 2>/dev/null || true
-import os, subprocess, sys
-from pathlib import Path
-
-def psql_rows(sql):
-    pg = subprocess.check_output(["docker", "ps", "-q", "--filter", "name=^postgres$"], text=True).strip().split()
-    if not pg:
-        return []
-    env = {}
-    for line in Path("/opt/assistant/.env").read_text(encoding="utf-8", errors="replace").splitlines():
-        s = line.strip()
-        if not s or s.startswith("#") or "=" not in s:
-            continue
-        k, v = s.split("=", 1)
-        env[k.strip()] = v.strip().strip('"').strip("'")
-    u = env.get("MEMORY_DB_USER", "hermes")
-    d = env.get("MEMORY_DB_NAME", "hermes_memory")
-    cmd = ["docker", "exec", pg[0], "psql", "-U", u, "-d", d, "-t", "-A", "-c", sql]
-    out = subprocess.check_output(cmd, text=True, errors="replace")
-    rows = []
-    for line in out.strip().splitlines():
-        parts = line.split("|")
-        if len(parts) >= 2 and parts[0].strip():
-            rows.append((parts[0].strip(), parts[1].strip()))
-    return rows
-
-admins = psql_rows("SELECT id, COALESCE(NULLIF(name,''),'Tn') FROM zalo_entities WHERE kind='admin' LIMIT 5")
-if admins:
-    body = "\n".join(f"{uid}|{name}" for uid, name in admins) + "\n"
-    Path("/data/assistant/zalo_admin_users.txt").write_text(body, encoding="utf-8")
-    print("ADMIN_SEED_OK", len(admins))
-PY
+bash scripts/main/seed-zalo-admin-from-postgres.sh 2>/dev/null || true
 bash scripts/main/setup-zalo.sh 2>&1 | tail -20
 
 log "3) health matrix"
