@@ -57,6 +57,13 @@ def is_qwen_chat_model(model_id: str) -> bool:
 
 
 def qwen_sort_key(model_id: str) -> tuple:
+    """Prefer chat/instruct Qwen that return visible text (not think-only).
+
+    Qwen3.x often spends the whole max_tokens budget inside ``<think>`` and
+    finishes with ``finish_reason=length`` and empty user-visible content —
+    Zalo then waits on compound delivery until the 150s queue turn timeout
+    and the user sees no reply.
+    """
     low = model_id.lower()
     if low.startswith("alibaba/"):
         tier = 0
@@ -68,7 +75,14 @@ def qwen_sort_key(model_id: str) -> tuple:
         tier = 3
     penalty = 0
     if "thinking" in low or "reason" in low:
-        penalty += 2
+        penalty += 5
+    # Qwen3.x chat ids (qwen3.6, qwen3-…) default to hidden reasoning tokens.
+    if re.search(r"qwen3(?:[.\-]|\b)", low) or "/qwen3" in low:
+        penalty += 6
+    if any(x in low for x in ("qwen2.5", "qwen-2.5", "qwen-plus", "qwen-turbo", "qwen-max")):
+        penalty -= 3
+    if "instruct" in low:
+        penalty -= 1
     if "-vl" in low or "vision" in low:
         penalty += 1
     if any(x in low for x in ("235b", "397b", "2.4t", "qwen3-max")):
