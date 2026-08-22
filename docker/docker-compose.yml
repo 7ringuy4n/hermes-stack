@@ -353,10 +353,14 @@ services:
       - INITIAL_PASSWORD=${OMNIROUTER_INITIAL_PASSWORD:-${N9ROUTER_INITIAL_PASSWORD:-unused}}
       - ENABLE_MEMORY=${OMNIROUTER_ENABLE_MEMORY:-1}
       - MEMORY_ENABLED=${OMNIROUTER_ENABLE_MEMORY:-1}
+      # Stop Omni background provider connection tests (scheduler latency / noise).
+      - OMNIROUTE_DISABLE_CREDENTIAL_HEALTH_CHECK=${OMNIROUTE_DISABLE_CREDENTIAL_HEALTH_CHECK:-true}
     volumes:
       - omni_router_data:/app/data
     ports:
-      - "127.0.0.1:${OMNIROUTER_HOST_PORT:-20129}:20129"
+      # Default localhost-only. For OpenVPN admin access from any OS client, set
+      # OMNIROUTER_BIND=0.0.0.0 and firewall-allow only the VPN subnet (see docs).
+      - "${OMNIROUTER_BIND:-127.0.0.1}:${OMNIROUTER_HOST_PORT:-20129}:20129"
     networks: [internal]
 
   hermes:

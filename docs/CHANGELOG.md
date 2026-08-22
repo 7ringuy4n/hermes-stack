@@ -1,3 +1,11 @@
+## 2026-08-22 10:30 +07 — Qwen slim + queue release + SOUL greeting + Omni VPN
+
+- Zalo queue: default skip compound mark_delivered wait (ZALO_COMPOUND_WAIT_FOR_DELIVERY=0) so the next message can run after handle_message.
+- Omni: OMNIROUTE_DISABLE_CREDENTIAL_HEALTH_CHECK=true; slim hermes/classifier to 1–2 Qwen models; dedicated qwen-fast combo for ~1.5B/1.7B; optional deactivate non-Qwen LLM providers.
+- SOUL: warm greeting without Hermes/AI branding; never invent /help slash-commands (still avoids deception_hide phrasing).
+- OpenVPN docs: reach Omni from any OS via SSH tunnel or VPN-bound publish.
+- Test: test/scripts/zalo_tn_qwen_perf.py (Tn inject) for latency + CPU/RAM/disk samples.
+
 ## 2026-08-22 09:10 +07 — Tn greeting inject PASS via gateway.log offsets
 
 - Test no longer false-fails on stale queue-timeout / SOUL lines (TZ cut).
