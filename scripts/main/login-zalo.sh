@@ -13,6 +13,75 @@ set -euo pipefail
 PORT="${ZALO_PLUGIN_PORT:-8787}"
 DATA_DIR="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
 ADMIN_FILE="${ZALO_ADMIN_USERS_FILE:-${DATA_DIR}/zalo_admin_users.txt}"
+HEALTH_URL="http://127.0.0.1:${PORT}/health"
+# After systemd restart the bridge may still be waiting_scan for several seconds.
+ZALO_LOGIN_HEALTH_WAIT_S="${ZALO_LOGIN_HEALTH_WAIT_S:-90}"
+
+bridge_health_ready() {
+  # stdin: JSON from /health → exit 0 when logged in with ownId and session alive
+  python3 -c '
+import json, sys
+raw = sys.stdin.read().strip()
+if not raw:
+    raise SystemExit(1)
+try:
+    d = json.loads(raw)
+except Exception:
+    raise SystemExit(1)
+if d.get("sessionDead") is True:
+    raise SystemExit(1)
+own = str(d.get("ownId") or "").strip()
+if d.get("loggedIn") is True and own:
+    raise SystemExit(0)
+if own and d.get("qr") in (None, "", "null"):
+    raise SystemExit(0)
+raise SystemExit(1)
+'
+}
+
+wait_bridge_logged_in() {
+  local raw="" i max="${ZALO_LOGIN_HEALTH_WAIT_S}"
+  log_wait() { echo "==> $*"; }
+  log_wait "wait for bridge loggedIn + ownId (up to ${max}s after restart)"
+  sleep 2
+  for ((i = 1; i <= max; i++)); do
+    raw="$(curl -sf -m 5 "$HEALTH_URL" 2>/dev/null || true)"
+    if [[ -n "$raw" ]] && printf '%s' "$raw" | bridge_health_ready; then
+      log_wait "bridge ready (${i}s)"
+      printf '%s' "$raw"
+      return 0
+    fi
+    if [[ "$i" -eq 1 || $((i % 15)) -eq 0 ]]; then
+      local state="unreachable"
+      if [[ -n "$raw" ]]; then
+        state="$(printf '%s' "$raw" | python3 -c '
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+except Exception:
+    print("invalid_json"); raise SystemExit(0)
+parts = []
+if d.get("loggedIn") is True:
+    parts.append("loggedIn")
+elif d.get("qr"):
+    parts.append("qr=" + str(d.get("qr")))
+else:
+    parts.append("loggedOut")
+if d.get("ownId"):
+    parts.append("ownId=" + str(d.get("ownId")))
+if d.get("sessionDead"):
+    parts.append("sessionDead")
+print(",".join(parts) or "unknown")
+' 2>/dev/null || echo "invalid_json")"
+      fi
+      log_wait "  … not ready yet (${i}/${max}s, state=${state})"
+    fi
+    sleep 1
+  done
+  log_wait "WARN: bridge not logged in after ${max}s — admin seed may be skipped"
+  printf '%s' "$raw"
+  return 1
+}
 
 echo "==> Zalo login (manual — original bridge: https://github.com/cuongdev/hermes-zalo-plugin )"
 echo "    Author: Cường Tuấn Nguyễn (cuongdev) — MIT"
@@ -41,7 +110,7 @@ systemctl --user try-restart com.hermes.zaloplugin.service 2>/dev/null \
 
 echo
 echo "--- health ---"
-HEALTH_JSON="$(curl -sf "http://127.0.0.1:${PORT}/health" || true)"
+HEALTH_JSON="$(wait_bridge_logged_in || true)"
 if [[ -n "$HEALTH_JSON" ]]; then
   echo "$HEALTH_JSON" | head -c 500
   echo
@@ -61,8 +130,13 @@ try:
     data = json.loads(raw)
 except Exception:
     raise SystemExit(0)
+if data.get("sessionDead") is True:
+    print("SKIP admin seed: bridge sessionDead")
+    raise SystemExit(0)
 own = str(data.get("ownId") or "").strip()
-logged = data.get("loggedIn") is True or bool(own)
+logged = data.get("loggedIn") is True and bool(own)
+if not logged and own and data.get("qr") in (None, "", "null"):
+    logged = True
 if not (logged and own):
     print("SKIP admin seed: bridge not logged in yet (no ownId)")
     raise SystemExit(0)
