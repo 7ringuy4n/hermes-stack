@@ -10,7 +10,7 @@ cd "$ROOT"
 [[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
 [[ -f /data/assistant/.env ]] && set -a && source <(tr -d '\r' < /data/assistant/.env) && set +a
 
-OLLAMA_MODEL="${OLLAMA_MODEL:-qwen2.5:7b}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:4b}"
 OLLAMA_HOST_URL="${OLLAMA_HOST_URL:-http://127.0.0.1:11434}"
 OLLAMA_DOCKER_URL="${OLLAMA_DOCKER_URL:-${OLLAMA_BASE_URL:-http://host.docker.internal:11434}}"
 

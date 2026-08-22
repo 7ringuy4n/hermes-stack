@@ -1,3 +1,15 @@
+## 2026-08-22 21:10 +07 — Lab default: local Qwen3 4B (`qwen3:4b`)
+
+- Defaults: `OLLAMA_MODEL=qwen3:4b` in `.env.example`, `ensure-ollama.sh`, `lab-enable-qwen-local.sh`.
+- `omnirouter_qwen.py`: pin `OLLAMA_MODEL` first in hermes/classifier; prefer local `ollama/qwen3:4b` in sort.
+- Docs: `00-workers.md`, `02-commands.md`, `QWEN_PERFORMANCE.md`, `SETUP.local.md`.
+
+## 2026-08-22 21:00 +07 — model-router: Qwen thinking follows `ENABLE_QWEN`
+
+- `ENABLE_QWEN=1` automatically enables extended-thinking passthrough (`ENABLE_QWEN_THINKING` implied).
+- `qwen2.5` on Ollama still strips thinking (model rejects the field); fix `openai_chat_ok` typo.
+- `docker-compose.yml`: pass `ENABLE_QWEN` + `ENABLE_QWEN_THINKING` into router-worker.
+
 ## 2026-08-22 20:30 +07 — model-router: strip thinking for Omni local Qwen + log exception failovers
 
 - `chat_norm.py`: `sanitize_for_ollama()` drops `thinking` / `reasoning_effort` fields host Ollama rejects.
