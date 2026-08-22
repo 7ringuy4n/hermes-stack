@@ -1,3 +1,16 @@
+﻿## 2026-08-22 17:10 +07 - Prod gap suite, SOUL multi-lang, ENABLE_QWEN empty combos
+
+### Symptom
+Clean production posture still risked stale Omni models in hermes/classifier, Vietnamese-only SOUL tone, and parallel=4 too low for 5-10 concurrent multi-request Zalo users. HISTORY gaps (no-reply, PDF fake send, schedule) needed a Tn regression pack + failure choreography cases.
+
+### Root cause
+Qwen fill was not gated by an explicit component switch; SOUL examples skewed Vietnamese; workflow parallel default undersized; gap matrix lived only outside the repo.
+
+### Fix
+ENABLE_QWEN=0 default with empty round-robin combos; parallel default 8 + sizing table; SOUL multi-language; cases 40-74 + Tn history/parallel scripts.
+
+### Prevent recurrence
+soul_deception_unit + qwen_parallel_recommend_unit; zalo_tn_history_regression (retry single case via ZALO_HISTORY_CASE).
 ## 2026-08-22 16:10 +07 - Mixed schedule bubble: dup weather, missing fuel
 
 ### Symptom
