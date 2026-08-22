@@ -42,6 +42,23 @@ def sanitize_chat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# Hermes may send OpenAI/Anthropic extended-thinking fields; host Ollama rejects them.
+OLLAMA_STRIP_KEYS = (
+    "thinking",
+    "reasoning_effort",
+    "reasoning",
+    "include_reasoning",
+    "effort",
+)
+
+
+def sanitize_for_ollama(payload: dict[str, Any]) -> dict[str, Any]:
+    out = sanitize_chat_payload(payload)
+    for key in OLLAMA_STRIP_KEYS:
+        out.pop(key, None)
+    return out
+
+
 def openai_chat_ok(data: Any) -> bool:
     if not isinstance(data, dict):
         return False
