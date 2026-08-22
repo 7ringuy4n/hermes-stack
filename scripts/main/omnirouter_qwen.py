@@ -11,8 +11,21 @@ from typing import Any, Callable
 HttpJson = Callable[..., tuple[int, dict]]
 
 
+def qwen_enabled(env: dict[str, str] | None = None) -> bool:
+    """Qwen is an optional activatable component (ENABLE_QWEN).
+
+    Default off: hermes/classifier stay empty round-robin aliases until the
+    operator turns Qwen on and provides a DashScope/Alibaba/Qwen key.
+    """
+    src = env if env is not None else {}
+    raw = (src.get("ENABLE_QWEN") or os.environ.get("ENABLE_QWEN") or "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def qwen_api_key(env: dict[str, str] | None = None) -> str:
     src = env if env is not None else {}
+    if not qwen_enabled(src):
+        return ""
     for k in (
         "QWEN_API_KEY",
         "ALIBABA_API_KEY",
@@ -272,6 +285,9 @@ def ensure_combo_qwen_fast(
     strategy: str = "round-robin",
 ) -> tuple[str, bool]:
     """Dedicated combo for small Qwen (1.5B/1.7B-class) — separate from hermes."""
+    if not qwen_enabled() or not qwen_api_key():
+        print(f"NOTE: skip combo {name} (ENABLE_QWEN off or no key)")
+        return name, False
     fast_ids = list_qwen_fast_models(http_json, base, opener)
     _, data = http_json(opener, "GET", f"{base}/api/combos")
     combos = data.get("combos") or []
@@ -348,13 +364,19 @@ def ensure_combo_qwen_first(
     member_count: Callable[[dict], int],
 ) -> tuple[str, bool]:
     drop_probes(opener)
-    qwen_ids = list_qwen_chat_models(http_json, base, opener, classify=classify)
-    qwen_active = bool(qwen_ids)
+    qwen_ids: list[str] = []
+    if qwen_enabled():
+        qwen_ids = list_qwen_chat_models(http_json, base, opener, classify=classify)
+    elif not qwen_enabled():
+        print(f"NOTE: ENABLE_QWEN off — combo {name} will stay empty round-robin")
+    qwen_active = bool(qwen_ids) and bool(qwen_api_key())
 
     _, data = http_json(opener, "GET", f"{base}/api/combos")
     combos = data.get("combos") or []
     existing = next((c for c in combos if (c.get("name") or "") == name), None)
 
+    # Default product posture: empty hermes/classifier with round-robin until
+    # ENABLE_QWEN=1 and a key yields active Qwen chat models.
     if qwen_active:
         # When Qwen is active, use Qwen members only. Keeping prior ollamacloud /
         # other RR members lets sticky round-robin land on empty_choices / slow
@@ -383,50 +405,46 @@ def ensure_combo_qwen_first(
             status, body = http_json(opener, "POST", f"{base}/api/combos", payload)
         if status not in (200, 201):
             raise SystemExit(f"combo {name} {action} failed: {body}")
-    elif existing and existing.get("id"):
-        n = member_count(existing)
-        print(
-            f"==> keep combo {name} ({existing['id']}) members={n} "
-            "(Qwen inactive — not clearing operator models)"
-        )
-        try:
-            http_json(
-                opener,
-                "PUT",
-                f"{base}/api/combos/{existing['id']}",
-                {
-                    "name": name,
-                    "models": existing.get("models") or [],
-                    "strategy": strategy,
-                    "description": description,
-                },
-            )
-        except Exception as e:  # noqa: BLE001
-            print(f"WARN combo {name} strategy refresh: {e}")
     else:
-        print(f"==> create empty combo alias {name} (Qwen inactive)")
+        # Force empty members (round-robin) so first-setup never leaves stale
+        # OpenCode/ollamacloud models in hermes/classifier by default.
+        _ = member_count  # signature compatibility
         payload = {
             "name": name,
             "models": [],
             "strategy": strategy,
             "description": description,
         }
-        created = False
-        for attempt in (
-            payload,
-            {"name": name, "strategy": strategy, "description": description},
-        ):
-            try:
-                status, body = http_json(opener, "POST", f"{base}/api/combos", attempt)
-            except urllib.error.HTTPError as e:
-                print(f"WARN create {name} HTTP {e.code}: {e.read()[:200]!r}")
-                continue
-            if status in (200, 201):
-                created = True
-                break
-            print(f"WARN create {name} rejected: {body}")
-        if not created:
-            raise SystemExit(f"could not create combo alias {name!r}")
+        if existing and existing.get("id"):
+            print(
+                f"==> clear combo {name} ({existing['id']}) to empty "
+                f"round-robin (Qwen inactive / ENABLE_QWEN off)"
+            )
+            status, body = http_json(
+                opener, "PUT", f"{base}/api/combos/{existing['id']}", payload
+            )
+            if status not in (200, 201):
+                print(f"WARN clear {name} failed: {body}")
+        else:
+            print(f"==> create empty combo alias {name} (Qwen inactive)")
+            created = False
+            for attempt in (
+                payload,
+                {"name": name, "strategy": strategy, "description": description},
+            ):
+                try:
+                    status, body = http_json(
+                        opener, "POST", f"{base}/api/combos", attempt
+                    )
+                except urllib.error.HTTPError as e:
+                    print(f"WARN create {name} HTTP {e.code}: {e.read()[:200]!r}")
+                    continue
+                if status in (200, 201):
+                    created = True
+                    break
+                print(f"WARN create {name} rejected: {body}")
+            if not created:
+                raise SystemExit(f"could not create combo alias {name!r}")
 
     try:
         http_json(
