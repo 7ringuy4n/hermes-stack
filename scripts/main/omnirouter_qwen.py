@@ -219,10 +219,86 @@ def list_qwen_chat_models(
         print(f"WARN filter Qwen by active providers: {e}")
 
     ids = sorted(set(ids), key=qwen_sort_key)
-    limit = 4 if classify else 8
+    limit = 1 if classify else 2  # slim: 1 classifier + <=2 hermes Qwen chat models
     out = ids[:limit]
     print(f"==> Qwen chat candidates classify={classify} n={len(out)} sample={out[:5]}")
     return out
+
+
+
+def is_qwen_fast_small(model_id: str) -> bool:
+    """Tiny Qwen (~0.5B–3B / 1.5B / 1.7B) for a dedicated low-latency combo."""
+    low = (model_id or "").lower()
+    if not is_qwen_chat_model(low):
+        return False
+    if any(x in low for x in ("thinking", "reason", "-vl", "vision")):
+        return False
+    return bool(
+        re.search(r"(?:^|[./\-])(?:0\.5b|1\.5b|1\.7b|1b|1\.8b|3b)(?:$|[./\-])", low)
+        or "1.5b" in low
+        or "1.7b" in low
+    )
+
+
+def list_qwen_fast_models(
+    http_json: HttpJson,
+    base: str,
+    opener: Any,
+) -> list[str]:
+    """Best tiny Qwen ids from the full catalog (not the slim hermes limit)."""
+    ids: list[str] = []
+    try:
+        _, data = http_json(opener, "GET", f"{base}/v1/models")
+        for row in data.get("data") or []:
+            if not isinstance(row, dict):
+                continue
+            mid = row.get("id")
+            if isinstance(mid, str) and is_qwen_fast_small(mid):
+                ids.append(mid.strip())
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN list Qwen-fast models: {e}")
+    ids = sorted(set(ids), key=qwen_sort_key)
+    out = ids[:2]
+    print(f"==> Qwen-fast candidates n={len(out)} sample={out}")
+    return out
+
+
+def ensure_combo_qwen_fast(
+    http_json: HttpJson,
+    base: str,
+    opener: Any,
+    *,
+    name: str = "qwen-fast",
+    strategy: str = "round-robin",
+) -> tuple[str, bool]:
+    """Dedicated combo for small Qwen (1.5B/1.7B-class) — separate from hermes."""
+    fast_ids = list_qwen_fast_models(http_json, base, opener)
+    _, data = http_json(opener, "GET", f"{base}/api/combos")
+    combos = data.get("combos") or []
+    existing = next((c for c in combos if (c.get("name") or "") == name), None)
+    if not fast_ids:
+        print(f"NOTE: no tiny Qwen for combo {name} — leave empty/absent")
+        return name, False
+    models = [combo_model_entry(name, i + 1, mid) for i, mid in enumerate(fast_ids)]
+    payload = {
+        "name": name,
+        "models": models,
+        "strategy": strategy,
+        "description": "Dedicated small Qwen (~1.5B/1.7B) for low-latency turns",
+    }
+    action = "update" if existing and existing.get("id") else "create"
+    print(f"==> {action} combo {name} n={len(models)} ids={fast_ids}")
+    if existing and existing.get("id"):
+        status, body = http_json(
+            opener, "PUT", f"{base}/api/combos/{existing['id']}", payload
+        )
+    else:
+        status, body = http_json(opener, "POST", f"{base}/api/combos", payload)
+    if status not in (200, 201):
+        print(f"WARN combo {name} {action} failed: {body}")
+        return name, False
+    return name, True
+
 
 
 def combo_model_entry(combo_name: str, index: int, model_id: str) -> dict:
