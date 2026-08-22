@@ -68,7 +68,7 @@ def qwen_sort_key(model_id: str) -> tuple:
     if low.startswith("alibaba/"):
         tier = 0
     elif low.startswith("groq/") and "qwen" in low:
-        tier = 1
+        tier = 1  # prefer Groq Qwen when OpenRouter is credit-blocked (402)
     elif low.startswith("openrouter/") and "qwen" in low:
         tier = 2
     else:
