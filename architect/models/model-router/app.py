@@ -306,10 +306,9 @@ async def outbound_endpoint(request: Request) -> dict[str, Any]:
         except Exception:
             body = {}
     text = str(body.get("text") or "")
-    last: dict[str, Any] = {}
+    last: dict[str, Any] = {"ok": False, "action": "send", "error": "outbound_llm_failed"}
     candidates = await _candidates("normal")
-    if candidates:
-        _name, base, headers, model = candidates[0]
+    for _name, base, headers, model in candidates:
         last = await outbound_with_llm(
             text,
             client=_client(),
@@ -319,7 +318,7 @@ async def outbound_endpoint(request: Request) -> dict[str, Any]:
         )
         if last.get("ok") and str(last.get("action") or "") in {"send", "drop"}:
             return last
-    return last or {"ok": False, "action": "drop", "error": "outbound_llm_failed"}
+    return last
 
 
 @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
