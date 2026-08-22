@@ -1,3 +1,10 @@
+## 2026-08-22 16:00 +07 — Classify offline heuristics (§15 cases 25/26) + Ollama ping SLO
+
+- `classify.py`: `numbered_list_heuristic_plan` for EN4 multi-step lists (case 25).
+- `classify.py`: `infographic_weather_fuel_plan` for weather+fuel poster (case 26); skip when numbered list.
+- `defaults_routers_lab`: mark ping SLO exceed as **SLOW** (not FAIL) when `OLLAMA_LAB=1`.
+- `schedule_classify_heuristic_unit`: cover EN4 + infographic offline paths.
+
 ## 2026-08-22 15:10 +07 — Root-cause: Ollama ensure + Zalo SSE bridge gate
 
 - `ensure-ollama.sh`: start/pull/verify host Ollama + docker reachability (stack-watch, run.sh, post-lab).
