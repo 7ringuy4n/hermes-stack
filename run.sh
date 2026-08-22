@@ -588,6 +588,13 @@ do_archive_before_change() {
   local reason="${1:-manual}"
   echo "==> current options (before change)"
   assistant_options_dump
+  local project="${COMPOSE_PROJECT_NAME:-assistant}"
+  local existing
+  existing="$(docker ps -aq --filter "label=com.docker.compose.project=${project}" 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "${existing:-0}" -eq 0 ]]; then
+    echo "==> no project containers — skip backup before ${reason} (clean / first-setup host)"
+    return 0
+  fi
   do_backup_first "$reason"
 }
 
