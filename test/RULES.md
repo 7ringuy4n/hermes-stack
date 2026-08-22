@@ -480,11 +480,13 @@ When re-testing a live High/Zalo lab:
 | Hermes dual-replica isolation | `cases/30-hermes-dual-isolation.md` |
 | Schedule fire into a group | `cases/31-schedule-group-fire.md` |
 | Secret-probe paths + AV via Security Worker | `cases/32-secret-probe-path-eicar.md` |
+| Zalo Tn greeting reply (LLM configured) | `cases/32-zalo-tn-greeting-reply.md` |
 | Zalo image / PDF / txt send / queue | `cases/33-zalo-image-pdf-txt-queue.md` |
 | Attachment workers, mixed pack, compound split, schedule remove | `cases/34-zalo-attachment-workers-schedule-remove.md` |
 | Image / video text really read (OCR fallback, ASR) | `cases/35-image-video-text-really-read.md` |
 | PaddleOCR primary for images | `cases/36-paddleocr-primary.md` |
 | Omni rotate + OCR never silent | `cases/37-omni-rotate-ocr-noreply.md` |
+| Qwen combo preflight (key or Ollama + combos) | `cases/38-qwen-combo-preflight.md` |
 
 **Unit scripts (no VPS, run in small batches):**
 
@@ -506,18 +508,34 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/ocr_refuse_unit.py` | 35 (blind model reply must not pass as OCR text) |
 | `test/scripts/paddle_ocr_unit.py` | 36 (PaddleOCR primary; vision opt-in) |
 | `test/scripts/omni_rotate_noreply_unit.py` | 37 (Omni rotate free models; OCR image always acks) |
+| `test/scripts/qwen_combo_preflight.py` | 38 (VPS: ENABLE_QWEN + cloud key or OLLAMA_* + filled combos) |
+| `test/scripts/qwen_parallel_recommend_unit.py` | Qwen parallel sizing table |
+| `test/scripts/soul_deception_unit.py` | SOUL must not trip deception_hide |
 
 **Lab scripts (SSH, one case per invocation — AGENT_RULES §17 / §18: explicit permission required):**
 
 | Script | Case |
 |--------|------|
+| `test/scripts/zalo_tn_greeting_inject.py` | 32 (Tn greeting reply) |
 | `test/scripts/zalo_latency_lab.py` | 17 |
 | `test/scripts/zalo_special_four_lab.py` | 25 |
 | `test/scripts/zalo_weather_fuel_lab.py` | 26 |
 | `test/scripts/file_pipeline_security_lab.py` | 19 |
 | `test/scripts/grafana_integration_lab.py` | 20 (skip if Grafana off) |
 | `test/scripts/defaults_routers_lab.py` | 21 |
-## Production failure gap cases (40�74)
+| `test/scripts/zalo_tn_qwen_parallel_sizing.py` | Qwen parallel by host profile |
+| `test/scripts/zalo_tn_history_regression.py` | HISTORY no-reply / PDF / schedule gaps |
+| `test/scripts/run_case_index_lab.py` | Full §15 batch (units + VPS scripts) |
 
-See [cases/README-gap-cases.md](./cases/README-gap-cases.md). Zalo cases inject as **Tn**. On failure, fix source and retry only the failed case (ZALO_HISTORY_CASE=...).
+## Production failure gap cases (40–74)
+
+See [cases/README-gap-cases.md](./cases/README-gap-cases.md). Zalo cases inject as **Tn**. On failure, fix source and retry only the failed case (`ZALO_HISTORY_CASE=...`).
+
+## Post-lab restore (required)
+
+After the final lab round, before stopping the VPS:
+
+1. `bash scripts/main/post-lab-restore.sh` — Ollama/Qwen, Zalo session, health + preflight + router chat smoke.
+2. Confirm case 38 `PASS` and case 32 greeting inject `PASS` (or document CPU timeout with `ZALO_GREETING_WAIT_S`).
+3. Do not leave `ENABLE_QWEN=1` with empty combos or missing Ollama — that breaks manual Zalo chat (configuration gap, not bridge bug).
 

@@ -22,6 +22,88 @@ def qwen_enabled(env: dict[str, str] | None = None) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def ollama_base_url(env: dict[str, str] | None = None) -> str:
+    src = env if env is not None else {}
+    return (src.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_BASE_URL") or "").strip().rstrip("/")
+
+
+def ollama_chat_model(env: dict[str, str] | None = None) -> str:
+    """Local Ollama Qwen id for hermes/classifier (e.g. ollama/qwen2.5:7b)."""
+    model = (env or {}).get("OLLAMA_MODEL") or os.environ.get("OLLAMA_MODEL") or ""
+    model = model.strip()
+    if not model or not ollama_base_url(env):
+        return ""
+    if "/" in model:
+        return model if is_qwen_chat_model(model) else ""
+    mid = f"ollama/{model}"
+    return mid if is_qwen_chat_model(mid) else ""
+
+
+def ollama_omni_base_url(host_url: str) -> str:
+    """Omni runs in Docker — reach host Ollama via host.docker.internal."""
+    url = (host_url or "").strip().rstrip("/")
+    if not url:
+        return ""
+    return url.replace("127.0.0.1", "host.docker.internal").replace("localhost", "host.docker.internal")
+
+
+def ensure_ollama_local_provider(
+    http_json: HttpJson,
+    base: str,
+    opener: Any,
+    env: dict[str, str],
+) -> dict | None:
+    """Register host Ollama (Qwen 2.5 7B-class) when OLLAMA_BASE_URL is set."""
+    host_url = ollama_base_url(env)
+    if not host_url:
+        return None
+    omni_url = ollama_omni_base_url(host_url)
+    model = ollama_chat_model(env)
+    if not model:
+        print("NOTE: OLLAMA_BASE_URL set but OLLAMA_MODEL is not a Qwen chat model — skip ollama provider")
+        return None
+    _, data = http_json(opener, "GET", f"{base}/api/providers")
+    conns = data.get("connections") or []
+    existing = next(
+        (c for c in conns if str(c.get("provider") or "").lower() == "ollama"),
+        None,
+    )
+    payload = {
+        "provider": "ollama",
+        "name": "local-qwen",
+        "isActive": True,
+        "priority": 1,
+        "apiKey": "ollama",
+        "baseUrl": omni_url,
+        "providerSpecificData": {"baseUrl": omni_url},
+    }
+    if existing and existing.get("id"):
+        cid = existing["id"]
+        print(f"==> update ollama local provider id={cid} base={omni_url}")
+        try:
+            status, body = http_json(opener, "PUT", f"{base}/api/providers/{cid}", payload)
+        except urllib.error.HTTPError as e:
+            print(f"WARN update ollama provider HTTP {e.code}: {e.read()[:200]!r}")
+            return existing if isinstance(existing, dict) else None
+        if status not in (200, 201):
+            print(f"WARN update ollama provider rejected: {body}")
+            return existing if isinstance(existing, dict) else None
+        return body.get("connection") if isinstance(body, dict) else existing
+
+    print(f"==> create ollama local provider base={omni_url} model={model}")
+    try:
+        status, body = http_json(opener, "POST", f"{base}/api/providers", payload)
+    except urllib.error.HTTPError as e:
+        print(f"WARN create ollama provider HTTP {e.code}: {e.read()[:200]!r}")
+        return None
+    if status not in (200, 201):
+        print(f"WARN create ollama provider rejected: {body}")
+        return None
+    conn = body.get("connection") if isinstance(body, dict) else None
+    print(f"==> ollama local provider created id={(conn or {}).get('id')}")
+    return conn if isinstance(conn, dict) else None
+
+
 def qwen_api_key(env: dict[str, str] | None = None) -> str:
     src = env if env is not None else {}
     if not qwen_enabled(src):
@@ -94,6 +176,8 @@ def qwen_sort_key(model_id: str) -> tuple:
         penalty += 6
     if any(x in low for x in ("qwen2.5", "qwen-2.5", "qwen-plus", "qwen-turbo", "qwen-max")):
         penalty -= 3
+    if re.search(r"(?:^|[./\-:])7b(?:$|[./\-:])", low) and "72b" not in low and "32b" not in low:
+        penalty -= 4
     if "instruct" in low:
         penalty -= 1
     if "-vl" in low or "vision" in low:
@@ -231,6 +315,10 @@ def list_qwen_chat_models(
     except Exception as e:  # noqa: BLE001
         print(f"WARN filter Qwen by active providers: {e}")
 
+    local = ollama_chat_model()
+    if local and local not in ids:
+        ids.append(local)
+
     ids = sorted(set(ids), key=qwen_sort_key)
     limit = 1 if classify else 2  # slim: 1 classifier + <=2 hermes Qwen chat models
     out = ids[:limit]
@@ -285,8 +373,8 @@ def ensure_combo_qwen_fast(
     strategy: str = "round-robin",
 ) -> tuple[str, bool]:
     """Dedicated combo for small Qwen (1.5B/1.7B-class) — separate from hermes."""
-    if not qwen_enabled() or not qwen_api_key():
-        print(f"NOTE: skip combo {name} (ENABLE_QWEN off or no key)")
+    if not qwen_enabled():
+        print(f"NOTE: skip combo {name} (ENABLE_QWEN off)")
         return name, False
     fast_ids = list_qwen_fast_models(http_json, base, opener)
     _, data = http_json(opener, "GET", f"{base}/api/combos")
@@ -369,14 +457,17 @@ def ensure_combo_qwen_first(
         qwen_ids = list_qwen_chat_models(http_json, base, opener, classify=classify)
     elif not qwen_enabled():
         print(f"NOTE: ENABLE_QWEN off — combo {name} will stay empty round-robin")
-    qwen_active = bool(qwen_ids) and bool(qwen_api_key())
+    # Active when ENABLE_QWEN=1 and Omni catalog has Qwen on active providers
+    # (OpenRouter/Groq/Ollama/alibaba). DashScope key is optional — only needed
+    # for the alibaba provider connection, not to populate hermes/classifier.
+    qwen_active = bool(qwen_ids) and qwen_enabled()
 
     _, data = http_json(opener, "GET", f"{base}/api/combos")
     combos = data.get("combos") or []
     existing = next((c for c in combos if (c.get("name") or "") == name), None)
 
     # Default product posture: empty hermes/classifier with round-robin until
-    # ENABLE_QWEN=1 and a key yields active Qwen chat models.
+    # ENABLE_QWEN=1 and Omni catalog yields Qwen chat models on active providers.
     if qwen_active:
         # When Qwen is active, use Qwen members only. Keeping prior ollamacloud /
         # other RR members lets sticky round-robin land on empty_choices / slow

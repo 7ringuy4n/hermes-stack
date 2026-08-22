@@ -804,7 +804,7 @@ case "$cmd" in
     if [[ "${ENABLE_QWEN:-0}" == "1" ]]; then
       _qwen_key="${QWEN_API_KEY:-${DASHSCOPE_API_KEY:-${ALIBABA_API_KEY:-}}}"
       if [[ -z "${_qwen_key// /}" ]]; then
-        echo "WARN: ENABLE_QWEN=1 but no QWEN/DASHSCOPE/ALIBABA API key — hermes/classifier combos stay empty; Zalo chat will not get LLM replies until key is set and: bash run.sh first-setup-omnirouter" >&2
+        echo "NOTE: ENABLE_QWEN=1 without DashScope/Alibaba key — hermes/classifier use Omni OpenRouter/Groq/Ollama Qwen; re-run: bash run.sh first-setup-omnirouter if combos empty" >&2
       fi
     fi
     if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then

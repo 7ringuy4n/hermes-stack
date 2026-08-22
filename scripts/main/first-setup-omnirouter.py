@@ -40,12 +40,14 @@ try:
         ensure_alibaba_qwen_provider as _ensure_alibaba_qwen_provider,
         ensure_combo_qwen_fast as _ensure_combo_qwen_fast,
         ensure_combo_qwen_first as _ensure_combo_qwen_first,
+        ensure_ollama_local_provider as _ensure_ollama_local_provider,
     )
 except ImportError:
     from omnirouter_qwen import (  # type: ignore
         ensure_alibaba_qwen_provider as _ensure_alibaba_qwen_provider,
         ensure_combo_qwen_fast as _ensure_combo_qwen_fast,
         ensure_combo_qwen_first as _ensure_combo_qwen_first,
+        ensure_ollama_local_provider as _ensure_ollama_local_provider,
     )
 
 ROOT = Path(os.environ.get("STACK_ROOT", "/opt/assistant"))
@@ -295,6 +297,11 @@ def list_oc_models(opener) -> list[str]:
 def ensure_alibaba_qwen_provider(opener, env: dict[str, str]):
     """Ensure Omni ``alibaba`` provider (Qwen/DashScope) when a key is present."""
     return _ensure_alibaba_qwen_provider(http_json, BASE, opener, env)
+
+
+def ensure_ollama_local_provider(opener, env: dict[str, str]):
+    """Ensure host Ollama (OLLAMA_BASE_URL + OLLAMA_MODEL) for local Qwen 2.5 7B."""
+    return _ensure_ollama_local_provider(http_json, BASE, opener, env)
 
 
 def ensure_empty_combo(
@@ -761,10 +768,11 @@ def main() -> int:
     print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
 
     ensure_alibaba_qwen_provider(opener, env)
-    deactivate_non_qwen_llm_providers(opener)
+    ensure_ollama_local_provider(opener, env)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
     qwen_fast = ensure_qwen_fast_combo(opener)
+    deactivate_non_qwen_llm_providers(opener)
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)

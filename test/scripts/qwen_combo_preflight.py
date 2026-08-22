@@ -27,6 +27,9 @@ for k in QWEN_API_KEY DASHSCOPE_API_KEY ALIBABA_API_KEY; do
   if [ -n "$v" ]; then key=1; echo "${k}_SET=1"; break; fi
 done
 [ -n "$key" ] || echo "QWEN_KEY_SET=0"
+ollama=$(grep -E '^OLLAMA_BASE_URL=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
+omodel=$(grep -E '^OLLAMA_MODEL=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
+if [ -n "$ollama" ] && [ -n "$omodel" ]; then echo "OLLAMA_LOCAL=1"; else echo "OLLAMA_LOCAL=0"; fi
 
 python3 <<'PY'
 import json, os, sqlite3, glob, sys
@@ -47,6 +50,7 @@ for line in Path("/opt/assistant/.env").read_text(encoding="utf-8", errors="repl
     env[k.strip()] = v.strip().strip('"').strip("'")
 enable = env.get("ENABLE_QWEN", "0") == "1"
 key = any(env.get(k, "").strip() for k in ("QWEN_API_KEY", "DASHSCOPE_API_KEY", "ALIBABA_API_KEY"))
+ollama = bool(env.get("OLLAMA_BASE_URL", "").strip() and env.get("OLLAMA_MODEL", "").strip())
 
 def combo_counts():
     dbs = glob.glob("/var/lib/docker/volumes/*omni*/_data/storage.sqlite")
@@ -71,11 +75,14 @@ if not enable:
     print("RESULT PASS_QWEN_OFF")
     sys.exit(0)
 
-if not key:
+if not key and not ollama:
+    if (h or 0) >= 1 and (cl or 0) >= 1:
+        print("RESULT PASS_QWEN_READY")
+        sys.exit(0)
     if (h or 0) == 0 and (cl or 0) == 0:
-        print("RESULT QWEN_KEY_MISSING")
+        print("RESULT QWEN_COMBOS_EMPTY")
         sys.exit(2)
-    print("RESULT FAIL_KEY_MISSING_BUT_COMBOS_NONEMPTY")
+    print("RESULT FAIL_PARTIAL_COMBOS")
     sys.exit(1)
 
 if (h or 0) < 1 or (cl or 0) < 1:
@@ -105,9 +112,9 @@ def main() -> int:
     if "RESULT PASS_QWEN_READY" in out or "RESULT PASS_QWEN_OFF" in out:
         print("PASS_QWEN_COMBO_PREFLIGHT")
         return 0
-    if "RESULT QWEN_KEY_MISSING" in out:
-        print("QWEN_KEY_MISSING (expected — Zalo chat will not reply until key is set)")
-        return 0  # expected negative on lab without key
+    if "RESULT QWEN_COMBOS_EMPTY" in out:
+        print("QWEN_COMBOS_EMPTY — run: bash run.sh first-setup-omnirouter (ENABLE_QWEN=1)")
+        return 2
     print("FAIL_QWEN_COMBO_PREFLIGHT")
     return 1
 
