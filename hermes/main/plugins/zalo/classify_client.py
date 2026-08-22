@@ -385,6 +385,12 @@ def normalize_outbound(data: dict[str, Any] | None) -> dict[str, Any]:
     action = str(src.get("action") or "send").strip().lower()
     if action not in OUTBOUND_ACTIONS:
         action = "send"
+    if src.get("ok") is False:
+        return {
+            "ok": False,
+            "action": action,
+            "error": str(src.get("error") or "outbound_failed"),
+        }
     return {"ok": True, "action": action}
 
 
@@ -413,4 +419,4 @@ def classify_outbound(text: str) -> dict[str, Any]:
             return normalize_outbound(data)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
         pass
-    return {"ok": False, "action": "drop", "error": "outbound_unavailable"}
+    return {"ok": False, "action": "send", "error": "outbound_unavailable"}
