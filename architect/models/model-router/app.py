@@ -116,17 +116,38 @@ def _log_failover(name: str, err: str, model: str) -> None:
     print(f"[route] failover {name}:{err} model={model}", flush=True)
 
 
+def _effective_failover_models(body: dict[str, Any]) -> list[str]:
+    """Drop failovers that cannot satisfy the incoming chat request."""
+    models = list(OMNI_FAILOVER_MODELS)
+    tools = body.get("tools")
+    has_tools = isinstance(tools, list) and bool(tools)
+    if has_tools:
+        models = [m for m in models if not (m or "").strip().lower().startswith("auto/")]
+    # Local Qwen lab: cloud auto/* tiers are inactive without keys — skip noise.
+    if LOCAL_OLLAMA and ENABLE_QWEN:
+        models = [m for m in models if not (m or "").strip().lower().startswith("auto/")]
+    return models
+
+
 def _expand_chat_candidates(
     candidates: list[tuple[str, str, dict[str, str], Optional[str]]],
     *,
     requested_model: str,
+    body: dict[str, Any] | None = None,
 ) -> list[tuple[str, str, dict[str, str], Optional[str]]]:
+    payload = body or {}
+    tools = payload.get("tools")
+    has_tools = isinstance(tools, list) and bool(tools)
+    rotate = OMNI_ROTATE_ATTEMPTS
+    if LOCAL_OLLAMA and ENABLE_QWEN:
+        rotate = min(rotate, 2)
     return expand_chat_candidates(
         candidates,
         requested_model=requested_model,
         default_model=OMNI_DEFAULT_MODEL,
-        failover_models=OMNI_FAILOVER_MODELS,
-        rotate_attempts=OMNI_ROTATE_ATTEMPTS,
+        failover_models=_effective_failover_models(payload),
+        rotate_attempts=rotate,
+        has_tools=has_tools,
     )
 
 app = FastAPI(title="assistant-model-router", version="0.5.0")
@@ -395,6 +416,7 @@ async def proxy(path: str, request: Request) -> Response:
         candidates = _expand_chat_candidates(
             candidates,
             requested_model=str((body or {}).get("model") or OMNI_DEFAULT_MODEL),
+            body=body if isinstance(body, dict) else {},
         )
 
     last_err = ""
