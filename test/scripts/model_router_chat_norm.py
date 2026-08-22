@@ -18,7 +18,7 @@ from chat_norm import (  # noqa: E402
     sanitize_for_ollama,
     should_strip_ollama_thinking,
 )
-from route_expand import upstream_url  # noqa: E402
+from route_expand import expand_chat_candidates, upstream_url  # noqa: E402
 
 
 def main() -> int:
@@ -31,6 +31,28 @@ def main() -> int:
         "http://omni-router:20129/v1/chat/completions"
     ):
         print("FAIL normal upstream url join")
+        return 1
+    omni = [("omni-router", "http://omni/v1", {}, None)]
+    with_tools = expand_chat_candidates(
+        omni,
+        requested_model="hermes",
+        failover_models=["auto/best-free"],
+        rotate_attempts=5,
+        has_tools=True,
+    )
+    tool_models = [m for _, _, _, m in with_tools if m]
+    if "auto/best-free" in tool_models:
+        print("FAIL auto/best-free must be skipped when tools present")
+        return 1
+    without_tools = expand_chat_candidates(
+        omni,
+        requested_model="hermes",
+        failover_models=["auto/best-free"],
+        rotate_attempts=2,
+        has_tools=False,
+    )
+    if "auto/best-free" not in [m for _, _, _, m in without_tools if m]:
+        print("FAIL auto/best-free should remain when no tools")
         return 1
     thinking_payload = sanitize_for_ollama(
         {"messages": [{"role": "user", "content": "hi"}], "thinking": {"type": "enabled"}}

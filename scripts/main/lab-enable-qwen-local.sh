@@ -31,6 +31,8 @@ upsert ENABLE_QWEN 1
 upsert ENABLE_QWEN_THINKING 1
 upsert OLLAMA_BASE_URL "${OLLAMA_DOCKER_URL}"
 upsert OLLAMA_MODEL "${OLLAMA_MODEL}"
+upsert OMNIROUTER_FAILOVER_MODELS ""
+upsert OMNIROUTER_ROTATE_ATTEMPTS 1
 
 log "first-setup-omnirouter (local Qwen combos)"
 bash run.sh first-setup-omnirouter
