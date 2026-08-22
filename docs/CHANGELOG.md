@@ -1,3 +1,10 @@
+## 2026-08-22 12:30 +07 — Postgres Docker network auth (pg_hba)
+
+- Fresh lab volumes could init with localhost-only `pg_hba.conf` and missing
+  `hermes_memory`, breaking workflow/authz/zalo-api (`no pg_hba.conf entry … no encryption`).
+- Mount `docker/postgres/pg_hba.conf` (scram for all hosts) and set
+  `POSTGRES_HOST_AUTH_METHOD=scram-sha-256`.
+
 ## 2026-08-22 11:45 +07 — Agent session cleanup + round-2 clean main
 
 - AGENT_RULES Hard Gates: after a lab/patch session, delete generated one-off
