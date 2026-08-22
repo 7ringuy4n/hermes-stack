@@ -1,3 +1,17 @@
+## 2026-08-22 16:00 +07 — §15 classify heuristics when Ollama JSON fails
+
+### Symptom
+Case index lab on main VPS: case 25 (`zalo_special_four_lab`) HTTP 503 on schedule create; case 26 (`zalo_weather_fuel_lab`) `classify_llm_failed` / `PLAN_N 0`; case 21 ping 5431ms counted as FAIL on Ollama CPU lab.
+
+### Root cause
+`heuristic_plan()` returned None for numbered lists and weather+fuel infographic text when local Qwen could not emit valid classify JSON; workflow rejected empty plans. `defaults_routers_lab` lacked Ollama-lab SLOW tolerance already used in `zalo_latency_lab`.
+
+### Fix
+`numbered_list_heuristic_plan`, `infographic_weather_fuel_plan` (ordered before short-text guards); infographic guard skips ≥2 numbered lines; `defaults_routers_lab` OLLAMA_LAB ping SLOW; unit coverage in `schedule_classify_heuristic_unit`.
+
+### Prevent recurrence
+Run `schedule_classify_heuristic_unit` in §15 batch; mirror Ollama SLO policy across latency + defaults labs.
+
 ## 2026-08-22 15:10 +07 — Release v0.5.24 lab: §15 fixes, Ollama ensure, Zalo SSE gate
 
 ### Symptom
