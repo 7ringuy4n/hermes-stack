@@ -1,173 +1,54 @@
 #!/usr/bin/env bash
-# Manual last step: QR login (or re-login) for the Zalo host bridge.
-# Run ONLY after: profile stack healthy + bash scripts/main/setup-zalo.sh
+# Zalo QR login / re-login for the host bridge.
+#
+# First setup: prefer bash scripts/main/setup-zalo.sh (QR then installs zalo-api).
+# Re-login when stack already running: bash scripts/main/login-zalo.sh
+#
+# Run as deploy user (not root).
 #
 # Attribution: bridge by Cường Tuấn Nguyễn (cuongdev) — hermes-zalo-plugin (MIT).
-#
-# First-setup admin: after loggedIn=true, seed sole admin = bridge ownId
-# (account that logged into Zalo proxy). Then from your personal Zalo:
-#   !zalo claim          — take admin (when seed is still the bridge account)
-#   !zalo admin transfer @tag|uid|reply  — move sole admin to another user
 set -euo pipefail
 
-PORT="${ZALO_PLUGIN_PORT:-8787}"
-DATA_DIR="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
-ADMIN_FILE="${ZALO_ADMIN_USERS_FILE:-${DATA_DIR}/zalo_admin_users.txt}"
-HEALTH_URL="http://127.0.0.1:${PORT}/health"
-# After systemd restart the bridge may still be waiting_scan for several seconds.
-ZALO_LOGIN_HEALTH_WAIT_S="${ZALO_LOGIN_HEALTH_WAIT_S:-90}"
+ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# shellcheck disable=SC1091
+source "${ROOT}/scripts/main/zalo-common.sh"
 
-bridge_health_ready() {
-  # stdin: JSON from /health → exit 0 when logged in with ownId and session alive
-  python3 -c '
-import json, sys
-raw = sys.stdin.read().strip()
-if not raw:
-    raise SystemExit(1)
-try:
-    d = json.loads(raw)
-except Exception:
-    raise SystemExit(1)
-if d.get("sessionDead") is True:
-    raise SystemExit(1)
-own = str(d.get("ownId") or "").strip()
-if d.get("loggedIn") is True and own:
-    raise SystemExit(0)
-if own and d.get("qr") in (None, "", "null"):
-    raise SystemExit(0)
-raise SystemExit(1)
-'
-}
+zalo_ensure_deploy_user
+zalo_ensure_config_writable
 
-wait_bridge_logged_in() {
-  local raw="" i max="${ZALO_LOGIN_HEALTH_WAIT_S}"
-  log_wait() { echo "==> $*"; }
-  log_wait "wait for bridge loggedIn + ownId (up to ${max}s after restart)"
-  sleep 2
-  for ((i = 1; i <= max; i++)); do
-    raw="$(curl -sf -m 5 "$HEALTH_URL" 2>/dev/null || true)"
-    if [[ -n "$raw" ]] && printf '%s' "$raw" | bridge_health_ready; then
-      log_wait "bridge ready (${i}s)"
-      printf '%s' "$raw"
-      return 0
-    fi
-    if [[ "$i" -eq 1 || $((i % 15)) -eq 0 ]]; then
-      local state="unreachable"
-      if [[ -n "$raw" ]]; then
-        state="$(printf '%s' "$raw" | python3 -c '
-import json, sys
-try:
-    d = json.loads(sys.stdin.read())
-except Exception:
-    print("invalid_json"); raise SystemExit(0)
-parts = []
-if d.get("loggedIn") is True:
-    parts.append("loggedIn")
-elif d.get("qr"):
-    parts.append("qr=" + str(d.get("qr")))
-else:
-    parts.append("loggedOut")
-if d.get("ownId"):
-    parts.append("ownId=" + str(d.get("ownId")))
-if d.get("sessionDead"):
-    parts.append("sessionDead")
-print(",".join(parts) or "unknown")
-' 2>/dev/null || echo "invalid_json")"
-      fi
-      log_wait "  … not ready yet (${i}/${max}s, state=${state})"
-    fi
-    sleep 1
-  done
-  log_wait "WARN: bridge not logged in after ${max}s — admin seed may be skipped"
-  printf '%s' "$raw"
-  return 1
-}
-
-echo "==> Zalo login (manual — original bridge: https://github.com/cuongdev/hermes-zalo-plugin )"
-echo "    Author: Cường Tuấn Nguyễn (cuongdev) — MIT"
+echo "==> Zalo login (https://github.com/cuongdev/hermes-zalo-plugin)"
 echo
 
-if ! command -v hermes-zalo-plugin >/dev/null 2>&1; then
-  echo "ERROR: hermes-zalo-plugin not on PATH. Run first: bash scripts/main/setup-zalo.sh" >&2
+if ! zalo_stack_running; then
+  echo "NOTE: zalo-api is not up yet — use setup-zalo for first install:" >&2
+  echo "  bash scripts/main/setup-zalo.sh" >&2
+  echo >&2
+fi
+
+local_health=""
+if ! local_health="$(zalo_qr_login_phase)"; then
+  zalo_teardown_failed_qr
+  echo "ERROR: QR login failed — Zalo bridge not logged in" >&2
   exit 1
 fi
 
-# Prefer interactive QR via upstream CLI
-if hermes-zalo-plugin login 2>/dev/null; then
-  :
-elif hermes-zalo-plugin setup --relogin 2>/dev/null; then
-  :
-else
-  echo "Open QR in browser (tunnel :${PORT} if remote):"
-  echo "  http://127.0.0.1:${PORT}/qr.png"
-  echo "Or: ZALO_FORCE_QR=1 hermes-zalo-plugin start   # then scan"
-  hermes-zalo-plugin setup 2>/dev/null || true
-fi
-
-systemctl --user try-restart com.hermes.zaloplugin.service 2>/dev/null \
-  || systemctl --user try-restart assistant-zalo.service 2>/dev/null \
-  || true
-
 echo
 echo "--- health ---"
-HEALTH_JSON="$(wait_bridge_logged_in || true)"
-if [[ -n "$HEALTH_JSON" ]]; then
-  echo "$HEALTH_JSON" | head -c 500
-  echo
+echo "$local_health" | head -c 500
+echo
+
+zalo_seed_admin "$local_health"
+zalo_backup_session
+
+if zalo_stack_running; then
+  zalo_restart_all_services
 else
-  echo "bridge not responding"
-fi
-
-# Seed sole admin from logged-in proxy account (first setup only).
-# Optional display name: ZALO_ADMIN_DISPLAY_NAME=Tn (develop lab).
-DISP="${ZALO_ADMIN_DISPLAY_NAME:-}"
-python3 - "$ADMIN_FILE" "$HEALTH_JSON" "$DISP" <<'PY' || true
-import json, os, sys
-path, raw, disp = sys.argv[1], sys.argv[2], (sys.argv[3] if len(sys.argv) > 3 else "").strip()
-if not raw:
-    raise SystemExit(0)
-try:
-    data = json.loads(raw)
-except Exception:
-    raise SystemExit(0)
-if data.get("sessionDead") is True:
-    print("SKIP admin seed: bridge sessionDead")
-    raise SystemExit(0)
-own = str(data.get("ownId") or "").strip()
-logged = data.get("loggedIn") is True and bool(own)
-if not logged and own and data.get("qr") in (None, "", "null"):
-    logged = True
-if not (logged and own):
-    print("SKIP admin seed: bridge not logged in yet (no ownId)")
-    raise SystemExit(0)
-# Keep existing sole admin if file already set
-if os.path.isfile(path):
-    for line in open(path, encoding="utf-8"):
-        t = line.strip()
-        if t and not t.startswith("#"):
-            print(f"admin file already set ({path}) — leave unchanged")
-            raise SystemExit(0)
-os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-line = f"{own}|{disp}" if disp else own
-with open(path, "w", encoding="utf-8", newline="\n") as f:
-    f.write("# managed by login-zalo — sole Zalo admin (exactly one)\n")
-    f.write(f"{line}\n")
-print(f"OK: first-setup admin seeded from Zalo proxy login → {line}")
-print(f"     file: {path}")
-PY
-
-# Durable copy for clean redeploy (round 2) — skip QR when credentials restore.
-if [[ -x "${ROOT:-}/scripts/main/backup-zalo-session.sh" ]] || [[ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backup-zalo-session.sh" ]]; then
-  bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backup-zalo-session.sh" || true
+  echo
+  echo "QR OK. Complete first-time install:"
+  echo "  bash scripts/main/setup-zalo.sh"
+  echo "(setup-zalo will skip QR if already logged in)"
 fi
 
 echo
-echo "When loggedIn=true: sg docker -c 'docker restart assistant-hermes-1 zalo-api'"
-echo "Pairing (if prompted): docker exec -it assistant-hermes-1 hermes pairing approve zalo <CODE>"
-echo
-echo "Admin (sole, 1 user — any Zalo account that scanned QR or claimed):"
-echo "  1) login-zalo seeds admin = bridge ownId (account logged into proxy)"
-echo "  2) DM bot: !zalo claim   (same QR account is OK on first setup)"
-echo "  3) Later: !zalo admin transfer @tag   # only one admin"
+echo "Admin (sole): !zalo claim  then  !zalo admin transfer @tag"
 echo "Session backup: \$ASSISTANT_DATA_DIR/zalo-session-backup/credentials.json"
-echo "  restore (no QR): bash scripts/main/restore-zalo-session.sh"

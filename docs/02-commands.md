@@ -9,7 +9,7 @@ cd /opt/assistant
 bash run.sh <command> [args…]
 ```
 
-Set secrets in `.env` **before** `up`. On a clean host, copy `.env.example` to `.env`, fill every `CHANGE_ME_*`, then activate only the workers you need.
+Set secrets in `.env` **before** `up`. Optional workers are **not** in `.env.example` — install them after core `up`.
 
 ---
 
@@ -21,7 +21,10 @@ Set secrets in `.env` **before** `up`. On a clean host, copy `.env.example` to `
 | `destroy` | all installs | Backup+verify, then remove this project's containers + networks (volumes/data kept) |
 | `update` | all installs | Backup+verify, rebuild stack, refresh router bootstrap, prune disk |
 | `workers` / `profile` | all installs | Show worker activation + core flags |
-| `add-components KEY=VAL…` | all installs | Backup+verify, update worker / component flags, then `up` |
+| `install NAME…` | all installs | Short name → `.env` (backup+verify, then `up`) |
+| `uninstall NAME…` | all installs | Deactivate by short name |
+| `install list` | all installs | Show install name catalog |
+| `add-components KEY=VAL…` | all installs | Backup+verify, write `.env`, then `up` (or `--update` on running host) |
 | `switch-profile <…>` | removed | Fails fast with a worker hint |
 | `backup` / `restore` / `verify` / `migrate` | all installs | DR stamp lifecycle |
 | `auto-learn` / `learn-status` | all installs | Knowledge ingest status / one-shot run |
@@ -29,7 +32,7 @@ Set secrets in `.env` **before** `up`. On a clean host, copy `.env.example` to `
 | `check-media` | Media\|File worker | Dispatcher / OCR / Jobs / SearXNG smoke |
 | `check-security` | Security / Monitor / OpenBao components | Security stack smoke |
 | `install-timers` | all installs | systemd timers: auto-learn, backup, stack-watch, and worker-specific extras |
-| `backup-sync-clouddrive` | when `ENABLE_CLOUDDRIVE=1` | Copy latest stamp to CloudDrive mirror |
+| `backup-sync-clouddrive` | when CloudDrive installed | Copy latest stamp to CloudDrive mirror |
 | `channel-status` | all installs | Show attached social-app flags |
 
 ---
@@ -41,21 +44,22 @@ git clone <your-repo-url> /opt/assistant
 cd /opt/assistant
 cp .env.example .env
 python3 scripts/temp/generate_env_secrets.py --out .env --force   # optional local helper
-# edit .env: replace remaining values, choose WORKER_*=active as needed
 sudo bash scripts/main/install-docker.sh   # if Docker is missing
-bash run.sh up
-bash run.sh first-setup-omnirouter
+
+bash run.sh up                             # core stack; workers still inactive
+bash run.sh first-setup-omnirouter         # runs on up when Omni enabled; safe to re-run
+
+# Install optional workers (see docs/00-workers.md):
+bash run.sh install schedule media security notify message monitor
+bash run.sh install list                   # all short names
+bash run.sh workers                        # confirm activation
 ```
 
 For Zalo:
 
 ```bash
-# .env:
-# WORKER_MESSAGE=active
-# ENABLE_ZALO=1
-bash run.sh up
-bash scripts/main/setup-zalo.sh
-bash scripts/main/login-zalo.sh   # manual QR step
+bash scripts/main/setup-zalo.sh            # QR first, then zalo-api + adapter (not sudo)
+bash scripts/main/login-zalo.sh            # re-login when stack already up
 ```
 
 `first-setup-llm` is **optional** and only used when `ENABLE_9ROUTER=1`.
@@ -71,7 +75,7 @@ bash run.sh destroy
 bash run.sh ps
 bash run.sh logs [service]
 bash run.sh workers
-bash run.sh add-components WORKER_MEDIA_FILE=active WORKER_SCHEDULE=active
+bash run.sh install media schedule
 bash run.sh update
 ```
 
@@ -80,6 +84,7 @@ Full recreate:
 ```bash
 bash run.sh destroy
 bash run.sh up
+bash run.sh install schedule media    # re-add workers you need
 ```
 
 Typical source update on a deployed host:
@@ -94,26 +99,34 @@ bash run.sh update
 
 ## Worker changes
 
-Optional workers are off by default:
-
-```env
-WORKER_SCHEDULE=inactive
-WORKER_MEDIA_FILE=inactive
-WORKER_SECURITY=inactive
-WORKER_NOTIFY=inactive
-WORKER_MESSAGE=inactive
-WORKER_MONITOR=inactive
-```
-
-Turn them on with `.env` edits or `add-components`:
+Workers are off until installed. Do **not** hand-edit `WORKER_*` in `.env.example` (those keys are not in the template).
 
 ```bash
-bash run.sh add-components WORKER_MEDIA_FILE=active
-bash run.sh add-components WORKER_SCHEDULE=active WORKER_MESSAGE=active ENABLE_ZALO=1
-bash run.sh add-components WORKER_SECURITY=active WORKER_MONITOR=active
+bash run.sh install media
+bash run.sh install schedule message zalo
+bash run.sh install security monitor openbao
+bash run.sh uninstall zalo
+bash run.sh uninstall traefik
+bash run.sh uninstall gateway
 ```
 
-Every worker change runs **backup + verify first** and aborts on failure.
+Runtime flags on a **running** host — `add-components` + **`--update`** (not plain `up`):
+
+```bash
+bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
+bash run.sh add-components ENABLE_9ROUTER=1 --update
+bash run.sh add-components ENABLE_QWEN=1 OLLAMA_BASE_URL=http://host.docker.internal:11434 OLLAMA_MODEL=qwen2.5:7b --update
+```
+
+Do **not** disable edge with raw flags:
+
+```bash
+# wrong — blocked by run.sh
+bash run.sh add-components ENABLE_TRAEFIK=0
+bash run.sh add-components ENABLE_API_GATEWAY=0
+```
+
+Every worker install/uninstall and every `add-components`/`remove-components` run **backup + verify first** and abort on failure.
 
 ---
 
@@ -133,7 +146,8 @@ bash run.sh migrate
 CloudDrive mirror is separate and optional:
 
 ```bash
-bash run.sh backup-sync-clouddrive   # only when ENABLE_CLOUDDRIVE=1
+bash run.sh install clouddrive
+bash run.sh backup-sync-clouddrive
 ```
 
 Stamps include `config/env.sealed` (full `.env`) and `config/profile-options.env` (non-secret runtime flags).
@@ -147,7 +161,7 @@ bash run.sh auto-learn
 bash run.sh learn-status
 ```
 
-`compact` / `optimize-memory` require the Media\|File worker path (`ENABLE_MEDIA_FILE=1` or bundled OCR / Jobs flags).
+`compact` / `optimize-memory` require the Media\|File worker (`bash run.sh install media`).
 
 ```bash
 bash run.sh compact
@@ -177,7 +191,7 @@ Installed timers depend on enabled components:
 | `assistant-backup.timer` | all installs |
 | `assistant-stack-watch.timer` | all installs |
 | `assistant-compact.timer` | when Media\|File worker is enabled |
-| `assistant-zalo-watch.timer` | when `ENABLE_ZALO=1` |
+| `assistant-zalo-watch.timer` | when Zalo/Message worker is enabled |
 
 ---
 

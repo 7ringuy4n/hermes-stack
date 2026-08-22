@@ -6,23 +6,17 @@ Use **optional workers** instead:
 
 | Doc | Contents |
 |-----|----------|
-| [00-workers.md](./00-workers.md) | Worker activation (`WORKER_*=active\|inactive`) |
+| [00-workers.md](./00-workers.md) | `bash run.sh install <worker>` |
 | [config/DEFAULTS.md](./config/DEFAULTS.md) | Non-secret defaults |
-| [02-commands.md](./02-commands.md) | `run.sh add-components`, `workers`, `up` |
+| [02-commands.md](./02-commands.md) | `run.sh install`, `workers`, `up` |
 
 ```bash
-# Example: Schedule + Media|File + Notify + Message (Zalo)
-# Edit .env then:
 bash run.sh up
-# Or:
-bash run.sh add-components \
-  WORKER_SCHEDULE=active \
-  WORKER_MEDIA_FILE=active \
-  WORKER_NOTIFY=active \
-  WORKER_MESSAGE=active
+bash run.sh install schedule media notify message
+bash run.sh workers
 ```
 
-`bash run.sh switch-profile …` is disabled (returns usage pointing at `add-components`).
+`bash run.sh switch-profile …` is disabled (returns usage pointing at `install` / `add-components`).
 
 ## Routers
 

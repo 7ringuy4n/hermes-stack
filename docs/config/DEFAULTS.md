@@ -30,35 +30,33 @@ Dispatcher (search / image / office HTTP) belongs to the **Media|File Worker** �
 
 ## Default setup — optional workers
 
-```env
-WORKER_SCHEDULE=inactive
-WORKER_MEDIA_FILE=inactive
-WORKER_SECURITY=inactive
-WORKER_NOTIFY=inactive
-WORKER_MESSAGE=inactive
-WORKER_MONITOR=inactive
+Optional workers are **not** in `.env.example`. Defaults (all inactive) come from `architect/backup-restore/lib/workers.sh` until you run:
+
+```bash
+bash run.sh install schedule | media | security | notify | message | monitor
+bash run.sh install list
 ```
 
-Set a worker to `active` (or compatible `ENABLE_*=1`) in host `.env`. Worker-bundled flags:
+Worker-bundled flags when active:
 
-| Worker | Bundled defaults when active |
-|--------|------------------------------|
-| Schedule | `SCHEDULE_URL=http://schedule-worker:8110`, `SCHEDULE_WORKER=1` |
-| Media\|File | dispatcher, OCR, Jobs, office file-gen, Comfy CPU, web search top-3 |
-| Security | security-manager overlay |
-| Notification | notify + alert-watch |
-| Message | Zalo proxy + zalo-api (and Telegram when enabled) |
-| Monitor | Grafana, Prometheus, Loki, Alloy |
+| Worker | Install name | Bundled defaults when active |
+|--------|--------------|------------------------------|
+| Schedule | `schedule` | `SCHEDULE_URL=http://schedule-worker:8110`, `SCHEDULE_WORKER=1` |
+| Media\|File | `media` | dispatcher, OCR, Jobs, office file-gen, Comfy CPU, web search top-3 |
+| Security | `security` / `openbao` | security-manager overlay, OpenBao, authz, SIEM, policy |
+| Notification | `notify` | notify + alert-watch |
+| Message | `message` / `zalo` | zalo-proxy + zalo-api (and Telegram when enabled) |
+| Monitor | `monitor` | Grafana, Prometheus, Loki, Alloy |
 
 ## First setup (clean OS)
 
 1. `sudo bash scripts/main/install-docker.sh` if Docker is missing (or `bash run.sh install-docker`).
 2. Install fail2ban on public VPS before opening SSH widely.
 3. `cp .env.example .env` then fill `CHANGE_ME_*` (or `python3 scripts/temp/generate_env_secrets.py --out .env --force`).
-4. Set workers you need (`WORKER_MESSAGE=active` + `ENABLE_ZALO=1` for Zalo, etc.).
-5. `bash run.sh up`
+4. `bash run.sh up` — core stack only.
+5. `bash run.sh install …` — each worker you need ([00-workers.md](../00-workers.md)).
 6. OmniRouter wiring runs on `up` when `ENABLE_OMNIROUTER=1`. Re-run: `bash run.sh first-setup-omnirouter`.
-7. Zalo (Message worker): `bash scripts/main/setup-zalo.sh` then **manual** `bash scripts/main/login-zalo.sh` (QR).
+7. Zalo: `bash scripts/main/setup-zalo.sh` (QR first, then stack — deploy user, not sudo). Re-login: `login-zalo.sh`.
 
 ```env
 ENABLE_OMNIROUTER=1
@@ -81,6 +79,28 @@ VALKEY_URL=redis://valkey:6379/0
 | `TRAEFIK_ACME_ENABLED` | Let's Encrypt (default **0**) |
 | `ENABLE_API_GATEWAY` | HTTP entry + Valkey rate limit (**core default 1**) |
 | `ENABLE_OPENVPN` | Private admin VPN stub (default **inactive**) |
+
+Turn Traefik / Gateway **off** or **on**:
+
+```bash
+bash run.sh uninstall traefik
+bash run.sh uninstall gateway
+bash run.sh install traefik
+bash run.sh install gateway
+```
+
+Do **not** use `add-components ENABLE_TRAEFIK=0` (blocked by `run.sh`).
+
+## Core flags (`bash run.sh workers` line)
+
+| Shown | Change with | Apply on running host |
+|-------|-------------|------------------------|
+| `OMNI=1` | `ENABLE_OMNIROUTER=1` in section C | `add-components … --update` |
+| `N9=0` | `ENABLE_9ROUTER=1` + `N9ROUTER_INITIAL_PASSWORD` | `add-components … --update` then `first-setup-llm` |
+| `REPLICAS=1` | `HERMES_REPLICAS=2` | `add-components HERMES_REPLICAS=2 --update` |
+| `QUEUE=1` | `ZALO_INBOUND_QUEUE=0` | `add-components ZALO_INBOUND_QUEUE=0 --update` |
+
+`ROUTER=1` (`ENABLE_MODEL_ROUTER`) should stay on in normal installs.
 
 ## Related
 

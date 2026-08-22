@@ -7,7 +7,7 @@ cd /opt/assistant
 bash run.sh <command>
 ```
 
-**Runtime note:** `ASSISTANT_PROFILE=low|medium|high` is legacy. Runtime now uses **workers** (`WORKER_*=active|inactive`) and component flags. Prefer [00-workers.md](./00-workers.md), [config/DEFAULTS.md](./config/DEFAULTS.md), and [02-commands.md](./02-commands.md).
+**Runtime note:** Optional workers use `bash run.sh install <name>` (not keys in `.env.example`). See [00-workers.md](./00-workers.md), [config/DEFAULTS.md](./config/DEFAULTS.md), and [02-commands.md](./02-commands.md).
 
 Legend: **Yes** = included · **No** = not enabled by default · **Opt** = attach / optional flag
 
