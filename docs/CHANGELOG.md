@@ -1,3 +1,9 @@
+## 2026-08-22 08:05 +07 — Zalo greeting no-reply: Qwen-only combo + Tn inject test
+
+- Short DM greeting timed out (150s queue turn) because hermes RR still kept flaky ollamacloud members after Qwen-first fill (empty_choices / slow retries).
+- When Qwen is active, Omni first-setup now sets hermes/classifier to Qwen-only (round-robin among Qwen chat models).
+- Lab case 32 + test/scripts/zalo_tn_greeting_inject.py: inject greeting as allowlisted user Tn via bridge /inject-event.
+
 ## 2026-08-22 07:40 +07 — Qwen/Alibaba provider + hermes/classifier first; scheduleFire/group allow
 
 - Omni first-setup: ensure provider alibaba (connection name qwen) when QWEN_API_KEY / ALIBABA_API_KEY / DASHSCOPE_API_KEY set; fill combos hermes + classifier Qwen-first, strategy round-robin (do not wipe when Qwen inactive).
