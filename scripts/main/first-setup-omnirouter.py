@@ -415,12 +415,16 @@ def _search_connections(opener):
 
 
 def enforce_search_priorities(opener) -> None:
-    """Force Omni unforced /v1/search order: Tavily=1, Firecrawl=2, SearXNG=3.
+    """Best-effort Omni connection priorities: Tavily=1, Firecrawl=2, SearXNG=3.
 
-    Lab drift previously left tavily-search and searxng-search both at priority=1,
-    so Omni's native search picked searxng-search even when Tavily was healthy.
-    Router Worker still forces OMNIROUTER_SEARCH_PROVIDERS order for Hermes; this
-    keeps Omni UI / direct /v1/search consistent with that cascade.
+    Hermes does **not** rely on Omni unforced default: Router Worker forces
+    ``provider`` per ``OMNIROUTER_SEARCH_PROVIDERS`` (Tavily → Firecrawl → SearXNG).
+
+    OmniRoute quirk (lab): unforced ``POST /v1/search`` still reports
+    ``provider=searxng-search`` even when that connection is blocked/deleted;
+    connection ``priority`` may not persist on GET after PUT. Keep connections
+    active for the forced cascade; judge health via forced Tavily smoke +
+    router ``backend=omni:tavily-search``.
     """
     wanted = (
         ("tavily-search", 1),
@@ -444,7 +448,6 @@ def enforce_search_priorities(opener) -> None:
             print(f"WARN enforce {prov} priority: {e}")
 
     by_prov = _search_connections(opener)
-    bad = []
     for prov, prio in wanted:
         row = by_prov.get(prov)
         if not row:
@@ -452,19 +455,12 @@ def enforce_search_priorities(opener) -> None:
         got = row.get("priority")
         active = row.get("isActive")
         print(f"==> verify {prov} priority={got} active={active}")
-        if got != prio:
-            bad.append(f"{prov} expected priority={prio} got={got}")
         if active is False:
-            bad.append(f"{prov} expected isActive=true")
-    if bad:
-        for line in bad:
-            print(f"ERROR search priority: {line}")
-    elif by_prov.get("tavily-search") and by_prov.get("searxng-search"):
-        tp = by_prov["tavily-search"].get("priority")
-        sp = by_prov["searxng-search"].get("priority")
-        if isinstance(tp, int) and isinstance(sp, int) and tp >= sp:
+            print(f"WARN search provider inactive: {prov}")
+        if got != prio:
             print(
-                f"ERROR search priority: tavily priority={tp} must be < searxng priority={sp}"
+                f"NOTE: {prov} priority GET={got} (wanted {prio}); "
+                "Omni may not persist search priorities — Hermes uses forced provider cascade"
             )
 
 
@@ -593,33 +589,48 @@ def ensure_search_providers(opener) -> None:
 
 
 def smoke_omni_search(key: str) -> None:
-    body = json.dumps({"query": "Ho Chi Minh weather", "max_results": 2}).encode()
-    req = urllib.request.Request(
-        f"{BASE}/v1/search",
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=45) as resp:
-            data = json.loads(resp.read().decode() or "{}")
-        n = len(data.get("results") or [])
-        prov = data.get("provider")
-        print(f"==> smoke Omni /v1/search provider={prov} results={n}")
-        if prov == "searxng-search":
-            print(
-                "WARN smoke: Omni defaulted to searxng-search — "
-                "expect tavily-search when Tavily is active (check priorities)"
-            )
-        elif prov == "tavily-search":
-            print("==> smoke OK: Omni default provider=tavily-search")
-    except urllib.error.HTTPError as e:
-        print(f"WARN smoke Omni /v1/search HTTP {e.code}: {e.read()[:200]!r}")
-    except Exception as e:
-        print(f"WARN smoke Omni /v1/search: {e}")
+    # Unforced Omni /v1/search often labels searxng-search even when Tavily works;
+    # Hermes health is forced-provider (matches Router Worker cascade).
+    for label, body_obj in (
+        ("unforced", {"query": "Ho Chi Minh weather", "max_results": 2}),
+        (
+            "forced-tavily",
+            {
+                "query": "Ho Chi Minh weather",
+                "max_results": 2,
+                "provider": "tavily-search",
+            },
+        ),
+    ):
+        body = json.dumps(body_obj).encode()
+        req = urllib.request.Request(
+            f"{BASE}/v1/search",
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode() or "{}")
+            n = len(data.get("results") or [])
+            prov = data.get("provider")
+            print(f"==> smoke Omni /v1/search ({label}) provider={prov} results={n}")
+            if label == "forced-tavily" and prov == "tavily-search" and n > 0:
+                print("==> smoke OK: forced tavily-search returns results")
+            elif label == "forced-tavily":
+                print("WARN smoke: forced tavily-search failed — check Tavily key in Omni")
+            elif label == "unforced" and prov == "searxng-search":
+                print(
+                    "NOTE: Omni unforced default labels searxng-search "
+                    "(product quirk); Hermes uses Router Worker forced cascade"
+                )
+        except urllib.error.HTTPError as e:
+            print(f"WARN smoke Omni /v1/search ({label}) HTTP {e.code}: {e.read()[:200]!r}")
+        except Exception as e:
+            print(f"WARN smoke Omni /v1/search ({label}): {e}")
 
 
 def ensure_combo_round_robin(opener) -> None:
