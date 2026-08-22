@@ -1,3 +1,9 @@
+## 2026-08-22 18:35 +07 — Media worker: drop global container_name (avoid orphan conflicts)
+
+- `docker-compose.media.yml`: remove `container_name` on searxng/ocr/jobs/comfyui — compose-scoped names when installed via `run.sh install media`.
+- `run.sh`: `do_remove_stale_fixed_media_names` before up/update removes legacy `searxng`, `ocr`, … orphans.
+- `backup.sh`: resolve containers by compose service label; stop jobs via `assistant_stop_services`.
+
 ## 2026-08-22 16:00 +07 — Classify offline heuristics (§15 cases 25/26) + Ollama ping SLO
 
 - `classify.py`: `numbered_list_heuristic_plan` for EN4 multi-step lists (case 25).
