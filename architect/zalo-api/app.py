@@ -241,6 +241,21 @@ def _startup_sync_channels() -> None:
         _sync_registry_from_bridge_contacts()
     except Exception:
         pass
+    try:
+        _startup_seed_admin_from_bridge()
+    except Exception:
+        pass
+
+
+def _startup_seed_admin_from_bridge() -> None:
+    """If admin file empty and bridge is logged in, seed sole admin = ownId."""
+    if _admin_users():
+        return
+    h = _bridge_health()
+    own = str(h.get("ownId") or "").strip()
+    logged = h.get("loggedIn") is True or bool(own)
+    if logged and own and h.get("sessionDead") is not True:
+        _write_admin_user(own, "")
 
 
 def _read_admin_file() -> list[dict[str, str]]:
@@ -299,6 +314,36 @@ def _admin_is_bot_placeholder(bot_id: str) -> bool:
     admins = _admin_users()
     bid = (bot_id or "").strip()
     return bool(bid) and admins == {bid}
+
+
+def claim_admin_decision(
+    sender: str,
+    bot_id: str,
+    admins: set[str],
+) -> str:
+    """Who may run !zalo claim.
+
+    Returns: missing_sender | has_other_admin | ok
+
+    The QR-login account (sender == bot_id) is a valid first-setup admin. Lab
+    operators often scan QR as Tn and then DM !zalo claim from the same user.
+    Rejecting that pair left admin_users=0 and a silent/failed claim.
+    Inbound /v1/zalo/chat is already authenticated; do not require a second
+    bridge /health loggedIn check (zalo-api often cannot see host :8787 the
+    same way Hermes does).
+    """
+    sid = (sender or "").strip()
+    if not sid:
+        return "missing_sender"
+    bid = (bot_id or "").strip()
+    admins = {str(a).strip() for a in (admins or set()) if str(a).strip()}
+    if not admins:
+        return "ok"
+    if sid in admins:
+        return "ok"
+    if bid and admins == {bid}:
+        return "ok"
+    return "has_other_admin"
 
 
 def _bridge_health() -> dict[str, Any]:
@@ -1449,23 +1494,12 @@ def chat_command(
             ),
         }
 
-    # First setup / bootstrap: claim sole admin after Zalo proxy is logged in.
+    # First setup / bootstrap: claim sole admin (QR account or a personal DM).
     if cmd in {"claim", "iamadmin", "takeadmin"}:
-        if not sender:
+        decision = claim_admin_decision(sender, bot_id, admins)
+        if decision == "missing_sender":
             return {"ok": True, "handled": True, "reply": "claim cần sender_id"}
-        if bot_id and sender == bot_id:
-            return {
-                "ok": True,
-                "handled": True,
-                "reply": "Không claim bằng chính tài khoản bridge. Dùng Zalo cá nhân của bạn nhắn bot.",
-            }
-        if not _bridge_logged_in():
-            return {
-                "ok": True,
-                "handled": True,
-                "reply": "Zalo proxy chưa login. Chạy: bash scripts/main/login-zalo.sh rồi !zalo claim",
-            }
-        if admins and not _admin_is_bot_placeholder(bot_id):
+        if decision == "has_other_admin":
             cur = next(iter(admins))
             return {
                 "ok": True,
