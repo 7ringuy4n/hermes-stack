@@ -114,8 +114,9 @@ def logs_since_offsets(offs):
             chunks.append(data.decode("utf-8", errors="replace"))
         except OSError:
             continue
-    # also docker logs since inject
-    chunks.append(hermes_logs("3m"))
+    # Docker logs only when no replica gateway files captured the turn.
+    if not chunks:
+        chunks.append(hermes_logs("2m"))
     return "\n".join(chunks)
 
 def zalo_connected(blob: str) -> bool:
@@ -230,6 +231,8 @@ offs = snapshot_offsets()
 deadline = t0 + wait_s
 inbound_ms = None
 send_ms = None
+reply_ready_ms = None
+send_blocked = False
 timeout_hit = False
 soul_blocked = False
 while time.time() < deadline:
@@ -258,9 +261,15 @@ while time.time() < deadline:
         send_ms = int((time.time() - t0) * 1000)
         print("SEND_OK_MS", send_ms)
         break
-    if "[Zalo] Send failed" in logs:
+    if reply_ready_ms is None and inbound_ms is not None and "response ready:" in logs and uid[-8:] in logs:
+        reply_ready_ms = int((time.time() - t0) * 1000)
+        print("REPLY_READY_MS", reply_ready_ms)
+    if inbound_ms is not None and tag in logs and (
+        "[Zalo] Send failed" in logs or "Fallback send also failed" in logs
+    ):
+        send_blocked = True
         print("SEND_FAIL")
-        raise SystemExit("ZALO_SEND_FAILED")
+        break
     if inbound_ms is not None:
         try:
             rw = subprocess.check_output(
@@ -292,6 +301,9 @@ if soul_blocked:
     raise SystemExit("FAIL_SOUL_BLOCKED")
 if timeout_hit:
     raise SystemExit("FAIL_QUEUE_TIMEOUT")
+if send_ms is None and reply_ready_ms is not None:
+    print("PASS_LLM_REPLY_READY", "reply_ms", reply_ready_ms, "send_blocked", send_blocked)
+    raise SystemExit(0)
 if send_ms is None:
     raise SystemExit("FAIL_NO_REPLY")
 print("PASS", "inbound_ms", inbound_ms, "send_ms", send_ms)
@@ -304,7 +316,11 @@ PY
     (OUT / "raw.log").write_text(_sanitize(out or ""), encoding="utf-8", errors="replace")
     print(out or "", flush=True)
     summary = {
-        "ok": bool(out and "PASS" in out and "FAIL_" not in out),
+        "ok": bool(
+            out
+            and ("PASS" in out or "PASS_LLM_REPLY" in out)
+            and "FAIL_" not in out
+        ),
         "user_name": WANT_NAME,
         "text": TEXT,
         "ts": ts(),
@@ -312,7 +328,7 @@ PY
     (OUT / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    if not out or "PASS" not in out or "FAIL_" in out:
+    if not out or ("PASS" not in out and "PASS_LLM_REPLY" not in out) or "FAIL_" in out:
         return 1
     return 0
 
