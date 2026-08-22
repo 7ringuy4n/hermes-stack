@@ -105,8 +105,8 @@ services:
       - HERMES_API_KEY=${API_SERVER_KEY:-}
       - HERMES_WORKFLOW_TIMEOUT_S=${HERMES_WORKFLOW_TIMEOUT_S:-90}
       - MODEL_ROUTER_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
-      - SCHEDULE_URL=${SCHEDULE_URL:-}
-      - SCHEDULE_WORKER=${SCHEDULE_WORKER:-0}
+      - SCHEDULE_URL=${SCHEDULE_URL:-http://schedule-worker:8110}
+      - SCHEDULE_WORKER=${SCHEDULE_WORKER:-1}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     depends_on:
       postgres:
@@ -413,8 +413,8 @@ services:
       - OCR_URL=${OCR_URL:-http://ocr:8091}
       - JOBS_URL=${JOBS_URL:-http://jobs:8104}
       - WORKFLOW_URL=${WORKFLOW_URL:-http://workflow:8108}
-      - SCHEDULE_URL=${SCHEDULE_URL:-}
-      - SCHEDULE_WORKER=${SCHEDULE_WORKER:-0}
+      - SCHEDULE_URL=${SCHEDULE_URL:-http://schedule-worker:8110}
+      - SCHEDULE_WORKER=${SCHEDULE_WORKER:-1}
       - HERMES_WORKFLOW=${HERMES_WORKFLOW:-1}
       - ZALO_WORKFLOW=${ZALO_WORKFLOW:-1}
       - ZALO_WORKFLOW_TURN_TIMEOUT_S=${ZALO_WORKFLOW_TURN_TIMEOUT_S:-420}

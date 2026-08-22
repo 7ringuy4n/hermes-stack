@@ -32,6 +32,18 @@ _TARGET_GROUP_LOOSE_RE = re.compile(
     r"(?:nhóm|nhom|group)\s*[:=\-]?\s*[\"“]?([^\"”\n,;:]{2,80})[\"”]?",
     re.I,
 )
+# Allow-list / admin status phrases — never treat as a group display name.
+_GROUP_REF_NOISE_RE = re.compile(
+    r"(?i)^\s*(?:"
+    r"đã\s*allow(?:\s*\(\s*\d+\s*\))?|"
+    r"da\s*allow(?:\s*\(\s*\d+\s*\))?|"
+    r"already\s*allow(?:ed)?(?:\s*\(\s*\d+\s*\))?|"
+    r"allow(?:ed)?\s*\(\s*\d+\s*\)|"
+    r"nhóm\s+đã\s*allow(?:\s*\(\s*\d+\s*\))?|"
+    r"nhom\s+da\s*allow(?:\s*\(\s*\d+\s*\))?|"
+    r"groups?\s+already\s*allow(?:ed)?"
+    r")\s*$"
+)
 
 
 def _api_base() -> str:
@@ -130,11 +142,18 @@ def remember_inbound(
         )
 
 
+def _clean_group_ref(raw: str) -> str:
+    ref = (raw or "").strip(" \t\"'“”.:-")
+    if not ref or _GROUP_REF_NOISE_RE.match(ref):
+        return ""
+    return ref
+
+
 def extract_target_group_ref(text: str, plan: Optional[dict[str, Any]] = None) -> str:
     """Pull a group name/id from classify plan or schedule wording."""
     src = plan if isinstance(plan, dict) else {}
     for key in ("target_channel", "deliver_to", "target_group", "group_name"):
-        val = str(src.get(key) or "").strip()
+        val = _clean_group_ref(str(src.get(key) or ""))
         if val:
             return val
     blob = (text or "").strip()
@@ -142,10 +161,14 @@ def extract_target_group_ref(text: str, plan: Optional[dict[str, Any]] = None) -
         return ""
     m = _TARGET_GROUP_RE.search(blob)
     if m:
-        return (m.group(1) or "").strip(" \t\"'“”.:-")
+        val = _clean_group_ref(m.group(1) or "")
+        if val:
+            return val
     m2 = _TARGET_GROUP_LOOSE_RE.search(blob)
     if m2:
-        return (m2.group(1) or "").strip(" \t\"'“”.:-")
+        val = _clean_group_ref(m2.group(1) or "")
+        if val:
+            return val
     return ""
 
 

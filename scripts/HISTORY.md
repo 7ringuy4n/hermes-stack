@@ -8,6 +8,23 @@ This is the operator-facing companion to [`docs/CHANGELOG.md`](../docs/CHANGELOG
 
 ---
 
+## 2026-08-22 07:40 +07 — Qwen default + scheduleFire / group allow misfires
+
+### Symptom
+Lab asked for Qwen as Omni/9Router provider and default for hermes+classifier (round-robin, Qwen first). Abnormal replies: group search still looked SearXNG-first; bot said unknown command scheduleFire; schedule target looked like allow-status text.
+
+### Root cause
+1. Combos were emptied / filled without Qwen priority; no alibaba provider wiring in first-setup.
+2. scheduleFire inject could sit behind FIFO / be treated as user text when worker defaults off.
+3. Loose group regex + classify fields accepted allow-list status text as a group name.
+
+### Fix
+- scripts/main/omnirouter_qwen.py + first-setup: alibaba/qwen provider + Qwen-first combos.
+- Zalo: reject allow-status group refs; scheduleFire queue bypass; schedule worker defaults on.
+
+### Prevent recurrence
+Keep only chat Qwen models in classifier. Never parse admin allow status as target_group. Monitor Hermes + Zalo bridge after first-setup.
+
 ## How to add an entry
 
 When you hit a real failure (deploy, cron, Zalo, routers, permissions):
