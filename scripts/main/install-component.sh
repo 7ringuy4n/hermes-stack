@@ -16,30 +16,44 @@ _install_pairs() {
   case "$1" in
     schedule|sched)
       echo WORKER_SCHEDULE=active
+      echo ENABLE_SCHEDULE=1
       ;;
     media|media-file|file)
       echo WORKER_MEDIA_FILE=active
+      echo ENABLE_MEDIA_FILE=1
       echo ENABLE_OCR=1
       echo ENABLE_JOBS=1
       echo ENABLE_SEARXNG=1
+      echo OFFICE_FILE_GEN=1
       ;;
     security|sec)
       echo WORKER_SECURITY=active
+      echo ENABLE_SECURITY=1
+      echo ENABLE_AUTHZ=1
+      echo ENABLE_SIEM=1
+      echo ENABLE_POLICY=1
       ;;
     openbao|bao)
       # OpenBao requires Security worker overlay (workers.sh forces ENABLE_OPENBAO=0 otherwise).
       echo WORKER_SECURITY=active
+      echo ENABLE_SECURITY=1
+      echo ENABLE_AUTHZ=1
+      echo ENABLE_SIEM=1
+      echo ENABLE_POLICY=1
       echo ENABLE_OPENBAO=1
       ;;
     notify|notification)
       echo WORKER_NOTIFY=active
+      echo ENABLE_NOTIFY=1
       ;;
     message|zalo)
       echo WORKER_MESSAGE=active
+      echo ENABLE_MESSAGE=1
       echo ENABLE_ZALO=1
       ;;
     monitor|mon)
       echo WORKER_MONITOR=active
+      echo ENABLE_MONITOR=1
       echo ENABLE_GRAFANA=1
       echo ENABLE_PROMETHEUS=1
       echo ENABLE_LOKI=1
@@ -97,25 +111,36 @@ _uninstall_pairs() {
   case "$1" in
     schedule|sched)
       echo WORKER_SCHEDULE=inactive
+      echo ENABLE_SCHEDULE=0
       ;;
     media|media-file|file)
       echo WORKER_MEDIA_FILE=inactive
+      echo ENABLE_MEDIA_FILE=0
       echo ENABLE_OCR=0
       echo ENABLE_JOBS=0
+      echo ENABLE_SEARXNG=0
+      echo OFFICE_FILE_GEN=0
       ;;
     security|sec|openbao|bao)
       echo WORKER_SECURITY=inactive
+      echo ENABLE_SECURITY=0
       echo ENABLE_OPENBAO=0
+      echo ENABLE_AUTHZ=0
+      echo ENABLE_SIEM=0
+      echo ENABLE_POLICY=0
       ;;
     notify|notification)
       echo WORKER_NOTIFY=inactive
+      echo ENABLE_NOTIFY=0
       ;;
     message|zalo)
       echo WORKER_MESSAGE=inactive
+      echo ENABLE_MESSAGE=0
       echo ENABLE_ZALO=0
       ;;
     monitor|mon|grafana)
       echo WORKER_MONITOR=inactive
+      echo ENABLE_MONITOR=0
       echo ENABLE_GRAFANA=0
       echo ENABLE_PROMETHEUS=0
       echo ENABLE_LOKI=0
@@ -193,7 +218,9 @@ Examples:
   bash run.sh install openbao
   bash run.sh install schedule media message zalo
   bash run.sh install monitor --no-up    # write .env only; then bash run.sh up
+  bash run.sh install schedule media security notify monitor antivirus --update
   bash run.sh uninstall zalo traefik
+  bash run.sh uninstall schedule media security notify monitor antivirus --update
 EOF
 }
 
