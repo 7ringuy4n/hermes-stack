@@ -59,6 +59,17 @@ Mitigations:
 - Raise `ZALO_QUEUE_TURN_TIMEOUT_S` default to **300** and `WEB_SEARCH_PROVIDER_TIMEOUT_S` to **30**.
 - Prefer non-thinking Qwen2.5; slim combos; disable Omni credential health spam.
 
+## Tavily vs “SEARXNG” naming (not the same as default engine)
+
+| Knob | Meaning |
+|------|---------|
+| Hermes `SEARXNG_URL` / `HERMES_SEARXNG_URL` | Points at Router Worker **SearXNG-shaped shim** (`/v1/searxng-compat`). Hermes native `web_search` speaks that protocol; the shim still runs the Omni cascade. |
+| Router `SEARXNG_URL=http://searxng:8080` | Direct local SearXNG container — used only as Omni’s **fallback** adapter base URL. |
+| `OMNIROUTER_SEARCH_PROVIDERS` | Router Worker forced order when calling Omni: **tavily → firecrawl → searxng**. |
+| Omni provider **priority** | Unforced Omni `POST /v1/search` (UI / smoke). Must be Tavily=1, Firecrawl=2, SearXNG=3. |
+
+If Omni shows Tavily active but `provider=searxng-search` on unforced search, both connections likely share **priority=1** (tie → SearXNG). Re-run `scripts/main/first-setup-omnirouter.py` (enforce pass) or `test/scripts/apply_omni_tavily_priority.py`. Hermes weather via shim should still report `backend=omni:tavily-search` when the router cascade is healthy.
+
 ## Tests
 
 | Script | Purpose |

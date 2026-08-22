@@ -403,6 +403,71 @@ def deactivate_non_qwen_llm_providers(opener) -> None:
             print(f"WARN deactivate {c.get('id')}: {e}")
 
 
+def _search_connections(opener):
+    _, data = http_json(opener, "GET", f"{BASE}/api/providers")
+    connections = data.get("connections") or []
+    by_prov = {}
+    for c in connections:
+        prov = str(c.get("provider") or "")
+        if prov in ("tavily-search", "firecrawl-search", "searxng-search"):
+            by_prov[prov] = c
+    return by_prov
+
+
+def enforce_search_priorities(opener) -> None:
+    """Force Omni unforced /v1/search order: Tavily=1, Firecrawl=2, SearXNG=3.
+
+    Lab drift previously left tavily-search and searxng-search both at priority=1,
+    so Omni's native search picked searxng-search even when Tavily was healthy.
+    Router Worker still forces OMNIROUTER_SEARCH_PROVIDERS order for Hermes; this
+    keeps Omni UI / direct /v1/search consistent with that cascade.
+    """
+    wanted = (
+        ("tavily-search", 1),
+        ("firecrawl-search", 2),
+        ("searxng-search", 3),
+    )
+    by_prov = _search_connections(opener)
+    for prov, prio in wanted:
+        row = by_prov.get(prov)
+        if not row or not row.get("id"):
+            continue
+        try:
+            http_json(
+                opener,
+                "PUT",
+                f"{BASE}/api/providers/{row['id']}",
+                {"isActive": True, "priority": prio},
+            )
+            print(f"==> enforce {prov} priority={prio} id={row['id']}")
+        except Exception as e:
+            print(f"WARN enforce {prov} priority: {e}")
+
+    by_prov = _search_connections(opener)
+    bad = []
+    for prov, prio in wanted:
+        row = by_prov.get(prov)
+        if not row:
+            continue
+        got = row.get("priority")
+        active = row.get("isActive")
+        print(f"==> verify {prov} priority={got} active={active}")
+        if got != prio:
+            bad.append(f"{prov} expected priority={prio} got={got}")
+        if active is False:
+            bad.append(f"{prov} expected isActive=true")
+    if bad:
+        for line in bad:
+            print(f"ERROR search priority: {line}")
+    elif by_prov.get("tavily-search") and by_prov.get("searxng-search"):
+        tp = by_prov["tavily-search"].get("priority")
+        sp = by_prov["searxng-search"].get("priority")
+        if isinstance(tp, int) and isinstance(sp, int) and tp >= sp:
+            print(
+                f"ERROR search priority: tavily priority={tp} must be < searxng priority={sp}"
+            )
+
+
 def ensure_search_providers(opener) -> None:
     """Omni UI owns search: Tavily → Firecrawl → SearXNG; block ollama-search."""
     searx_url = (
@@ -412,11 +477,10 @@ def ensure_search_providers(opener) -> None:
     ).rstrip("/")
     print(f"==> ensure Omni search providers (SearXNG base={searx_url})")
 
-    _, data = http_json(opener, "GET", f"{BASE}/api/providers")
-    connections = data.get("connections") or []
-    tavily = next((c for c in connections if c.get("provider") == "tavily-search"), None)
-    firecrawl = next((c for c in connections if c.get("provider") == "firecrawl-search"), None)
-    searx = next((c for c in connections if c.get("provider") == "searxng-search"), None)
+    by_prov = _search_connections(opener)
+    tavily = by_prov.get("tavily-search")
+    firecrawl = by_prov.get("firecrawl-search")
+    searx = by_prov.get("searxng-search")
 
     if tavily and tavily.get("id"):
         try:
@@ -447,6 +511,8 @@ def ensure_search_providers(opener) -> None:
         print("NOTE: no firecrawl-search connection — add API key in Omni Providers → Search")
 
     # Omni stores local SearXNG URL in providerSpecificData.baseUrl (SSRF-aware path).
+    # Do not rely on this PUT for priority — Omni may reset it; enforce_search_priorities
+    # runs a minimal priority-only pass afterward.
     cid = None
     searx_body = {
         "provider": "searxng-search",
@@ -493,6 +559,8 @@ def ensure_search_providers(opener) -> None:
         except Exception as e:
             print(f"WARN searxng test: {e}")
 
+    enforce_search_priorities(opener)
+
     # Drop accidental chat combo named websearch that embeds search providers as models.
     try:
         _, combos = http_json(opener, "GET", f"{BASE}/api/combos")
@@ -510,7 +578,7 @@ def ensure_search_providers(opener) -> None:
     except Exception as e:
         print(f"WARN websearch combo cleanup: {e}")
 
-    # Prefer Tavily/SearXNG over built-in ollama-search for default /v1/search.
+    # Prefer Tavily/Firecrawl/SearXNG over built-in ollama-search for default /v1/search.
     try:
         _, settings = http_json(opener, "GET", f"{BASE}/api/settings")
         blocked = list(settings.get("blockedProviders") or [])
@@ -539,7 +607,15 @@ def smoke_omni_search(key: str) -> None:
         with urllib.request.urlopen(req, timeout=45) as resp:
             data = json.loads(resp.read().decode() or "{}")
         n = len(data.get("results") or [])
-        print(f"==> smoke Omni /v1/search provider={data.get('provider')} results={n}")
+        prov = data.get("provider")
+        print(f"==> smoke Omni /v1/search provider={prov} results={n}")
+        if prov == "searxng-search":
+            print(
+                "WARN smoke: Omni defaulted to searxng-search — "
+                "expect tavily-search when Tavily is active (check priorities)"
+            )
+        elif prov == "tavily-search":
+            print("==> smoke OK: Omni default provider=tavily-search")
     except urllib.error.HTTPError as e:
         print(f"WARN smoke Omni /v1/search HTTP {e.code}: {e.read()[:200]!r}")
     except Exception as e:
