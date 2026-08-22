@@ -543,16 +543,7 @@ do_update() {
   ensure_profile_timers
 
   do_post_ready_learn
-
-  if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
-    if [[ "$(id -u)" -eq 0 ]]; then
-      echo "NEXT (manual, as deploy user — not root): bash scripts/main/setup-zalo.sh"
-    else
-      echo "==> Zalo setup (QR first; deploy user — not sudo)"
-      bash "${SCRIPTS_DIR}/setup-zalo.sh" \
-        || echo "WARN: setup-zalo failed — re-run: bash scripts/main/setup-zalo.sh"
-    fi
-  fi
+  do_zalo_setup_hint
 
   compose ps
   echo "OK: update complete"
@@ -574,6 +565,51 @@ do_post_ready_learn() {
   export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$ASSISTANT_DATA_DIR}"
   python3 "${SCRIPTS_DIR}/post-ready-learn.py" \
     || echo "WARN: post-ready-learn failed — re-run: bash run.sh post-ready-learn"
+}
+
+do_zalo_setup_hint() {
+  [[ "${ENABLE_ZALO:-0}" == "1" ]] || return 0
+  if [[ "$(id -u)" -eq 0 ]]; then
+    echo "NEXT (manual, as deploy user — not root): bash scripts/main/setup-zalo.sh"
+  else
+    echo "NEXT (Zalo QR + adapter): bash scripts/main/setup-zalo.sh"
+  fi
+}
+
+do_post_up_hooks() {
+  # Full stack bring-up hooks — skipped when ASSISTANT_UP_LIGHT=1 (e.g. setup-zalo after QR).
+  ensure_profile_timers
+  if [[ "${ENABLE_9ROUTER:-0}" == "1" && -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
+    echo "==> first-setup-llm (9Router key + hermes combo)"
+    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
+    export HERMES_DATA_DIR="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
+    python3 "${SCRIPTS_DIR}/first-setup-9router-hermes.py" \
+      || echo "WARN: first-setup-llm failed — re-run: bash run.sh first-setup-llm"
+  elif [[ "${ENABLE_9ROUTER:-0}" == "1" ]]; then
+    echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip 9Router first-setup"
+  fi
+  if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+    echo "==> first-setup-omnirouter (empty hermes/classifier; ENABLE_QWEN fills Qwen)"
+    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
+    python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py" \
+      || echo "WARN: first-setup-omnirouter failed — re-run: bash run.sh first-setup-omnirouter"
+  fi
+  if [[ "${ENABLE_QWEN:-0}" == "1" ]]; then
+    _qwen_key="${QWEN_API_KEY:-${DASHSCOPE_API_KEY:-${ALIBABA_API_KEY:-}}}"
+    if [[ -z "${_qwen_key// /}" ]]; then
+      echo "NOTE: ENABLE_QWEN=1 without DashScope/Alibaba key — hermes/classifier use Omni OpenRouter/Groq/Ollama Qwen; re-run: bash run.sh first-setup-omnirouter if combos empty" >&2
+    fi
+    if [[ -n "${OLLAMA_BASE_URL:-}" ]]; then
+      echo "==> ensure-ollama (local Qwen path)"
+      bash "${SCRIPTS_DIR}/ensure-ollama.sh" \
+        || echo "WARN: ensure-ollama failed — stack-watch will retry; Zalo chat may 503 until Ollama is up"
+    fi
+  fi
+  if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then
+    do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
+  fi
+  do_post_ready_learn
+  do_zalo_setup_hint
 }
 
 env_upsert() {
@@ -915,46 +951,10 @@ case "$cmd" in
       echo "==> share Hermes schedules (keep jobs across replica ids)"
       bash "${SCRIPTS_DIR}/hermes-cron-share.sh" || true
     fi
-    ensure_profile_timers
-    # Wire 9Router when ENABLE_9ROUTER=1
-    if [[ "${ENABLE_9ROUTER:-0}" == "1" && -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
-      echo "==> first-setup-llm (9Router key + hermes combo)"
-      export STACK_ROOT="${STACK_ROOT:-$ROOT}"
-      export HERMES_DATA_DIR="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
-      python3 "${SCRIPTS_DIR}/first-setup-9router-hermes.py" \
-        || echo "WARN: first-setup-llm failed — re-run: bash run.sh first-setup-llm"
-    elif [[ "${ENABLE_9ROUTER:-0}" == "1" ]]; then
-      echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip 9Router first-setup"
-    fi
-    if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
-      echo "==> first-setup-omnirouter (empty hermes/classifier; ENABLE_QWEN fills Qwen)"
-      export STACK_ROOT="${STACK_ROOT:-$ROOT}"
-      python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py" \
-        || echo "WARN: first-setup-omnirouter failed — re-run: bash run.sh first-setup-omnirouter"
-    fi
-    if [[ "${ENABLE_QWEN:-0}" == "1" ]]; then
-      _qwen_key="${QWEN_API_KEY:-${DASHSCOPE_API_KEY:-${ALIBABA_API_KEY:-}}}"
-      if [[ -z "${_qwen_key// /}" ]]; then
-        echo "NOTE: ENABLE_QWEN=1 without DashScope/Alibaba key — hermes/classifier use Omni OpenRouter/Groq/Ollama Qwen; re-run: bash run.sh first-setup-omnirouter if combos empty" >&2
-      fi
-      if [[ -n "${OLLAMA_BASE_URL:-}" ]]; then
-        echo "==> ensure-ollama (local Qwen path)"
-        bash "${SCRIPTS_DIR}/ensure-ollama.sh" \
-          || echo "WARN: ensure-ollama failed — stack-watch will retry; Zalo chat may 503 until Ollama is up"
-      fi
-    fi
-    if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then
-      do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
-    fi
-    do_post_ready_learn
-    if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
-      if [[ "$(id -u)" -eq 0 ]]; then
-        echo "NEXT (manual, as deploy user — not root): bash scripts/main/setup-zalo.sh"
-      else
-        echo "==> Zalo setup (QR first; deploy user — not sudo)"
-        bash "${SCRIPTS_DIR}/setup-zalo.sh" \
-          || echo "WARN: setup-zalo failed — re-run: bash scripts/main/setup-zalo.sh"
-      fi
+    if [[ "${ASSISTANT_UP_LIGHT:-0}" == "1" ]]; then
+      echo "==> up (light — compose only; timers: bash run.sh install-timers)"
+    else
+      do_post_up_hooks
     fi
     ;;
   down) compose down ;;
