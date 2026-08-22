@@ -801,6 +801,12 @@ case "$cmd" in
       python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py" \
         || echo "WARN: first-setup-omnirouter failed — re-run: bash run.sh first-setup-omnirouter"
     fi
+    if [[ "${ENABLE_QWEN:-0}" == "1" ]]; then
+      _qwen_key="${QWEN_API_KEY:-${DASHSCOPE_API_KEY:-${ALIBABA_API_KEY:-}}}"
+      if [[ -z "${_qwen_key// /}" ]]; then
+        echo "WARN: ENABLE_QWEN=1 but no QWEN/DASHSCOPE/ALIBABA API key — hermes/classifier combos stay empty; Zalo chat will not get LLM replies until key is set and: bash run.sh first-setup-omnirouter" >&2
+      fi
+    fi
     if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then
       do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
     fi
