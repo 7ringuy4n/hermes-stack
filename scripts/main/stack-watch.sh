@@ -269,6 +269,27 @@ heal_by_health() {
     fi
     probe zalo-api "http://127.0.0.1:${ZALO_API_PORT:-${ADMIN_API_PORT:-8100}}/health" \
       || { failed=1; mark_failed zalo-api; }
+    local zport="${ZALO_PLUGIN_PORT:-8787}"
+    if ! probe zalo-bridge "http://127.0.0.1:${zport}/health"; then
+      log "zalo bridge :${zport} down — restart host unit"
+      if [[ -f "${ROOT}/scripts/main/patch_zalo_bridge_inject.py" ]]; then
+        ZALO_BRIDGE_FORCE_RESTART=1 $SUDO python3 "${ROOT}/scripts/main/patch_zalo_bridge_inject.py" \
+          >/dev/null 2>&1 || true
+      else
+        systemctl --user try-restart com.hermes.zaloplugin.service 2>/dev/null \
+          || systemctl --user try-restart assistant-zalo.service 2>/dev/null \
+          || true
+      fi
+      failed=1
+    fi
+  fi
+
+  if [[ "${ENABLE_QWEN:-0}" == "1" && -n "${OLLAMA_BASE_URL:-}" ]]; then
+    if ! bash "${ROOT}/scripts/main/ensure-ollama.sh" >/dev/null 2>&1; then
+      log "ollama down while ENABLE_QWEN=1 — ensure-ollama failed"
+      failed=1
+      mark_failed router-worker
+    fi
   fi
 
   if [[ "$failed" -ne 0 ]]; then

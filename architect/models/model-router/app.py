@@ -148,6 +148,24 @@ async def _probe(name: str, url: str, headers: Optional[dict] = None) -> bool:
     return ok
 
 
+async def _probe_ollama() -> bool:
+    """Host Ollama must respond before we advertise it as a chat/classify candidate."""
+    if not OLLAMA_BASE:
+        return False
+    now = time.time()
+    hit = _health_cache.get("ollama")
+    if hit and now - hit[0] < HEALTH_TTL_S:
+        return hit[1]
+    ok = False
+    try:
+        r = await _client().get(f"{OLLAMA_BASE}/api/tags", timeout=5.0)
+        ok = r.status_code == 200
+    except Exception:
+        ok = False
+    _health_cache["ollama"] = (now, ok)
+    return ok
+
+
 TASK_ALIASES = {
     "code": "coding",
     "general": "normal",
@@ -223,7 +241,7 @@ async def _candidates(task: str, *, prefer_omni: bool | None = None) -> list[tup
                 FALLBACK_OPENAI_MODEL,
             )
         )
-    if OLLAMA_BASE:
+    if OLLAMA_BASE and await _probe_ollama():
         out.append(("ollama", f"{OLLAMA_BASE}/v1", {}, OLLAMA_MODEL))
     return out
 
@@ -249,12 +267,15 @@ async def health() -> dict[str, Any]:
     omni = False
     if ENABLE_OMNI:
         omni = await _probe("omni", OMNI_BASE, _auth_headers(OMNI_KEY))
+    ollama = await _probe_ollama() if OLLAMA_BASE else False
     return {
         "ok": True,
         "service": "model-router",
         "status": MESSAGES.get("health_ok", "ok"),
         "nine_router": n9,
         "omni_router": omni,
+        "ollama": ollama,
+        "ollama_configured": bool(OLLAMA_BASE),
         "enable_omni": ENABLE_OMNI,
         "task_hints": list(TASK_HINTS),
         "classify": "/v1/classify",

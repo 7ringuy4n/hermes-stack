@@ -14,18 +14,9 @@ OLLAMA_DOCKER_URL="${OLLAMA_DOCKER_URL:-http://host.docker.internal:11434}"
 
 log() { echo "==> $*"; }
 
-if ! command -v ollama >/dev/null 2>&1; then
-  log "install Ollama"
-  curl -fsSL https://ollama.com/install.sh | sh
-fi
-systemctl enable ollama 2>/dev/null || true
-systemctl start ollama 2>/dev/null || true
-sleep 2
-
-if ! curl -fsS -m 8 "${OLLAMA_HOST_URL}/api/tags" 2>/dev/null | grep -q "${OLLAMA_MODEL}"; then
-  log "pull ${OLLAMA_MODEL}"
-  ollama pull "${OLLAMA_MODEL}"
-fi
+bash "${ROOT}/scripts/main/ensure-ollama.sh" || {
+  log "WARN ensure-ollama failed — continuing (may recover on stack-watch)"
+}
 
 upsert() {
   local k="$1" v="$2"
