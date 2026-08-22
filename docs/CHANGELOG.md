@@ -1,3 +1,8 @@
+## 2026-08-22 14:20 +07 — Zalo outbound fail-open when classifier down
+
+- `gateway_noise.drop_outbound`: when `/v1/outbound` is unavailable, send user
+  replies instead of dropping them as approval chatter (fixes greeting no-reply).
+
 ## 2026-08-22 14:10 +07 — router-worker Ollama host gateway
 
 - `docker-compose.yml`: add `extra_hosts: host.docker.internal:host-gateway` on
