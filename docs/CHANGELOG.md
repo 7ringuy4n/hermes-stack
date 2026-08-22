@@ -1,3 +1,9 @@
+## 2026-08-22 19:20 +07 — Fix setup-zalo infinite loop + light compose up
+
+- `setup-zalo.sh`: after QR, call `ASSISTANT_UP_LIGHT=1 run.sh up` (compose only — no timers, Omni/Ollama/learn re-run).
+- `run.sh`: stop auto-invoking `setup-zalo.sh` from `up`/`update` (was looping: setup-zalo → up → setup-zalo); print NEXT hint instead.
+- `zalo-common.sh`: poll `/health` while login CLI runs in background (QR scan no longer hangs setup).
+
 ## 2026-08-22 19:00 +07 — Purge compose-scoped worker containers on install
 
 - `workers.sh`: remove `${project}-${service}-1` and all compose-labeled worker containers (not just legacy fixed names like `searxng`).
