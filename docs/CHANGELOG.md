@@ -1,4 +1,32 @@
-﻿## 2026-08-22 17:20 +07 — Release v0.5.18
+## 2026-08-22 11:35 +07 — Zalo entities in Postgres + lab/prod branch rules
+
+- AGENT_RULES §14: develop lab may use Tn + Vietnamese inject strings; main must
+  accept any sole admin and prefer English production defaults.
+- zalo-api: PostgreSQL SoT for admin / users / DMs / groups / denied
+  (`zalo_entities`); CRUD `GET|POST|DELETE /v1/zalo/entities`, `GET|PUT /v1/zalo/admin`.
+- Text allowlist files remain migrate/mirror only. Compose: `DATABASE_URL` on zalo-api.
+- Session durable backup/restore: `scripts/main/backup-zalo-session.sh`,
+  `restore-zalo-session.sh` (round-2 redeploy without re-scan QR).
+- Tn inject scripts: prefer named admin Tn; with `ZALO_REQUIRE_NAMED_ADMIN=0` fall
+  back to any admin (main).
+
+## 2026-08-22 18:20 +07 — !zalo claim fails when QR account is Tn
+
+- Lab: after QR scan, `!zalo claim` from Tn did nothing useful: bridge often still
+  `loggedIn=false` (stale QR), and claim rejected `sender==bot_id` plus zalo-api
+  `/health` not loggedIn even when the message path was the same account.
+- Claim allows the QR-login uid (same as bot) on first setup; do not require a
+  second personal Zalo. Inbound `/v1/zalo/chat` is enough (no extra health gate).
+- Seed admin from bridge `ownId` on zalo-api startup when the admin file is empty.
+- Pass `ZALO_PLUGIN_TOKEN` into the host bridge systemd override.
+- Unit: `zalo_claim_unit.py`.
+
+## 2026-08-22 17:30 +07 — ENABLE_QWEN is a first-class worker option
+
+- `assistant_option_key_ok` accepts `ENABLE_QWEN` so `run.sh add-components ENABLE_QWEN=1` works.
+- Help text: first-setup-omnirouter creates empty hermes/classifier (Qwen fill when enabled).
+
+## 2026-08-22 17:20 +07 — Release v0.5.18
 
 Promote develop → main: PDF skill collision + office-file, schedule/classify guards, ENABLE_QWEN empty combos, SOUL multi-lang, ZALO_WORKFLOW_PARALLEL=8, production gap cases 40–74.
 
@@ -156,7 +184,7 @@ Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting 
 - Fix: pass `TAVILY_API_KEY` (and Firecrawl) into Hermes; rename knowledge
   skill to `web-search-strategy` to end `web-search` name collision.
 
-﻿## 2026-08-21 16:53 +07 — Omni UI owns search (Tavily → SearXNG)
+## 2026-08-21 16:53 +07 — Omni UI owns search (Tavily → SearXNG)
 
 - Omni Providers: first-setup connects local SearXNG (`providerSpecificData.baseUrl`)
   and prefers Tavily; blocks `ollama-search` for default `/v1/search`.
