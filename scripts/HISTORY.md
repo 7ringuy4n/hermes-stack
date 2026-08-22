@@ -1,18 +1,29 @@
+## 2026-08-22 15:20 +07 - Omni unforced /v1/search always labels SearXNG
+
+### Symptom
+Tavily active; operators still saw “SEARXNG default” (Omni unforced `provider=searxng-search`; Hermes env named `SEARXNG_URL`). Suspected stale router-worker / priority tie.
+
+### Root cause
+1. Naming: Hermes `SEARXNG_URL` → searxng-compat shim, not “prefer SearXNG engine.”
+2. Router-worker was **not** stale (514 lines, searxng-compat present); Hermes `POST /v1/search` already returned `backend=omni:tavily-search`.
+3. OmniRoute quirk: unforced `/v1/search` keeps labeling `searxng-search` even when that connection is blocked or deleted; connection `priority` does not persist on GET after PUT. Forced `provider=tavily-search` works.
+
+### Fix
+Document the quirk; first-setup smoke checks **forced** Tavily; keep Router Worker cascade as Hermes SoT. Do not treat Omni unforced smoke as the Hermes default.
+
+### Prevent recurrence
+Judge search health via router `backend=omni:tavily-search` + forced Tavily smoke. Rebuild router-worker after websearch.py changes. Never hotpatch only on VPS.
+
 ## 2026-08-22 14:50 +07 - Omni defaulted to SearXNG while Tavily active
 
 ### Symptom
-Operators saw Tavily enabled but assumed SearXNG was still the default (Omni smoke / direct `/v1/search` returned `provider=searxng-search`; Hermes env still named `SEARXNG_URL`).
+Operators saw Tavily enabled but assumed SearXNG was still the default.
 
-### Root cause
-1. Naming: Hermes `SEARXNG_URL` targets the searxng-compat shim, not “use SearXNG engine first.”
-2. Omni UI: `tavily-search` and `searxng-search` both had priority=1; unforced Omni search picked SearXNG. Router Worker Hermes path still forced Tavily via `OMNIROUTER_SEARCH_PROVIDERS`.
-3. first-setup PUT of full searxng body could leave priority drifted; no verify pass.
+### Root cause (partial — superseded by 15:20 entry)
+Suspected priority=1 tie + SEARXNG_URL naming; Hermes cascade already Tavily-first.
 
 ### Fix
-Enforce priority-only PUT after provider upsert (1/2/3); verify; smoke warns on searxng default; apply script re-runs first-setup after git pull.
-
-### Prevent recurrence
-After Omni provider edits, confirm priorities Tavily < Firecrawl < SearXNG. Probe both Omni direct and router `/v1/search` backends. Keep router-worker searxng-compat present (`grep -c searxng-compat /app/websearch.py` > 0).
+Priority enforce attempt + apply/probe scripts; later clarified Omni unforced quirk.
 
 ## 2026-08-22 11:00 +07 - Weather HCMC: searxng-compat 404 + OpenRouter 402
 
