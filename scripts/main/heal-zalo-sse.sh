@@ -55,6 +55,18 @@ fi
 
 sleep 5
 port="${ZALO_PLUGIN_PORT:-8787}"
+# Wait for host bridge before Hermes SSE reconnects (avoids connect storm to dead :8787).
+for _i in $(seq 1 20); do
+  if curl -sf -m 3 "http://127.0.0.1:${port}/health" >/dev/null 2>&1; then
+    break
+  fi
+  if [[ "$_i" -eq 1 ]] && [[ -f "${ROOT}/scripts/main/patch_zalo_bridge_inject.py" ]]; then
+    log "bridge not ready — patch/restart host unit"
+    ZALO_BRIDGE_FORCE_RESTART=1 $SUDO python3 "${ROOT}/scripts/main/patch_zalo_bridge_inject.py" \
+      >/dev/null 2>&1 || true
+  fi
+  sleep 1
+done
 health="$(curl -sf -m 5 "http://127.0.0.1:${port}/health" 2>/dev/null || true)"
 if [[ -n "$health" ]]; then
   log "bridge health: ${health}"

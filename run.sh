@@ -806,6 +806,11 @@ case "$cmd" in
       if [[ -z "${_qwen_key// /}" ]]; then
         echo "NOTE: ENABLE_QWEN=1 without DashScope/Alibaba key — hermes/classifier use Omni OpenRouter/Groq/Ollama Qwen; re-run: bash run.sh first-setup-omnirouter if combos empty" >&2
       fi
+      if [[ -n "${OLLAMA_BASE_URL:-}" ]]; then
+        echo "==> ensure-ollama (local Qwen path)"
+        bash "${SCRIPTS_DIR}/ensure-ollama.sh" \
+          || echo "WARN: ensure-ollama failed — stack-watch will retry; Zalo chat may 503 until Ollama is up"
+      fi
     fi
     if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then
       do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"

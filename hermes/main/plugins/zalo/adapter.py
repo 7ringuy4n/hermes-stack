@@ -625,6 +625,37 @@ class ZaloAdapter(BasePlatformAdapter):
 
     # ── Inbound: SSE loop ─────────────────────────────────────────────────
 
+    async def _wait_for_bridge_ready(self, max_wait_s: float = 30.0) -> bool:
+        """Gate SSE connect until host bridge /health responds (bridge restart window)."""
+        import aiohttp
+        import time as _time
+
+        deadline = _time.monotonic() + max_wait_s
+        delay = 0.5
+        while _time.monotonic() < deadline and not self._stop:
+            try:
+                if self._session is None or self._session.closed:
+                    self._session = aiohttp.ClientSession()
+                headers: dict[str, str] = {}
+                if self.bridge_token:
+                    headers["x-bridge-token"] = self.bridge_token
+                timeout = aiohttp.ClientTimeout(total=8)
+                async with self._session.get(
+                    f"{self.bridge_url}/health", headers=headers, timeout=timeout
+                ) as resp:
+                    if resp.status != 200:
+                        raise RuntimeError(f"health status {resp.status}")
+                    data = await resp.json(content_type=None)
+                    if isinstance(data, dict) and (
+                        data.get("loggedIn") is True or data.get("ownId")
+                    ):
+                        return True
+            except Exception:
+                pass
+            await asyncio.sleep(delay)
+            delay = min(delay * 1.5, 3.0)
+        return False
+
     async def _sse_loop(self) -> None:
         """Consume the bridge SSE stream with reconnect + backoff + loop breaker.
 
@@ -646,6 +677,10 @@ class ZaloAdapter(BasePlatformAdapter):
                 if self._session is None or self._session.closed:
                     self._session = aiohttp.ClientSession()
                     logger.info("Zalo: recreated aiohttp session for SSE")
+
+                wait_s = min(max(backoff * 2, 5.0), 30.0)
+                if not await self._wait_for_bridge_ready(max_wait_s=wait_s):
+                    raise RuntimeError(f"bridge health timeout ({self.bridge_url})")
 
                 headers = {}
                 if self.bridge_token:

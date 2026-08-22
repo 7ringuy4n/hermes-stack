@@ -13,7 +13,7 @@ log() { echo "==> $*"; }
 fail=0
 
 log "1) local Qwen (Ollama)"
-bash scripts/main/lab-enable-qwen-local.sh || fail=1
+bash scripts/main/ensure-ollama.sh 2>/dev/null || bash scripts/main/lab-enable-qwen-local.sh || fail=1
 
 log "2) Zalo bridge + session"
 for PRES in /home/tn/zalo-lab-preserve /home/tn/zalo-round3-preserve; do

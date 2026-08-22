@@ -1,3 +1,11 @@
+## 2026-08-22 15:10 +07 — Root-cause: Ollama ensure + Zalo SSE bridge gate
+
+- `ensure-ollama.sh`: start/pull/verify host Ollama + docker reachability (stack-watch, run.sh, post-lab).
+- `model-router`: probe Ollama before candidate pool; `/health` reports `ollama` status.
+- `stack-watch`: heal down Zalo bridge `:8787` and Ollama when `ENABLE_QWEN=1`.
+- `adapter.py`: wait for bridge `/health` before SSE connect (avoids thrash during bridge restart).
+- `heal-zalo-sse.sh`: wait for bridge ready before declaring heal done.
+
 ## 2026-08-22 15:00 +07 — Lab §15 fixes (Omni-only + offline cadence)
 
 - `plan.infer_cadence_heuristic`: offline cadence when classify LLM unavailable (`workflow_cadence_unit`).
