@@ -171,19 +171,18 @@ deadline = t0 + wait_s
 inbound_ms = None
 send_ms = None
 timeout_hit = False
-cut = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t0))
+soul_blocked = False
 while time.time() < deadline:
-    logs = hermes_logs("5m")
-    fresh = []
-    for line in logs.splitlines():
-        if len(line) >= 19 and line[0:4].isdigit() and line[:19] < cut:
-            continue
-        fresh.append(line)
-    logs = "\n".join(fresh)
-    if inbound_ms is None and ("Zalo inbound:" in logs or tag in logs):
+    since_s = max(5, int(time.time() - t0) + 5)
+    logs = hermes_logs(str(since_s) + "s")
+    if "deception_hide" in logs and "SOUL" in logs:
+        soul_blocked = True
+        print("SOUL_BLOCKED_DECEPTION_HIDE")
+        break
+    if inbound_ms is None and (tag in logs or "Zalo inbound:" in logs):
         inbound_ms = int((time.time() - t0) * 1000)
         print("INBOUND_MS", inbound_ms)
-    if "queue turn timeout" in logs and (tag in logs or uname in logs or uid[-8:] in logs):
+    if "queue turn timeout" in logs and (uid[-8:] in logs or tag in logs or uname in logs):
         timeout_hit = True
         print("QUEUE_TURN_TIMEOUT")
         break
@@ -199,6 +198,8 @@ while time.time() < deadline:
 h2 = get("http://127.0.0.1:8787/health")
 print("SSE_AFTER", h2.get("sseClients"), "loggedIn", h2.get("loggedIn"))
 
+if soul_blocked:
+    raise SystemExit("FAIL_SOUL_BLOCKED")
 if timeout_hit:
     raise SystemExit("FAIL_QUEUE_TIMEOUT")
 if send_ms is None:
