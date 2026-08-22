@@ -16,17 +16,19 @@ if hasattr(sys.stdout, "buffer"):
 WANT_NAME = (os.environ.get("ZALO_TEST_USER_NAME") or "Tn").strip()
 WAIT_S = int(os.environ.get("ZALO_CASE_WAIT_S") or "90")
 
-REMOTE = r"""
+REMOTE = rf"""
 set -euo pipefail
+export LC_ALL=C.UTF-8
 cd /opt/assistant
-python3 <<'PY'
-import json, time, urllib.request, re
+set -a; . ./.env; set +a
+python3 - <<'PY'
+import json, time, urllib.request, os, re
 from pathlib import Path
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-want = __WANT_NAME__
-wait_s = __WAIT_S__
+want_name = {WANT_NAME!r}
+wait_s = {WAIT_S}
 tz = ZoneInfo("Asia/Ho_Chi_Minh")
 fire_at = (datetime.now(tz) + timedelta(hours=2)).replace(second=0, microsecond=0)
 hhmm = fire_at.strftime("%H:%M")
@@ -37,63 +39,67 @@ text = (
     "[%s]"
 ) % (hhmm, tag)
 
-def find_uid():
-    roots = []
-    for base in (Path("/data/assistant"), Path("/opt/data")):
-        if base.is_dir():
-            roots.extend(base.rglob("*allow*"))
-    for p in roots:
-        if not p.is_file():
-            continue
-        try:
-            data = json.loads(p.read_text(encoding="utf-8", errors="replace"))
-        except Exception:
-            continue
-        def walk(o):
-            if isinstance(o, dict):
-                name = str(o.get("name") or o.get("displayName") or "")
-                if name == want:
-                    return str(o.get("id") or o.get("userId") or "")
-                for v in o.values():
-                    r = walk(v)
-                    if r:
-                        return r
-            if isinstance(o, list):
-                for i in o:
-                    r = walk(i)
-                    if r:
-                        return r
-            return ""
-        uid = walk(data)
-        if uid:
-            return uid
-    return ""
-
-uid = find_uid()
-print("uid_len", len(uid), "hhmm", hhmm, "tag", tag)
-assert uid, "missing Tn id"
-offs = {}
-for root in (Path("/data/assistant/replicas"), Path("/opt/data/replicas")):
-    if not root.is_dir():
+uid = ""
+uname = ""
+for path in (
+    "/data/assistant/zalo_admin_users.txt",
+    "/opt/data/zalo_admin_users.txt",
+):
+    p = Path(path)
+    if not p.is_file():
         continue
-    for f in root.glob("*/logs/gateway.log"):
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        left, sep, right = raw.partition("|")
+        cand = left.strip()
+        name = right.strip()
+        if not cand:
+            continue
+        if want_name and name.lower() == want_name.lower():
+            uid, uname = cand, name
+            break
+        if not uid:
+            uid, uname = cand, name or "admin"
+    if uid and want_name and uname.lower() == want_name.lower():
+        break
+if not uid:
+    raise SystemExit("NO_ADMIN_USER")
+print("USER_NAME", uname, "hhmm", hhmm, "tag", tag)
+
+offs = {{}}
+for root in ("/data/assistant/replicas", "/opt/data/replicas"):
+    base = Path(root)
+    if not base.is_dir():
+        continue
+    for f in base.glob("*/logs/gateway.log"):
         offs[str(f)] = f.stat().st_size
-body = {
+
+tok = (os.environ.get("ZALO_PLUGIN_TOKEN") or "").strip()
+headers = {{"Content-Type": "application/json"}}
+if tok:
+    headers["Authorization"] = "Bearer " + tok
+payload = {{
     "type": "message",
-    "threadId": uid,
-    "threadType": "user",
-    "senderId": uid,
-    "senderName": want,
-    "text": text,
-}
+    "payload": {{
+        "threadId": uid,
+        "threadType": "user",
+        "senderId": uid,
+        "senderName": uname,
+        "text": text,
+        "isSelf": False,
+    }},
+}}
 req = urllib.request.Request(
     "http://127.0.0.1:8787/inject-event",
-    data=json.dumps(body).encode(),
-    headers={"Content-Type": "application/json"},
+    data=json.dumps(payload).encode(),
+    headers=headers,
     method="POST",
 )
 with urllib.request.urlopen(req, timeout=20) as r:
-    print("inject", r.status, r.read()[:120])
+    print("inject", r.status, r.read()[:160])
+
 time.sleep(wait_s)
 chunks = []
 for path, off in offs.items():
@@ -106,7 +112,7 @@ stored = bool(re.search(r"schedule stored|Đã lưu lịch|Da luu lich", blob, r
 wf = bool(re.search(r"workflow created jobs=\s*[2-9]", blob, re.I))
 soul = bool(re.search(r"deception_hide|SOUL.md blocked", blob, re.I))
 send_ok = len(re.findall(r"send ok", blob, re.I))
-summary = {
+summary = {{
     "tag": tag,
     "hhmm": hhmm,
     "schedule_stored": stored,
@@ -114,11 +120,11 @@ summary = {
     "send_ok": send_ok,
     "soul_blocked": soul,
     "pass": bool(stored and (not wf) and (not soul)),
-}
+}}
 print(json.dumps(summary, ensure_ascii=False, indent=2))
 print("PASS_MIXED" if summary["pass"] else "FAIL_MIXED")
 PY
-""".replace("__WANT_NAME__", repr(WANT_NAME)).replace("__WAIT_S__", str(WAIT_S))
+"""
 
 
 def main() -> int:
