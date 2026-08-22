@@ -80,21 +80,40 @@ def hermes_logs(since="10m"):
             )
         except Exception:
             pass
-    # Gateway often logs to replica files, not docker stdout.
+    return "\n".join(chunks)
+
+def gateway_paths():
+    out = []
     for root in ("/opt/data/replicas", "/data/assistant/replicas"):
         base = Path(root)
         if not base.is_dir():
             continue
-        for glog in base.glob("*/logs/gateway.log"):
-            try:
-                chunks.append(glog.read_text(encoding="utf-8", errors="replace")[-400000:])
-            except OSError:
-                pass
-        for alog in base.glob("*/logs/agent.log"):
-            try:
-                chunks.append(alog.read_text(encoding="utf-8", errors="replace")[-200000:])
-            except OSError:
-                pass
+        out.extend(base.glob("*/logs/gateway.log"))
+        out.extend(base.glob("*/logs/agent.log"))
+    return out
+
+def snapshot_offsets():
+    offs = {{}}
+    for pth in gateway_paths():
+        try:
+            offs[str(pth)] = pth.stat().st_size
+        except OSError:
+            offs[str(pth)] = 0
+    return offs
+
+def logs_since_offsets(offs):
+    chunks = []
+    for path, start in offs.items():
+        pth = Path(path)
+        try:
+            with pth.open("rb") as f:
+                f.seek(start)
+                data = f.read()
+            chunks.append(data.decode("utf-8", errors="replace"))
+        except OSError:
+            continue
+    # also docker logs since inject
+    chunks.append(hermes_logs("3m"))
     return "\n".join(chunks)
 
 def zalo_connected(blob: str) -> bool:
@@ -185,26 +204,35 @@ with urllib.request.urlopen(req, timeout=15) as r:
     inj = json.loads(r.read().decode() or "{{}}")
 print("INJECT_OK", inj.get("ok"), "sse", health.get("sseClients"))
 
+offs = snapshot_offsets()
 deadline = t0 + wait_s
 inbound_ms = None
 send_ms = None
 timeout_hit = False
 soul_blocked = False
 while time.time() < deadline:
-    since_s = max(5, int(time.time() - t0) + 5)
-    logs = hermes_logs(str(since_s) + "s")
-    if "deception_hide" in logs and "SOUL" in logs:
+    logs = logs_since_offsets(offs)
+    if "Context file SOUL.md blocked: deception_hide" in logs or "SOUL.md blocked: deception_hide" in logs:
         soul_blocked = True
         print("SOUL_BLOCKED_DECEPTION_HIDE")
         break
-    if inbound_ms is None and (tag in logs or "Zalo inbound:" in logs or "inbound queued" in logs or "inbound message:" in logs):
+    if inbound_ms is None and (
+        tag in logs
+        or "inbound queued" in logs
+        or "inbound message:" in logs
+        or "Zalo inbound:" in logs
+    ):
         inbound_ms = int((time.time() - t0) * 1000)
         print("INBOUND_MS", inbound_ms)
-    if "queue turn timeout" in logs and (uid[-8:] in logs or tag in logs or uname in logs):
+    if "queue turn timeout" in logs and uid[-8:] in logs and tag in logs:
         timeout_hit = True
         print("QUEUE_TURN_TIMEOUT")
         break
-    if "Zalo: send ok" in logs:
+    if "Zalo: send ok" in logs and (tag in logs or uid[-8:] in logs):
+        send_ms = int((time.time() - t0) * 1000)
+        print("SEND_OK_MS", send_ms)
+        break
+    if "Zalo: send ok" in logs and inbound_ms is not None:
         send_ms = int((time.time() - t0) * 1000)
         print("SEND_OK_MS", send_ms)
         break
