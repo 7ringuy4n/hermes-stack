@@ -1,5 +1,5 @@
 {
-  "timeout_s": 60,
+  "timeout_s": 15,
   "temperature": 0,
   "retry": 1,
   "max_tokens": 768,
