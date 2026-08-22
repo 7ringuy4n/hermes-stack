@@ -38,7 +38,45 @@ curl -fsS -m 8 http://127.0.0.1:8096/health && echo || { echo "FAIL model-router
 
 log "4) Qwen preflight"
 if [[ -f test/scripts/qwen_combo_preflight.py ]]; then
-  python3 test/scripts/qwen_combo_preflight.py 2>&1 | tail -15 || fail=1
+  python3 - <<'PY' 2>&1 | tail -15 || fail=1
+import json, os, sqlite3, glob, sys
+from pathlib import Path
+env = {}
+for line in Path("/opt/assistant/.env").read_text(encoding="utf-8", errors="replace").splitlines():
+    s = line.strip()
+    if not s or s.startswith("#") or "=" not in s:
+        continue
+    k, v = s.split("=", 1)
+    env[k.strip()] = v.strip().strip('"').strip("'")
+enable = env.get("ENABLE_QWEN", "0") == "1"
+key = any(env.get(k, "").strip() for k in ("QWEN_API_KEY", "DASHSCOPE_API_KEY", "ALIBABA_API_KEY"))
+ollama = bool(env.get("OLLAMA_BASE_URL", "").strip() and env.get("OLLAMA_MODEL", "").strip())
+dbs = glob.glob("/var/lib/docker/volumes/*omni*/_data/storage.sqlite")
+h = cl = None
+if dbs:
+    c = sqlite3.connect(dbs[0])
+    c.row_factory = sqlite3.Row
+    for row in c.execute("select name,data from combos"):
+        if row["name"] not in ("hermes", "classifier"):
+            continue
+        data = json.loads(row["data"] or "{}")
+        models = data.get("models") or data.get("members") or []
+        if row["name"] == "hermes":
+            h = len(models)
+        else:
+            cl = len(models)
+print("COMBO_HERMES", h)
+print("COMBO_CLASSIFIER", cl)
+if not enable:
+    print("RESULT PASS_QWEN_OFF"); sys.exit(0)
+if not key and not ollama:
+    if (h or 0) >= 1 and (cl or 0) >= 1:
+        print("RESULT PASS_QWEN_READY"); sys.exit(0)
+    print("RESULT QWEN_COMBOS_EMPTY"); sys.exit(2)
+if (h or 0) < 1 or (cl or 0) < 1:
+    print("RESULT FAIL_EMPTY_COMBOS"); sys.exit(1)
+print("RESULT PASS_QWEN_READY")
+PY
 fi
 
 log "5) router chat smoke"

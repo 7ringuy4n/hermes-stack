@@ -1,3 +1,9 @@
+## 2026-08-22 14:10 +07 — router-worker Ollama host gateway
+
+- `docker-compose.yml`: add `extra_hosts: host.docker.internal:host-gateway` on
+  `router-worker` so `OLLAMA_BASE_URL` failover works from containers.
+- `post-lab-restore.sh`: inline Qwen preflight (no paramiko on VPS).
+
 ## 2026-08-22 14:00 +07 — Local Ollama Qwen + post-lab restore
 
 - Qwen active when `ENABLE_QWEN=1` and **either** cloud key **or** `OLLAMA_BASE_URL` + `OLLAMA_MODEL` (no DashScope required for lab).
