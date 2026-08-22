@@ -1,6 +1,6 @@
-﻿## 2026-08-22 17:30 +07 — ENABLE_QWEN is a first-class worker option
+## 2026-08-22 17:30 +07 — ENABLE_QWEN is a first-class worker option
 
-- ssistant_option_key_ok accepts ENABLE_QWEN so un.sh add-components ENABLE_QWEN=1 works.
+- `assistant_option_key_ok` accepts `ENABLE_QWEN` so `run.sh add-components ENABLE_QWEN=1` works.
 - Help text: first-setup-omnirouter creates empty hermes/classifier (Qwen fill when enabled).
 
 ## 2026-08-22 17:20 +07 — Release v0.5.18
@@ -161,7 +161,7 @@ Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting 
 - Fix: pass `TAVILY_API_KEY` (and Firecrawl) into Hermes; rename knowledge
   skill to `web-search-strategy` to end `web-search` name collision.
 
-﻿## 2026-08-21 16:53 +07 — Omni UI owns search (Tavily → SearXNG)
+## 2026-08-21 16:53 +07 — Omni UI owns search (Tavily → SearXNG)
 
 - Omni Providers: first-setup connects local SearXNG (`providerSpecificData.baseUrl`)
   and prefers Tavily; blocks `ollama-search` for default `/v1/search`.
@@ -1395,6 +1395,5 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 - Copied service code into layers from lab (memory, tools, models, â€¦) without hotfix push scripts / OpenVPN / Traefik product path.
 - **Action for operators:** copy `.env.example` â†’ `.env` and set all `CHANGE_ME` secrets before `bash run.sh up`.
 - No VPS deploy in this change.
-
 
 
