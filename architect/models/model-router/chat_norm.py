@@ -136,6 +136,16 @@ def chat_busy_capacity(status: int, data: Any) -> bool:
     )
 
 
+def chat_omni_skip_remaining(status: int, data: Any) -> bool:
+    """Omni errors where retrying the same combo/failover id cannot succeed."""
+    msg = _error_text(data).lower()
+    if "all upstream accounts are inactive" in msg:
+        return True
+    if "supports tool calling" in msg:
+        return True
+    return False
+
+
 def completion_to_sse(data: dict[str, Any]) -> bytes:
     """One-shot OpenAI SSE body from a non-stream chat.completion object."""
     import json as _json

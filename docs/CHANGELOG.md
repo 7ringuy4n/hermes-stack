@@ -1,3 +1,8 @@
+## 2026-08-22 21:45 +07 — model-router: stop Omni rotate after inactive / tool-call fail
+
+- After first `all upstream accounts are inactive` or `supports tool calling` Omni error, skip remaining omni-router hops (one log line, then Ollama).
+- Local Qwen lab: `OMNIROUTER_ROTATE_ATTEMPTS` capped to 1 at expand time.
+
 ## 2026-08-22 21:35 +07 — model-router: skip auto/best-free when Hermes sends tools
 
 - Skip `auto/*` Omni failovers on tool-calling chat requests (fixes noisy 400).
