@@ -15,6 +15,7 @@ from chat_norm import (  # noqa: E402
     normalize_chat_completion,
     openai_chat_ok,
     sanitize_chat_payload,
+    sanitize_for_ollama,
 )
 from route_expand import upstream_url  # noqa: E402
 
@@ -29,6 +30,12 @@ def main() -> int:
         "http://omni-router:20129/v1/chat/completions"
     ):
         print("FAIL normal upstream url join")
+        return 1
+    thinking_payload = sanitize_for_ollama(
+        {"messages": [{"role": "user", "content": "hi"}], "thinking": {"type": "enabled"}}
+    )
+    if "thinking" in thinking_payload:
+        print("FAIL ollama sanitize must drop thinking")
         return 1
     if openai_chat_ok({"error": {"message": "nope"}}):
         print("FAIL error body must not be ok")

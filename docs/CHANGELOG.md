@@ -1,3 +1,9 @@
+## 2026-08-22 20:30 +07 — model-router: strip thinking for Omni local Qwen + log exception failovers
+
+- `chat_norm.py`: `sanitize_for_ollama()` drops `thinking` / `reasoning_effort` fields host Ollama rejects.
+- `app.py`: apply on `omni-router` hops when `ENABLE_QWEN=1` or `OLLAMA_BASE_URL` set (Qwen via Omni path); keep Omni-first routing.
+- `app.py`: log `[route] failover` on upstream exceptions (disconnect/timeouts visible in router logs).
+
 ## 2026-08-22 20:00 +07 — model-router: fix duplicate /v1 in Ollama upstream URL
 
 - `app.py`: register `/v1/*` route before catch-all (decorators apply bottom-up); was matching `/{path:path}` with `path=v1/chat/completions`.
