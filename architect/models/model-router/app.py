@@ -42,7 +42,7 @@ from chat_norm import (  # noqa: E402
     normalize_chat_completion,
     sanitize_chat_payload,
 )
-from route_expand import expand_chat_candidates
+from route_expand import expand_chat_candidates, upstream_url
 from websearch import health_fields as websearch_health
 from websearch import router as websearch_router
 
@@ -342,8 +342,9 @@ async def outbound_endpoint(request: Request) -> dict[str, Any]:
     return last
 
 
-@app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+# Catch-all must register AFTER /v1/* (decorators apply bottom-up).
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 async def proxy(path: str, request: Request) -> Response:
     raw = await request.body()
     body: dict = {}
@@ -380,7 +381,7 @@ async def proxy(path: str, request: Request) -> Response:
             payload["model"] = model_override
         elif model_override and is_chat:
             payload["model"] = model_override
-        url = f"{base}/{path.lstrip('/')}"
+        url = upstream_url(base, path)
         try:
             if (not is_chat) and stream_passthrough_ok(want_stream, request.method):
                 req = _client().build_request(
