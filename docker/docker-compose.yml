@@ -506,6 +506,7 @@ services:
       - ZALO_DENIED_THREADS_FILE=/data/assistant/zalo_denied_threads.txt
       - ZALO_ALLOWED_USERS_FILE=/data/assistant/zalo_allowed_users.txt
       - ZALO_USERS_MODE_FILE=/data/assistant/zalo_users_mode.txt
+      - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
       - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://host.docker.internal:8787}
       - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
       - AUTHZ_URL=${AUTHZ_URL:-http://authz:8097}
@@ -530,7 +531,10 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - workflow
+      workflow:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3)"]
       interval: 20s

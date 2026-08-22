@@ -1,3 +1,15 @@
+## 2026-08-22 11:35 +07 — Zalo entities in Postgres + lab/prod branch rules
+
+- AGENT_RULES §14: develop lab may use Tn + Vietnamese inject strings; main must
+  accept any sole admin and prefer English production defaults.
+- zalo-api: PostgreSQL SoT for admin / users / DMs / groups / denied
+  (`zalo_entities`); CRUD `GET|POST|DELETE /v1/zalo/entities`, `GET|PUT /v1/zalo/admin`.
+- Text allowlist files remain migrate/mirror only. Compose: `DATABASE_URL` on zalo-api.
+- Session durable backup/restore: `scripts/main/backup-zalo-session.sh`,
+  `restore-zalo-session.sh` (round-2 redeploy without re-scan QR).
+- Tn inject scripts: prefer named admin Tn; with `ZALO_REQUIRE_NAMED_ADMIN=0` fall
+  back to any admin (main).
+
 ## 2026-08-22 18:20 +07 — !zalo claim fails when QR account is Tn
 
 - Lab: after QR scan, `!zalo claim` from Tn did nothing useful: bridge often still
