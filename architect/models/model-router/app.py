@@ -38,6 +38,7 @@ from classify import (  # noqa: E402
 from chat_norm import (  # noqa: E402
     chat_body_should_failover,
     chat_busy_capacity,
+    chat_omni_skip_remaining,
     completion_to_sse,
     normalize_chat_completion,
     sanitize_chat_payload,
@@ -140,7 +141,7 @@ def _expand_chat_candidates(
     has_tools = isinstance(tools, list) and bool(tools)
     rotate = OMNI_ROTATE_ATTEMPTS
     if LOCAL_OLLAMA and ENABLE_QWEN:
-        rotate = min(rotate, 2)
+        rotate = 1
     return expand_chat_candidates(
         candidates,
         requested_model=requested_model,
@@ -420,7 +421,10 @@ async def proxy(path: str, request: Request) -> Response:
         )
 
     last_err = ""
+    skip_omni = False
     for name, base, headers, model_override in candidates:
+        if skip_omni and name == "omni-router":
+            continue
         payload = _sanitize_upstream_payload(name, dict(body) if body else {})
         # Always call chat upstream non-stream so we can inspect error bodies
         # (paid Omni models often 403 inside a 200 SSE stream Hermes cannot recover from).
@@ -481,6 +485,8 @@ async def proxy(path: str, request: Request) -> Response:
                     detail = str((parsed or {}).get("error") or "bad_chat")[:80]
                     last_err = f"{name}:{upstream.status_code}:{detail}"
                     _log_failover(name, f"{upstream.status_code}:{detail}", str(payload.get("model") or ""))
+                    if name == "omni-router" and chat_omni_skip_remaining(upstream.status_code, parsed):
+                        skip_omni = True
                     if chat_busy_capacity(upstream.status_code, parsed) and OMNI_BUSY_BACKOFF_S > 0:
                         await asyncio.sleep(OMNI_BUSY_BACKOFF_S)
                     continue
