@@ -255,7 +255,8 @@ for path in (
             uid, uname = cand, name or "admin"
     if uid and want_name and uname.lower() == want_name.lower():
         break
-if not uid:
+_strict = (os.environ.get("ZALO_REQUIRE_NAMED_ADMIN") or "1").strip().lower() in ("1", "true", "yes")
+if not uid or (_strict and want_name and uname.lower() != want_name.lower()):
     raise SystemExit("NO_ADMIN_USER")
 print("USER_NAME", uname)
 

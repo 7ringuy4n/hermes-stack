@@ -6,6 +6,7 @@ In-Zalo commands: POST /v1/zalo/chat (only ZALO_ADMIN_USERS).
 from __future__ import annotations
 
 import glob
+import json
 import os
 import re
 import shutil
@@ -16,6 +17,7 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
+import zalo_store
 from channels_registry import (
     list_channels,
     resolve,
@@ -234,6 +236,15 @@ app = FastAPI(title="assistant-zalo-api", version="1.3.0")
 def _startup_sync_channels() -> None:
     """Seed id↔name registry from allowlists + bridge contacts (best-effort)."""
     try:
+        zalo_store.migrate_from_files(
+            admin_file=ADMIN_USERS_FILE,
+            allowed_threads_file=ALLOWED_FILE,
+            denied_threads_file=DENIED_THREADS_FILE,
+            allowed_users_file=ALLOWED_USERS_FILE,
+        )
+    except Exception:
+        pass
+    try:
         _sync_registry_from_files()
     except Exception:
         pass
@@ -248,7 +259,7 @@ def _startup_sync_channels() -> None:
 
 
 def _startup_seed_admin_from_bridge() -> None:
-    """If admin file empty and bridge is logged in, seed sole admin = ownId."""
+    """If admin empty and bridge is logged in, seed sole admin = ownId."""
     if _admin_users():
         return
     h = _bridge_health()
@@ -259,7 +270,11 @@ def _startup_seed_admin_from_bridge() -> None:
 
 
 def _read_admin_file() -> list[dict[str, str]]:
-    """Exactly one admin line preferred: `uid` or `uid | name`."""
+    """Exactly one admin: prefer Postgres, else legacy file `uid` / `uid | name`."""
+    if zalo_store.available():
+        adm = zalo_store.get_admin()
+        if adm:
+            return [{"id": adm["id"], "name": adm.get("name") or ""}]
     out: list[dict[str, str]] = []
     try:
         if not os.path.isfile(ADMIN_USERS_FILE):
@@ -283,21 +298,27 @@ def _read_admin_file() -> list[dict[str, str]]:
 
 
 def _write_admin_user(uid: str, name: str = "") -> None:
-    """Persist exactly one admin uid (overwrites file)."""
+    """Persist exactly one admin uid (Postgres SoT + file mirror)."""
     uid = (uid or "").strip()
     if not uid:
         raise ValueError("admin uid required")
+    name = (name or "").strip()
+    if zalo_store.available():
+        try:
+            zalo_store.set_admin(uid, name)
+        except Exception:
+            pass
     os.makedirs(os.path.dirname(ADMIN_USERS_FILE) or ".", exist_ok=True)
     with open(ADMIN_USERS_FILE, "w", encoding="utf-8", newline="\n") as f:
-        f.write("# managed by zalo-api — sole Zalo admin (exactly one)\n")
-        if name.strip():
-            f.write(f"{uid} | {name.strip()}\n")
+        f.write("# managed by zalo-api — sole Zalo admin (exactly one); Postgres is SoT\n")
+        if name:
+            f.write(f"{uid} | {name}\n")
         else:
             f.write(f"{uid}\n")
 
 
 def _admin_users() -> set[str]:
-    """Sole admin from file, else bootstrap from ZALO_ADMIN_USERS env (first id only)."""
+    """Sole admin from Postgres/file, else bootstrap from ZALO_ADMIN_USERS env (first id only)."""
     filed = _read_admin_file()
     if filed:
         return {filed[0]["id"]}
@@ -1391,6 +1412,125 @@ def revoke_user(
     ok, detail = _pairing_revoke(uid)
     _remove_allowed_user(uid)
     return {"ok": ok, "user_id": uid, "detail": detail}
+
+
+class ZaloEntityUpsert(BaseModel):
+    kind: str = Field(..., description="admin|user|dm|group|denied")
+    id: str = Field(..., min_length=1)
+    name: str = ""
+    status: str = "active"
+
+
+class ZaloEntityDelete(BaseModel):
+    kind: str
+    id: str = Field(..., min_length=1)
+
+
+class ZaloAdminSet(BaseModel):
+    id: str = Field(..., min_length=1)
+    name: str = ""
+
+
+@app.get("/v1/zalo/entities")
+def zalo_entities_list(
+    kind: Optional[str] = None,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """CRUD read: admin/users/dms/groups/denied from Postgres (fallback files)."""
+    _auth(authorization, x_admin_token)
+    snap = zalo_store.export_snapshot() if zalo_store.available() else {
+        "ok": True,
+        "backend": "files",
+        "admin": (_read_admin_file() or [None])[0],
+        "users": _read_allowed_users(),
+        "dms": _read_allowed_users(),
+        "groups": _read_entries(),
+        "denied": [{"id": x, "name": "", "status": "denied"} for x in sorted(_read_denied_threads())],
+    }
+    if kind:
+        k = kind.strip().lower()
+        key = {"admin": "admin", "user": "users", "users": "users", "dm": "dms", "dms": "dms",
+               "group": "groups", "groups": "groups", "denied": "denied"}.get(k)
+        if not key:
+            raise HTTPException(400, "kind must be admin|user|dm|group|denied")
+        return {"ok": True, "backend": snap.get("backend"), "kind": k, "items": snap.get(key)}
+    return snap
+
+
+@app.post("/v1/zalo/entities")
+def zalo_entities_upsert(
+    req: ZaloEntityUpsert,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    kind = req.kind.strip().lower()
+    eid = req.id.strip()
+    name = (req.name or "").strip()
+    status = (req.status or "active").strip() or "active"
+    if kind == "admin":
+        _write_admin_user(eid, name)
+        return {"ok": True, "entity": {"kind": "admin", "id": eid, "name": name, "status": "active"}}
+    if kind == "group":
+        cur = _allow_thread(eid, label=name)
+        return {"ok": True, "entity": {"kind": "group", "id": eid, "name": name}, "entries": cur}
+    if kind == "denied":
+        _deny_thread(eid)
+        return {"ok": True, "entity": {"kind": "denied", "id": eid, "status": "denied"}}
+    if kind in {"user", "dm"}:
+        users = _add_allowed_user(eid, name)
+        return {"ok": True, "entity": {"kind": kind, "id": eid, "name": name}, "users": users}
+    raise HTTPException(400, "kind must be admin|user|dm|group|denied")
+
+
+@app.delete("/v1/zalo/entities")
+def zalo_entities_delete(
+    req: ZaloEntityDelete,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    kind = req.kind.strip().lower()
+    eid = req.id.strip()
+    if kind == "admin":
+        raise HTTPException(400, "use POST /v1/zalo/admin to transfer sole admin")
+    if kind == "group":
+        cur = _kick_thread(eid)
+        return {"ok": True, "deleted": {"kind": kind, "id": eid}, "entries": cur}
+    if kind == "denied":
+        _undeny_thread(eid)
+        return {"ok": True, "deleted": {"kind": kind, "id": eid}}
+    if kind in {"user", "dm"}:
+        _remove_allowed_user(eid)
+        return {"ok": True, "deleted": {"kind": kind, "id": eid}, "users": _read_allowed_users()}
+    raise HTTPException(400, "kind must be user|dm|group|denied")
+
+
+@app.put("/v1/zalo/admin")
+def zalo_admin_set(
+    req: ZaloAdminSet,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """Set sole admin (replaces previous)."""
+    _auth(authorization, x_admin_token)
+    _write_admin_user(req.id.strip(), (req.name or "").strip())
+    return {"ok": True, "admin": (_read_admin_file() or [None])[0]}
+
+
+@app.get("/v1/zalo/admin")
+def zalo_admin_get(
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    rows = _read_admin_file()
+    return {
+        "ok": True,
+        "backend": "postgres" if zalo_store.available() else "files",
+        "admin": rows[0] if rows else None,
+    }
 
 
 @app.post("/v1/zalo/chat")
@@ -2529,6 +2669,9 @@ def _allow_thread(tid: str, label: str = "") -> list[dict[str, str]]:
 
 
 def _read_denied_threads() -> set[str]:
+    if zalo_store.available():
+        rows = zalo_store.list_entities("denied", status=None)
+        return {r["id"] for r in rows}
     out: set[str] = set()
     try:
         if os.path.isfile(DENIED_THREADS_FILE):
@@ -2547,9 +2690,18 @@ def _read_denied_threads() -> set[str]:
 
 
 def _write_denied_threads(ids: set[str]) -> None:
+    if zalo_store.available():
+        try:
+            existing = {r["id"] for r in zalo_store.list_entities("denied", status=None)}
+            for tid in existing - set(ids):
+                zalo_store.delete_entity("denied", tid)
+            for tid in ids:
+                zalo_store.upsert_entity("denied", tid, status="denied")
+        except Exception:
+            pass
     os.makedirs(os.path.dirname(DENIED_THREADS_FILE) or ".", exist_ok=True)
     with open(DENIED_THREADS_FILE, "w", encoding="utf-8") as f:
-        f.write("# managed by zalo-api — kicked threads (overrides .env allow)\n")
+        f.write("# managed by zalo-api — kicked threads (overrides .env allow); Postgres SoT\n")
         for tid in sorted(ids):
             f.write(tid + "\n")
 
@@ -2650,7 +2802,21 @@ def _pairing_revoke(user_id: str) -> tuple[bool, str]:
 
 
 def _read_entries() -> list[dict[str, str]]:
-    """Parse allowlist: 'id' or 'id | name' (also legacy 'id # name')."""
+    """Parse allowlist: Postgres groups first, else file/env 'id' / 'id | name'."""
+    denied = _read_denied_threads()
+    if zalo_store.available():
+        rows = zalo_store.list_entities("group", status="active")
+        ordered = [{"id": r["id"], "name": r.get("name") or ""} for r in rows if r["id"] not in denied]
+        if ordered or rows is not None:
+            # Also merge env allow if not denied (bootstrap)
+            seen = {e["id"] for e in ordered}
+            for t in os.environ.get("ZALO_ALLOWED_THREADS", "").split(","):
+                tid = t.strip()
+                if tid and tid not in denied and tid not in seen:
+                    seen.add(tid)
+                    ordered.append({"id": tid, "name": ""})
+            return ordered
+
     ordered: list[dict[str, str]] = []
     seen: set[str] = set()
 
@@ -2664,8 +2830,6 @@ def _read_entries() -> list[dict[str, str]]:
             return
         seen.add(tid)
         ordered.append({"id": tid, "name": name.strip()})
-
-    denied = _read_denied_threads()
 
     for t in os.environ.get("ZALO_ALLOWED_THREADS", "").split(","):
         if t.strip() and t.strip() not in denied:
@@ -2697,9 +2861,24 @@ def _read_entries() -> list[dict[str, str]]:
 
 
 def _write_entries(entries: list[dict[str, str]]) -> None:
+    if zalo_store.available():
+        try:
+            keep = {e["id"] for e in entries if e.get("id")}
+            existing = {r["id"] for r in zalo_store.list_entities("group", status="active")}
+            for tid in existing - keep:
+                zalo_store.delete_entity("group", tid)
+            for e in entries:
+                zalo_store.upsert_entity(
+                    "group",
+                    e["id"],
+                    name=str(e.get("name") or ""),
+                    status="active",
+                )
+        except Exception:
+            pass
     os.makedirs(os.path.dirname(ALLOWED_FILE) or ".", exist_ok=True)
     with open(ALLOWED_FILE, "w", encoding="utf-8") as f:
-        f.write("# managed by zalo-api — format: threadId | display name\n")
+        f.write("# managed by zalo-api — format: threadId | display name; Postgres SoT\n")
         for e in entries:
             if e.get("name"):
                 f.write(f"{e['id']} | {e['name']}\n")
@@ -2741,6 +2920,16 @@ def _set_users_mode(mode: str) -> None:
 
 
 def _read_allowed_users() -> list[dict[str, str]]:
+    if zalo_store.available():
+        rows = zalo_store.list_entities("user", status="active")
+        out = [{"id": r["id"], "name": r.get("name") or ""} for r in rows]
+        seen = {e["id"] for e in out}
+        for u in os.environ.get("ZALO_ALLOWED_USERS", "").split(","):
+            uid = u.strip()
+            if uid and uid not in seen:
+                seen.add(uid)
+                out.append({"id": uid, "name": ""})
+        return out
     out: list[dict[str, str]] = []
     seen: set[str] = set()
     for u in os.environ.get("ZALO_ALLOWED_USERS", "").split(","):
@@ -2769,9 +2958,25 @@ def _read_allowed_users() -> list[dict[str, str]]:
 
 
 def _write_allowed_users(users: list[dict[str, str]]) -> None:
+    if zalo_store.available():
+        try:
+            keep = {u["id"] for u in users if u.get("id")}
+            existing = {r["id"] for r in zalo_store.list_entities("user", status="active")}
+            for uid in existing - keep:
+                zalo_store.delete_entity("user", uid)
+                zalo_store.delete_entity("dm", uid)
+            for u in users:
+                zalo_store.upsert_entity(
+                    "user", u["id"], name=str(u.get("name") or ""), status="active"
+                )
+                zalo_store.upsert_entity(
+                    "dm", u["id"], name=str(u.get("name") or ""), status="active"
+                )
+        except Exception:
+            pass
     os.makedirs(os.path.dirname(ALLOWED_USERS_FILE) or ".", exist_ok=True)
     with open(ALLOWED_USERS_FILE, "w", encoding="utf-8") as f:
-        f.write("# managed by zalo-api — format: uid | optional name\n")
+        f.write("# managed by zalo-api — format: uid | optional name; Postgres SoT\n")
         for u in users:
             if u.get("name"):
                 f.write(f"{u['id']} | {u['name']}\n")
