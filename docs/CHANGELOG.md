@@ -1,4 +1,9 @@
-﻿## 2026-08-22 17:20 +07 — Release v0.5.18
+﻿## 2026-08-22 17:30 +07 — ENABLE_QWEN is a first-class worker option
+
+- ssistant_option_key_ok accepts ENABLE_QWEN so un.sh add-components ENABLE_QWEN=1 works.
+- Help text: first-setup-omnirouter creates empty hermes/classifier (Qwen fill when enabled).
+
+## 2026-08-22 17:20 +07 — Release v0.5.18
 
 Promote develop → main: PDF skill collision + office-file, schedule/classify guards, ENABLE_QWEN empty combos, SOUL multi-lang, ZALO_WORKFLOW_PARALLEL=8, production gap cases 40–74.
 
@@ -1390,5 +1395,6 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 - Copied service code into layers from lab (memory, tools, models, â€¦) without hotfix push scripts / OpenVPN / Traefik product path.
 - **Action for operators:** copy `.env.example` â†’ `.env` and set all `CHANGE_ME` secrets before `bash run.sh up`.
 - No VPS deploy in this change.
+
 
 
