@@ -1,3 +1,10 @@
+## 2026-08-22 16:10 +07 — Mixed đặt-lịch+fuel+weather ran as async (dup weather)
+
+- Lab: one bubble “đặt lịch lúc HH:MM + chào + giá xăng + thời tiết” was demoted to immediate workflow (3 parallel jobs); fuel job answered weather → duplicate weather; schedule not stored for 09:50.
+- Guard: classify force `task_hint=schedule` when đặt/ặt lịch + HH:MM; extract cron from clock; prompt clarifies sau/kèm theo stays on the lịch.
+- Topic lock on compound/workflow wraps so fuel ≠ weather ≠ greeting.
+- Apply: `test/scripts/apply_mixed_schedule_fuel_weather.py`; Tn: `zalo_tn_mixed_schedule_store.py`.
+
 ## 2026-08-22 15:20 +07 — Omni unforced search always labels SearXNG
 
 - Deeper lab probe: Omni unforced `/v1/search` reports `searxng-search` even when that connection is blocked/deleted; priority PUT does not stick on GET.
