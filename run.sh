@@ -205,27 +205,12 @@ do_stop_disabled_optionals() {
   done < <(assistant_disabled_monitor_containers)
   local n
   for n in "${extra[@]}"; do
-    docker rm -f "$n" >/dev/null 2>&1 || true
+    assistant_rm_container_by_service "$n"
   done
 }
 
-do_remove_stale_fixed_media_names() {
-  # Media overlay uses compose-scoped names (no global container_name). Legacy orphans
-  # (searxng, ocr, …) from repo-wipe redeploys block `bash run.sh install media`.
-  if [[ "${WORKER_MEDIA_FILE:-inactive}" != "active" \
-    && "${ENABLE_MEDIA_FILE:-0}" != "1" \
-    && "${ENABLE_OCR:-0}" != "1" \
-    && "${ENABLE_JOBS:-0}" != "1" \
-    && "${ENABLE_SEARXNG:-0}" != "1" ]]; then
-    return 0
-  fi
-  local name
-  for name in searxng ocr jobs jobs-worker comfyui-cpu comfyui-gpu; do
-    if docker ps -aq --filter "name=^/${name}$" 2>/dev/null | grep -q .; then
-      echo "==> remove legacy fixed-name container ${name} (media worker uses compose DNS)"
-      docker rm -f "$name" 2>/dev/null || true
-    fi
-  done
+do_remove_stale_worker_containers() {
+  assistant_remove_stale_worker_containers
 }
 
 do_auto_learn() {
@@ -519,7 +504,7 @@ do_update() {
 
   echo "==> rebuild + recreate"
   ensure_hermes_media_dirs
-  do_remove_stale_fixed_media_names
+  do_remove_stale_worker_containers
   compose up -d --build --remove-orphans
   do_stop_disabled_optionals
 
@@ -921,7 +906,7 @@ case "$cmd" in
   up)
     assistant_profile_summary
     ensure_hermes_media_dirs
-    do_remove_stale_fixed_media_names
+    do_remove_stale_worker_containers
     compose up -d --remove-orphans
     do_stop_disabled_optionals
     if [[ -f "${SCRIPTS_DIR}/hermes-cron-share.sh" ]]; then

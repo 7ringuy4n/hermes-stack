@@ -211,6 +211,59 @@ assistant_disabled_monitor_containers() {
   fi
 }
 
+assistant_rm_container_by_service() {
+  local svc="$1" id project="${COMPOSE_PROJECT_NAME:-assistant}"
+  id="$(docker ps -aq --filter "label=com.docker.compose.service=${svc}" \
+    --filter "label=com.docker.compose.project=${project}" 2>/dev/null | head -n1)"
+  if [[ -n "$id" ]]; then
+    docker rm -f "$id" 2>/dev/null || true
+    return 0
+  fi
+  docker rm -f "$svc" 2>/dev/null || true
+}
+
+assistant_worker_legacy_container_names() {
+  case "${1:-}" in
+    schedule) printf '%s\n' schedule-worker ;;
+    media) printf '%s\n' searxng ocr jobs jobs-worker comfyui-cpu comfyui-gpu dispatcher ;;
+    security) printf '%s\n' openbao security-manager authz siem policy-center docker-socket-proxy ;;
+    notify) printf '%s\n' notify alert-watch ;;
+    monitor) printf '%s\n' grafana prometheus loki alloy omni-exporter nine-exporter node-exporter stack-exporter ;;
+    antivirus) printf '%s\n' clamav av-gateway ;;
+    message|zalo) printf '%s\n' zalo-proxy zalo-api ;;
+    clouddrive) printf '%s\n' clouddrive-sync ;;
+    sandbox) printf '%s\n' docker-socket-proxy ;;
+  esac
+}
+
+assistant_remove_stale_worker_containers() {
+  # Optional workers install via `bash run.sh install …`. Drop legacy fixed-name
+  # orphans left when /opt/assistant was wiped without `bash run.sh destroy`.
+  local -a workers=() w name
+  [[ "${WORKER_SCHEDULE:-inactive}" == "active" || "${ENABLE_SCHEDULE:-0}" == "1" ]] && workers+=(schedule)
+  if [[ "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_MEDIA_FILE:-0}" == "1" \
+    || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" ]]; then
+    workers+=(media)
+  fi
+  [[ "${WORKER_SECURITY:-inactive}" == "active" || "${ENABLE_SECURITY:-0}" == "1" ]] && workers+=(security)
+  [[ "${WORKER_NOTIFY:-inactive}" == "active" || "${ENABLE_NOTIFY:-0}" == "1" ]] && workers+=(notify)
+  [[ "${WORKER_MONITOR:-inactive}" == "active" || "${ENABLE_MONITOR:-0}" == "1" ]] && workers+=(monitor)
+  [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && workers+=(antivirus)
+  [[ "${WORKER_MESSAGE:-inactive}" == "active" || "${ENABLE_ZALO:-0}" == "1" ]] && workers+=(message)
+  [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && workers+=(clouddrive)
+  [[ "${SECURITY_SANDBOX:-0}" == "1" ]] && workers+=(sandbox)
+  [[ ${#workers[@]} -eq 0 ]] && return 0
+  for w in "${workers[@]}"; do
+    while IFS= read -r name; do
+      [[ -z "$name" ]] && continue
+      if docker ps -aq --filter "name=^/${name}$" 2>/dev/null | grep -q .; then
+        echo "==> remove legacy worker container ${name} (${w}; run.sh install)"
+        docker rm -f "$name" 2>/dev/null || true
+      fi
+    done < <(assistant_worker_legacy_container_names "$w")
+  done
+}
+
 assistant_workers_summary() {
   echo "workers SCHEDULE=${WORKER_SCHEDULE} MEDIA_FILE=${WORKER_MEDIA_FILE} SECURITY=${WORKER_SECURITY} NOTIFY=${WORKER_NOTIFY} MESSAGE=${WORKER_MESSAGE} MONITOR=${WORKER_MONITOR}"
   echo "core TRAEFIK=${ENABLE_TRAEFIK:-1} GATEWAY=${ENABLE_API_GATEWAY:-1} OMNI=${ENABLE_OMNIROUTER:-1} N9=${ENABLE_9ROUTER:-0} ROUTER=${ENABLE_MODEL_ROUTER:-1} REPLICAS=${HERMES_REPLICAS:-1} QUEUE=${ZALO_INBOUND_QUEUE:-1}"
