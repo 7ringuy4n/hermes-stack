@@ -1,3 +1,8 @@
+## 2026-08-22 20:00 +07 — model-router: fix duplicate /v1 in Ollama upstream URL
+
+- `app.py`: register `/v1/*` route before catch-all (decorators apply bottom-up); was matching `/{path:path}` with `path=v1/chat/completions`.
+- `route_expand.py`: `upstream_url()` strips duplicate `v1/` when provider base already ends with `/v1` (fixes `ollama:404:bad_chat` for local Qwen).
+
 ## 2026-08-22 19:30 +07 — check-security: compose-scoped zalo-api detection
 
 - `check-security.sh`: detect zalo-api by compose service label (`assistant-zalo-api-1`), not legacy fixed name `zalo-api`.

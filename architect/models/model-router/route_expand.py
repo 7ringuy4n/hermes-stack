@@ -4,6 +4,19 @@ from __future__ import annotations
 from typing import Optional
 
 
+def upstream_url(base: str, path: str) -> str:
+    """Join provider base + relative path for the OpenAI proxy.
+
+    When the catch-all route matches ``/v1/chat/completions``, ``path`` is
+    ``v1/chat/completions`` even though ``base`` already ends with ``/v1``.
+    """
+    rel = (path or "").lstrip("/")
+    base = (base or "").rstrip("/")
+    if base.endswith("/v1") and rel.startswith("v1/"):
+        rel = rel[3:].lstrip("/")
+    return f"{base}/{rel}"
+
+
 def expand_chat_candidates(
     candidates: list[tuple[str, str, dict[str, str], Optional[str]]],
     *,
