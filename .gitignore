@@ -28,3 +28,6 @@ Thumbs.db
 .idea/
 AGENT_RULES.md
 BE_RULE.md
+
+# Local operator setup guide (may contain host-specific notes / credentials)
+test/SETUP.local.md

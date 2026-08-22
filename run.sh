@@ -541,12 +541,11 @@ do_update() {
 
   if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
     if [[ "$(id -u)" -eq 0 ]]; then
-      echo "NEXT (manual, as deploy user — not root): bash scripts/main/setup-zalo.sh && bash scripts/main/login-zalo.sh"
+      echo "NEXT (manual, as deploy user — not root): bash scripts/main/setup-zalo.sh"
     else
-      echo "==> Zalo install (after profile ready; login is manual)"
+      echo "==> Zalo setup (QR first; deploy user — not sudo)"
       bash "${SCRIPTS_DIR}/setup-zalo.sh" \
         || echo "WARN: setup-zalo failed — re-run: bash scripts/main/setup-zalo.sh"
-      echo "NEXT (manual): bash scripts/main/login-zalo.sh"
     fi
   fi
 
@@ -583,6 +582,48 @@ env_upsert() {
   fi
 }
 
+_reject_edge_flag_off() {
+  local k="$1" v="$2"
+  case "$k" in
+    ENABLE_TRAEFIK)
+      if [[ "$v" == "0" ]]; then
+        echo "ERROR: disable Traefik with: bash run.sh uninstall traefik" >&2
+        echo "      (not add-components ENABLE_TRAEFIK=0)" >&2
+        return 1
+      fi
+      ;;
+    ENABLE_API_GATEWAY)
+      if [[ "$v" == "0" ]]; then
+        echo "ERROR: disable API Gateway with: bash run.sh uninstall gateway" >&2
+        echo "      (not add-components ENABLE_API_GATEWAY=0)" >&2
+        return 1
+      fi
+      ;;
+  esac
+  return 0
+}
+
+_apply_component_change() {
+  local stamp="$1"
+  shift
+  local noup="${1:-0}"
+  local doupdate="${2:-0}"
+  if [[ "$noup" == "1" ]]; then
+    if [[ "$doupdate" == "1" ]]; then
+      echo "NEXT: bash run.sh update"
+    else
+      echo "NEXT: bash run.sh up"
+    fi
+    echo "UNDO: bash run.sh restore ${stamp}"
+    return 0
+  fi
+  if [[ "$doupdate" == "1" ]]; then
+    do_update
+  else
+    exec bash "${ROOT}/run.sh" up
+  fi
+}
+
 do_archive_before_change() {
   # Snapshot live options + DR backup; verify stamp before worker add/remove.
   local reason="${1:-manual}"
@@ -600,18 +641,20 @@ do_archive_before_change() {
 
 do_switch_profile() {
   echo "Profile upgrade/downgrade is removed."
-  echo "Enable workers with: bash run.sh add-components WORKER_SCHEDULE=active WORKER_MEDIA_FILE=active WORKER_SECURITY=active WORKER_NOTIFY=active WORKER_MESSAGE=active WORKER_MONITOR=active ENABLE_QWEN=1"
+  echo "Enable workers with: bash run.sh install schedule media security notify message monitor"
+  echo "  (or: bash run.sh install list)"
   return 2
 }
 
 do_remove_components() {
-  local dry=0 noup=0
+  local dry=0 noup=0 doupdate=0
   local -a pairs=()
   local arg k v
   for arg in "$@"; do
     case "$arg" in
       --dry-run) dry=1 ;;
       --no-up) noup=1 ;;
+      --update) doupdate=1 ;;
       *=*)
         k="${arg%%=*}"
         v="${arg#*=}"
@@ -619,6 +662,16 @@ do_remove_components() {
           echo "ERROR: unknown option ${k} (not in worker option list)" >&2
           return 2
         fi
+        case "$k" in
+          ENABLE_TRAEFIK)
+            echo "ERROR: disable Traefik with: bash run.sh uninstall traefik" >&2
+            return 2
+            ;;
+          ENABLE_API_GATEWAY)
+            echo "ERROR: disable API Gateway with: bash run.sh uninstall gateway" >&2
+            return 2
+            ;;
+        esac
         # Normalize remove verbs to inactive/0
         case "$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')" in
           remove|off|inactive|0|false|no) v="inactive" ;;
@@ -637,18 +690,28 @@ do_remove_components() {
           return 2
         fi
         case "$k" in
+          ENABLE_TRAEFIK)
+            echo "ERROR: disable Traefik with: bash run.sh uninstall traefik" >&2
+            return 2
+            ;;
+          ENABLE_API_GATEWAY)
+            echo "ERROR: disable API Gateway with: bash run.sh uninstall gateway" >&2
+            return 2
+            ;;
+        esac
+        case "$k" in
           ENABLE_*) pairs+=("${k}=0") ;;
           WORKER_*) pairs+=("${k}=inactive") ;;
           *) pairs+=("${k}=0") ;;
         esac
         ;;
       *)
-        echo "usage: bash run.sh remove-components KEY[=inactive|0] […] [--dry-run] [--no-up]" >&2
+        echo "usage: bash run.sh remove-components KEY[=inactive|0] […] [--dry-run] [--no-up] [--update]" >&2
         return 2
         ;;
     esac
   done
-  [[ ${#pairs[@]} -gt 0 ]] || { echo "usage: bash run.sh remove-components KEY[=…] […] [--dry-run] [--no-up]" >&2; return 2; }
+  [[ ${#pairs[@]} -gt 0 ]] || { echo "usage: bash run.sh remove-components KEY[=…] […] [--dry-run] [--no-up] [--update]" >&2; return 2; }
   echo "==> remove-components ${pairs[*]}"
   if [[ "$dry" == "1" ]]; then
     echo "DRY_RUN: would archive then set: ${pairs[*]}"
@@ -661,22 +724,84 @@ do_remove_components() {
     env_upsert "${arg%%=*}" "${arg#*=}"
   done
   echo "OK: wrote ${pairs[*]} (stamp=${stamp})"
-  if [[ "$noup" == "1" ]]; then
-    echo "NEXT: bash run.sh up"
-    echo "UNDO: bash run.sh restore ${stamp}"
-    return 0
-  fi
-  exec bash "${ROOT}/run.sh" up
+  _apply_component_change "$stamp" "$noup" "$doupdate"
+}
+
+do_install() {
+  local dry=0 noup=0
+  local -a names=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry=1 ;;
+      --no-up) noup=1 ;;
+      list|-l|--list|help|-h|--help)
+        bash "${SCRIPTS_DIR}/install-component.sh" list
+        return 0
+        ;;
+      *)
+        names+=("$arg")
+        ;;
+    esac
+  done
+  [[ ${#names[@]} -gt 0 ]] || {
+    echo "usage: bash run.sh install NAME [NAME…] [--dry-run] [--no-up]" >&2
+    echo "       bash run.sh install list" >&2
+    bash "${SCRIPTS_DIR}/install-component.sh" list >&2
+    return 2
+  }
+  local -a pairs=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && pairs+=("$line")
+  done < <(bash "${SCRIPTS_DIR}/install-component.sh" resolve "${names[@]}")
+  [[ ${#pairs[@]} -gt 0 ]] || return 1
+  local -a extra=()
+  [[ "$dry" == "1" ]] && extra+=(--dry-run)
+  [[ "$noup" == "1" ]] && extra+=(--no-up)
+  do_add_components "${pairs[@]}" "${extra[@]}"
+}
+
+do_uninstall() {
+  local dry=0 noup=0
+  local -a names=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) dry=1 ;;
+      --no-up) noup=1 ;;
+      list|-l|--list|help|-h|--help)
+        bash "${SCRIPTS_DIR}/install-component.sh" list
+        return 0
+        ;;
+      *)
+        names+=("$arg")
+        ;;
+    esac
+  done
+  [[ ${#names[@]} -gt 0 ]] || {
+    echo "usage: bash run.sh uninstall NAME [NAME…] [--dry-run] [--no-up]" >&2
+    return 2
+  }
+  local -a pairs=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && pairs+=("$line")
+  done < <(bash "${SCRIPTS_DIR}/install-component.sh" unresolve "${names[@]}")
+  [[ ${#pairs[@]} -gt 0 ]] || return 1
+  local -a extra=()
+  [[ "$dry" == "1" ]] && extra+=(--dry-run)
+  [[ "$noup" == "1" ]] && extra+=(--no-up)
+  do_remove_components "${pairs[@]}" "${extra[@]}"
 }
 
 do_add_components() {
-  local dry=0 noup=0
+  local dry=0 noup=0 doupdate=0
   local -a pairs=()
   local arg k v
   for arg in "$@"; do
     case "$arg" in
       --dry-run) dry=1 ;;
       --no-up) noup=1 ;;
+      --update) doupdate=1 ;;
       *=*)
         k="${arg%%=*}"
         v="${arg#*=}"
@@ -684,15 +809,16 @@ do_add_components() {
           echo "ERROR: unknown option ${k} (not in worker option list)" >&2
           return 2
         fi
+        _reject_edge_flag_off "$k" "$v" || return 2
         pairs+=("${k}=${v}")
         ;;
       *)
-        echo "usage: bash run.sh add-components KEY=VAL [KEY=VAL…] [--dry-run] [--no-up]" >&2
+        echo "usage: bash run.sh add-components KEY=VAL [KEY=VAL…] [--dry-run] [--no-up] [--update]" >&2
         return 2
         ;;
     esac
   done
-  [[ ${#pairs[@]} -gt 0 ]] || { echo "usage: bash run.sh add-components KEY=VAL [KEY=VAL…] [--dry-run] [--no-up]" >&2; return 2; }
+  [[ ${#pairs[@]} -gt 0 ]] || { echo "usage: bash run.sh add-components KEY=VAL [KEY=VAL…] [--dry-run] [--no-up] [--update]" >&2; return 2; }
   echo "==> add-components ${pairs[*]}"
   assistant_profile_summary
   for arg in "${pairs[@]}"; do
@@ -714,12 +840,7 @@ do_add_components() {
     env_upsert "${arg%%=*}" "${arg#*=}"
   done
   echo "OK: wrote ${pairs[*]} (stamp=${stamp})"
-  if [[ "$noup" == "1" ]]; then
-    echo "NEXT: bash run.sh up"
-    echo "UNDO: bash run.sh restore ${stamp}"
-    return 0
-  fi
-  exec bash "${ROOT}/run.sh" up
+  _apply_component_change "$stamp" "$noup" "$doupdate"
 }
 
 do_help() {
@@ -735,8 +856,10 @@ Stack (all):
            # then rebuild with: bash run.sh up
 
 Change workers (backup+verify first):
-  add-components KEY=VAL […] [--dry-run] [--no-up]
-  remove-components KEY[=inactive|0] […] [--dry-run] [--no-up]
+  install NAME [NAME…]          # short names → .env (see: bash run.sh install list)
+  uninstall NAME [NAME…]        # deactivate by short name
+  add-components KEY=VAL […] [--dry-run] [--no-up] [--update]
+  remove-components KEY[=inactive|0] […] [--dry-run] [--no-up] [--update]
   install-workers …             # alias of add-components
   remove-workers …              # alias of remove-components
   workers                       # show current worker activation
@@ -767,8 +890,8 @@ Security overlay:
 
 Attachable:
   channel-status
-  setup-zalo              # after check-*: install bridge+adapter (no QR)
-  login-zalo              # MANUAL last step — QR login (cuongdev hermes-zalo-plugin)
+  setup-zalo              # QR first, then bridge + zalo-api + adapter (deploy user, not sudo)
+  login-zalo              # re-login QR when stack already installed
   zalo-watch              # self-heal bridge/SSE (also timer when ENABLE_ZALO=1)
   stack-watch             # self-heal down/unhealthy compose services (timer)
 EOF
@@ -819,12 +942,10 @@ case "$cmd" in
     if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
       if [[ "$(id -u)" -eq 0 ]]; then
         echo "NEXT (manual, as deploy user — not root): bash scripts/main/setup-zalo.sh"
-        echo "THEN: bash scripts/main/login-zalo.sh"
       else
-        echo "==> Zalo install (after workers ready; login is manual)"
+        echo "==> Zalo setup (QR first; deploy user — not sudo)"
         bash "${SCRIPTS_DIR}/setup-zalo.sh" \
-          || echo "WARN: setup-zalo failed — re-run after check-*: bash scripts/main/setup-zalo.sh"
-        echo "NEXT (manual): bash scripts/main/login-zalo.sh"
+          || echo "WARN: setup-zalo failed — re-run: bash scripts/main/setup-zalo.sh"
       fi
     fi
     ;;
@@ -834,6 +955,8 @@ case "$cmd" in
   logs) compose logs -f --tail=100 "$@" ;;
   workers|profile) assistant_workers_summary ;;
   switch-profile|change-profile) do_switch_profile "$@" ;;
+  install|enable) do_install "$@" ;;
+  uninstall|disable) do_uninstall "$@" ;;
   add-components|enable-components|install-workers) do_add_components "$@" ;;
   remove-components|disable-components|remove-workers) do_remove_components "$@" ;;
   update) do_update ;;
