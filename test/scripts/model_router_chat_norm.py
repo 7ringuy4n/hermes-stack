@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
 from chat_norm import (  # noqa: E402
     chat_body_should_failover,
     chat_busy_capacity,
+    chat_omni_skip_remaining,
     completion_to_sse,
     normalize_chat_completion,
     openai_chat_ok,
@@ -79,6 +80,14 @@ def main() -> int:
         pass
     else:
         print("FAIL thinking off must strip on ollama path")
+        return 1
+    inactive = {"error": {"message": "Service temporarily unavailable: all upstream accounts are inactive"}}
+    if not chat_omni_skip_remaining(503, inactive):
+        print("FAIL inactive omni must skip remaining hops")
+        return 1
+    tools_err = {"error": {"message": "No target in combo auto/best-free supports tool calling"}}
+    if not chat_omni_skip_remaining(400, tools_err):
+        print("FAIL tool-calling combo error must skip remaining omni hops")
         return 1
     if openai_chat_ok({"error": {"message": "nope"}}):
         print("FAIL error body must not be ok")
