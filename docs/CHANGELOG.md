@@ -1,3 +1,7 @@
+## 2026-08-22 18:50 +07 — Fix docker-compose.security.yml invalid UTF-8 (go-yaml parse error)
+
+- Replace Windows-1252 `0x97` byte in comment line 15 with ASCII `-` (broke `bash run.sh install` on Linux).
+
 ## 2026-08-22 18:45 +07 — All optional workers: compose-scoped names + orphan cleanup on install
 
 - Optional worker overlays (schedule, media, security, notify, monitor, antivirus, zalo): no global `container_name`.

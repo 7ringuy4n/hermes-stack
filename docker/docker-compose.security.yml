@@ -12,7 +12,7 @@
 #
 # Do NOT re-list Must/Medium environment lists here (Compose list-merge replaces).
 #
-# No container_name on optional workers — installed via run.sh install; compose-scoped names.
+# No container_name on optional workers - installed via run.sh install; compose-scoped names.
 # run.sh removes legacy fixed-name orphans before up.
 
 volumes:
