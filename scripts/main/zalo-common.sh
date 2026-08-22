@@ -327,19 +327,30 @@ zalo_qr_login_phase() {
 
   zalo_print_qr_instructions
 
-  if hermes-zalo-plugin login 2>/dev/null; then
-    :
-  elif hermes-zalo-plugin setup --relogin 2>/dev/null; then
-    :
-  else
-    hermes-zalo-plugin setup 2>/dev/null || true
+  # login CLI can hang after a successful scan while /health already shows loggedIn.
+  # Poll health as source of truth; stop the helper when login completes.
+  (
+    hermes-zalo-plugin login 2>/dev/null \
+      || hermes-zalo-plugin setup --relogin 2>/dev/null \
+      || hermes-zalo-plugin setup 2>/dev/null \
+      || true
+  ) &
+  local login_pid=$!
+
+  local health_json=""
+  if health_json="$(zalo_wait_bridge_logged_in)"; then
+    kill "$login_pid" 2>/dev/null || true
+    wait "$login_pid" 2>/dev/null || true
+    systemctl --user try-restart com.hermes.zaloplugin.service 2>/dev/null \
+      || systemctl --user try-restart assistant-zalo.service 2>/dev/null \
+      || true
+    printf '%s' "$health_json"
+    return 0
   fi
 
-  systemctl --user try-restart com.hermes.zaloplugin.service 2>/dev/null \
-    || systemctl --user try-restart assistant-zalo.service 2>/dev/null \
-    || true
-
-  zalo_wait_bridge_logged_in
+  kill "$login_pid" 2>/dev/null || true
+  wait "$login_pid" 2>/dev/null || true
+  return 1
 }
 
 zalo_teardown_failed_qr() {
