@@ -69,14 +69,32 @@ def hermes_logs(since="10m"):
         ["docker", "ps", "-q", "--filter", "name=hermes"], text=True
     ).split()
     for cid in ids:
-        chunks.append(
-            subprocess.check_output(
-                ["docker", "logs", "--since", since, cid],
-                stderr=subprocess.STDOUT,
-                text=True,
-                errors="replace",
+        try:
+            chunks.append(
+                subprocess.check_output(
+                    ["docker", "logs", "--since", since, cid],
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    errors="replace",
+                )
             )
-        )
+        except Exception:
+            pass
+    # Gateway often logs to replica files, not docker stdout.
+    for root in ("/opt/data/replicas", "/data/assistant/replicas"):
+        base = Path(root)
+        if not base.is_dir():
+            continue
+        for glog in base.glob("*/logs/gateway.log"):
+            try:
+                chunks.append(glog.read_text(encoding="utf-8", errors="replace")[-400000:])
+            except OSError:
+                pass
+        for alog in base.glob("*/logs/agent.log"):
+            try:
+                chunks.append(alog.read_text(encoding="utf-8", errors="replace")[-200000:])
+            except OSError:
+                pass
     return "\n".join(chunks)
 
 def zalo_connected(blob: str) -> bool:
@@ -179,7 +197,7 @@ while time.time() < deadline:
         soul_blocked = True
         print("SOUL_BLOCKED_DECEPTION_HIDE")
         break
-    if inbound_ms is None and (tag in logs or "Zalo inbound:" in logs):
+    if inbound_ms is None and (tag in logs or "Zalo inbound:" in logs or "inbound queued" in logs or "inbound message:" in logs):
         inbound_ms = int((time.time() - t0) * 1000)
         print("INBOUND_MS", inbound_ms)
     if "queue turn timeout" in logs and (uid[-8:] in logs or tag in logs or uname in logs):
