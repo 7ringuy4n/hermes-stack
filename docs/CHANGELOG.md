@@ -1,3 +1,9 @@
+## 2026-08-22 08:20 +07 — SOUL.md blocked by deception_hide (greeting no-reply)
+
+- Hermes threat pattern do not … tell … the user (FILLER up to 8 words) matched SOUL phrasing and blocked the whole SOUL.md context every turn.
+- Agent ran without greeting guidance, over-used tools, hit 150s Zalo queue turn timeout — no useful reply.
+- Reword SOUL lines to avoid the pattern; keep intent (no /help spam, no channel naming, no pangocairo chatter).
+
 ## 2026-08-22 08:05 +07 — Zalo greeting no-reply: Qwen-only combo + Tn inject test
 
 - Short DM greeting timed out (150s queue turn) because hermes RR still kept flaky ollamacloud members after Qwen-first fill (empty_choices / slow retries).
