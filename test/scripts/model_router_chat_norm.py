@@ -16,9 +16,20 @@ from chat_norm import (  # noqa: E402
     openai_chat_ok,
     sanitize_chat_payload,
 )
+from route_expand import upstream_url  # noqa: E402
 
 
 def main() -> int:
+    if upstream_url("http://host.docker.internal:11434/v1", "v1/chat/completions") != (
+        "http://host.docker.internal:11434/v1/chat/completions"
+    ):
+        print("FAIL duplicate v1 must be stripped from upstream url")
+        return 1
+    if upstream_url("http://omni-router:20129/v1", "chat/completions") != (
+        "http://omni-router:20129/v1/chat/completions"
+    ):
+        print("FAIL normal upstream url join")
+        return 1
     if openai_chat_ok({"error": {"message": "nope"}}):
         print("FAIL error body must not be ok")
         return 1
