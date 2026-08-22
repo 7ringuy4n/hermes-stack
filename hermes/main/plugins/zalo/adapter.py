@@ -1717,25 +1717,41 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_compound_thread_type.pop(tid, None)
 
     async def _as_compound_wait_part(self, thread_id: str) -> None:
-        """Wait until the current part sent something, then a short idle gap."""
+        """Optionally wait for outbound delivery; default is no wait.
+
+        Queue UX: once a part is dequeued and handle_message returns, release
+        answering so the next FIFO item can run. Waiting on mark_delivered
+        (historically up to 180s) burned the queue turn budget and often
+        prevented the timeout UX from reaching the user.
+        Set ZALO_COMPOUND_WAIT_FOR_DELIVERY=1 to restore the old wait.
+        """
         tid = str(thread_id or "")
-        # Keep well under ZALO_QUEUE_TURN_TIMEOUT_S (default 150s). An empty
-        # model reply never marks delivered; waiting 180s here burns the turn
-        # and the user sees no message (including the timeout UX line).
-        timeout = self._as_env_float("ZALO_COMPOUND_PART_TIMEOUT_S", 35.0, 5.0, 120.0)
-        gap = self._as_env_float("ZALO_COMPOUND_GAP_S", 4.0, 0.0, 30.0)
-        ev = self._as_part_delivered.get(tid)
-        if ev is not None:
-            if ev.is_set():
-                ev.clear()
-            else:
-                try:
-                    await asyncio.wait_for(ev.wait(), timeout=timeout)
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "Zalo: compound part wait timeout thread=%s — continue without delivery",
-                        tid,
-                    )
+        wait = (os.getenv("ZALO_COMPOUND_WAIT_FOR_DELIVERY") or "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        gap = self._as_env_float("ZALO_COMPOUND_GAP_S", 0.0 if not wait else 4.0, 0.0, 30.0)
+        if wait:
+            timeout = self._as_env_float("ZALO_COMPOUND_PART_TIMEOUT_S", 35.0, 5.0, 120.0)
+            ev = self._as_part_delivered.get(tid)
+            if ev is not None:
+                if ev.is_set():
+                    ev.clear()
+                else:
+                    try:
+                        await asyncio.wait_for(ev.wait(), timeout=timeout)
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "Zalo: compound part wait timeout thread=%s — continue without delivery",
+                            tid,
+                        )
+                    ev.clear()
+        else:
+            # Do not block the queue on delivery; clear a stale event if present.
+            ev = self._as_part_delivered.get(tid)
+            if ev is not None and ev.is_set():
                 ev.clear()
         if gap > 0:
             await asyncio.sleep(gap)
@@ -2223,7 +2239,7 @@ class ZaloAdapter(BasePlatformAdapter):
         if not tid:
             return
         deadline = asyncio.get_event_loop().time() + self._as_env_float(
-            "ZALO_COMPOUND_PART_TIMEOUT_S", 180.0, 15.0, 600.0
+            "ZALO_COMPOUND_PART_TIMEOUT_S", 35.0, 5.0, 120.0
         )
         while asyncio.get_event_loop().time() < deadline:
             if self._as_inflight_try(tid):
