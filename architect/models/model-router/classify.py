@@ -547,6 +547,11 @@ _CONTENT_AFTER = re.compile(
     r"(?:với\s*nội\s*dung|voi\s*noi\s*dung|nội\s*dung|noi\s*dung)\s*[:\-]?\s*(.+)$",
     re.I | re.S,
 )
+_NUMBERED_LINE = re.compile(r"^\s*\d+[.)]\s+(.+)$", re.MULTILINE)
+_FUEL_KW = ("xăng", "xang", "ron92", "ron95", "e5", "e10", "gasoline", "fuel")
+_WEATHER_KW = ("thời tiết", "thoi tiet", "weather")
+_DRAW_KW = ("vẽ", "ve ", "draw", "hình", "hinh", "poster", "infographic", "video")
+_CITY_KW = ("hồ chí minh", "ho chi minh", "hcmc", "tp.hcm", "thành phố", "thanh pho")
 
 
 def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
@@ -600,6 +605,78 @@ def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
     }
 
 
+def _parse_numbered_instructions(blob: str) -> list[str]:
+    items: list[str] = []
+    for m in _NUMBERED_LINE.finditer(blob):
+        s = m.group(1).strip()
+        if s:
+            items.append(s)
+    return items
+
+
+def infographic_weather_fuel_plan(text: str) -> dict[str, Any] | None:
+    """One-shot weather+fuel infographic when classify LLM is down (case 26)."""
+    blob = (text or "").strip()
+    if not blob or len(blob) > 4000:
+        return None
+    if len(_parse_numbered_instructions(blob)) >= 2:
+        return None
+    low = blob.lower()
+    fuel = any(k in low for k in _FUEL_KW)
+    weather = any(k in low for k in _WEATHER_KW)
+    draw = any(k in low for k in _DRAW_KW)
+    city = any(k in low for k in _CITY_KW)
+    if not (fuel and (weather or draw) and (city or draw)):
+        return None
+    return {
+        "task_hint": "tool",
+        "execution_class": "async",
+        "task_type": "media_generation",
+        "response_mode": "ack_then_deliver",
+        "process_original_message": True,
+        "instructions": [blob],
+    }
+
+
+def numbered_list_heuristic_plan(text: str) -> dict[str, Any] | None:
+    """Multi-part numbered asks when classify LLM returns garbage (case 25 / FIFO)."""
+    blob = (text or "").strip()
+    if not blob or len(blob) > 8000:
+        return None
+    items = _parse_numbered_instructions(blob)
+    if len(items) < 2:
+        return None
+    m_daily = _DAILY_AT.search(blob)
+    if m_daily:
+        try:
+            hh, mm = int(m_daily.group(1)), int(m_daily.group(2))
+        except (TypeError, ValueError):
+            hh = mm = None
+        if hh is not None and mm is not None and 0 <= hh <= 23 and 0 <= mm <= 59:
+            cron = valid_cron(f"{mm} {hh} * * *")
+            if cron:
+                return {
+                    "task_hint": "schedule",
+                    "execution_class": "schedule",
+                    "task_type": "create_schedule",
+                    "response_mode": "confirm",
+                    "process_original_message": False,
+                    "instructions": items,
+                    "cadence": "daily",
+                    "cron_expr": cron,
+                    "skill": "schedule",
+                    "skill_action": "create",
+                }
+    return {
+        "task_hint": "tool",
+        "execution_class": "async",
+        "task_type": "tool",
+        "response_mode": "ack_then_deliver",
+        "process_original_message": True,
+        "instructions": items,
+    }
+
+
 def heuristic_plan(text: str) -> dict[str, Any] | None:
     """Local fallback when classify LLM returns garbage (Omni free-tier weak models)."""
     blob = (text or "").strip()
@@ -608,6 +685,12 @@ def heuristic_plan(text: str) -> dict[str, Any] | None:
     sched = schedule_heuristic_plan(blob)
     if sched:
         return sched
+    info = infographic_weather_fuel_plan(blob)
+    if info:
+        return info
+    numbered = numbered_list_heuristic_plan(blob)
+    if numbered:
+        return numbered
     if len(blob) > 400:
         return None
     low = blob.lower()
