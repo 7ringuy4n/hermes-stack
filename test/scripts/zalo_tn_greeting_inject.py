@@ -259,6 +259,23 @@ while time.time() < deadline:
     if "[Zalo] Send failed" in logs:
         print("SEND_FAIL")
         raise SystemExit("ZALO_SEND_FAILED")
+    if inbound_ms is not None:
+        try:
+            rw = subprocess.check_output(
+                ["docker", "logs", "--since", "2m", "router-worker"],
+                stderr=subprocess.STDOUT,
+                text=True,
+                errors="replace",
+            )
+        except Exception:
+            rw = ""
+        if (
+            "Unable to determine provider for model 'hermes'" in rw
+            or "[route] failover omni-router:400" in rw
+            or "[classify] http=400 model=hermes" in rw
+        ):
+            print("FAIL_LLM_NOT_CONFIGURED")
+            raise SystemExit("FAIL_LLM_NOT_CONFIGURED")
     time.sleep(1)
 
 h2 = get("http://127.0.0.1:8787/health")
