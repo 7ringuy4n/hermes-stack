@@ -8,6 +8,17 @@ This is the operator-facing companion to [`docs/CHANGELOG.md`](../docs/CHANGELOG
 
 ---
 
+## 2026-08-22 09:00 +07 — Inject test false FAIL while send ok
+
+### Symptom
+zalo_tn_greeting_inject reported FAIL_NO_REPLY while gateway.log showed send ok for the same Tn greeting.
+
+### Root cause
+Logs landed in replica gateway.log; docker logs were empty. Early compound mark_delivered also raced with async send.
+
+### Fix
+Test reads gateway/agent logs. Remove premature mark_delivered; keep shorter compound timeout.
+
 ## 2026-08-22 08:40 +07 — Greeting DM still silent after SOUL unblock
 
 ### Symptom

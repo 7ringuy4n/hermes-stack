@@ -2279,16 +2279,6 @@ class ZaloAdapter(BasePlatformAdapter):
             async def _run_turn() -> None:
                 await self.handle_message(event)
                 await self._as_autosend_late_files(tid, thread_type)
-                # If the model returned no user-visible text (e.g. think-only
-                # finish_reason=length), nothing calls mark_delivered — do not
-                # sit on the compound event for the rest of the queue budget.
-                ev = self._as_part_delivered.get(tid)
-                if ev is not None and not ev.is_set():
-                    logger.info(
-                        "Zalo: no outbound this part thread=%s — skip compound wait",
-                        tid,
-                    )
-                    self._as_compound_mark_delivered(tid)
                 await self._as_compound_wait_part(tid)
 
             try:
