@@ -264,15 +264,12 @@ def ensure_combo_qwen_first(
     existing = next((c for c in combos if (c.get("name") or "") == name), None)
 
     if qwen_active:
-        kept = [
-            m
-            for m in existing_model_ids(existing, reserved_names)
-            if not is_qwen_chat_model(m)
-        ]
-        ordered = list(qwen_ids) + kept
-        seen: set[str] = set()
+        # When Qwen is active, use Qwen members only. Keeping prior ollamacloud /
+        # other RR members lets sticky round-robin land on empty_choices / slow
+        # failures and burn the Zalo queue turn budget (no user reply).
         uniq: list[str] = []
-        for m in ordered:
+        seen: set[str] = set()
+        for m in qwen_ids:
             if m in seen:
                 continue
             seen.add(m)
@@ -285,7 +282,7 @@ def ensure_combo_qwen_first(
             "description": description,
         }
         action = "update" if existing and existing.get("id") else "create"
-        print(f"==> {action} combo {name} Qwen-first n={len(models)} first={uniq[:3]}")
+        print(f"==> {action} combo {name} Qwen-only n={len(models)} first={uniq[:3]}")
         if existing and existing.get("id"):
             status, body = http_json(
                 opener, "PUT", f"{base}/api/combos/{existing['id']}", payload
