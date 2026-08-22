@@ -1,4 +1,17 @@
-﻿# Ops history â€” issues and fixes
+## 2026-08-22 10:30 +07 - Compound wait burned queue; /help in greetings; Omni credential spam
+
+### Symptom
+Queue turn waited on mark_delivered (~180s) and burned the 150s budget; greetings suggested /help or "Hermes — trợ lý AI"; Omni kept testing provider credentials.
+
+### Root cause
+Compound wait defaulted to delivery sync; SOUL allowed command tips; Omni credential health scheduler enabled; too many Qwen RR members.
+
+### Fix
+Default ZALO_COMPOUND_WAIT_FOR_DELIVERY=0; SOUL warm greeting without slash-commands; disable credential health check; slim Qwen combos + qwen-fast; OpenVPN Omni access docs; Tn Qwen perf test.
+
+### Prevent recurrence
+Keep compound wait opt-in; after SOUL edits scan for deception_hide; keep OMNIROUTE_DISABLE_CREDENTIAL_HEALTH_CHECK=true on lab; prefer ≤2 hermes Qwen members.
+
 
 English log of **problems we actually hit** (lab and product) and **how they were fixed**. Newest first.
 
