@@ -2,6 +2,10 @@
 # Heal Zalo SSE after restore / owner-lock drift (component: ENABLE_ZALO=1).
 # Clears stale zalo_owner election files, restarts zalo-proxy + Hermes replicas
 # so exactly one replica can re-attach SSE.
+#
+# Called automatically by setup-zalo.sh / login-zalo.sh after QR success.
+# Re-run manually anytime Hermes loses bridge (sseClients: 0):
+#   bash scripts/main/heal-zalo-sse.sh
 set -euo pipefail
 export LC_ALL="${LC_ALL:-C.UTF-8}"
 export LANG="${LANG:-C.UTF-8}"
