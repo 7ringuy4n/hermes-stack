@@ -854,8 +854,8 @@ async def outbound_with_llm(
         content = _message_text(data)
     except Exception as exc:
         print(f"[outbound] llm_err {type(exc).__name__}", flush=True)
-        return {"ok": False, "action": "drop", "error": "outbound_llm_failed"}
+        return {"ok": False, "action": "send", "error": "outbound_llm_failed"}
     parsed = _json_object(content) or _loads_first(content)
     if not parsed:
-        return {"ok": False, "action": "drop", "error": "outbound_llm_failed"}
+        return {"ok": False, "action": "send", "error": "outbound_llm_failed"}
     return normalize_outbound(parsed)

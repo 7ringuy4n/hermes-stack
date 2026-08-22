@@ -1,3 +1,9 @@
+## 2026-08-22 14:25 +07 — Outbound classify fail-open (Zalo send path)
+
+- `classify_client.normalize_outbound`: preserve `ok: false` from router.
+- `/v1/outbound`: try all provider candidates; fail-open `action: send` when LLM down.
+- `gateway_noise`: send user replies when outbound classifier unavailable.
+
 ## 2026-08-22 14:20 +07 — Zalo outbound fail-open when classifier down
 
 - `gateway_noise.drop_outbound`: when `/v1/outbound` is unavailable, send user
