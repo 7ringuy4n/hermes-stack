@@ -1,4 +1,11 @@
-## 2026-08-22 16:30 +07 — Release v0.5.17
+## 2026-08-22 17:10 +07 — Prod gap cases + SOUL multi-lang + Qwen component/parallel
+
+- SOUL.md: multi-language reply rules (not Vietnamese-only); keep deception_hide-safe phrasing.
+- Qwen is optional (`ENABLE_QWEN=0` default): `hermes`/`classifier` stay empty round-robin until enabled + key.
+- Default `ZALO_WORKFLOW_PARALLEL=8` for ~5–10 concurrent multi-request Zalo users; sizing table in `docs/QWEN_PERFORMANCE.md`.
+- Gap matrix cases 40–74 (`test/cases/*-gap-*.md` + README-gap-cases.md) from Production Failure Gap Test Cases v2.
+- Tn scripts: `zalo_tn_history_regression.py`, `zalo_tn_qwen_parallel_sizing.py`; units for parallel recommend + SOUL.
+- Docs/.env.example aligned (no OpenCode default fill; Qwen activatable).
 
 Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting fixes, searxng-compat web search + Tavily cascade docs, weather/queue timeouts, mixed đặt-lịch+fuel+weather schedule guard, Tn inject lab suites.
 

@@ -506,3 +506,7 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/file_pipeline_security_lab.py` | 19 |
 | `test/scripts/grafana_integration_lab.py` | 20 (skip if Grafana off) |
 | `test/scripts/defaults_routers_lab.py` | 21 |
+## Production failure gap cases (40–74)
+
+See [cases/README-gap-cases.md](./cases/README-gap-cases.md). Zalo cases inject as **Tn**. On failure, fix source and retry only the failed case (ZALO_HISTORY_CASE=...).
+

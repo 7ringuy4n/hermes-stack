@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Verify rewritten SOUL.md does not trip deception_hide."""
+"""Strengthen SOUL checks: deception_hide + multi-language section present."""
 from __future__ import annotations
 
 import re
@@ -16,7 +16,18 @@ def main() -> int:
     if PAT.search(SOUL) or re.search(r"do\s+not\s+tell\s+the\s+user", SOUL, re.I):
         print("FAIL deception_hide still matches SOUL", file=sys.stderr)
         return 1
-    print("OK SOUL clears deception_hide pattern")
+    if "Response language" not in SOUL and "same language" not in SOUL.lower():
+        print("FAIL SOUL missing multi-language guidance", file=sys.stderr)
+        return 1
+    # Must not imply Vietnamese-only
+    if re.search(r"(?i)only\s+support\s+vietnamese|vietnamese\s+only", SOUL):
+        print("FAIL SOUL still Vietnamese-only", file=sys.stderr)
+        return 1
+    for needle in ("Spanish", "Japanese", "English", "same language"):
+        if needle.lower() not in SOUL.lower():
+            print(f"FAIL SOUL missing language example/hint: {needle}", file=sys.stderr)
+            return 1
+    print("OK SOUL clears deception_hide + multi-language")
     return 0
 
 
