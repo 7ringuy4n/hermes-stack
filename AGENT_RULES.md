@@ -78,6 +78,12 @@ The following are mandatory and must be satisfied before finishing work:
     unit at minimum). See §18 / §19 and
     [`scripts/HISTORY.md`](./scripts/HISTORY.md) entry
     **2026-08-21 11:20 +07 — Bridge crash-loop on :8787**.
+-   After a development / patching / lab session completes (or is
+    abandoned), **clean up all generated scripts and one-off helpers
+    created for that session** under gitignored paths such as
+    `scripts/temp/` and `hermes/temp/` — leave only durable, committed
+    tooling. Do not leave VPS-only patch scripts or credential extractors
+    behind.
 
 ------------------------------------------------------------------------
 
