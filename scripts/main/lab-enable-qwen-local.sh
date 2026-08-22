@@ -44,6 +44,9 @@ log "first-setup-omnirouter (local Qwen combos)"
 bash run.sh first-setup-omnirouter
 
 docker restart router-worker omni-router assistant-hermes-1 2>/dev/null || true
+cd "$ROOT"
+docker compose -f docker/docker-compose.yml up -d router-worker 2>/dev/null || \
+  docker compose up -d router-worker 2>/dev/null || true
 sleep 10
 
 log "verify model-router → Ollama"

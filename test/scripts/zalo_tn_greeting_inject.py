@@ -31,7 +31,7 @@ TEXT = (
     os.environ.get("ZALO_GREETING_TEXT") or "chúc một buổi sáng tốt lành"
 ).strip() or "chúc một buổi sáng tốt lành"
 # Local Ollama on CPU needs longer than cloud Qwen; override with ZALO_GREETING_WAIT_S.
-_default_wait = "180" if os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_MODEL") else "90"
+_default_wait = "300" if os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_MODEL") else "90"
 WAIT_S = int(os.environ.get("ZALO_GREETING_WAIT_S") or _default_wait)
 CONNECT_WAIT_S = int(os.environ.get("ZALO_CONNECT_WAIT_S") or "180")
 
