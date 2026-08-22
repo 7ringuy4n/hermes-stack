@@ -4,12 +4,14 @@
 1) Login with OMNIROUTER_INITIAL_PASSWORD (else N9ROUTER_INITIAL_PASSWORD)
 2) Read/create Default Key → OMNIROUTER_API_KEY
 3) Ensure chat combo alias exists (OMNIROUTER_DEFAULT_COMBO, default ``hermes``)
-   — **empty members**; operator adds models in Omni Combos UI (no OpenCode defaults)
-4) Ensure classify combo ``classifier`` — **empty members** (same rule)
-5) Set combo strategy preference (round-robin)
-6) Ensure Search providers: Tavily (1) → Firecrawl (2) → local SearXNG (3);
+   — **empty members** + round-robin by default (no OpenCode defaults)
+4) Ensure classify combo ``classifier`` — **empty members** + round-robin
+5) When ENABLE_QWEN=1 and a Qwen/Alibaba/DashScope key is set: fill hermes/
+   classifier (and optional qwen-fast) with Qwen chat models only
+6) Set combo strategy preference (round-robin)
+7) Ensure Search providers: Tavily (1) → Firecrawl (2) → local SearXNG (3);
    block ollama-search so Omni /v1/search owns web search
-7) Point Hermes at model-router; recreate router-worker for the key
+8) Point Hermes at model-router; recreate router-worker for the key
 
 Stack code sends combo *names* as OpenAI ``model``. Chat uses ``hermes``;
 classify uses ``classifier``. Web search: Hermes → model-router /v1/search → Omni.
@@ -360,6 +362,13 @@ def deactivate_non_qwen_llm_providers(opener) -> None:
     ).strip().lower()
     if flag not in {"1", "true", "yes", "on"}:
         print("NOTE: skip deactivate non-Qwen providers (OMNIROUTER_QWEN_ONLY_PROVIDERS off)")
+        return
+    try:
+        from omnirouter_qwen import qwen_enabled
+    except ImportError:
+        from omnirouter_qwen import qwen_enabled  # type: ignore
+    if not qwen_enabled():
+        print("NOTE: skip deactivate non-Qwen providers (ENABLE_QWEN off)")
         return
     keep_providers = {
         "alibaba",
