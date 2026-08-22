@@ -28,6 +28,22 @@ import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
 
+# Local helpers (omnirouter_qwen) live next to this script.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+try:
+    from omnirouter_qwen import (
+        ensure_alibaba_qwen_provider as _ensure_alibaba_qwen_provider,
+        ensure_combo_qwen_first as _ensure_combo_qwen_first,
+    )
+except ImportError:
+    from omnirouter_qwen import (  # type: ignore
+        ensure_alibaba_qwen_provider as _ensure_alibaba_qwen_provider,
+        ensure_combo_qwen_first as _ensure_combo_qwen_first,
+    )
+
 ROOT = Path(os.environ.get("STACK_ROOT", "/opt/assistant"))
 PORT = int(os.environ.get("OMNIROUTER_HOST_PORT", "20129"))
 BASE = f"http://127.0.0.1:{PORT}"
@@ -271,91 +287,49 @@ def list_oc_models(opener) -> list[str]:
     return uniq
 
 
+
+def ensure_alibaba_qwen_provider(opener, env: dict[str, str]):
+    """Ensure Omni ``alibaba`` provider (Qwen/DashScope) when a key is present."""
+    return _ensure_alibaba_qwen_provider(http_json, BASE, opener, env)
+
+
 def ensure_empty_combo(
     opener,
     *,
     name: str,
     description: str,
 ) -> str:
-    """Ensure combo *name* exists with **no** member models (operator fills in UI)."""
-    drop_probe_combos(opener)
-    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
-    combos = data.get("combos") or []
-    existing = next((c for c in combos if (c.get("name") or "") == name), None)
-    payload = {
-        "name": name,
-        "models": [],
-        "strategy": COMBO_STRATEGY,
-        "description": description,
-    }
-    if existing and existing.get("id"):
-        cid = existing["id"]
-        n = _combo_member_count(existing)
-        print(f"==> clear combo {name} ({cid}) was_members={n} → empty")
-        status, body = http_json(opener, "PUT", f"{BASE}/api/combos/{cid}", payload)
-        if status not in (200, 201):
-            raise SystemExit(f"combo {name} clear failed: {body}")
-    else:
-        print(f"==> create empty combo alias {name}")
-        created = False
-        for attempt in (
-            payload,
-            {
-                "name": name,
-                "strategy": COMBO_STRATEGY,
-                "description": description,
-            },
-        ):
-            try:
-                status, body = http_json(opener, "POST", f"{BASE}/api/combos", attempt)
-            except urllib.error.HTTPError as e:
-                print(f"WARN create {name} HTTP {e.code}: {e.read()[:200]!r}")
-                continue
-            if status in (200, 201):
-                created = True
-                break
-            print(f"WARN create {name} rejected: {body}")
-        if not created:
-            raise SystemExit(
-                f"could not create combo alias {name!r} — create it empty in OmniRouter UI"
-            )
-
-    try:
-        http_json(
-            opener,
-            "PATCH",
-            f"{BASE}/api/settings",
-            {
-                "comboStrategies": {
-                    name: {"fallbackStrategy": COMBO_STRATEGY},
-                },
-            },
-        )
-    except Exception as e:
-        print(f"WARN {name} comboStrategies patch: {e}")
-
-    print(
-        f"NOTE: combo {name!r} has no members — add models in OmniRouter Combos UI "
-        "(stack does not install OpenCode or any default models)"
+    """Ensure combo; Qwen-first when Qwen models are active on Omni."""
+    n, _ = _ensure_combo_qwen_first(
+        http_json,
+        BASE,
+        opener,
+        name=name,
+        description=description,
+        strategy=COMBO_STRATEGY,
+        classify=(name == CLASSIFY_COMBO_NAME),
+        reserved_names={COMBO_NAME, CLASSIFY_COMBO_NAME},
+        drop_probes=drop_probe_combos,
+        member_count=_combo_member_count,
     )
-    return name
+    return n
 
 
 def ensure_classifier_combo(opener) -> str:
-    """Ensure classify combo exists empty — operator adds models in Omni UI."""
+    """Ensure classify combo; Qwen-first when active."""
     return ensure_empty_combo(
         opener,
         name=CLASSIFY_COMBO_NAME,
-        description="Classify/intent combo — add models in OmniRouter UI (no OpenCode defaults)",
+        description="Classify/intent combo — Qwen first when active (round-robin)",
     )
 
 
 def ensure_combo_alias(opener) -> str:
-    """Ensure chat combo exists empty — operator adds models in Omni UI."""
+    """Ensure chat combo; Qwen-first when active."""
     return ensure_empty_combo(
         opener,
         name=COMBO_NAME,
-        description="Stack chat combo alias — add models in OmniRouter UI (no OpenCode defaults)",
+        description="Stack chat combo — Qwen first when active (round-robin)",
     )
 
 
@@ -620,6 +594,7 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_API_KEY", key)
     print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
 
+    ensure_alibaba_qwen_provider(opener, env)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
     ensure_combo_round_robin(opener)
@@ -639,12 +614,12 @@ def main() -> int:
     patch_hermes_model_router(key, combo)
     print(
         f"NOTE: skip chat smoke for empty combos {combo!r}/{classify_combo!r} — "
-        "add models in Omni UI then re-run smoke if needed"
+        "Qwen-first when active; re-run smoke after key/provider changes"
     )
     smoke_omni_search(key)
     print(
         f"OK: first-setup omni-router complete "
-        f"(chat combo={combo!r} empty; classify combo={classify_combo!r} empty; "
+        f"(chat/classify Qwen-first when active; "
         f"search via Omni Tavily→Firecrawl→SearXNG)"
     )
     return 0
