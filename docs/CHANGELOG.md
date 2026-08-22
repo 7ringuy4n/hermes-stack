@@ -1,3 +1,9 @@
+## 2026-08-22 13:05 +07 — Qwen preflight tests + no-reply diagnosis
+
+- Case 38 + `qwen_combo_preflight.py`: detect ENABLE_QWEN=1 with empty key / empty Omni combos.
+- `zalo_tn_greeting_inject`: fail fast with `FAIL_LLM_NOT_CONFIGURED` when router returns 400 on empty hermes.
+- `run.sh up`: WARN when ENABLE_QWEN=1 without QWEN/DASHSCOPE/ALIBABA key.
+
 ## 2026-08-22 12:50 +07 — Skip pre-change backup on clean host (add-components)
 
 - `run.sh add-components` / `remove-components` no longer require postgres backup when
