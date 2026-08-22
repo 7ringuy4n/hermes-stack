@@ -1,10 +1,17 @@
+## 2026-08-22 07:40 +07 — Qwen/Alibaba provider + hermes/classifier first; scheduleFire/group allow
+
+- Omni first-setup: ensure provider alibaba (connection name qwen) when QWEN_API_KEY / ALIBABA_API_KEY / DASHSCOPE_API_KEY set; fill combos hermes + classifier Qwen-first, strategy round-robin (do not wipe when Qwen inactive).
+- Reject allow-status phrases as schedule group names (status text like da allow (N)).
+- scheduleFire bypasses inbound FIFO; SCHEDULE_URL / SCHEDULE_WORKER defaults on so fires reach Hermes.
+- Classified tasks keep using Router Worker to Omni model=classifier (Qwen via combo).
+
 ## 2026-08-21 18:50 +07 — Empty Omni combos; office files via Dispatcher
 
-- first-setup no longer fills OpenCode into `hermes` / `classifier`; both combos
+- first-setup no longer fills OpenCode into hermes / classifier; both combos
   are cleared to empty members (operator adds models in Omni UI).
-- Zalo “tạo file pdf/txt” claimed success but no upload: Hermes hit pdf skill
-  collision + failed pip/pypdf; nothing landed in `media/out`. Skills now require
-  `POST /v1/office-file`; default `OFFICE_FILE_GEN=1`; empty send caption.
+- Zalo "tao file pdf/txt" claimed success but no upload: Hermes hit pdf skill
+  collision + failed pip/pypdf; nothing landed in media/out. Skills now require
+  POST /v1/office-file; default OFFICE_FILE_GEN=1; empty send caption.
 
 ## 2026-08-21 18:20 +07 — Queue turn timeout; Tavily → Firecrawl → SearXNG
 
