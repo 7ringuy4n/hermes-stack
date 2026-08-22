@@ -8,6 +8,21 @@ This is the operator-facing companion to [`docs/CHANGELOG.md`](../docs/CHANGELOG
 
 ---
 
+## 2026-08-22 08:05 +07 — Greeting DM no reply (queue turn timeout)
+
+### Symptom
+User message greeting in the morning got no Zalo reply.
+
+### Root cause
+Hermes received the DM (Tn thread). Omni hermes combo was Qwen-first but still appended prior ollamacloud / other RR members. Sticky round-robin landed on ollamacloud models that returned empty_choices / errors, burned retries, and hit the 150s Zalo queue turn timeout.
+
+### Fix
+- omnirouter_qwen: when Qwen active, write hermes/classifier as Qwen-only.
+- Add Tn greeting inject lab case (bridge /inject-event) to catch no-reply regressions.
+
+### Prevent recurrence
+Do not keep known-flaky non-Qwen members beside Qwen when the operator asked for Qwen default. Re-run first-setup after combo changes; monitor queue turn timeout lines.
+
 ## 2026-08-22 07:40 +07 — Qwen default + scheduleFire / group allow misfires
 
 ### Symptom
