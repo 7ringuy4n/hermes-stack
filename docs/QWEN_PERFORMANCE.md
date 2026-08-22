@@ -25,6 +25,9 @@ Measured with Tn Zalo bridge inject + model-router probes.
 | Short math inject | ~10–11 s E2E; `response ready` ~3 s |
 | Model-router short chat | ~0.5–1.4 s |
 | Model-router math `17×19` | ~0.7 s; answer **323** |
+| Weather HCMC (after searxng-compat rebuild) | first send ~15 s; `response ready` ~7.6 s (136 chars); suite PASS |
+| Mixed ≥3 requests (greet + math + Hà Nội weather) | 4 sends; first ~10 s, last ~18 s; 3× `response ready` (3.0s / 6.4s / 10.5s) |
+| Schedule multi-task (3 items @ 23:55) | send ~10 s; ack PASS (no queue timeout) |
 
 ## Hardware headroom (same window)
 
