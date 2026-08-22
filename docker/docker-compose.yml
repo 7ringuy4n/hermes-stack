@@ -23,9 +23,15 @@ services:
       POSTGRES_USER: ${MEMORY_DB_USER:-hermes}
       POSTGRES_PASSWORD: ${MEMORY_DB_PASSWORD:?set MEMORY_DB_PASSWORD in .env}
       POSTGRES_DB: ${MEMORY_DB_NAME:-hermes_memory}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    command:
+      - postgres
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     networks: [internal]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${MEMORY_DB_USER:-hermes}"]
