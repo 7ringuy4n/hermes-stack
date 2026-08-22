@@ -623,8 +623,10 @@ _apply_component_change() {
     return 0
   fi
   if [[ "$doupdate" == "1" ]]; then
+    export ASSISTANT_PURGE_WORKER_COMPOSE=1
     do_update
   else
+    export ASSISTANT_PURGE_WORKER_COMPOSE=1
     exec bash "${ROOT}/run.sh" up
   fi
 }
