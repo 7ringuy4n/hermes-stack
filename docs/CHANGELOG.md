@@ -1,3 +1,9 @@
+## 2026-08-22 22:00 +07 — install/uninstall: full worker `.env` sync + `--update`
+
+- `install-component.sh`: write bundled `ENABLE_*` / `WORKER_*` on install **and** uninstall (schedule, media, security, notify, monitor, antivirus).
+- `run.sh install|uninstall`: accept `--update` (same as `add-components --update`).
+- `.env.example` / `QWEN_PERFORMANCE.md`: document `qwen2.5:7b` plain-chat profile vs `qwen3:4b` thinking.
+
 ## 2026-08-22 21:45 +07 — model-router: stop Omni rotate after inactive / tool-call fail
 
 - After first `all upstream accounts are inactive` or `supports tool calling` Omni error, skip remaining omni-router hops (one log line, then Ollama).
