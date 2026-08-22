@@ -1,3 +1,7 @@
+## 2026-08-22 21:20 +07 — add-components: accept OLLAMA_* + ENABLE_QWEN_THINKING
+
+- `assistant_option_key_ok`: allow `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `ENABLE_QWEN_THINKING` (docs already use them with `add-components`).
+
 ## 2026-08-22 21:10 +07 — Lab default: local Qwen3 4B (`qwen3:4b`)
 
 - Defaults: `OLLAMA_MODEL=qwen3:4b` in `.env.example`, `ensure-ollama.sh`, `lab-enable-qwen-local.sh`.
