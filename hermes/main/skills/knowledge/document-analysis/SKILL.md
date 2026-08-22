@@ -9,10 +9,10 @@ description: "Analyze PDF/DOCX/XLSX and structured files. Use for extract, summa
 
 | Type | Skill |
 |---|---|
-| PDF | `pdf`, `official/pdf` |
-| Word | `docx`, `official/docx` |
-| Excel | `xlsx`, `official/xlsx` |
-| Mixed / create | `documents`, `file-gen` |
+| Create + send (Zalo) | `file-gen` / `documents` → `POST /v1/office-file` only |
+| PDF (advanced local) | `pdf-tools-local` (not chat create) |
+| Word (advanced local) | `docx-tools-local` |
+| Excel (advanced local) | `xlsx-tools-local` |
 
 ## Must follow
 

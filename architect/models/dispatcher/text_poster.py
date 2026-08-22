@@ -45,11 +45,19 @@ def parse_text_poster(prompt: str) -> Optional[dict[str, Any]]:
         return None
     phrase = (quoted[-1] if quoted else "").strip()
     if not phrase and n_m:
-        # "10 dòng KHÁT QUÁ" without quotes
+        # "10 dòng KHÁT QUÁ" / "5 dòng hello và gửi cho tôi" without quotes
         after = text[n_m.end() :].strip(" :,-")
         after = _QUOTED.sub("", after).strip()
-        after = re.sub(r"^(với|with|of|là)\s+", "", after, flags=re.I).strip()
-        phrase = after[:80] if after else ""
+        after = re.sub(r"^(với|with|of|là|vào|vao)\s+", "", after, flags=re.I).strip()
+        after = re.sub(
+            r"\s*(?:và\s+)?(?:gửi|gui|send|gởi)\s+(?:cho\s+)?(?:tôi|toi|me)\s*$",
+            "",
+            after,
+            flags=re.I,
+        ).strip()
+        # Prefer the first token when the rest is delivery/noise
+        tok = re.match(r"([^\s,.;:]+)", after)
+        phrase = (tok.group(1) if tok else after)[:80] if after else ""
     if not phrase:
         return None
     n = int(n_m.group(1)) if n_m else 1

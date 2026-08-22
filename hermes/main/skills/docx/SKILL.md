@@ -1,6 +1,6 @@
----
-name: docx
-description: Create, read, edit, template, and review Word .docx files.
+﻿---
+name: docx-tools-local
+description: "ADVANCED local docx tooling only. Do NOT use for chat create-and-send (Zalo/Telegram) — use skill file-gen / Dispatcher POST /v1/office-file. Never pip/uv install reportlab/pypdf/openpyxl/python-docx in the agent."
 version: 1.1.0
 author: Nous Research
 license: MIT
@@ -8,11 +8,16 @@ platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [word, docx, documents, office, templates, revisions, comments]
-    category: productivity
+    category: advanced-local
     related_skills: [pdf, xlsx, powerpoint]
 ---
 
 # Docx Skill
+
+## Chat create-and-send (Zalo / Telegram)
+
+**Do not use this skill.** Call skill `file-gen` and `POST http://dispatcher:8090/v1/office-file`.
+Do not `pip` / `uv` install PDF/Office libraries in the agent. Do not claim a file was sent unless `"ok":true`.
 
 Create, read, edit, and template Microsoft Word `.docx` files with
 python-docx via small CLIs. It handles text, styles, lists, tables,

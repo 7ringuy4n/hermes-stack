@@ -1,6 +1,6 @@
----
-name: xlsx
-description: Create, read, edit Excel .xlsx workbooks and CSVs.
+﻿---
+name: xlsx-tools-local
+description: "ADVANCED local xlsx tooling only. Do NOT use for chat create-and-send (Zalo/Telegram) — use skill file-gen / Dispatcher POST /v1/office-file. Never pip/uv install reportlab/pypdf/openpyxl/python-docx in the agent."
 version: 1.1.0
 author: Nous Research
 license: MIT
@@ -8,11 +8,16 @@ platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [excel, spreadsheet, xlsx, csv, openpyxl, productivity]
-    category: productivity
+    category: advanced-local
     related_skills: [docx, pdf, powerpoint]
 ---
 
 # Xlsx Skill
+
+## Chat create-and-send (Zalo / Telegram)
+
+**Do not use this skill.** Call skill `file-gen` and `POST http://dispatcher:8090/v1/office-file`.
+Do not `pip` / `uv` install PDF/Office libraries in the agent. Do not claim a file was sent unless `"ok":true`.
 
 Work with Excel .xlsx workbooks using Python and openpyxl: build styled
 multi-sheet workbooks with formulas and charts, inspect or dump existing

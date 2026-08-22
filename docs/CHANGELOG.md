@@ -1,4 +1,15 @@
-## 2026-08-22 16:30 +07 — Release v0.5.17
+﻿## 2026-08-22 17:20 +07 — Release v0.5.18
+
+Promote develop → main: PDF skill collision + office-file, schedule/classify guards, ENABLE_QWEN empty combos, SOUL multi-lang, ZALO_WORKFLOW_PARALLEL=8, production gap cases 40–74.
+
+## 2026-08-22 17:10 +07 — Prod gap cases + SOUL multi-lang + Qwen component/parallel
+
+- SOUL.md: multi-language reply rules (not Vietnamese-only); keep deception_hide-safe phrasing.
+- Qwen is optional (`ENABLE_QWEN=0` default): `hermes`/`classifier` stay empty round-robin until enabled + key.
+- Default `ZALO_WORKFLOW_PARALLEL=8` for ~5–10 concurrent multi-request Zalo users; sizing table in `docs/QWEN_PERFORMANCE.md`.
+- Gap matrix cases 40–74 (`test/cases/*-gap-*.md` + README-gap-cases.md) from Production Failure Gap Test Cases v2.
+- Tn scripts: `zalo_tn_history_regression.py`, `zalo_tn_qwen_parallel_sizing.py`; units for parallel recommend + SOUL.
+- Docs/.env.example aligned (no OpenCode default fill; Qwen activatable).
 
 Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting fixes, searxng-compat web search + Tavily cascade docs, weather/queue timeouts, mixed đặt-lịch+fuel+weather schedule guard, Tn inject lab suites.
 
@@ -70,6 +81,46 @@ Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting 
 - Reject allow-status phrases as schedule group names (status text like da allow (N)).
 - scheduleFire bypasses inbound FIFO; SCHEDULE_URL / SCHEDULE_WORKER defaults on so fires reach Hermes.
 - Classified tasks keep using Router Worker to Omni model=classifier (Qwen via combo).
+
+## 2026-08-21 20:40 +07 — Classifier 400 AiError (prompt/text/audio) + prior hydrate
+
+- Omni `classifier` combo members resolved to Cloudflare AI non-chat models
+  (need `prompt` / `text` / `audio`); chat/completions `messages` → HTTP 400.
+- Classify now skips 400 + AiError schema bodies (mark combo bad → try `hermes`).
+- Strip `[Prior conversation]` before classify so Valkey hydrate does not hide
+  schedule/intent of the current message.
+
+## 2026-08-21 20:25 +07 — Schedule create silent: classify 503 + 150s queue timeout
+
+- Zalo “đặt lịch … lúc HH:MM” got no reply: Omni `classifier` 503 (inactive
+  accounts), failover `hermes` ReadTimeout 60s, then Zalo queue turn timeout 150s;
+  answering lock left stuck; cron jobs empty.
+- Classify marks 502/503 like 401/403 (skip dead combo briefly); classify timeout
+  15s; early/fallback **schedule heuristic** for once/daily `lúc HH:MM`.
+- Unit: `schedule_classify_heuristic_unit.py`.
+
+## 2026-08-21 19:55 +07 — SOUL deception_hide; Valkey session; PDF/poster content
+
+- SOUL.md rephrased so Hermes `deception_hide` no longer blocks the whole file
+  (“do not tell the user…” → skip/suggest-only wording).
+- Zalo short-term chat hydrates/appends via Session service (Valkey); replica
+  `sessions.json` is not the SoT after recreate.
+- Office-file parses `chứa số N` and strips “gửi cho tôi”; text-poster takes the
+  first token after `N dòng` (e.g. hello).
+- Zalo media shortcuts call Dispatcher office-file / text-poster for clear
+  create intents so the model cannot rewrite into wrong PDF/scene images.
+- Units: `office_poster_session_unit.py`.
+
+## 2026-08-21 19:30 +07 — PDF skill collision → fake send + gpt-oss spam
+
+- Zalo “tạo 1 file pdf…” still answered “file gửi kèm” with no attachment:
+  agent called `skill_view('pdf')` (3 clones), then `pip`/`reportlab` loops;
+  each tool turn re-hit Omni `gpt-oss-120b` with full tool schemas.
+- Rename SoT `pdf`/`docx`/`xlsx` (+ official) to `*-tools-local` with
+  create-and-send deferred to `file-gen` / `POST /v1/office-file`.
+- Replica entry purges `productivity|documents/{pdf,docx,xlsx}` clones,
+  force-overlays SoT office skills, and rewrites leftover `name: pdf|docx|xlsx`.
+- Unit: `office_skill_collision_unit.py`.
 
 ## 2026-08-21 18:50 +07 — Empty Omni combos; office files via Dispatcher
 
@@ -1339,4 +1390,5 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 - Copied service code into layers from lab (memory, tools, models, â€¦) without hotfix push scripts / OpenVPN / Traefik product path.
 - **Action for operators:** copy `.env.example` â†’ `.env` and set all `CHANGE_ME` secrets before `bash run.sh up`.
 - No VPS deploy in this change.
+
 

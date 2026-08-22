@@ -1,3 +1,16 @@
+﻿## 2026-08-22 17:10 +07 - Prod gap suite, SOUL multi-lang, ENABLE_QWEN empty combos
+
+### Symptom
+Clean production posture still risked stale Omni models in hermes/classifier, Vietnamese-only SOUL tone, and parallel=4 too low for 5-10 concurrent multi-request Zalo users. HISTORY gaps (no-reply, PDF fake send, schedule) needed a Tn regression pack + failure choreography cases.
+
+### Root cause
+Qwen fill was not gated by an explicit component switch; SOUL examples skewed Vietnamese; workflow parallel default undersized; gap matrix lived only outside the repo.
+
+### Fix
+ENABLE_QWEN=0 default with empty round-robin combos; parallel default 8 + sizing table; SOUL multi-language; cases 40-74 + Tn history/parallel scripts.
+
+### Prevent recurrence
+soul_deception_unit + qwen_parallel_recommend_unit; zalo_tn_history_regression (retry single case via ZALO_HISTORY_CASE).
 ## 2026-08-22 16:10 +07 - Mixed schedule bubble: dup weather, missing fuel
 
 ### Symptom
@@ -164,6 +177,128 @@ When you hit a real failure (deploy, cron, Zalo, routers, permissions):
 4. Prefer a reusable config/skill/queue fix over a one-off keyword patch.
 
 ---
+
+## 2026-08-21 20:40 +07 — Classifier 400: CF models want prompt/text/audio
+
+### Symptom
+
+Classify `model=classifier` with OpenAI `messages` returned CF AiError 400:
+required `prompt` / `text` / `audio`. Logs showed Cloudflare AI, not Codex chat.
+
+### Root cause
+
+1. Combo `classifier` members were (or remapped to) Workers AI models that are
+   not chat/completions-capable; Omni RR tried several and each 400’d.
+2. Our classify only skipped 401/403/502/503 — not 400 — so it waited on the
+   dead combo longer than needed.
+3. Valkey `[Prior conversation]` was prepended before classify, so the current
+   ask (and schedule wording) was buried under older PDF/image turns.
+
+### Fix
+
+- Skip classify combo on HTTP 400 and AiError schema bodies; failover to `hermes`.
+- `strip_prior_for_classify` before LLM/heuristic.
+
+### Prevent recurrence
+
+Keep only **chat** models in the `classifier` combo (same class as `hermes`).
+Do not add CF translation / ASR / vision-only / prompt-only models.
+
+
+## 2026-08-21 20:25 +07 — Đặt lịch no reply (classifier 503 + queue timeout)
+
+### Symptom
+
+User: “đặt lịch chạy một lần lúc 20:07/20:17 với nội dung…”. No Zalo reply;
+schedule never stored (`jobs.json` empty / no new rows).
+
+### Root cause
+
+1. Omni combo `classifier` returned 503 “all upstream accounts are inactive”
+   (~50ms) but was **not** skipped (only 401/403/404/429 were).
+2. Failover to `hermes` hit ReadTimeout (classify `timeout_s=60`).
+3. Hermes turn then hit Zalo queue turn timeout (150s) → no useful reply;
+   Valkey `gate:ans` / `gate:qwork` could stay occupied.
+4. Schedule heuristic explicitly returned `None` for “đặt lịch”, so LLM failure
+   did not fall back to a storeable cron plan.
+
+### Fix
+
+- Skip classify combos on 502/503; shorten classify timeout to 15s.
+- Deterministic schedule heuristic for once/daily `lúc HH:MM` (early + fallback).
+- Ops: clear stuck answering/queue keys for the thread when applying.
+
+### Prevent recurrence
+
+Dead Omni classify combos must not burn the full Zalo turn budget. Clocked
+“đặt lịch” must store via heuristic when LLM classify is unavailable.
+
+
+## 2026-08-21 19:55 +07 — SOUL blocked; empty session; wrong PDF/image content
+
+### Symptom
+
+After Hermes recreate: canned “Chào bạn /help” intro (forgot chat). PDF “điền
+số 1” contained the instruction sentence. “5 dòng hello” image was an unrelated
+photo (sana diffusion), not five lines of hello.
+
+### Root cause
+
+1. Hermes threat scan matched SOUL “do not tell the user…” → `deception_hide`
+   → entire SOUL replaced with a BLOCKED placeholder.
+2. Gateway transcript lived under per-replica `sessions.json`; recreate →
+   msgs:0. Valkey session service was not hydrating the next turn.
+3. `parse_office` missed `chứa số 1`; agent-rewritten prompts became the PDF
+   body. Text-poster left “hello và gửi cho tôi”; agent skipped poster mode
+   and called diffusion.
+
+### Fix
+
+- Rewrite SOUL without the deception trigger phrase.
+- Zalo `session_memory`: hydrate inbound + append outbound via `SESSION_URL`.
+- Harden office/text-poster parsers; Zalo `media_shortcuts` for clear create
+  intents (Dispatcher only).
+
+### Prevent recurrence
+
+Never put “do not tell the user” in SOUL. Short-term chat SoT is Session/Valkey.
+Exact text posters and simple office creates must not depend on the LLM
+rewriting the prompt.
+
+
+## 2026-08-21 19:30 +07 — PDF claim + gpt-oss-120b request storm
+
+### Symptom
+
+User: “tạo 1 file pdf và điền vào số 1”. Bot: “Đây là file PDF… (File được
+gửi kèm)” but Zalo had no attachment. OmniRouter showed many
+`openrouter/openai/gpt-oss-120b` (and groq) turns with huge tool lists.
+
+### Root cause
+
+1. Three skills still registered as `name: pdf` (SoT + official + Hermes
+   `productivity/` clone). `skill_view('pdf')` refused (ambiguous).
+2. Agent fell back to local pdf scripts → missing `reportlab` → pip/uv
+   install loops. Each failure = another chat.completions call (~20+ tools
+   in the body) → Omni “plenty of requests” to gpt-oss-120b.
+3. Model narrated success without `"ok":true` / file in `media/out`.
+4. `file-gen` already pointed at Dispatcher office-file, but the skill
+   index still advertised “Create… PDF files” under name `pdf`.
+
+### Fix
+
+- Rename office SoT skills to `pdf-tools-local` / `docx-tools-local` /
+  `xlsx-tools-local` (and `official-*`); descriptions defer to `file-gen`.
+- `hermes-replica-entry.sh` deletes category clones under
+  `productivity|documents/{pdf,docx,xlsx}` after skill overlay.
+- Unit `office_skill_collision_unit.py` forbids reserved names `pdf|docx|xlsx`.
+
+### Prevent recurrence
+
+Never ship multiple skills with the same frontmatter `name`. Chat
+create-and-send must only go through Dispatcher `/v1/office-file`. Do not
+claim delivery without `"ok":true` or autosend of a real `media/out` file.
+
 
 ## 2026-08-21 18:50 +07 — PDF/txt “created” but never sent on Zalo
 
