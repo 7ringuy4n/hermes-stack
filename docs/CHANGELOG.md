@@ -1,3 +1,8 @@
+## 2026-08-22 19:00 +07 — Purge compose-scoped worker containers on install
+
+- `workers.sh`: remove `${project}-${service}-1` and all compose-labeled worker containers (not just legacy fixed names like `searxng`).
+- `run.sh`: set `ASSISTANT_PURGE_WORKER_COMPOSE=1` on `install`/`add-components` so failed partial installs do not block re-run (`assistant-searxng-1` conflict).
+
 ## 2026-08-22 18:50 +07 — Fix docker-compose.security.yml invalid UTF-8 (go-yaml parse error)
 
 - Replace Windows-1252 `0x97` byte in comment line 15 with ASCII `-` (broke `bash run.sh install` on Linux).
