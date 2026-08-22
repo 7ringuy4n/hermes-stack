@@ -1,3 +1,9 @@
+## 2026-08-22 21:35 +07 — model-router: skip auto/best-free when Hermes sends tools
+
+- Skip `auto/*` Omni failovers on tool-calling chat requests (fixes noisy 400).
+- Local Qwen lab: cap rotate at 2, lab script sets empty failovers + rotate=1.
+- `add-components`: accept `OMNIROUTER_FAILOVER_MODELS`, `OMNIROUTER_ROTATE_ATTEMPTS`.
+
 ## 2026-08-22 21:20 +07 — add-components: accept OLLAMA_* + ENABLE_QWEN_THINKING
 
 - `assistant_option_key_ok`: allow `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `ENABLE_QWEN_THINKING` (docs already use them with `add-components`).
