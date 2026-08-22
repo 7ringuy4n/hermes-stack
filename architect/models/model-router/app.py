@@ -41,6 +41,7 @@ from chat_norm import (  # noqa: E402
     completion_to_sse,
     normalize_chat_completion,
     sanitize_chat_payload,
+    sanitize_for_ollama,
 )
 from route_expand import expand_chat_candidates, upstream_url
 from websearch import health_fields as websearch_health
@@ -74,6 +75,9 @@ OMNI_ROTATE_ATTEMPTS = max(
 OMNI_BUSY_BACKOFF_S = float(os.environ.get("OMNIROUTER_BUSY_BACKOFF_S") or "3")
 OLLAMA_BASE = (os.environ.get("OLLAMA_BASE_URL") or "").rstrip("/")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
+ENABLE_QWEN = os.environ.get("ENABLE_QWEN", "0").strip() in {"1", "true", "yes", "on"}
+# Local Qwen lab: Omni hermes combo may route to host Ollama — strip thinking there too.
+LOCAL_QWEN = ENABLE_QWEN or bool(OLLAMA_BASE)
 FALLBACK_OPENAI = (os.environ.get("FALLBACK_OPENAI_BASE_URL") or "").rstrip("/")
 FALLBACK_OPENAI_KEY = (os.environ.get("OPENAI_API_KEY") or "").strip()
 FALLBACK_OPENAI_MODEL = os.environ.get("FALLBACK_OPENAI_MODEL", "gpt-4o-mini")
@@ -87,6 +91,17 @@ FAILOVER_HTTP = {401, 403, 413, 429}
 
 def _failover_status(code: int) -> bool:
     return code >= 500 or code in FAILOVER_HTTP
+
+
+def _sanitize_upstream_payload(name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop extended-thinking fields before Ollama (direct hop or via Omni local Qwen)."""
+    if name == "ollama" or (name == "omni-router" and LOCAL_QWEN):
+        return sanitize_for_ollama(payload)
+    return sanitize_chat_payload(payload)
+
+
+def _log_failover(name: str, err: str, model: str) -> None:
+    print(f"[route] failover {name}:{err} model={model}", flush=True)
 
 
 def _expand_chat_candidates(
@@ -372,7 +387,7 @@ async def proxy(path: str, request: Request) -> Response:
 
     last_err = ""
     for name, base, headers, model_override in candidates:
-        payload = sanitize_chat_payload(dict(body) if body else {})
+        payload = _sanitize_upstream_payload(name, dict(body) if body else {})
         # Always call chat upstream non-stream so we can inspect error bodies
         # (paid Omni models often 403 inside a 200 SSE stream Hermes cannot recover from).
         if is_chat:
@@ -429,8 +444,9 @@ async def proxy(path: str, request: Request) -> Response:
                 except Exception:
                     parsed = None
                 if chat_body_should_failover(upstream.status_code, parsed):
-                    last_err = f"{name}:{upstream.status_code}:{str((parsed or {}).get('error') or 'bad_chat')[:80]}"
-                    print(f"[route] failover {last_err} model={payload.get('model')}", flush=True)
+                    detail = str((parsed or {}).get("error") or "bad_chat")[:80]
+                    last_err = f"{name}:{upstream.status_code}:{detail}"
+                    _log_failover(name, f"{upstream.status_code}:{detail}", str(payload.get("model") or ""))
                     if chat_busy_capacity(upstream.status_code, parsed) and OMNI_BUSY_BACKOFF_S > 0:
                         await asyncio.sleep(OMNI_BUSY_BACKOFF_S)
                     continue
@@ -463,6 +479,7 @@ async def proxy(path: str, request: Request) -> Response:
             )
         except Exception as e:
             last_err = f"{name}:{e}"
+            _log_failover(name, str(e), str(payload.get("model") or ""))
             continue
 
     return JSONResponse(
