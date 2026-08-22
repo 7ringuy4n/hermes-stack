@@ -87,7 +87,9 @@ def qwen_sort_key(model_id: str) -> tuple:
         penalty += 1
     if any(x in low for x in ("235b", "397b", "2.4t", "qwen3-max")):
         penalty += 1
-    return (tier, penalty, low)
+    # Penalty first so Groq Qwen3 (tier=1, penalty=6) loses to OpenRouter
+    # Qwen2.5 (tier=2, penalty=-3). Otherwise think-only models stay first.
+    return (penalty, tier, low)
 
 
 def ensure_alibaba_qwen_provider(
