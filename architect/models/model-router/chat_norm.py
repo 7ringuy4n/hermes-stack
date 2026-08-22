@@ -52,11 +52,24 @@ OLLAMA_STRIP_KEYS = (
 )
 
 
-def sanitize_for_ollama(payload: dict[str, Any]) -> dict[str, Any]:
+def sanitize_for_ollama(payload: dict[str, Any], *, strip_thinking: bool = True) -> dict[str, Any]:
     out = sanitize_chat_payload(payload)
-    for key in OLLAMA_STRIP_KEYS:
-        out.pop(key, None)
+    if strip_thinking:
+        for key in OLLAMA_STRIP_KEYS:
+            out.pop(key, None)
     return out
+
+
+def ollama_model_rejects_thinking(model: str) -> bool:
+    """Host Ollama chat models that 400 on extended-thinking request fields."""
+    m = (model or "").lower()
+    return "qwen2" in m or "qwen-2" in m
+
+
+def should_strip_ollama_thinking(*, enable_qwen_thinking: bool, ollama_model: str) -> bool:
+    if ollama_model_rejects_thinking(ollama_model):
+        return True
+    return not enable_qwen_thinking
 
 
 def openai_chat_ok(data: Any) -> bool:

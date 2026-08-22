@@ -16,6 +16,7 @@ from chat_norm import (  # noqa: E402
     openai_chat_ok,
     sanitize_chat_payload,
     sanitize_for_ollama,
+    should_strip_ollama_thinking,
 )
 from route_expand import upstream_url  # noqa: E402
 
@@ -36,6 +37,26 @@ def main() -> int:
     )
     if "thinking" in thinking_payload:
         print("FAIL ollama sanitize must drop thinking")
+        return 1
+    keep_thinking = sanitize_for_ollama(
+        {"messages": [{"role": "user", "content": "hi"}], "thinking": {"type": "enabled"}},
+        strip_thinking=False,
+    )
+    if "thinking" not in keep_thinking:
+        print("FAIL ollama sanitize strip_thinking=False must keep thinking")
+        return 1
+    if not should_strip_ollama_thinking(enable_qwen_thinking=True, ollama_model="qwen3:8b"):
+        pass
+    else:
+        print("FAIL qwen3 + thinking enabled must not strip")
+        return 1
+    if not should_strip_ollama_thinking(enable_qwen_thinking=True, ollama_model="qwen2.5:7b"):
+        print("FAIL qwen2.5 must always strip thinking")
+        return 1
+    if should_strip_ollama_thinking(enable_qwen_thinking=False, ollama_model="qwen3:8b"):
+        pass
+    else:
+        print("FAIL thinking off must strip on ollama path")
         return 1
     if openai_chat_ok({"error": {"message": "nope"}}):
         print("FAIL error body must not be ok")

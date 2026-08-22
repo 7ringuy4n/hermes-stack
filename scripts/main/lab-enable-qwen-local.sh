@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enable local Qwen (Ollama qwen2.5:7b) for lab — no DashScope key required.
+# Enable local Qwen (Ollama qwen3:4b) for lab — no DashScope key required.
 # Usage: bash scripts/main/lab-enable-qwen-local.sh
 set -euo pipefail
 
@@ -8,7 +8,7 @@ cd "$ROOT"
 # shellcheck disable=SC1091
 [[ -f .env ]] && set -a && source <(tr -d '\r' < .env) && set +a
 
-OLLAMA_MODEL="${OLLAMA_MODEL:-qwen2.5:7b}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:4b}"
 OLLAMA_HOST_URL="${OLLAMA_HOST_URL:-http://127.0.0.1:11434}"
 OLLAMA_DOCKER_URL="${OLLAMA_DOCKER_URL:-http://host.docker.internal:11434}"
 
@@ -28,6 +28,7 @@ upsert() {
 }
 
 upsert ENABLE_QWEN 1
+upsert ENABLE_QWEN_THINKING 1
 upsert OLLAMA_BASE_URL "${OLLAMA_DOCKER_URL}"
 upsert OLLAMA_MODEL "${OLLAMA_MODEL}"
 
