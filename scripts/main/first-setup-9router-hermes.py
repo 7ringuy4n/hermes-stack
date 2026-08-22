@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""First-setup after the stack is up with 9Router enabled:
+"""Note: Qwen/Alibaba is wired primarily via OmniRouter first-setup (provider alibaba, combos hermes+classifier). When ENABLE_9ROUTER=1, add Qwen models in 9Router Combos UI with Qwen first and round-robin.
+First-setup after the stack is up with 9Router enabled:
 
 1) Login to 9Router with N9ROUTER_INITIAL_PASSWORD
 2) Read Default Key from GET /api/keys
