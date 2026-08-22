@@ -36,11 +36,13 @@ if str(_SCRIPT_DIR) not in sys.path:
 try:
     from omnirouter_qwen import (
         ensure_alibaba_qwen_provider as _ensure_alibaba_qwen_provider,
+        ensure_combo_qwen_fast as _ensure_combo_qwen_fast,
         ensure_combo_qwen_first as _ensure_combo_qwen_first,
     )
 except ImportError:
     from omnirouter_qwen import (  # type: ignore
         ensure_alibaba_qwen_provider as _ensure_alibaba_qwen_provider,
+        ensure_combo_qwen_fast as _ensure_combo_qwen_fast,
         ensure_combo_qwen_first as _ensure_combo_qwen_first,
     )
 
@@ -308,7 +310,7 @@ def ensure_empty_combo(
         description=description,
         strategy=COMBO_STRATEGY,
         classify=(name == CLASSIFY_COMBO_NAME),
-        reserved_names={COMBO_NAME, CLASSIFY_COMBO_NAME},
+        reserved_names={COMBO_NAME, CLASSIFY_COMBO_NAME, "qwen-fast"},
         drop_probes=drop_probe_combos,
         member_count=_combo_member_count,
     )
@@ -331,6 +333,74 @@ def ensure_combo_alias(opener) -> str:
         name=COMBO_NAME,
         description="Stack chat combo — Qwen first when active (round-robin)",
     )
+
+
+def ensure_qwen_fast_combo(opener) -> str:
+    """Dedicated small-Qwen combo (1.5B/1.7B-class), separate from hermes."""
+    name, _ = _ensure_combo_qwen_fast(
+        http_json,
+        BASE,
+        opener,
+        name=os.environ.get("OMNIROUTER_QWEN_FAST_COMBO", "qwen-fast"),
+        strategy=COMBO_STRATEGY,
+    )
+    return name
+
+
+def deactivate_non_qwen_llm_providers(opener) -> None:
+    """Deactivate LLM providers that do not host current Qwen chat models.
+
+    Keeps search providers and any provider prefix present in Qwen catalog hits
+    (alibaba / groq / openrouter / …). Controlled by OMNIROUTER_QWEN_ONLY_PROVIDERS.
+    """
+    flag = (
+        os.environ.get("OMNIROUTER_QWEN_ONLY_PROVIDERS")
+        or os.environ.get("OMNI_QWEN_ONLY_PROVIDERS")
+        or "1"
+    ).strip().lower()
+    if flag not in {"1", "true", "yes", "on"}:
+        print("NOTE: skip deactivate non-Qwen providers (OMNIROUTER_QWEN_ONLY_PROVIDERS off)")
+        return
+    keep_providers = {
+        "alibaba",
+        "tavily-search",
+        "firecrawl-search",
+        "searxng-search",
+    }
+    try:
+        from omnirouter_qwen import is_qwen_chat_model
+    except ImportError:
+        from omnirouter_qwen import is_qwen_chat_model  # type: ignore
+    try:
+        _, models_data = http_json(opener, "GET", f"{BASE}/v1/models")
+        for row in models_data.get("data") or []:
+            if not isinstance(row, dict):
+                continue
+            mid = row.get("id")
+            if isinstance(mid, str) and is_qwen_chat_model(mid):
+                keep_providers.add(mid.split("/", 1)[0].lower())
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN qwen provider keep-scan: {e}")
+    _, data = http_json(opener, "GET", f"{BASE}/api/providers")
+    for c in data.get("connections") or []:
+        if not isinstance(c, dict) or not c.get("id"):
+            continue
+        prov = str(c.get("provider") or "").lower()
+        name = str(c.get("name") or "").lower()
+        if prov in keep_providers or name in {"qwen", "dashscope", "alibaba"}:
+            continue
+        if not c.get("isActive"):
+            continue
+        try:
+            http_json(
+                opener,
+                "PUT",
+                f"{BASE}/api/providers/{c['id']}",
+                {"isActive": False},
+            )
+            print(f"==> deactivate provider id={c['id']} provider={prov!r} name={name!r}")
+        except Exception as e:  # noqa: BLE001
+            print(f"WARN deactivate {c.get('id')}: {e}")
 
 
 def ensure_search_providers(opener) -> None:
@@ -595,8 +665,10 @@ def main() -> int:
     print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
 
     ensure_alibaba_qwen_provider(opener, env)
+    deactivate_non_qwen_llm_providers(opener)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
+    qwen_fast = ensure_qwen_fast_combo(opener)
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
@@ -619,7 +691,7 @@ def main() -> int:
     smoke_omni_search(key)
     print(
         f"OK: first-setup omni-router complete "
-        f"(chat/classify Qwen-first when active; "
+        f"(chat/classify slim Qwen-only; fast_combo={qwen_fast!r}; "
         f"search via Omni Tavily→Firecrawl→SearXNG)"
     )
     return 0

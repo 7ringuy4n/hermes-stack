@@ -125,8 +125,11 @@ GATEWAY_UPSTREAM_URL=http://traefik:80
 | Stub service | `kylemanna/openvpn` under profile `openvpn` |
 | Data dir | `OPENVPN_DATA_DIR` (certs/config) |
 | Host port | `127.0.0.1:${OPENVPN_HOST_PORT:-1194}/udp` for local tests |
+| Any-OS clients | Issue `.ovpn`; use OpenVPN Connect / Tunnelblick / NetworkManager |
 
 Initialize PKI before expecting a healthy VPN. Steps: `architect/edge/openvpn/README.md`.
+
+**OmniRouter over VPN:** default publish is `OMNIROUTER_BIND=127.0.0.1:20129`. From Windows/macOS/Linux after VPN connect, prefer `ssh -L 20129:127.0.0.1:20129` then open `http://127.0.0.1:20129`. Optional: `OMNIROUTER_BIND=0.0.0.0` **only** with firewall limited to the VPN subnet. Set `OMNIROUTE_DISABLE_CREDENTIAL_HEALTH_CHECK=true` to stop Omni connection-test spam.
 
 ---
 
