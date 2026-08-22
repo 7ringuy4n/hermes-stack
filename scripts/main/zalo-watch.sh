@@ -111,10 +111,17 @@ clear_owner_lock() {
 }
 
 restart_bridge() {
-  log "restart host Zalo bridge unit (if any)"
-  systemctl --user try-restart com.hermes.zaloplugin.service 2>/dev/null \
-    || systemctl --user try-restart assistant-zalo.service 2>/dev/null \
-    || true
+  log "restart host Zalo bridge unit (heal EADDRINUSE orphans first)"
+  # Prefer the idempotent patcher: clears orphan runuser/nohup holders of :8787,
+  # keeps /media/fetch + /inject-event, then restarts the user systemd unit.
+  if [[ -f "${ROOT}/scripts/main/patch_zalo_bridge_inject.py" ]]; then
+    ZALO_BRIDGE_FORCE_RESTART=1 $SUDO python3 "${ROOT}/scripts/main/patch_zalo_bridge_inject.py" \
+      >/dev/null 2>&1 || true
+  else
+    systemctl --user try-restart com.hermes.zaloplugin.service 2>/dev/null \
+      || systemctl --user try-restart assistant-zalo.service 2>/dev/null \
+      || true
+  fi
   if $SUDO docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$PROXY_CTR"; then
     log "restart ${PROXY_CTR}"
     $SUDO docker restart "$PROXY_CTR" >/dev/null 2>&1 || true

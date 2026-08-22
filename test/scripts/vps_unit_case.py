@@ -30,6 +30,8 @@ def main() -> int:
         "24": "/opt/assistant/test/scripts/workflow_schedule_concurrency_unit.py",
         "34": "/opt/assistant/test/scripts/zalo_attachment_unit.py",
         "35": "/opt/assistant/test/scripts/ocr_refuse_unit.py",
+        "36": "/opt/assistant/test/scripts/paddle_ocr_unit.py",
+        "37": "/opt/assistant/test/scripts/omni_rotate_noreply_unit.py",
     }
     if CASE not in scripts:
         print("FAIL: set CASE=" + "|".join(sorted(scripts)))

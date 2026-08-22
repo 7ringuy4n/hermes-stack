@@ -15,6 +15,7 @@ Classify prompt: config/classify.json
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -34,7 +35,14 @@ from classify import (  # noqa: E402
     outbound_with_llm,
     plan_schema_ok,
 )
-from chat_norm import normalize_chat_completion, sanitize_chat_payload
+from chat_norm import (  # noqa: E402
+    chat_body_should_failover,
+    chat_busy_capacity,
+    completion_to_sse,
+    normalize_chat_completion,
+    sanitize_chat_payload,
+)
+from route_expand import expand_chat_candidates
 from websearch import health_fields as websearch_health
 from websearch import router as websearch_router
 
@@ -47,12 +55,30 @@ ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "1").strip() in {"1", "true", 
 ENABLE_9ROUTER = os.environ.get("ENABLE_9ROUTER", "0").strip() in {"1", "true", "yes", "on"}
 N9_KEY = (os.environ.get("N9ROUTER_API_KEY") or "").strip()
 OMNI_KEY = (os.environ.get("OMNIROUTER_API_KEY") or os.environ.get("N9ROUTER_API_KEY") or "").strip()
+OMNI_DEFAULT_MODEL = (
+    os.environ.get("OMNIROUTER_DEFAULT_COMBO") or os.environ.get("MODEL_ROUTER_OUTBOUND_MODEL") or "hermes"
+).strip() or "hermes"
+# After blocked/slow Omni members, try these free-safe ids (combo or model).
+OMNI_FAILOVER_MODELS = [
+    x.strip()
+    for x in (
+        os.environ.get("OMNIROUTER_FAILOVER_MODELS") or "auto/best-free"
+    ).split(",")
+    if x.strip()
+]
+# Retry the primary combo so Omni round-robin can land on an alive free member.
+OMNI_ROTATE_ATTEMPTS = max(
+    1, min(int(os.environ.get("OMNIROUTER_ROTATE_ATTEMPTS") or "5"), 8)
+)
+# Sleep between hops when Omni says capacity is busy (free-tier throttle).
+OMNI_BUSY_BACKOFF_S = float(os.environ.get("OMNIROUTER_BUSY_BACKOFF_S") or "3")
 OLLAMA_BASE = (os.environ.get("OLLAMA_BASE_URL") or "").rstrip("/")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
 FALLBACK_OPENAI = (os.environ.get("FALLBACK_OPENAI_BASE_URL") or "").rstrip("/")
 FALLBACK_OPENAI_KEY = (os.environ.get("OPENAI_API_KEY") or "").strip()
 FALLBACK_OPENAI_MODEL = os.environ.get("FALLBACK_OPENAI_MODEL", "gpt-4o-mini")
-TIMEOUT_S = float(os.environ.get("MODEL_ROUTER_TIMEOUT_S", "90"))
+# Free Omni models can be slow; give them room before rotating.
+TIMEOUT_S = float(os.environ.get("MODEL_ROUTER_TIMEOUT_S", "180"))
 HEALTH_TTL_S = float(os.environ.get("MODEL_ROUTER_HEALTH_TTL_S", "15"))
 LISTEN_PORT = int(os.environ.get("MODEL_ROUTER_PORT", "8096"))
 # Retry next provider on these (413 payload, 429 rate, auth, 5xx).
@@ -61,6 +87,20 @@ FAILOVER_HTTP = {401, 403, 413, 429}
 
 def _failover_status(code: int) -> bool:
     return code >= 500 or code in FAILOVER_HTTP
+
+
+def _expand_chat_candidates(
+    candidates: list[tuple[str, str, dict[str, str], Optional[str]]],
+    *,
+    requested_model: str,
+) -> list[tuple[str, str, dict[str, str], Optional[str]]]:
+    return expand_chat_candidates(
+        candidates,
+        requested_model=requested_model,
+        default_model=OMNI_DEFAULT_MODEL,
+        failover_models=OMNI_FAILOVER_MODELS,
+        rotate_attempts=OMNI_ROTATE_ATTEMPTS,
+    )
 
 app = FastAPI(title="assistant-model-router", version="0.5.0")
 # Web search combo must be registered before the OpenAI proxy catch-all below.
@@ -302,17 +342,27 @@ async def proxy(path: str, request: Request) -> Response:
             content={"error": {"message": MESSAGES.get("no_model_available"), "type": "no_model_available", "task": task}},
         )
 
-    stream = bool(body.get("stream")) if isinstance(body, dict) else False
+    want_stream = bool(body.get("stream")) if isinstance(body, dict) else False
+    if is_chat:
+        candidates = _expand_chat_candidates(
+            candidates,
+            requested_model=str((body or {}).get("model") or OMNI_DEFAULT_MODEL),
+        )
+
     last_err = ""
     for name, base, headers, model_override in candidates:
         payload = sanitize_chat_payload(dict(body) if body else {})
+        # Always call chat upstream non-stream so we can inspect error bodies
+        # (paid Omni models often 403 inside a 200 SSE stream Hermes cannot recover from).
+        if is_chat:
+            payload["stream"] = False
         if model_override and "model" in payload:
             payload["model"] = model_override
         elif model_override and is_chat:
             payload["model"] = model_override
         url = f"{base}/{path.lstrip('/')}"
         try:
-            if stream and request.method == "POST":
+            if (not is_chat) and stream_passthrough_ok(want_stream, request.method):
                 req = _client().build_request(
                     request.method,
                     url,
@@ -328,17 +378,10 @@ async def proxy(path: str, request: Request) -> Response:
                 if "event-stream" not in ctype:
                     raw_body = await upstream.aread()
                     await upstream.aclose()
-                    try:
-                        parsed = json.loads(raw_body.decode("utf-8", errors="replace") or "{}")
-                    except Exception:
-                        parsed = None
-                    norm = normalize_chat_completion(parsed)
-                    if norm is None:
-                        last_err = f"{name}:bad_chat_json"
-                        continue
-                    return JSONResponse(
-                        content=norm,
-                        status_code=200,
+                    return Response(
+                        content=raw_body,
+                        status_code=upstream.status_code,
+                        media_type=upstream.headers.get("content-type", "application/json"),
                         headers={"x-model-router-provider": name, "x-model-router-task": task},
                     )
 
@@ -347,7 +390,11 @@ async def proxy(path: str, request: Request) -> Response:
                         yield chunk
                     await upstream.aclose()
 
-                return StreamingResponse(gen(), status_code=upstream.status_code, media_type=upstream.headers.get("content-type", "text/event-stream"))
+                return StreamingResponse(
+                    gen(),
+                    status_code=upstream.status_code,
+                    media_type=upstream.headers.get("content-type", "text/event-stream"),
+                )
 
             upstream = await _client().request(
                 request.method,
@@ -355,23 +402,38 @@ async def proxy(path: str, request: Request) -> Response:
                 headers=headers,
                 content=json.dumps(payload).encode("utf-8") if payload else raw,
             )
-            if _failover_status(upstream.status_code):
-                last_err = f"{name}:{upstream.status_code}"
-                continue
             if is_chat:
                 try:
                     parsed = json.loads(upstream.content.decode("utf-8", errors="replace") or "{}")
                 except Exception:
                     parsed = None
+                if chat_body_should_failover(upstream.status_code, parsed):
+                    last_err = f"{name}:{upstream.status_code}:{str((parsed or {}).get('error') or 'bad_chat')[:80]}"
+                    print(f"[route] failover {last_err} model={payload.get('model')}", flush=True)
+                    if chat_busy_capacity(upstream.status_code, parsed) and OMNI_BUSY_BACKOFF_S > 0:
+                        await asyncio.sleep(OMNI_BUSY_BACKOFF_S)
+                    continue
                 norm = normalize_chat_completion(parsed)
                 if norm is None:
                     last_err = f"{name}:bad_chat_json"
                     continue
-                return JSONResponse(
-                    content=norm,
-                    status_code=200,
-                    headers={"x-model-router-provider": name, "x-model-router-task": task},
-                )
+                headers_out = {
+                    "x-model-router-provider": name,
+                    "x-model-router-task": task,
+                    "x-model-router-model": str(payload.get("model") or ""),
+                }
+                if want_stream:
+                    return StreamingResponse(
+                        iter([completion_to_sse(norm)]),
+                        status_code=200,
+                        media_type="text/event-stream",
+                        headers=headers_out,
+                    )
+                return JSONResponse(content=norm, status_code=200, headers=headers_out)
+
+            if _failover_status(upstream.status_code):
+                last_err = f"{name}:{upstream.status_code}"
+                continue
             return Response(
                 content=upstream.content,
                 status_code=upstream.status_code,
@@ -393,6 +455,10 @@ async def proxy(path: str, request: Request) -> Response:
             }
         },
     )
+
+
+def stream_passthrough_ok(want_stream: bool, method: str) -> bool:
+    return bool(want_stream) and method == "POST"
 
 
 if __name__ == "__main__":

@@ -4,13 +4,15 @@
 1) Login with OMNIROUTER_INITIAL_PASSWORD (else N9ROUTER_INITIAL_PASSWORD)
 2) Read/create Default Key → OMNIROUTER_API_KEY
 3) Ensure chat combo alias exists (OMNIROUTER_DEFAULT_COMBO, default ``hermes``)
-   — do NOT hardcode chat member models; OmniRouter / UI choose models
-4) Ensure classify combo ``classifier`` with all OpenCode Free (``oc/*``) models
+   — **empty members**; operator adds models in Omni Combos UI (no OpenCode defaults)
+4) Ensure classify combo ``classifier`` — **empty members** (same rule)
 5) Set combo strategy preference (round-robin)
-6) Point Hermes at model-router; recreate router-worker for the key
+6) Ensure Search providers: Tavily (1) → Firecrawl (2) → local SearXNG (3);
+   block ollama-search so Omni /v1/search owns web search
+7) Point Hermes at model-router; recreate router-worker for the key
 
 Stack code sends combo *names* as OpenAI ``model``. Chat uses ``hermes``;
-classify uses ``classifier`` (OpenCode members refreshed by this script).
+classify uses ``classifier``. Web search: Hermes → model-router /v1/search → Omni.
 """
 from __future__ import annotations
 
@@ -25,6 +27,24 @@ import urllib.parse
 import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
+
+# Local helpers (omnirouter_qwen) live next to this script.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+try:
+    from omnirouter_qwen import (
+        ensure_alibaba_qwen_provider as _ensure_alibaba_qwen_provider,
+        ensure_combo_qwen_fast as _ensure_combo_qwen_fast,
+        ensure_combo_qwen_first as _ensure_combo_qwen_first,
+    )
+except ImportError:
+    from omnirouter_qwen import (  # type: ignore
+        ensure_alibaba_qwen_provider as _ensure_alibaba_qwen_provider,
+        ensure_combo_qwen_fast as _ensure_combo_qwen_fast,
+        ensure_combo_qwen_first as _ensure_combo_qwen_first,
+    )
 
 ROOT = Path(os.environ.get("STACK_ROOT", "/opt/assistant"))
 PORT = int(os.environ.get("OMNIROUTER_HOST_PORT", "20129"))
@@ -269,128 +289,348 @@ def list_oc_models(opener) -> list[str]:
     return uniq
 
 
+
+def ensure_alibaba_qwen_provider(opener, env: dict[str, str]):
+    """Ensure Omni ``alibaba`` provider (Qwen/DashScope) when a key is present."""
+    return _ensure_alibaba_qwen_provider(http_json, BASE, opener, env)
+
+
+def ensure_empty_combo(
+    opener,
+    *,
+    name: str,
+    description: str,
+) -> str:
+    """Ensure combo; Qwen-first when Qwen models are active on Omni."""
+    n, _ = _ensure_combo_qwen_first(
+        http_json,
+        BASE,
+        opener,
+        name=name,
+        description=description,
+        strategy=COMBO_STRATEGY,
+        classify=(name == CLASSIFY_COMBO_NAME),
+        reserved_names={COMBO_NAME, CLASSIFY_COMBO_NAME, "qwen-fast"},
+        drop_probes=drop_probe_combos,
+        member_count=_combo_member_count,
+    )
+    return n
+
+
 def ensure_classifier_combo(opener) -> str:
-    """Create/update combo ``classifier`` with all current OpenCode Free models."""
-    unblock_opencode(opener)
-    conn = ensure_opencode_provider(opener)
-    oc = list_oc_models(opener)
-    if not oc:
-        raise SystemExit("no oc/* OpenCode Free models for classifier combo")
-    print(f"==> classifier OpenCode models ({len(oc)}): {oc}")
-
-    # Omni Combos expect member *objects* (connectionId) like the hermes combo shape.
-    members: list[dict] = []
-    conn_id = (conn or {}).get("id")
-    for i, mid in enumerate(oc, 1):
-        item: dict = {
-            "id": f"classifier-model-{i}-{mid.replace('/', '-').replace('.', '-')}"[:80],
-            "kind": "model",
-            "model": mid,
-            "providerId": "oc",
-            "weight": 0,
-            "label": mid,
-        }
-        if conn_id:
-            item["connectionId"] = conn_id
-        members.append(item)
-
-    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
-    combos = data.get("combos") or []
-    existing = next((c for c in combos if (c.get("name") or "") == CLASSIFY_COMBO_NAME), None)
-    payload = {
-        "name": CLASSIFY_COMBO_NAME,
-        "models": members,
-        "strategy": COMBO_STRATEGY,
-        "description": "Classify/intent combo — all OpenCode Free (oc/*) models",
-    }
-    if existing and existing.get("id"):
-        cid = existing["id"]
-        print(f"==> update combo {CLASSIFY_COMBO_NAME} ({cid}) members={len(members)}")
-        status, body = http_json(opener, "PUT", f"{BASE}/api/combos/{cid}", payload)
-        if status not in (200, 201):
-            raise SystemExit(f"classifier combo update failed: {body}")
-    else:
-        print(f"==> create combo {CLASSIFY_COMBO_NAME} members={len(members)}")
-        status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
-        if status not in (200, 201):
-            raise SystemExit(f"classifier combo create failed: {body}")
-
-    try:
-        http_json(
-            opener,
-            "PATCH",
-            f"{BASE}/api/settings",
-            {
-                "comboStrategies": {
-                    CLASSIFY_COMBO_NAME: {"fallbackStrategy": COMBO_STRATEGY},
-                },
-            },
-        )
-    except Exception as e:
-        print(f"WARN classifier comboStrategies patch: {e}")
-    return CLASSIFY_COMBO_NAME
+    """Ensure classify combo; Qwen-first when active."""
+    return ensure_empty_combo(
+        opener,
+        name=CLASSIFY_COMBO_NAME,
+        description="Classify/intent combo — Qwen first when active (round-robin)",
+    )
 
 
 def ensure_combo_alias(opener) -> str:
-    """Ensure combo *name* exists. Never overwrite member models — Omni chooses."""
-    drop_probe_combos(opener)
-
-    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
-    combos = data.get("combos") or []
-    existing = next((c for c in combos if (c.get("name") or "") == COMBO_NAME), None)
-
-    if existing and existing.get("id"):
-        cid = existing["id"]
-        n = _combo_member_count(existing)
-        # Strategy/description only — omit "models" so Omni keeps operator membership.
-        payload = {
-            "name": COMBO_NAME,
-            "strategy": COMBO_STRATEGY,
-            "description": "Stack combo alias — member models managed in OmniRouter UI",
-        }
-        print(f"==> keep combo {COMBO_NAME} ({cid}) members={n} (not overwriting models)")
-        status, body = http_json(opener, "PUT", f"{BASE}/api/combos/{cid}", payload)
-        if status not in (200, 201):
-            print(f"WARN combo metadata update failed: {body}")
-        ensure_combo_round_robin(opener)
-        if n == 0:
-            print(
-                f"WARN combo {COMBO_NAME!r} has no members — add models in OmniRouter Combos UI"
-            )
-        return COMBO_NAME
-
-    # Create alias shell only. Prefer empty members; Omni/UI fills models.
-    print(f"==> create combo alias {COMBO_NAME} (no hardcoded members)")
-    for payload in (
-        {
-            "name": COMBO_NAME,
-            "models": [],
-            "strategy": COMBO_STRATEGY,
-            "description": "Stack combo alias — member models managed in OmniRouter UI",
-        },
-        {
-            "name": COMBO_NAME,
-            "strategy": COMBO_STRATEGY,
-            "description": "Stack combo alias — member models managed in OmniRouter UI",
-        },
-    ):
-        try:
-            status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
-        except urllib.error.HTTPError as e:
-            print(f"WARN create attempt failed HTTP {e.code}: {e.read()[:200]!r}")
-            continue
-        if status in (200, 201):
-            ensure_combo_round_robin(opener)
-            print(
-                f"NOTE: add member models for combo {COMBO_NAME!r} in OmniRouter Combos UI "
-                "(do not hardcode in stack)"
-            )
-            return COMBO_NAME
-        print(f"WARN create attempt rejected: {body}")
-
-    raise SystemExit(
-        f"could not create combo alias {COMBO_NAME!r} — create it in OmniRouter UI"
+    """Ensure chat combo; Qwen-first when active."""
+    return ensure_empty_combo(
+        opener,
+        name=COMBO_NAME,
+        description="Stack chat combo — Qwen first when active (round-robin)",
     )
+
+
+def ensure_qwen_fast_combo(opener) -> str:
+    """Dedicated small-Qwen combo (1.5B/1.7B-class), separate from hermes."""
+    name, _ = _ensure_combo_qwen_fast(
+        http_json,
+        BASE,
+        opener,
+        name=os.environ.get("OMNIROUTER_QWEN_FAST_COMBO", "qwen-fast"),
+        strategy=COMBO_STRATEGY,
+    )
+    return name
+
+
+def deactivate_non_qwen_llm_providers(opener) -> None:
+    """Deactivate LLM providers that do not host current Qwen chat models.
+
+    Keeps search providers and any provider prefix present in Qwen catalog hits
+    (alibaba / groq / openrouter / …). Controlled by OMNIROUTER_QWEN_ONLY_PROVIDERS.
+    """
+    flag = (
+        os.environ.get("OMNIROUTER_QWEN_ONLY_PROVIDERS")
+        or os.environ.get("OMNI_QWEN_ONLY_PROVIDERS")
+        or "1"
+    ).strip().lower()
+    if flag not in {"1", "true", "yes", "on"}:
+        print("NOTE: skip deactivate non-Qwen providers (OMNIROUTER_QWEN_ONLY_PROVIDERS off)")
+        return
+    keep_providers = {
+        "alibaba",
+        "tavily-search",
+        "firecrawl-search",
+        "searxng-search",
+    }
+    try:
+        from omnirouter_qwen import is_qwen_chat_model
+    except ImportError:
+        from omnirouter_qwen import is_qwen_chat_model  # type: ignore
+    try:
+        _, models_data = http_json(opener, "GET", f"{BASE}/v1/models")
+        for row in models_data.get("data") or []:
+            if not isinstance(row, dict):
+                continue
+            mid = row.get("id")
+            if isinstance(mid, str) and is_qwen_chat_model(mid):
+                keep_providers.add(mid.split("/", 1)[0].lower())
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN qwen provider keep-scan: {e}")
+    _, data = http_json(opener, "GET", f"{BASE}/api/providers")
+    for c in data.get("connections") or []:
+        if not isinstance(c, dict) or not c.get("id"):
+            continue
+        prov = str(c.get("provider") or "").lower()
+        name = str(c.get("name") or "").lower()
+        if prov in keep_providers or name in {"qwen", "dashscope", "alibaba"}:
+            continue
+        if not c.get("isActive"):
+            continue
+        try:
+            http_json(
+                opener,
+                "PUT",
+                f"{BASE}/api/providers/{c['id']}",
+                {"isActive": False},
+            )
+            print(f"==> deactivate provider id={c['id']} provider={prov!r} name={name!r}")
+        except Exception as e:  # noqa: BLE001
+            print(f"WARN deactivate {c.get('id')}: {e}")
+
+
+def _search_connections(opener):
+    _, data = http_json(opener, "GET", f"{BASE}/api/providers")
+    connections = data.get("connections") or []
+    by_prov = {}
+    for c in connections:
+        prov = str(c.get("provider") or "")
+        if prov in ("tavily-search", "firecrawl-search", "searxng-search"):
+            by_prov[prov] = c
+    return by_prov
+
+
+def enforce_search_priorities(opener) -> None:
+    """Best-effort Omni connection priorities: Tavily=1, Firecrawl=2, SearXNG=3.
+
+    Hermes does **not** rely on Omni unforced default: Router Worker forces
+    ``provider`` per ``OMNIROUTER_SEARCH_PROVIDERS`` (Tavily → Firecrawl → SearXNG).
+
+    OmniRoute quirk (lab): unforced ``POST /v1/search`` still reports
+    ``provider=searxng-search`` even when that connection is blocked/deleted;
+    connection ``priority`` may not persist on GET after PUT. Keep connections
+    active for the forced cascade; judge health via forced Tavily smoke +
+    router ``backend=omni:tavily-search``.
+    """
+    wanted = (
+        ("tavily-search", 1),
+        ("firecrawl-search", 2),
+        ("searxng-search", 3),
+    )
+    by_prov = _search_connections(opener)
+    for prov, prio in wanted:
+        row = by_prov.get(prov)
+        if not row or not row.get("id"):
+            continue
+        try:
+            http_json(
+                opener,
+                "PUT",
+                f"{BASE}/api/providers/{row['id']}",
+                {"isActive": True, "priority": prio},
+            )
+            print(f"==> enforce {prov} priority={prio} id={row['id']}")
+        except Exception as e:
+            print(f"WARN enforce {prov} priority: {e}")
+
+    by_prov = _search_connections(opener)
+    for prov, prio in wanted:
+        row = by_prov.get(prov)
+        if not row:
+            continue
+        got = row.get("priority")
+        active = row.get("isActive")
+        print(f"==> verify {prov} priority={got} active={active}")
+        if active is False:
+            print(f"WARN search provider inactive: {prov}")
+        if got != prio:
+            print(
+                f"NOTE: {prov} priority GET={got} (wanted {prio}); "
+                "Omni may not persist search priorities — Hermes uses forced provider cascade"
+            )
+
+
+def ensure_search_providers(opener) -> None:
+    """Omni UI owns search: Tavily → Firecrawl → SearXNG; block ollama-search."""
+    searx_url = (
+        os.environ.get("OMNIROUTER_SEARXNG_URL")
+        or os.environ.get("SEARXNG_URL")
+        or "http://searxng:8080"
+    ).rstrip("/")
+    print(f"==> ensure Omni search providers (SearXNG base={searx_url})")
+
+    by_prov = _search_connections(opener)
+    tavily = by_prov.get("tavily-search")
+    firecrawl = by_prov.get("firecrawl-search")
+    searx = by_prov.get("searxng-search")
+
+    if tavily and tavily.get("id"):
+        try:
+            http_json(
+                opener,
+                "PUT",
+                f"{BASE}/api/providers/{tavily['id']}",
+                {"isActive": True, "priority": 1},
+            )
+            print(f"==> tavily-search priority=1 id={tavily['id']}")
+        except Exception as e:
+            print(f"WARN tavily priority: {e}")
+    else:
+        print("NOTE: no tavily-search connection — add API key in Omni Providers → Search")
+
+    if firecrawl and firecrawl.get("id"):
+        try:
+            http_json(
+                opener,
+                "PUT",
+                f"{BASE}/api/providers/{firecrawl['id']}",
+                {"isActive": True, "priority": 2},
+            )
+            print(f"==> firecrawl-search priority=2 id={firecrawl['id']}")
+        except Exception as e:
+            print(f"WARN firecrawl priority: {e}")
+    else:
+        print("NOTE: no firecrawl-search connection — add API key in Omni Providers → Search")
+
+    # Omni stores local SearXNG URL in providerSpecificData.baseUrl (SSRF-aware path).
+    # Do not rely on this PUT for priority — Omni may reset it; enforce_search_priorities
+    # runs a minimal priority-only pass afterward.
+    cid = None
+    searx_body = {
+        "provider": "searxng-search",
+        "name": "local-searxng",
+        "isActive": True,
+        "priority": 3,
+        "apiKey": "local",
+        "baseUrl": searx_url,
+        "providerSpecificData": {"baseUrl": searx_url},
+    }
+    if searx and searx.get("id"):
+        try:
+            http_json(opener, "PUT", f"{BASE}/api/providers/{searx['id']}", searx_body)
+            cid = searx["id"]
+            print(f"==> update searxng-search id={cid}")
+        except Exception as e:
+            print(f"WARN searxng update: {e}")
+            cid = searx.get("id")
+    else:
+        try:
+            status, body = http_json(opener, "POST", f"{BASE}/api/providers", searx_body)
+            cid = (body.get("connection") or body).get("id")
+            print(f"==> create searxng-search HTTP {status} id={cid}")
+            if cid:
+                http_json(
+                    opener,
+                    "PUT",
+                    f"{BASE}/api/providers/{cid}",
+                    {
+                        "apiKey": "local",
+                        "isActive": True,
+                        "priority": 3,
+                        "providerSpecificData": {"baseUrl": searx_url},
+                    },
+                )
+        except Exception as e:
+            print(f"WARN searxng create: {e}")
+            cid = None
+
+    if cid:
+        try:
+            status, body = http_json(opener, "POST", f"{BASE}/api/providers/{cid}/test")
+            print(f"==> searxng test valid={body.get('valid')} err={body.get('error')}")
+        except Exception as e:
+            print(f"WARN searxng test: {e}")
+
+    enforce_search_priorities(opener)
+
+    # Drop accidental chat combo named websearch that embeds search providers as models.
+    try:
+        _, combos = http_json(opener, "GET", f"{BASE}/api/combos")
+        for c in combos.get("combos") or []:
+            if (c.get("name") or "") != "websearch":
+                continue
+            models = c.get("models") or []
+            if any(
+                "search" in str(m.get("providerId") or m.get("model") or "").lower()
+                for m in models
+                if isinstance(m, dict)
+            ):
+                print(f"==> delete misleading chat combo websearch id={c.get('id')}")
+                http_json(opener, "DELETE", f"{BASE}/api/combos/{c['id']}")
+    except Exception as e:
+        print(f"WARN websearch combo cleanup: {e}")
+
+    # Prefer Tavily/Firecrawl/SearXNG over built-in ollama-search for default /v1/search.
+    try:
+        _, settings = http_json(opener, "GET", f"{BASE}/api/settings")
+        blocked = list(settings.get("blockedProviders") or [])
+        if "ollama-search" not in blocked:
+            blocked.append("ollama-search")
+            http_json(opener, "PUT", f"{BASE}/api/settings", {"blockedProviders": blocked})
+            print("==> blockedProviders += ollama-search")
+        else:
+            print("==> ollama-search already blocked")
+    except Exception as e:
+        print(f"WARN blockedProviders: {e}")
+
+
+def smoke_omni_search(key: str) -> None:
+    # Unforced Omni /v1/search often labels searxng-search even when Tavily works;
+    # Hermes health is forced-provider (matches Router Worker cascade).
+    for label, body_obj in (
+        ("unforced", {"query": "Ho Chi Minh weather", "max_results": 2}),
+        (
+            "forced-tavily",
+            {
+                "query": "Ho Chi Minh weather",
+                "max_results": 2,
+                "provider": "tavily-search",
+            },
+        ),
+    ):
+        body = json.dumps(body_obj).encode()
+        req = urllib.request.Request(
+            f"{BASE}/v1/search",
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=45) as resp:
+                data = json.loads(resp.read().decode() or "{}")
+            n = len(data.get("results") or [])
+            prov = data.get("provider")
+            print(f"==> smoke Omni /v1/search ({label}) provider={prov} results={n}")
+            if label == "forced-tavily" and prov == "tavily-search" and n > 0:
+                print("==> smoke OK: forced tavily-search returns results")
+            elif label == "forced-tavily":
+                print("WARN smoke: forced tavily-search failed — check Tavily key in Omni")
+            elif label == "unforced" and prov == "searxng-search":
+                print(
+                    "NOTE: Omni unforced default labels searxng-search "
+                    "(product quirk); Hermes uses Router Worker forced cascade"
+                )
+        except urllib.error.HTTPError as e:
+            print(f"WARN smoke Omni /v1/search ({label}) HTTP {e.code}: {e.read()[:200]!r}")
+        except Exception as e:
+            print(f"WARN smoke Omni /v1/search ({label}): {e}")
 
 
 def ensure_combo_round_robin(opener) -> None:
@@ -511,23 +751,35 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_API_KEY", key)
     print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
 
+    ensure_alibaba_qwen_provider(opener, env)
+    deactivate_non_qwen_llm_providers(opener)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
+    qwen_fast = ensure_qwen_fast_combo(opener)
+    ensure_combo_round_robin(opener)
+    ensure_search_providers(opener)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
     set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
     set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
     set_env_key(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
     set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "1"))
+    # Hermes-facing Router Worker proxies search to Omni by default.
+    if env.get("WEB_BACKENDS") in (None, ""):
+        set_env_key(ROOT / ".env", "WEB_BACKENDS", "omni")
     enable_omni_memory(opener)
 
     recreate_model_router()
     time.sleep(3)
     patch_hermes_model_router(key, combo)
-    verify(key, combo)
-    verify(key, classify_combo)
+    print(
+        f"NOTE: skip chat smoke for empty combos {combo!r}/{classify_combo!r} — "
+        "Qwen-first when active; re-run smoke after key/provider changes"
+    )
+    smoke_omni_search(key)
     print(
         f"OK: first-setup omni-router complete "
-        f"(chat combo={combo!r}; classify combo={classify_combo!r} with OpenCode oc/*)"
+        f"(chat/classify slim Qwen-only; fast_combo={qwen_fast!r}; "
+        f"search via Omni Tavily→Firecrawl→SearXNG)"
     )
     return 0
 
