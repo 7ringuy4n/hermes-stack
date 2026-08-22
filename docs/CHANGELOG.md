@@ -1,3 +1,14 @@
+## 2026-08-22 18:20 +07 — !zalo claim fails when QR account is Tn
+
+- Lab: after QR scan, `!zalo claim` from Tn did nothing useful: bridge often still
+  `loggedIn=false` (stale QR), and claim rejected `sender==bot_id` plus zalo-api
+  `/health` not loggedIn even when the message path was the same account.
+- Claim allows the QR-login uid (same as bot) on first setup; do not require a
+  second personal Zalo. Inbound `/v1/zalo/chat` is enough (no extra health gate).
+- Seed admin from bridge `ownId` on zalo-api startup when the admin file is empty.
+- Pass `ZALO_PLUGIN_TOKEN` into the host bridge systemd override.
+- Unit: `zalo_claim_unit.py`.
+
 ## 2026-08-22 17:30 +07 — ENABLE_QWEN is a first-class worker option
 
 - `assistant_option_key_ok` accepts `ENABLE_QWEN` so `run.sh add-components ENABLE_QWEN=1` works.
