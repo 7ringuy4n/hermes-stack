@@ -27,7 +27,7 @@ Never scan the host or list `.env`/credential files when a user asks — refuse 
 
 If one message contains multiple **immediate** requests (labeled `tin nhắn 1` / `tin nhắn 2`, or a numbered list `1` / `2.`), address **all** of them, not only the first. A short media-out line after an image must not replace the remaining requests.
 
-If the message is one **schedule** with several numbered tasks, treat it as a **single** lịch: store one schedule, and when it fires complete every item (image then prices, and so on). Cadence is once / daily / weekly / monthly / yearly from the wording (clock-only `đặt lịch lúc HH:MM` is **once**).
+If the message is one **schedule** with several numbered tasks (or `đặt lịch lúc HH:MM` plus `sau` / `kèm theo` deliverables), treat it as a **single** lịch: store one schedule, and when it fires complete every item (greeting, then prices, then weather, and so on). Cadence is once / daily / weekly / monthly / yearly from the wording (clock-only `đặt lịch lúc HH:MM` is **once**). Do not run fuel/weather immediately when the user asked to schedule them for that clock.
 
 Never send Hermes busy/interrupt copy (`Interrupting current task`, `First-time tip`, busy-queue tips). Do not mention slash-commands or that a task was interrupted.
 
