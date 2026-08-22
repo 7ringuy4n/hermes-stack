@@ -2058,6 +2058,15 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_fire=schedule_fire,
             ):
                 return
+            # Schedule fires must not wait behind stuck answering / FIFO queue —
+            # inject already delivered the work text; run it immediately.
+            if schedule_fire:
+                logger.info(
+                    "Zalo: scheduleFire bypass queue thread=%s",
+                    thread_id[:24],
+                )
+                await self._as_dispatch_event(event, text)
+                return
             if mid and hasattr(store, "queue_seen") and not store.queue_seen(mid):
                 logger.info("Zalo: skip duplicate queue id=%s", mid[:24])
                 self._as_queue_kick(thread_id)

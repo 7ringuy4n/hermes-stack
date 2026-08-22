@@ -25,7 +25,10 @@ def schedule_url() -> str:
 
 
 def schedule_enabled() -> bool:
-    return _worker_flag_on() and bool(schedule_url())
+    """True when the Go schedule worker is reachable (URL set or SCHEDULE_WORKER=1)."""
+    if (os.getenv("SCHEDULE_URL") or "").strip():
+        return True
+    return _worker_flag_on()
 
 
 def fire_text_from_plan(plan: dict[str, Any] | None, original: str = "") -> str:
