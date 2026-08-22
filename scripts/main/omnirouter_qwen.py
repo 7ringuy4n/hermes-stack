@@ -28,7 +28,7 @@ def ollama_base_url(env: dict[str, str] | None = None) -> str:
 
 
 def ollama_chat_model(env: dict[str, str] | None = None) -> str:
-    """Local Ollama Qwen id for hermes/classifier (e.g. ollama/qwen2.5:7b)."""
+    """Local Ollama Qwen id for hermes/classifier (e.g. ollama/qwen3:4b)."""
     model = (env or {}).get("OLLAMA_MODEL") or os.environ.get("OLLAMA_MODEL") or ""
     model = model.strip()
     if not model or not ollama_base_url(env):
@@ -53,7 +53,7 @@ def ensure_ollama_local_provider(
     opener: Any,
     env: dict[str, str],
 ) -> dict | None:
-    """Register host Ollama (Qwen 2.5 7B-class) when OLLAMA_BASE_URL is set."""
+    """Register host Ollama (Qwen3 4B-class) when OLLAMA_BASE_URL is set."""
     host_url = ollama_base_url(env)
     if not host_url:
         return None
@@ -171,9 +171,11 @@ def qwen_sort_key(model_id: str) -> tuple:
     penalty = 0
     if "thinking" in low or "reason" in low:
         penalty += 5
-    # Qwen3.x chat ids (qwen3.6, qwen3-…) default to hidden reasoning tokens.
+    # Qwen3.x chat ids default to hidden reasoning tokens unless thinking is managed.
     if re.search(r"qwen3(?:[.\-]|\b)", low) or "/qwen3" in low:
         penalty += 6
+        if low.startswith("ollama/") and re.search(r"(?:^|[./\-:])(?:4b)(?:$|[./\-:])", low):
+            penalty -= 8  # lab default: local qwen3:4b with ENABLE_QWEN thinking
     if any(x in low for x in ("qwen2.5", "qwen-2.5", "qwen-plus", "qwen-turbo", "qwen-max")):
         penalty -= 3
     if re.search(r"(?:^|[./\-:])7b(?:$|[./\-:])", low) and "72b" not in low and "32b" not in low:
@@ -320,6 +322,8 @@ def list_qwen_chat_models(
         ids.append(local)
 
     ids = sorted(set(ids), key=qwen_sort_key)
+    if local:
+        ids = [local] + [mid for mid in ids if mid != local]
     limit = 1 if classify else 2  # slim: 1 classifier + <=2 hermes Qwen chat models
     out = ids[:limit]
     print(f"==> Qwen chat candidates classify={classify} n={len(out)} sample={out[:5]}")
