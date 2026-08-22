@@ -1,3 +1,8 @@
+## 2026-08-22 09:10 +07 — Tn greeting inject PASS via gateway.log offsets
+
+- Test no longer false-fails on stale queue-timeout / SOUL lines (TZ cut).
+- Reads new bytes of replica gateway.log after inject; PASS ~22s send ok on lab.
+
 ## 2026-08-22 09:00 +07 — Greeting test reads gateway.log; drop compound race
 
 - Hermes gateway logs to replica gateway.log (docker logs often empty) — Tn greeting inject now reads those files.
