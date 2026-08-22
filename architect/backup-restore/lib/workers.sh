@@ -212,14 +212,35 @@ assistant_disabled_monitor_containers() {
 }
 
 assistant_rm_container_by_service() {
-  local svc="$1" id project="${COMPOSE_PROJECT_NAME:-assistant}"
-  id="$(docker ps -aq --filter "label=com.docker.compose.service=${svc}" \
-    --filter "label=com.docker.compose.project=${project}" 2>/dev/null | head -n1)"
-  if [[ -n "$id" ]]; then
+  assistant_rm_all_compose_service_containers "${1:-}"
+}
+
+assistant_rm_all_compose_service_containers() {
+  local svc="${1:-}" id project="${COMPOSE_PROJECT_NAME:-assistant}" cname
+  [[ -n "$svc" ]] || return 0
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    cname="$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null | sed 's|^/||' || echo "$id")"
+    echo "==> remove compose worker container ${cname} (service=${svc})"
     docker rm -f "$id" 2>/dev/null || true
-    return 0
-  fi
+  done < <(docker ps -aq --filter "label=com.docker.compose.service=${svc}" \
+    --filter "label=com.docker.compose.project=${project}" 2>/dev/null)
   docker rm -f "$svc" 2>/dev/null || true
+  docker rm -f "${project}-${svc}-1" 2>/dev/null || true
+}
+
+assistant_rm_nonrunning_compose_service_containers() {
+  local svc="${1:-}" id st project="${COMPOSE_PROJECT_NAME:-assistant}" cname
+  [[ -n "$svc" ]] || return 0
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    st="$(docker inspect -f '{{.State.Status}}' "$id" 2>/dev/null || echo unknown)"
+    [[ "$st" == "running" ]] && continue
+    cname="$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null | sed 's|^/||' || echo "$id")"
+    echo "==> remove stopped compose worker container ${cname} (service=${svc}, state=${st})"
+    docker rm -f "$id" 2>/dev/null || true
+  done < <(docker ps -aq --filter "label=com.docker.compose.service=${svc}" \
+    --filter "label=com.docker.compose.project=${project}" 2>/dev/null)
 }
 
 assistant_worker_legacy_container_names() {
@@ -238,8 +259,11 @@ assistant_worker_legacy_container_names() {
 
 assistant_remove_stale_worker_containers() {
   # Optional workers install via `bash run.sh install …`. Drop legacy fixed-name
-  # orphans left when /opt/assistant was wiped without `bash run.sh destroy`.
-  local -a workers=() w name
+  # orphans (searxng) and compose-scoped leftovers (assistant-searxng-1) from
+  # failed partial installs or repo-wipe without `bash run.sh destroy`.
+  # Set ASSISTANT_PURGE_WORKER_COMPOSE=1 (install/add-components) to force-remove
+  # all compose worker containers before up, even when running.
+  local -a workers=() w name purge="${ASSISTANT_PURGE_WORKER_COMPOSE:-0}"
   [[ "${WORKER_SCHEDULE:-inactive}" == "active" || "${ENABLE_SCHEDULE:-0}" == "1" ]] && workers+=(schedule)
   if [[ "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_MEDIA_FILE:-0}" == "1" \
     || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" ]]; then
@@ -259,6 +283,11 @@ assistant_remove_stale_worker_containers() {
       if docker ps -aq --filter "name=^/${name}$" 2>/dev/null | grep -q .; then
         echo "==> remove legacy worker container ${name} (${w}; run.sh install)"
         docker rm -f "$name" 2>/dev/null || true
+      fi
+      if [[ "$purge" == "1" ]]; then
+        assistant_rm_all_compose_service_containers "$name"
+      else
+        assistant_rm_nonrunning_compose_service_containers "$name"
       fi
     done < <(assistant_worker_legacy_container_names "$w")
   done
