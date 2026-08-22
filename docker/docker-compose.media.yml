@@ -7,11 +7,14 @@
 #
 # Do NOT re-list hermes/dispatcher environment here — Compose list-merge would
 # replace the base env and drop core keys.
+#
+# No container_name on media services — installed via `bash run.sh install media`.
+# Compose assigns project-scoped names (e.g. assistant-searxng-1). Internal DNS still
+# uses service names (searxng, ocr, …). run.sh removes legacy fixed-name orphans on up.
 
 services:
   searxng:
     image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
-    container_name: searxng
     restart: unless-stopped
     volumes:
       - ./config/searxng:/etc/searxng:ro
@@ -27,7 +30,6 @@ services:
       context: ./architect/tools/ocr
       args:
         INSTALL_PADDLE: ${INSTALL_PADDLE:-1}
-    container_name: ocr
     restart: unless-stopped
     environment:
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://omni-router:20129/v1}
@@ -50,7 +52,6 @@ services:
 
   jobs:
     build: ./architect/tools/jobs
-    container_name: jobs
     restart: unless-stopped
     environment:
       - VALKEY_URL=${VALKEY_URL:-valkey://valkey:6379/0}
@@ -69,7 +70,6 @@ services:
 
   jobs-worker:
     build: ./architect/tools/jobs
-    container_name: jobs-worker
     restart: unless-stopped
     command: ["python", "worker.py"]
     environment:
@@ -90,7 +90,6 @@ services:
   # Default self-host image gen (no VGA): SDXL / SD 1.5 via ComfyUI CPU
   comfyui-cpu:
     image: ${COMFYUI_CPU_IMAGE:-yanwk/comfyui-boot:cpu}
-    container_name: comfyui-cpu
     restart: unless-stopped
     environment:
       # --cpu required: cpu image still ships torch without CUDA; without it main.py asserts
@@ -106,7 +105,6 @@ services:
   comfyui-gpu:
     profiles: ["comfy-gpu"]
     image: ${COMFYUI_GPU_IMAGE:-yanwk/comfyui-boot:cu124}
-    container_name: comfyui-gpu
     restart: unless-stopped
     environment:
       - CLI_ARGS=--listen 0.0.0.0 --port 8188
