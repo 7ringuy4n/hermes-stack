@@ -1,74 +1,82 @@
-# Qwen performance (lab)
+# Qwen performance & concurrency sizing
 
-Operator-facing snapshot of **current Qwen via OmniRouter combos** on the lab stack.
+Operator-facing guide for **Qwen as an optional OmniRouter component** and
+recommended Zalo/workflow parallelism by host size.
+
 Do not put hostnames, accounts, or secrets here.
 
-Companion: [`CHANGELOG.md`](./CHANGELOG.md), [`../scripts/HISTORY.md`](../scripts/HISTORY.md).
+Companions: [`CHANGELOG.md`](./CHANGELOG.md), [`../scripts/HISTORY.md`](../scripts/HISTORY.md).
 
-## Active combos (after slim)
+## Component switch
+
+| Knob | Default | Meaning |
+|------|---------|---------|
+| `ENABLE_QWEN` | `0` | Qwen is inactive until the operator turns it on |
+| `QWEN_API_KEY` / `ALIBABA_API_KEY` / `DASHSCOPE_API_KEY` | empty | Required when `ENABLE_QWEN=1` |
+| `OMNIROUTER_COMBO_STRATEGY` | `round-robin` | Strategy for `hermes` / `classifier` |
+| `hermes` / `classifier` members | **empty** | Filled only when Qwen is active + key yields chat models |
+| `OMNIROUTER_QWEN_ONLY_PROVIDERS` | `1` | When Qwen is active, deactivate non-Qwen LLM providers (skipped if `ENABLE_QWEN=0`) |
+| `OMNIROUTER_QWEN_FAST_COMBO` | `qwen-fast` | Optional tiny (~1.5B/1.7B) combo; empty if catalog has none |
+| `ZALO_WORKFLOW_PARALLEL` | **8** | Default parallel workflow jobs per turn (targets 5–10 concurrent multi-request users) |
+
+Activate on a host:
+
+```text
+ENABLE_QWEN=1
+QWEN_API_KEY=<dashscope-or-alibaba-key>
+bash run.sh add-components ENABLE_QWEN=1   # or edit .env then re-run first-setup-omnirouter
+```
+
+## Active combos (when Qwen on)
 
 | Combo | Members | Notes |
 |-------|---------|--------|
-| `hermes` | ≤2 Qwen chat models (lab: Qwen2.5-72B + 7B Instruct via provider RR) | Round-robin |
+| `hermes` | ≤2 Qwen chat models (prefer Qwen2.5 instruct; avoid think-only Qwen3) | Round-robin |
 | `classifier` | 1 Qwen chat model | Intent / multi-request split |
-| `qwen-fast` | Tiny ~1.5B/1.7B when catalog has them | Empty if none in catalog |
+| `qwen-fast` | Tiny ~1.5B/1.7B when catalog has them | Empty if none |
 
-Non-Qwen LLM providers are deactivated when `OMNIROUTER_QWEN_ONLY_PROVIDERS=1`.
+When Qwen is **off**, first-setup still creates `hermes` + `classifier` as **empty** round-robin aliases (operator adds models in Omni Combos UI).
 
-## Latency (lab, 2026-08-22)
+## Recommended `ZALO_WORKFLOW_PARALLEL` by host profile
 
-Measured with Tn Zalo bridge inject + model-router probes.
+These are **starting recommendations** for Omni cloud Qwen (not local GPU weights).
+They assume Hermes + Router Worker + Valkey on the same host and ~5–10 concurrent
+Zalo users with multi-request bubbles. Validate with
+`test/scripts/zalo_tn_qwen_parallel_sizing.py` (Tn inject) before production.
+
+| Profile (vCPU / RAM) | Recommended parallel | Concurrent users (guidance) | Notes |
+|----------------------|----------------------|-----------------------------|--------|
+| 1 / 1 GB | 2 | 1–2 | Too small for full stack; expect queue waits |
+| 1 / 2 GB | 3 | 2–3 | Prefer `qwen-fast` / 7B only; slim combos |
+| 2 / 2 GB | 4 | 3–5 | Minimum practical lab |
+| 2 / 4 GB | 6 | 5–8 | Good for mixed text + light tools |
+| 4 / 8 GB | **8** (product default) | 5–10 | Target for multi-request Zalo |
+| 4 / 16 GB | 10 | 8–12 | Headroom for weather/search tools |
+| 8 / 16 GB | 12 | 10–16 | Scale Hermes replicas if SSE/queue saturates |
+| 8 / 32 GB | 16 | 12–20 | Watch Omni upstream rate limits |
+
+Rule of thumb: `parallel ≈ min(vCPU * 2, RAM_GB, 16)` then clamp to the table.
+Never raise parallel alone if Omni returns 402/503 — slim combos and fail over first.
+
+## Latency snapshot (lab, 2026-08-22)
+
+Measured with Tn Zalo bridge inject + model-router probes (prior lab host; not a sizing claim).
 
 | Path | Result |
 |------|--------|
 | Greeting inject → send ok | ~7.5–22 s E2E; Hermes `response ready` ~1.8–10 s |
 | Short math inject | ~10–11 s E2E; `response ready` ~3 s |
-| Model-router short chat | ~0.5–1.4 s |
-| Model-router math `17×19` | ~0.7 s; answer **323** |
-| Weather HCMC (after searxng-compat rebuild) | first send ~15 s; `response ready` ~7.6 s (136 chars); suite PASS |
-| Mixed ≥3 requests (greet + math + Hà Nội weather) | 4 sends; first ~10 s, last ~18 s; 3× `response ready` (3.0s / 6.4s / 10.5s) |
-| Schedule multi-task (3 items @ 23:55) | send ~10 s; ack PASS (no queue timeout) |
+| Weather HCMC (after searxng-compat rebuild) | first send ~15 s |
+| Mixed ≥3 requests | 4 sends; first ~10 s, last ~18 s |
+| Schedule multi-task | send ~10 s; ack PASS |
 
-## Hardware headroom (same window)
-
-| Resource | Observed |
-|----------|----------|
-| Host RAM | ~16 GB total; ~6.3 GB used; ~9.6 GB free |
-| Disk `/` | ~25% used; ~149 GB free |
-| load1 | 0.45–1.19 |
-| Hermes RSS | ~313 MiB |
-| Omni RSS | ~844 MiB |
-| Container CPU (Hermes/Omni) | idle ~0–1%; spikes to ~100%+ on turns |
-
-Conclusion: host has headroom for larger context; keep **7B for fast turns** and **72B for harder turns**. Dedicated `qwen-fast` needs a tiny Qwen id in the Omni catalog (or a local small provider).
-
-## Weather / web-search failure mode (2026-08-22)
-
-Symptom: `tìm thông tin thời tiết hồ chí minh hiện tại` took long / no useful reply.
-
-Root cause (stacked):
-
-1. Lab `router-worker` image was **stale** — `/app/websearch.py` lacked `GET /v1/searxng-compat/search` while Hermes `SEARXNG_URL` pointed at that shim → **404**.
-2. OpenRouter intermittent **402/502/503** during the same window (credits / upstream).
-3. Queue turn budget default **150 s** is tight when search cascades + LLM retries.
-
-Mitigations:
-
-- Rebuild/recreate `router-worker` from current `architect/models/model-router`.
-- Keep `WEB_BACKENDS=omni` and Hermes `SEARXNG_URL=…/v1/searxng-compat`.
-- Raise `ZALO_QUEUE_TURN_TIMEOUT_S` default to **300** and `WEB_SEARCH_PROVIDER_TIMEOUT_S` to **30**.
-- Prefer non-thinking Qwen2.5; slim combos; disable Omni credential health spam.
-
-## Tavily vs “SEARXNG” naming (not the same as default engine)
+## Tavily vs “SEARXNG” naming
 
 | Knob | Meaning |
 |------|---------|
-| Hermes `SEARXNG_URL` / `HERMES_SEARXNG_URL` | Points at Router Worker **SearXNG-shaped shim** (`/v1/searxng-compat`). Hermes native `web_search` speaks that protocol; the shim still runs the Omni cascade. |
-| Router `SEARXNG_URL=http://searxng:8080` | Direct local SearXNG container — used as Omni’s **fallback** adapter base URL (last hop). |
-| `OMNIROUTER_SEARCH_PROVIDERS` | Router Worker **forces** `provider` on each Omni call: **tavily → firecrawl → searxng**. This is the Hermes source of truth. |
-| Omni unforced `POST /v1/search` | OmniRoute product quirk: response often labels `provider=searxng-search` even when Tavily is the only healthy connection / SearXNG is blocked or deleted. Forced `provider=tavily-search` works. |
-
-**Do not** treat Hermes env `SEARXNG_*` or Omni unforced smoke as “SearXNG is preferred.” Check `POST http://127.0.0.1:8096/v1/search` → `backend=omni:tavily-search`, and keep `grep -c searxng-compat` on `/app/websearch.py` > 0 after router-worker rebuilds.
+| Hermes `SEARXNG_URL` | Router Worker **SearXNG-shaped shim** (`/v1/searxng-compat`) — not “prefer SearXNG engine” |
+| `OMNIROUTER_SEARCH_PROVIDERS` | Forced cascade: **tavily → firecrawl → searxng** |
+| Omni unforced `POST /v1/search` | Often labels `searxng-search` even when Tavily is healthy — do not treat as Hermes default |
 
 ## Tests
 
@@ -76,6 +84,10 @@ Mitigations:
 |--------|---------|
 | `test/scripts/zalo_tn_greeting_inject.py` | Tn greeting |
 | `test/scripts/zalo_tn_qwen_perf.py` | Latency + HW samples |
-| `test/scripts/zalo_tn_weather_mixed_schedule.py` | Weather + mixed ≥3 + schedule multi-task |
+| `test/scripts/zalo_tn_qwen_parallel_sizing.py` | Recommend / probe parallel by profile |
+| `test/scripts/zalo_tn_weather_mixed_schedule.py` | Weather + mixed ≥3 + schedule |
+| `test/scripts/zalo_tn_history_regression.py` | HISTORY no-reply / PDF / schedule / SOUL gaps |
+| `test/scripts/soul_deception_unit.py` | SOUL must not trip `deception_hide` |
+| `test/scripts/qwen_parallel_recommend_unit.py` | Offline sizing table unit |
 
 Always inject as allowlisted user **Tn** via bridge `/inject-event` (id from host allowlist file — never commit).

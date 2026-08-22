@@ -1,6 +1,6 @@
----
-name: pdf
-description: Create, read, merge, fill, and secure PDF files.
+﻿---
+name: official-pdf-tools-local
+description: "ADVANCED local pdf tooling only. Do NOT use for chat create-and-send (Zalo/Telegram) — use skill file-gen / Dispatcher POST /v1/office-file. Never pip/uv install reportlab/pypdf/openpyxl/python-docx in the agent."
 version: 1.0.0
 author: Nous Research
 license: MIT
@@ -8,11 +8,16 @@ platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [pdf, documents, forms, reportlab, pypdf, pdfplumber]
-    category: productivity
+    category: advanced-local
     related_skills: [docx, xlsx, powerpoint, ocr-and-documents]
 ---
 
 # PDF Skill
+
+## Chat create-and-send (Zalo / Telegram)
+
+**Do not use this skill.** Call skill `file-gen` and `POST http://dispatcher:8090/v1/office-file`.
+Do not `pip` / `uv` install PDF/Office libraries in the agent. Do not claim a file was sent unless `"ok":true`.
 
 Create PDFs from structured specs, build and fill AcroForm forms (with layout linting and visual overlays), extract text/tables/metadata, merge/split/rotate/watermark/stamp pages, export page images, manage metadata and attachments, and encrypt/decrypt — using pypdf, reportlab, and pdfplumber. Scanned (image-only) PDFs contain no text layer: OCR is explicitly out of scope here — when a page is image-only, stop and use the `ocr-and-documents` skill instead of pretending to extract text.
 

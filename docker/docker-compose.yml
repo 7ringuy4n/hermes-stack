@@ -422,7 +422,7 @@ services:
       - HERMES_WORKFLOW=${HERMES_WORKFLOW:-1}
       - ZALO_WORKFLOW=${ZALO_WORKFLOW:-1}
       - ZALO_WORKFLOW_TURN_TIMEOUT_S=${ZALO_WORKFLOW_TURN_TIMEOUT_S:-420}
-      - ZALO_WORKFLOW_PARALLEL=${ZALO_WORKFLOW_PARALLEL:-4}
+      - ZALO_WORKFLOW_PARALLEL=${ZALO_WORKFLOW_PARALLEL:-8}
       # Native Hermes web_search uses SEARXNG_URL → {base}/search?format=json.
       # Point at Router Worker SearXNG-compat shim (Omni-backed), not the raw
       # SearXNG container (datacenter CAPTCHA / empty results).

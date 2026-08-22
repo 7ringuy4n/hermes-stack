@@ -593,7 +593,7 @@ do_archive_before_change() {
 
 do_switch_profile() {
   echo "Profile upgrade/downgrade is removed."
-  echo "Enable workers with: bash run.sh add-components WORKER_SCHEDULE=active WORKER_MEDIA_FILE=active WORKER_SECURITY=active WORKER_NOTIFY=active WORKER_MESSAGE=active WORKER_MONITOR=active"
+  echo "Enable workers with: bash run.sh add-components WORKER_SCHEDULE=active WORKER_MEDIA_FILE=active WORKER_SECURITY=active WORKER_NOTIFY=active WORKER_MESSAGE=active WORKER_MONITOR=active ENABLE_QWEN=1"
   return 2
 }
 

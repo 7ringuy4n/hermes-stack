@@ -10,7 +10,7 @@
 | **Knowledge** | `knowledge/*` | Research, web strategy, RAG, documents |
 | **Coding** | `coding/*` + `coding/SKILL.md` router | Debug, review, security, git, testing |
 | **Communication** | `communication/*` | Email, chat tone, translation, **friendly-response** (default), **vi-people-terms** (Vietnamese people/gender) |
-| **Documents** | `pdf`, `docx`, `xlsx`, `documents`, … | |
+| **Documents** | `file-gen` / `documents` (create+send via Dispatcher); advanced local `*-tools-local` only | |
 | **Web** | `web-search`, `searxng*`, `tavily`, `firecrawl` | OmniRouter → SearXNG |
 | **Core routing** | `core/worker-routing` | Classifier JSON → skill → worker table |
 | **Schedule** | `schedule` | Go schedule worker (SQLite). Hermes does not tick cron. |
