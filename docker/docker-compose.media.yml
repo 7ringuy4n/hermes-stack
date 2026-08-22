@@ -8,9 +8,10 @@
 # Do NOT re-list hermes/dispatcher environment here — Compose list-merge would
 # replace the base env and drop core keys.
 #
-# No container_name on media services — installed via `bash run.sh install media`.
+# No container_name on optional workers — installed via `bash run.sh install media`.
 # Compose assigns project-scoped names (e.g. assistant-searxng-1). Internal DNS still
-# uses service names (searxng, ocr, …). run.sh removes legacy fixed-name orphans on up.
+# uses service names (searxng, ocr, …). run.sh removes legacy fixed-name orphans on up
+# for every enabled worker (schedule, media, security, notify, monitor, antivirus, …).
 
 services:
   searxng:

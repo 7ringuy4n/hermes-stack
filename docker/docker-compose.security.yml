@@ -11,6 +11,9 @@
 # Docker socket proxy OFF by default — compose profile "sandbox" when SECURITY_SANDBOX=1 (not recommended).
 #
 # Do NOT re-list Must/Medium environment lists here (Compose list-merge replaces).
+#
+# No container_name on optional workers � installed via run.sh install; compose-scoped names.
+# run.sh removes legacy fixed-name orphans before up.
 
 volumes:
   clamav_data:
@@ -23,7 +26,6 @@ services:
   openbao:
     profiles: ["security"]
     image: ${OPENBAO_IMAGE:-openbao/openbao:2.2.0}
-    container_name: openbao
     restart: unless-stopped
     cap_add: ["IPC_LOCK"]
     environment:
@@ -47,7 +49,6 @@ services:
   clamav:
     profiles: ["antivirus"]
     image: ${CLAMAV_IMAGE:-clamav/clamav:1.4}
-    container_name: clamav
     restart: unless-stopped
     volumes:
       - clamav_data:/var/lib/clamav
@@ -64,7 +65,6 @@ services:
   av-gateway:
     profiles: ["antivirus"]
     build: ./architect/security/av-gateway
-    container_name: av-gateway
     restart: unless-stopped
     environment:
       - CLAMAV_HOST=${CLAMAV_HOST:-clamav}
@@ -85,7 +85,6 @@ services:
   security-manager:
     profiles: ["security"]
     build: ./architect/security/security-manager
-    container_name: security-manager
     restart: unless-stopped
     environment:
       # Empty / unreachable when ENABLE_ANTIVIRUS=0 — isolation still runs (YARA/static/limits)
@@ -117,7 +116,6 @@ services:
   docker-socket-proxy:
     profiles: ["sandbox"]
     image: ${DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:0.3.0}
-    container_name: docker-socket-proxy
     restart: unless-stopped
     environment:
       - CONTAINERS=1
@@ -146,7 +144,6 @@ services:
   siem:
     profiles: ["security"]
     build: ./architect/security/siem
-    container_name: siem
     restart: unless-stopped
     environment:
       - LOKI_URL=${LOKI_URL:-http://loki:3100}
@@ -159,7 +156,6 @@ services:
   authz:
     profiles: ["security"]
     build: ./architect/authentication/authz
-    container_name: authz
     restart: unless-stopped
     environment:
       - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
@@ -176,7 +172,6 @@ services:
   policy-center:
     profiles: ["security"]
     build: ./architect/authentication/policy-center
-    container_name: policy-center
     restart: unless-stopped
     environment:
       - POLICY_STORE=/data/policies.json
@@ -191,7 +186,6 @@ services:
   loki:
     profiles: ["loki"]
     image: ${LOKI_IMAGE:-grafana/loki:3.4.2}
-    container_name: loki
     restart: unless-stopped
     user: "0:0"
     command: -config.file=/etc/loki/local-config.yaml
@@ -203,7 +197,6 @@ services:
   alloy:
     profiles: ["alloy"]
     image: ${ALLOY_IMAGE:-grafana/alloy:v1.9.1}
-    container_name: alloy
     restart: unless-stopped
     command:
       - run
@@ -222,7 +215,6 @@ services:
   prometheus:
     profiles: ["prometheus"]
     image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.2.1}
-    container_name: prometheus
     restart: unless-stopped
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -237,7 +229,6 @@ services:
   grafana:
     profiles: ["grafana"]
     image: ${GRAFANA_IMAGE:-grafana/grafana:11.6.0}
-    container_name: grafana
     restart: unless-stopped
     ports:
       - "127.0.0.1:${GRAFANA_HOST_PORT:-23000}:3000"
@@ -258,7 +249,6 @@ services:
   nine-exporter:
     profiles: ["prometheus"]
     build: ./architect/monitor/nine-exporter
-    container_name: nine-exporter
     restart: unless-stopped
     environment:
       - LISTEN=0.0.0.0:9101
@@ -271,7 +261,6 @@ services:
   omni-exporter:
     profiles: ["omni-exporter"]
     build: ./architect/monitor/nine-exporter
-    container_name: omni-exporter
     restart: unless-stopped
     environment:
       - LISTEN=0.0.0.0:9104
@@ -287,7 +276,6 @@ services:
   node-exporter:
     profiles: ["prometheus"]
     image: ${NODE_EXPORTER_IMAGE:-prom/node-exporter:v1.9.1}
-    container_name: node-exporter
     restart: unless-stopped
     pid: host
     command:
@@ -307,7 +295,6 @@ services:
     build:
       context: ./architect/monitor
       dockerfile: stack-exporter/Dockerfile
-    container_name: stack-exporter
     restart: unless-stopped
     environment:
       - LISTEN=0.0.0.0:9102
@@ -335,7 +322,6 @@ services:
   notify:
     profiles: ["notify"]
     build: ./architect/notification/notify
-    container_name: notify
     restart: unless-stopped
     environment:
       - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://host.docker.internal:8787}
@@ -360,7 +346,6 @@ services:
     build:
       context: ./architect/monitor
       dockerfile: alert-watch/Dockerfile
-    container_name: alert-watch
     restart: unless-stopped
     environment:
       - LISTEN=0.0.0.0:9103
@@ -399,7 +384,6 @@ services:
   clouddrive-sync:
     profiles: ["clouddrive"]
     image: ${RCLONE_IMAGE:-rclone/rclone:1.69}
-    container_name: clouddrive-sync
     restart: unless-stopped
     entrypoint: ["/bin/sh", "-c"]
     command:
