@@ -1,3 +1,10 @@
+## 2026-08-22 12:45 +07 — Release v0.5.21 Postgres pg_hba mount path
+
+- Fix compose bind mount: `./docker/postgres/pg_hba.conf` (project root), not
+  `./postgres/pg_hba.conf` (Docker created a directory and postgres crash-looped).
+- `setup-zalo.sh` / `heal-zalo-sse.sh`: use plain `docker` when deploy user is in
+  the docker group; retry SSE attach when `sseClients=0` after config sync.
+
 ## 2026-08-22 12:30 +07 — Postgres Docker network auth (pg_hba)
 
 - Fresh lab volumes could init with localhost-only `pg_hba.conf` and missing

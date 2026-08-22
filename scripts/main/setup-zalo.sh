@@ -39,6 +39,18 @@ fi
 
 log() { echo "==> $*"; }
 
+# Prefer plain docker when the deploy user is in the docker group (paramiko/lab).
+# Fall back to sudo -S only when needed (ASSISTANT_SUDO_PASSWORD for non-interactive).
+docker_cmd() {
+  if docker info >/dev/null 2>&1; then
+    docker "$@"
+  elif [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" && "$(id -u)" -ne 0 ]]; then
+    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker "$@"
+  else
+    $SUDO docker "$@"
+  fi
+}
+
 ensure_user_bus() {
   # sudo -u / paramiko has no login session; linger + XDG_RUNTIME_DIR are required
   # for systemctl --user (otherwise: Failed to connect to bus: No medium found).
@@ -363,12 +375,12 @@ resolve_hermes_container() {
   local project="${COMPOSE_PROJECT_NAME:-assistant}"
   local exact="${HERMES_CONTAINER:-hermes}"
   local name=""
-  name="$($SUDO docker ps --format '{{.Names}}' 2>/dev/null | awk -v w="$exact" '$0==w {print; exit}')"
+  name="$(docker_cmd ps --format '{{.Names}}' 2>/dev/null | awk -v w="$exact" '$0==w {print; exit}')"
   if [[ -z "$name" ]]; then
-    name="$($SUDO docker ps --format '{{.Names}}' 2>/dev/null | awk -v w="${project}-hermes-1" '$0==w {print; exit}')"
+    name="$(docker_cmd ps --format '{{.Names}}' 2>/dev/null | awk -v w="${project}-hermes-1" '$0==w {print; exit}')"
   fi
   if [[ -z "$name" ]]; then
-    name="$($SUDO docker ps --format '{{.Names}}' 2>/dev/null | awk '/hermes/ {print; exit}')"
+    name="$(docker_cmd ps --format '{{.Names}}' 2>/dev/null | awk '/hermes/ {print; exit}')"
   fi
   printf '%s' "${name:-$exact}"
 }
@@ -377,17 +389,17 @@ ensure_aiohttp_in_hermes() {
   local ctr="$1"
   # Hermes gateway runs inside /opt/hermes/.venv; use that interpreter if present.
   local py_bin="/opt/hermes/.venv/bin/python"
-  $SUDO docker exec "$ctr" /bin/sh -lc "test -x '${py_bin}'" >/dev/null 2>&1 || py_bin="python3"
+  docker_cmd exec "$ctr" /bin/sh -lc "test -x '${py_bin}'" >/dev/null 2>&1 || py_bin="python3"
 
-  if $SUDO docker exec "$ctr" /bin/sh -lc "${py_bin} -c 'import aiohttp' >/dev/null 2>&1"; then
+  if docker_cmd exec "$ctr" /bin/sh -lc "${py_bin} -c 'import aiohttp' >/dev/null 2>&1"; then
     log "aiohttp already present in ${ctr}"
     return 0
   fi
   log "install aiohttp into ${ctr} (required for zalo-platform SSE)"
-  $SUDO docker exec "$ctr" /bin/sh -lc "${py_bin} -m pip --version" >/dev/null 2>&1 || \
-    $SUDO docker exec "$ctr" /bin/sh -lc "${py_bin} -m ensurepip --upgrade" >/dev/null 2>&1 || true
+  docker_cmd exec "$ctr" /bin/sh -lc "${py_bin} -m pip --version" >/dev/null 2>&1 || \
+    docker_cmd exec "$ctr" /bin/sh -lc "${py_bin} -m ensurepip --upgrade" >/dev/null 2>&1 || true
 
-  $SUDO docker exec "$ctr" /bin/sh -lc "${py_bin} -m pip install --no-cache-dir aiohttp" || {
+  docker_cmd exec "$ctr" /bin/sh -lc "${py_bin} -m pip install --no-cache-dir aiohttp" || {
     echo "ERROR: failed to install aiohttp in ${ctr}" >&2
     return 1
   }
@@ -397,7 +409,7 @@ ensure_aiohttp_in_hermes() {
 sync_replica_config_from_shared() {
   local ctr="$1"
   log "sync replica config.yaml from /opt/data/config.yaml in ${ctr}"
-  $SUDO docker exec "$ctr" /bin/sh -lc '
+  docker_cmd exec "$ctr" /bin/sh -lc '
     for f in /opt/data/replicas/*/config.yaml; do
       [ -f "$f" ] || continue
       cp -f /opt/data/config.yaml "$f" 2>/dev/null || true
@@ -516,11 +528,15 @@ main() {
   ensure_aiohttp_in_hermes "$hermes_ctr"
   sync_replica_config_from_shared "$hermes_ctr"
 
-  if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
-    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker restart "$hermes_ctr" zalo-proxy 2>/dev/null \
-      || printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S docker restart "$hermes_ctr" || true
-  else
-    $SUDO docker restart "$hermes_ctr" zalo-proxy 2>/dev/null || $SUDO docker restart "$hermes_ctr" || true
+  docker_cmd restart "$hermes_ctr" zalo-proxy 2>/dev/null || docker_cmd restart "$hermes_ctr" || true
+  sleep 8
+  local sse_clients
+  sse_clients="$(curl -sf -m 5 "http://127.0.0.1:${PORT}/health" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("sseClients",0))' 2>/dev/null || echo 0)"
+  if [[ "${sse_clients:-0}" == "0" ]]; then
+    log "WARN: bridge sseClients=0 after restart — sync replica config and retry once"
+    sync_replica_config_from_shared "$hermes_ctr"
+    docker_cmd restart "$hermes_ctr" 2>/dev/null || true
+    sleep 8
   fi
   print_next
 }
