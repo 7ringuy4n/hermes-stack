@@ -42,6 +42,18 @@ bash scripts/main/lab-enable-qwen-local.sh   # installs Ollama, pulls model, run
 
 Router Worker failovers to Ollama when Omni `hermes`/`classifier` return 503/400 on empty or busy cloud members.
 
+### Activate — local Ollama **without thinking** (`qwen2.5:7b`)
+
+Use when you want plain instruct chat only (router **strips** `thinking` / `reasoning_effort` — Ollama rejects them on 2.5):
+
+```text
+ENABLE_QWEN=1
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL=qwen2.5:7b
+bash run.sh add-components ENABLE_QWEN=1 OLLAMA_BASE_URL=http://host.docker.internal:11434 OLLAMA_MODEL=qwen2.5:7b --update
+bash run.sh first-setup-omnirouter
+```
+
 **Post-lab:** run `bash scripts/main/post-lab-restore.sh` so Zalo session, Ollama, combos, and router chat are verified before stopping the host (avoids “Qwen off → case 32 / manual chat no reply” gaps).
 
 ## Active combos (when Qwen on)
