@@ -48,6 +48,7 @@ want_name = {want!r}
 n = {n}
 wait_s = {wait_s}
 uid = uname = ""
+first_uid = first_name = ""
 for path in ("/data/assistant/zalo_admin_users.txt", "/opt/data/zalo_admin_users.txt"):
     p = Path(path)
     if not p.is_file():
@@ -57,13 +58,20 @@ for path in ("/data/assistant/zalo_admin_users.txt", "/opt/data/zalo_admin_users
         if not raw or raw.startswith("#"):
             continue
         left, _, right = raw.partition("|")
+        if not left.strip():
+            continue
+        if not first_uid:
+            first_uid, first_name = left.strip(), right.strip() or "admin"
         if right.strip().lower() == want_name.lower():
             uid, uname = left.strip(), right.strip()
             break
     if uid:
         break
 if not uid:
-    raise SystemExit("NO_ADMIN_USER")
+    _strict = (os.environ.get("ZALO_REQUIRE_NAMED_ADMIN") or "1").strip().lower() in ("1", "true", "yes")
+    if _strict or not first_uid:
+        raise SystemExit("NO_ADMIN_USER")
+    uid, uname = first_uid, first_name
 tok = (os.environ.get("ZALO_PLUGIN_TOKEN") or "").strip()
 headers = {{"Content-Type": "application/json"}}
 if tok:

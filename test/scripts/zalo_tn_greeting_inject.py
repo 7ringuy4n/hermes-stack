@@ -147,33 +147,53 @@ while time.time() < ready_deadline:
 else:
     raise SystemExit("ZALO_NOT_CONNECTED")
 
-uid = ""
-uname = ""
-for path in (
+# Inline resolve (VPS has no test/scripts on PYTHONPATH). Prefer Tn; else any admin.
+def resolve_admin_user(want_name="", want_id="", strict_name=False, paths=(
     "/data/assistant/zalo_admin_users.txt",
     "/opt/data/zalo_admin_users.txt",
-):
-    p = Path(path)
-    if not p.is_file():
-        continue
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        raw = line.strip()
-        if not raw or raw.startswith("#"):
+)):
+    want_name = (want_name or "").strip()
+    want_id = (want_id or "").strip()
+    first = named = None
+    for path in paths:
+        p = Path(path)
+        if not p.is_file():
             continue
-        left, sep, right = raw.partition("|")
-        cand = left.strip()
-        name = right.strip()
-        if not cand:
-            continue
-        if want_name and name.lower() == want_name.lower():
-            uid, uname = cand, name
-            break
-        if not uid:
-            uid, uname = cand, name or "admin"
-    if uid and want_name and uname.lower() == want_name.lower():
-        break
-if not uid:
-    raise SystemExit("NO_ADMIN_USER")
+        for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            raw = line.strip()
+            if not raw or raw.startswith("#"):
+                continue
+            left, _, right = raw.partition("|")
+            uid, name = left.strip(), right.strip()
+            if not uid:
+                continue
+            if want_id and uid == want_id:
+                return uid, name or "admin"
+            if first is None:
+                first = (uid, name or "admin")
+            if want_name and name.lower() == want_name.lower():
+                named = (uid, name)
+                break
+        if named:
+            return named
+    if want_id:
+        raise RuntimeError("NO_ADMIN_USER id=" + want_id)
+    if want_name and strict_name:
+        raise RuntimeError("NO_ADMIN_USER name=" + want_name)
+    if first:
+        return first
+    raise RuntimeError("NO_ADMIN_USER")
+
+# develop: ZALO_REQUIRE_NAMED_ADMIN=1 forces Tn; main: any admin fallback
+_strict = (os.environ.get("ZALO_REQUIRE_NAMED_ADMIN") or "1").strip().lower() in {{"1", "true", "yes"}}
+try:
+    uid, uname = resolve_admin_user(
+        want_name,
+        want_id=(os.environ.get("ZALO_TEST_USER_ID") or "").strip(),
+        strict_name=_strict,
+    )
+except RuntimeError as e:
+    raise SystemExit(str(e)) from e
 print("USER_NAME", uname)
 print("TAG", tag)
 

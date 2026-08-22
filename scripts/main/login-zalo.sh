@@ -50,9 +50,11 @@ else
 fi
 
 # Seed sole admin from logged-in proxy account (first setup only).
-python3 - "$ADMIN_FILE" "$HEALTH_JSON" <<'PY' || true
+# Optional display name: ZALO_ADMIN_DISPLAY_NAME=Tn (develop lab).
+DISP="${ZALO_ADMIN_DISPLAY_NAME:-}"
+python3 - "$ADMIN_FILE" "$HEALTH_JSON" "$DISP" <<'PY' || true
 import json, os, sys
-path, raw = sys.argv[1], sys.argv[2]
+path, raw, disp = sys.argv[1], sys.argv[2], (sys.argv[3] if len(sys.argv) > 3 else "").strip()
 if not raw:
     raise SystemExit(0)
 try:
@@ -72,18 +74,26 @@ if os.path.isfile(path):
             print(f"admin file already set ({path}) — leave unchanged")
             raise SystemExit(0)
 os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+line = f"{own}|{disp}" if disp else own
 with open(path, "w", encoding="utf-8", newline="\n") as f:
     f.write("# managed by login-zalo — sole Zalo admin (exactly one)\n")
-    f.write(f"{own}\n")
-print(f"OK: first-setup admin seeded from Zalo proxy login → uid={own}")
+    f.write(f"{line}\n")
+print(f"OK: first-setup admin seeded from Zalo proxy login → {line}")
 print(f"     file: {path}")
 PY
 
+# Durable copy for clean redeploy (round 2) — skip QR when credentials restore.
+if [[ -x "${ROOT:-}/scripts/main/backup-zalo-session.sh" ]] || [[ -f "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backup-zalo-session.sh" ]]; then
+  bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/backup-zalo-session.sh" || true
+fi
+
 echo
-  echo "When loggedIn=true: docker restart hermes zalo-api 2>/dev/null || docker restart hermes"
-echo "Pairing (if prompted): docker exec -it hermes hermes pairing approve zalo <CODE>"
+echo "When loggedIn=true: sg docker -c 'docker restart assistant-hermes-1 zalo-api'"
+echo "Pairing (if prompted): docker exec -it assistant-hermes-1 hermes pairing approve zalo <CODE>"
 echo
-echo "Admin (sole, 1 user):"
+echo "Admin (sole, 1 user — any Zalo account that scanned QR or claimed):"
 echo "  1) login-zalo seeds admin = bridge ownId (account logged into proxy)"
-echo "  2) From your personal Zalo → DM bot: !zalo claim"
+echo "  2) DM bot: !zalo claim   (same QR account is OK on first setup)"
 echo "  3) Later: !zalo admin transfer @tag   # only one admin"
+echo "Session backup: \$ASSISTANT_DATA_DIR/zalo-session-backup/credentials.json"
+echo "  restore (no QR): bash scripts/main/restore-zalo-session.sh"
