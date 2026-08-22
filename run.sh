@@ -771,13 +771,14 @@ do_remove_components() {
 }
 
 do_install() {
-  local dry=0 noup=0
+  local dry=0 noup=0 doupdate=0
   local -a names=()
   local arg
   for arg in "$@"; do
     case "$arg" in
       --dry-run) dry=1 ;;
       --no-up) noup=1 ;;
+      --update) doupdate=1 ;;
       list|-l|--list|help|-h|--help)
         bash "${SCRIPTS_DIR}/install-component.sh" list
         return 0
@@ -788,7 +789,7 @@ do_install() {
     esac
   done
   [[ ${#names[@]} -gt 0 ]] || {
-    echo "usage: bash run.sh install NAME [NAME…] [--dry-run] [--no-up]" >&2
+    echo "usage: bash run.sh install NAME [NAME…] [--dry-run] [--no-up] [--update]" >&2
     echo "       bash run.sh install list" >&2
     bash "${SCRIPTS_DIR}/install-component.sh" list >&2
     return 2
@@ -801,17 +802,19 @@ do_install() {
   local -a extra=()
   [[ "$dry" == "1" ]] && extra+=(--dry-run)
   [[ "$noup" == "1" ]] && extra+=(--no-up)
+  [[ "$doupdate" == "1" ]] && extra+=(--update)
   do_add_components "${pairs[@]}" "${extra[@]}"
 }
 
 do_uninstall() {
-  local dry=0 noup=0
+  local dry=0 noup=0 doupdate=0
   local -a names=()
   local arg
   for arg in "$@"; do
     case "$arg" in
       --dry-run) dry=1 ;;
       --no-up) noup=1 ;;
+      --update) doupdate=1 ;;
       list|-l|--list|help|-h|--help)
         bash "${SCRIPTS_DIR}/install-component.sh" list
         return 0
@@ -822,7 +825,7 @@ do_uninstall() {
     esac
   done
   [[ ${#names[@]} -gt 0 ]] || {
-    echo "usage: bash run.sh uninstall NAME [NAME…] [--dry-run] [--no-up]" >&2
+    echo "usage: bash run.sh uninstall NAME [NAME…] [--dry-run] [--no-up] [--update]" >&2
     return 2
   }
   local -a pairs=()
@@ -833,6 +836,7 @@ do_uninstall() {
   local -a extra=()
   [[ "$dry" == "1" ]] && extra+=(--dry-run)
   [[ "$noup" == "1" ]] && extra+=(--no-up)
+  [[ "$doupdate" == "1" ]] && extra+=(--update)
   do_remove_components "${pairs[@]}" "${extra[@]}"
 }
 
