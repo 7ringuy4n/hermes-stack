@@ -1,3 +1,9 @@
+## 2026-08-22 14:30 +07 — AGENT_RULES: full §15 + post-lab restore
+
+- §29.1: “run all test cases” = entire `test/RULES.md` §15 Case index (units + VPS).
+- §29.2: after final lab round, `post-lab-restore.sh` + connectivity before stopping host.
+- `run_case_index_lab.py`: include history regression + parallel sizing VPS scripts.
+
 ## 2026-08-22 14:25 +07 — Outbound classify fail-open (Zalo send path)
 
 - `classify_client.normalize_outbound`: preserve `ok: false` from router.

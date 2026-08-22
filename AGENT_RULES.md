@@ -854,6 +854,35 @@ test/cases/
 Do not run unrelated expensive test suites merely for the appearance of
 verification.
 
+### 29.1 “Run all test cases” means §15 Case index (full)
+
+When the operator asks to run **all test cases**, **all tests**, or the full
+lab suite, run the **entire** [`test/RULES.md`](./test/RULES.md) **§15 Case index**:
+
+1.  Every **unit script** listed under §15 (offline batch).
+2.  Every **lab/VPS script** listed under §15 (SSH; real Zalo traffic where
+    applicable — Tn on develop lab, any sole admin on `main`).
+3.  Do **not** substitute a smaller subset (e.g. health + preflight only)
+    unless the operator explicitly scopes the run.
+
+Batch runner: `test/scripts/run_case_index_lab.py` (keep in sync when §15
+grows). Gap cases **40–74** are separate unless the operator asks for them.
+
+After **all** rounds finish, **before stopping the host**, run post-lab restore
+(§19.1) — not optional when the operator requested a full lab.
+
+### 29.2 Post-lab restore (after all test rounds)
+
+After the **final** lab round, before stopping the VPS or declaring complete:
+
+1.  `bash scripts/main/post-lab-restore.sh` — local Qwen (when enabled), Zalo
+    session, health matrix, Qwen preflight (case 38), router chat smoke.
+2.  Confirm connectivity: bridge `loggedIn` + `sseClients≥1`, zalo-api,
+    model-router, Hermes (no crash-loop in recent logs).
+3.  Do **not** leave `ENABLE_QWEN=1` with empty `hermes`/`classifier` combos
+    or missing Ollama — that breaks manual Zalo chat (configuration gap, not a
+    bridge bug). See [`test/RULES.md`](./test/RULES.md) § Post-lab restore.
+
 ------------------------------------------------------------------------
 
 ## 30. Editable Companions

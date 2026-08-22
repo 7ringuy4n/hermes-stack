@@ -51,6 +51,8 @@ VPS: list[tuple[str, str]] = [
     ("file_pipeline_security_lab.py", "19"),
     ("grafana_integration_lab.py", "20"),
     ("defaults_routers_lab.py", "21"),
+    ("zalo_tn_qwen_parallel_sizing.py", "qwen-par"),
+    ("zalo_tn_history_regression.py", "history"),
 ]
 
 
