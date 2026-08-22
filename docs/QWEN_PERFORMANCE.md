@@ -14,7 +14,7 @@ Companions: [`CHANGELOG.md`](./CHANGELOG.md), [`../scripts/HISTORY.md`](../scrip
 | `ENABLE_QWEN` | `0` | Qwen inactive until operator turns it on |
 | `QWEN_API_KEY` / `ALIBABA_API_KEY` / `DASHSCOPE_API_KEY` | empty | Optional cloud DashScope path when `ENABLE_QWEN=1` |
 | `OLLAMA_BASE_URL` | empty | Host Ollama URL **as seen from Docker** (`http://host.docker.internal:11434`) |
-| `OLLAMA_MODEL` | empty | Local Qwen chat id (e.g. `qwen2.5:7b` → combo member `ollama/qwen2.5:7b`) |
+| `OLLAMA_MODEL` | `qwen3:4b` | Local Qwen chat id (e.g. `qwen3:4b` → combo member `ollama/qwen3:4b`) |
 | `OMNIROUTER_COMBO_STRATEGY` | `round-robin` | Strategy for `hermes` / `classifier` |
 | `hermes` / `classifier` members | **empty** | Filled when Qwen is active **and** cloud key or local Ollama is configured |
 | `OMNIROUTER_QWEN_ONLY_PROVIDERS` | `1` | When Qwen active, deactivate non-Qwen LLM providers (skipped if `ENABLE_QWEN=0`) |
@@ -36,7 +36,7 @@ bash run.sh first-setup-omnirouter
 ```text
 ENABLE_QWEN=1
 OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_MODEL=qwen3:4b
 bash scripts/main/lab-enable-qwen-local.sh   # installs Ollama, pulls model, runs first-setup
 ```
 
@@ -48,7 +48,7 @@ Router Worker failovers to Ollama when Omni `hermes`/`classifier` return 503/400
 
 | Combo | Members | Notes |
 |-------|---------|--------|
-| `hermes` | ≤2 Qwen chat models (cloud and/or `ollama/qwen2.5:7b`) | Round-robin |
+| `hermes` | ≤2 Qwen chat models (cloud and/or `ollama/qwen3:4b`) | Round-robin |
 | `classifier` | 1 Qwen chat model | Intent / multi-request split |
 | `qwen-fast` | Tiny ~1.5B/1.7B when catalog has them | Empty if none |
 

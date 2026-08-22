@@ -42,6 +42,7 @@ from chat_norm import (  # noqa: E402
     normalize_chat_completion,
     sanitize_chat_payload,
     sanitize_for_ollama,
+    should_strip_ollama_thinking,
 )
 from route_expand import expand_chat_candidates, upstream_url
 from websearch import health_fields as websearch_health
@@ -76,8 +77,15 @@ OMNI_BUSY_BACKOFF_S = float(os.environ.get("OMNIROUTER_BUSY_BACKOFF_S") or "3")
 OLLAMA_BASE = (os.environ.get("OLLAMA_BASE_URL") or "").rstrip("/")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
 ENABLE_QWEN = os.environ.get("ENABLE_QWEN", "0").strip() in {"1", "true", "yes", "on"}
-# Local Qwen lab: Omni hermes combo may route to host Ollama — strip thinking there too.
-LOCAL_QWEN = ENABLE_QWEN or bool(OLLAMA_BASE)
+# When Qwen is active, pass extended-thinking fields (qwen2.5 still force-stripped on Ollama).
+ENABLE_QWEN_THINKING = ENABLE_QWEN or os.environ.get("ENABLE_QWEN_THINKING", "0").strip() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+# Local Qwen lab: Omni hermes combo may route to host Ollama.
+LOCAL_OLLAMA = bool(OLLAMA_BASE)
 FALLBACK_OPENAI = (os.environ.get("FALLBACK_OPENAI_BASE_URL") or "").rstrip("/")
 FALLBACK_OPENAI_KEY = (os.environ.get("OPENAI_API_KEY") or "").strip()
 FALLBACK_OPENAI_MODEL = os.environ.get("FALLBACK_OPENAI_MODEL", "gpt-4o-mini")
@@ -94,9 +102,13 @@ def _failover_status(code: int) -> bool:
 
 
 def _sanitize_upstream_payload(name: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """Drop extended-thinking fields before Ollama (direct hop or via Omni local Qwen)."""
-    if name == "ollama" or (name == "omni-router" and LOCAL_QWEN):
-        return sanitize_for_ollama(payload)
+    """Drop extended-thinking fields before Ollama when the model rejects them."""
+    if name == "ollama" or (name == "omni-router" and LOCAL_OLLAMA):
+        strip = should_strip_ollama_thinking(
+            enable_qwen_thinking=ENABLE_QWEN_THINKING,
+            ollama_model=OLLAMA_MODEL,
+        )
+        return sanitize_for_ollama(payload, strip_thinking=strip)
     return sanitize_chat_payload(payload)
 
 
