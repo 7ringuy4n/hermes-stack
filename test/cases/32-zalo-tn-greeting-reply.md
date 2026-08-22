@@ -12,6 +12,7 @@ Catch “no response” regressions on short Vietnamese greetings (chat-only, no
 - Bridge logged in, Hermes SSE connected (`sseClients >= 1`)
 - Tn present in `zalo_admin_users.txt` (id|Tn)
 - Omni combo `hermes` has at least one healthy chat model
+- When `ENABLE_QWEN=1`: `QWEN_API_KEY` (or DashScope/Alibaba alias) set and case 38 preflight PASS
 
 ## Steps
 
@@ -32,7 +33,7 @@ Catch “no response” regressions on short Vietnamese greetings (chat-only, no
 ## Fail events
 
 - Inject 404 / bridge down
-- Inbound seen but no outbound within 60s
+- Inbound seen but no outbound within 60s → often **empty Omni `hermes` combo** (run case 38); exit `FAIL_LLM_NOT_CONFIGURED`
 - Queue turn timeout on the greeting thread
 - Hermes / bridge crash-loop during the run
 
