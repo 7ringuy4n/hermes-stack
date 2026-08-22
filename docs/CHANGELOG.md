@@ -1,3 +1,8 @@
+## 2026-08-22 09:00 +07 — Greeting test reads gateway.log; drop compound race
+
+- Hermes gateway logs to replica gateway.log (docker logs often empty) — Tn greeting inject now reads those files.
+- Removed premature compound mark_delivered that raced with in-flight Zalo send.
+
 ## 2026-08-22 08:40 +07 — Greeting no-reply: Qwen3 think-only + compound wait
 
 - Root cause after Qwen-only combos: hermes lead model qwen3.6 burned max_tokens inside think tags (finish_reason=length, empty visible text). Zalo then waited on compound delivery until the 150s queue turn timeout — no reply.
