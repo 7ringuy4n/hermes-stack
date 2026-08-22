@@ -23,3 +23,8 @@ python scripts/temp/probe-low-status.py
 ```
 
 Same default-`main` / local-`temp` split: [`hermes/`](../hermes/README.md).
+
+## Lab notes
+
+- Qwen lab performance: [docs/QWEN_PERFORMANCE.md](../docs/QWEN_PERFORMANCE.md)
+- Ops history: [HISTORY.md](./HISTORY.md)

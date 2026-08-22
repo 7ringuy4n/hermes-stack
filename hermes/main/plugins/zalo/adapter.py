@@ -1982,7 +1982,7 @@ class ZaloAdapter(BasePlatformAdapter):
 
     def _as_queue_turn_timeout_s(self) -> float:
         """Max seconds for one queued Hermes turn (handle_message + late files + wait)."""
-        return self._as_env_float("ZALO_QUEUE_TURN_TIMEOUT_S", 150.0, 30.0, 600.0)
+        return self._as_env_float("ZALO_QUEUE_TURN_TIMEOUT_S", 300.0, 30.0, 900.0)
 
     def _as_queue_drain_max_s(self) -> float:
         """Max seconds one drain task may hold the per-thread worker lock."""
