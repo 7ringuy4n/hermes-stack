@@ -1,11 +1,14 @@
 """LLM classify — structured task_hint + instructions. No NLU in this module.
 
 Parses JSON protocol from the model. Validates enums and cron tokens only.
+Timed schedule detection (đặt lịch + HH:MM) is a protocol guard so weak classify
+models cannot demote a once-at-clock message into immediate async workflow.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -318,6 +321,77 @@ def valid_cron(expr: str) -> str | None:
     return " ".join(parts)
 
 
+_SCHEDULE_TRIGGER = re.compile(
+    r"(?:đặt\s*lịch|dat\s*lich|ặt\s*lịch|schedule|chạy\s+một\s+lần|"
+    r"chay\s+mot\s+lan|one[\s-]?shot|run\s+once)",
+    re.I,
+)
+_CLOCK_HM = re.compile(
+    r"(?:lúc|luc|at|@)\s*(\d{1,2})\s*[:hH]\s*(\d{2})\b|"
+    r"\b(\d{1,2})\s*[:hH]\s*(\d{2})\b",
+    re.I,
+)
+
+
+def extract_clock_cron(text: str) -> str | None:
+    """Build once-daily cron ``M H * * *`` from the first HH:MM in prose."""
+    blob = text or ""
+    m = _CLOCK_HM.search(blob)
+    if not m:
+        return None
+    h_raw = m.group(1) or m.group(3)
+    min_raw = m.group(2) or m.group(4)
+    try:
+        hour = int(h_raw)
+        minute = int(min_raw)
+    except (TypeError, ValueError):
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return valid_cron(f"{minute} {hour} * * *")
+
+
+def looks_like_timed_schedule(text: str) -> bool:
+    """True when user prose asks to schedule work at a clock time."""
+    blob = (text or "").strip()
+    if not blob:
+        return False
+    if not _SCHEDULE_TRIGGER.search(blob):
+        return False
+    return extract_clock_cron(blob) is not None
+
+
+def force_timed_schedule_plan(
+    src: dict[str, Any],
+    text: str,
+) -> dict[str, Any]:
+    """Override weak LLM demotions: timed đặt-lịch must stay task_hint=schedule.
+
+    Lab failure: mixed greeting+fuel+weather with ``đặt lịch lúc HH:MM`` was
+    classified as immediate async → 3 parallel jobs (fuel often answered as
+    weather) instead of one lịch confirm + fire later.
+    """
+    out = dict(src) if isinstance(src, dict) else {}
+    if not looks_like_timed_schedule(text):
+        return out
+    cron = valid_cron(str(out.get("cron_expr") or "")) or extract_clock_cron(text)
+    if not cron:
+        return out
+    out["task_hint"] = "schedule"
+    out["cron_expr"] = cron
+    cadence = str(out.get("cadence") or "").strip().lower()
+    if cadence not in CADENCES:
+        out["cadence"] = "once"
+    out["execution_class"] = "schedule"
+    out["task_type"] = "create_schedule"
+    out["response_mode"] = "confirm"
+    out["process_original_message"] = False
+    out["skill"] = "schedule"
+    if out.get("skill_action") in (None, "", "null"):
+        out["skill_action"] = "create"
+    return out
+
+
 def _coerce_message_field(val: Any) -> str:
     """Turn a message field (str / list parts / reasoning_details) into text."""
     if isinstance(val, str) and val.strip():
@@ -455,7 +529,7 @@ def heuristic_plan(text: str) -> dict[str, Any] | None:
 
 
 def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dict[str, Any]:
-    src = data if isinstance(data, dict) else {}
+    src = force_timed_schedule_plan(data if isinstance(data, dict) else {}, text or "")
     hint = str(src.get("task_hint") or "").strip().lower()
     if hint in {"secret", "blocked", "sensitive"}:
         hint = "unknown"
@@ -468,6 +542,8 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     if cadence not in CADENCES:
         cadence = "daily" if hint == "schedule" else "once"
     cron = valid_cron(str(src.get("cron_expr") or ""))
+    if hint == "schedule" and not cron:
+        cron = extract_clock_cron(fallback)
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
     exec_cls, task_type, response_mode = normalize_execution(src, hint)
     skill, skill_action = normalize_skill(src, hint, task_type)
