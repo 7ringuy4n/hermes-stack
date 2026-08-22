@@ -750,7 +750,7 @@ Timers:
 
 First setup:
   install-docker [user]   # if docker missing; default = SSH login user (not a hardcoded name)
-  first-setup-omnirouter  # OmniRoute Default Key → combo hermes (OpenCode Free oc/*) [default]
+  first-setup-omnirouter  # OmniRoute Default Key → empty hermes/classifier (ENABLE_QWEN fills Qwen)
   first-setup-llm         # 9Router Default Key → combo hermes (only when ENABLE_9ROUTER=1)
 
 Security overlay:
