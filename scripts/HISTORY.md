@@ -8,6 +8,22 @@ This is the operator-facing companion to [`docs/CHANGELOG.md`](../docs/CHANGELOG
 
 ---
 
+## 2026-08-22 08:40 +07 — Greeting DM still silent after SOUL unblock
+
+### Symptom
+Tn greeting inject / real DM still timed out at 150s with no Zalo send ok after SOUL deception_hide fix and Qwen-only combos.
+
+### Root cause
+1. Lead combo model groq/qwen/qwen3.6-27b returned only think-tag content and finish_reason=length (empty user-visible text).
+2. Zalo compound wait default 180s waited for mark_delivered that never came, burning the 150s queue turn budget. Timeout UX often never reached the user either.
+
+### Fix
+- Prefer non-thinking Qwen (2.5 / plus / instruct) in omnirouter_qwen sort.
+- Skip compound wait when the part had no outbound; shorten compound part timeout default.
+
+### Prevent recurrence
+After first-setup, confirm hermes combo first member is not Qwen3.x. Monitor finish_reason=length + empty content on greeting turns.
+
 ## 2026-08-22 08:20 +07 — Greeting inject: SOUL blocked, queue timeout
 
 ### Symptom
