@@ -1,7 +1,10 @@
-"""Web search combo for Router Worker (OmniRouter side).
+"""Web search for Router Worker (Hermes-facing).
 
-Fallback order is a combo like the LLM combos: paid vendor first, local
-SearXNG last. Default chain: tavily -> searxng.
+Skill path: Hermes web-search → POST model-router /v1/search.
+**Default:** backend ``omni`` proxies to OmniRoute ``POST /v1/search``.
+Omni UI owns Search providers + failover (Tavily → Firecrawl → SearXNG). Direct
+``tavily`` / ``firecrawl`` / ``searxng`` adapters remain for offline Omni / lab fallback.
+Override: WEB_BACKENDS / WEB_EXTRACT_BACKENDS.
 
 Endpoints (mounted before the OpenAI proxy catch-all):
   POST /v1/search    { query, max_results?, backend? }
@@ -19,38 +22,106 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-DEFAULT_CHAIN = ("tavily", "searxng")
-EXTRACT_BACKENDS = ("tavily", "firecrawl")
-SEARCH_RESULT_CAP = 10
-SNIPPET_CHARS = 500
-
-_raw_chain = os.environ.get("WEB_BACKENDS")
-if _raw_chain is None:
-    BACKENDS: list[str] = list(DEFAULT_CHAIN)
-else:
-    BACKENDS = [b.strip().lower() for b in _raw_chain.split(",") if b.strip()]
-SEARCH_MAX = int(os.environ.get("WEB_SEARCH_MAX_RESULTS", "3"))
-SEARXNG_URL = (os.environ.get("SEARXNG_URL") or "").rstrip("/")
-SEARXNG_MAX = int(os.environ.get("SEARXNG_MAX_RESULTS", str(SEARCH_MAX)))
+ROOT = Path(__file__).resolve().parent
+COMBO_PATH = Path(
+    os.environ.get(
+        "WEB_SEARCH_COMBO_PATH",
+        str(ROOT / "config" / "web-search-combo.json"),
+    )
+)
 MESSAGES_PATH = Path(
     os.environ.get(
         "WEB_SEARCH_MESSAGES",
-        str(Path(__file__).resolve().parent / "messages" / "ops-alerts.json"),
+        str(ROOT / "messages" / "ops-alerts.json"),
     )
 )
+SEARCH_RESULT_CAP = 10
+SNIPPET_CHARS = 500
+# Default Omni Search provider cascade (override with OMNIROUTER_SEARCH_PROVIDERS).
+DEFAULT_OMNI_SEARCH_PROVIDERS = "tavily-search,firecrawl-search,searxng-search"
+
+# Known adapters only — membership registry, not failover order.
+_ADAPTERS = frozenset({"omni", "tavily", "firecrawl", "exa", "searxng"})
+_EXTRACT_ADAPTERS = frozenset({"tavily", "firecrawl"})
 
 router = APIRouter()
 
 
-class SearchReq(BaseModel):
-    query: str
-    max_results: int = SEARCH_MAX
-    backend: Optional[str] = None
+def _env_timeout(name: str, default: float, lo: float = 3.0, hi: float = 90.0) -> float:
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return max(lo, min(hi, float(raw)))
+    except ValueError:
+        return default
 
 
-class ExtractReq(BaseModel):
-    url: str
-    backend: Optional[str] = None
+def _provider_timeout_s() -> float:
+    """Per-provider HTTP timeout so failover does not wait the sum of worst cases."""
+    return _env_timeout("WEB_SEARCH_PROVIDER_TIMEOUT_S", 20.0, 5.0, 45.0)
+
+
+def _omni_search_providers() -> list[str]:
+    raw = os.environ.get("OMNIROUTER_SEARCH_PROVIDERS") or DEFAULT_OMNI_SEARCH_PROVIDERS
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def _load_combo() -> dict[str, Any]:
+    try:
+        data = json.loads(COMBO_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _split_csv(raw: str | None) -> list[str]:
+    if raw is None:
+        return []
+    return [b.strip().lower() for b in raw.split(",") if b.strip()]
+
+
+def _combo_backends() -> list[str]:
+    """Failover order from WEB_BACKENDS env, else web-search-combo.json."""
+    env = os.environ.get("WEB_BACKENDS")
+    if env is not None:
+        # Explicit empty → search off (operator cleared the combo).
+        return _split_csv(env)
+    cfg = _load_combo()
+    raw = cfg.get("backends") if isinstance(cfg.get("backends"), list) else []
+    out: list[str] = []
+    for item in raw:
+        name = str(item or "").strip().lower()
+        if name and name not in out:
+            out.append(name)
+    return out
+
+
+def _combo_extract() -> list[str]:
+    env = os.environ.get("WEB_EXTRACT_BACKENDS")
+    if env is not None:
+        return [b for b in _split_csv(env) if b in _EXTRACT_ADAPTERS]
+    cfg = _load_combo()
+    raw = cfg.get("extract_backends") if isinstance(cfg.get("extract_backends"), list) else []
+    out: list[str] = []
+    for item in raw:
+        name = str(item or "").strip().lower()
+        if name in _EXTRACT_ADAPTERS and name not in out:
+            out.append(name)
+    return out
+
+
+def _combo_max_results() -> int:
+    try:
+        return int(os.environ.get("WEB_SEARCH_MAX_RESULTS") or 0) or int(
+            _load_combo().get("max_results") or 3
+        )
+    except (TypeError, ValueError):
+        return 3
+
+
+def _searxng_url() -> str:
+    return (os.environ.get("SEARXNG_URL") or "").rstrip("/")
 
 
 def _msg(key: str, fallback: str) -> str:
@@ -68,32 +139,134 @@ def _key(name: str) -> str:
     return os.environ.get(f"{name.upper()}_API_KEY", "").strip()
 
 
+def _omni_search_url() -> str:
+    """Omni OpenAI-compat base ends with /v1 → POST …/v1/search."""
+    base = (os.environ.get("OMNIROUTER_BASE_URL") or "").rstrip("/")
+    if not base:
+        return ""
+    return f"{base}/search"
+
+
+def _omni_api_key() -> str:
+    return (
+        os.environ.get("OMNIROUTER_API_KEY")
+        or os.environ.get("N9ROUTER_API_KEY")
+        or ""
+    ).strip()
+
+
 def search_order(preferred: Optional[str] = None) -> list[str]:
-    """Combo order; SearXNG stays last when configured."""
-    order = [b for b in BACKENDS if b != "searxng"]
-    if SEARXNG_URL and "searxng" in (BACKENDS or DEFAULT_CHAIN):
-        order.append("searxng")
-    elif SEARXNG_URL and not BACKENDS:
-        order.append("searxng")
+    """Config/env failover order. Skip adapters that lack required env."""
+    order: list[str] = []
+    for name in _combo_backends():
+        if name not in _ADAPTERS:
+            continue
+        if name == "searxng" and not _searxng_url():
+            continue
+        if name == "omni" and (not _omni_search_url() or not _omni_api_key()):
+            continue
+        if name not in order:
+            order.append(name)
     if preferred:
         p = preferred.strip().lower()
-        order = [p] + [b for b in order if b != p]
+        ok = p in _ADAPTERS
+        if p == "searxng" and not _searxng_url():
+            ok = False
+        if p == "omni" and (not _omni_search_url() or not _omni_api_key()):
+            ok = False
+        if ok:
+            order = [p] + [b for b in order if b != p]
     return order
 
 
 def health_fields() -> dict[str, Any]:
+    cfg = _load_combo()
     return {
+        "web_combo": str(cfg.get("combo") or "websearch"),
         "web_backends": search_order(),
+        "web_extract_backends": _combo_extract(),
         "web_keys": {name: bool(_key(name)) for name in ("tavily", "firecrawl", "exa")},
-        "searxng": bool(SEARXNG_URL),
+        "searxng": bool(_searxng_url()),
+        "omni_search": bool(_omni_search_url() and _omni_api_key()),
+        "web_combo_path": str(COMBO_PATH),
     }
+
+
+class SearchReq(BaseModel):
+    query: str
+    max_results: int = 0
+    backend: Optional[str] = None
+
+
+class ExtractReq(BaseModel):
+    url: str
+    backend: Optional[str] = None
+
+
+async def _omni_search(query: str, max_results: int) -> dict[str, Any]:
+    """Proxy to OmniRoute search gateway (Tavily → Firecrawl → SearXNG)."""
+    url = _omni_search_url()
+    key = _omni_api_key()
+    if not url or not key:
+        raise HTTPException(503, "Omni search unavailable (OMNIROUTER_BASE_URL / OMNIROUTER_API_KEY)")
+    n = max(1, min(int(max_results or _combo_max_results()), SEARCH_RESULT_CAP))
+    # Cap each provider so a hung Tavily/Firecrawl call fails over quickly.
+    providers = _omni_search_providers()
+    per_timeout = _provider_timeout_s()
+    errors: list[str] = []
+    async with httpx.AsyncClient(timeout=per_timeout) as client:
+        for provider in providers:
+            body: dict[str, Any] = {"query": query, "max_results": n, "provider": provider}
+            try:
+                r = await client.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=body,
+                )
+                r.raise_for_status()
+                data = r.json()
+            except Exception as e:  # noqa: BLE001 — try next Omni provider
+                errors.append(f"{provider}: {e}")
+                continue
+            if not isinstance(data, dict):
+                errors.append(f"{provider}: non-object response")
+                continue
+            used = str(data.get("provider") or provider)
+            results: list[dict[str, Any]] = []
+            for item in data.get("results") or []:
+                if not isinstance(item, dict):
+                    continue
+                results.append(
+                    {
+                        "title": item.get("title") or "",
+                        "url": item.get("url") or item.get("link") or "",
+                        "content": (
+                            item.get("content")
+                            or item.get("snippet")
+                            or item.get("description")
+                            or ""
+                        )[:SNIPPET_CHARS],
+                        "provider": used,
+                    }
+                )
+            if results or data.get("answer"):
+                return {
+                    "backend": f"omni:{used}",
+                    "answer": data.get("answer"),
+                    "results": results,
+                }
+            errors.append(f"{provider}: no results")
+    raise RuntimeError("omni search returned no results (" + "; ".join(errors[:4]) + ")")
 
 
 async def _tavily_search(query: str, max_results: int) -> dict[str, Any]:
     key = _key("tavily")
     if not key:
         raise HTTPException(503, "TAVILY_API_KEY missing")
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=_provider_timeout_s()) as client:
         r = await client.post(
             "https://api.tavily.com/search",
             json={
@@ -112,7 +285,9 @@ async def _firecrawl_search(query: str, max_results: int) -> dict[str, Any]:
     key = _key("firecrawl")
     if not key:
         raise HTTPException(503, "FIRECRAWL_API_KEY missing")
-    async with httpx.AsyncClient(timeout=90.0) as client:
+    # Slightly higher than Tavily but still capped so combo failover stays bounded.
+    timeout = min(30.0, max(_provider_timeout_s(), _env_timeout("WEB_SEARCH_FIRECRAWL_TIMEOUT_S", 25.0, 5.0, 45.0)))
+    async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.post(
             "https://api.firecrawl.dev/v1/search",
             headers={"Authorization": f"Bearer {key}"},
@@ -127,7 +302,7 @@ async def _exa_search(query: str, max_results: int) -> dict[str, Any]:
     key = _key("exa")
     if not key:
         raise HTTPException(503, "EXA_API_KEY missing")
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=_provider_timeout_s()) as client:
         r = await client.post(
             "https://api.exa.ai/search",
             headers={"x-api-key": key, "Content-Type": "application/json"},
@@ -139,13 +314,16 @@ async def _exa_search(query: str, max_results: int) -> dict[str, Any]:
 
 
 async def _searxng_search(query: str, max_results: int) -> dict[str, Any]:
-    if not SEARXNG_URL:
+    base = _searxng_url()
+    if not base:
         raise HTTPException(503, "SEARXNG_URL missing")
-    n = max(1, min(int(max_results or SEARXNG_MAX), SEARXNG_MAX, SEARCH_RESULT_CAP))
-    async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+    n = max(1, min(int(max_results or _combo_max_results()), SEARCH_RESULT_CAP))
+    timeout = min(_provider_timeout_s(), _env_timeout("WEB_SEARCH_SEARXNG_TIMEOUT_S", 15.0, 3.0, 30.0))
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         r = await client.get(
-            f"{SEARXNG_URL}/search",
-            params={"q": query, "format": "json", "language": "all"},
+            f"{base}/search",
+            params={"q": query, "format": "json"},
+            headers={"User-Agent": "hermes-router-worker/websearch"},
         )
         r.raise_for_status()
         data = r.json()
@@ -160,7 +338,17 @@ async def _searxng_search(query: str, max_results: int) -> dict[str, Any]:
             }
         )
     if not results:
-        raise RuntimeError("searxng returned no results")
+        unresp = data.get("unresponsive_engines") or []
+        hint = ""
+        if unresp:
+            parts = []
+            for row in unresp[:4]:
+                if isinstance(row, (list, tuple)) and len(row) >= 2:
+                    parts.append(f"{row[0]}:{row[1]}")
+                else:
+                    parts.append(str(row))
+            hint = f" unresponsive={{{', '.join(parts)}}}"
+        raise RuntimeError(f"searxng returned no results{hint}")
     return {"backend": "searxng", "results": results, "answer": None}
 
 
@@ -193,6 +381,8 @@ async def _firecrawl_extract(url: str) -> dict[str, Any]:
 
 async def _run_backend(name: str, query: str, n: int) -> dict[str, Any]:
     match name:
+        case "omni":
+            return await _omni_search(query, n)
         case "tavily":
             return await _tavily_search(query, n)
         case "firecrawl":
@@ -208,7 +398,12 @@ async def _run_backend(name: str, query: str, n: int) -> dict[str, Any]:
 @router.get("/v1/backends/next")
 def backends_next() -> dict[str, str]:
     order = search_order()
-    return {"backend": order[0] if order else ""}
+    cfg = _load_combo()
+    return {
+        "combo": str(cfg.get("combo") or "websearch"),
+        "backend": order[0] if order else "",
+        "order": ",".join(order),
+    }
 
 
 @router.post("/v1/search")
@@ -219,7 +414,7 @@ async def search(req: SearchReq) -> dict[str, Any]:
             503,
             _msg("web_search_disabled", "Web search is unavailable (no search backends configured)."),
         )
-    n = max(1, min(int(req.max_results or SEARCH_MAX), SEARCH_RESULT_CAP))
+    n = max(1, min(int(req.max_results or _combo_max_results()), SEARCH_RESULT_CAP))
     errors: list[str] = []
     merged: list[Any] = []
     answer: Any = None
@@ -242,6 +437,7 @@ async def search(req: SearchReq) -> dict[str, Any]:
             break
     if merged or answer is not None:
         return {
+            "combo": str(_load_combo().get("combo") or "websearch"),
             "backend": "+".join(used) if used else "combo",
             "answer": answer,
             "results": merged[:n],
@@ -250,9 +446,60 @@ async def search(req: SearchReq) -> dict[str, Any]:
     raise HTTPException(502, {"error": "all backends failed", "detail": errors})
 
 
+@router.get("/v1/searxng-compat/search")
+async def searxng_compat_search(q: str = "", format: str = "json") -> dict[str, Any]:
+    """SearXNG-shaped GET shim for Hermes native ``web_search`` (toolset web).
+
+    Hermes plugins call ``{SEARXNG_URL}/search?q=&format=json``. Point Hermes
+    ``SEARXNG_URL`` at ``http://model-router:8096/v1/searxng-compat`` so the
+    native tool uses Omni-owned search (same cascade as POST /v1/search) without
+    needing ``TAVILY_API_KEY`` inside the Hermes container.
+    """
+    if (format or "").lower() not in {"", "json"}:
+        raise HTTPException(400, "only format=json is supported")
+    query = (q or "").strip()
+    if not query:
+        raise HTTPException(400, "q is required")
+    # Reuse the same combo as POST /v1/search (default backend omni → Omni).
+    body = await search(SearchReq(query=query, max_results=_combo_max_results()))
+    results = []
+    for i, row in enumerate(body.get("results") or []):
+        if not isinstance(row, dict):
+            continue
+        results.append(
+            {
+                "url": row.get("url") or "",
+                "title": row.get("title") or "",
+                "content": row.get("content") or row.get("snippet") or "",
+                "engine": str(body.get("backend") or "omni"),
+                "score": max(0.0, 1.0 - (i * 0.05)),
+                "category": "general",
+            }
+        )
+    return {
+        "query": query,
+        "number_of_results": len(results),
+        "results": results,
+        "answers": [],
+        "corrections": [],
+        "infoboxes": [],
+        "suggestions": [],
+        "unresponsive_engines": [],
+    }
+
+
 @router.post("/v1/extract")
 async def extract(req: ExtractReq) -> dict[str, Any]:
-    order = [b for b in search_order(req.backend) if b in EXTRACT_BACKENDS]
+    base = _combo_extract()
+    if req.backend:
+        p = req.backend.strip().lower()
+        order = (
+            [p] + [b for b in base if b != p]
+            if p in _EXTRACT_ADAPTERS
+            else list(base)
+        )
+    else:
+        order = list(base)
     if not order:
         raise HTTPException(503, "web extract unavailable (no extract backend configured)")
     errors: list[str] = []

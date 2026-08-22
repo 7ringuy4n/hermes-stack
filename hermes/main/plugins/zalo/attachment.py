@@ -49,6 +49,45 @@ def worker_media_path(local_path: str) -> str:
     return cont
 
 
+def stage_shared_media(
+    local_path: str,
+    file_name: str = "",
+    *,
+    thread_id: str = "",
+    inbound_root: str = "/opt/data/media/inbound",
+) -> str:
+    """Copy a file into the shared media volume so OCR/ingest/dispatcher can read it.
+
+    Hermes ``cache_image_from_bytes`` writes under ``/opt/data/replicas/.../cache/``,
+    which workers do not mount. Without this copy, ``POST /v1/ocr`` returns 404 and
+    the agent is asked to "open the image" with no vision tools — no Zalo reply.
+    """
+    import re
+    import shutil
+    import uuid
+    from pathlib import Path
+
+    src = Path(str(local_path or ""))
+    if not src.is_file():
+        return ""
+    cont = str(src).replace("\\", "/")
+    # Already on the shared volume — workers can see it after prefix rewrite.
+    for prefix in _MEDIA_PREFIXES:
+        if cont.startswith(prefix):
+            return cont
+    try:
+        src.resolve().relative_to(Path(inbound_root).resolve())
+        return cont
+    except ValueError:
+        pass
+    safe = re.sub(r"[^\w.\-() ]", "_", (file_name or src.name))[:120].strip() or "file.bin"
+    dest_dir = Path(inbound_root) / (str(thread_id or "dm").strip() or "dm")
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{uuid.uuid4().hex[:8]}_{safe}"
+    shutil.copy2(src, dest)
+    return str(dest)
+
+
 def caption_payload(caption: Any) -> Dict[str, str]:
     """Zalo rejects document sends whose caption is blank, so omit it entirely."""
     text = str(caption or "")
@@ -117,3 +156,126 @@ def context_newest(items: List[Dict[str, Any]]) -> Tuple[str, str]:
         return "", ""
     last = items[-1]
     return str(last.get("file") or ""), str(last.get("text") or "")
+
+
+def quoted_context_snip(quote: Any, *, max_chars: int = 2000) -> str:
+    """Plain text / file title from a Zalo quote payload for the agent prompt."""
+    if not isinstance(quote, dict):
+        return ""
+    qc = quote.get("content")
+    if isinstance(qc, str) and qc.strip():
+        body = qc.strip()
+    elif isinstance(qc, dict):
+        title = str(qc.get("title") or "").strip()
+        desc = str(qc.get("description") or "").strip()
+        href = str(qc.get("href") or "").strip()
+        parts = [p for p in (title, desc) if p]
+        body = "\n".join(parts) if parts else (href[:180] if href else "")
+    else:
+        body = str(quote.get("msg") or quote.get("text") or "").strip()
+    if not body:
+        return ""
+    if len(body) > max_chars:
+        body = body[:max_chars].rstrip() + "…"
+    return body
+
+
+def song_hint_from_filename(file_name: str) -> str:
+    """Best-effort song/artist hint from an audio/video filename."""
+    name = (file_name or "").strip()
+    if not name:
+        return ""
+    low = name.lower()
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    for noise in (
+        "official lyric video",
+        "official music video",
+        "lyric video",
+        "official audio",
+        "audio",
+        "lyrics",
+        "mv",
+    ):
+        # case-insensitive remove
+        idx = stem.lower().find(noise)
+        if idx >= 0:
+            stem = (stem[:idx] + stem[idx + len(noise) :]).strip(" -_[](){}")
+    stem = " ".join(stem.replace("_", " ").replace("  ", " ").split())
+    if not stem:
+        return name
+    if low.endswith(AV_EXTS):
+        return stem
+    return ""
+
+
+def image_ocr_ack_message(excerpt: str, *, max_chars: int = 1800) -> str:
+    """Deterministic Zalo reply for a bare image after OCR (empty or with text)."""
+    body = ocr_excerpt_for_ack(excerpt)
+    if not body:
+        return (
+            "Đã nhận ảnh. OCR không đọc được chữ rõ trong ảnh. "
+            "Gửi ảnh có chữ nét hơn, hoặc nói rõ bạn muốn mình làm gì với ảnh này."
+        )
+    if len(body) > max_chars:
+        body = body[:max_chars].rstrip() + "…"
+    return (
+        "Đã đọc chữ trong ảnh (OCR):\n"
+        f"{body}\n\n"
+        "Bạn muốn mình tóm tắt / dịch / lưu knowledge không?"
+    )
+
+
+def file_extract_ack_message(
+    file_name: str,
+    excerpt: str,
+    *,
+    kind: str = "",
+    max_chars: int = 1800,
+) -> str:
+    """Deterministic Zalo reply for a bare non-image attachment after extract."""
+    name = (file_name or "file").strip() or "file"
+    k = (kind or attachment_kind(name)).strip() or "none"
+    if k == "ocr" and name.lower().endswith(
+        (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
+    ):
+        return image_ocr_ack_message(excerpt, max_chars=max_chars)
+    body = (excerpt or "").strip()
+    if not body:
+        if k == "av":
+            return (
+                f"Đã nhận media `{name}`. Chưa lấy được transcript / chữ trên khung hình. "
+                "Gửi lại hoặc nói rõ bạn muốn mình làm gì tiếp."
+            )
+        return (
+            f"Đã nhận file `{name}`. Chưa đọc được nội dung. "
+            "Gửi lại hoặc đổi định dạng giúp mình."
+        )
+    if len(body) > max_chars:
+        body = body[:max_chars].rstrip() + "…"
+    if k == "av":
+        head = f"Đã đọc media `{name}` (transcript / chữ trên khung hình):"
+    else:
+        head = f"Đã đọc file `{name}`:"
+    return (
+        f"{head}\n{body}\n\n"
+        "Bạn muốn mình tóm tắt / dịch / lưu knowledge không?"
+    )
+
+
+def ocr_excerpt_for_ack(excerpt: str) -> str:
+    """Drop glyph-noise OCR (single-letter lines) so users get a clear empty ack."""
+    body = (excerpt or "").strip()
+    if not body:
+        return ""
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    if not lines:
+        return ""
+    if len(lines) >= 3:
+        short = sum(1 for ln in lines if len(ln) <= 1)
+        if short / len(lines) >= 0.6:
+            return ""
+    # Mostly punctuation / isolated chars with almost no words
+    words = [w for w in body.replace("\n", " ").split() if len(w) >= 2]
+    if len(body) >= 12 and len(words) <= 1 and len(lines) >= 4:
+        return ""
+    return body

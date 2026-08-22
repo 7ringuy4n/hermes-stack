@@ -301,6 +301,11 @@ from attachment import (  # noqa: E402
     context_encode,
     context_merge,
     context_newest,
+    file_extract_ack_message,
+    image_ocr_ack_message,
+    quoted_context_snip,
+    song_hint_from_filename,
+    stage_shared_media,
     worker_media_path,
 )
 
@@ -426,6 +431,8 @@ class ZaloAdapter(BasePlatformAdapter):
         self._auto_sethome_done: bool = bool(_existing_home)
         self._as_hold_inflight: set[str] = set()
         self._as_part_delivered: Dict[str, asyncio.Event] = {}
+        self._as_inbound_locks: Dict[str, asyncio.Lock] = {}
+        self._as_inbound_tasks: set[asyncio.Task] = set()
         self._as_queue_tasks: Dict[str, asyncio.Task] = {}
         self._as_compound_after: Dict[str, int] = {}
         self._as_compound_defer_ack: set[str] = set()
@@ -785,7 +792,11 @@ class ZaloAdapter(BasePlatformAdapter):
             await self._on_session_dead(data)
             return
         if event_type == "message":
-            await self._on_inbound_message(data)
+            # Do not await OCR/AV here — blocking the SSE reader drops follow-up
+            # photos while the first image is still being scanned.
+            task = asyncio.create_task(self._on_inbound_guarded(data))
+            self._as_inbound_tasks.add(task)
+            task.add_done_callback(self._as_inbound_tasks.discard)
             return
         # Reaction / undo / friend / group events: surface as a synthetic
         # context line for the agent (no media). These don't trigger a turn by
@@ -793,6 +804,26 @@ class ZaloAdapter(BasePlatformAdapter):
         if event_type in ("reaction", "undo", "friend_event", "group_event"):
             logger.info("Zalo: %s event %s", event_type, data)
             return
+
+    async def _on_inbound_guarded(self, data: Dict[str, Any]) -> None:
+        """Serialize per-thread inbound work; never raise into the SSE loop."""
+        tid = str((data or {}).get("threadId") or "")
+        locks = getattr(self, "_as_inbound_locks", None)
+        if not isinstance(locks, dict):
+            self._as_inbound_locks = {}
+            locks = self._as_inbound_locks
+        lock = locks.get(tid) if tid else None
+        if tid and lock is None:
+            lock = asyncio.Lock()
+            locks[tid] = lock
+        try:
+            if lock is not None:
+                async with lock:
+                    await self._on_inbound_message(data)
+            else:
+                await self._on_inbound_message(data)
+        except Exception:
+            logger.exception("Zalo: inbound message failed thread=%s", tid or "?")
 
     async def _on_session_dead(self, data: Dict[str, Any]) -> None:
         """Zalo session ended (logout / kicked / cookie expired)."""
@@ -1686,17 +1717,42 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_compound_thread_type.pop(tid, None)
 
     async def _as_compound_wait_part(self, thread_id: str) -> None:
-        """Wait until the current part sent something, then a short idle gap."""
+        """Optionally wait for outbound delivery; default is no wait.
+
+        Queue UX: once a part is dequeued and handle_message returns, release
+        answering so the next FIFO item can run. Waiting on mark_delivered
+        (historically up to 180s) burned the queue turn budget and often
+        prevented the timeout UX from reaching the user.
+        Set ZALO_COMPOUND_WAIT_FOR_DELIVERY=1 to restore the old wait.
+        """
         tid = str(thread_id or "")
-        timeout = self._as_env_float("ZALO_COMPOUND_PART_TIMEOUT_S", 180.0, 15.0, 600.0)
-        gap = self._as_env_float("ZALO_COMPOUND_GAP_S", 4.0, 0.0, 30.0)
-        ev = self._as_part_delivered.get(tid)
-        if ev is not None:
-            try:
-                await asyncio.wait_for(ev.wait(), timeout=timeout)
-            except asyncio.TimeoutError:
-                logger.warning("Zalo: compound part wait timeout thread=%s", tid)
-            ev.clear()
+        wait = (os.getenv("ZALO_COMPOUND_WAIT_FOR_DELIVERY") or "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        gap = self._as_env_float("ZALO_COMPOUND_GAP_S", 0.0 if not wait else 4.0, 0.0, 30.0)
+        if wait:
+            timeout = self._as_env_float("ZALO_COMPOUND_PART_TIMEOUT_S", 35.0, 5.0, 120.0)
+            ev = self._as_part_delivered.get(tid)
+            if ev is not None:
+                if ev.is_set():
+                    ev.clear()
+                else:
+                    try:
+                        await asyncio.wait_for(ev.wait(), timeout=timeout)
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "Zalo: compound part wait timeout thread=%s — continue without delivery",
+                            tid,
+                        )
+                    ev.clear()
+        else:
+            # Do not block the queue on delivery; clear a stale event if present.
+            ev = self._as_part_delivered.get(tid)
+            if ev is not None and ev.is_set():
+                ev.clear()
         if gap > 0:
             await asyncio.sleep(gap)
 
@@ -1924,14 +1980,34 @@ class ZaloAdapter(BasePlatformAdapter):
             return False
         return self._as_gate_store() is not None
 
+    def _as_queue_turn_timeout_s(self) -> float:
+        """Max seconds for one queued Hermes turn (handle_message + late files + wait)."""
+        return self._as_env_float("ZALO_QUEUE_TURN_TIMEOUT_S", 300.0, 30.0, 900.0)
+
+    def _as_queue_drain_max_s(self) -> float:
+        """Max seconds one drain task may hold the per-thread worker lock."""
+        return self._as_env_float("ZALO_QUEUE_DRAIN_MAX_S", 600.0, 60.0, 3600.0)
+
     def _as_queue_kick(self, thread_id: str) -> None:
         tid = str(thread_id or "")
         if not tid:
             return
         prev = self._as_queue_tasks.get(tid)
         if prev is not None and not prev.done():
-            return
-        self._as_queue_tasks[tid] = asyncio.create_task(self._as_queue_drain(tid))
+            # Stuck drain: cancel after drain-max so a new kick can restart.
+            started = float(getattr(prev, "_as_drain_started", 0.0) or 0.0)
+            age = (__import__("time").time() - started) if started > 0 else 0.0
+            if age < self._as_queue_drain_max_s():
+                return
+            logger.warning(
+                "Zalo: cancel stuck queue drain thread=%s age=%.0fs",
+                tid,
+                age,
+            )
+            prev.cancel()
+        task = asyncio.create_task(self._as_queue_drain(tid))
+        task._as_drain_started = __import__("time").time()  # type: ignore[attr-defined]
+        self._as_queue_tasks[tid] = task
 
     async def _as_enqueue_inbound(
         self,
@@ -2007,6 +2083,15 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_fire=schedule_fire,
             ):
                 return
+            # Schedule fires must not wait behind stuck answering / FIFO queue —
+            # inject already delivered the work text; run it immediately.
+            if schedule_fire:
+                logger.info(
+                    "Zalo: scheduleFire bypass queue thread=%s",
+                    thread_id[:24],
+                )
+                await self._as_dispatch_event(event, text)
+                return
             if mid and hasattr(store, "queue_seen") and not store.queue_seen(mid):
                 logger.info("Zalo: skip duplicate queue id=%s", mid[:24])
                 self._as_queue_kick(thread_id)
@@ -2072,8 +2157,16 @@ class ZaloAdapter(BasePlatformAdapter):
             from .multi_request import split_compound_requests
         except ImportError:
             split_compound_requests = lambda t: [t]  # type: ignore[misc, assignment]
+        loop = asyncio.get_running_loop()
+        drain_deadline = loop.time() + self._as_queue_drain_max_s()
         try:
             while True:
+                if loop.time() >= drain_deadline:
+                    logger.warning(
+                        "Zalo: queue drain max exceeded thread=%s — release for next kick",
+                        tid,
+                    )
+                    break
                 try:
                     raw = store.queue_pop(tid)
                 except Exception:
@@ -2126,6 +2219,9 @@ class ZaloAdapter(BasePlatformAdapter):
                         except Exception:
                             pass
                 await self._as_run_queued_part(item)
+        except asyncio.CancelledError:
+            logger.warning("Zalo: queue drain cancelled thread=%s", tid)
+            raise
         finally:
             try:
                 store.worker_done(tid)
@@ -2143,7 +2239,7 @@ class ZaloAdapter(BasePlatformAdapter):
         if not tid:
             return
         deadline = asyncio.get_event_loop().time() + self._as_env_float(
-            "ZALO_COMPOUND_PART_TIMEOUT_S", 180.0, 15.0, 600.0
+            "ZALO_COMPOUND_PART_TIMEOUT_S", 35.0, 5.0, 120.0
         )
         while asyncio.get_event_loop().time() < deadline:
             if self._as_inflight_try(tid):
@@ -2191,19 +2287,42 @@ class ZaloAdapter(BasePlatformAdapter):
                 parts_after = int(store.queue_len(tid) or 0)
             except Exception:
                 parts_after = 0
-        self._as_compound_set_after(
-            tid,
-            parts_after,
-            str(item.get("thread_type") or "user"),
-        )
+        thread_type = str(item.get("thread_type") or "user")
+        self._as_compound_set_after(tid, parts_after, thread_type)
         self._as_compound_begin(tid)
+        turn_timeout = self._as_queue_turn_timeout_s()
         try:
-            await self.handle_message(event)
-            await self._as_autosend_late_files(tid, str(item.get("thread_type") or "user"))
-            await self._as_compound_wait_part(tid)
+            async def _run_turn() -> None:
+                await self.handle_message(event)
+                await self._as_autosend_late_files(tid, thread_type)
+                await self._as_compound_wait_part(tid)
+
+            try:
+                await asyncio.wait_for(_run_turn(), timeout=turn_timeout)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Zalo: queue turn timeout thread=%s after %.0fs — release for next message",
+                    tid,
+                    turn_timeout,
+                )
+                # Unblock compound waiters / outbound paths that key off delivery.
+                try:
+                    self._as_compound_mark_delivered(tid)
+                except Exception:
+                    pass
+                msg = self._as_ux_line(
+                    "ZALO_QUEUE_TURN_TIMEOUT_MSG",
+                    ("queue", "turn_timeout"),
+                    "Xin lỗi, tin trước xử lý quá lâu nên mình dừng lại. Bạn gửi tin tiếp theo nhé.",
+                )
+                try:
+                    await self._as_gate_announce(tid, thread_type, msg)
+                except Exception:
+                    pass
         except Exception:
             logger.exception("Zalo: queued part failed thread=%s", tid)
         finally:
+            # Always release answering + hold so the next FIFO item can run.
             self._as_compound_end(tid)
             self._as_compound_after.pop(tid, None)
             if parts_after <= 0:
@@ -2895,6 +3014,21 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             local_path, mtype = await self._download_media(media)
             if local_path:
+                # Replica cache is invisible to OCR/ingest/dispatcher — stage onto
+                # the shared media volume before workers run (see stage_shared_media).
+                staged = stage_shared_media(
+                    local_path,
+                    str(media.get("fileName") or ""),
+                    thread_id=str(thread_id or ""),
+                )
+                if staged:
+                    self._as_flow(
+                        "attach_staged",
+                        file=media.get("fileName") or "",
+                        from_path=str(local_path)[:120],
+                        to_path=str(staged)[:120],
+                    )
+                    local_path = staged
                 media_urls.append(local_path)
                 media_types.append(media.get("mime") or "")
                 message_type = mtype
@@ -2974,6 +3108,14 @@ class ZaloAdapter(BasePlatformAdapter):
                 excerpt = ""
             if excerpt:
                 self._as_attachment_remember(str(thread_id), attach_name, excerpt)
+            else:
+                # Still remember the filename so follow-ups ("tìm lời bài hát")
+                # can web-search without asking which song when the title is clear.
+                self._as_attachment_remember(
+                    str(thread_id),
+                    attach_name,
+                    f"[Attached file: {attach_name}]",
+                )
             if attach_bare:
                 text = self._as_attachment_prompt(
                     attach_name, excerpt, is_image=attach_is_image, local_path=media_urls[0]
@@ -2990,8 +3132,78 @@ class ZaloAdapter(BasePlatformAdapter):
                 attach_bare,
                 len(excerpt),
             )
+            # Bare attachment: deterministic extract ack (image/office/text/av).
+            # Do not wait on the agent — Omni capacity-busy 503 left users silent
+            # after Knowledge-pending while csv/xlsx/mp4 never got a content reply.
+            if attach_bare:
+                kind = attachment_kind(attach_name)
+                if attach_is_image:
+                    ack = image_ocr_ack_message(excerpt or "")
+                    flow_stage = (
+                        "attach_image_ocr_ack"
+                        if (excerpt or "").strip()
+                        else "attach_image_empty_ocr_ack"
+                    )
+                else:
+                    ack = file_extract_ack_message(
+                        attach_name, excerpt or "", kind=kind
+                    )
+                    flow_stage = (
+                        "attach_file_extract_ack"
+                        if (excerpt or "").strip()
+                        else "attach_file_empty_ack"
+                    )
+                self._as_flow(
+                    flow_stage,
+                    file=attach_name,
+                    thread_id=thread_id,
+                    kind=kind,
+                    chars=len(excerpt or ""),
+                )
+                try:
+                    await self.send(
+                        chat_id=str(thread_id),
+                        content=ack,
+                        metadata={
+                            "thread_type": "group" if thread_type == "group" else "user",
+                            "as_skip_timing": True,
+                            "as_skip_autosend": True,
+                            "as_skip_dest": True,
+                            "skip_outbound_filter": True,
+                        },
+                    )
+                except Exception as e:
+                    logger.warning("Zalo: extract ack failed: %s", type(e).__name__)
+                try:
+                    self._as_inflight_done(str(thread_id), {})
+                except Exception:
+                    pass
+                try:
+                    ev = self._as_part_delivered.get(str(thread_id))
+                    if ev is not None:
+                        ev.set()
+                except Exception:
+                    pass
+                try:
+                    self._as_queue_kick(str(thread_id))
+                except Exception:
+                    pass
+                return
         elif not media_urls and str(text or "").strip():
             text = self._as_attachment_followup(str(thread_id), text)
+
+        # Quoted reply: inject quoted text/title so the agent can resolve
+        # "tìm lời bài hát" against Multo / Cup of Joe without re-asking.
+        try:
+            raw_q = m.get("quoted") if isinstance(m.get("quoted"), dict) else None
+            if not isinstance(raw_q, dict):
+                raw_q = m.get("quote") if isinstance(m.get("quote"), dict) else {}
+            qsnip = quoted_context_snip(raw_q)
+            if qsnip and str(text or "").strip() and qsnip not in str(text):
+                text = f"{text}\n\n[Quoted message]\n{qsnip}"
+                self._as_flow("quote_context", thread_id=thread_id, chars=len(qsnip))
+        except Exception:
+            pass
 
         event = MessageEvent(
             text=text,
@@ -3993,11 +4205,16 @@ class ZaloAdapter(BasePlatformAdapter):
 
 
     def _as_redact_internal(self, content: str) -> str:  # ASSISTANT_PATH_REDACT_v1
-        """Strip server paths / secrets from outbound chat. Always on."""
+        """Strip server paths / secrets / Hermes cron wrappers from outbound chat."""
         import re as _re
         t = content or ""
         if not t.strip():
             return t
+        try:
+            from .gateway_noise import strip_cron_delivery
+        except ImportError:
+            from gateway_noise import strip_cron_delivery  # type: ignore
+        t = strip_cron_delivery(t)
 
         def _path_sub(m):
             raw = m.group(0).strip("`'")
@@ -4053,7 +4270,14 @@ class ZaloAdapter(BasePlatformAdapter):
                 async with session.post(url, json=payload) as resp:
                     body = await resp.text()
                     if resp.status >= 300:
-                        self._as_flow("attach_worker_fail", url=url, status=resp.status)
+                        self._as_flow(
+                            "attach_worker_fail",
+                            url=url,
+                            status=resp.status,
+                        )
+                        # Sentinel so callers can distinguish 404 from empty OCR.
+                        if resp.status == 404:
+                            return "__AS_WORKER_404__"
                         return ""
             data = json.loads(body or "{}")
         except Exception as e:
@@ -4091,6 +4315,28 @@ class ZaloAdapter(BasePlatformAdapter):
                     {"path": worker_path, "prompt": "Extract all text as markdown."},
                     timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
                 )
+                # Path mismatch / race → 404; retry with bytes (not on empty OCR).
+                if text == "__AS_WORKER_404__" and src.is_file():
+                    import base64
+
+                    b64 = base64.b64encode(src.read_bytes()).decode("ascii")
+                    text = await self._as_worker_text(
+                        f"{ocr_url}/v1/ocr",
+                        {
+                            "image_b64": b64,
+                            "prompt": "Extract all text as markdown.",
+                        },
+                        timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
+                    )
+                    self._as_flow(
+                        "attach_ocr_b64_retry",
+                        file=name,
+                        chars=len(text) if text != "__AS_WORKER_404__" else 0,
+                        path=worker_path[:160],
+                    )
+                if text == "__AS_WORKER_404__":
+                    text = ""
+
             case "office":
                 ingest_url = (os.getenv("INGEST_URL") or "http://ingest:8099").rstrip("/")
                 text = await self._as_worker_text(
@@ -4197,11 +4443,13 @@ class ZaloAdapter(BasePlatformAdapter):
             return f"{head}\n\n[Extracted text — summarize from this]\n{body[:ATTACHMENT_PROMPT_CHARS]}"
         if is_image:
             return (
-                f"[Attached image: {file_name}"
-                + (f" path={local_path}" if local_path else "")
-                + "]\n"
-                "Ảnh không có chữ đọc được (OCR trống). Mở file ảnh và mô tả nội dung ảnh, "
-                "rồi trả lời. Không hỏi user mô tả ảnh."
+                f"[Attached image: {file_name}]\n"
+                "OCR không đọc được chữ trong ảnh (file đã nhận). "
+                "Trả lời ngắn: mô tả những gì nhìn thấy được từ tên file / ngữ cảnh "
+                "hoặc nói rõ ảnh không có chữ đọc được, rồi hỏi user muốn làm gì tiếp "
+                "(tóm tắt, dịch, lưu knowledge). "
+                "Cấm hỏi user mô tả lại ảnh, cấm bảo user mở/gửi lại file trừ khi "
+                "download thất bại, cấm gọi tool vision/browser không có sẵn."
             )
         if kind == "av":
             return (
@@ -4227,9 +4475,30 @@ class ZaloAdapter(BasePlatformAdapter):
             return text
         self._as_flow("attach_followup", thread_id=thread_id, files=len(blocks))
         joined = "\n\n".join(reversed(blocks))
+        extra = ""
+        low = str(text or "").lower()
+        if any(
+            k in low
+            for k in (
+                "lời bài hát",
+                "loi bai hat",
+                "lyrics",
+                "lyric",
+                "lời nhạc",
+            )
+        ):
+            newest_name, _ = context_newest(items)
+            hint = song_hint_from_filename(newest_name) or newest_name
+            if hint:
+                extra = (
+                    f"\n\n[Lyric request] Newest attachment looks like `{newest_name}`. "
+                    f"Treat song as: {hint}. "
+                    "Web-search for the lyrics now (Router Worker /v1/search). "
+                    "Do not ask which song if the title/artist is already clear from the filename."
+                )
         return (
             f"{text}\n\n[Recent attachments in this chat — use them if the request refers to "
-            f"those files, otherwise ignore]\n{joined}"
+            f"those files, otherwise ignore]\n{joined}{extra}"
         )
 
     def _as_attachment_recall(self, thread_id: str) -> tuple[str, str]:

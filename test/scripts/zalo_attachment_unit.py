@@ -18,6 +18,10 @@ from attachment import (  # noqa: E402
     context_encode,
     context_merge,
     context_newest,
+    file_extract_ack_message,
+    image_ocr_ack_message,
+    ocr_excerpt_for_ack,
+    stage_shared_media,
     worker_media_path,
 )
 from autosend import ATTACH_CAPTION_FALLBACK  # noqa: E402
@@ -53,6 +57,37 @@ def test_worker_path() -> None:
     assert worker_media_path("/data/media/in/a.pdf") == "/data/media/in/a.pdf"
     assert worker_media_path("/tmp/x.png") == "/tmp/x.png"
     print("PASS worker media path mapping")
+
+
+def test_stage_shared_media(tmp_path: Path | None = None) -> None:
+    import tempfile
+
+    root = Path(tempfile.mkdtemp(prefix="zalo-stage-"))
+    try:
+        src = root / "replica-cache" / "img_abc.jpg"
+        src.parent.mkdir(parents=True)
+        src.write_bytes(b"\xff\xd8\xfffakejpeg")
+        inbound = root / "inbound"
+        staged = stage_shared_media(
+            str(src), "image.jpg", thread_id="2337", inbound_root=str(inbound)
+        )
+        assert staged, "expected staged path"
+        sp = Path(staged)
+        assert sp.is_file(), staged
+        inbound_n = str(inbound).replace("\\", "/")
+        staged_n = str(sp).replace("\\", "/")
+        assert inbound_n in staged_n, (inbound_n, staged_n)
+        assert sp.read_bytes() == src.read_bytes()
+        # Already under shared media — no second copy.
+        again = stage_shared_media(
+            staged, "image.jpg", thread_id="2337", inbound_root=str(inbound)
+        )
+        assert again.replace("\\", "/") == staged.replace("\\", "/")
+        print("PASS stage_shared_media copies replica cache into inbound")
+    finally:
+        import shutil
+
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def test_caption() -> None:
@@ -114,13 +149,45 @@ def test_context_blocks() -> None:
     print("PASS recall blocks newest-first within budget")
 
 
+def test_image_ocr_ack() -> None:
+    empty = image_ocr_ack_message("")
+    assert "OCR không đọc được" in empty, empty
+    full = image_ocr_ack_message("HOA DON 1250000 VND")
+    assert "HOA DON 1250000 VND" in full and "Đã đọc chữ" in full, full
+    noise = "\n".join(list("naotoeeeeeeie"))
+    assert ocr_excerpt_for_ack(noise) == "", noise
+    assert "OCR không đọc được" in image_ocr_ack_message(noise)
+    print("PASS bare-image OCR ack never silent")
+
+
+def test_file_extract_ack() -> None:
+    csv_ack = file_extract_ack_message(
+        "usage.csv", "col_a,col_b\n1,2", kind="text"
+    )
+    assert "usage.csv" in csv_ack and "col_a" in csv_ack, csv_ack
+    xlsx_ack = file_extract_ack_message(
+        "report.xlsx", "Sheet1\nA B", kind="office"
+    )
+    assert "report.xlsx" in xlsx_ack and "Sheet1" in xlsx_ack, xlsx_ack
+    empty_av = file_extract_ack_message("clip.mp4", "", kind="av")
+    assert "Chưa lấy được transcript" in empty_av, empty_av
+    mp3 = file_extract_ack_message("song.mp3", "lyrics line", kind="av")
+    assert "song.mp3" in mp3 and "lyrics line" in mp3, mp3
+    empty_txt = file_extract_ack_message("note.txt", "", kind="text")
+    assert "Chưa đọc được nội dung" in empty_txt, empty_txt
+    print("PASS bare-file extract ack never silent")
+
+
 def main() -> int:
     try:
         test_kind()
         test_worker_path()
+        test_stage_shared_media()
         test_caption()
         test_context_pack()
         test_context_blocks()
+        test_image_ocr_ack()
+        test_file_extract_ack()
     except AssertionError as e:
         print(f"FAIL {e}")
         return 1

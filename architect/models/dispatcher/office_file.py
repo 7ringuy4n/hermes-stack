@@ -27,7 +27,7 @@ class OfficeFileReq(BaseModel):
     prompt: str = ""
     thread_id: str = ""
     thread_type: str = "user"
-    caption: str = "Đây là file của bạn."
+    caption: str = ""
     filename: Optional[str] = None
 
 
@@ -187,18 +187,30 @@ def register_office_file(
             name = f"{Path(name).stem}{ext}"
         dest = media_dir / "out" / name
         dest = write_office(dest, ext, body)
-        caption = (req.caption or "Đây là file của bạn.").strip()
-        sent = deliver(
-            path=str(dest),
-            thread_id=req.thread_id,
-            thread_type=req.thread_type or "user",
-            caption=caption,
-            filename=dest.name,
-            lock_thread=True,
-        )
+        caption = (req.caption if req.caption is not None else "").strip()
+        zalo: Any = None
+        zalo_error: Any = None
+        try:
+            zalo = deliver(
+                path=str(dest),
+                thread_id=req.thread_id,
+                thread_type=req.thread_type or "user",
+                caption=caption,
+                filename=dest.name,
+                lock_thread=True,
+            )
+        except HTTPException as e:
+            # File is on disk under media/out — Hermes autosend can still deliver.
+            zalo_error = e.detail
+            log.warning(
+                "office-file wrote %s but zalo send failed: %s",
+                dest.name,
+                e.detail,
+            )
         return {
             "ok": True,
             "file": dest.name,
             "ext": dest.suffix.lower(),
-            "zalo": sent,
+            "zalo": zalo,
+            "zalo_error": zalo_error,
         }

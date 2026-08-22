@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "tools" / "ocr"))
 
 from refuse import llm_refused  # noqa: E402
+from result import empty_scan_result  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -56,10 +57,19 @@ def test_upstream_status() -> None:
     print("OK upstream status handling")
 
 
+def test_empty_scan_ok() -> None:
+    out = empty_scan_result("tesseract")
+    assert out["ok"] is True and out["empty"] is True and out["text"] == ""
+    assert out["via"] == "tesseract"
+    assert empty_scan_result("")["via"] == "none"
+    print("OK empty local scan is success, not ocr_failed")
+
+
 def main() -> int:
     test_blind_replies_refused()
     test_real_text_kept()
     test_upstream_status()
+    test_empty_scan_ok()
     print("PASS ocr_refuse_unit")
     return 0
 
