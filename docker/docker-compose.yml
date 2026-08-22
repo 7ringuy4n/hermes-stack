@@ -340,6 +340,8 @@ services:
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     ports:
       - "127.0.0.1:${MODEL_ROUTER_HOST_PORT:-8096}:8096"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       internal:
         aliases:
