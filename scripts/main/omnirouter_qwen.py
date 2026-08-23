@@ -458,12 +458,19 @@ def ensure_combo_qwen_first(
     drop_probes(opener)
     qwen_ids: list[str] = []
     if qwen_enabled():
-        qwen_ids = list_qwen_chat_models(http_json, base, opener, classify=classify)
+        local = ollama_chat_model()
+        if local:
+            # Local Ollama configured: hermes/classifier members = that model only.
+            # Omni API still owns the combo; RR must not land on inactive cloud
+            # accounts (instant 503, ACCOUNT:-, TI:0 — Zalo ack then silence).
+            qwen_ids = [local]
+            print(f"==> hermes/classifier via Omni combo → local Ollama only: {local}")
+        else:
+            qwen_ids = list_qwen_chat_models(http_json, base, opener, classify=classify)
     elif not qwen_enabled():
         print(f"NOTE: ENABLE_QWEN off — combo {name} will stay empty round-robin")
-    # Active when ENABLE_QWEN=1 and Omni catalog has Qwen on active providers
-    # (OpenRouter/Groq/Ollama/alibaba). DashScope key is optional — only needed
-    # for the alibaba provider connection, not to populate hermes/classifier.
+    # Active when ENABLE_QWEN=1 and we have at least one Qwen member (catalog
+    # and/or local Ollama). DashScope key optional.
     qwen_active = bool(qwen_ids) and qwen_enabled()
 
     _, data = http_json(opener, "GET", f"{base}/api/combos")
