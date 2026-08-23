@@ -1,3 +1,50 @@
+## 2026-08-23 11:25 +07 — update: clear compose recreate name conflicts
+
+- Root cause: failed `compose up` left hex-prefixed rename leftovers (e.g. `e207aa1eecb5_assistant-authz-1`) → next update Conflict “name already in use”.
+- `workers.sh`: `assistant_rm_compose_recreate_orphans` removes `<hex>_*` orphans + duplicate project/service containers before up; always runs from stale-worker cleanup.
+- `run.sh update`: retry `compose up` once after orphan clear if the first up fails.
+
+## 2026-08-23 11:20 +07 — purge session temp junk; keep generate_env_secrets only
+
+- `scripts/temp` / `hermes/temp`: remove session hotfix/deploy/probe scripts; keep `README.md` + `scripts/temp/generate_env_secrets.py` only.
+- `test/reports`: drop untracked `_*.txt` / session dump logs; leave curated `run-*` summary trees.
+
+## 2026-08-23 12:05 +07 — classify prompt: office / text-poster / schedule intents
+
+- `classify.json`: add INTENT FAMILIES so the LLM owns office-file create (one instruction per kind), exact text-poster (N lines / quotes / B&W, not scene diffusion), and schedule `nội dung:` verbatim — host regex stays gate/renderer only.
+- Document remaining cheats: `media_shortcuts` office/poster matchers, `text_poster.parse_text_poster`, `office_file` multi-kind gate, `classify.py`/`schedule_client` `_CONTENT_AFTER` protocol guards, `multi_request` clock fan-out.
+
+## 2026-08-23 11:55 +07 — classify prompt: multi-request split first
+
+- `classify.json` system prompt: PRIMARY DUTY is to split packed user messages (numbered / và / sau đó / stacked clauses) into one `instructions[]` entry per distinct request, with concrete VI/EN examples; keep schedule verbatim + compound-office rules.
+
+## 2026-08-23 11:15 +07 — Comfy ckpt path fix; OpenBao load wired in run.sh
+
+- `ensure-comfy-checkpoints.sh`: write into `comfyui/ComfyUI/models/checkpoints` (yanwk mount `/root`), not the wrong `comfyui/models/checkpoints`.
+- `run.sh first-setup-openbao` also runs `load-openbao-env`; `run.sh load-openbao-env` command works.
+
+## 2026-08-23 11:00 +07 — OpenBao env load; drop office compound regex; Grafana valkey
+
+- OpenBao: `load-openbao-env.py` + `run.sh load-openbao-env`; hermes compose optional `env_file` `.env.openbao` so secrets are not .env-only after seed.
+- office_file / media_shortcuts: remove `sau đó tạo` regex NLU; multi-kind only gates shortcut; classify LLM splits tasks.
+- Classify: forbid chatty paraphrased schedule confirmations (host announces).
+- Grafana: file-flow logs include valkey; n9router-only scrape soft-zeros when 9Router off; redis panel notes Valkey backend.
+
+## 2026-08-23 10:55 +07 — classify verbatim schedule; office LLM-split; Comfy ckpt guard
+
+- Classify: schedule message/instructions must copy nội dung verbatim (no paraphrase); compound office creates = one instruction per file (LLM decides).
+- fire_text_from_plan / force_timed_schedule_plan: prefer exact body after `nội dung:`.
+- office_file.parse_office_jobs: no regex multi-file split — one prompt → one file.
+- Image: skip Comfy when checkpoint list empty; ensure-comfy-checkpoints.sh + first-setup hook (VPS `/v1/image` 400/502 root cause).
+
+## 2026-08-23 10:40 +07 — monitor valkey/memory/nine; multi-clock schedule; OpenBao seeds
+
+- stack-exporter: `REDIS_URL` defaults to Valkey (`redis://valkey:6379/0`); health target `redis_via_tcp=valkey:6379`.
+- nine-exporter: own compose profile; only when `ENABLE_9ROUTER=1` + Prometheus; Grafana router scrape ORs Omni.
+- memory: default/ensure Qdrant `conversational_memory`; compose `EMBED_URL` → embedding.
+- Zalo: distinct clocks in one schedule message → one stored job per clock (same clock stays one job).
+- OpenBao first-setup: seed Omni/gateway/provider keys (not only the short legacy list).
+
 ## 2026-08-23 09:55 +07 — compound office create: skip shortcut; split pdf+txt jobs
 
 - Root cause: Zalo office shortcut matched compound “tạo pdf … sau đó tạo text …” as one `/v1/office-file` call → single PDF with mangled body; no `.txt`.
