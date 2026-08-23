@@ -407,8 +407,8 @@ def force_timed_schedule_plan(
     """Override weak LLM demotions: timed đặt-lịch must stay task_hint=schedule.
 
     Lab failure: mixed greeting+fuel+weather with ``đặt lịch lúc HH:MM`` was
-    classified as immediate async → 3 parallel jobs (fuel often answered as
-    weather) instead of one lịch confirm + fire later.
+    classified as immediate async → 3 sequential compound jobs instead of one
+    lịch confirm + fire later.
     """
     out = dict(src) if isinstance(src, dict) else {}
     if not looks_like_timed_schedule(text):

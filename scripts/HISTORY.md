@@ -1,3 +1,7 @@
+## 2026-08-23 17:35 +07 — classify + schedule: sequential compound (not parallel)
+
+- Classify prompt + workflow `sequential=True` for N immediate instructions; schedule multi-clock vs single-fire docs.
+
 ## 2026-08-23 17:05 +07 — video policy: OmniRouter refuse messages
 
 - Dispatcher `video_summary.py`: LLM-written refuse for social video summary + video generation; `/v1/video` blocked; `video-gen` skill aligned.

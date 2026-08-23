@@ -1393,13 +1393,13 @@ class ZaloAdapter(BasePlatformAdapter):
             from .workflow_client import create_schedule, create_workflow, workflow_enabled
             from .schedule_client import create_schedule as go_create_schedule
             from .schedule_client import fire_text_from_plan, schedule_enabled
-            from .classify_client import classify_text, plan_is_async
+            from .classify_client import classify_text, plan_compound_sequential, plan_is_async
             from .knowledge_cite import plan_is_knowledge
         except ImportError:
             from workflow_client import create_schedule, create_workflow, workflow_enabled  # type: ignore
             from schedule_client import create_schedule as go_create_schedule  # type: ignore
             from schedule_client import fire_text_from_plan, schedule_enabled  # type: ignore
-            from classify_client import classify_text, plan_is_async  # type: ignore
+            from classify_client import classify_text, plan_compound_sequential, plan_is_async  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
         if not isinstance(plan, dict):
             plan = classify_text(text)
@@ -1536,6 +1536,7 @@ class ZaloAdapter(BasePlatformAdapter):
             origin=origin,
             context=context,
             task_details=plan.get("task_details") if isinstance(plan.get("task_details"), list) else [],
+            sequential=plan_compound_sequential(plan),
         )
         if not data.get("ok"):
             return False
