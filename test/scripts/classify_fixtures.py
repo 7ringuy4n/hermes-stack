@@ -34,6 +34,14 @@ PLENTY_CRON_0600 = (
     "5. calendar brief\n"
     "6. water reminder"
 )
+
+PLENTY_MULTI_CLOCK = (
+    "Đặt lịch:\n"
+    "1. lúc 06:00 gửi tin chào buổi sáng\n"
+    "2. lúc 12:00 cập nhật giá xăng E5 RON92 và E10 RON95\n"
+    "3. lúc 18:00 báo thời tiết HCMC"
+)
+
 PLENTY_CRON_1200 = (
     "hằng ngày lúc 12:00 GMT+7:\n"
     "1. noon ping\n"
@@ -277,6 +285,16 @@ _PLANS = {
     PLENTY_CRON_0600: {
         "task_hint": "schedule",
         "instructions": _SIX_0600,
+        "cadence": "daily",
+        "cron_expr": "0 6 * * *",
+    },
+    PLENTY_MULTI_CLOCK: {
+        "task_hint": "schedule",
+        "instructions": [
+            "lúc 06:00 gửi tin chào buổi sáng",
+            "lúc 12:00 cập nhật giá xăng E5 RON92 và E10 RON95",
+            "lúc 18:00 báo thời tiết HCMC",
+        ],
         "cadence": "daily",
         "cron_expr": "0 6 * * *",
     },

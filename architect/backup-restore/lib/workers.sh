@@ -188,6 +188,9 @@ assistant_append_monitor_profiles() {
   if [[ "$want_prom" == "1" && "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
     _amp_profiles+=(--profile omni-exporter)
   fi
+  if [[ "$want_prom" == "1" && "${ENABLE_9ROUTER:-0}" == "1" ]]; then
+    _amp_profiles+=(--profile nine-exporter)
+  fi
 }
 
 assistant_disabled_monitor_containers() {
@@ -198,9 +201,11 @@ assistant_disabled_monitor_containers() {
   [[ "$g" == "1" ]] || echo grafana
   if [[ "$want_prom" != "1" ]]; then
     echo prometheus
-    echo nine-exporter
     echo node-exporter
     echo stack-exporter
+  fi
+  if [[ "$want_prom" != "1" || "${ENABLE_9ROUTER:-0}" != "1" ]]; then
+    echo nine-exporter
   fi
   if [[ "$want_loki" != "1" ]]; then
     echo loki

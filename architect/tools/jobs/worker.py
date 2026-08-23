@@ -6,7 +6,7 @@ import os
 import redis
 from rq import Worker
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = os.environ.get("REDIS_URL") or os.environ.get("VALKEY_URL") or "redis://valkey:6379/0"
 QUEUES = [q.strip() for q in os.environ.get("RQ_QUEUES", "default,ingest,memory,learn,security").split(",") if q.strip()]
 
 

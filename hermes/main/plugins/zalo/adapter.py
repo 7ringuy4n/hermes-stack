@@ -1388,6 +1388,7 @@ class ZaloAdapter(BasePlatformAdapter):
         chat_type: str,
         plan: dict | None = None,
         schedule_fire: bool = False,
+        _schedule_fanout_child: bool = False,
     ) -> bool:
         try:
             from .workflow_client import create_schedule, create_workflow, workflow_enabled
@@ -1436,6 +1437,40 @@ class ZaloAdapter(BasePlatformAdapter):
             "plan": plan,
         }
         if plan.get("task_hint") == "schedule" and not schedule_fire:
+            if not _schedule_fanout_child:
+                try:
+                    from .multi_request import split_compound_requests
+                except ImportError:
+                    from multi_request import split_compound_requests  # type: ignore
+                sched_parts = split_compound_requests(text) or [text]
+                if len(sched_parts) > 1:
+                    ok_n = 0
+                    for part in sched_parts:
+                        part_plan = classify_text(part)
+                        if await self._as_try_workflow_submit(
+                            text=part,
+                            thread_id=thread_id,
+                            thread_type=thread_type,
+                            sender_id=sender_id,
+                            sender_name=sender_name,
+                            chat_type=chat_type,
+                            plan=part_plan,
+                            schedule_fire=False,
+                            _schedule_fanout_child=True,
+                        ):
+                            ok_n += 1
+                    if ok_n:
+                        try:
+                            msg = self._as_ux_line(
+                                "ZALO_SCHEDULE_SAVED_MSG",
+                                ("schedule", "saved"),
+                                f"Đã lưu {ok_n} lịch (mỗi yêu cầu một giờ chạy).",
+                                user_text=text,
+                            )
+                            await self._as_gate_announce(thread_id, thread_type, msg)
+                        except Exception:
+                            pass
+                        return True
             try:
                 from .channels_client import apply_schedule_delivery_target
             except ImportError:
@@ -1486,6 +1521,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
             if data.get("ok"):
                 logger.info("[zalo] schedule stored")
+                if _schedule_fanout_child:
+                    return True
                 try:
                     dest = str(origin.get("chat_name") or origin.get("thread_id") or "")
                     sid = str(data.get("id") or (data.get("schedule") or {}).get("id") or "")

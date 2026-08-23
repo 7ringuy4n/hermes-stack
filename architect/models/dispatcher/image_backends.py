@@ -168,6 +168,27 @@ def _has_gpu() -> bool:
     return v in {"1", "true", "yes", "on"}
 
 
+
+def _comfy_has_checkpoint(base_url: str) -> bool:
+    """Empty models/checkpoints makes Comfy prompt validation fail (HTTP 400)."""
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            r = client.get(f"{base_url.rstrip('/')}/object_info/CheckpointLoaderSimple")
+            if r.status_code >= 400:
+                return True
+            data = r.json() or {}
+            info = data.get("CheckpointLoaderSimple") or data
+            names = (
+                ((info.get("input") or {}).get("required") or {}).get("ckpt_name")
+                or [None, []]
+            )
+            if isinstance(names, list) and len(names) >= 2 and isinstance(names[1], list):
+                return len(names[1]) > 0
+    except Exception:
+        return True
+    return False
+
+
 def backend_available(name: str) -> bool:
     n = _norm_backend(name)
     if n == "llm":
@@ -194,11 +215,13 @@ def backend_available(name: str) -> bool:
             _env("IMAGE_VENDOR_URL", "IMAGE_PAID2_URL", "FLUXAI_URL")
         )
     if n in {"comfy-cpu", "comfy_cpu", "cpu"}:
-        return bool(_env("COMFYUI_CPU_URL", "COMFYUI_URL"))
+        url = _env("COMFYUI_CPU_URL", "COMFYUI_URL")
+        return bool(url) and _comfy_has_checkpoint(url)
     if n in {"comfy-gpu", "comfy_gpu", "gpu"}:
         if not _has_gpu():
             return False
-        return bool(_env("COMFYUI_GPU_URL", "COMFYUI_URL"))
+        url = _env("COMFYUI_GPU_URL", "COMFYUI_URL")
+        return bool(url) and _comfy_has_checkpoint(url)
     if n == "pillow":
         return True
     return False
