@@ -23,8 +23,22 @@ def qwen_enabled(env: dict[str, str] | None = None) -> bool:
 
 
 def ollama_base_url(env: dict[str, str] | None = None) -> str:
+    """Host/docker URL for local Ollama (Omni provider + router fallback).
+
+    Accepts OLLAMA_BASE_URL, OLLAMA_DOCKER_URL, or OLLAMA_HOST_URL. When
+    ENABLE_QWEN=1 and OLLAMA_MODEL is set but no URL is present, default to
+    host.docker.internal so hermes combo still pins local Ollama (otherwise
+    catalog fill leaves groq/gpt-oss-* members → 413 TPM on free Groq).
+    """
     src = env if env is not None else {}
-    return (src.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_BASE_URL") or "").strip().rstrip("/")
+    for key in ("OLLAMA_BASE_URL", "OLLAMA_DOCKER_URL", "OLLAMA_HOST_URL"):
+        raw = (src.get(key) or os.environ.get(key) or "").strip().rstrip("/")
+        if raw:
+            return raw
+    model = (src.get("OLLAMA_MODEL") or os.environ.get("OLLAMA_MODEL") or "").strip()
+    if qwen_enabled(src) and model:
+        return "http://host.docker.internal:11434"
+    return ""
 
 
 def ollama_chat_model(env: dict[str, str] | None = None) -> str:

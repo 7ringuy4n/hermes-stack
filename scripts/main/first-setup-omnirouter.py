@@ -785,6 +785,17 @@ def main() -> int:
 
     ensure_alibaba_qwen_provider(opener, env)
     ensure_ollama_local_provider(opener, env)
+    # Persist Ollama URL so hermes combo stays local-only (avoids Groq TPM 413
+    # when Hermes sends full tool schemas ~8k+ tokens on free 8k TPM tier).
+    try:
+        from omnirouter_qwen import ollama_base_url as _ollama_url
+    except ImportError:
+        from omnirouter_qwen import ollama_base_url as _ollama_url  # type: ignore
+    ollama_url = _ollama_url(env)
+    if ollama_url and not (env.get("OLLAMA_BASE_URL") or "").strip():
+        set_env_key(ROOT / ".env", "OLLAMA_BASE_URL", ollama_url)
+        env["OLLAMA_BASE_URL"] = ollama_url
+        print(f"==> wrote OLLAMA_BASE_URL={ollama_url}")
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
     qwen_fast = ensure_qwen_fast_combo(opener)
