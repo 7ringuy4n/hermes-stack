@@ -147,6 +147,12 @@ def chat_omni_skip_remaining(status: int, data: Any) -> bool:
     if status == 503 and ("temporarily unavailable" in msg or "service unavailable" in msg):
         # Instant 503 on hermes/classifier (TI:0) — further Omni hops waste time.
         return True
+    # Groq free TPM / request-too-large: Omni marks the whole Groq provider
+    # exhausted and RR only hits more groq/* members (413 again). Skip Omni.
+    if status == 413:
+        return True
+    if "request too large" in msg or "tokens per minute" in msg or "tpm" in msg:
+        return True
     if "supports tool calling" in msg:
         return True
     return False
