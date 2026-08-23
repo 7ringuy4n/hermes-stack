@@ -50,13 +50,6 @@
       "vi": "Chưa nhận diện được yêu cầu. Bạn gửi lại giúp mình."
     }
   },
-  "async": {
-    "ack": {
-      "default": "en",
-      "en": "Got it — working on that now.",
-      "vi": "Đã nhận yêu cầu. Mình đang xử lý..."
-    }
-  },
   "outbound_protocol_drop": [
     "Context compaction complete",
     "Request payload too large (413)",
