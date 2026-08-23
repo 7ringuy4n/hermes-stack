@@ -29,6 +29,7 @@ _BW = re.compile(
 )
 _N_LINES = re.compile(r"(\d+)\s*(?:dòng|dong|lines?|hàng)", re.I)
 _QUOTED = re.compile(r"[\"“”«»']([^\"“”«»']{1,80})[\"“”«»']")
+# Renderer parser for /v1/image mode=text-poster. Classify must keep N/phrase/B&W verbatim.
 
 
 def parse_text_poster(prompt: str) -> Optional[dict[str, Any]]:

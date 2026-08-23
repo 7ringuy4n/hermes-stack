@@ -45,7 +45,7 @@
           "refId": "A"
         }
       ],
-      "title": "All [flow] stages (media \u2192 security \u2192 OCR \u2192 ingest \u2192 RAG \u2192 LLM)",
+      "title": "All [flow] stages (media → security → OCR → ingest → RAG → LLM)",
       "type": "logs"
     },
     {
@@ -72,7 +72,7 @@
           "refId": "A"
         }
       ],
-      "title": "1 \u00b7 Media receive / cache",
+      "title": "1 · Media receive / cache",
       "type": "logs"
     },
     {
@@ -99,7 +99,7 @@
           "refId": "A"
         }
       ],
-      "title": "2 \u00b7 Security scan (LLM / YARA)",
+      "title": "2 · Security scan (LLM / YARA)",
       "type": "logs"
     },
     {
@@ -126,7 +126,7 @@
           "refId": "A"
         }
       ],
-      "title": "3 \u00b7 OCR \u2192 ingest \u2192 embed",
+      "title": "3 · OCR → ingest → embed",
       "type": "logs"
     },
     {
@@ -149,11 +149,11 @@
       },
       "targets": [
         {
-          "expr": "{job=\"docker\", container=~\"qdrant|memory|redis|ingest\"} |= `[flow]` or `knowledge_chunks` or `conversational_memory` or `collection`",
+          "expr": "{job=\"docker\", container=~\"qdrant|memory|redis|valkey|ingest\"} |= `[flow]` or `knowledge_chunks` or `conversational_memory` or `collection`",
           "refId": "A"
         }
       ],
-      "title": "4 \u00b7 Knowledge cache (Qdrant / Redis)",
+      "title": "4 · Knowledge cache (Qdrant / Redis)",
       "type": "logs"
     },
     {
@@ -180,7 +180,7 @@
           "refId": "A"
         }
       ],
-      "title": "5 \u00b7 LLM / Hermes / 9Router",
+      "title": "5 · LLM / Hermes / 9Router",
       "type": "logs"
     },
     {

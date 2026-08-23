@@ -2,7 +2,7 @@
 """High first-setup: seed API keys from .env into OpenBao (+ export .env.openbao).
 
 SoT after this script: OpenBao KV at secret/assistant/api-keys (UI on :8200).
-Host .env stays for worker/component flags, paths, OpenBao bootstrap token, and Compose interpolate.
+Host .env stays for worker/component flags, paths, OpenBao bootstrap token, and Compose interpolate. API keys/passwords are also stored in OpenBao by this script — do not leave OpenBao empty while secrets only sit in .env.
 
 Usage (stack already up with the security/OpenBao components enabled):
   python3 scripts/main/first-setup-openbao.py
@@ -30,15 +30,27 @@ SECRET_PATH = os.environ.get("OPENBAO_SECRET_PATH") or "secret/data/assistant/ap
 SEED_KEYS = (
     "N9ROUTER_API_KEY",
     "N9ROUTER_INITIAL_PASSWORD",
+    "OMNIROUTER_API_KEY",
+    "OMNIROUTER_INITIAL_PASSWORD",
+    "API_SERVER_KEY",
+    "GATEWAY_API_KEYS",
     "TAVILY_API_KEY",
     "FIRECRAWL_API_KEY",
     "HERMES_DASHBOARD_PASSWORD",
     "HERMES_DASHBOARD_SECRET",
     "MEMORY_DB_PASSWORD",
     "ZALO_API_TOKEN",
-    "GRAFANA_ADMIN_PASSWORD",
     "ZALO_PLUGIN_TOKEN",
+    "GRAFANA_ADMIN_PASSWORD",
     "TELEGRAM_BOT_TOKEN",
+    "GEMINI_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "QWEN_API_KEY",
+    "FAL_KEY",
+    "FLUXAI_API_KEY",
+    "POLLINATIONS_API_KEY",
+    "IMAGE_LLM_API_KEY",
+    "IMAGE_VENDOR_API_KEY",
 )
 
 
