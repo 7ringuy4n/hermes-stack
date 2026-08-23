@@ -253,24 +253,82 @@ zalo_bridge_plugin_dir() {
   return 1
 }
 
-zalo_install_bridge_overlays() {
-  local src="${ZALO_COMMON_ROOT}/scripts/main/zalo-bridge/zaloClient.js"
-  local dest_dir dest
-  if [[ ! -f "$src" ]]; then
-    zalo_log "WARN: missing bridge overlay ${src}"
-    return 1
-  fi
-  dest_dir="$(zalo_bridge_plugin_dir)" || {
-    zalo_log "WARN: hermes-zalo-plugin install dir not found — skip bridge overlay"
-    return 1
-  }
-  dest="${dest_dir}/zaloClient.js"
-  zalo_log "install bridge overlay ${src} → ${dest}"
+zalo_bridge_overlay_files() {
+  # Keep in sync with scripts/main/zalo-bridge/ — zaloClient.js imports ./markdownToZalo.js
+  # but npm hermes-zalo-plugin@1.0.x does not ship it; overlay bundle must include deps.
+  printf '%s\n' zaloClient.js markdownToZalo.js
+}
+
+zalo_bridge_overlay_cp() {
+  local src="$1" dest="$2"
   if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
     printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S cp -f "$src" "$dest"
   else
     $ZALO_SUDO cp -f "$src" "$dest"
   fi
+}
+
+zalo_verify_bridge_overlays() {
+  local dest_dir="$1"
+  local f missing=0
+  zalo_need_node
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if ! node --check "${dest_dir}/${f}" 2>/dev/null; then
+      zalo_log "ERROR: bridge overlay failed node --check: ${dest_dir}/${f}"
+      return 1
+    fi
+  done < <(zalo_bridge_overlay_files)
+  if ! python3 - "$dest_dir" <<'PY'
+import re, sys
+from pathlib import Path
+
+dest = Path(sys.argv[1])
+client = dest / "zaloClient.js"
+text = client.read_text(encoding="utf-8")
+missing = []
+for m in re.finditer(r'from\s+"\./([^"]+)"', text):
+    rel = m.group(1)
+    if not (dest / rel).is_file():
+        missing.append(rel)
+if missing:
+    for rel in missing:
+        print(f"missing local import ./{rel}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+  then
+    zalo_log "ERROR: bridge overlay missing local imports (see above)"
+    return 1
+  fi
+  zalo_log "bridge overlay verified (syntax + local imports)"
+}
+
+zalo_install_bridge_overlays() {
+  local overlay_dir="${ZALO_COMMON_ROOT}/scripts/main/zalo-bridge"
+  local dest_dir dest f src
+  if [[ ! -d "$overlay_dir" ]]; then
+    zalo_log "WARN: missing bridge overlay dir ${overlay_dir}"
+    return 1
+  fi
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    if [[ ! -f "${overlay_dir}/${f}" ]]; then
+      zalo_log "WARN: missing bridge overlay ${overlay_dir}/${f}"
+      return 1
+    fi
+  done < <(zalo_bridge_overlay_files)
+  dest_dir="$(zalo_bridge_plugin_dir)" || {
+    zalo_log "WARN: hermes-zalo-plugin install dir not found — skip bridge overlay"
+    return 1
+  }
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    src="${overlay_dir}/${f}"
+    dest="${dest_dir}/${f}"
+    zalo_log "install bridge overlay ${src} → ${dest}"
+    zalo_bridge_overlay_cp "$src" "$dest"
+  done < <(zalo_bridge_overlay_files)
+  zalo_verify_bridge_overlays "$dest_dir"
 }
 
 zalo_configure_bridge_systemd() {
@@ -323,7 +381,10 @@ zalo_start_bridge_service() {
   else
     systemctl --user enable --now assistant-zalo.service 2>/dev/null || true
   fi
-  zalo_install_bridge_overlays || true
+  if ! zalo_install_bridge_overlays; then
+    zalo_log "ERROR: bridge overlay install/verify failed — fix before starting bridge"
+    return 1
+  fi
   if [[ -f "${ZALO_COMMON_ROOT}/scripts/main/patch_zalo_bridge_inject.py" ]]; then
     ZALO_BRIDGE_FORCE_RESTART=1 $ZALO_SUDO python3 "${ZALO_COMMON_ROOT}/scripts/main/patch_zalo_bridge_inject.py" || true
   fi
