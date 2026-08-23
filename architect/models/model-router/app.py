@@ -45,7 +45,7 @@ from chat_norm import (  # noqa: E402
     sanitize_for_ollama,
     should_strip_ollama_thinking,
 )
-from route_expand import expand_chat_candidates, upstream_url
+from route_expand import direct_ollama_allowed, expand_chat_candidates, upstream_url
 from websearch import health_fields as websearch_health
 from websearch import router as websearch_router
 
@@ -291,7 +291,8 @@ async def _candidates(task: str, *, prefer_omni: bool | None = None) -> list[tup
             )
         )
     if OLLAMA_BASE and await _probe_ollama():
-        out.append(("ollama", f"{OLLAMA_BASE}/v1", {}, OLLAMA_MODEL))
+        if direct_ollama_allowed(task=task, enable_omni=ENABLE_OMNI, omni_ok=omni_ok):
+            out.append(("ollama", f"{OLLAMA_BASE}/v1", {}, OLLAMA_MODEL))
     return out
 
 
@@ -430,6 +431,8 @@ async def proxy(path: str, request: Request) -> Response:
         # (paid Omni models often 403 inside a 200 SSE stream Hermes cannot recover from).
         if is_chat:
             payload["stream"] = False
+            if task == "normal":
+                payload["model"] = OMNI_DEFAULT_MODEL
         if model_override and "model" in payload:
             payload["model"] = model_override
         elif model_override and is_chat:

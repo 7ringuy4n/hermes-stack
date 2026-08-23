@@ -35,6 +35,21 @@ CREATE TABLE IF NOT EXISTS zalo_settings (
   value TEXT NOT NULL DEFAULT '',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS zalo_message_history (
+  id BIGSERIAL PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  thread_type TEXT NOT NULL DEFAULT 'user',
+  message_id TEXT,
+  event TEXT NOT NULL,
+  role TEXT,
+  content TEXT,
+  task_hint TEXT,
+  queue_depth INT,
+  meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS zalo_message_history_thread_created_idx
+  ON zalo_message_history (thread_id, created_at DESC);
 """
 
 KINDS = frozenset({"admin", "user", "dm", "group", "denied"})
@@ -251,3 +266,82 @@ def export_snapshot() -> dict[str, Any]:
         "groups": list_entities("group"),
         "denied": list_entities("denied", status=None),
     }
+
+
+def record_message_history(
+    *,
+    thread_id: str,
+    event: str,
+    thread_type: str = "user",
+    message_id: str = "",
+    role: str = "",
+    content: str = "",
+    task_hint: str = "",
+    queue_depth: int | None = None,
+    meta: dict[str, Any] | None = None,
+) -> bool:
+    """Append inbound queue / turn trace row (SoT when DATABASE_URL is set)."""
+    tid = (thread_id or "").strip()
+    ev = (event or "").strip().lower()
+    if not tid or not ev:
+        return False
+    if not _ensure():
+        return False
+    from psycopg.types.json import Json
+
+    body = (content or "")[:4000]
+    with _pool.connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO zalo_message_history (
+              thread_id, thread_type, message_id, event, role, content,
+              task_hint, queue_depth, meta
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                tid,
+                (thread_type or "user").strip() or "user",
+                (message_id or "").strip() or None,
+                ev,
+                (role or "").strip() or None,
+                body or None,
+                (task_hint or "").strip() or None,
+                queue_depth,
+                Json(meta if isinstance(meta, dict) else {}),
+            ),
+        )
+        conn.commit()
+    return True
+
+
+def load_recent_turns(
+    thread_id: str,
+    *,
+    thread_type: str = "user",
+    limit: int = 12,
+) -> list[dict[str, str]]:
+    """Recent user/assistant turns for hydrate when Valkey session is cold."""
+    tid = (thread_id or "").strip()
+    if not tid or not _ensure():
+        return []
+    cap = max(2, min(24, int(limit or 12)))
+    with _pool.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT role, content FROM zalo_message_history
+            WHERE thread_id=%s AND thread_type=%s
+              AND event IN ('user_turn', 'assistant_turn')
+              AND role IN ('user', 'assistant')
+              AND content IS NOT NULL AND content <> ''
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (tid, (thread_type or "user").strip() or "user", cap),
+        ).fetchall()
+    out: list[dict[str, str]] = []
+    for row in reversed(rows):
+        role = str(row.get("role") or "").strip().lower()
+        text = str(row.get("content") or "").strip()
+        if role in {"user", "assistant"} and text:
+            out.append({"role": role, "content": text})
+    return out

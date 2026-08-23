@@ -89,14 +89,24 @@ def hydrate_user_text(thread_id: str, thread_type: str, text: str, *, max_msgs: 
     low = cur.lower()
     if cur.startswith("[Prior conversation]") or low.startswith("!zalo"):
         return cur
-    msgs = load_messages(thread_id, thread_type)
-    if not msgs:
-        return cur
     try:
         cap = int(os.getenv("ZALO_SESSION_HYDRATE_MAX") or str(max_msgs))
     except ValueError:
         cap = max_msgs
     cap = max(2, min(24, cap))
+    msgs = load_messages(thread_id, thread_type)
+    if not msgs:
+        try:
+            from .queue_history import load_recent_turns as pg_turns
+        except ImportError:
+            try:
+                from queue_history import load_recent_turns as pg_turns  # type: ignore
+            except ImportError:
+                pg_turns = None  # type: ignore
+        if pg_turns is not None:
+            msgs = pg_turns(thread_id, thread_type, limit=cap)
+    if not msgs:
+        return cur
     prior = msgs[-cap:]
     # Avoid double-hydrate if the adapter already injected
     if "[Prior conversation]" in cur:
@@ -149,3 +159,23 @@ def append_turn(
             "metadata": {"platform": "zalo", "thread_type": thread_type},
         },
     )
+    try:
+        from .queue_history import record as history_record
+    except ImportError:
+        from queue_history import record as history_record  # type: ignore
+    if user:
+        history_record(
+            thread_id=str(thread_id),
+            thread_type=str(thread_type),
+            event="user_turn",
+            role="user",
+            content=user,
+        )
+    if asst:
+        history_record(
+            thread_id=str(thread_id),
+            thread_type=str(thread_type),
+            event="assistant_turn",
+            role="assistant",
+            content=asst,
+        )
