@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Ensure host Ollama is running and reachable (ENABLE_QWEN + OLLAMA_BASE_URL).
+# Ensure host Ollama is running and OLLAMA_MODEL matches a pulled tag.
 # Used by run.sh, stack-watch, post-lab-restore, lab-enable-qwen-local.
 # Exit 0 when host + (optional) router-worker can reach Ollama; 1 on hard failure.
+# Exit 3 when model was realigned (caller should re-source .env / first-setup).
 set -euo pipefail
 
 ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -13,12 +14,34 @@ cd "$ROOT"
 OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3.5:2b-instruct}"
 OLLAMA_HOST_URL="${OLLAMA_HOST_URL:-http://127.0.0.1:11434}"
 OLLAMA_DOCKER_URL="${OLLAMA_DOCKER_URL:-${OLLAMA_BASE_URL:-http://host.docker.internal:11434}}"
+# Prefer these when configured tag is missing / pull fails (lab VPS reality).
+OLLAMA_FALLBACKS="${OLLAMA_FALLBACKS:-qwen3:4b,qwen2.5:7b,qwen2.5:3b,qwen2.5:1.5b}"
 
 log() { echo "$(date -Is) ensure-ollama: $*"; }
 
+upsert_env() {
+  local k="$1" v="$2" f="${ROOT}/.env"
+  [[ -f "$f" ]] || return 0
+  if grep -q "^${k}=" "$f" 2>/dev/null; then
+    sed -i "s|^${k}=.*|${k}=${v}|" "$f"
+  else
+    printf '%s=%s\n' "$k" "$v" >>"$f"
+  fi
+}
+
+tags_json() {
+  curl -fsS -m 8 "${OLLAMA_HOST_URL}/api/tags" 2>/dev/null || true
+}
+
+model_present() {
+  local want="$1"
+  tags_json | grep -q "\"name\":\"${want}\"" \
+    || tags_json | grep -q "\"model\":\"${want}\"" \
+    || tags_json | grep -Fq "\"${want}\""
+}
+
 host_ok() {
-  curl -fsS -m 8 "${OLLAMA_HOST_URL}/api/tags" 2>/dev/null | grep -q '"models"' \
-    || curl -fsS -m 8 "${OLLAMA_HOST_URL}/api/tags" 2>/dev/null | grep -q "${OLLAMA_MODEL}"
+  tags_json | grep -q '"models"'
 }
 
 docker_ok() {
@@ -35,6 +58,32 @@ try:
 except Exception:
     sys.exit(1)
 " 2>/dev/null
+}
+
+pick_fallback() {
+  local cand
+  IFS=',' read -r -a arr <<<"${OLLAMA_FALLBACKS}"
+  for cand in "${arr[@]}"; do
+    cand="$(echo "$cand" | tr -d '[:space:]')"
+    [[ -n "$cand" ]] || continue
+    if model_present "$cand"; then
+      echo "$cand"
+      return 0
+    fi
+  done
+  # Any local qwen* tag
+  tags_json | python3 -c '
+import json,sys
+try:
+    d=json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+for m in d.get("models") or []:
+    n=(m.get("name") or m.get("model") or "")
+    if "qwen" in n.lower():
+        print(n); sys.exit(0)
+sys.exit(1)
+' 2>/dev/null
 }
 
 if [[ "${ENABLE_QWEN:-0}" != "1" && -z "${OLLAMA_BASE_URL:-}" ]]; then
@@ -71,9 +120,25 @@ else
   sleep 2
 fi
 
-if ! curl -fsS -m 8 "${OLLAMA_HOST_URL}/api/tags" 2>/dev/null | grep -q "${OLLAMA_MODEL}"; then
+ALIGNED=0
+if ! model_present "${OLLAMA_MODEL}"; then
   log "pull ${OLLAMA_MODEL}"
-  ollama pull "${OLLAMA_MODEL}" || true
+  if ! ollama pull "${OLLAMA_MODEL}"; then
+    log "WARN pull ${OLLAMA_MODEL} failed — trying fallbacks"
+  fi
+fi
+
+if ! model_present "${OLLAMA_MODEL}"; then
+  fb="$(pick_fallback || true)"
+  if [[ -n "${fb:-}" ]]; then
+    log "ALIGN OLLAMA_MODEL ${OLLAMA_MODEL} → ${fb} (pulled tag on host)"
+    upsert_env OLLAMA_MODEL "$fb"
+    OLLAMA_MODEL="$fb"
+    ALIGNED=1
+  else
+    log "FAIL no OLLAMA_MODEL=${OLLAMA_MODEL} and no qwen fallback on host — run: ollama pull ${OLLAMA_MODEL}"
+    exit 1
+  fi
 fi
 
 if ! host_ok; then
@@ -89,4 +154,7 @@ else
   exit 2
 fi
 
+if [[ "$ALIGNED" -eq 1 ]]; then
+  exit 3
+fi
 exit 0

@@ -7,7 +7,11 @@ description: "Generate images via dispatcher POST /v1/image (default). Overlay f
 
 Follow skill **`media-out`** (result only — no step chatter, no approve, no chat_id / names / DM metadata).
 
-The built-in Hermes `image_generation` tool is often **unavailable** (it checks cloud keys such as BFL). Do **not** stop. Do **not** invent matplotlib, PIL scripts, HTML screenshots, or new skills. Generate through this skill and dispatcher instead.
+The built-in Hermes `image_generation` tool is often **unavailable** (cloud keys / BFL). Do **not** stop. Do **not** invent matplotlib, PIL scripts, HTML screenshots, or new skills.
+
+**This stack path (required):** `POST http://dispatcher:8090/v1/image` with `IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu`. Dispatcher may call **ComfyUI** internally. Skill `comfyui` is only for an explicit Comfy workflow the user named — default image gen is always dispatcher.
+
+Generate through this skill and dispatcher instead.
 
 **Never** `web_search`, `web_extract`, or browse GitHub/release/news pages to “find image URLs”. That is not generation. Users must receive a **new file** from dispatcher, not a scrape of someone else’s page. If weather/fuel context is needed, one short search for conditions is enough, then `POST /v1/image` with a **scene prompt** plus `overlay` fact lines (Vietnamese when the user asked for Vietnamese). If dispatcher fails: one failure line from **media-out**, then stop.
 

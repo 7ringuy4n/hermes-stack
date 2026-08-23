@@ -1,3 +1,15 @@
+## 2026-08-23 07:55 +07 — hermes 503: Omni combo + Ollama align + Comfy image path
+
+- Model-router: keep sending `model=hermes` via Omni API; after Omni 503 inactive/empty, skip remaining Omni hops and allow Ollama last-hop (no more ack-then-silence).
+- `first-setup-omnirouter` / `omnirouter_qwen`: when local Ollama is set, hermes/classifier members = that Ollama model only (combo RR must not land on dead cloud accounts).
+- Keep provider `ollama` when Qwen-only deactivate runs; always smoke hermes chat; pin `IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu`.
+- `ensure-ollama.sh`: pull configured tag or **align** `OLLAMA_MODEL` to a pulled qwen* fallback (writes `.env`).
+- `lab-enable-qwen-local.sh` + `image-gen` skill: dispatcher/Comfy path, not Hermes built-in image tool.
+
+## 2026-08-23 07:35 +07 — AGENT_RULES: setup-fix, session cleanup, ask before MR
+
+- Hard Gates / §15 / §17: on error|bug, update durable setup file/script (no patch-file cheats); clean generated session scripts after done; always ask before merge requests.
+
 ## 2026-08-23 07:20 +07 — Qwen3.5 2B instruct + normal→hermes + Postgres queue history
 
 - Default `OLLAMA_MODEL=qwen3.5:2b-instruct` (replaces qwen3:4b / qwen2.5:7b lab refs).

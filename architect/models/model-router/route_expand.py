@@ -18,9 +18,14 @@ def upstream_url(base: str, path: str) -> str:
 
 
 def direct_ollama_allowed(*, task: str, enable_omni: bool, omni_ok: bool) -> bool:
-    """Normal chat must use Omni ``hermes`` combo; skip direct Ollama when Omni is up."""
-    if (task or "").strip().lower() == "normal" and enable_omni and omni_ok:
-        return False
+    """Whether Ollama may appear in the candidate list (always as a *last* hop).
+
+    Normal chat still goes to Omni ``hermes`` first (candidate order + forced
+    ``model=hermes``). Omni's combo owns member RR. Ollama must remain available
+    after Omni returns 503 inactive/empty — excluding it when Omni was merely
+    healthy caused ack-then-silence (no final Zalo reply).
+    """
+    _ = (task, enable_omni, omni_ok)
     return True
 
 
