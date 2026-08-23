@@ -22,6 +22,28 @@ _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
 )
 
+_OFFICE_KIND = re.compile(
+    r"\b(pdf|docx|xlsx|csv|txt|text|markdown|\.md)\b",
+    re.I,
+)
+_COMPOUND_NEXT = re.compile(
+    r"(?:sau\s+đó|sau\s+do|then|and\s+then).{0,60}\b(?:tạo|tao|create|make)\b",
+    re.I | re.S,
+)
+_CLAUSE_SPLIT = re.compile(
+    r"(?:[,;]\s*)?(?:sau\s+đó|sau\s+do|rồi|then|and\s+then)\s+",
+    re.I,
+)
+_CREATE_SPLIT = re.compile(
+    r"(?:^|[,;]\s+|\s+)(?=(?:tạo|tao|create|make)\s+)",
+    re.I,
+)
+_BODY_CUT = re.compile(
+    r"\s*(?:,?\s*(?:sau\s+đó|sau\s+do|rồi|then|and\s+then)\b"
+    r"|,?\s*và\s+(?:tạo|tao|create|make)\b)",
+    re.I,
+)
+
 
 class OfficeFileReq(BaseModel):
     prompt: str = ""
@@ -33,25 +55,92 @@ class OfficeFileReq(BaseModel):
 
 def _enabled() -> bool:
     # Default off (Low). Medium+ sets OFFICE_FILE_GEN=1 via profile.sh / compose.
-    v = (os.environ.get("OFFICE_FILE_GEN") or os.environ.get("ZALO_OFFICE_FILE") or "0").strip().lower()
+    v = (
+        os.environ.get("OFFICE_FILE_GEN") or os.environ.get("ZALO_OFFICE_FILE") or "0"
+    ).strip().lower()
     return v not in {"0", "false", "no", "off"}
+
+
+def _norm_office_kind(token: str) -> str:
+    t = (token or "").lower().lstrip(".")
+    if t in {"text", "txt"}:
+        return "txt"
+    if t in {"md", "markdown"}:
+        return "md"
+    return t
+
+
+def is_compound_office_request(text: str) -> bool:
+    """True when the prompt asks for 2+ office files (skip single-shot shortcut)."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    kinds = {_norm_office_kind(k) for k in _OFFICE_KIND.findall(raw)}
+    if len(kinds) >= 2:
+        return True
+    if _COMPOUND_NEXT.search(raw) and _OFFICE_KIND.search(raw):
+        return True
+    return False
+
+
+def _office_ext(low: str) -> str:
+    if re.search(r"xlsx|excel|\.xls", low):
+        return ".xlsx"
+    if re.search(r"\bcsv\b", low):
+        return ".csv"
+    if re.search(r"docx|word|\.doc\b", low):
+        return ".docx"
+    if re.search(r"\bpdf\b", low):
+        return ".pdf"
+    if re.search(r"\bmd\b|markdown", low):
+        return ".md"
+    if re.search(r"\b(?:txt|text)\b", low):
+        return ".txt"
+    return ".txt"
+
+
+def _clean_office_body(raw: str, body: str) -> str:
+    """Strip compound tails / delivery phrases; prefer 'chứa số N' payload."""
+    compact = re.search(
+        r"(?:ch[uứ]a|chua|contain|đi[eề]n|dien)\s+(?:số|so)\s+(\S+)",
+        raw,
+        re.I,
+    )
+    if compact:
+        body = compact.group(1).strip().strip(",.;")
+    else:
+        body = _BODY_CUT.split(body, maxsplit=1)[0].strip()
+        body = re.sub(r"^(số|so)\s+", "", body, flags=re.I).strip()
+        body = re.sub(
+            r"\s*(?:và\s+)?(?:gửi|gui|send|gởi)\s+(?:cho\s+)?(?:tôi|toi|me)\s*$",
+            "",
+            body,
+            flags=re.I,
+        ).strip()
+        body = re.sub(r"\s+và\s*$", "", body, flags=re.I).strip()
+
+    m2 = re.search(
+        r"(\d+)\s*dòng\s*(in\s*hoa)?\s*[\"“]?(.+?)[\"”]?\s*$",
+        body,
+        re.I | re.S,
+    )
+    if m2:
+        n = max(1, min(int(m2.group(1)), 100))
+        line = (m2.group(3) or "").strip().strip('"').strip("'")
+        if m2.group(2):
+            line = line.upper()
+        body = "\n".join([line] * n)
+
+    if not body:
+        body = " "
+    return body
 
 
 def parse_office(prompt: str) -> tuple[str, str]:
     """Return (ext, body). UTF-8 Vietnamese prompts."""
     raw = (prompt or "").strip()
     low = raw.lower()
-    ext = ".txt"
-    if re.search(r"xlsx|excel|\.xls", low):
-        ext = ".xlsx"
-    elif re.search(r"\bcsv\b", low):
-        ext = ".csv"
-    elif re.search(r"docx|word|\.doc\b", low):
-        ext = ".docx"
-    elif re.search(r"\bpdf\b", low):
-        ext = ".pdf"
-    elif re.search(r"\bmd\b|markdown", low):
-        ext = ".md"
+    ext = _office_ext(low)
 
     body = raw
     m = re.search(
@@ -68,32 +157,40 @@ def parse_office(prompt: str) -> tuple[str, str]:
         if m_num:
             body = m_num.group(1).strip()
 
-    body = re.sub(r"^(số|so)\s+", "", body, flags=re.I).strip()
-    # Drop delivery tail so "1 gửi cho tôi" → "1"
-    body = re.sub(
-        r"\s*(?:và\s+)?(?:gửi|gui|send|gởi)\s+(?:cho\s+)?(?:tôi|toi|me)\s*$",
-        "",
-        body,
-        flags=re.I,
-    ).strip()
-    body = re.sub(r"\s+và\s*$", "", body, flags=re.I).strip()
+    return ext, _clean_office_body(raw, body)
 
-    # "10 dòng in hoa ..." → expand lines
-    m2 = re.search(
-        r"(\d+)\s*dòng\s*(in\s*hoa)?\s*[\"“]?(.+?)[\"”]?\s*$",
-        body,
-        re.I | re.S,
-    )
-    if m2:
-        n = max(1, min(int(m2.group(1)), 100))
-        line = (m2.group(3) or "").strip().strip('"').strip("'")
-        if m2.group(2):
-            line = line.upper()
-        body = "\n".join([line] * n)
 
-    if not body:
-        body = " "
-    return ext, body
+def parse_office_jobs(prompt: str) -> list[tuple[str, str]]:
+    """Split compound office prompts into one (ext, body) job per file."""
+    raw = (prompt or "").strip()
+    if not raw:
+        return []
+    if not is_compound_office_request(raw):
+        return [parse_office(raw)]
+
+    parts = [p.strip(" ,;") for p in _CLAUSE_SPLIT.split(raw) if p and p.strip(" ,;")]
+    refined: list[str] = []
+    for part in parts:
+        bits = [
+            b.strip(" ,;")
+            for b in _CREATE_SPLIT.split(part)
+            if b and b.strip(" ,;")
+        ]
+        refined.extend(bits or [part])
+    if not refined:
+        refined = [raw]
+
+    jobs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for part in refined:
+        if not _OFFICE_KIND.search(part):
+            continue
+        job = parse_office(part)
+        if job in seen:
+            continue
+        seen.add(job)
+        jobs.append(job)
+    return jobs or [parse_office(raw)]
 
 
 def _pdf_font():
@@ -194,38 +291,63 @@ def register_office_file(
             raise HTTPException(400, "prompt required")
         if not req.thread_id:
             raise HTTPException(400, "thread_id required")
-        ext, body = parse_office(prompt)
-        if ext not in _OFFICE_OK:
-            raise HTTPException(400, f"unsupported {ext}")
-        name = (req.filename or "").strip() or f"file-{uuid.uuid4().hex[:8]}{ext}"
-        if Path(name).suffix.lower() != ext:
-            name = f"{Path(name).stem}{ext}"
-        dest = media_dir / "out" / name
-        dest = write_office(dest, ext, body)
+
+        jobs = parse_office_jobs(prompt)
+        if not jobs:
+            raise HTTPException(400, "prompt required")
+        for ext, _body in jobs:
+            if ext not in _OFFICE_OK:
+                raise HTTPException(400, f"unsupported {ext}")
+
         caption = (req.caption if req.caption is not None else "").strip()
+        base_name = (req.filename or "").strip()
+        files: list[dict[str, Any]] = []
         zalo: Any = None
         zalo_error: Any = None
-        try:
-            zalo = deliver(
-                path=str(dest),
-                thread_id=req.thread_id,
-                thread_type=req.thread_type or "user",
-                caption=caption,
-                filename=dest.name,
-                lock_thread=True,
+
+        for i, (ext, body) in enumerate(jobs):
+            if base_name and len(jobs) == 1:
+                name = base_name
+            elif base_name and len(jobs) > 1:
+                name = f"{Path(base_name).stem}-{i + 1}{ext}"
+            else:
+                name = f"file-{uuid.uuid4().hex[:8]}{ext}"
+            if Path(name).suffix.lower() != ext:
+                name = f"{Path(name).stem}{ext}"
+            dest = media_dir / "out" / name
+            dest = write_office(dest, ext, body)
+            try:
+                zalo = deliver(
+                    path=str(dest),
+                    thread_id=req.thread_id,
+                    thread_type=req.thread_type or "user",
+                    caption=caption,
+                    filename=dest.name,
+                    lock_thread=True,
+                )
+            except HTTPException as e:
+                # File is on disk under media/out — Hermes autosend can still deliver.
+                zalo_error = e.detail
+                log.warning(
+                    "office-file wrote %s but zalo send failed: %s",
+                    dest.name,
+                    e.detail,
+                )
+            files.append(
+                {
+                    "file": dest.name,
+                    "ext": dest.suffix.lower(),
+                    "zalo": zalo,
+                    "zalo_error": zalo_error,
+                }
             )
-        except HTTPException as e:
-            # File is on disk under media/out — Hermes autosend can still deliver.
-            zalo_error = e.detail
-            log.warning(
-                "office-file wrote %s but zalo send failed: %s",
-                dest.name,
-                e.detail,
-            )
+
+        first = files[0]
         return {
             "ok": True,
-            "file": dest.name,
-            "ext": dest.suffix.lower(),
-            "zalo": zalo,
-            "zalo_error": zalo_error,
+            "file": first["file"],
+            "ext": first["ext"],
+            "files": files,
+            "zalo": first.get("zalo"),
+            "zalo_error": first.get("zalo_error"),
         }
