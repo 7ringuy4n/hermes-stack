@@ -35,9 +35,7 @@ def ollama_base_url(env: dict[str, str] | None = None) -> str:
         raw = (src.get(key) or os.environ.get(key) or "").strip().rstrip("/")
         if raw:
             return raw
-    model = (src.get("OLLAMA_MODEL") or os.environ.get("OLLAMA_MODEL") or "").strip()
-    if qwen_enabled(src) and model:
-        return "http://host.docker.internal:11434"
+    # Do not invent a default Ollama URL — local Qwen is lab-only.
     return ""
 
 
