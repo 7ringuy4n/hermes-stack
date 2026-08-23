@@ -1,3 +1,9 @@
+## 2026-08-23 09:25 +07 — first-setup clears Qwen/Ollama pins; force hermes/classifier oc/*
+
+- Root cause (VPS xin chào silence): `.env` still `ENABLE_QWEN=1` + `OLLAMA_MODEL=qwen3:4b` → model-router fell through dead Omni to disconnecting Ollama → Hermes 503.
+- `first-setup-omnirouter`: write `ENABLE_QWEN=0` and blank `OLLAMA_*`; fill hermes/classifier with `oc/*` only; assert no `ollama/*` members before finish.
+- Recreate router-worker after clear so runtime env drops Ollama last-hop.
+
 ## 2026-08-23 08:50 +07 — drop async ack; default Omni setup = OpenCode (no Qwen/Ollama)
 
 - Zalo: remove `ux.json` `async.ack` and early “Đã nhận yêu cầu…” announce before workflow.
