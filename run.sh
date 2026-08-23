@@ -504,8 +504,14 @@ do_update() {
 
   echo "==> rebuild + recreate"
   ensure_hermes_media_dirs
+  # Clear hex-prefixed compose rename orphans + duplicate service containers
+  # (avoids: Conflict … name "/<hex>_assistant-authz-1" is already in use).
   do_remove_stale_worker_containers
-  compose up -d --build --remove-orphans
+  if ! compose up -d --build --remove-orphans; then
+    echo "WARN: compose up failed — clearing recreate orphans and retrying once"
+    do_remove_stale_worker_containers
+    compose up -d --build --remove-orphans || return $?
+  fi
   do_stop_disabled_optionals
 
   if [[ "${ENABLE_9ROUTER:-0}" == "1" && -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
