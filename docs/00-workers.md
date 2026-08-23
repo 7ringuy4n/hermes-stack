@@ -89,7 +89,7 @@ Runtime / core flags (Omni, 9Router, queue, Qwen, Ollama) — use `add-component
 ```bash
 bash run.sh add-components ENABLE_9ROUTER=1 --update
 bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
-bash run.sh add-components ENABLE_QWEN=1 OLLAMA_BASE_URL=http://host.docker.internal:11434 OLLAMA_MODEL=qwen3:4b --update
+bash run.sh add-components ENABLE_QWEN=1 OLLAMA_BASE_URL=http://host.docker.internal:11434 OLLAMA_MODEL=qwen3.5:2b-instruct --update
 ```
 
 First deploy only: `bash run.sh up` after editing `.env` secrets (before any workers installed).

@@ -1,8 +1,15 @@
+## 2026-08-23 07:20 +07 — Qwen3.5 2B instruct + normal→hermes + Postgres queue history
+
+- Default `OLLAMA_MODEL=qwen3.5:2b-instruct` (replaces qwen3:4b / qwen2.5:7b lab refs).
+- Model-router: `task=normal` forces `hermes` combo; skip direct Ollama when Omni is up.
+- Zalo: Postgres `zalo_message_history` trace (enqueue/process/turns); hydrate fallback from PG.
+- zalo-api: `POST/GET /v1/zalo/message-history`; Hermes `queue_history.py` client.
+
 ## 2026-08-22 22:00 +07 — install/uninstall: full worker `.env` sync + `--update`
 
 - `install-component.sh`: write bundled `ENABLE_*` / `WORKER_*` on install **and** uninstall (schedule, media, security, notify, monitor, antivirus).
 - `run.sh install|uninstall`: accept `--update` (same as `add-components --update`).
-- `.env.example` / `QWEN_PERFORMANCE.md`: document `qwen2.5:7b` plain-chat profile vs `qwen3:4b` thinking.
+- `.env.example` / `QWEN_PERFORMANCE.md`: document `qwen3.5:2b-instruct` plain-chat profile vs `qwen3.5:2b-instruct` thinking.
 
 ## 2026-08-22 21:45 +07 — model-router: stop Omni rotate after inactive / tool-call fail
 
@@ -19,10 +26,10 @@
 
 - `assistant_option_key_ok`: allow `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `ENABLE_QWEN_THINKING` (docs already use them with `add-components`).
 
-## 2026-08-22 21:10 +07 — Lab default: local Qwen3 4B (`qwen3:4b`)
+## 2026-08-22 21:10 +07 — Lab default: local Qwen3 4B (`qwen3.5:2b-instruct`)
 
-- Defaults: `OLLAMA_MODEL=qwen3:4b` in `.env.example`, `ensure-ollama.sh`, `lab-enable-qwen-local.sh`.
-- `omnirouter_qwen.py`: pin `OLLAMA_MODEL` first in hermes/classifier; prefer local `ollama/qwen3:4b` in sort.
+- Defaults: `OLLAMA_MODEL=qwen3.5:2b-instruct` in `.env.example`, `ensure-ollama.sh`, `lab-enable-qwen-local.sh`.
+- `omnirouter_qwen.py`: pin `OLLAMA_MODEL` first in hermes/classifier; prefer local `ollama/qwen3.5:2b-instruct` in sort.
 - Docs: `00-workers.md`, `02-commands.md`, `QWEN_PERFORMANCE.md`, `SETUP.local.md`.
 
 ## 2026-08-22 21:00 +07 — model-router: Qwen thinking follows `ENABLE_QWEN`
@@ -123,7 +130,7 @@
 ## 2026-08-22 14:00 +07 — Local Ollama Qwen + post-lab restore
 
 - Qwen active when `ENABLE_QWEN=1` and **either** cloud key **or** `OLLAMA_BASE_URL` + `OLLAMA_MODEL` (no DashScope required for lab).
-- `scripts/main/lab-enable-qwen-local.sh`, `post-lab-restore.sh`: enable Ollama qwen2.5:7b, restore Zalo, preflight + router smoke before stopping host.
+- `scripts/main/lab-enable-qwen-local.sh`, `post-lab-restore.sh`: enable Ollama qwen3.5:2b-instruct, restore Zalo, preflight + router smoke before stopping host.
 - `qwen_combo_preflight.py` (case 38): pass with local Ollama combos; `QWEN_COMBOS_EMPTY` when enabled but empty.
 - `zalo_tn_greeting_inject`: fix LLM-not-configured detection; default wait 180s when Ollama set (CPU 7B).
 - Docs: `QWEN_PERFORMANCE.md`, `.env.example`, `test/RULES.md` §15/§post-lab aligned with activatable Qwen component.
