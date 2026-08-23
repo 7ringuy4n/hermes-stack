@@ -2172,6 +2172,20 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception as e:
                 logger.warning("Zalo: rate-limit announce failed: %s", type(e).__name__)
         logger.info("Zalo: inbound queued thread=%s len=%s rate_over=%s", thread_id, n, rate_over)
+        try:
+            from .queue_history import record as history_record
+        except ImportError:
+            from queue_history import record as history_record  # type: ignore
+        history_record(
+            thread_id=thread_id,
+            thread_type=thread_type,
+            message_id=mid,
+            event="enqueued",
+            role="user",
+            content=text,
+            task_hint="normal",
+            queue_depth=n if n >= 0 else None,
+        )
         self._as_queue_kick(thread_id)
 
     async def _as_queue_drain(self, thread_id: str) -> None:
@@ -2273,6 +2287,19 @@ class ZaloAdapter(BasePlatformAdapter):
         tid = str(item.get("thread_id") or "")
         if not tid:
             return
+        try:
+            from .queue_history import record as history_record
+        except ImportError:
+            from queue_history import record as history_record  # type: ignore
+        history_record(
+            thread_id=tid,
+            thread_type=str(item.get("thread_type") or "user"),
+            message_id=str(item.get("message_id") or ""),
+            event="processing",
+            role="user",
+            content=str(item.get("text") or ""),
+            task_hint="normal",
+        )
         deadline = asyncio.get_event_loop().time() + self._as_env_float(
             "ZALO_COMPOUND_PART_TIMEOUT_S", 35.0, 5.0, 120.0
         )

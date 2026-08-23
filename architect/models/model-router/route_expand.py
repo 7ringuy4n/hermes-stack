@@ -17,6 +17,13 @@ def upstream_url(base: str, path: str) -> str:
     return f"{base}/{rel}"
 
 
+def direct_ollama_allowed(*, task: str, enable_omni: bool, omni_ok: bool) -> bool:
+    """Normal chat must use Omni ``hermes`` combo; skip direct Ollama when Omni is up."""
+    if (task or "").strip().lower() == "normal" and enable_omni and omni_ok:
+        return False
+    return True
+
+
 def expand_chat_candidates(
     candidates: list[tuple[str, str, dict[str, str], Optional[str]]],
     *,
