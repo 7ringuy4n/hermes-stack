@@ -1,3 +1,7 @@
+﻿## 2026-08-23 11:10 +07 — valkey/memory/nine monitor, multi-clock schedule, OpenBao, classify intents
+
+- Monitor: Valkey/memory/nine dashboards and exporter signals.
+- Schedule: multi-clock jobs; OpenBao env wiring; classify intent hardening.
 ## 2026-08-23 18:15 +07 — Zalo bridge overlay: bundle markdownToZalo.js + verify
 
 - Root cause: overlay `zaloClient.js` (upstream main) imports `./markdownToZalo.js` but npm `hermes-zalo-plugin@1.0.x` does not ship it → bridge crash-loop, `:8787` down.

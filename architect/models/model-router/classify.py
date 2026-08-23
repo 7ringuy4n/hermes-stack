@@ -428,7 +428,23 @@ def force_timed_schedule_plan(
     out["skill"] = "schedule"
     if out.get("skill_action") in (None, "", "null"):
         out["skill_action"] = "create"
+    exact = verbatim_schedule_body(text)
+    if exact:
+        out["message"] = exact
+        out["instructions"] = [exact]
     return out
+
+
+def verbatim_schedule_body(text: str) -> str | None:
+    """Exact reminder body after nội dung: — never trust a paraphrased LLM rewrite."""
+    blob = (text or "").strip()
+    if not blob:
+        return None
+    m = _CONTENT_AFTER.search(blob)
+    if not m:
+        return None
+    body = (m.group(1) or "").strip().strip("\"' ")
+    return body or None
 
 
 def _coerce_message_field(val: Any) -> str:
