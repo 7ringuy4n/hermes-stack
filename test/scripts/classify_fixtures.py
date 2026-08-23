@@ -248,7 +248,7 @@ _PLANS = {
         "task_hint": "normal",
         "execution_class": "interactive",
         "task_type": "chat",
-        "response_mode": "direct",
+        "response_mode": "ack_then_deliver",
         "instructions": ["Hello"],
     },
     "cite labsolution": {

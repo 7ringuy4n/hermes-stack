@@ -37,6 +37,8 @@ def main() -> int:
     same_kind = "tạo pdf chứa 1 sau đó tạo pdf chứa 2"
     assert is_compound_office_request(same_kind) is False
     assert looks_office_create("tạo 1 file pdf chứa số 1 và gửi cho tôi") is True
+    weather_pdf = "tạo 1 file pdf thể hiện thời tiết hồ chí minh hiện tại"
+    assert looks_office_create(weather_pdf) is False, weather_pdf
     assert parse_office(compound) == (".pdf", "1"), parse_office(compound)
     # Dispatcher does not regex-split compounds — classify emits one instruction per file.
     assert parse_office_jobs(compound) == [parse_office(compound)], parse_office_jobs(compound)

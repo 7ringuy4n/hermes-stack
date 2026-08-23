@@ -86,7 +86,7 @@ def main() -> int:
         "Asia/Ho_Chi_Minh",
     )
     assert hello["execution_class"] == "interactive"
-    assert hello["response_mode"] == "direct"
+    assert hello["response_mode"] == "ack_then_deliver"
     sched = normalize_plan(
         {
             "task_hint": "schedule",

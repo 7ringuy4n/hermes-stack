@@ -18,7 +18,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
     <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
   </tr>
   <tr>
-    <td colspan="3" style="padding:12px;background:#0f766e;color:#fff;text-align:center;font-weight:700;">edge (v0.5.0 default) — API Gateway · Traefik &nbsp;|&nbsp; Zalo bypasses edge</td>
+    <td colspan="3" style="padding:12px;background:#0f766e;color:#fff;text-align:center;font-weight:700;">edge (core default) — API Gateway · Traefik local &nbsp;|&nbsp; Zalo bypasses edge</td>
   </tr>
   <tr>
     <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
@@ -30,7 +30,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
     <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
   </tr>
   <tr>
-    <td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">model-router — task_hint (NORMAL fast path · CODING → 9router · never SECRET)</td>
+    <td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">router-worker — OmniRouter default · 9Router optional · classify path</td>
   </tr>
   <tr>
     <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
@@ -38,15 +38,15 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
   <tr>
     <td style="width:34%;padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;vertical-align:top;">
       <div style="font-weight:700;margin-bottom:6px;">Core (always on)</div>
-      memory · session · ingest · embed<br/>dispatcher · 9Router · model-router · backup
+      memory · session · ingest · embed<br/>router-worker · Omni · backup<br/>Traefik local · API Gateway · Valkey
     </td>
     <td style="width:33%;padding:12px;background:#fff8e6;border:1px solid #f0e0b0;vertical-align:top;">
-      <div style="font-weight:700;margin-bottom:6px;">Medium+</div>
-      OCR · Jobs · web search<br/>file-gen · compact · OmniRouter opt.
+      <div style="font-weight:700;margin-bottom:6px;">Media · Schedule</div>
+      dispatcher · OCR · Jobs · SearXNG<br/>Comfy · office file-gen · compact<br/>schedule-worker
     </td>
     <td style="width:33%;padding:12px;background:#fde8e8;border:1px solid #f0c0c0;vertical-align:top;">
-      <div style="font-weight:700;margin-bottom:6px;">High only</div>
-      authz · security · notify<br/>monitor opt · OpenBao · CloudDrive
+      <div style="font-weight:700;margin-bottom:6px;">Security · Notify · Monitor · Message</div>
+      authz · OpenBao · SIEM · AV<br/>notify · Grafana/Prom/Loki<br/>zalo-proxy + zalo-api
     </td>
   </tr>
   <tr>
@@ -68,51 +68,53 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
 
 ---
 
-## 1. Profile layers
+## 1. Worker layers
+
+Product tiers `ASSISTANT_PROFILE=low|medium|high` are **removed**. Optional capability comes from workers:
 
 ### Brief view
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
-    <td style="padding:14px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:30%;"><b>Low</b><br/>Must chat</td>
-    <td style="padding:8px;background:#eee;text-align:center;width:5%;">→</td>
-    <td style="padding:14px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:30%;"><b>Medium</b><br/>+ OCR web file-gen compact</td>
-    <td style="padding:8px;background:#eee;text-align:center;width:5%;">→</td>
-    <td style="padding:14px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;width:30%;"><b>High</b><br/>+ security ACL · monitor opt · CloudDrive</td>
-  </tr>
-  <tr>
-    <td colspan="5" style="padding:10px 12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;">
-      <b>social-app</b> = attach anytime (not a profile)
-    </td>
+    <td style="padding:14px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:22%;"><b>Core</b><br/>always on</td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">+</td>
+    <td style="padding:14px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:22%;"><b>schedule</b><br/><b>media</b></td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">+</td>
+    <td style="padding:14px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;width:22%;"><b>security</b><br/><b>notify</b><br/><b>monitor</b></td>
+    <td style="padding:8px;background:#eee;text-align:center;width:4%;">+</td>
+    <td style="padding:14px;background:#e8eef8;border:1px solid #c0d0f0;text-align:center;width:22%;"><b>message</b><br/>Zalo / TG</td>
   </tr>
 </table>
 
 ### Workflow
 
-<table style="width:100%;border-collapse:collapse;font-size:13px;">
-  <tr>
-    <td style="padding:14px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:30%;"><b>Low</b><br/>Must chat</td>
-    <td style="padding:8px;background:#eee;text-align:center;width:5%;">→</td>
-    <td style="padding:14px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:30%;"><b>Medium</b><br/>OCR · web · file-gen · compact</td>
-    <td style="padding:8px;background:#eee;text-align:center;width:5%;">→</td>
-    <td style="padding:14px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;width:30%;"><b>High</b><br/>security · ACL · monitor opt · CloudDrive · OpenBao</td>
-  </tr>
-</table>
+```bash
+bash run.sh up                                         # core only
+bash run.sh install schedule media security notify message monitor
+bash run.sh workers                                    # confirm
+```
 
-- **Low:** Must only + text chat. Dispatcher on; web backends empty.
-- **Medium:** + OCR, Jobs, web, file-gen, compact @ 00:00.
-- **High:** + secret-probe, AV, authz, notify, **optional** monitor (Grafana↔Prometheus+exporters, Loki↔Alloy), OpenBao, CloudDrive. zalo-api with ENABLE_ZALO. Extra RAM/disk/CPU: [HARDWARE.md](./HARDWARE.md).
-- **Social apps:** attach anytime — not a profile.
+| Worker | Adds |
+|--------|------|
+| **Core** | Hermes, memory, session, ingest, embed, router-worker, Omni, backup, Traefik local, API Gateway, Valkey queue |
+| **schedule** | Go schedule-worker (timed outbound) |
+| **media** | Dispatcher, OCR, Jobs, Comfy CPU, SearXNG, office file-gen, compact @ 00:00 |
+| **security** / **openbao** | security-manager, authz, SIEM, policy, OpenBao (+ AV via `antivirus`) |
+| **notify** | notify + alert-watch (does not start Security core) |
+| **monitor** | Grafana, Prometheus, Loki, Alloy |
+| **message** / **zalo** | zalo-proxy + zalo-api (+ Telegram when configured) |
+
+Sizing extras: [HARDWARE.md](./HARDWARE.md). Catalog: `bash run.sh install list`.
 
 ---
 
-## 2. End-to-end chat (Low)
+## 2. End-to-end chat (core)
 
 ### Brief view
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
-    <td colspan="5" style="padding:10px;background:#1a1a1a;color:#fff;text-align:center;"><b>User</b> → console / IDE</td>
+    <td colspan="5" style="padding:10px;background:#1a1a1a;color:#fff;text-align:center;"><b>User</b> → console / IDE / Message worker</td>
   </tr>
   <tr><td colspan="5" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr>
@@ -123,7 +125,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">session<br/><small>Valkey</small></td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">memory-manager<br/><small>Postgres</small></td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">ingest<br/><small>cite opt</small></td>
-    <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">9Router<br/><small>LLM</small></td>
+    <td style="padding:10px;background:#4338ca;color:#fff;border:1px solid #312e81;text-align:center;width:20%;">router-worker<br/><small>Omni default</small></td>
     <td style="padding:10px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:20%;">Qdrant<br/><small>knowledge</small></td>
   </tr>
 </table>
@@ -143,7 +145,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
     <tr style="background:#fafafa;"><td style="padding:10px 12px;">2</td><td style="padding:10px 12px;">Hermes → session</td><td style="padding:10px 12px;">short-term turns (Valkey)</td></tr>
     <tr><td style="padding:10px 12px;">3</td><td style="padding:10px 12px;">Hermes → memory-manager</td><td style="padding:10px 12px;">budgeted context</td></tr>
     <tr style="background:#fafafa;"><td style="padding:10px 12px;">4</td><td style="padding:10px 12px;">Hermes → ingest <small>(opt)</small></td><td style="padding:10px 12px;">list or search knowledge (top 5)</td></tr>
-    <tr><td style="padding:10px 12px;">5</td><td style="padding:10px 12px;">Hermes → 9Router</td><td style="padding:10px 12px;">completion → answer</td></tr>
+    <tr><td style="padding:10px 12px;">5</td><td style="padding:10px 12px;">Hermes → router-worker</td><td style="padding:10px 12px;">Omni (default) / optional 9Router → answer</td></tr>
     <tr style="background:#fafafa;"><td style="padding:10px 12px;">6</td><td style="padding:10px 12px;">Hermes → User</td><td style="padding:10px 12px;">one short reply</td></tr>
     <tr><td style="padding:10px 12px;">7</td><td style="padding:10px 12px;">Hermes → memory-manager</td><td style="padding:10px 12px;">async remember</td></tr>
   </tbody>
@@ -159,7 +161,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
   <tr>
     <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">Files<br/><code>/data/assistant</code><br/>media · inbound</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:28%;"><b>tools</b><br/>OCR opt · ingest · embed</td>
+    <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:28%;"><b>tools</b><br/>OCR (media) · ingest · embed</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;"><b>Qdrant</b><br/>knowledge_chunks</td>
   </tr>
@@ -180,7 +182,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
     <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">Files<br/>media / inbound<br/><small>auto-learn 00:00</small></td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:68%;">
-      High AV? → clean/skip → OCR (Med+) → ingest → embedding → <b>Qdrant knowledge_chunks</b>
+      Security/AV (if installed) → OCR (media) → ingest → embedding → <b>Qdrant knowledge_chunks</b>
     </td>
   </tr>
   <tr>
@@ -190,14 +192,16 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
     <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;">cite / keyword</td>
     <td style="padding:8px;background:#eee;text-align:center;">→</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;">
-      knowledge-learn → list/search → hits? <b>Top 5 + rest count</b> · else <b>no info / no guess / no web on Low</b>
+      knowledge-learn → list/search → hits? <b>Top 5 + rest count</b> · else <b>no info / no guess</b> (web needs media)
     </td>
   </tr>
 </table>
 
 ---
 
-## 4. Medium tools (web / OCR / file-gen)
+## 4. Media tools (web / OCR / file-gen)
+
+Requires `bash run.sh install media`.
 
 ### Brief view
 
@@ -225,19 +229,21 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
   <tr>
     <td style="padding:12px;background:#1a1a1a;color:#fff;text-align:center;width:18%;">User → Hermes</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:18%;">skill</td>
+    <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:18%;">skill / classify</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:left;width:56%;">
       <b>research</b> → dispatcher → Tavily → Firecrawl → SearXNG<br/>
       <b>PDF</b> → ocr → ingest<br/>
-      <b>file-gen</b> → office outputs
+      <b>file-gen</b> → office / text-poster outputs
     </td>
   </tr>
 </table>
 
 ---
 
-## 5. High security inbound file
+## 5. Security inbound file
+
+Requires `bash run.sh install security` (and optionally `antivirus`).
 
 ### Brief view
 
@@ -251,7 +257,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
   </tr>
   <tr>
     <td colspan="5" style="padding:10px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;">
-      block → refuse message · optional <b>notification</b>
+      block → refuse message · optional <b>notification</b> worker
     </td>
   </tr>
 </table>
@@ -270,7 +276,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
   </tr>
   <tr>
     <td colspan="7" style="padding:10px;background:#fde8e8;border:1px solid #f0c0c0;text-align:center;">
-      infected / risk → <b>Refuse</b> → notify (optional)
+      infected / risk → <b>Refuse</b> → notify (if installed)
     </td>
   </tr>
 </table>
@@ -287,12 +293,12 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
   </tr>
   <tr>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:33%;"><b>00:00</b><br/>auto-learn → ingest</td>
-    <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:33%;"><b>00:00 Med+</b><br/>compact → memory</td>
+    <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:33%;"><b>00:00</b><br/>compact (media worker)</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:33%;"><b>00:30</b><br/>backup-restore</td>
   </tr>
   <tr>
     <td colspan="3" style="padding:10px;background:#f5f5f5;border:1px solid #ddd;text-align:center;">
-      Stamp → <code>/data/assistant/backups</code> · High optional CloudDrive sync
+      Stamp → <code>/data/assistant/backups</code> · optional CloudDrive (<code>install clouddrive</code>)
     </td>
   </tr>
 </table>
@@ -302,7 +308,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:32%;"><b>00:00</b><br/>auto-learn → Qdrant</td>
-    <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:32%;"><b>00:00 Med+</b><br/>compact → memory-manager</td>
+    <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:32%;"><b>00:00 media</b><br/>compact → memory-manager</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:32%;"><b>00:30</b><br/>backup → <code>/data/assistant/backups</code></td>
   </tr>
 </table>
@@ -321,7 +327,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;"><b>Valkey</b><br/>short-term TTL</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;"><b>Postgres</b><br/>typed LTM</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;"><b>Postgres</b><br/>facts</td>
-    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;"><b>Qdrant</b><br/>conversational</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;"><b>Qdrant</b><br/>conversational_memory</td>
   </tr>
 </table>
 
@@ -334,7 +340,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:26%;">Valkey TTL<br/><small>expires → short-term gone</small></td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">+</td>
     <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:40%;">
-      Hermes reply → async remember → Postgres (+ optional Qdrant) → <b>next-day context</b>
+      Hermes reply → async remember → Postgres (+ Qdrant conversational) → <b>next-day context</b>
     </td>
   </tr>
 </table>
@@ -349,7 +355,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
   </thead>
   <tbody>
     <tr><td style="padding:10px 12px;">Valkey session</td><td style="padding:10px 12px;">Hours–~1 day</td><td style="padding:10px 12px;">Recent messages</td></tr>
-    <tr style="background:#fafafa;"><td style="padding:10px 12px;">Postgres / conversational Qdrant (optional)</td><td style="padding:10px 12px;">Long-term</td><td style="padding:10px 12px;">User facts</td></tr>
+    <tr style="background:#fafafa;"><td style="padding:10px 12px;">Postgres / conversational Qdrant</td><td style="padding:10px 12px;">Long-term</td><td style="padding:10px 12px;">User facts</td></tr>
     <tr><td style="padding:10px 12px;">Postgres</td><td style="padding:10px 12px;">Long-term</td><td style="padding:10px 12px;">Typed Memory Manager rows</td></tr>
     <tr style="background:#fafafa;"><td style="padding:10px 12px;">Qdrant knowledge_chunks</td><td style="padding:10px 12px;">Long-term</td><td style="padding:10px 12px;">Document RAG</td></tr>
   </tbody>
@@ -361,6 +367,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
 
 | Doc | Content |
 |---|---|
+| [00-workers.md](./00-workers.md) | `run.sh install` catalog |
 | [04-component-flows.md](./04-component-flows.md) | HTML brief view + HTML flow per component |
-| [02-components-and-commands.md](./02-components-and-commands.md) | Profile tables + commands |
+| [02-components-and-commands.md](./02-components-and-commands.md) | Components + commands |
 | [architect/README.md](../architect/README.md) | Layer index |
