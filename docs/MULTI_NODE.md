@@ -4,7 +4,7 @@
 
 | Component | Support |
 |-----------|---------|
-| Hermes | **×2 on one node** (High default). Not true HA. |
+| Hermes | **×2 on one node** (optional `HERMES_REPLICAS=2`). Not true HA. |
 | Jobs workers | Scale workers; shared Valkey RQ queue |
 | Zalo SSE | **Exactly one** SSE owner via `zalo_owner` lock — never 2 clients |
 | Valkey / Postgres / Qdrant / Traefik | **Single-node SPOFs** — HA later |
@@ -35,7 +35,8 @@ Do **not** call this HA until stores are replicated.
 
 ## Related
 
-- [00-profiles.md](./00-profiles.md)
+- [00-workers.md](./00-workers.md)
+- [00-profiles.md](./00-profiles.md) (legacy)
 - [03-architecture.md](./03-architecture.md)
 - [06-model-routing.md](./06-model-routing.md)
 - [HARDWARE.md](./HARDWARE.md) — extra RAM/disk/CPU when Grafana/Prometheus/Loki/OmniRouter are on

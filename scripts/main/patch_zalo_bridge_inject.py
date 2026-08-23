@@ -4,6 +4,8 @@
 1. POST /inject-event — synthetic inbound onto the existing SSE fan-out (tests).
 2. POST /media/fetch + GET /media/:id — download Zalo CDN bytes with the
    logged-in session cookies so Hermes can OCR / summarize attachments.
+3. zaloClient.js quote mapping — use data.quote.* for quoted reply context
+   (not the current message fields).
 
 Restart prefers the user systemd unit (com.hermes.zaloplugin /
 assistant-zalo). Orphan ``runuser`` / ``nohup`` processes that hold :8787
@@ -27,11 +29,46 @@ PLUGIN = Path(
         "/usr/lib/node_modules/hermes-zalo-plugin/server.js",
     )
 )
+ZALO_CLIENT = Path(
+    os.environ.get(
+        "ZALO_PLUGIN_CLIENT",
+        str(PLUGIN.parent / "zaloClient.js"),
+    )
+)
 PORT = (os.environ.get("ZALO_PLUGIN_PORT") or "8787").strip() or "8787"
 HOST_BIND = (os.environ.get("ZALO_PLUGIN_HOST") or "0.0.0.0").strip() or "0.0.0.0"
 
 INJECT_MARKER = 'app.post("/inject-event"'
 MEDIA_MARKER = "ASSISTANT_MEDIA_PROXY_v1"
+QUOTE_MARKER = "ASSISTANT_QUOTE_FIX_v1"
+
+QUOTE_SNIPPET = r"""
+      // ASSISTANT_QUOTE_FIX_v1 — quoted reply must map data.quote, not current msg.
+      quote: (() => {
+        const q = data.quote;
+        if (!q || typeof q !== "object") return null;
+        return {
+          content: typeof q.content === "string" ? q.content : q.content,
+          msgType: q.msgType,
+          propertyExt: q.propertyExt,
+          uidFrom: q.ownerId || q.uidFrom,
+          msgId: q.globalMsgId || q.msgId,
+          cliMsgId: q.cliMsgId,
+          ts: q.ts,
+          ttl: q.ttl,
+        };
+      })(),
+"""
+
+# Broken upstream mapping: quote block reads data.content / data.msgId (current msg).
+_QUOTE_BROKEN = re.compile(
+    r"\n\s*quote:\s*\{\s*content:\s*typeof data\.content",
+    re.S,
+)
+_QUOTE_BLOCK = re.compile(
+    r"\n\s*quote:\s*(?:\(\(\)\s*=>\s*\{[\s\S]*?\}\)\(\)|\{[\s\S]*?\}),",
+    re.S,
+)
 
 INJECT_SNIPPET = r"""
 // assistant-stack: synthetic inbound onto the existing SSE fan-out (tests).
@@ -227,6 +264,28 @@ def _strip_broken_media(text: str) -> str:
         re.S,
     )
     return pattern.sub("\n", text)
+
+
+def patch_zalo_client() -> dict[str, str]:
+    """Fix quoted-reply payload: Hermes needs data.quote content, not current message."""
+    out: dict[str, str] = {}
+    if not ZALO_CLIENT.is_file():
+        return {"status": "CLIENT_MISSING", "path": str(ZALO_CLIENT)}
+    text = ZALO_CLIENT.read_text(encoding="utf-8", errors="replace")
+    original = text
+    if QUOTE_MARKER in text:
+        out["quote"] = "ALREADY"
+    elif _QUOTE_BROKEN.search(text):
+        text = _QUOTE_BLOCK.sub("\n" + QUOTE_SNIPPET, text, count=1)
+        out["quote"] = "PATCHED"
+    else:
+        out["quote"] = "NO_BROKEN_PATTERN"
+    if text != original:
+        ZALO_CLIENT.write_text(text, encoding="utf-8")
+        out["status"] = "WRITTEN"
+    else:
+        out["status"] = "UNCHANGED"
+    return out
 
 
 def patch_server() -> dict[str, str]:
@@ -459,8 +518,14 @@ def restart_plugin() -> str:
 
 def main() -> int:
     result = patch_server()
+    quote_result = patch_zalo_client()
     print(f"bridge_patch={result}")
-    need_restart = result.get("status") == "WRITTEN" or result.get("media") == "PATCHED"
+    print(f"quote_patch={quote_result}")
+    need_restart = (
+        result.get("status") == "WRITTEN"
+        or result.get("media") == "PATCHED"
+        or quote_result.get("status") == "WRITTEN"
+    )
     # Always heal EADDRINUSE crash-loops when explicitly requested.
     force = (os.environ.get("ZALO_BRIDGE_FORCE_RESTART") or "").strip() in {
         "1",

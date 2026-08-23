@@ -1,3 +1,15 @@
+## 2026-08-23 16:20 +07 — classify: drop direct mode; route all replies via model-router
+
+- `classify.json`: remove `response_mode: direct` (no host instant reply). Hello/Q&A, search, coding, knowledge use `ack_then_deliver` and explicit router-worker routing (Hermes combo, web_search, media_file, schedule).
+- `classify.py` + classify clients: default hints remap `direct` → `ack_then_deliver`; search default is async.
+- `worker-routing` skill + `docs/06-model-routing.md` aligned.
+
+## 2026-08-23 16:10 +07 — trace fixes: Zalo quote, image backends, weather PDF classify
+
+- **Quote reply:** `patch_zalo_bridge_inject.py` patches `zaloClient.js` so `quote` maps `data.quote.*` (not current message fields). Hermes `[Quoted message]` injection works again.
+- **Image gen:** remove paid `llm`/`vendor` image backends and keys from dispatcher, compose, `.env.example`, first-setup pins. Default `IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni`; Comfy skipped when no checkpoints; OmniRouter `/images/generations` fallback via `OMNIROUTER_API_KEY`.
+- **Weather PDF:** classify splits live-data office requests (search facts → create file with verbatim body, `depends_on`); office shortcut gate skips “thể hiện/hiện tại” without inline payload.
+
 ## 2026-08-23 11:25 +07 — update: clear compose recreate name conflicts
 
 - Root cause: failed `compose up` left hex-prefixed rename leftovers (e.g. `e207aa1eecb5_assistant-authz-1`) → next update Conflict “name already in use”.
