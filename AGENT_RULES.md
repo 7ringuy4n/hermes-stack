@@ -60,14 +60,21 @@ The following are mandatory and must be satisfied before finishing work:
     passing result.
 -   Never leave a lab-only hotpatch as the permanent fix.
 -   Never fix a production bug only on the VPS.
+-   **If an error or bug is found, fix it in the durable setup
+    file / script / source of truth** (`scripts/main/`, `run.sh`,
+    compose, `.env.example`, product code). **Do not cheat by making
+    patch files**, one-off `*.patch` / hotpatch scripts, VPS-only
+    sed overlays, or session-only workarounds that leave the setup
+    path broken for the next install.
 -   Never use special-case logic solely for the observed failing input.
 -   Never bypass an available real integration when the requirement is
     to test that integration.
 -   Never leave test-only configuration enabled after testing.
 -   Never introduce lab identity, credentials, or host-specific secrets
     into committed source.
--   Never deploy, push, or create a merge request without explicit
-    permission.
+-   **Always ask the user before creating merge requests** (or pushing
+    / deploying). Never open, merge, or push an MR without explicit
+    permission in the current conversation.
 -   Never bypass security, authorization, validation, or isolation
     merely to make a workflow succeed.
 -   Never claim success without verifying the affected behavior.
@@ -78,12 +85,11 @@ The following are mandatory and must be satisfied before finishing work:
     unit at minimum). See §18 / §19 and
     [`scripts/HISTORY.md`](./scripts/HISTORY.md) entry
     **2026-08-21 11:20 +07 — Bridge crash-loop on :8787**.
--   After a development / patching / lab session completes (or is
-    abandoned), **clean up all generated scripts and one-off helpers
-    created for that session** under gitignored paths such as
-    `scripts/temp/` and `hermes/temp/` — leave only durable, committed
-    tooling. Do not leave VPS-only patch scripts or credential extractors
-    behind.
+-   **After done** (session complete or abandoned): **clean up all
+    generated scripts for the current session in development** under
+    gitignored paths such as `scripts/temp/` and `hermes/temp/` —
+    leave only durable, committed tooling. Do not leave VPS-only patch
+    scripts or credential extractors behind.
 
 ------------------------------------------------------------------------
 
@@ -512,10 +518,15 @@ Verify
 Never permanently fix a problem by:
 
 -   hand-editing files on the VPS;
--   copying one-off patches;
--   shipping temporary scripts;
+-   copying one-off patches or inventing `*.patch` / hotpatch files
+    instead of updating the setup script that should have been correct;
+-   shipping temporary scripts as the lasting fix;
 -   modifying containers manually;
 -   changing host configuration solely to hide a source bug.
+
+When the bug is in install, first-setup, ensure-\*, lab-enable, or
+`run.sh` wiring: **update that setup file/script**. A sidecar patch
+that papers over a broken setup path is a Hard Gate violation.
 
 Temporary probes under:
 
@@ -575,6 +586,10 @@ Do not:
 -   deploy to the VPS without explicit permission;
 -   push changes without explicit permission;
 -   create a merge request without explicit permission.
+
+**Always ask the user** before opening or merging any GitHub/GitLab
+merge request. A prior conversation where the user once said “create
+MR” does not authorize later MRs — ask again for each new change set.
 
 Before implementing a new requirement:
 
