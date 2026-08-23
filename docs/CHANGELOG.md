@@ -1,3 +1,14 @@
+## 2026-08-23 11:25 +07 — update: clear compose recreate name conflicts
+
+- Root cause: failed `compose up` left hex-prefixed rename leftovers (e.g. `e207aa1eecb5_assistant-authz-1`) → next update Conflict “name already in use”.
+- `workers.sh`: `assistant_rm_compose_recreate_orphans` removes `<hex>_*` orphans + duplicate project/service containers before up; always runs from stale-worker cleanup.
+- `run.sh update`: retry `compose up` once after orphan clear if the first up fails.
+
+## 2026-08-23 11:20 +07 — purge session temp junk; keep generate_env_secrets only
+
+- `scripts/temp` / `hermes/temp`: remove session hotfix/deploy/probe scripts; keep `README.md` + `scripts/temp/generate_env_secrets.py` only.
+- `test/reports`: drop untracked `_*.txt` / session dump logs; leave curated `run-*` summary trees.
+
 ## 2026-08-23 12:05 +07 — classify prompt: office / text-poster / schedule intents
 
 - `classify.json`: add INTENT FAMILIES so the LLM owns office-file create (one instruction per kind), exact text-poster (N lines / quotes / B&W, not scene diffusion), and schedule `nội dung:` verbatim — host regex stays gate/renderer only.
