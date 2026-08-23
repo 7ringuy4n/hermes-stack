@@ -4,9 +4,13 @@
 - `classify.py` + classify clients: default hints remap `direct` → `ack_then_deliver`; search default is async.
 - `worker-routing` skill + `docs/06-model-routing.md` aligned.
 
+## 2026-08-23 17:00 +07 — Zalo quote: durable bridge overlay (not runtime patch)
+
+- **Quote reply:** vendored `scripts/main/zalo-bridge/zaloClient.js` maps `data.quote.*` for quoted attachments; `zalo_install_bridge_overlays()` in `zalo-common.sh` copies it after npm install / before bridge start. Removed quote regex patch from `patch_zalo_bridge_inject.py`.
+
 ## 2026-08-23 16:10 +07 — trace fixes: Zalo quote, image backends, weather PDF classify
 
-- **Quote reply:** `patch_zalo_bridge_inject.py` patches `zaloClient.js` so `quote` maps `data.quote.*` (not current message fields). Hermes `[Quoted message]` injection works again.
+- **Quote reply:** host bridge must expose quoted message metadata so Hermes `[Quoted message]` + “gửi lại file” work (see bridge overlay above).
 - **Image gen:** remove paid `llm`/`vendor` image backends and keys from dispatcher, compose, `.env.example`, first-setup pins. Default `IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni`; Comfy skipped when no checkpoints; OmniRouter `/images/generations` fallback via `OMNIROUTER_API_KEY`.
 - **Weather PDF:** classify splits live-data office requests (search facts → create file with verbatim body, `depends_on`); office shortcut gate skips “thể hiện/hiện tại” without inline payload.
 
