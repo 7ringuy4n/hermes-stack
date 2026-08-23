@@ -1,3 +1,7 @@
+## 2026-08-23 08:40 +07 — first-setup-omnirouter: fix smoke_chat NameError
+
+- `main()` called undefined `smoke_chat`; use existing `verify()` (models list + hermes combo chat smoke).
+
 ## 2026-08-23 08:30 +07 — Groq 413 TPM: skip Omni after request-too-large
 
 - Root cause: Hermes full tool schemas (~21 tools, ~32KB) alone ≈8k tokens; Groq free TPM=8000; hermes combo RR hit `groq/openai/gpt-oss-120b` → 413 Requested 35520.
