@@ -1,3 +1,10 @@
+## 2026-08-23 08:30 +07 — Groq 413 TPM: skip Omni after request-too-large
+
+- Root cause: Hermes full tool schemas (~21 tools, ~32KB) alone ≈8k tokens; Groq free TPM=8000; hermes combo RR hit `groq/openai/gpt-oss-120b` → 413 Requested 35520.
+- Model-router: on HTTP 413 / TPM / request-too-large, skip remaining Omni hops (go to Ollama).
+- `omnirouter_qwen`: default `OLLAMA_BASE_URL=http://host.docker.internal:11434` when ENABLE_QWEN+OLLAMA_MODEL so hermes combo pins local Ollama (not Groq catalog).
+- `first-setup-omnirouter`: persist `OLLAMA_BASE_URL` when defaulted.
+
 ## 2026-08-23 07:55 +07 — hermes 503: Omni combo + Ollama align + Comfy image path
 
 - Model-router: keep sending `model=hermes` via Omni API; after Omni 503 inactive/empty, skip remaining Omni hops and allow Ollama last-hop (no more ack-then-silence).
