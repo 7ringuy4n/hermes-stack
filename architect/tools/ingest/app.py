@@ -21,7 +21,7 @@ import redis
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = os.environ.get("REDIS_URL") or os.environ.get("VALKEY_URL") or "redis://valkey:6379/0"
 OCR_URL = os.environ.get("OCR_URL", "http://ocr:8091").rstrip("/")
 EMBED_URL = os.environ.get("EMBED_URL", "http://embedding:8094").rstrip("/")
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://qdrant:6333").rstrip("/")

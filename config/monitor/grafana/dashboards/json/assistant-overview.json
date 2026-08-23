@@ -130,7 +130,8 @@
         }
       ],
       "title": "Redis conversation sessions",
-      "type": "stat"
+      "type": "stat",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "datasource": {
@@ -167,7 +168,8 @@
         }
       ],
       "title": "Redis total keys",
-      "type": "stat"
+      "type": "stat",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "datasource": {
@@ -204,7 +206,8 @@
         }
       ],
       "title": "Redis used memory",
-      "type": "stat"
+      "type": "stat",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "datasource": {
@@ -241,7 +244,8 @@
         }
       ],
       "title": "Ingest queue (Redis)",
-      "type": "stat"
+      "type": "stat",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "datasource": {
@@ -429,7 +433,8 @@
         }
       ],
       "title": "Redis session / index / clients",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "datasource": {
@@ -551,13 +556,14 @@
       },
       "targets": [
         {
-          "expr": "n9router_scrape_success",
-          "legendFormat": "nine-exporter",
+          "expr": "clamp_max((max(n9router_scrape_success) or max(omnirouter_scrape_success) or vector(0)), 1)",
+          "legendFormat": "router-exporter",
           "refId": "A"
         }
       ],
-      "title": "nine-exporter scrape",
-      "type": "stat"
+      "title": "router-exporter scrape",
+      "type": "stat",
+      "description": "9Router when ENABLE_9ROUTER=1; else OmniRouter omni-exporter."
     },
     {
       "datasource": {
@@ -1472,13 +1478,14 @@
       },
       "targets": [
         {
-          "expr": "n9router_scrape_success",
+          "expr": "clamp_max((max(n9router_scrape_success) or vector(0)), 1)",
           "legendFormat": "scrape",
           "refId": "A"
         }
       ],
       "title": "9Router scrape",
-      "type": "stat"
+      "type": "stat",
+      "description": "Expected 0 when ENABLE_9ROUTER=0; use router-exporter / Omni panels."
     },
     {
       "datasource": {

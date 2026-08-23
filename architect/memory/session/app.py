@@ -15,7 +15,7 @@ import redis
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = os.environ.get("REDIS_URL") or os.environ.get("VALKEY_URL") or "redis://valkey:6379/0"
 TTL = int(os.environ.get("REDIS_CONVERSATION_TTL_SECONDS", "86400"))
 PREFIX = os.environ.get("SESSION_KEY_PREFIX", "conversation_active")
 LOCK_PREFIX = os.environ.get("SESSION_LOCK_PREFIX", "session_lock")
