@@ -112,6 +112,17 @@ def main() -> int:
     if not chat_omni_skip_remaining(503, inactive):
         print("FAIL inactive omni must skip remaining hops")
         return 1
+    tpm413 = {
+        "error": {
+            "message": (
+                "[413]: Request too large for model `openai/gpt-oss-120b` "
+                "on tokens per minute (TPM): Limit 8000, Requested 35520"
+            )
+        }
+    }
+    if not chat_omni_skip_remaining(413, tpm413):
+        print("FAIL Groq TPM 413 must skip remaining Omni hops")
+        return 1
     tools_err = {"error": {"message": "No target in combo auto/best-free supports tool calling"}}
     if not chat_omni_skip_remaining(400, tools_err):
         print("FAIL tool-calling combo error must skip remaining omni hops")
