@@ -9,7 +9,12 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "models" / "dispatcher"))
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
-from office_file import parse_office  # noqa: E402
+from office_file import (  # noqa: E402
+    is_compound_office_request,
+    parse_office,
+    parse_office_jobs,
+)
+from media_shortcuts import looks_office_create  # noqa: E402
 from text_poster import parse_text_poster  # noqa: E402
 
 
@@ -20,6 +25,18 @@ def main() -> int:
     assert ext == ".pdf" and body == "1", (ext, body)
     ext, body = parse_office("tạo 1 file pdf điền số 1 gửi cho tôi")
     assert ext == ".pdf" and body == "1", (ext, body)
+
+    compound = (
+        "tạo 1 file pdf chứa số 1 và gửi cho tôi, sau đó tạo 1 file text "
+        "chứa số 1  cũng gửi cho tôi"
+    )
+    assert is_compound_office_request(compound) is True
+    assert looks_office_create(compound) is False
+    assert looks_office_create("tạo 1 file pdf chứa số 1 và gửi cho tôi") is True
+    assert parse_office(compound) == (".pdf", "1"), parse_office(compound)
+    assert parse_office_jobs(compound) == [(".pdf", "1"), (".txt", "1")], parse_office_jobs(
+        compound
+    )
 
     spec = parse_text_poster("vẽ hình ảnh điền vào 5 dòng hello và gửi cho tôi")
     assert spec and spec["n"] == 5 and spec["phrase"].lower() == "hello", spec
