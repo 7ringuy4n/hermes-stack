@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from video_summary import health_fields, register_video_summary
+from video_summary import health_fields, omni_refuse_message, policy_block_response, register_video_summary
 
 app = FastAPI(title="assistant dispatcher", version="1.1.0")
 
@@ -1003,58 +1003,10 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
 
 @app.post("/v1/video")
 def video_generate(req: VideoReq) -> dict[str, Any]:
-    """Default video path: still (existing or /v1/image) → short H.264 mp4."""
-    from video_clip import clamp_seconds, ffmpeg_bin, still_to_mp4
-
-    out_dir = MEDIA_DIR / "out"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    still: Optional[Path] = None
-    used = ""
-    if (req.image or "").strip():
-        name = Path(str(req.image).strip()).name
-        cand = out_dir / name
-        if cand.is_file():
-            still = cand
-            used = "still"
-    if still is None:
-        prompt = (req.prompt or "").strip()
-        if not prompt:
-            raise HTTPException(400, _msg("prompt_required", "A prompt or image is required."))
-        img = image_generate(
-            ImageReq(
-                prompt=prompt,
-                filename=(req.filename or "clip-still.jpg").rsplit(".", 1)[0] + ".jpg",
-                provider=req.provider,
-                refine=req.refine,
-                overlay=req.overlay,
-            )
-        )
-        still = Path(str(img.get("file") or ""))
-        used = str(img.get("provider") or img.get("backend") or "image")
-        if not still.is_file():
-            raise HTTPException(502, {"error": "still image missing", "detail": img})
-    elif req.overlay:
-        _apply_image_overlay(still, req.overlay)
-    if not ffmpeg_bin():
-        raise HTTPException(503, "ffmpeg missing — cannot encode video")
-    name = req.filename or f"clip-{uuid.uuid4().hex[:10]}.mp4"
-    if not name.lower().endswith(".mp4"):
-        name += ".mp4"
-    dest = out_dir / name
-    try:
-        still_to_mp4(still, dest, seconds=req.seconds)
-        _chown_media(dest)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, {"error": "video encode failed", "detail": str(e)}) from e
-    return {
-        "ok": True,
-        "file": str(dest),
-        "hermes_path": f"/opt/data/media/out/{dest.name}",
-        "backend": "ffmpeg-still",
-        "still": str(still),
-        "provider": used,
-        "seconds": clamp_seconds(req.seconds),
-    }
+    """Video generation blocked — same policy as video-summary; OmniRouter writes refuse text."""
+    ctx = (req.prompt or req.image or req.filename or "").strip()
+    message, meta = omni_refuse_message(topic="video_generate", context=ctx)
+    return policy_block_response(reason="video_policy", message=message, meta=meta)
 
 
 class RemuxReq(BaseModel):

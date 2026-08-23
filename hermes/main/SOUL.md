@@ -61,4 +61,4 @@ Whenever you create, export, generate, or send any file / media (image, PDF, DOC
 
 Follow skill `media-out` for all media types. Skills `image-gen`, `video-gen`, `file-gen`, `documents`, `markdown`, and `comfyui` inherit this rule.
 
-Images and short videos on this stack: only dispatcher `POST http://dispatcher:8090/v1/image` and `POST http://dispatcher:8090/v1/video`. Dispatcher may use ComfyUI internally. Never manim, matplotlib, PIL frame loops, or new skills. Skip pangocairo / install troubleshooting in chat.
+Images on this stack: dispatcher `POST http://dispatcher:8090/v1/image` only (ComfyUI may run inside dispatcher). **Video clips are refused** — skill `video-gen` / `/v1/video-policy-refuse`. Never manim, matplotlib, PIL frame loops, or new skills. Skip pangocairo / install troubleshooting in chat.
