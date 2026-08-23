@@ -257,6 +257,47 @@ assistant_worker_legacy_container_names() {
   esac
 }
 
+assistant_rm_compose_recreate_orphans() {
+  # Compose recreate renames the old container to <hex>_<oldname>. A failed
+  # `compose up` can leave that hex name taken → next up:
+  #   Conflict: container name "/e207aa1eecb5_assistant-authz-1" is already in use
+  # Drop those rename leftovers (and duplicate project service containers) before up.
+  local id name project="${COMPOSE_PROJECT_NAME:-assistant}" svc kept
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    name="$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null | sed 's|^/||' || true)"
+    [[ -z "$name" ]] && continue
+    # Docker Compose anonymous rename: 8–64 hex chars + underscore + rest
+    if [[ "$name" =~ ^[0-9a-fA-F]{6,64}_.+ ]]; then
+      echo "==> remove compose recreate orphan ${name}"
+      docker rm -f "$id" 2>/dev/null || true
+    fi
+  done < <(docker ps -aq 2>/dev/null)
+
+  # Same project+service with >1 container: keep one running (newest), remove rest.
+  while IFS= read -r svc; do
+    [[ -z "$svc" ]] && continue
+    kept=""
+    while IFS= read -r id; do
+      [[ -z "$id" ]] && continue
+      if [[ -z "$kept" ]] \
+        && [[ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null || echo false)" == "true" ]]; then
+        kept="$id"
+        continue
+      fi
+      if [[ -z "$kept" ]]; then
+        kept="$id"
+        continue
+      fi
+      name="$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null | sed 's|^/||' || echo "$id")"
+      echo "==> remove duplicate compose container ${name} (service=${svc})"
+      docker rm -f "$id" 2>/dev/null || true
+    done < <(docker ps -aq --filter "label=com.docker.compose.project=${project}" \
+      --filter "label=com.docker.compose.service=${svc}" 2>/dev/null)
+  done < <(docker ps -a --filter "label=com.docker.compose.project=${project}" \
+    --format '{{.Label "com.docker.compose.service"}}' 2>/dev/null | sort -u)
+}
+
 assistant_remove_stale_worker_containers() {
   # Optional workers install via `bash run.sh install …`. Drop legacy fixed-name
   # orphans (searxng) and compose-scoped leftovers (assistant-searxng-1) from
@@ -264,6 +305,10 @@ assistant_remove_stale_worker_containers() {
   # Set ASSISTANT_PURGE_WORKER_COMPOSE=1 (install/add-components) to force-remove
   # all compose worker containers before up, even when running.
   local -a workers=() w name purge="${ASSISTANT_PURGE_WORKER_COMPOSE:-0}"
+
+  # Always clear recreate-name collisions first (authz Conflict on update).
+  assistant_rm_compose_recreate_orphans
+
   [[ "${WORKER_SCHEDULE:-inactive}" == "active" || "${ENABLE_SCHEDULE:-0}" == "1" ]] && workers+=(schedule)
   if [[ "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_MEDIA_FILE:-0}" == "1" \
     || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" ]]; then
