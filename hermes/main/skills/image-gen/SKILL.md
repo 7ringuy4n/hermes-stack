@@ -69,6 +69,6 @@ After `ok:true`: send the file only (autosend). No success ack line. If the user
 ## Related
 
 - `media-out` — result-only rules for all media
-- `video-gen` — short H.264 clips via `POST /v1/video`
+- `video-gen` — video clips refused (policy); still images via `image-gen`
 - `comfyui` — explicit Comfy workflow only; still `--output-dir /opt/data/media/out`
 - `file-gen` — office docs only, not images
