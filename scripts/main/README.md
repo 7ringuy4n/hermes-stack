@@ -18,7 +18,8 @@ Committed with the repo. Invoked by `run.sh` and first-setup docs.
 | `heal-zalo-sse.sh` | Clear owner lock; restart zalo-proxy + Hermes replicas |
 | `backup-zalo-session.sh` / `restore-zalo-session.sh` | Preserve / restore Zalo session between labs |
 | `seed-zalo-admin-from-postgres.sh` | Lab/post-restore admin seed helper |
-| `patch_zalo_bridge_inject.py` | Bridge inject used by heal / zalo-watch / setup |
+| `patch_zalo_bridge_inject.py` | Bridge inject + media proxy (heal / zalo-watch / setup) |
+| `zalo-bridge/zaloClient.js` | Durable quoted-reply fix for host bridge (installed by `zalo-common.sh`) |
 | `patch-hermes-model-router.py` | Hermes→router wiring used by setup / first-setup |
 | `stack-watch.sh` | Health / auto-heal timer |
 | `log-archive.sh` | Log retention timer target |
