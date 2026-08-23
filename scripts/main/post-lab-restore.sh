@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Post-lab restore: Zalo session, local Qwen, connectivity probes (AGENT_RULES §19).
+# Post-lab restore: Zalo session, Omni OpenCode combos, connectivity probes (AGENT_RULES §19).
 # Run after final lab round before stopping the host.
 # Usage: bash scripts/main/post-lab-restore.sh
 set -euo pipefail
@@ -12,8 +12,15 @@ export ENABLE_ZALO=1
 log() { echo "==> $*"; }
 fail=0
 
-log "1) local Qwen (Ollama)"
-bash scripts/main/ensure-ollama.sh 2>/dev/null || bash scripts/main/lab-enable-qwen-local.sh || fail=1
+# shellcheck disable=SC1091
+set -a; [[ -f .env ]] && . ./.env; set +a
+
+log "1) Omni combos (OpenCode cloud; local Qwen only if ENABLE_QWEN=1)"
+if [[ "${ENABLE_QWEN:-0}" == "1" ]]; then
+  bash scripts/main/ensure-ollama.sh 2>/dev/null || bash scripts/main/lab-enable-qwen-local.sh || fail=1
+else
+  echo "NOTE: ENABLE_QWEN off — skip ensure-ollama / lab-enable-qwen (classifier→Omni classifier)"
+fi
 
 log "2) Zalo bridge + session"
 for PRES in /home/tn/zalo-lab-preserve /home/tn/zalo-round3-preserve; do
@@ -73,7 +80,9 @@ if dbs:
 print("COMBO_HERMES", h)
 print("COMBO_CLASSIFIER", cl)
 if not enable:
-    print("RESULT PASS_QWEN_OFF"); sys.exit(0)
+    if (h or 0) >= 1 and (cl or 0) >= 1:
+        print("RESULT PASS_OPENCODE_COMBOS"); sys.exit(0)
+    print("RESULT FAIL_EMPTY_COMBOS"); sys.exit(1)
 if not key and not ollama:
     if (h or 0) >= 1 and (cl or 0) >= 1:
         print("RESULT PASS_QWEN_READY"); sys.exit(0)
