@@ -379,6 +379,7 @@ def deactivate_non_qwen_llm_providers(opener) -> None:
         return
     keep_providers = {
         "alibaba",
+        "ollama",
         "tavily-search",
         "firecrawl-search",
         "searxng-search",
@@ -753,6 +754,21 @@ def verify(key: str, combo: str) -> None:
         print(f"WARN smoke chat combo={combo} HTTP {e.code}: {e.read()[:200]!r}")
 
 
+def pin_image_backends(env: dict[str, str]) -> None:
+    """Media|File worker: empty IMAGE_BACKENDS → Hermes invents PIL. Pin dispatcher+Comfy."""
+    media_on = (env.get("ENABLE_MEDIA_FILE") or os.environ.get("ENABLE_MEDIA_FILE") or "0").strip()
+    if media_on not in {"1", "true", "yes", "on"}:
+        return
+    cur = (env.get("IMAGE_BACKENDS") or "").strip()
+    if cur:
+        print(f"OK: IMAGE_BACKENDS already {cur}")
+        return
+    want = "llm,vendor,comfy-cpu,comfy-gpu"
+    set_env_key(ROOT / ".env", "IMAGE_BACKENDS", want)
+    env["IMAGE_BACKENDS"] = want
+    print(f"OK: pinned IMAGE_BACKENDS={want} (dispatcher → Comfy; not Hermes image_generation tool)")
+
+
 def main() -> int:
     env = load_env(ROOT / ".env")
     if env.get("ENABLE_OMNIROUTER", "0") not in {"1", "true", "yes", "on"}:
@@ -775,6 +791,7 @@ def main() -> int:
     deactivate_non_qwen_llm_providers(opener)
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
+    pin_image_backends(env)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
     set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
     set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
@@ -788,10 +805,8 @@ def main() -> int:
     recreate_model_router()
     time.sleep(3)
     patch_hermes_model_router(key, combo)
-    print(
-        f"NOTE: skip chat smoke for empty combos {combo!r}/{classify_combo!r} — "
-        "Qwen-first when active; re-run smoke after key/provider changes"
-    )
+    # Always smoke hermes combo via Omni /v1/chat/completions (local Ollama member).
+    smoke_chat(key, combo)
     smoke_omni_search(key)
     print(
         f"OK: first-setup omni-router complete "
