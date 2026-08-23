@@ -4,6 +4,15 @@
 - `classify.py` + classify clients: default hints remap `direct` → `ack_then_deliver`; search default is async.
 - `worker-routing` skill + `docs/06-model-routing.md` aligned.
 
+## 2026-08-23 17:35 +07 — classify + schedule: sequential compound (not parallel)
+
+- `classify.json`: multi-instruction immediate requests run sequentially over time on Zalo; `depends_on` only for true data deps; multi-clock vs single-fire schedule clarified.
+- Workflow: `sequential=True` for compound plans; `plan_compound_sequential()` in classify clients; adapter + worker-routing/zalo-channel/schedule skills aligned.
+
+## 2026-08-23 17:30 +07 — SOUL: Zalo compound messages run as separate turns over time
+
+- `SOUL.md`: one inbound Zalo bubble may split into many parts; each turn scoped to one part; multiple replies/files over time is expected.
+
 ## 2026-08-23 17:05 +07 — video policy: OmniRouter refuse (no hardcoded VI)
 
 - `video_summary.py`: social-summary and video-generate refuses call OmniRouter `chat/completions`; fallbacks in `messages/en.json` only when LLM unavailable.

@@ -1,4 +1,8 @@
-"""Zalo uses LLM classify for multi-task / schedule intent. No regex NLU."""
+"""Zalo compound + schedule splitting via LLM classify. No regex NLU for intent.
+
+Immediate multi-request bubbles: classify emits N instructions; the host runs them
+sequentially (one turn at a time). Schedule: one fire payload or one job per clock.
+"""
 from __future__ import annotations
 
 import os

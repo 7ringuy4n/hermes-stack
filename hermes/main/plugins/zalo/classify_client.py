@@ -216,6 +216,15 @@ def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
     return out
 
 
+def plan_compound_sequential(plan: dict[str, Any] | None) -> bool:
+    """True when classify split this bubble into multiple immediate parts (Zalo FIFO order)."""
+    src = plan if isinstance(plan, dict) else {}
+    if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    return len(parts) >= 2
+
+
 def plan_is_async(plan: dict[str, Any] | None) -> bool:
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
