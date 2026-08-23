@@ -1,3 +1,8 @@
+## 2026-08-23 18:15 +07 — Zalo bridge overlay: bundle markdownToZalo.js + verify
+
+- VPS trace: full `zaloClient.js` overlay without `markdownToZalo.js` → `ERR_MODULE_NOT_FOUND`, no bridge on `:8787`.
+- Vendored `markdownToZalo.js`; `zalo_install_bridge_overlays()` installs bundle + pre-start verify.
+
 ## 2026-08-23 17:35 +07 — classify + schedule: sequential compound (not parallel)
 
 - Classify prompt + workflow `sequential=True` for N immediate instructions; schedule multi-clock vs single-fire docs.
