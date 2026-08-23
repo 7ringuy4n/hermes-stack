@@ -139,7 +139,13 @@ def chat_busy_capacity(status: int, data: Any) -> bool:
 def chat_omni_skip_remaining(status: int, data: Any) -> bool:
     """Omni errors where retrying the same combo/failover id cannot succeed."""
     msg = _error_text(data).lower()
+    # Omni UI / API variants for empty or dead hermes combo members.
     if "all upstream accounts are inactive" in msg:
+        return True
+    if "no available accounts" in msg or "no active accounts" in msg:
+        return True
+    if status == 503 and ("temporarily unavailable" in msg or "service unavailable" in msg):
+        # Instant 503 on hermes/classifier (TI:0) — further Omni hops waste time.
         return True
     if "supports tool calling" in msg:
         return True

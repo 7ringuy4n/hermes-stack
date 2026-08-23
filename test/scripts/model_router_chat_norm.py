@@ -83,13 +83,30 @@ def main() -> int:
     else:
         print("FAIL thinking off must strip on ollama path")
         return 1
-    if not direct_ollama_allowed(task="normal", enable_omni=True, omni_ok=True):
+    if direct_ollama_allowed(task="normal", enable_omni=True, omni_ok=True):
         pass
     else:
-        print("FAIL normal+omni must skip direct ollama")
+        print("FAIL normal+omni must still allow Ollama as last-hop fallback")
         return 1
     if not direct_ollama_allowed(task="coding", enable_omni=True, omni_ok=True):
         print("FAIL coding may use direct ollama when configured")
+        return 1
+    # After Omni hermes 503 inactive, skip remaining Omni hops (then Ollama).
+    ordered = expand_chat_candidates(
+        [
+            ("omni-router", "http://omni/v1", {}, None),
+            ("ollama", "http://ollama/v1", {}, "qwen3:4b"),
+        ],
+        requested_model="hermes",
+        failover_models=[],
+        rotate_attempts=1,
+        has_tools=True,
+    )
+    if ordered[0][0] != "omni-router" or ordered[0][3] != "hermes":
+        print("FAIL first hop must be Omni hermes combo")
+        return 1
+    if ordered[-1][0] != "ollama":
+        print("FAIL last hop must remain Ollama fallback")
         return 1
     inactive = {"error": {"message": "Service temporarily unavailable: all upstream accounts are inactive"}}
     if not chat_omni_skip_remaining(503, inactive):
