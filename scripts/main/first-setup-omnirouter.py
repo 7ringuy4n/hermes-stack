@@ -817,7 +817,7 @@ def main() -> int:
     time.sleep(3)
     patch_hermes_model_router(key, combo)
     # Always smoke hermes combo via Omni /v1/chat/completions (local Ollama member).
-    smoke_chat(key, combo)
+    verify(key, combo)
     smoke_omni_search(key)
     print(
         f"OK: first-setup omni-router complete "
