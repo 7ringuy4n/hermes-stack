@@ -19,7 +19,7 @@ Set secrets in `.env` **before** `up`. Optional workers are **not** in `.env.exa
 |---|---|---|
 | `up` / `down` / `ps` / `logs` | all installs | Compose lifecycle |
 | `destroy` | all installs | Backup+verify, then remove this project's containers + networks (volumes/data kept) |
-| `update` | all installs | Backup+verify, rebuild stack, refresh router bootstrap, prune disk |
+| `update` | all installs | Backup+verify, rebuild stack, prune disk (router bootstrap: manual — see `first-setup-omnirouter`) |
 | `workers` / `profile` | all installs | Show worker activation + core flags |
 | `install NAME…` | all installs | Short name → `.env` (backup+verify, then `up`) |
 | `uninstall NAME…` | all installs | Deactivate by short name |
