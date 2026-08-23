@@ -1,3 +1,8 @@
+## 2026-08-23 18:15 +07 — Zalo bridge overlay: bundle markdownToZalo.js + verify
+
+- Root cause: overlay `zaloClient.js` (upstream main) imports `./markdownToZalo.js` but npm `hermes-zalo-plugin@1.0.x` does not ship it → bridge crash-loop, `:8787` down.
+- Vendored `scripts/main/zalo-bridge/markdownToZalo.js`; `zalo_install_bridge_overlays()` copies full bundle and runs `node --check` + local-import verify before bridge start.
+
 ## 2026-08-23 16:20 +07 — classify: drop direct mode; route all replies via model-router
 
 - `classify.json`: remove `response_mode: direct` (no host instant reply). Hello/Q&A, search, coding, knowledge use `ack_then_deliver` and explicit router-worker routing (Hermes combo, web_search, media_file, schedule).
