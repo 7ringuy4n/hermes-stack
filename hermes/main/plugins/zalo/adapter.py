@@ -1531,16 +1531,6 @@ class ZaloAdapter(BasePlatformAdapter):
         async_job = plan_is_async(plan) or len(parts) >= 2
         if not async_job or not parts:
             return False
-        try:
-            ack = self._as_ux_line(
-                "ZALO_ASYNC_ACK_MSG",
-                ("async", "ack"),
-                "Got it — working on that now.",
-                user_text=text,
-            )
-            await self._as_gate_announce(thread_id, thread_type, ack)
-        except Exception:
-            pass
         data = create_workflow(
             instructions=parts,
             origin=origin,

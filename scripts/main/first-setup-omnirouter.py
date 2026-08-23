@@ -3,18 +3,14 @@
 
 1) Login with OMNIROUTER_INITIAL_PASSWORD (else N9ROUTER_INITIAL_PASSWORD)
 2) Read/create Default Key → OMNIROUTER_API_KEY
-3) Ensure chat combo alias exists (OMNIROUTER_DEFAULT_COMBO, default ``hermes``)
-   — **empty members** + round-robin by default (no OpenCode defaults)
-4) Ensure classify combo ``classifier`` — **empty members** + round-robin
-5) When ENABLE_QWEN=1 and a Qwen/Alibaba/DashScope key is set: fill hermes/
-   classifier (and optional qwen-fast) with Qwen chat models only
+3) Ensure OpenCode provider; fill chat combo ``hermes`` with cloud ``oc/*`` members
+4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members (Omni route)
+5) ENABLE_QWEN / local Ollama are NOT part of default setup (lab scripts remain)
 6) Set combo strategy preference (round-robin)
-7) Ensure Search providers: Tavily (1) → Firecrawl (2) → local SearXNG (3);
-   block ollama-search so Omni /v1/search owns web search
+7) Ensure Search: Tavily (1) → Firecrawl (2) → local SearXNG (3); block ollama-search
 8) Point Hermes at model-router; recreate router-worker for the key
 
-Stack code sends combo *names* as OpenAI ``model``. Chat uses ``hermes``;
-classify uses ``classifier``. Web search: Hermes → model-router /v1/search → Omni.
+Stack sends combo *names* as OpenAI ``model``. Chat = ``hermes``; classify = ``classifier``.
 """
 from __future__ import annotations
 
@@ -36,19 +32,9 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 try:
-    from omnirouter_qwen import (
-        ensure_alibaba_qwen_provider as _ensure_alibaba_qwen_provider,
-        ensure_combo_qwen_fast as _ensure_combo_qwen_fast,
-        ensure_combo_qwen_first as _ensure_combo_qwen_first,
-        ensure_ollama_local_provider as _ensure_ollama_local_provider,
-    )
+    from omnirouter_qwen import combo_model_entry as _combo_model_entry
 except ImportError:
-    from omnirouter_qwen import (  # type: ignore
-        ensure_alibaba_qwen_provider as _ensure_alibaba_qwen_provider,
-        ensure_combo_qwen_fast as _ensure_combo_qwen_fast,
-        ensure_combo_qwen_first as _ensure_combo_qwen_first,
-        ensure_ollama_local_provider as _ensure_ollama_local_provider,
-    )
+    from omnirouter_qwen import combo_model_entry as _combo_model_entry  # type: ignore
 
 ROOT = Path(os.environ.get("STACK_ROOT", "/opt/assistant"))
 PORT = int(os.environ.get("OMNIROUTER_HOST_PORT", "20129"))
@@ -294,130 +280,65 @@ def list_oc_models(opener) -> list[str]:
 
 
 
-def ensure_alibaba_qwen_provider(opener, env: dict[str, str]):
-    """Ensure Omni ``alibaba`` provider (Qwen/DashScope) when a key is present."""
-    return _ensure_alibaba_qwen_provider(http_json, BASE, opener, env)
 
 
-def ensure_ollama_local_provider(opener, env: dict[str, str]):
-    """Ensure host Ollama (OLLAMA_BASE_URL + OLLAMA_MODEL) for local Qwen3.5 2B instruct."""
-    return _ensure_ollama_local_provider(http_json, BASE, opener, env)
 
 
-def ensure_empty_combo(
+
+def ensure_opencode_combo(
     opener,
     *,
     name: str,
     description: str,
+    member_limit: int | None = None,
 ) -> str:
-    """Ensure combo; Qwen-first when Qwen models are active on Omni."""
-    n, _ = _ensure_combo_qwen_first(
-        http_json,
-        BASE,
-        opener,
-        name=name,
-        description=description,
-        strategy=COMBO_STRATEGY,
-        classify=(name == CLASSIFY_COMBO_NAME),
-        reserved_names={COMBO_NAME, CLASSIFY_COMBO_NAME, "qwen-fast"},
-        drop_probes=drop_probe_combos,
-        member_count=_combo_member_count,
-    )
-    return n
+    """Fill Omni combo with cloud OpenCode ``oc/*`` members (default setup)."""
+    drop_probe_combos(opener)
+    oc = list_oc_models(opener)
+    if not oc:
+        raise SystemExit(f"no oc/* OpenCode Free models for combo {name!r}")
+    if member_limit is not None and member_limit > 0:
+        oc = oc[:member_limit]
+    models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(oc)]
+    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    combos = data.get("combos") or []
+    existing = next((c for c in combos if (c.get("name") or "") == name), None)
+    payload = {
+        "name": name,
+        "models": models,
+        "strategy": COMBO_STRATEGY,
+        "description": description,
+    }
+    action = "update" if existing and existing.get("id") else "create"
+    print(f"==> {action} combo {name} OpenCode n={len(models)} first={oc[:3]}")
+    if existing and existing.get("id"):
+        status, body = http_json(
+            opener, "PUT", f"{BASE}/api/combos/{existing['id']}", payload
+        )
+    else:
+        status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
+    if status not in (200, 201):
+        raise SystemExit(f"combo {name} {action} failed: {body}")
+    return name
 
 
 def ensure_classifier_combo(opener) -> str:
-    """Ensure classify combo; Qwen-first when active."""
-    return ensure_empty_combo(
+    """Ensure classify combo ``classifier`` via Omni OpenCode cloud members."""
+    return ensure_opencode_combo(
         opener,
         name=CLASSIFY_COMBO_NAME,
-        description="Classify/intent combo — Qwen first when active (round-robin)",
+        description="Classify/intent combo — Omni OpenCode cloud (round-robin)",
+        member_limit=5,
     )
 
 
 def ensure_combo_alias(opener) -> str:
-    """Ensure chat combo; Qwen-first when active."""
-    return ensure_empty_combo(
+    """Ensure chat combo ``hermes`` via Omni OpenCode cloud members."""
+    return ensure_opencode_combo(
         opener,
         name=COMBO_NAME,
-        description="Stack chat combo — Qwen first when active (round-robin)",
+        description="Stack chat combo — Omni OpenCode cloud (round-robin)",
     )
-
-
-def ensure_qwen_fast_combo(opener) -> str:
-    """Dedicated small-Qwen combo (1.5B/1.7B-class), separate from hermes."""
-    name, _ = _ensure_combo_qwen_fast(
-        http_json,
-        BASE,
-        opener,
-        name=os.environ.get("OMNIROUTER_QWEN_FAST_COMBO", "qwen-fast"),
-        strategy=COMBO_STRATEGY,
-    )
-    return name
-
-
-def deactivate_non_qwen_llm_providers(opener) -> None:
-    """Deactivate LLM providers that do not host current Qwen chat models.
-
-    Keeps search providers and any provider prefix present in Qwen catalog hits
-    (alibaba / groq / openrouter / …). Controlled by OMNIROUTER_QWEN_ONLY_PROVIDERS.
-    """
-    flag = (
-        os.environ.get("OMNIROUTER_QWEN_ONLY_PROVIDERS")
-        or os.environ.get("OMNI_QWEN_ONLY_PROVIDERS")
-        or "1"
-    ).strip().lower()
-    if flag not in {"1", "true", "yes", "on"}:
-        print("NOTE: skip deactivate non-Qwen providers (OMNIROUTER_QWEN_ONLY_PROVIDERS off)")
-        return
-    try:
-        from omnirouter_qwen import qwen_enabled
-    except ImportError:
-        from omnirouter_qwen import qwen_enabled  # type: ignore
-    if not qwen_enabled():
-        print("NOTE: skip deactivate non-Qwen providers (ENABLE_QWEN off)")
-        return
-    keep_providers = {
-        "alibaba",
-        "ollama",
-        "tavily-search",
-        "firecrawl-search",
-        "searxng-search",
-    }
-    try:
-        from omnirouter_qwen import is_qwen_chat_model
-    except ImportError:
-        from omnirouter_qwen import is_qwen_chat_model  # type: ignore
-    try:
-        _, models_data = http_json(opener, "GET", f"{BASE}/v1/models")
-        for row in models_data.get("data") or []:
-            if not isinstance(row, dict):
-                continue
-            mid = row.get("id")
-            if isinstance(mid, str) and is_qwen_chat_model(mid):
-                keep_providers.add(mid.split("/", 1)[0].lower())
-    except Exception as e:  # noqa: BLE001
-        print(f"WARN qwen provider keep-scan: {e}")
-    _, data = http_json(opener, "GET", f"{BASE}/api/providers")
-    for c in data.get("connections") or []:
-        if not isinstance(c, dict) or not c.get("id"):
-            continue
-        prov = str(c.get("provider") or "").lower()
-        name = str(c.get("name") or "").lower()
-        if prov in keep_providers or name in {"qwen", "dashscope", "alibaba"}:
-            continue
-        if not c.get("isActive"):
-            continue
-        try:
-            http_json(
-                opener,
-                "PUT",
-                f"{BASE}/api/providers/{c['id']}",
-                {"isActive": False},
-            )
-            print(f"==> deactivate provider id={c['id']} provider={prov!r} name={name!r}")
-        except Exception as e:  # noqa: BLE001
-            print(f"WARN deactivate {c.get('id')}: {e}")
 
 
 def _search_connections(opener):
@@ -783,23 +704,10 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_API_KEY", key)
     print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
 
-    ensure_alibaba_qwen_provider(opener, env)
-    ensure_ollama_local_provider(opener, env)
-    # Persist Ollama URL so hermes combo stays local-only (avoids Groq TPM 413
-    # when Hermes sends full tool schemas ~8k+ tokens on free 8k TPM tier).
-    try:
-        from omnirouter_qwen import ollama_base_url as _ollama_url
-    except ImportError:
-        from omnirouter_qwen import ollama_base_url as _ollama_url  # type: ignore
-    ollama_url = _ollama_url(env)
-    if ollama_url and not (env.get("OLLAMA_BASE_URL") or "").strip():
-        set_env_key(ROOT / ".env", "OLLAMA_BASE_URL", ollama_url)
-        env["OLLAMA_BASE_URL"] = ollama_url
-        print(f"==> wrote OLLAMA_BASE_URL={ollama_url}")
+    unblock_opencode(opener)
+    ensure_opencode_provider(opener)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
-    qwen_fast = ensure_qwen_fast_combo(opener)
-    deactivate_non_qwen_llm_providers(opener)
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
     pin_image_backends(env)
@@ -816,12 +724,12 @@ def main() -> int:
     recreate_model_router()
     time.sleep(3)
     patch_hermes_model_router(key, combo)
-    # Always smoke hermes combo via Omni /v1/chat/completions (local Ollama member).
-    smoke_chat(key, combo)
+    # Smoke hermes combo via Omni /v1/chat/completions (OpenCode cloud members).
+    verify(key, combo)
     smoke_omni_search(key)
     print(
         f"OK: first-setup omni-router complete "
-        f"(chat/classify slim Qwen-only; fast_combo={qwen_fast!r}; "
+        f"(hermes+classifier OpenCode cloud; classify→{classify_combo!r}; "
         f"search via Omni Tavily→Firecrawl→SearXNG)"
     )
     return 0
