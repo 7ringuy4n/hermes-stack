@@ -73,6 +73,8 @@ services:
       - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
       - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION_MEMORY:-conversational_memory}
+      - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     depends_on:
       postgres:
@@ -363,6 +365,10 @@ services:
     networks: [internal]
 
   hermes:
+    # When ENABLE_OPENBAO=1, first-setup-openbao writes ${ASSISTANT_DATA_DIR}/.env.openbao
+    env_file:
+      - path: ${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}/.env.openbao
+        required: false
     image: ${HERMES_IMAGE:-nousresearch/hermes-agent:latest}
     # No container_name — required for HERMES_REPLICAS > 1
     restart: unless-stopped

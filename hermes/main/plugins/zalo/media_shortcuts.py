@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Deterministic Dispatcher shortcuts for office create + exact text posters.
+"""Optional Dispatcher fast-path for unambiguous office create + text posters.
 
-Models often rewrite prompts into scene diffusion / wrong PDF bodies. When the
-user intent is unambiguous, call Dispatcher directly and skip the agent loop.
+Compound / ambiguous asks must skip these matchers and go through classify LLM
+(see config/classify.json INTENT FAMILIES). Regex here is a gate, not NLU.
 """
 from __future__ import annotations
 
@@ -33,19 +33,6 @@ _OFFICE_KIND = re.compile(
     r"\b(pdf|docx|xlsx|csv|txt|text|markdown|\.md)\b",
     re.I,
 )
-_COMPOUND_NEXT = re.compile(
-    r"(?:sau\s+đó|sau\s+do|then|and\s+then).{0,60}\b(?:tạo|tao|create|make)\b",
-    re.I | re.S,
-)
-# Live/external facts must be fetched before office shortcut (classify/workflow owns the split).
-_LIVE_FACT = re.compile(
-    r"thể hiện|the hien|hiện tại|hien tai|báo cáo|bao cao|current|live",
-    re.I,
-)
-_INLINE_BODY = re.compile(
-    r"đi[eề]n|dien|ch[uứ]a|chua|(?:ch[iỉ]\s+)?(?:số|so)\s+",
-    re.I,
-)
 
 
 def _norm_office_kind(token: str) -> str:
@@ -58,16 +45,15 @@ def _norm_office_kind(token: str) -> str:
 
 
 def is_compound_office_request(text: str) -> bool:
-    """True when user asks for 2+ office files — leave to classify/workflow."""
+    """True when 2+ office kinds appear — leave compound to classify (LLM).
+
+    Do not regex-parse 'sau đó tạo'; only multi-kind detection gates the shortcut.
+    """
     raw = (text or "").strip()
     if not raw:
         return False
     kinds = {_norm_office_kind(k) for k in _OFFICE_KIND.findall(raw)}
-    if len(kinds) >= 2:
-        return True
-    if _COMPOUND_NEXT.search(raw) and _OFFICE_KIND.search(raw):
-        return True
-    return False
+    return len(kinds) >= 2
 
 
 
@@ -81,9 +67,6 @@ def looks_office_create(text: str) -> bool:
         return False
     # Compound multi-file asks must not take the single-file Dispatcher shortcut.
     if is_compound_office_request(t):
-        return False
-    # Live-data PDF/doc (weather, prices) without inline body → workflow must fetch first.
-    if _LIVE_FACT.search(t) and not _INLINE_BODY.search(t):
         return False
     return bool(_OFFICE.search(t))
 
