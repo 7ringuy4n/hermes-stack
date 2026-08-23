@@ -29,6 +29,39 @@ _POSTER = re.compile(
 _DRAW = re.compile(r"(?:vẽ|ve|draw|image|hình|hinh|ảnh|anh|poster)", re.I)
 
 
+_OFFICE_KIND = re.compile(
+    r"\b(pdf|docx|xlsx|csv|txt|text|markdown|\.md)\b",
+    re.I,
+)
+_COMPOUND_NEXT = re.compile(
+    r"(?:sau\s+đó|sau\s+do|then|and\s+then).{0,60}\b(?:tạo|tao|create|make)\b",
+    re.I | re.S,
+)
+
+
+def _norm_office_kind(token: str) -> str:
+    t = (token or "").lower().lstrip(".")
+    if t in {"text", "txt"}:
+        return "txt"
+    if t in {"md", "markdown"}:
+        return "md"
+    return t
+
+
+def is_compound_office_request(text: str) -> bool:
+    """True when user asks for 2+ office files — leave to classify/workflow."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    kinds = {_norm_office_kind(k) for k in _OFFICE_KIND.findall(raw)}
+    if len(kinds) >= 2:
+        return True
+    if _COMPOUND_NEXT.search(raw) and _OFFICE_KIND.search(raw):
+        return True
+    return False
+
+
+
 def dispatcher_url() -> str:
     return (os.getenv("DISPATCHER_URL") or "http://dispatcher:8090").rstrip("/")
 
@@ -36,6 +69,9 @@ def dispatcher_url() -> str:
 def looks_office_create(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > 500:
+        return False
+    # Compound multi-file asks must not take the single-file Dispatcher shortcut.
+    if is_compound_office_request(t):
         return False
     return bool(_OFFICE.search(t))
 

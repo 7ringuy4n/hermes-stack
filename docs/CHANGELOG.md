@@ -1,3 +1,10 @@
+## 2026-08-23 09:55 +07 — compound office create: skip shortcut; split pdf+txt jobs
+
+- Root cause: Zalo office shortcut matched compound “tạo pdf … sau đó tạo text …” as one `/v1/office-file` call → single PDF with mangled body; no `.txt`.
+- `media_shortcuts.looks_office_create`: refuse multi-file compounds so classify/workflow can run both jobs.
+- `office_file.parse_office`: extract payload (`chứa số N`) and cut compound tails; `parse_office_jobs` emits one job per file and `/v1/office-file` delivers each.
+- Regression: compound pdf+txt unit in `office_poster_session_unit.py`.
+
 ## 2026-08-23 09:25 +07 — first-setup clears Qwen/Ollama pins; force hermes/classifier oc/*
 
 - Root cause (VPS xin chào silence): `.env` still `ENABLE_QWEN=1` + `OLLAMA_MODEL=qwen3:4b` → model-router fell through dead Omni to disconnecting Ollama → Hermes 503.
