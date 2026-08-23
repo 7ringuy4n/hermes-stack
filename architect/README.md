@@ -18,20 +18,22 @@ Platform layers around Hermes. Each subfolder has a **System architecture** sect
   </tr>
 </table>
 
-| Layer | Doc | Profile |
+| Layer | Doc | Worker / activation |
 |---|---|---|
-| host | [host/README.md](./host/README.md) | all |
-| social-app | [social-app/README.md](./social-app/README.md) | attach |
-| authentication | [authentication/README.md](./authentication/README.md) | High |
-| security | [security/README.md](./security/README.md) | High |
-| memory | [memory/README.md](./memory/README.md) | Must |
-| tools | [tools/README.md](./tools/README.md) | Must (+ OCR/Jobs Med+) |
-| models | [models/README.md](./models/README.md) | Must |
-| notification | [notification/README.md](./notification/README.md) | High |
-| zalo-api | [zalo-api/README.md](./zalo-api/README.md) | with Zalo (`ENABLE_ZALO`) |
-| backup-restore | [backup-restore/README.md](./backup-restore/README.md) | Must |
-| monitor | [monitor/README.md](./monitor/README.md) | High optional (Grafana↔Prometheus+exporters, Loki↔Alloy) |
-| edge | [edge/README.md](./edge/README.md) | Traefik / OpenVPN |
-| gateway | [gateway/README.md](./gateway/README.md) | API Gateway |
+| host | [host/README.md](./host/README.md) | core |
+| social-app | [social-app/README.md](./social-app/README.md) | Message worker / attach |
+| authentication | [authentication/README.md](./authentication/README.md) | Security worker |
+| security | [security/README.md](./security/README.md) | Security / OpenBao worker |
+| memory | [memory/README.md](./memory/README.md) | core |
+| tools | [tools/README.md](./tools/README.md) | core (+ OCR/Jobs via Media worker) |
+| models | [models/README.md](./models/README.md) | core (router-worker; Omni default) |
+| notification | [notification/README.md](./notification/README.md) | Notify worker |
+| zalo-api | [zalo-api/README.md](./zalo-api/README.md) | Message worker (`install message` / `zalo`) |
+| backup-restore | [backup-restore/README.md](./backup-restore/README.md) | core |
+| monitor | [monitor/README.md](./monitor/README.md) | Monitor worker (Grafana↔Prometheus+exporters, Loki↔Alloy) |
+| edge | [edge/README.md](./edge/README.md) | Traefik core default · OpenVPN optional |
+| gateway | [gateway/README.md](./gateway/README.md) | API Gateway (core default) |
+
+Workers: [docs/00-workers.md](../docs/00-workers.md).
 
 Hermes product surface (skills, messages, plugins): [../hermes/README.md](../hermes/README.md).

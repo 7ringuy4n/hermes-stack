@@ -9,7 +9,7 @@ Follow skill **`media-out`** (result only — no step chatter).
 
 Do **not** write Python/matplotlib/manim/PIL frame loops. Do **not** create new skills. Do **not** install manim or mention pangocairo. Native Hermes video tools are often missing — use dispatcher.
 
-**ComfyUI** is still the diffusion backend **inside dispatcher** (`IMAGE_BACKENDS` includes `comfy-cpu`). You do not run `comfy` CLI unless the user named a Comfy/Wan/Hunyuan workflow. Default video = `POST /v1/video` (still → H.264). Default image = `POST /v1/image` (llm → vendor → comfy-cpu).
+**ComfyUI** is still the diffusion backend **inside dispatcher** (`IMAGE_BACKENDS` includes `comfy-cpu`). You do not run `comfy` CLI unless the user named a Comfy/Wan/Hunyuan workflow. Default video = `POST /v1/video` (still → H.264). Default image = `POST /v1/image` (comfy-cpu → comfy-gpu → omni).
 
 ## Default (must)
 

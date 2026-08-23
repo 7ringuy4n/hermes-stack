@@ -9,7 +9,7 @@ Follow skill **`media-out`** (result only — no step chatter, no approve, no ch
 
 The built-in Hermes `image_generation` tool is often **unavailable** (cloud keys / BFL). Do **not** stop. Do **not** invent matplotlib, PIL scripts, HTML screenshots, or new skills.
 
-**This stack path (required):** `POST http://dispatcher:8090/v1/image` with `IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu`. Dispatcher may call **ComfyUI** internally. Skill `comfyui` is only for an explicit Comfy workflow the user named — default image gen is always dispatcher.
+**This stack path (required):** `POST http://dispatcher:8090/v1/image` with `IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni`. ComfyUI is tried first; on failure dispatcher falls back to OmniRouter (`/images/generations`). Skill `comfyui` is only for an explicit Comfy workflow the user named — default image gen is always dispatcher.
 
 Generate through this skill and dispatcher instead.
 

@@ -12,7 +12,7 @@ curl -sS -X POST http://dispatcher:8090/v1/image \
   -d '{"prompt":"<text>"}'
 ```
 
-Fallback order (Medium+): `paid1` → `paid2` (`IMAGE_PAID2_PROVIDER`) → `comfy-cpu` → `comfy-gpu`.
+Fallback order (Medium+): `comfy-cpu` → `comfy-gpu` → `omni` (OmniRouter when Comfy fails).
 
 | Env | Meaning |
 |---|---|
