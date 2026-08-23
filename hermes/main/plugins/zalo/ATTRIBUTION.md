@@ -19,5 +19,6 @@ Paths under `hermes/main/plugins/zalo/` and `architect/social-app/zalo/` **reuse
 - Install only after profile services are healthy
 - **Manual** QR login as a separate last step (`scripts/main/login-zalo.sh`)
 - Mention-gate / Valkey / admin-command patches for the local workflow
+- **Quoted-reply fix:** `scripts/main/zalo-bridge/zaloClient.js` installed over upstream npm by `zalo-common.sh` (maps `data.quote.*` for attachment resend)
 
 MIT conditions apply: keep this notice (and the upstream LICENSE text) with distributed copies.

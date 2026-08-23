@@ -9,7 +9,7 @@ Hermes receives structured JSON from the model-router `/v1/classify` hop (or equ
 
 | `task_hint` | `skill` | `skill_action` | Worker / next step |
 |---|---|---|---|
-| `normal` | `null` | `null` | Answer directly. **No** workflow queue for simple chat. |
+| `normal` | `null` | `null` | Hermes via model-router chat combo (`ack_then_deliver`). No host instant reply. |
 | `search` | `web_search` | `search` | **Web Search skill** → Router Worker `POST /v1/search` → Omni (Tavily → Firecrawl → SearXNG). |
 | `file` / `tool` (media) | `media_file` | `process_file`, `process_image`, `generate_media`, `create_file` | **Media/File skill** → media worker / OCR (**PaddleOCR first** on `ocr:8091`) / ComfyUI (`/v1/media/text` for audio-video). |
 | `schedule` | `schedule` | `create` | **Schedule skill** → Go schedule worker (`SCHEDULE_URL`). Store inner `fire_text` only. |
@@ -20,16 +20,18 @@ Hermes receives structured JSON from the model-router `/v1/classify` hop (or equ
 
 | `execution_class` | `response_mode` | Hermes behavior |
 |---|---|---|
-| `interactive` | `direct` | Reply in the same turn. |
-| `async` | `ack_then_deliver` | Short ack, then workflow / worker; deliver when done. |
+| `interactive` | `ack_then_deliver` | Route through model-router; Hermes chat combo produces the reply. |
+| `async` | `ack_then_deliver` | Workflow / worker job; deliver when done. |
 | `schedule` | `confirm` | Confirm lịch once; worker fires inner message later. |
+
+Legacy `response_mode: direct` is remapped to `ack_then_deliver` at normalize time — do not emit it from classify.
 
 ## Multi-instruction messages
 
 When `instructions[]` has **N > 1** distinct deliverables:
 
-1. Keep **N** separate workflow jobs unless `depends_on` requires order.
-2. Default **parallel** (`sequential=false`) unless an instruction depends on another.
+1. Keep **N** separate instructions in order — the Zalo host runs them **sequentially over time** (one turn at a time, multiple replies/files), not in one combined answer.
+2. Use `depends_on=[i]` only when a later instruction truly needs output from instruction `i` (e.g. search → office file). Independent parts use `depends_on=[]`.
 3. Do **not** merge numbered greeting + fuel + weather + draw-image into one poster unless the user asked for one combined image.
 
 ## Scheduled fire (`scheduleFire`)

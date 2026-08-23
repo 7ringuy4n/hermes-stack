@@ -1,12 +1,11 @@
-# scripts/temp — local hotfix / deploy probes
+# scripts/temp — session-only hotfix / deploy probes
 
-**Not committed** (see root `.gitignore`). Use for:
+**Not committed** (see root `.gitignore`). Allowed durable-looking helper:
 
-- one-off deploys to a **test host** (`deploy-*.py`)
-- health probes (`probe-*.py`)
-- temporary bugfix / finish scripts
-- any script that needs a real VPS IP, SSH user, or password
+- `generate_env_secrets.py` — fill `CHANGE_ME_*` in `.env` from `.env.example`
 
-Do not put product entrypoints here — those belong in `scripts/main/` and must use `ASSISTANT_SSH_*` env vars with **no** lab host/account defaults.
+Everything else here is **session junk** and must be deleted after the lab/fix
+round (AGENT_RULES: clean `scripts/temp` when done).
 
-Never copy host credentials from this folder into `scripts/main/`, `test/`, or docs.
+Use for one-off VPS probes only. Product entrypoints belong in `scripts/main/`
+with `ASSISTANT_SSH_*` — never bake lab host/password defaults into committed code.
