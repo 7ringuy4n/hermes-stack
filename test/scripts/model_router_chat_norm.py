@@ -19,7 +19,7 @@ from chat_norm import (  # noqa: E402
     sanitize_for_ollama,
     should_strip_ollama_thinking,
 )
-from route_expand import expand_chat_candidates, upstream_url  # noqa: E402
+from route_expand import direct_ollama_allowed, expand_chat_candidates, upstream_url  # noqa: E402
 
 
 def main() -> int:
@@ -68,18 +68,28 @@ def main() -> int:
     if "thinking" not in keep_thinking:
         print("FAIL ollama sanitize strip_thinking=False must keep thinking")
         return 1
-    if not should_strip_ollama_thinking(enable_qwen_thinking=True, ollama_model="qwen3:8b"):
+    if not should_strip_ollama_thinking(enable_qwen_thinking=True, ollama_model="qwen3.5:2b-instruct"):
         pass
     else:
-        print("FAIL qwen3 + thinking enabled must not strip")
+        print("FAIL qwen3.5 + thinking enabled must not strip")
         return 1
-    if not should_strip_ollama_thinking(enable_qwen_thinking=True, ollama_model="qwen2.5:7b"):
+    if should_strip_ollama_thinking(enable_qwen_thinking=True, ollama_model="qwen2.5:7b"):
+        pass
+    else:
         print("FAIL qwen2.5 must always strip thinking")
         return 1
-    if should_strip_ollama_thinking(enable_qwen_thinking=False, ollama_model="qwen3:8b"):
+    if should_strip_ollama_thinking(enable_qwen_thinking=False, ollama_model="qwen3.5:2b-instruct"):
         pass
     else:
         print("FAIL thinking off must strip on ollama path")
+        return 1
+    if not direct_ollama_allowed(task="normal", enable_omni=True, omni_ok=True):
+        pass
+    else:
+        print("FAIL normal+omni must skip direct ollama")
+        return 1
+    if not direct_ollama_allowed(task="coding", enable_omni=True, omni_ok=True):
+        print("FAIL coding may use direct ollama when configured")
         return 1
     inactive = {"error": {"message": "Service temporarily unavailable: all upstream accounts are inactive"}}
     if not chat_omni_skip_remaining(503, inactive):

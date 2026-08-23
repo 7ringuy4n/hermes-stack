@@ -300,7 +300,7 @@ def ensure_alibaba_qwen_provider(opener, env: dict[str, str]):
 
 
 def ensure_ollama_local_provider(opener, env: dict[str, str]):
-    """Ensure host Ollama (OLLAMA_BASE_URL + OLLAMA_MODEL) for local Qwen3 4B."""
+    """Ensure host Ollama (OLLAMA_BASE_URL + OLLAMA_MODEL) for local Qwen3.5 2B instruct."""
     return _ensure_ollama_local_provider(http_json, BASE, opener, env)
 
 

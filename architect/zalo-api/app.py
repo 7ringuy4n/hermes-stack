@@ -1301,6 +1301,55 @@ def channels_upsert(
     return {"ok": True, "channel": row}
 
 
+class ZaloMessageHistoryBody(BaseModel):
+    thread_id: str
+    event: str
+    thread_type: str = "user"
+    message_id: str = ""
+    role: str = ""
+    content: str = ""
+    task_hint: str = ""
+    queue_depth: Optional[int] = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+@app.post("/v1/zalo/message-history")
+def zalo_message_history_post(
+    body: ZaloMessageHistoryBody,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """Trace inbound queue + turns in Postgres (Hermes adapter calls this)."""
+    _auth(authorization, x_admin_token)
+    ok = zalo_store.record_message_history(
+        thread_id=body.thread_id,
+        event=body.event,
+        thread_type=body.thread_type,
+        message_id=body.message_id,
+        role=body.role,
+        content=body.content,
+        task_hint=body.task_hint,
+        queue_depth=body.queue_depth,
+        meta=body.meta,
+    )
+    if not ok:
+        raise HTTPException(503, "postgres history unavailable")
+    return {"ok": True}
+
+
+@app.get("/v1/zalo/message-history")
+def zalo_message_history_get(
+    thread_id: str,
+    thread_type: str = "user",
+    limit: int = 12,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    turns = zalo_store.load_recent_turns(thread_id, thread_type=thread_type, limit=limit)
+    return {"ok": True, "turns": turns}
+
+
 @app.post("/v1/sessions/reset-all")
 def api_reset_all_sessions(
     authorization: Optional[str] = Header(default=None),
