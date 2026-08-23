@@ -1,35 +1,38 @@
 ---
 name: video-gen
-description: "Generate a short H.264 video via dispatcher POST /v1/video. Default stack path — do not invent matplotlib/manim/ascii. RESULT-ONLY (see media-out)."
+description: "Video generation is blocked on this stack — refuse via dispatcher policy (like video-summary). RESULT-ONLY (see media-out)."
 ---
 
-# Video generation
+# Video generation (refused)
 
 Follow skill **`media-out`** (result only — no step chatter).
 
-Do **not** write Python/matplotlib/manim/PIL frame loops. Do **not** create new skills. Do **not** install manim or mention pangocairo. Native Hermes video tools are often missing — use dispatcher.
+**Policy:** this stack does **not** generate synthetic video clips (same family as **`video-summary`** blocking YouTube/TikTok/Facebook fetch). Do **not** call `POST /v1/video`, manim, matplotlib, PIL frame loops, ffmpeg encode loops, or Comfy video workflows.
 
-**ComfyUI** is still the diffusion backend **inside dispatcher** (`IMAGE_BACKENDS` includes `comfy-cpu`). You do not run `comfy` CLI unless the user named a Comfy/Wan/Hunyuan workflow. Default video = `POST /v1/video` (still → H.264). Default image = `POST /v1/image` (llm → vendor → comfy-cpu).
+## Required (must)
 
-## Default (must)
-
-1. One short web search only if the user asked for **live** weather/facts.
-2. `POST http://dispatcher:8090/v1/video` with a scene prompt and optional `overlay` lines (facts already fetched — do not put the whole user paragraph in overlay).
-3. Write under `/opt/data/media/out/<safe-slug>.mp4` (dispatcher does this).
-4. Do **not** `send_zalo` / `/v1/send-file` — Zalo autosend delivers the file.
+1. **Do not** invent Python/video pipelines or install manim / pangocairo.
+2. Ask dispatcher for the refuse message — **OmniRouter writes the user-facing text** (not hardcoded in the skill):
 
 ```bash
-mkdir -p /opt/data/media/out && curl -sS -X POST http://dispatcher:8090/v1/video \
+curl -sS -X POST http://dispatcher:8090/v1/video-policy-refuse \
   -H 'content-type: application/json' \
-  -d '{"prompt":"<scene>","filename":"<safe-slug>.mp4","seconds":4,"refine":false,"overlay":["<fact1>","<fact2>"]}'
+  -d '{"topic":"video_generate","context":"<verbatim user request>","language":"vi"}'
 ```
 
-Success: `"ok":true`, `"backend":"ffmpeg-still"`. Autosend sends the mp4. No extra chat line.
+Or call `POST /v1/video-summary` when the user pasted a YouTube/TikTok/Facebook link and wants transcript/summary (`topic` is implicit — use the URL in `context` or `url`).
 
-If dispatcher returns 503/502: one failure line from **media-out**, then stop.
+3. Reply with the JSON **`message`** field only. No step chatter, no approve, no chat_id / thread metadata.
+
+## Alternatives (only when the user wanted visual output)
+
+| Need | Route |
+|------|--------|
+| Still image / infographic / poster | **`image-gen`** → `POST /v1/image` |
+| Office document | **`file-gen`** / **`documents`** |
 
 ## Related
 
-- `image-gen` — still images (`POST /v1/image`)
 - `media-out` — result-only delivery
-- `comfyui` — only when the user named a Comfy/Wan/Hunyuan workflow
+- `image-gen` — supported still images
+- `comfyui` — only when user named an explicit Comfy **image** workflow (not video)

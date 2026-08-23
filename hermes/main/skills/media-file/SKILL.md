@@ -18,7 +18,7 @@ Classifier `skill_action` selects the worker operation. Do **not** implement `if
 
 | skill_action | Worker |
 |---|---|
-| `generate_media` | `POST http://dispatcher:8090/v1/image` or `/v1/video` (see `image-gen` / `video-gen`) |
+| `generate_media` | `POST http://dispatcher:8090/v1/image` (see `image-gen`); video refused — `video-gen` / `/v1/video-policy-refuse` |
 | `process_file` / `process_image` | Ingest/OCR via `OCR_URL` / `INGEST_URL` — worker chooses the engine |
 | `create_file` | `file-gen` / office skills |
 

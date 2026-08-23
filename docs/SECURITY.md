@@ -18,7 +18,7 @@ file
 
 `LLM says CLEAN` is **ignored**. It cannot allow a file. Judge outages also cannot allow or block.
 
-## Defaults (High)
+## Defaults (Security worker)
 
 | Flag | Default | Role |
 |------|---------|------|
@@ -45,7 +45,7 @@ file
 
 ## Still lab-only / P1
 
-- OpenBao still runs **`-dev`** on High. Production needs non-dev storage + AppRole.
+- OpenBao still runs **`-dev`** when Security/OpenBao is installed. Production needs non-dev storage + AppRole.
 - Alloy monitor profile still mounts docker.sock **read-only** for log discovery.
 - Image tags may use `:latest` — pin digests for production.
 - Secrets still fan out via compose env — prefer OpenBao per-service credentials later.
