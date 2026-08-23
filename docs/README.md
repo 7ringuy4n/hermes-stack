@@ -16,7 +16,7 @@ English operations docs for the **assistant** stack.
 | [06-model-routing.md](./06-model-routing.md) | Model Router / OmniRouter (default) / 9Router (optional) |
 | [MULTI_NODE.md](./MULTI_NODE.md) | Hermes×2 vs true HA; store SPOFs |
 | [SECURITY.md](./SECURITY.md) | Isolation vs LLM heuristic; VPN-only edge |
-| [AGENT_RULES.md](./AGENT_RULES.md) | Operator / agent hard rules (SoT) |
+| [AGENT_RULES.md](../AGENT_RULES.md) | Operator / agent hard rules (SoT) |
 | [config/DEFAULTS.md](./config/DEFAULTS.md) | Non-secret defaults |
 | [CHANGELOG.md](./CHANGELOG.md) | Change log |
 | [scripts/HISTORY.md](../scripts/HISTORY.md) | Ops issue log: symptoms, root causes, fixes (timestamped) |

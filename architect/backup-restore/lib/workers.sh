@@ -44,7 +44,7 @@ assistant_workers_apply() {
     export ENABLE_SEARXNG="${ENABLE_SEARXNG:-1}"
     # Web search runs on router-worker; combo order = paid vendor then local SearXNG
     [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,searxng
-    [[ -n "${IMAGE_BACKENDS:-}" ]] || export IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
+    [[ -n "${IMAGE_BACKENDS:-}" ]] || export IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni
   else
     export WORKER_MEDIA_FILE=inactive
     export ENABLE_MEDIA_FILE=0

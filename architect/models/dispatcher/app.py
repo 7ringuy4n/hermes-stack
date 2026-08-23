@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from video_summary import health_fields, register_video_summary
+from video_summary import health_fields, omni_refuse_message, policy_block_response, register_video_summary
 
 app = FastAPI(title="assistant dispatcher", version="1.1.0")
 
@@ -174,7 +174,7 @@ class ImageReq(BaseModel):
     """Generate an image; optionally refine via LLM then push to Zalo."""
     prompt: str
     filename: Optional[str] = None
-    provider: Optional[str] = None  # llm|vendor|comfy-cpu|comfy-gpu|pollinations|text (paid1/paid2 aliases ok)
+    provider: Optional[str] = None  # comfy-cpu|comfy-gpu|omni|text
     mode: Optional[str] = None  # text|poster → exact glyph poster, skip diffusion
     thread_id: Optional[str] = None
     thread_type: str = "group"
@@ -603,50 +603,6 @@ def _refine_prompt_llm(prompt: str) -> tuple[str, dict[str, Any]]:
     return prompt, meta
 
 
-def _gen_pollinations(prompt: str) -> bytes:
-    from urllib.parse import quote
-
-    url = f"https://image.pollinations.ai/prompt/{quote(prompt)}?width=768&height=512&nologo=true"
-    with httpx.Client(timeout=120.0, follow_redirects=True) as client:
-        r = client.get(url)
-        r.raise_for_status()
-        if "image" not in r.headers.get("content-type", "") and len(r.content) < 1000:
-            raise RuntimeError(f"pollinations bad response ctype={r.headers.get('content-type')}")
-        return r.content
-
-
-def _gen_openai(prompt: str) -> bytes:
-    """OpenAI-compatible images API via 9Router (or any gateway). Not DeepSeek chat API."""
-    base = os.environ.get("OPENAI_BASE_URL", "http://9router:20128/v1").rstrip("/")
-    key = os.environ.get("OPENAI_API_KEY") or os.environ.get("N9ROUTER_API_KEY") or ""
-    model = os.environ.get("IMAGE_MODEL", "dall-e-3")
-    headers = {"content-type": "application/json"}
-    if key:
-        headers["authorization"] = f"Bearer {key}"
-    with httpx.Client(timeout=180.0) as client:
-        r = client.post(
-            f"{base}/images/generations",
-            headers=headers,
-            json={"model": model, "prompt": prompt, "n": 1, "size": "1024x1024"},
-        )
-        r.raise_for_status()
-        data = r.json()
-        items = data.get("data") or []
-        if not items:
-            raise RuntimeError(f"no image data: {data}")
-        item = items[0]
-        if item.get("b64_json"):
-            import base64
-
-            return base64.b64decode(item["b64_json"])
-        url = item.get("url")
-        if not url:
-            raise RuntimeError(f"no url/b64 in image response: {item}")
-        img = client.get(url)
-        img.raise_for_status()
-        return img.content
-
-
 _SEND_FILE_OK = {
     ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
     ".txt", ".csv", ".rtf", ".odt", ".ods", ".md",
@@ -919,10 +875,9 @@ def _chown_media(path: Path) -> None:
 
 @app.post("/v1/image")
 def image_generate(req: ImageReq) -> dict[str, Any]:
-    """Image gen fallback (Medium+): llm → vendor → ComfyUI CPU → ComfyUI GPU.
+    """Image gen fallback (Medium+): ComfyUI CPU → ComfyUI GPU → OmniRouter.
 
-    llm = OpenAI / Gemini / DeepSeek (IMAGE_LLM_PROVIDER).
-    vendor = fal / pollinations / fluxai / ….
+    Default IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni (no separate paid image API keys).
     Low: IMAGE_BACKENDS empty → 503.
     """
     from image_backends import generate_image_bytes, image_backends
@@ -1048,58 +1003,10 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
 
 @app.post("/v1/video")
 def video_generate(req: VideoReq) -> dict[str, Any]:
-    """Default video path: still (existing or /v1/image) → short H.264 mp4."""
-    from video_clip import clamp_seconds, ffmpeg_bin, still_to_mp4
-
-    out_dir = MEDIA_DIR / "out"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    still: Optional[Path] = None
-    used = ""
-    if (req.image or "").strip():
-        name = Path(str(req.image).strip()).name
-        cand = out_dir / name
-        if cand.is_file():
-            still = cand
-            used = "still"
-    if still is None:
-        prompt = (req.prompt or "").strip()
-        if not prompt:
-            raise HTTPException(400, _msg("prompt_required", "A prompt or image is required."))
-        img = image_generate(
-            ImageReq(
-                prompt=prompt,
-                filename=(req.filename or "clip-still.jpg").rsplit(".", 1)[0] + ".jpg",
-                provider=req.provider,
-                refine=req.refine,
-                overlay=req.overlay,
-            )
-        )
-        still = Path(str(img.get("file") or ""))
-        used = str(img.get("provider") or img.get("backend") or "image")
-        if not still.is_file():
-            raise HTTPException(502, {"error": "still image missing", "detail": img})
-    elif req.overlay:
-        _apply_image_overlay(still, req.overlay)
-    if not ffmpeg_bin():
-        raise HTTPException(503, "ffmpeg missing — cannot encode video")
-    name = req.filename or f"clip-{uuid.uuid4().hex[:10]}.mp4"
-    if not name.lower().endswith(".mp4"):
-        name += ".mp4"
-    dest = out_dir / name
-    try:
-        still_to_mp4(still, dest, seconds=req.seconds)
-        _chown_media(dest)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, {"error": "video encode failed", "detail": str(e)}) from e
-    return {
-        "ok": True,
-        "file": str(dest),
-        "hermes_path": f"/opt/data/media/out/{dest.name}",
-        "backend": "ffmpeg-still",
-        "still": str(still),
-        "provider": used,
-        "seconds": clamp_seconds(req.seconds),
-    }
+    """Video generation blocked — same policy as video-summary; OmniRouter writes refuse text."""
+    ctx = (req.prompt or req.image or req.filename or "").strip()
+    message, meta = omni_refuse_message(topic="video_generate", context=ctx)
+    return policy_block_response(reason="video_policy", message=message, meta=meta)
 
 
 class RemuxReq(BaseModel):

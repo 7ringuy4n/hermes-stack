@@ -1,3 +1,33 @@
+## 2026-08-23 16:20 +07 — classify: drop direct mode; route all replies via model-router
+
+- `classify.json`: remove `response_mode: direct` (no host instant reply). Hello/Q&A, search, coding, knowledge use `ack_then_deliver` and explicit router-worker routing (Hermes combo, web_search, media_file, schedule).
+- `classify.py` + classify clients: default hints remap `direct` → `ack_then_deliver`; search default is async.
+- `worker-routing` skill + `docs/06-model-routing.md` aligned.
+
+## 2026-08-23 17:35 +07 — classify + schedule: sequential compound (not parallel)
+
+- `classify.json`: multi-instruction immediate requests run sequentially over time on Zalo; `depends_on` only for true data deps; multi-clock vs single-fire schedule clarified.
+- Workflow: `sequential=True` for compound plans; `plan_compound_sequential()` in classify clients; adapter + worker-routing/zalo-channel/schedule skills aligned.
+
+## 2026-08-23 17:30 +07 — SOUL: Zalo compound messages run as separate turns over time
+
+- `SOUL.md`: one inbound Zalo bubble may split into many parts; each turn scoped to one part; multiple replies/files over time is expected.
+
+## 2026-08-23 17:05 +07 — video policy: OmniRouter refuse (no hardcoded VI)
+
+- `video_summary.py`: social-summary and video-generate refuses call OmniRouter `chat/completions`; fallbacks in `messages/en.json` only when LLM unavailable.
+- `/v1/video` and `/v1/video-policy-refuse` return policy block; `video-gen` skill updated to refuse (like video-summary).
+
+## 2026-08-23 17:00 +07 — Zalo quote: durable bridge overlay (not runtime patch)
+
+- **Quote reply:** vendored `scripts/main/zalo-bridge/zaloClient.js` maps `data.quote.*` for quoted attachments; `zalo_install_bridge_overlays()` in `zalo-common.sh` copies it after npm install / before bridge start. Removed quote regex patch from `patch_zalo_bridge_inject.py`.
+
+## 2026-08-23 16:10 +07 — trace fixes: Zalo quote, image backends, weather PDF classify
+
+- **Quote reply:** host bridge must expose quoted message metadata so Hermes `[Quoted message]` + “gửi lại file” work (see bridge overlay above).
+- **Image gen:** remove paid `llm`/`vendor` image backends and keys from dispatcher, compose, `.env.example`, first-setup pins. Default `IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni`; Comfy skipped when no checkpoints; OmniRouter `/images/generations` fallback via `OMNIROUTER_API_KEY`.
+- **Weather PDF:** classify splits live-data office requests (search facts → create file with verbatim body, `depends_on`); office shortcut gate skips “thể hiện/hiện tại” without inline payload.
+
 ## 2026-08-23 11:25 +07 — update: clear compose recreate name conflicts
 
 - Root cause: failed `compose up` left hex-prefixed rename leftovers (e.g. `e207aa1eecb5_assistant-authz-1`) → next update Conflict “name already in use”.

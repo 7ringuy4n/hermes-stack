@@ -37,6 +37,15 @@ _COMPOUND_NEXT = re.compile(
     r"(?:sau\s+đó|sau\s+do|then|and\s+then).{0,60}\b(?:tạo|tao|create|make)\b",
     re.I | re.S,
 )
+# Live/external facts must be fetched before office shortcut (classify/workflow owns the split).
+_LIVE_FACT = re.compile(
+    r"thể hiện|the hien|hiện tại|hien tai|báo cáo|bao cao|current|live",
+    re.I,
+)
+_INLINE_BODY = re.compile(
+    r"đi[eề]n|dien|ch[uứ]a|chua|(?:ch[iỉ]\s+)?(?:số|so)\s+",
+    re.I,
+)
 
 
 def _norm_office_kind(token: str) -> str:
@@ -72,6 +81,9 @@ def looks_office_create(text: str) -> bool:
         return False
     # Compound multi-file asks must not take the single-file Dispatcher shortcut.
     if is_compound_office_request(t):
+        return False
+    # Live-data PDF/doc (weather, prices) without inline body → workflow must fetch first.
+    if _LIVE_FACT.search(t) and not _INLINE_BODY.search(t):
         return False
     return bool(_OFFICE.search(t))
 

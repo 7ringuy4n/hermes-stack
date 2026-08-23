@@ -22,6 +22,15 @@ JSON body (deterministic fields from classifier JSON, not from parsing user pros
 
 The worker stores the row in SQLite, waits, and sends `fire_text` back through the Hermes inbound pipeline (`scheduleFire` protocol flag). Hermes classifies that inner message again and routes through skills.
 
+## Multiple clocks vs one fire
+
+| Pattern | Store |
+|---|---|
+| One clock, multiple inner tasks (`đặt lịch 06:00: chào, xăng, thời tiết`) | **One** schedule — `instructions[]` / `fire_text` contains all tasks for that fire |
+| Multiple clocks (`06:00 thời tiết` and `21:00 xăng` in one bubble) | **One lịch per clock** — adapter stores separate jobs |
+
+Do not split a single-clock daily lịch into immediate async jobs.
+
 ## Deliver into a named Zalo group
 
 When classify JSON includes `target_channel` (group display name), Zalo adapter resolves it via zalo-api channel registry and rewrites schedule `origin.thread_id` to that group (requester stays `user_id`).

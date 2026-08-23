@@ -37,7 +37,7 @@ Applies to **every** create/export/send of a file or media asset: images, PDF, D
 | Need | Skill / API |
 |------|-------------|
 | Image | `image-gen` → `POST /v1/image` (**no** `send_zalo`; use `overlay` for on-image facts) |
-| Short video | `video-gen` → `POST /v1/video` (**no** matplotlib / manim) |
+| Short video | **`video-gen`** — refused; use **`image-gen`** for stills or policy refuse via `/v1/video-policy-refuse` |
 | Office | `file-gen` / `documents` → `POST /v1/office-file` (create+send; not Hermes pdf skill) |
 | Markdown / text file | `markdown` → then `file-gen` |
 | Explicit Comfy workflow | `comfyui` → `--output-dir /opt/data/media/out` |

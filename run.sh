@@ -489,7 +489,8 @@ do_destroy() {
 
 do_update() {
   # After: git pull  →  bash run.sh update
-  # Rebuilds/recreates stack from current tree; refreshes 9Router→Hermes wiring; prunes disk.
+  # Rebuilds/recreates stack from current tree; prunes disk.
+  # Router combo refresh: bash run.sh first-setup-llm | first-setup-omnirouter (not on every update).
   do_backup_first "update" || return 1
   echo "==> update from current source"
   if [[ -d "${ROOT}/.git" ]]; then
@@ -514,26 +515,6 @@ do_update() {
   fi
   do_stop_disabled_optionals
 
-  if [[ "${ENABLE_9ROUTER:-0}" == "1" && -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
-    echo "==> refresh 9Router Default Key + hermes combo"
-    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
-    export HERMES_DATA_DIR="${HERMES_DATA_DIR:-/data/assistant}"
-    python3 "${SCRIPTS_DIR}/first-setup-9router-hermes.py" \
-      || echo "WARN: first-setup-llm failed — stack is up; fix .env / 9Router and re-run: bash run.sh first-setup-llm"
-  elif [[ "${ENABLE_9ROUTER:-0}" == "1" ]]; then
-    echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip 9Router first-setup refresh"
-  else
-    echo "==> 9Router inactive (ENABLE_9ROUTER=0) — skip first-setup-9router-hermes"
-  fi
-
-  if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
-    echo "==> refresh OmniRouter combo + memory"
-    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
-    python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py" \
-      || echo "WARN: first-setup-omnirouter failed — re-run: bash run.sh first-setup-omnirouter"
-  fi
-
-  # After LLM setup so N9ROUTER_API_KEY is in .env when seeding
   if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then
     echo "==> seed API keys into OpenBao"
     do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"

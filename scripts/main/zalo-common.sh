@@ -204,6 +204,7 @@ zalo_need_node() {
 zalo_install_plugin_package() {
   zalo_need_node
   if command -v hermes-zalo-plugin >/dev/null 2>&1; then
+    zalo_install_bridge_overlays || true
     return 0
   fi
   zalo_log "npm install -g hermes-zalo-plugin (upstream: cuongdev)"
@@ -223,6 +224,52 @@ zalo_install_plugin_package() {
       (cd "${tmp}/p" && $ZALO_SUDO npm install -g .)
       rm -rf "$tmp"
     }
+  fi
+  zalo_install_bridge_overlays || true
+}
+
+zalo_bridge_plugin_dir() {
+  local bin dir npm_root
+  bin="$(command -v hermes-zalo-plugin 2>/dev/null || true)"
+  if [[ -n "$bin" ]]; then
+    dir="$(readlink -f "$bin" 2>/dev/null || true)"
+    if [[ -n "$dir" ]]; then
+      dir="$(dirname "$dir")"
+      if [[ -f "${dir}/zaloClient.js" ]]; then
+        printf '%s' "$dir"
+        return 0
+      fi
+    fi
+  fi
+  npm_root="$(npm root -g 2>/dev/null || true)"
+  if [[ -n "$npm_root" && -f "${npm_root}/hermes-zalo-plugin/zaloClient.js" ]]; then
+    printf '%s/hermes-zalo-plugin' "$npm_root"
+    return 0
+  fi
+  if [[ -f "/usr/lib/node_modules/hermes-zalo-plugin/zaloClient.js" ]]; then
+    printf '/usr/lib/node_modules/hermes-zalo-plugin'
+    return 0
+  fi
+  return 1
+}
+
+zalo_install_bridge_overlays() {
+  local src="${ZALO_COMMON_ROOT}/scripts/main/zalo-bridge/zaloClient.js"
+  local dest_dir dest
+  if [[ ! -f "$src" ]]; then
+    zalo_log "WARN: missing bridge overlay ${src}"
+    return 1
+  fi
+  dest_dir="$(zalo_bridge_plugin_dir)" || {
+    zalo_log "WARN: hermes-zalo-plugin install dir not found — skip bridge overlay"
+    return 1
+  }
+  dest="${dest_dir}/zaloClient.js"
+  zalo_log "install bridge overlay ${src} → ${dest}"
+  if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
+    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S cp -f "$src" "$dest"
+  else
+    $ZALO_SUDO cp -f "$src" "$dest"
   fi
 }
 
@@ -276,6 +323,7 @@ zalo_start_bridge_service() {
   else
     systemctl --user enable --now assistant-zalo.service 2>/dev/null || true
   fi
+  zalo_install_bridge_overlays || true
   if [[ -f "${ZALO_COMMON_ROOT}/scripts/main/patch_zalo_bridge_inject.py" ]]; then
     ZALO_BRIDGE_FORCE_RESTART=1 $ZALO_SUDO python3 "${ZALO_COMMON_ROOT}/scripts/main/patch_zalo_bridge_inject.py" || true
   fi

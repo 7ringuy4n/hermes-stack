@@ -684,10 +684,10 @@ def pin_image_backends(env: dict[str, str]) -> None:
     if cur:
         print(f"OK: IMAGE_BACKENDS already {cur}")
         return
-    want = "llm,vendor,comfy-cpu,comfy-gpu"
+    want = "comfy-cpu,comfy-gpu,omni"
     set_env_key(ROOT / ".env", "IMAGE_BACKENDS", want)
     env["IMAGE_BACKENDS"] = want
-    print(f"OK: pinned IMAGE_BACKENDS={want} (dispatcher → Comfy; not Hermes image_generation tool)")
+    print(f"OK: pinned IMAGE_BACKENDS={want} (Comfy → Omni fallback; not Hermes image_generation tool)")
 
 
 def clear_local_qwen_ollama_pins(env: dict[str, str]) -> None:
