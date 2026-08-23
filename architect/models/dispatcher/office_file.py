@@ -26,23 +26,7 @@ _OFFICE_KIND = re.compile(
     r"\b(pdf|docx|xlsx|csv|txt|text|markdown|\.md)\b",
     re.I,
 )
-_COMPOUND_NEXT = re.compile(
-    r"(?:sau\s+đó|sau\s+do|then|and\s+then).{0,60}\b(?:tạo|tao|create|make)\b",
-    re.I | re.S,
-)
-_CLAUSE_SPLIT = re.compile(
-    r"(?:[,;]\s*)?(?:sau\s+đó|sau\s+do|rồi|then|and\s+then)\s+",
-    re.I,
-)
-_CREATE_SPLIT = re.compile(
-    r"(?:^|[,;]\s+|\s+)(?=(?:tạo|tao|create|make)\s+)",
-    re.I,
-)
-_BODY_CUT = re.compile(
-    r"\s*(?:,?\s*(?:sau\s+đó|sau\s+do|rồi|then|and\s+then)\b"
-    r"|,?\s*và\s+(?:tạo|tao|create|make)\b)",
-    re.I,
-)
+# Multi-kind gate only (skip single-shot shortcut). Classify LLM owns task split.
 
 
 class OfficeFileReq(BaseModel):
@@ -71,16 +55,16 @@ def _norm_office_kind(token: str) -> str:
 
 
 def is_compound_office_request(text: str) -> bool:
-    """True when the prompt asks for 2+ office files (skip single-shot shortcut)."""
+    """True when 2+ distinct office kinds appear — skip single-shot shortcut.
+
+    Conjunction/clause splitting is classify's job (LLM). This only detects
+    multi-kind prompts so the Zalo shortcut does not swallow a compound ask.
+    """
     raw = (text or "").strip()
     if not raw:
         return False
     kinds = {_norm_office_kind(k) for k in _OFFICE_KIND.findall(raw)}
-    if len(kinds) >= 2:
-        return True
-    if _COMPOUND_NEXT.search(raw) and _OFFICE_KIND.search(raw):
-        return True
-    return False
+    return len(kinds) >= 2
 
 
 def _office_ext(low: str) -> str:
@@ -100,7 +84,7 @@ def _office_ext(low: str) -> str:
 
 
 def _clean_office_body(raw: str, body: str) -> str:
-    """Strip compound tails / delivery phrases; prefer 'chứa số N' payload."""
+    """Prefer 'chứa số N' payload; strip trailing delivery phrases only."""
     compact = re.search(
         r"(?:ch[uứ]a|chua|contain|đi[eề]n|dien)\s+(?:số|so)\s+(\S+)",
         raw,
@@ -109,7 +93,7 @@ def _clean_office_body(raw: str, body: str) -> str:
     if compact:
         body = compact.group(1).strip().strip(",.;")
     else:
-        body = _BODY_CUT.split(body, maxsplit=1)[0].strip()
+        # Compound tails are classify's job; only strip delivery phrases here.
         body = re.sub(r"^(số|so)\s+", "", body, flags=re.I).strip()
         body = re.sub(
             r"\s*(?:và\s+)?(?:gửi|gui|send|gởi)\s+(?:cho\s+)?(?:tôi|toi|me)\s*$",
@@ -161,36 +145,15 @@ def parse_office(prompt: str) -> tuple[str, str]:
 
 
 def parse_office_jobs(prompt: str) -> list[tuple[str, str]]:
-    """Split compound office prompts into one (ext, body) job per file."""
+    """One office prompt → one job.
+
+    Compound multi-file asks are split by classify into separate instructions;
+    each instruction hits /v1/office-file once. Do not regex-split compounds here.
+    """
     raw = (prompt or "").strip()
     if not raw:
         return []
-    if not is_compound_office_request(raw):
-        return [parse_office(raw)]
-
-    parts = [p.strip(" ,;") for p in _CLAUSE_SPLIT.split(raw) if p and p.strip(" ,;")]
-    refined: list[str] = []
-    for part in parts:
-        bits = [
-            b.strip(" ,;")
-            for b in _CREATE_SPLIT.split(part)
-            if b and b.strip(" ,;")
-        ]
-        refined.extend(bits or [part])
-    if not refined:
-        refined = [raw]
-
-    jobs: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for part in refined:
-        if not _OFFICE_KIND.search(part):
-            continue
-        job = parse_office(part)
-        if job in seen:
-            continue
-        seen.add(job)
-        jobs.append(job)
-    return jobs or [parse_office(raw)]
+    return [parse_office(raw)]
 
 
 def _pdf_font():

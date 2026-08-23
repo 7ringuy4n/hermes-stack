@@ -18,7 +18,7 @@ from optional_services import host_expected
 
 LISTEN = os.environ.get("LISTEN", "0.0.0.0:9102")
 SCRAPE_INTERVAL = float(os.environ.get("SCRAPE_INTERVAL", "30"))
-REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = os.environ.get("REDIS_URL") or os.environ.get("VALKEY_URL") or "redis://valkey:6379/0"
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://qdrant:6333").rstrip("/")
 COLL_KNOWLEDGE = os.environ.get("QDRANT_COLLECTION_KNOWLEDGE", "knowledge_chunks")
 COLL_MEMORY = os.environ.get("QDRANT_COLLECTION_MEMORY", "conversational_memory")
@@ -27,7 +27,7 @@ COLL_MEMORY = os.environ.get("QDRANT_COLLECTION_MEMORY", "conversational_memory"
 # OmniRoute has no /health — compose probes omni-router:20129/ (GET /).
 HEALTH_TARGETS = os.environ.get(
     "HEALTH_TARGETS",
-    "redis_via_tcp=redis:6379,"
+    "redis_via_tcp=valkey:6379,"
     "qdrant=qdrant:6333/readyz,"
     "security-manager=security-manager:8093/health,"
     "ocr=ocr:8091/health,"
@@ -38,7 +38,7 @@ HEALTH_TARGETS = os.environ.get(
     "memory=memory:8095/health,"
     "zalo-api=zalo-api:8100/health,"
     "openbao=openbao:8200/v1/sys/health,"
-    "9router=9router:20128",
+    "omni-router=omni-router:20129/",
 )
 
 _lock = threading.Lock()

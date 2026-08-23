@@ -198,6 +198,18 @@ def main() -> int:
         print(f"FAIL conjunction parts must be independent: {conj_plan!r}")
         return 1
     print("PASS conjunction-joined request splits into 3 async parts")
+
+    from classify_fixtures import PLENTY_MULTI_CLOCK  # noqa: E402
+
+    multi = split_compound_requests(PLENTY_MULTI_CLOCK)
+    if len(multi) != 3:
+        print(f"FAIL multi-clock schedule expected 3 parts, got {multi!r}")
+        return 1
+    if "06:00" not in multi[0] or "12:00" not in multi[1] or "18:00" not in multi[2]:
+        print(f"FAIL multi-clock clocks: {multi!r}")
+        return 1
+    print("PASS multi-clock schedule splits to 3 timed jobs")
+
     return 0
 
 

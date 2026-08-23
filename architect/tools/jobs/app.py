@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from rq import Queue, Retry
 from rq.job import Job
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = os.environ.get("REDIS_URL") or os.environ.get("VALKEY_URL") or "redis://valkey:6379/0"
 LISTEN_QUEUES = [
     q.strip()
     for q in os.environ.get(

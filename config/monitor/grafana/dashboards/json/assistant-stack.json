@@ -107,7 +107,8 @@
       },
       "id": 101,
       "title": "Redis session cache",
-      "type": "row"
+      "type": "row",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "datasource": {
@@ -147,7 +148,8 @@
         }
       ],
       "title": "Redis conversation sessions (conversation_active:*)",
-      "type": "stat"
+      "type": "stat",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "datasource": {
@@ -186,7 +188,8 @@
         }
       ],
       "title": "Redis total keys (db)",
-      "type": "stat"
+      "type": "stat",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "datasource": {
@@ -225,7 +228,8 @@
         }
       ],
       "title": "Redis used memory",
-      "type": "stat"
+      "type": "stat",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "datasource": {
@@ -264,7 +268,8 @@
         }
       ],
       "title": "Ingest queue length (Redis)",
-      "type": "stat"
+      "type": "stat",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "datasource": {
@@ -309,7 +314,8 @@
         }
       ],
       "title": "Redis session / index / clients over time",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Metric name keeps redis_*; backend is Valkey (stack-exporter → valkey:6379)."
     },
     {
       "collapsed": false,
