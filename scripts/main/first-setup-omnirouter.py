@@ -5,7 +5,7 @@
 2) Read/create Default Key → OMNIROUTER_API_KEY
 3) Ensure OpenCode provider; fill chat combo ``hermes`` with cloud ``oc/*`` members
 4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members (Omni route)
-5) ENABLE_QWEN / local Ollama are NOT part of default setup (lab scripts remain)
+5) Clear ENABLE_QWEN + OLLAMA_* pins in .env so model-router will not fall back to broken local Ollama
 6) Set combo strategy preference (round-robin)
 7) Ensure Search: Tavily (1) → Firecrawl (2) → local SearXNG (3); block ollama-search
 8) Point Hermes at model-router; recreate router-worker for the key
@@ -294,7 +294,7 @@ def ensure_opencode_combo(
 ) -> str:
     """Fill Omni combo with cloud OpenCode ``oc/*`` members (default setup)."""
     drop_probe_combos(opener)
-    oc = list_oc_models(opener)
+    oc = [m for m in list_oc_models(opener) if str(m).startswith(("oc/", "opencode/"))]
     if not oc:
         raise SystemExit(f"no oc/* OpenCode Free models for combo {name!r}")
     if member_limit is not None and member_limit > 0:
@@ -690,6 +690,57 @@ def pin_image_backends(env: dict[str, str]) -> None:
     print(f"OK: pinned IMAGE_BACKENDS={want} (dispatcher → Comfy; not Hermes image_generation tool)")
 
 
+def clear_local_qwen_ollama_pins(env: dict[str, str]) -> None:
+    """Default product path is Omni OpenCode — strip leftover lab Qwen/Ollama pins."""
+    changed = False
+    for key, want in (
+        ("ENABLE_QWEN", "0"),
+        ("ENABLE_QWEN_THINKING", "0"),
+        ("OLLAMA_BASE_URL", ""),
+        ("OLLAMA_MODEL", ""),
+        ("OLLAMA_DOCKER_URL", ""),
+        ("OLLAMA_HOST_URL", ""),
+    ):
+        cur = (env.get(key) or "").strip()
+        if cur != want:
+            set_env_key(ROOT / ".env", key, want)
+            env[key] = want
+            changed = True
+            print(f"==> cleared {key}={want!r} (was {cur!r})")
+    os.environ["ENABLE_QWEN"] = "0"
+    os.environ["OLLAMA_BASE_URL"] = ""
+    os.environ["OLLAMA_MODEL"] = ""
+    if not changed:
+        print("OK: ENABLE_QWEN/OLLAMA_* already cleared for OpenCode default")
+
+
+def assert_combo_oc_only(opener, name: str) -> None:
+    """Fail setup if hermes/classifier still contain non-OpenCode members (e.g. ollama/*)."""
+    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    combos = data.get("combos") or []
+    combo = next((c for c in combos if (c.get("name") or "") == name), None)
+    if not combo:
+        raise SystemExit(f"combo {name!r} missing after OpenCode fill")
+    models = combo.get("models") or combo.get("members") or []
+    ids: list[str] = []
+    for m in models:
+        if isinstance(m, str) and m.strip():
+            ids.append(m.strip())
+        elif isinstance(m, dict):
+            mid = m.get("model") or m.get("fullModel") or m.get("id") or m.get("name")
+            if isinstance(mid, str) and mid.strip():
+                ids.append(mid.strip())
+    if not ids:
+        raise SystemExit(f"combo {name!r} has zero members after OpenCode fill")
+    bad = [mid for mid in ids if not (mid.startswith("oc/") or mid.startswith("opencode/"))]
+    if bad:
+        raise SystemExit(
+            f"combo {name!r} has non-OpenCode members {bad[:8]!r} — expected oc/* only"
+        )
+    print(f"OK: combo {name} OpenCode-only n={len(ids)} first={ids[:3]}")
+
+
+
 def main() -> int:
     env = load_env(ROOT / ".env")
     if env.get("ENABLE_OMNIROUTER", "0") not in {"1", "true", "yes", "on"}:
@@ -704,10 +755,13 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_API_KEY", key)
     print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
 
+    clear_local_qwen_ollama_pins(env)
     unblock_opencode(opener)
     ensure_opencode_provider(opener)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
+    assert_combo_oc_only(opener, combo)
+    assert_combo_oc_only(opener, classify_combo)
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
     pin_image_backends(env)
