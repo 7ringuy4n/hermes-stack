@@ -30,8 +30,8 @@ Legacy `response_mode: direct` is remapped to `ack_then_deliver` at normalize ti
 
 When `instructions[]` has **N > 1** distinct deliverables:
 
-1. Keep **N** separate workflow jobs unless `depends_on` requires order.
-2. Default **parallel** (`sequential=false`) unless an instruction depends on another.
+1. Keep **N** separate instructions in order — the Zalo host runs them **sequentially over time** (one turn at a time, multiple replies/files), not in one combined answer.
+2. Use `depends_on=[i]` only when a later instruction truly needs output from instruction `i` (e.g. search → office file). Independent parts use `depends_on=[]`.
 3. Do **not** merge numbered greeting + fuel + weather + draw-image into one poster unless the user asked for one combined image.
 
 ## Scheduled fire (`scheduleFire`)
