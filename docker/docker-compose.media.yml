@@ -2,7 +2,7 @@
 # Merged when WORKER_MEDIA_FILE=active (or ENABLE_MEDIA_FILE / ENABLE_OCR / ENABLE_JOBS / ENABLE_SEARXNG is 1).
 #
 # Worker bundled defaults (when active): ENABLE_OCR=1 ENABLE_JOBS=1 OFFICE_FILE_GEN=1
-# IMAGE_BACKENDS=llm,vendor,comfy-cpu,comfy-gpu
+# IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni
 # File-gen lives in dispatcher (office_file.py). Web backends: vendors first, SearXNG last.
 #
 # Do NOT re-list hermes/dispatcher environment here — Compose list-merge would

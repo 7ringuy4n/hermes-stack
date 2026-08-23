@@ -57,12 +57,12 @@ HINT_SKILL = {
 HINT_EXECUTION = {
     "schedule": ("schedule", "create_schedule", "confirm"),
     "file": ("async", "file_processing", "ack_then_deliver"),
-    "knowledge": ("interactive", "knowledge", "direct"),
-    "coding": ("interactive", "coding", "direct"),
-    "search": ("interactive", "search", "direct"),
-    "normal": ("interactive", "chat", "direct"),
-    "unknown": ("interactive", "chat", "direct"),
-    "tool": ("interactive", "tool", "direct"),
+    "knowledge": ("interactive", "knowledge", "ack_then_deliver"),
+    "coding": ("interactive", "coding", "ack_then_deliver"),
+    "search": ("async", "search", "ack_then_deliver"),
+    "normal": ("interactive", "chat", "ack_then_deliver"),
+    "unknown": ("interactive", "chat", "ack_then_deliver"),
+    "tool": ("interactive", "tool", "ack_then_deliver"),
 }
 HINT_ALIASES = {"chat": "normal", "qna": "normal", "question": "normal", "general": "normal"}
 MAX_INSTRUCTIONS = 32
@@ -76,7 +76,9 @@ def normalize_execution(
     raw_cls = str(src.get("execution_class") or "").strip().lower()
     raw_type = str(src.get("task_type") or "").strip().lower()
     raw_mode = str(src.get("response_mode") or "").strip().lower()
-    d_cls, d_type, d_mode = HINT_EXECUTION.get(hint, ("interactive", "chat", "direct"))
+    if raw_mode == "direct":
+        raw_mode = "ack_then_deliver"
+    d_cls, d_type, d_mode = HINT_EXECUTION.get(hint, ("interactive", "chat", "ack_then_deliver"))
     if raw_type not in TASK_TYPES:
         raw_type = d_type
     if raw_cls not in EXECUTION_CLASSES:
@@ -129,7 +131,7 @@ def normalize_task_details(
         if item:
             body = item
         elif hint == "schedule":
-            body = {"execution_class": "interactive", "task_type": "chat", "response_mode": "direct"}
+            body = {"execution_class": "interactive", "task_type": "chat", "response_mode": "ack_then_deliver"}
         else:
             body = src
         cls, typ, mode = normalize_execution(body, hint, wrapper=False)
@@ -405,8 +407,8 @@ def force_timed_schedule_plan(
     """Override weak LLM demotions: timed đặt-lịch must stay task_hint=schedule.
 
     Lab failure: mixed greeting+fuel+weather with ``đặt lịch lúc HH:MM`` was
-    classified as immediate async → 3 parallel jobs (fuel often answered as
-    weather) instead of one lịch confirm + fire later.
+    classified as immediate async → 3 sequential compound jobs instead of one
+    lịch confirm + fire later.
     """
     out = dict(src) if isinstance(src, dict) else {}
     if not looks_like_timed_schedule(text):

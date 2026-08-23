@@ -1,3 +1,15 @@
+## 2026-08-23 17:35 +07 — classify + schedule: sequential compound (not parallel)
+
+- Classify prompt + workflow `sequential=True` for N immediate instructions; schedule multi-clock vs single-fire docs.
+
+## 2026-08-23 17:05 +07 — video policy: OmniRouter refuse messages
+
+- Dispatcher `video_summary.py`: LLM-written refuse for social video summary + video generation; `/v1/video` blocked; `video-gen` skill aligned.
+
+## 2026-08-23 17:00 +07 — Zalo quote: durable bridge overlay (not runtime patch)
+
+- Vendored `scripts/main/zalo-bridge/zaloClient.js`; `zalo_install_bridge_overlays()` in `zalo-common.sh` copies after npm install / before bridge start. Quote regex patch removed from `patch_zalo_bridge_inject.py`.
+
 ## 2026-08-22 16:00 +07 — §15 classify heuristics when Ollama JSON fails
 
 ### Symptom

@@ -5,6 +5,9 @@
 2. POST /media/fetch + GET /media/:id — download Zalo CDN bytes with the
    logged-in session cookies so Hermes can OCR / summarize attachments.
 
+Quoted-reply mapping lives in scripts/main/zalo-bridge/zaloClient.js (installed
+by zalo-common.sh), not here.
+
 Restart prefers the user systemd unit (com.hermes.zaloplugin /
 assistant-zalo). Orphan ``runuser`` / ``nohup`` processes that hold :8787
 are cleared first so the unit stops crash-looping on EADDRINUSE.

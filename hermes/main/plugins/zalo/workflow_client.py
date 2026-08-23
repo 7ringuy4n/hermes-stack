@@ -43,7 +43,11 @@ def create_workflow(
     origin: dict[str, Any],
     context: dict[str, Any],
     task_details: list[dict[str, Any]] | None = None,
+    sequential: bool | None = None,
 ) -> dict[str, Any]:
+    texts = [str(x).strip() for x in instructions if str(x).strip()]
+    if sequential is None:
+        sequential = len(texts) >= 2
     return _req(
         "POST",
         "/v1/workflows",
@@ -51,7 +55,7 @@ def create_workflow(
             "instructions": instructions,
             "origin": origin,
             "context": context,
-            "sequential": False,
+            "sequential": sequential,
             "wrap": True,
             "task_details": task_details or [],
         },
