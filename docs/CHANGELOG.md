@@ -1,3 +1,11 @@
+## 2026-08-23 08:50 +07 — drop async ack; default Omni setup = OpenCode (no Qwen/Ollama)
+
+- Zalo: remove `ux.json` `async.ack` and early “Đã nhận yêu cầu…” announce before workflow.
+- `first-setup-omnirouter`: fill `hermes` + `classifier` with Omni OpenCode `oc/*`; classifier routes to combo `classifier`; stop pinning local Ollama/Qwen in default setup.
+- `.env.example`: blank `OLLAMA_*`; OpenCode cloud is default combo fill.
+- post-lab-restore: skip ensure-ollama unless ENABLE_QWEN=1; preflight expects non-empty OpenCode combos.
+- `post-lab-restore`: skip ensure-ollama unless `ENABLE_QWEN=1`; preflight expects non-empty OpenCode combos.
+
 ## 2026-08-23 08:30 +07 — Groq 413 TPM: skip Omni after request-too-large
 
 - Root cause: Hermes full tool schemas (~21 tools, ~32KB) alone ≈8k tokens; Groq free TPM=8000; hermes combo RR hit `groq/openai/gpt-oss-120b` → 413 Requested 35520.

@@ -589,7 +589,7 @@ do_post_up_hooks() {
     echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip 9Router first-setup"
   fi
   if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
-    echo "==> first-setup-omnirouter (empty hermes/classifier; ENABLE_QWEN fills Qwen)"
+    echo "==> first-setup-omnirouter (hermes/classifier ← Omni OpenCode cloud)"
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
     python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py" \
       || echo "WARN: first-setup-omnirouter failed — re-run: bash run.sh first-setup-omnirouter"
@@ -927,7 +927,7 @@ Timers:
 
 First setup:
   install-docker [user]   # if docker missing; default = SSH login user (not a hardcoded name)
-  first-setup-omnirouter  # OmniRoute Default Key → empty hermes/classifier (ENABLE_QWEN fills Qwen)
+  first-setup-omnirouter  # OmniRoute Default Key → hermes/classifier OpenCode cloud
   first-setup-llm         # 9Router Default Key → combo hermes (only when ENABLE_9ROUTER=1)
 
 Security overlay:
