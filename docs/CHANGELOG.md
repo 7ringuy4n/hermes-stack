@@ -1,3 +1,8 @@
+## 2026-08-24 08:35 +07 — Restore valkey: use compose service `valkey` (not `redis`)
+
+- `assistant_stack_up_datastore` / `assistant_restore_valkey`: stop/start/ping resolved valkey container; compose `up … valkey` (fixes `no such service: redis` / `No such container: redis`).
+- `run.sh` compact: ping `valkey` container.
+
 ## 2026-08-24 08:20 +07 — run.sh scoped update: skip hermes --scale for non-hermes services
 
 - `compose()`: only append `--scale hermes=N` on full-stack `up` or when `hermes` is in the service list. Fixes `run.sh update zalo-api …` failing with `no such service: hermes: disabled`.
