@@ -156,6 +156,45 @@ def delete_schedule(sid: str) -> dict[str, Any]:
     return _req("DELETE", f"/v1/schedules/{sid}")
 
 
+def schedules_for_thread(thread_id: str) -> list[dict[str, Any]]:
+    """Schedules that deliver to or were requested from this thread id."""
+    tid = (thread_id or "").strip()
+    if not tid:
+        return []
+    out: list[dict[str, Any]] = []
+    for row in list_schedules():
+        if not isinstance(row, dict):
+            continue
+        origin = row.get("origin") if isinstance(row.get("origin"), dict) else {}
+        context = row.get("context") if isinstance(row.get("context"), dict) else {}
+        ids = {
+            str(origin.get(k) or "").strip()
+            for k in ("thread_id", "chat_id", "user_id", "requester_id", "sender_id")
+        }
+        ids |= {
+            str(context.get(k) or "").strip()
+            for k in ("thread_id", "sender_id")
+        }
+        ids.discard("")
+        if tid in ids:
+            out.append(row)
+    return out
+
+
+def delete_schedules_for_thread(thread_id: str) -> list[str]:
+    """Delete every schedule tied to a destination/requester thread. Returns deleted ids."""
+    deleted: list[str] = []
+    for row in schedules_for_thread(thread_id):
+        sid = str(row.get("id") or "").strip()
+        if not sid:
+            continue
+        data = delete_schedule(sid)
+        if data.get("ok") or data.get("deleted") == sid or not data:
+            # empty {} from soft HTTP failure — still record attempt id for UX
+            deleted.append(sid)
+    return deleted
+
+
 def list_schedule_history(
     *,
     schedule_id: str = "",

@@ -116,17 +116,33 @@ def visible_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def job_origin_thread_ids(job: dict[str, Any]) -> set[str]:
+    """Thread ids that own or receive this schedule (origin + delivery + requester).
+
+    Go schedule-worker rows for "gửi vào nhóm X" set origin.thread_id to the
+    *destination* group while the requester DM stays on requester_id / user_id.
+    Matching only chat_id/thread_id hid those jobs from DM `!zalo schedule list`
+    and made `remove` resolve against an empty pool.
+    """
     origin = job.get("origin") if isinstance(job.get("origin"), dict) else {}
+    context = job.get("context") if isinstance(job.get("context"), dict) else {}
     out: set[str] = set()
-    for key in ("chat_id", "thread_id"):
-        val = str(origin.get(key) or "").strip()
-        if val:
-            out.add(val)
+    for blob in (origin, context):
+        for key in (
+            "chat_id",
+            "thread_id",
+            "user_id",
+            "requester_id",
+            "sender_id",
+            "claimed_thread_id",
+        ):
+            val = str(blob.get(key) or "").strip()
+            if val:
+                out.add(val)
     return out
 
 
 def jobs_for_thread(jobs: list[dict[str, Any]], thread_id: str) -> list[dict[str, Any]]:
-    """User jobs whose origin is this Zalo thread (DM or group)."""
+    """User jobs whose origin/delivery/requester touches this Zalo thread."""
     tid = (thread_id or "").strip()
     vis = visible_jobs(jobs)
     if not tid:

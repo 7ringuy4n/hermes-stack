@@ -73,10 +73,13 @@ ALLOWED_USERS_FILE = os.environ.get(
 )
 HERMES_DATA = os.environ.get("HERMES_DATA_DIR", "/data/hermes")
 WORKFLOW_URL = (os.environ.get("WORKFLOW_URL") or "http://workflow:8108").rstrip("/")
+SCHEDULE_URL = (os.environ.get("SCHEDULE_URL") or "http://schedule-worker:8110").rstrip("/")
 
 
-def _workflow_http(method: str, path: str, payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-    url = f"{WORKFLOW_URL}{path}"
+def _http_json(
+    base: str, method: str, path: str, payload: Optional[dict[str, Any]] = None
+) -> dict[str, Any]:
+    url = f"{base.rstrip('/')}{path}"
     try:
         r = httpx.request(method, url, json=payload, timeout=8.0)
         if r.status_code >= 300:
@@ -87,34 +90,59 @@ def _workflow_http(method: str, path: str, payload: Optional[dict[str, Any]] = N
         return {}
 
 
+def _workflow_http(method: str, path: str, payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    return _http_json(WORKFLOW_URL, method, path, payload)
+
+
+def _schedule_http(method: str, path: str, payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    return _http_json(SCHEDULE_URL, method, path, payload)
+
+
 def _workflow_row_as_job(row: dict[str, Any]) -> dict[str, Any]:
     expr = str(row.get("cron_expr") or "")
     origin = row.get("origin") if isinstance(row.get("origin"), dict) else {}
+    context = row.get("context") if isinstance(row.get("context"), dict) else {}
+    name = str(row.get("name") or "").strip()
+    if not name:
+        fire = str(row.get("fire_text") or row.get("text") or row.get("id") or "lịch").strip()
+        name = fire.splitlines()[0][:80] if fire else "lịch"
     return {
         "id": str(row.get("id") or ""),
-        "name": str(row.get("name") or row.get("id") or "lịch"),
-        "prompt": str(row.get("text") or ""),
+        "name": name,
+        "prompt": str(row.get("fire_text") or row.get("text") or ""),
         "schedule": {"kind": "cron", "expr": expr, "display": expr},
         "schedule_display": expr,
         "origin": origin,
+        "context": context,
         "enabled": bool(row.get("enabled", True)),
         "state": "scheduled",
         "deliver": "origin",
+        "next_run_at": row.get("next_run_at"),
+        "cadence": str(row.get("cadence") or ""),
     }
 
 
-def _merge_workflow_schedules(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    data = _workflow_http("GET", "/v1/schedules")
-    rows = data.get("schedules") if isinstance(data, dict) else None
-    if not isinstance(rows, list) or not rows:
-        return jobs
-    by_id = {str(j.get("id") or ""): j for j in jobs if isinstance(j, dict)}
+def _merge_schedule_rows(jobs: list[dict[str, Any]], rows: Any) -> dict[str, dict[str, Any]]:
+    by_id = {str(j.get("id") or ""): j for j in jobs if isinstance(j, dict) and j.get("id")}
+    if not isinstance(rows, list):
+        return by_id
     for row in rows:
         if not isinstance(row, dict):
             continue
         job = _workflow_row_as_job(row)
         if job.get("id"):
             by_id[str(job["id"])] = job
+    return by_id
+
+
+def _merge_workflow_schedules(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge file cron + Go schedule-worker (+ workflow mirror) into one admin list."""
+    by_id = {str(j.get("id") or ""): j for j in jobs if isinstance(j, dict) and j.get("id")}
+    # Prefer schedule-worker (source of truth for adapter-created lịch).
+    go = _schedule_http("GET", "/v1/schedules")
+    by_id = _merge_schedule_rows(list(by_id.values()), go.get("schedules") if isinstance(go, dict) else None)
+    wf = _workflow_http("GET", "/v1/schedules")
+    by_id = _merge_schedule_rows(list(by_id.values()), wf.get("schedules") if isinstance(wf, dict) else None)
     return [j for j in by_id.values() if j.get("id")]
 
 
@@ -131,25 +159,26 @@ def _workflow_upsert_schedule(job: dict[str, Any], expr: str, prompt: str, tz_na
         "sender_name": str(origin.get("chat_name") or tid),
         "execute": "hermes",
     }
-    _workflow_http(
-        "POST",
-        "/v1/schedules",
-        {
-            "id": str(job.get("id") or ""),
-            "name": str(job.get("name") or ""),
-            "cron_expr": expr,
-            "timezone": tz_name,
-            "text": prompt,
-            "origin": origin,
-            "context": ctx,
-            "enabled": True,
-        },
-    )
+    body = {
+        "id": str(job.get("id") or ""),
+        "name": str(job.get("name") or ""),
+        "cron_expr": expr,
+        "timezone": tz_name,
+        "text": prompt,
+        "fire_text": prompt,
+        "origin": origin,
+        "context": ctx,
+        "enabled": True,
+    }
+    _schedule_http("POST", "/v1/schedules", body)
+    _workflow_http("POST", "/v1/schedules", body)
 
 
 def _workflow_delete_schedule(sid: str) -> None:
-    if sid:
-        _workflow_http("DELETE", f"/v1/schedules/{sid}")
+    if not sid:
+        return
+    _schedule_http("DELETE", f"/v1/schedules/{sid}")
+    _workflow_http("DELETE", f"/v1/schedules/{sid}")
 
 
 ADMIN_MESSAGES_PATH = os.environ.get("ZALO_ADMIN_MESSAGES", "/app/zalo-admin.json")
@@ -2227,10 +2256,8 @@ def chat_command(
                     SCHEDULE_SCOPE_GLOBAL,
                     SCHEDULE_SCOPE_GROUP,
                 }:
-                    # Names may live outside this chat — retry against every schedule.
-                    named = [s for s in req["selectors"] if not s.isdigit()]
-                    if named:
-                        targets, errors = resolve_schedule_jobs(vis, named)
+                    # Names/indexes from `list all` may target another group's jobs.
+                    targets, errors = resolve_schedule_jobs(vis, req["selectors"])
             if not targets:
                 reply = errors[0] if errors else _admin_msg(
                     ("schedule", "remove_none"), "Không có lịch nào khớp để xóa."
