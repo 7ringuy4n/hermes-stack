@@ -1,3 +1,12 @@
+## 2026-08-24 16:30 +07 — Schedule verbatim fire + clean target_channel + save/list UX
+
+- Root cause of paraphrased group delivery: `scheduleFire` inject always went through Hermes LLM; poem bodies became chatty rewrites.
+- Adapter: `schedule_delivery=verbatim` → send `fire_text` as-is (skip LLM); create stores delivery on origin/context; save ack always appends `→ nhóm <name>` for cross-thread targets.
+- schedule-worker inject payload includes `scheduleDelivery`.
+- Classify: `schedule_delivery` (verbatim|process); `target_channel` = display name only (strip zalo/… prefixes); reinforce relative `next_run_at`.
+- Host: `_clean_group_ref` strips platform prefixes; `fire_text_from_plan` prefers message/exact `nội dung:`; list lines show `→ nhóm …`; scoped heading clarifies chat+groups.
+- Skills + unit tests updated (`schedule_delivery_unit.py`, list destination label).
+
 ## 2026-08-24 15:25 +07 — Schedule delete other groups + list merge schedule-worker
 
 - Root cause of `!zalo schedule delete 1…` → “Không có lịch số 1 (đang có 0)”: DM list scoped only `origin.thread_id`; adapter-created “gửi vào nhóm” rows put the **group** on `thread_id` and the requester on `requester_id`, and zalo-api never merged Go `schedule-worker` rows into admin list.
