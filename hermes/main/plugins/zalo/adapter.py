@@ -1690,6 +1690,17 @@ class ZaloAdapter(BasePlatformAdapter):
                 heartbeat(jid, wid)
 
             _pulse()
+            blocked, block_msg = await self._as_security_message_gate(
+                text=instruction,
+                thread_id=tid,
+                user_id=sender_id,
+                correlation_id=jid,
+            )
+            if blocked:
+                if block_msg:
+                    await self._as_gate_announce(tid, zalo_tt, block_msg)
+                complete_job(jid, {"ok": False, "blocked": "security"})
+                return
             await self.handle_message(event)
             idle = await self._as_wait_thread_idle(
                 iso, pulse=_pulse, arm_first=True
@@ -2383,6 +2394,16 @@ class ZaloAdapter(BasePlatformAdapter):
         turn_timeout = self._as_queue_turn_timeout_s()
         try:
             async def _run_turn() -> None:
+                blocked, block_msg = await self._as_security_message_gate(
+                    text=str(event.text or ""),
+                    thread_id=tid,
+                    user_id=sender_id,
+                    correlation_id=str(event.message_id or ""),
+                )
+                if blocked:
+                    if block_msg:
+                        await self._as_gate_announce(tid, thread_type, block_msg)
+                    return
                 await self.handle_message(event)
                 await self._as_autosend_late_files(tid, thread_type)
                 await self._as_compound_wait_part(tid)
@@ -4690,6 +4711,107 @@ class ZaloAdapter(BasePlatformAdapter):
         if raw == "":
             return av_on
         return raw in {"1", "true", "yes", "on"}
+
+    def _as_security_worker_active(self) -> bool:
+        """True when Security Worker is intentionally enabled for this stack."""
+        import os
+        flag = (
+            os.getenv("ENABLE_SECURITY")
+            or os.getenv("WORKER_SECURITY")
+            or ""
+        ).strip().lower()
+        return flag in {"1", "true", "yes", "on", "active"}
+
+    async def _as_security_message_gate(
+        self,
+        *,
+        text: str,
+        thread_id: str,
+        user_id: str,
+        correlation_id: str = "",
+    ) -> tuple[bool, str]:
+        """Check inbound Zalo text with Security Worker before Hermes.
+
+        Returns (blocked, user_message). When Security Worker is inactive → allow.
+        When active but unreachable → fail closed (configurable via SECURITY_FAIL_OPEN=1).
+        """
+        import os
+        import uuid
+
+        if not self._as_security_worker_active():
+            return False, ""
+        body = (text or "").strip()
+        if not body:
+            return False, ""
+        base = (
+            os.getenv("SECURITY_MANAGER_URL")
+            or os.getenv("SECURITY_URL")
+            or "http://security-manager:8093"
+        ).rstrip("/")
+        corr = (correlation_id or "").strip() or f"zalo_{uuid.uuid4().hex[:12]}"
+        fail_open = (os.getenv("SECURITY_FAIL_OPEN") or "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        try:
+            import asyncio
+            import json as _json
+            import urllib.request
+
+            def _post() -> dict:
+                req = urllib.request.Request(
+                    base + "/v1/message-check",
+                    data=_json.dumps(
+                        {
+                            "text": body,
+                            "thread_id": str(thread_id or ""),
+                            "user_id": str(user_id or ""),
+                            "correlation_id": corr,
+                            "source": "zalo",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=5.0) as resp:
+                    return _json.loads(resp.read().decode("utf-8") or "{}")
+
+            data = await asyncio.to_thread(_post)
+            if data.get("allowed") is False or str(data.get("action") or "") == "block":
+                msg = str(
+                    data.get("user_message")
+                    or self._as_ux_line(
+                        "ZALO_SECURITY_BLOCK_MSG",
+                        ("security", "blocked"),
+                        "Tin nhắn bị chặn bởi bảo mật.",
+                    )
+                )
+                self._as_flow(
+                    "security_message_blocked",
+                    thread_id=thread_id,
+                    user_id=user_id,
+                    correlation_id=corr,
+                )
+                return True, msg
+            return False, ""
+        except Exception as exc:
+            self._as_flow(
+                "security_message_unavailable",
+                thread_id=thread_id,
+                error=type(exc).__name__,
+                fail_open=fail_open,
+                correlation_id=corr,
+            )
+            if fail_open:
+                return False, ""
+            msg = self._as_ux_line(
+                "ZALO_SECURITY_UNAVAILABLE_MSG",
+                ("security", "unavailable"),
+                "Bảo mật tạm thời không sẵn sàng. Thử lại sau.",
+            )
+            return True, msg
 
     async def _as_av_gate(  # ASSISTANT_FILE_PIPELINE_v6
         self, thread_id, sender_id, local_path: str, media: dict
