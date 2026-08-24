@@ -1165,6 +1165,56 @@ class ZaloAdapter(BasePlatformAdapter):
             window = 10.0
         return max(0, n), max(3.0, window)
 
+    async def _as_schedule_fire_verbatim(
+        self,
+        m: dict,
+        *,
+        text: str,
+        thread_id: str,
+        thread_type: str,
+    ) -> bool:
+        """If this inject is a verbatim schedule fire, send body and skip Hermes.
+
+        Returns True when handled (caller must return). Process-mode fires return False.
+        """
+        delivery = str(
+            m.get("scheduleDelivery")
+            or m.get("schedule_delivery")
+            or ""
+        ).strip().lower()
+        if delivery not in {"verbatim", "send", "deliver"}:
+            return False
+        body = (text or "").strip()
+        if not body:
+            logger.warning(
+                "Zalo: scheduleFire verbatim empty body thread=%s id=%s",
+                thread_id,
+                m.get("scheduleId") or m.get("schedule_id"),
+            )
+            return True
+        tt = "group" if str(thread_type or "").lower() in {"group", "g"} else "user"
+        logger.info(
+            "Zalo: scheduleFire verbatim send thread=%s id=%s chars=%s",
+            thread_id,
+            m.get("scheduleId") or m.get("schedule_id"),
+            len(body),
+        )
+        await self.send(
+            chat_id=str(thread_id),
+            content=body,
+            metadata={
+                "thread_type": tt,
+                "as_skip_timing": True,
+                "as_skip_dest": True,
+                "as_skip_autosend": True,
+                "as_skip_inflight": True,
+                "as_skip_quote": True,
+                "schedule_fire": True,
+                "schedule_delivery": "verbatim",
+            },
+        )
+        return True
+
     async def _as_gate_announce(self, thread_id, thread_type, content: str) -> None:  # ASSISTANT_RATE_LIMIT_v4
         """Send a gate line only to this thread. Never quote. Never retarget via global dest."""
         tid = str(thread_id or "").strip()
@@ -1395,13 +1445,21 @@ class ZaloAdapter(BasePlatformAdapter):
         try:
             from .workflow_client import create_schedule, create_workflow, workflow_enabled
             from .schedule_client import create_schedule as go_create_schedule
-            from .schedule_client import fire_text_from_plan, schedule_enabled
+            from .schedule_client import (
+                fire_text_from_plan,
+                schedule_delivery_mode,
+                schedule_enabled,
+            )
             from .classify_client import classify_text, plan_compound_sequential, plan_is_async
             from .knowledge_cite import plan_is_knowledge
         except ImportError:
             from workflow_client import create_schedule, create_workflow, workflow_enabled  # type: ignore
             from schedule_client import create_schedule as go_create_schedule  # type: ignore
-            from schedule_client import fire_text_from_plan, schedule_enabled  # type: ignore
+            from schedule_client import (  # type: ignore
+                fire_text_from_plan,
+                schedule_delivery_mode,
+                schedule_enabled,
+            )
             from classify_client import classify_text, plan_compound_sequential, plan_is_async  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
         if not isinstance(plan, dict):
@@ -1571,6 +1629,9 @@ class ZaloAdapter(BasePlatformAdapter):
             if target_note:
                 logger.info("[zalo] schedule %s", target_note)
             fire_text = fire_text_from_plan(plan, text)
+            delivery = schedule_delivery_mode(plan, text)
+            origin["schedule_delivery"] = delivery
+            context["schedule_delivery"] = delivery
             # Compute next_run_at from relative-time expression in inbound text so
             # the worker does not roll to the next calendar day for "N phút nữa".
             try:
@@ -1600,11 +1661,23 @@ class ZaloAdapter(BasePlatformAdapter):
                     next_run_at=next_run_at or None,
                 )
             if data.get("ok"):
-                logger.info("[zalo] schedule stored")
+                logger.info("[zalo] schedule stored delivery=%s", delivery)
                 if _schedule_fanout_child:
                     return True
                 try:
-                    dest = str(origin.get("chat_name") or origin.get("thread_id") or "")
+                    dest = str(
+                        origin.get("target_name")
+                        or origin.get("chat_name")
+                        or origin.get("thread_id")
+                        or ""
+                    ).strip()
+                    dest_is_group = str(context.get("thread_type") or "").lower() in {
+                        "group",
+                        "g",
+                    }
+                    cross = dest_is_group and str(origin.get("thread_id") or "") != str(
+                        thread_id
+                    )
                     sid = str(data.get("id") or (data.get("schedule") or {}).get("id") or "")
                     next_at = str(
                         data.get("next_run_at")
@@ -1616,9 +1689,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         base_msg = f"Đã lưu lịch. Lần chạy tới: {next_at}."
                     if sid:
                         base_msg = f"{base_msg} id={sid}"
-                    if dest and str(context.get("thread_type") or "") == "group" and str(
-                        origin.get("thread_id") or ""
-                    ) != str(thread_id):
+                    if cross and dest:
                         base_msg = f"{base_msg} → nhóm {dest}."
                     msg = self._as_ux_line(
                         "ZALO_SCHEDULE_SAVED_MSG",
@@ -1626,6 +1697,9 @@ class ZaloAdapter(BasePlatformAdapter):
                         base_msg,
                         user_text=text,
                     )
+                    # UX file may return a short fixed string — always re-append destination.
+                    if cross and dest and "→ nhóm" not in msg and "nhóm" not in msg.lower():
+                        msg = f"{msg.rstrip()} → nhóm {dest}."
                     await self._as_gate_announce(thread_id, thread_type, msg)
                 except Exception:
                     pass
@@ -3101,6 +3175,12 @@ class ZaloAdapter(BasePlatformAdapter):
                 "Zalo: scheduleFire bypass mention-gate thread=%s",
                 thread_id,
             )
+
+        # Verbatim schedule delivery: send fire_text as-is (no Hermes paraphrase).
+        if schedule_fire and await self._as_schedule_fire_verbatim(
+            m, text=text, thread_id=str(thread_id), thread_type=str(thread_type)
+        ):
+            return
 
         # ASSISTANT_RATE_LIMIT_v4 — Valkey 1 / 10s; queue overflow instead of drop when enabled
         rate_over, rate_notify = self._zalo_rate_check(sender_id, thread_id)
