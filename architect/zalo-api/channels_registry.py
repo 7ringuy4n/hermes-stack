@@ -123,11 +123,31 @@ def _ref_variants(ref: str) -> list[str]:
 
 
 def resolve(platform: str, ref: str) -> Optional[dict[str, Any]]:
-    """Resolve channel by exact id or diacritic-insensitive name match."""
+    """Resolve channel by exact id or diacritic-insensitive name match.
+
+    Prefer PostgreSQL zalo_threads / zalo_entities when DATABASE_URL is live,
+    then fall back to the on-disk registry JSON.
+    """
     plat = (platform or "").strip().lower()
     needle = (ref or "").strip()
     if not plat or not needle:
         return None
+    if plat == "zalo":
+        try:
+            import zalo_store
+
+            hit = zalo_store.find_thread(needle)
+            if hit and hit.get("thread_id"):
+                return {
+                    "platform": "zalo",
+                    "external_id": str(hit.get("thread_id")),
+                    "kind": str(hit.get("thread_type") or "group"),
+                    "name": str(hit.get("display_name") or ""),
+                    "meta": hit.get("raw_metadata") if isinstance(hit.get("raw_metadata"), dict) else {},
+                    "source": "postgres",
+                }
+        except Exception:
+            pass
     channels = list_channels(plat)
     for ch in channels:
         if str(ch.get("external_id") or "") == needle:
