@@ -3,11 +3,29 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from typing import Any, Optional
 
 DEFAULT_URL = "http://schedule-worker:8110"
+
+_CONTENT_AFTER = re.compile(
+    r"(?:với\s*nội\s*dung|voi\s*noi\s*dung|nội\s*dung|noi\s*dung|content)\s*[:\-]?\s*(.+)$",
+    re.I | re.S,
+)
+# Protocol guard: prefer exact body after nội dung: if classify paraphrased.
+
+
+def exact_schedule_body(original: str) -> str:
+    """Prefer verbatim text after nội dung: so fire never uses a paraphrased plan."""
+    raw = (original or "").strip()
+    if not raw:
+        return ""
+    m = _CONTENT_AFTER.search(raw)
+    if not m:
+        return ""
+    return (m.group(1) or "").strip().strip("\"' ")
 
 
 def _worker_flag_on() -> bool:
@@ -33,6 +51,9 @@ def schedule_enabled() -> bool:
 
 def fire_text_from_plan(plan: dict[str, Any] | None, original: str = "") -> str:
     """Inner work only. Never fire the đặt lịch wrapper (that re-creates schedules)."""
+    exact = exact_schedule_body(original)
+    if exact:
+        return exact
     src = plan if isinstance(plan, dict) else {}
     parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
     if parts:

@@ -410,7 +410,18 @@ def pin_image_backends(env: dict[str, str]) -> None:
     if cur:
         print(f"OK: IMAGE_BACKENDS already {cur}")
         return
-    want = "comfy-cpu,comfy-gpu,omni"
+    want = "llm,vendor,comfy-cpu,comfy-gpu"
+    try:
+        import subprocess
+        from pathlib import Path as _P
+        subprocess.run(
+            ["bash", str(_P(__file__).resolve().parents[2] / "scripts/main/ensure-comfy-checkpoints.sh")],
+            check=False,
+            timeout=600,
+        )
+    except Exception:
+        pass
+
     set_env_key(ROOT / ".env", "IMAGE_BACKENDS", want)
     env["IMAGE_BACKENDS"] = want
     print(f"OK: pinned IMAGE_BACKENDS={want}")

@@ -33,7 +33,7 @@ DSN = os.environ.get(
     "postgresql://hermes:hermes@postgres:5432/hermes_memory",
 )
 QDRANT_URL = os.environ.get("QDRANT_URL", "").rstrip("/")
-QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "hermes_memory")
+QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "conversational_memory")
 EMBED_URL = os.environ.get("EMBED_URL", "").rstrip("/")  # OpenAI-compat embeddings
 EMBED_MODEL = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
 EMBED_API_KEY = os.environ.get("EMBED_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
@@ -128,6 +128,36 @@ def _connect() -> ConnectionPool:
     )
 
 
+
+def _ensure_qdrant_collection(dim: int | None = None) -> None:
+    """Create QDRANT_COLLECTION when missing (Grafana expects conversational_memory)."""
+    if not QDRANT_URL or not QDRANT_COLLECTION:
+        return
+    size = dim
+    if size is None:
+        try:
+            size = int(os.environ.get("QDRANT_VECTOR_SIZE", "0") or "0")
+        except ValueError:
+            size = 0
+    if not size and EMBED_URL:
+        vec = _embed("collection-bootstrap")
+        if vec:
+            size = len(vec)
+    if not size:
+        size = 384
+    try:
+        r = httpx.get(f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}", timeout=15.0)
+        if r.status_code == 200:
+            return
+        httpx.put(
+            f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}",
+            json={"vectors": {"size": int(size), "distance": "Cosine"}},
+            timeout=15.0,
+        )
+    except Exception:
+        pass
+
+
 @app.on_event("startup")
 def startup() -> None:
     global pool
@@ -136,6 +166,7 @@ def startup() -> None:
             pool = _connect()
             with pool.connection() as conn:
                 conn.execute(SCHEMA)
+            _ensure_qdrant_collection()
             break
         except Exception:
             if attempt == 29:
@@ -588,6 +619,7 @@ def _index_memory(mid: str, content: str, typ: str, importance: float) -> None:
     vec = _embed(content)
     if not vec:
         return
+    _ensure_qdrant_collection(dim=len(vec))
     httpx.put(
         f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/points?wait=true",
         json={

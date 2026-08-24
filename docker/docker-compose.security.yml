@@ -245,9 +245,9 @@ services:
       - prometheus
     networks: [internal]
 
-  # Pairs with 9Router (always on). Starts with Prometheus.
+  # Pairs with 9Router only. run.sh adds --profile nine-exporter when ENABLE_9ROUTER=1 + Prometheus/Grafana.
   nine-exporter:
-    profiles: ["prometheus"]
+    profiles: ["nine-exporter"]
     build: ./architect/monitor/nine-exporter
     restart: unless-stopped
     environment:
@@ -299,7 +299,7 @@ services:
     environment:
       - LISTEN=0.0.0.0:9102
       - SCRAPE_INTERVAL=30
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - QDRANT_COLLECTION_KNOWLEDGE=${QDRANT_COLLECTION_KNOWLEDGE:-knowledge_chunks}
       - QDRANT_COLLECTION_MEMORY=${QDRANT_COLLECTION_MEMORY:-conversational_memory}
@@ -315,7 +315,7 @@ services:
       - ENABLE_PROMETHEUS=${ENABLE_PROMETHEUS:-0}
       # OmniRoute has no /health (404). Probe `/` (SPA 200). /v1/models needs auth.
       # 9Router UI /health is 404 and /v1/models is 401 — TCP listen only (nine-exporter does authenticated scrape).
-      - HEALTH_TARGETS=${STACK_HEALTH_TARGETS:-qdrant=qdrant:6333/readyz,security-manager=security-manager:8093/health,ocr=ocr:8091/health,ingest=ingest:8099/health,authz=authz:8097/health,embedding=embedding:8094/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,openbao=openbao:8200/v1/sys/health,omni-router=omni-router:20129/,model-router=model-router:8096/health}
+      - HEALTH_TARGETS=${STACK_HEALTH_TARGETS:-redis_via_tcp=valkey:6379,qdrant=qdrant:6333/readyz,security-manager=security-manager:8093/health,ocr=ocr:8091/health,ingest=ingest:8099/health,authz=authz:8097/health,embedding=embedding:8094/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,openbao=openbao:8200/v1/sys/health,omni-router=omni-router:20129/,model-router=model-router:8096/health}
     networks: [internal]
 
   # Optional — only when run.sh passes --profile notify (ENABLE_NOTIFY=1)
