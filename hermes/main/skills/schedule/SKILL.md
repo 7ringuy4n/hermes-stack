@@ -1,6 +1,6 @@
 ---
 name: schedule
-description: "Create or delete a lịch via the Go schedule worker. Store when-to-run only; Hermes processes the inner message when it is due."
+description: "Create or delete a lịch via the Go schedule worker. Store when-to-run; deliver fire_text verbatim or process via Hermes."
 ---
 
 # Schedule skill
@@ -17,11 +17,17 @@ JSON body (deterministic fields from classifier JSON, not from parsing user pros
 - `cadence` — `once` / `daily` / `weekly` / `monthly` / `yearly`
 - `timezone` — IANA zone (default `Asia/Ho_Chi_Minh`)
 - `next_run_at` — RFC3339 UTC when classify/host already knows the absolute fire time (required for relative “N phút nữa”)
-- `fire_text` — inner work only (`instructions` joined, or `message`). **Never** the “đặt lịch lúc HH:MM” wrapper
+- `fire_text` — inner work only (`message` / `instructions` joined). **Never** the “đặt lịch lúc HH:MM” wrapper
 - `text` — original inbound (audit only)
 - `origin` / `context` — thread routing so the worker can inject back into the conversation
+- `context.schedule_delivery` — `verbatim` (send body as-is) or `process` (Hermes runs skills)
 
-The worker stores the row in SQLite/Postgres, waits, and sends `fire_text` back through the Hermes inbound pipeline (`scheduleFire` protocol flag). Hermes classifies that inner message again and routes through skills.
+### Delivery modes
+
+| Mode | When | Fire behavior |
+|---|---|---|
+| **verbatim** | User asked to **send/post** body text (`nội dung:`, gửi tin vào nhóm) | Adapter sends `fire_text` **exactly** — no LLM paraphrase |
+| **process** | User asked to **do work** at a time (search, OCR, generate file, …) | Inject with `scheduleFire`; Hermes classifies and routes skills |
 
 ## Delete / cancel
 
@@ -44,7 +50,7 @@ Do not split a single-clock daily lịch into immediate async jobs.
 
 ## Deliver into a named Zalo group
 
-When classify JSON includes `target_channel` (group display name), **always** resolve via skill **`zalo-context`** (`POST /v1/zalo/context` or `/v1/zalo/threads/find`) / zalo-api channel registry and rewrite schedule `origin.thread_id` to that group (requester stays `user_id`).
+When classify JSON includes `target_channel` (group **display name only**, no `zalo ` prefix), **always** resolve via skill **`zalo-context`** (`POST /v1/zalo/context` or `/v1/zalo/threads/find`) / zalo-api channel registry and rewrite schedule `origin.thread_id` to that group (requester stays `user_id`).
 
 If the group is unknown:
 
@@ -56,17 +62,19 @@ If the group is unknown:
 
 When a sole-admin `!zalo claim` exists, outbound delivery for that context uses `claim.claimed_thread_id`, never the admin `user_id` alone.
 
+Confirm create with destination when cross-thread: `Đã lưu lịch … → nhóm <name>.`
+
 ## Must follow
 
-1. Confirm in one short line. Next run as `HH:MM DD/MM/YYYY` local. Do not invent a second timezone label.
+1. Confirm in one short line. Next run as `HH:MM DD/MM/YYYY` local. Do not invent a second timezone label. Include `→ nhóm …` when delivering elsewhere.
 2. Do not call Hermes CLI cron (`cronjob` tool, `hermes cron`, `jobs.json`), or workflow `/v1/schedules/tick`.
 3. Do not execute the inner task at create time.
 4. User wording: **lịch** (Vietnamese) or **schedule** (English). Never **cron** in chat.
-5. When the due payload runs, the delivered chat must be **body only** — never `Cronjob Response` / `job_id` / stop-reminder footers.
+5. When due: **verbatim** jobs deliver body only; **process** jobs run skills. Never `Cronjob Response` / `job_id` footers.
 6. Before naming a destination group, call **`zalo-context`**. Never guess.
 
 ## Related
 
 - `zalo-context` — resolve user/thread/claim ids (PostgreSQL via zalo-api)
 - `core/scheduling` — how to behave when a due payload arrives
-- Web search / media-file skills handle the inner work after fire
+- Web search / media-file skills handle **process** fires
