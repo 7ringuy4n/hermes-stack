@@ -26,8 +26,11 @@ _POSTER = re.compile(
     r"|\b\d+\s*(?:dòng|dong|lines?)\b",
     re.I | re.S,
 )
-_DRAW = re.compile(r"(?:vẽ|ve|draw|image|hình|hinh|ảnh|anh|poster)", re.I)
-
+# Word boundaries: bare "anh" must not match inside "xanh"; bare "ve" must not match mid-word.
+_DRAW = re.compile(
+    r"(?<!\w)(?:vẽ|ve|draw|image|hình|hinh|ảnh|anh|poster)(?!\w)",
+    re.I,
+)
 
 _OFFICE_KIND = re.compile(
     r"\b(pdf|docx|xlsx|csv|txt|text|markdown|\.md)\b",
@@ -37,9 +40,23 @@ _COMPOUND_NEXT = re.compile(
     r"(?:sau\s+đó|sau\s+do|then|and\s+then).{0,60}\b(?:tạo|tao|create|make)\b",
     re.I | re.S,
 )
+# Schedule create must never take office/poster Dispatcher shortcuts (host owns save+fire).
+_SCHEDULE_CREATE = re.compile(
+    r"(?:đặt\s*lịch|dat\s*lich|ặt\s*lịch|\bschedule\b|\bcron\b|"
+    r"hằng\s*ngày|hang\s*ngay|mỗi\s*ngày|moi\s*ngay|daily\s+at|"
+    r"chạy\s+một\s+lần|chay\s+mot\s+lan|one[\s-]?shot|run\s+once|"
+    r"mỗi\s*sáng|moi\s*sang)",
+    re.I,
+)
+_SCHEDULE_CLOCK = re.compile(
+    r"(?:lúc|luc|at|@)\s*\d{1,2}\s*[:hH]\s*\d{2}"
+    r"|\b\d{1,2}\s*[:hH]\s*\d{2}\b",
+    re.I,
+)
 # Live/external facts must be fetched before office shortcut (classify/workflow owns the split).
 _LIVE_FACT = re.compile(
-    r"thể hiện|the hien|hiện tại|hien tai|báo cáo|bao cao|current|live",
+    r"thể hiện|the hien|hiện tại|hien tai|báo cáo|bao cao|current|live|"
+    r"thời tiết|thoi tiet|weather|giá xăng|gia xang",
     re.I,
 )
 _INLINE_BODY = re.compile(
@@ -57,6 +74,33 @@ def _norm_office_kind(token: str) -> str:
     return t
 
 
+def looks_schedule_create(text: str) -> bool:
+    """True when prose is a timed/cadence schedule create — not a poster/office ask."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if not _SCHEDULE_CREATE.search(raw):
+        return False
+    # Clock or explicit daily/once cadence words already matched in _SCHEDULE_CREATE
+    # for hằng ngày / daily; still require a clock when only "đặt lịch" appears.
+    if _SCHEDULE_CLOCK.search(raw):
+        return True
+    low = raw.lower()
+    return any(
+        tok in low
+        for tok in (
+            "hằng ngày",
+            "hang ngay",
+            "mỗi ngày",
+            "moi ngay",
+            "daily",
+            "một lần",
+            "mot lan",
+            "once",
+        )
+    )
+
+
 def is_compound_office_request(text: str) -> bool:
     """True when user asks for 2+ office files — leave to classify/workflow."""
     raw = (text or "").strip()
@@ -70,7 +114,6 @@ def is_compound_office_request(text: str) -> bool:
     return False
 
 
-
 def dispatcher_url() -> str:
     return (os.getenv("DISPATCHER_URL") or "http://dispatcher:8090").rstrip("/")
 
@@ -78,6 +121,8 @@ def dispatcher_url() -> str:
 def looks_office_create(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > 500:
+        return False
+    if looks_schedule_create(t):
         return False
     # Compound multi-file asks must not take the single-file Dispatcher shortcut.
     if is_compound_office_request(t):
@@ -91,6 +136,8 @@ def looks_office_create(text: str) -> bool:
 def looks_text_poster(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > 500:
+        return False
+    if looks_schedule_create(t):
         return False
     if not _DRAW.search(t) and "điền" not in t.lower() and "dien" not in t.lower():
         # Allow "5 dòng hello" without vẽ
