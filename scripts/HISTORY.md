@@ -1,3 +1,17 @@
+## 2026-08-24 08:35 +07 — Restore fails: No such container: redis
+
+### Symptom
+`bash run.sh restore <stamp>` → `no such service: redis`, then valkey step `No such container: redis` / `ERROR: valkey ping after restore`. Postgres/qdrant may already have been restored.
+
+### Root cause
+Compose renamed Redis → Valkey (`container_name: valkey`). Restore still hardcoded `docker stop|start|exec redis` and `compose up … redis`.
+
+### Fix (core)
+`architect/backup-restore/lib/backup.sh`: datastore up uses `valkey`; restore resolves container via `assistant_container`; `run.sh` compact pings `valkey`.
+
+### Prevent recurrence
+Never hardcode legacy container name `redis` for stack ops; use `assistant_container` or compose service `valkey`.
+
 ## 2026-08-24 08:20 +07 — Scoped `run.sh update` fails on zalo-api (hermes scale)
 
 ### Symptom
