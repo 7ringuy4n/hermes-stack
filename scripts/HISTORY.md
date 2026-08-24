@@ -1,3 +1,31 @@
+## 2026-08-24 12:05 +07 — Quote fix shipped; zalo-api 500 / missing tables
+
+### Symptom
+After quote-photo fix, zalo-api returned 500 on `/v1/zalo/claims/active` (`relation "zalo_claims" does not exist`); Hermes also 404 on invented `/threads/search`, `/context/current`. Quote OCR path itself could extract `params.rawUrl`, but context/claim calls failed.
+
+### Root cause
+`zalo_store._ensure()` ran the full multi-statement `SCHEMA` via a single `psycopg` `Connection.execute()` (one command only). Process marked ready while DB still only had legacy tables from restore (`zalo_entities`, `zalo_settings`, `zalo_message_history`) — never creating `zalo_users` / `zalo_threads` / `zalo_group_members` / `zalo_claims`.
+
+### Fix (core)
+Statement-by-statement SCHEMA apply + required-table verification; startup `ensure_schema(force=True)`; route aliases for common wrong paths; skill documents allowed endpoints only.
+
+### Prevent recurrence
+Never apply multi-statement DDL with one `execute()`; always verify required tables after ensure; re-run schema on every zalo-api startup.
+
+## 2026-08-24 11:40 +07 — Backup should include router combos + OpenBao
+
+### Symptom
+Operators expected backup/restore to preserve OmniRouter/9Router combo configuration and OpenBao secrets as first-class components (not only buried in generic volumes / skipped KV import).
+
+### Root cause
+Router volumes were mixed into `volumes`; no human-readable combo export. OpenBao KV restore skipped when the -dev container was not yet up.
+
+### Fix (core)
+Component `routers` (volumes + env.router + combo JSON export); OpenBao restore brings container up then imports KV.
+
+### Prevent recurrence
+Treat routers and OpenBao as named backup components with verify-friendly artifacts.
+
 ## 2026-08-24 11:20 +07 — Quote-reply photo: only "[quoted image]", no OCR
 
 ### Symptom

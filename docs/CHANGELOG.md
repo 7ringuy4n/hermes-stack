@@ -1,3 +1,15 @@
+## 2026-08-24 12:05 +07 — zalo-api: apply PG schema statement-by-statement
+
+- Root cause of post-quote “zalo-api not work”: `_ensure()` used one `conn.execute(SCHEMA)` (psycopg3 = one statement); after restore only `zalo_entities|settings|message_history` existed → `UndefinedTable` on `zalo_claims`/`zalo_threads`.
+- Fix: split SCHEMA, execute each DDL, verify required tables; startup `ensure_schema(force=True)`.
+- Alias `/v1/zalo/threads/search` → find, `/v1/zalo/context/current` → context; harden `zalo-context` skill path list.
+
+## 2026-08-24 11:40 +07 — Backup component `routers` (Omni/9Router combos) + OpenBao bring-up
+
+- New backup/restore component `routers`: `omni_router_data` / `nine_router_data` volumes, `env.router` flags, best-effort combo JSON via `backup_routers_export.py`.
+- OpenBao restore: start container + wait health before KV import.
+- Monitor/edge volumes stay under `volumes`; legacy stamps with router tarballs under `volumes/` still restore.
+
 ## 2026-08-24 11:20 +07 — Quote photo: parse TQuote.attach JSON for real image URL
 
 - Bridge `_mapInboundQuote`: merge Zalo `attach` (JSON string) into quote content; RAW logs `cliMsgType` + attach preview.

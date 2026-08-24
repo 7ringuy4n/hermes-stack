@@ -53,6 +53,7 @@ curl -sS "$ZALO_API_URL/v1/zalo/claims/active?admin_user_id=<uid>" \
 3. **Do not** invent a multi-minute “confirmation wait”. If the group is missing, fail fast with the allow/refresh instruction.
 4. Schedule create / file / image / worker output for a claimed group must use `claimed_thread_id` (or resolved group `thread_id`), not the admin’s DM id.
 5. Prefer this skill over reading JSON allowlists or guessing from chat history.
+6. **Only** call the paths above (`/v1/zalo/context`, `/v1/zalo/threads/find`, `/v1/zalo/claims/active`, `/v1/zalo/threads/list`). **Do not** invent `/threads/search`, `/context/current`, `POST /threads`, or `POST /groups`.
 
 ## Related
 

@@ -29,6 +29,7 @@ assistant_backup_flag() {
     valkey) echo "${BACKUP_ENABLE_VALKEY:-${ENABLE_REDIS:-1}}" ;;
     hermes) echo "${BACKUP_ENABLE_HERMES:-${ENABLE_HERMES:-1}}" ;;
     openbao) echo "${BACKUP_ENABLE_OPENBAO:-${ENABLE_OPENBAO:-1}}" ;;
+    routers) echo "${BACKUP_ENABLE_ROUTERS:-1}" ;;
     zalo) echo "${BACKUP_ENABLE_ZALO:-${ENABLE_ZALO:-1}}" ;;
     schedules) echo "${BACKUP_ENABLE_SCHEDULES:-1}" ;;
     volumes) echo "${BACKUP_ENABLE_VOLUMES:-1}" ;;
@@ -491,13 +492,27 @@ assistant_backup_openbao() {
 }
 
 assistant_restore_openbao() {
-  local dir="$1" kv="${dir}/openbao/kv-assistant-api-keys.json"
+  local dir="$1" kv="${dir}/openbao/kv-assistant-api-keys.json" i
   if [[ -f "${dir}/openbao/env.openbao" ]]; then
     $SUDO cp -a "${dir}/openbao/env.openbao" "${HERMES_DATA_DIR}/.env.openbao"
     $SUDO chmod 600 "${HERMES_DATA_DIR}/.env.openbao"
   fi
-  # OpenBao -dev is in-memory; re-import KV export so API keys survive container recreate.
+  # OpenBao -dev is in-memory; ensure container is up before KV import.
+  if [[ -f "$kv" ]]; then
+    if [[ -z "$(assistant_container openbao || true)" ]]; then
+      log "bring openbao up for KV restore"
+      assistant_compose up -d openbao || log "WARN: openbao up returned non-zero"
+      for i in $(seq 1 30); do
+        [[ -n "$(assistant_container openbao || true)" ]] && break
+        sleep 1
+      done
+    fi
+  fi
   if [[ -f "$kv" ]] && [[ -n "$(assistant_container openbao || true)" ]]; then
+    for i in $(seq 1 30); do
+      curl -fsS -m 2 "http://127.0.0.1:${OPENBAO_PORT:-8200}/v1/sys/health" >/dev/null 2>&1 && break
+      sleep 1
+    done
     ROOT="${ROOT}" python3 "${BACKUP_LIB_DIR}/restore_openbao_kv.py" "$kv" \
       || assistant_backup_fail "openbao KV import failed"
     if [[ -f "${ROOT}/scripts/main/load-openbao-env.py" ]]; then
@@ -506,6 +521,55 @@ assistant_restore_openbao() {
     fi
   elif [[ -f "$kv" ]]; then
     log "WARN: openbao container not running — skipped KV import (env.openbao restored if present)"
+  fi
+}
+
+assistant_backup_routers() {
+  # OmniRouter / 9Router combo+provider SoT = named volumes; also export JSON for audit.
+  local dir="$1" v envf
+  $SUDO mkdir -p "${dir}/routers"
+  for v in omni_router_data nine_router_data; do
+    if [[ -n "$(as_volume "$v")" ]]; then
+      as_tar_volume "$v" "${dir}/routers/${v}.tgz" || assistant_backup_fail "router volume tar ${v}"
+    fi
+  done
+  envf="${dir}/routers/env.router"
+  {
+    echo "# Router flags snapshot (non-secret names; secrets remain in env.sealed / OpenBao)"
+    for k in \
+      ENABLE_OMNIROUTER ENABLE_9ROUTER ENABLE_MODEL_ROUTER \
+      OMNIROUTER_DEFAULT_COMBO N9ROUTER_DEFAULT_COMBO \
+      OMNIROUTER_COMBO_STRATEGY N9ROUTER_COMBO_STRATEGY \
+      OMNIROUTER_HOST_PORT N9ROUTER_HOST_PORT \
+      OMNIROUTER_ENABLE_MEMORY OMNIROUTER_FAILOVER_MODELS OMNIROUTER_ROTATE_ATTEMPTS \
+      ENABLE_QWEN ENABLE_QWEN_THINKING OLLAMA_BASE_URL OLLAMA_MODEL
+    do
+      if [[ -n "${!k:-}" ]]; then
+        printf '%s=%s\n' "$k" "${!k}"
+      fi
+    done
+  } | $SUDO tee "$envf" >/dev/null
+  $SUDO chmod 600 "$envf" 2>/dev/null || true
+  # Best-effort human-readable combo export (login + GET /api/combos). Volumes remain SoT.
+  if [[ -f "${BACKUP_LIB_DIR}/backup_routers_export.py" ]]; then
+    ROOT="${ROOT}" python3 "${BACKUP_LIB_DIR}/backup_routers_export.py" "${dir}/routers" \
+      || log "WARN: router combo JSON export returned non-zero (volumes still backed up)"
+  fi
+}
+
+assistant_restore_routers() {
+  local dir="$1" v
+  docker stop omni-router 9router 2>/dev/null || true
+  for v in omni_router_data nine_router_data; do
+    if [[ -f "${dir}/routers/${v}.tgz" ]]; then
+      as_untar_volume "$v" "${dir}/routers/${v}.tgz" || assistant_backup_fail "router volume restore ${v}"
+    elif [[ -f "${dir}/volumes/${v}.tgz" ]]; then
+      # Legacy stamps (pre-routers component) stored these under volumes/
+      as_untar_volume "$v" "${dir}/volumes/${v}.tgz" || assistant_backup_fail "router volume restore ${v}"
+    fi
+  done
+  if [[ -f "${dir}/routers/env.router" ]]; then
+    log "router env snapshot present (apply via .env / first-setup if needed): routers/env.router"
   fi
 }
 
@@ -608,8 +672,8 @@ assistant_restore_schedules() {
 assistant_backup_volumes() {
   local dir="$1" v
   $SUDO mkdir -p "${dir}/volumes"
-  # Router combo/provider state lives in named volumes (OmniRouter + optional 9Router).
-  for v in grafana_data loki_data prometheus_data alloy_data traefik_letsencrypt omni_router_data nine_router_data; do
+  # Monitor / edge volumes. Omni + 9Router volumes live under component "routers".
+  for v in grafana_data loki_data prometheus_data alloy_data traefik_letsencrypt; do
     if [[ -n "$(as_volume "$v")" ]]; then
       as_tar_volume "$v" "${dir}/volumes/${v}.tgz" || assistant_backup_fail "volume tar ${v}"
     fi
@@ -621,13 +685,14 @@ assistant_backup_volumes() {
 
 assistant_restore_volumes() {
   local dir="$1" v
-  # Stop edge/monitor/router containers that hold named volumes; stack_up brings them back.
-  docker stop grafana loki prometheus alloy traefik omni-router 9router 2>/dev/null || true
-  for v in grafana_data loki_data prometheus_data alloy_data traefik_letsencrypt omni_router_data nine_router_data; do
+  # Stop edge/monitor containers that hold named volumes; stack_up brings them back.
+  docker stop grafana loki prometheus alloy traefik 2>/dev/null || true
+  for v in grafana_data loki_data prometheus_data alloy_data traefik_letsencrypt; do
     if [[ -f "${dir}/volumes/${v}.tgz" ]]; then
       as_untar_volume "$v" "${dir}/volumes/${v}.tgz" || assistant_backup_fail "volume restore ${v}"
     fi
   done
+  # Legacy stamps may still carry router volumes here — leave files; routers restore reads them.
 }
 
 assistant_backup_clouddrive() {
@@ -659,9 +724,9 @@ assistant_restore_openvpn() {
 }
 
 # Order: dump stores while running, then host files.
-ASSISTANT_BACKUP_ORDER=(config postgres qdrant valkey hermes openbao zalo schedules volumes clouddrive openvpn)
-# Restore stores before generate/deploy; schedules last.
-ASSISTANT_RESTORE_ORDER=(config postgres qdrant valkey volumes hermes openbao zalo clouddrive openvpn schedules)
+ASSISTANT_BACKUP_ORDER=(config postgres qdrant valkey hermes openbao routers zalo schedules volumes clouddrive openvpn)
+# Restore stores before generate/deploy; schedules last. Routers (Omni/9Router volumes) before hermes.
+ASSISTANT_RESTORE_ORDER=(config postgres qdrant valkey volumes routers hermes openbao zalo clouddrive openvpn schedules)
 
 assistant_backup_all() {
   local stamp dir name
@@ -710,7 +775,7 @@ assistant_restore_all() {
   fi
   log "bring datastore up (postgres/valkey/qdrant) for restore"
   assistant_stack_up_datastore || log "WARN: datastore up returned non-zero — continuing restore"
-  for name in postgres qdrant valkey volumes hermes openbao zalo clouddrive openvpn; do
+  for name in postgres qdrant valkey volumes routers hermes openbao zalo clouddrive openvpn; do
     if ! assistant_backup_wanted "$name"; then
       log "skip restore ${name}"
       continue
