@@ -923,9 +923,21 @@ export class ZaloClient extends EventEmitter {
     }
     const msgId = q.globalMsgId || q.msgId || q.gMsgID || q.messageId || "";
     const cliMsgId = q.cliMsgId || q.clientMsgId || "";
+    const numMap = {
+      1: "webchat",
+      32: "chat.photo",
+      31: "chat.voice",
+      44: "chat.video.msg",
+      46: "share.file",
+      49: "chat.gif",
+    };
+    let msgType = q.msgType || q.cliMsgType || "";
+    if (numMap[msgType] || numMap[String(msgType)]) {
+      msgType = numMap[msgType] || numMap[String(msgType)];
+    }
     const mapped = {
       content,
-      msgType: q.msgType || q.cliMsgType || "",
+      msgType,
       propertyExt: q.propertyExt || q.propExt || null,
       uidFrom: String(q.ownerId || q.uidFrom || q.fromUid || ""),
       ownerId: String(q.ownerId || q.uidFrom || q.fromUid || ""),
