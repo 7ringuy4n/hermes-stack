@@ -524,6 +524,7 @@ services:
       - HERMES_GID=${HERMES_GID:-1000}
       - HERMES_CONTAINER=${HERMES_CONTAINER:-hermes}
       - WORKFLOW_URL=${WORKFLOW_URL:-http://workflow:8108}
+      - SCHEDULE_URL=${SCHEDULE_URL:-http://schedule-worker:8110}
       - CHANNELS_REGISTRY_FILE=/data/assistant/channels/registry.json
       - ZALO_ADMIN_MESSAGES=/app/zalo-admin.json
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
