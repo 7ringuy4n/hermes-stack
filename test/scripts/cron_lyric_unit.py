@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -74,6 +75,32 @@ def test_quoted_snip() -> None:
         }
     )
     assert media and media.get("kind") == "image" and media.get("url"), media
+    # Real inbound TQuote shape: attach JSON string + cliMsgType (no content/href).
+    attach_media = extract_media_from_quote(
+        {
+            "cliMsgType": 32,
+            "msg": "",
+            "attach": json.dumps(
+                {
+                    "title": "",
+                    "description": "",
+                    "href": "https://cdn.example/from-attach.jpg",
+                    "thumb": "https://cdn.example/thumb.jpg",
+                    "params": '{"width":800,"height":600,"fileSize":1234}',
+                }
+            ),
+            "globalMsgId": 123,
+            "cliMsgId": 456,
+        }
+    )
+    assert attach_media and attach_media["url"].endswith("from-attach.jpg"), attach_media
+    hd_media = extract_media_from_quote(
+        {
+            "cliMsgType": "32",
+            "attach": {"hdUrl": "https://cdn.example/hd.jpg", "thumbUrl": "https://cdn.example/t.jpg"},
+        }
+    )
+    assert hd_media and hd_media["url"].endswith("hd.jpg"), hd_media
     print("PASS quoted_context_snip")
 
 
