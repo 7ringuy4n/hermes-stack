@@ -842,9 +842,24 @@ class ZaloAdapter(BasePlatformAdapter):
             logger.info("Zalo: %s event %s", event_type, data)
             return
 
+    def _as_inbound_is_admin(self, data: Dict[str, Any] | None) -> bool:
+        """True when this SSE payload is a !zalo admin command."""
+        blob = data if isinstance(data, dict) else {}
+        text = str(blob.get("text") or "")
+        return bool(self._zalo_admin_extract_cmd(text))
+
     async def _on_inbound_guarded(self, data: Dict[str, Any]) -> None:
-        """Serialize per-thread inbound work; never raise into the SSE loop."""
+        """Serialize per-thread inbound work; never raise into the SSE loop.
+
+        ``!zalo`` admin must not wait behind a stuck media/LLM turn on the same thread.
+        """
         tid = str((data or {}).get("threadId") or "")
+        if self._as_inbound_is_admin(data):
+            try:
+                await self._on_inbound_message(data)
+            except Exception:
+                logger.exception("Zalo: inbound admin failed thread=%s", tid or "?")
+            return
         locks = getattr(self, "_as_inbound_locks", None)
         if not isinstance(locks, dict):
             self._as_inbound_locks = {}
@@ -2969,6 +2984,12 @@ class ZaloAdapter(BasePlatformAdapter):
         # Remember type for outbound routing.
         self._thread_types[thread_id] = "group" if thread_type == "group" else "user"
         self._as_mark_recv(thread_id)  # ASSISTANT_TIMING_FOOTER_v6
+        # New user text must not flush a leftover image from a previous (stuck) turn.
+        if not (m.get("scheduleFire") or m.get("schedule_fire")):
+            try:
+                self._as_cancel_late_autosend(str(thread_id))
+            except Exception:
+                pass
         self._as_autosend_remember_turn(thread_id, thread_type)  # ASSISTANT_AUTOSEND_v3
         try:
             from .channels_client import remember_inbound
