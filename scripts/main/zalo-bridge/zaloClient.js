@@ -695,10 +695,18 @@ export class ZaloClient extends EventEmitter {
         const qRaw = d.quote || d.refMsg || d.reference || null;
         const qKeys =
           qRaw && typeof qRaw === "object" ? Object.keys(qRaw).slice(0, 12).join(",") : "";
+        let attachPrev = "-";
+        if (qRaw && typeof qRaw === "object" && qRaw.attach != null) {
+          const a =
+            typeof qRaw.attach === "string" ? qRaw.attach : JSON.stringify(qRaw.attach);
+          attachPrev = JSON.stringify(String(a).slice(0, 180));
+        }
         console.log(
           `[zalo] RAW message: type=${isGroup ? "group" : "user"} thread=${message.threadId} ` +
             `from=${d.uidFrom} self=${message.isSelf} msgType=${d.msgType} ` +
             `hasQuote=${qRaw ? 1 : 0} quoteKeys=${qKeys || "-"} ` +
+            `cliMsgType=${qRaw && qRaw.cliMsgType != null ? qRaw.cliMsgType : "-"} ` +
+            `attach=${attachPrev} ` +
             `content=${typeof d.content === "string" ? JSON.stringify(d.content).slice(0, 80) : JSON.stringify(d.content).slice(0, 400)}`,
         );
         const ev = this._normaliseMessage(message);
@@ -905,8 +913,27 @@ export class ZaloClient extends EventEmitter {
   _mapInboundQuote(data) {
     const q = this._extractInboundQuote(data);
     if (!q) return null;
+    // Inbound TQuote uses: cliMsgType, msg, attach (JSON string) — not msgType/content.
+    // See zca-js models/Message.d.ts TQuote.
     let content = q.content;
     if (content == null) content = q.msg ?? q.text ?? q.body ?? q.qmsg ?? null;
+    let attach = q.attach;
+    if (typeof attach === "string" && attach.trim()) {
+      try {
+        attach = JSON.parse(attach);
+      } catch {
+        attach = null;
+      }
+    }
+    if (attach && typeof attach === "object") {
+      if (content && typeof content === "object") {
+        content = { ...attach, ...content };
+      } else if (typeof content === "string" && content.trim()) {
+        content = { ...attach, title: attach.title || content };
+      } else {
+        content = attach;
+      }
+    }
     // Flatten stringified attachment params so Hermes can snip titles / hrefs.
     if (content && typeof content === "object") {
       let params = content.params;
@@ -937,6 +964,7 @@ export class ZaloClient extends EventEmitter {
     }
     const mapped = {
       content,
+      attach: attach && typeof attach === "object" ? attach : q.attach || null,
       msgType,
       propertyExt: q.propertyExt || q.propExt || null,
       uidFrom: String(q.ownerId || q.uidFrom || q.fromUid || ""),
