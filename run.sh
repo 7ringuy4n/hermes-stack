@@ -132,7 +132,26 @@ compose() {
   fi
   case "${1:-}" in
     up|create|run)
-      scale_args=(--scale "hermes=${replicas}")
+      # --scale must not trail a scoped `up … zalo-api` (compose errors e.g.
+      # "no such service: hermes: disabled"). Only scale when hermes is in the
+      # service list, or when this is a full-stack up (no explicit services).
+      local -a up_rest=()
+      if [[ $# -gt 0 ]]; then
+        up_rest=("${@:2}")
+      fi
+      local a has_explicit_svc=0 has_hermes=0
+      for a in "${up_rest[@]}"; do
+        case "$a" in
+          -*) ;;
+          *)
+            has_explicit_svc=1
+            [[ "$a" == "hermes" ]] && has_hermes=1
+            ;;
+        esac
+      done
+      if [[ "$has_explicit_svc" -eq 0 || "$has_hermes" -eq 1 ]]; then
+        scale_args=(--scale "hermes=${replicas}")
+      fi
       ;;
   esac
   docker compose "${files[@]}" "${profiles[@]}" "$@" "${scale_args[@]}"
