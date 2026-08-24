@@ -237,6 +237,12 @@ log = logging.getLogger("zalo-api")
 @app.on_event("startup")
 def _startup_sync_channels() -> None:
     """Seed id↔name registry from allowlists + bridge contacts (best-effort)."""
+    # Always (re)apply full PG schema first — restore / old DBs may lack zalo_users|threads|claims.
+    try:
+        if not zalo_store.ensure_schema(force=True):
+            log.warning("zalo postgres schema ensure failed at startup (file fallback may apply)")
+    except Exception as e:
+        log.warning("zalo postgres schema ensure error: %s", type(e).__name__)
     try:
         zalo_store.migrate_from_files(
             admin_file=ADMIN_USERS_FILE,
@@ -1338,6 +1344,8 @@ class ZaloContextQuery(BaseModel):
 
 @app.get("/v1/zalo/context")
 @app.post("/v1/zalo/context")
+@app.get("/v1/zalo/context/current")
+@app.post("/v1/zalo/context/current")
 def zalo_context(
     body: Optional[ZaloContextQuery] = None,
     thread_id: str = "",
@@ -1366,6 +1374,8 @@ def zalo_context(
 
 @app.get("/v1/zalo/threads/find")
 @app.post("/v1/zalo/threads/find")
+@app.get("/v1/zalo/threads/search")
+@app.post("/v1/zalo/threads/search")
 def zalo_threads_find(
     body: Optional[ZaloContextQuery] = None,
     query: str = "",
