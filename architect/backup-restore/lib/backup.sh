@@ -172,7 +172,8 @@ assistant_compose() {
 
 assistant_stack_up_datastore() {
   # Lightweight bring-up for restore (avoid run.sh first-setup / timers).
-  assistant_compose up -d postgres redis qdrant
+  # Compose service is `valkey` (container_name: valkey); legacy name was redis.
+  assistant_compose up -d postgres valkey qdrant
 }
 
 assistant_stack_up() {
@@ -386,11 +387,14 @@ assistant_backup_valkey() {
 }
 
 assistant_restore_valkey() {
-  local dir="$1" rdb="${dir}/valkey/dump.rdb" vol img
+  local dir="$1" rdb="${dir}/valkey/dump.rdb" vol img c
   [[ -f "$rdb" ]] || { assistant_backup_fail "missing valkey dump.rdb"; return 1; }
   assistant_stop_services session jobs jobs-worker ingest
   assistant_stop_hermes
-  docker stop redis
+  # Resolve running container (compose service valkey; assistant_container maps redis→valkey).
+  c="$(assistant_container redis || true)"
+  [[ -n "$c" ]] || c="$(assistant_container valkey || true)"
+  [[ -n "$c" ]] && docker stop "$c" || true
   vol="$(as_volume valkey_data)"
   [[ -n "$vol" ]] || vol="$(as_volume redis_data)"
   [[ -n "$vol" ]] || { assistant_backup_fail "valkey_data volume missing"; return 1; }
@@ -401,10 +405,17 @@ assistant_restore_valkey() {
     -v "$(cd "$(dirname "$rdb")" && pwd):/bak:ro" \
     --entrypoint /bin/cp \
     "$img" "/bak/$(basename "$rdb")" /data/dump.rdb
-  docker start redis
+  if [[ -n "$c" ]]; then
+    docker start "$c"
+  else
+    assistant_compose up -d valkey
+    c="$(assistant_container redis || true)"
+    [[ -n "$c" ]] || c="$(assistant_container valkey || true)"
+  fi
+  [[ -n "$c" ]] || { assistant_backup_fail "valkey container missing after restore"; return 1; }
   sleep 2
-  docker exec redis valkey-cli PING | grep -qi PONG \
-    || docker exec redis redis-cli PING | grep -qi PONG \
+  docker exec "$c" valkey-cli PING | grep -qi PONG \
+    || docker exec "$c" redis-cli PING | grep -qi PONG \
     || assistant_backup_fail "valkey ping after restore"
 }
 
@@ -686,7 +697,7 @@ assistant_restore_all() {
     [[ -f "${dir}/config/generated.tgz" ]] && $SUDO tar -C "${ROOT}" -xzf "${dir}/config/generated.tgz"
     [[ -f "${dir}/config/vendor.tgz" ]] && $SUDO tar -C "${ROOT}" -xzf "${dir}/config/vendor.tgz"
   fi
-  log "bring datastore up (postgres/redis/qdrant) for restore"
+  log "bring datastore up (postgres/valkey/qdrant) for restore"
   assistant_stack_up_datastore || log "WARN: datastore up returned non-zero — continuing restore"
   for name in postgres qdrant valkey volumes hermes openbao zalo clouddrive openvpn; do
     if ! assistant_backup_wanted "$name"; then
