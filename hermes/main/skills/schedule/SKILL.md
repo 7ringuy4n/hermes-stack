@@ -26,8 +26,8 @@ JSON body (deterministic fields from classifier JSON, not from parsing user pros
 
 | Mode | When | Fire behavior |
 |---|---|---|
-| **verbatim** | User asked to **send/post** body text (`nội dung:`, gửi tin vào nhóm) | Adapter sends `fire_text` **exactly** — no LLM paraphrase |
-| **process** | User asked to **do work** at a time (search, OCR, generate file, …) | Inject with `scheduleFire`; Hermes classifies and routes skills |
+| **verbatim** | User asked to **send/post** a fixed body (poem/quote; no work verbs) | Adapter sends `fire_text` **exactly** — no LLM paraphrase |
+| **process** | User asked to **do work** at a time (mô tả/search/weather/image/OCR), even if wrapped in `nội dung:` | Inject with `scheduleFire`; Hermes runs **split** skills; never dump the task list as the chat text |
 
 ## Delete / cancel
 
@@ -43,14 +43,14 @@ Admin CLI (same host): `!zalo schedule remove group <tên nhóm>` / `!zalo sched
 
 | Pattern | Store |
 |---|---|
-| One clock, multiple inner tasks (`đặt lịch 06:00: chào, xăng, thời tiết`) | **One** schedule — `instructions[]` / `fire_text` contains all tasks for that fire |
+| One clock, multiple inner tasks (`đặt lịch 06:00: thơ, xăng, thời tiết`) | **One** schedule — `schedule_delivery=process`, `instructions[]` **split by skill** (not one blob) |
 | Multiple clocks (`06:00 thời tiết` and `21:00 xăng` in one bubble) | **One lịch per clock** — adapter stores separate jobs |
 
 Do not split a single-clock daily lịch into immediate async jobs.
 
 ## Deliver into a named Zalo group
 
-When classify JSON includes `target_channel` (group **display name only**, no `zalo ` prefix), **always** resolve via skill **`zalo-context`** (`POST /v1/zalo/context` or `/v1/zalo/threads/find`) / zalo-api channel registry and rewrite schedule `origin.thread_id` to that group (requester stays `user_id`).
+When classify JSON includes `target_channel` (group **display name only**, no `zalo ` prefix — including “vào Zalo LC Group” → `LC group`), **always** resolve via skill **`zalo-context`** (`POST /v1/zalo/context` or `/v1/zalo/threads/find`) / zalo-api channel registry and rewrite schedule `origin.thread_id` to that group (requester stays `user_id`).
 
 If the group is unknown:
 
