@@ -1,3 +1,32 @@
+## 2026-08-24 13:05 +07 — find_thread SoT: sync entities → normalized, no dual search
+
+### Symptom
+`!zalo list` shows "LC group" but `threads/find` returned not_found.
+
+### Root cause
+Dual search in `find_thread` (zalo_threads + zalo_entities) produced duplicate exact matches. Dedupe at search time was a bypass, not a data fix.
+
+### Fix (core)
+- `sync_normalized_from_entities()` at startup: one-way backfill entities → `zalo_users`/`zalo_threads`; prune denied rows from threads.
+- `find_thread` / `get_current_context` query normalized tables only.
+
+### Prevent recurrence
+Compat mirror (`zalo_entities`) feeds normalized SoT on startup; routing APIs never merge two stores at query time.
+
+## 2026-08-24 13:00 +07 — !zalo list shows LC group but find_thread not_found
+
+### Symptom
+`!zalo list` shows allowed group "LC group", but bot/Hermes says "Không tìm thấy nhóm LC Group" and asks for `!zalo allow`/`refresh`. PG had the row in both `zalo_entities` and `zalo_threads`.
+
+### Root cause
+`find_thread` appended the same thread twice (normalized table + legacy entities mirror). `len(exact)==2` so it returned `None` instead of the single group.
+
+### Fix (core)
+Superseded by normalized SoT sync (see 13:05 entry).
+
+### Prevent recurrence
+Any name search merging two stores must dedupe before uniqueness checks.
+
 ## 2026-08-24 12:05 +07 — Quote fix shipped; zalo-api 500 / missing tables
 
 ### Symptom

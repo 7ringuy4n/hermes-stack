@@ -496,6 +496,49 @@ def _mirror_entity_to_normalized(kind: str, eid: str, *, name: str = "", meta: O
         conn.commit()
 
 
+def _prune_denied_from_threads() -> int:
+    """Drop normalized thread rows for denied/kicked groups (entities SoT for deny list)."""
+    if not _ensure():
+        return 0
+    with _pool.connection() as conn:
+        cur = conn.execute(
+            """
+            DELETE FROM zalo_threads t
+            USING zalo_entities e
+            WHERE e.kind = 'denied' AND e.id = t.thread_id AND e.status = 'denied'
+            """
+        )
+        conn.commit()
+        return int(cur.rowcount or 0)
+
+
+def sync_normalized_from_entities() -> dict[str, int]:
+    """Backfill zalo_users / zalo_threads from zalo_entities (compat mirror → normalized SoT).
+
+    Idempotent upsert via _mirror_entity_to_normalized. Run at startup so find_thread
+    and context APIs read only normalized tables without legacy search fallbacks.
+    """
+    counts = {"users": 0, "threads": 0, "pruned": 0}
+    if not _ensure():
+        return counts
+    for ent in list_entities("admin", status="active"):
+        _mirror_entity_to_normalized("admin", str(ent.get("id") or ""), name=str(ent.get("name") or ""))
+        counts["users"] += 1
+    for ent in list_entities("user", status="active"):
+        _mirror_entity_to_normalized("user", str(ent.get("id") or ""), name=str(ent.get("name") or ""))
+        counts["users"] += 1
+    for ent in list_entities("dm", status="active"):
+        _mirror_entity_to_normalized("dm", str(ent.get("id") or ""), name=str(ent.get("name") or ""))
+        counts["threads"] += 1
+    for ent in list_entities("group", status="active"):
+        _mirror_entity_to_normalized("group", str(ent.get("id") or ""), name=str(ent.get("name") or ""))
+        counts["threads"] += 1
+    counts["pruned"] = _prune_denied_from_threads()
+    if any(counts.values()):
+        log.info("zalo normalized sync from entities: %s", counts)
+    return counts
+
+
 def upsert_group_member(
     thread_id: str,
     zalo_user_id: str,
@@ -606,7 +649,7 @@ def get_active_claim(admin_user_id: str = "") -> Optional[dict[str, Any]]:
 
 
 def find_thread(query: str) -> Optional[dict[str, Any]]:
-    """Resolve group/DM by exact thread_id or diacritic-insensitive display name."""
+    """Resolve group/DM by thread_id or diacritic-insensitive display name (zalo_threads SoT only)."""
     needle = (query or "").strip()
     if not needle or not _ensure():
         return None
@@ -627,8 +670,6 @@ def find_thread(query: str) -> Optional[dict[str, Any]]:
         rows = conn.execute(
             "SELECT thread_id, thread_type, display_name, owner_user_id, raw_metadata FROM zalo_threads"
         ).fetchall()
-    # also search legacy entities groups
-    groups = list_entities("group", status="active")
     nneedle = _norm(needle)
     exact: list[dict[str, Any]] = []
     partial: list[dict[str, Any]] = []
@@ -642,23 +683,6 @@ def find_thread(query: str) -> Optional[dict[str, Any]]:
             "owner_user_id": row.get("owner_user_id"),
             "raw_metadata": row.get("raw_metadata") if isinstance(row.get("raw_metadata"), dict) else {},
         }
-        if nname == nneedle:
-            exact.append(item)
-        elif nneedle and (nneedle in nname or nname in nneedle):
-            partial.append(item)
-    for g in groups:
-        gid = str(g.get("id") or "")
-        name = str(g.get("name") or "")
-        nname = _norm(name)
-        item = {
-            "thread_id": gid,
-            "thread_type": "group",
-            "display_name": name,
-            "owner_user_id": None,
-            "raw_metadata": {},
-        }
-        if gid == needle:
-            return item
         if nname == nneedle:
             exact.append(item)
         elif nneedle and (nneedle in nname or nname in nneedle):
@@ -705,25 +729,15 @@ def get_current_context(*, thread_id: str = "", user_id: str = "") -> dict[str, 
             ).fetchone()
         if row:
             thread = dict(row)
-        else:
-            for kind in ("group", "dm", "user"):
-                for ent in list_entities(kind, status="active"):
-                    if str(ent.get("id") or "") == tid:
-                        thread = {
-                            "thread_id": tid,
-                            "thread_type": "group" if kind == "group" else "dm",
-                            "display_name": str(ent.get("name") or ""),
-                            "owner_user_id": uid or None,
-                        }
-                        break
-                if thread:
-                    break
     user_name = ""
-    if uid:
-        for ent in list_entities("user", status="active") + list_entities("admin", status="active"):
-            if str(ent.get("id") or "") == uid:
-                user_name = str(ent.get("name") or "")
-                break
+    if uid and _ensure():
+        with _pool.connection() as conn:
+            row = conn.execute(
+                "SELECT display_name FROM zalo_users WHERE zalo_user_id=%s",
+                (uid,),
+            ).fetchone()
+        if row:
+            user_name = str(row.get("display_name") or "")
     deliver_thread = tid
     if claim and claim.get("claimed_thread_id"):
         # Prefer explicit claim for outbound worker/file delivery when set.
