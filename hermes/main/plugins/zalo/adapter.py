@@ -1503,6 +1503,14 @@ class ZaloAdapter(BasePlatformAdapter):
             if target_note:
                 logger.info("[zalo] schedule %s", target_note)
             fire_text = fire_text_from_plan(plan, text)
+            # Compute next_run_at from relative-time expression in inbound text so
+            # the worker does not roll to the next calendar day for "N phút nữa".
+            try:
+                from .schedule_client import next_run_at_from_relative
+            except ImportError:
+                from schedule_client import next_run_at_from_relative  # type: ignore
+            plan_next = (plan or {}).get("next_run_at") or ""
+            next_run_at = plan_next or next_run_at_from_relative(text, tz=str(plan.get("timezone") or "Asia/Ho_Chi_Minh")) or ""
             if schedule_enabled():
                 data = go_create_schedule(
                     cron_expr=str(plan.get("cron_expr") or ""),
@@ -1512,6 +1520,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     context=context,
                     cadence=str(plan.get("cadence") or ""),
                     timezone=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
+                    next_run_at=next_run_at or None,
                 )
             else:
                 data = create_schedule(
@@ -1520,6 +1529,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     origin=origin,
                     context=context,
                     cadence=str(plan.get("cadence") or ""),
+                    next_run_at=next_run_at or None,
                 )
             if data.get("ok"):
                 logger.info("[zalo] schedule stored")
