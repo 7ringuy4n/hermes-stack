@@ -16,6 +16,41 @@ _CONTENT_AFTER = re.compile(
 )
 # Protocol guard: prefer exact body after nội dung: if classify paraphrased.
 
+# Relative-time patterns: "N phút nữa", "sau N phút", "in N minutes", etc.
+_RELATIVE_RE = re.compile(
+    r"(?:sau\s+|in\s+)?(\d+)\s*(phút|giây|giờ|phut|giay|gio|minute|minutes|second|seconds|hour|hours)\s*(?:nữa|nua)?",
+    re.I,
+)
+_UNIT_SECONDS: dict[str, int] = {
+    "phút": 60, "phut": 60, "minute": 60, "minutes": 60,
+    "giây": 1, "giay": 1, "second": 1, "seconds": 1,
+    "giờ": 3600, "gio": 3600, "hour": 3600, "hours": 3600,
+}
+
+
+def next_run_at_from_relative(text: str, tz: str = "Asia/Ho_Chi_Minh") -> str:
+    """Return RFC3339 UTC timestamp for relative-time schedules ('N phút nữa').
+
+    Returns empty string when no relative-time expression is found; the worker
+    then falls back to cron_expr resolution.
+    """
+    raw = (text or "").strip()
+    m = _RELATIVE_RE.search(raw)
+    if not m:
+        return ""
+    n = int(m.group(1))
+    unit = m.group(2).lower()
+    secs = n * _UNIT_SECONDS.get(unit, 60)
+    import datetime
+    try:
+        import zoneinfo
+        loc = zoneinfo.ZoneInfo(tz)
+    except Exception:
+        loc = None
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    fire_utc = now_utc + datetime.timedelta(seconds=secs)
+    return fire_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
 
 def exact_schedule_body(original: str) -> str:
     """Prefer verbatim text after nội dung: so fire never uses a paraphrased plan."""
