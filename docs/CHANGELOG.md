@@ -1,4 +1,12 @@
+## 2026-08-24 18:15 +07 — Daily LC-group task schedule: process+split, admin not blocked
+
+- Daily “06:00 vào Zalo LC Group nội dung: mô tả thơ + giá xăng + thời tiết” was treated as send-body (`nội dung:` ⇒ verbatim) with `target_channel` null; create flushed a leftover DM photo; `!zalo schedule list all` waited behind the inbound lock.
+- Classify: `schedule_delivery=process` for task nội dung; split `instructions[]` by skill; `target_channel` from “vào Zalo LC Group”; never `send_message` tool scripts.
+- Host: `plan_is_task_work` forces process even if classify says verbatim; process `fire_text` joins split instructions.
+- Adapter: `!zalo` skips per-thread inbound lock; cancel leftover late-autosend on new user text so a stuck media turn cannot steal the next message.
+
 ## 2026-08-24 16:30 +07 — Schedule verbatim fire + clean target_channel + save/list UX
+
 
 - Root cause of paraphrased group delivery: `scheduleFire` inject always went through Hermes LLM; poem bodies became chatty rewrites.
 - Adapter: `schedule_delivery=verbatim` → send `fire_text` as-is (skip LLM); create stores delivery on origin/context; save ack always appends `→ nhóm <name>` for cross-thread targets.
