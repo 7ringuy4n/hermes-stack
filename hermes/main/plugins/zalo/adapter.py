@@ -3059,29 +3059,49 @@ class ZaloAdapter(BasePlatformAdapter):
                 raw_q = m.get("quote")
             quote = raw_q if isinstance(raw_q, dict) else {}
             qc = quote.get("content")
-            qtype = str(quote.get("msgType") or "")
-            if isinstance(qc, dict) and (qc.get("href") or qtype.startswith("share.") or qtype.startswith("chat.photo")):
+            qtype = str(quote.get("msgType") or quote.get("cliMsgType") or "").lower()
+            href = ""
+            if isinstance(qc, dict):
+                href = str(qc.get("href") or qc.get("thumb") or "").strip()
+            media_hint = bool(href) or any(
+                tok in qtype for tok in ("photo", "gif", "image", "voice", "video", "file", "share.")
+            )
+            if isinstance(qc, dict) and media_hint:
                 params = qc.get("params") or {}
                 if isinstance(params, str):
                     try:
                         params = json.loads(params)
                     except Exception:
                         params = {}
+                if not isinstance(params, dict):
+                    params = {}
+                if not href:
+                    href = str(params.get("hd") or params.get("m4a") or params.get("oriUrl") or "").strip()
                 ext = (params.get("fileExt") if isinstance(params, dict) else None) or (
                     (qc.get("title") or "bin").rsplit(".", 1)[-1]
                 )
-                kind = "image" if "photo" in qtype or "gif" in qtype else "file"
-                media = {
-                    "kind": kind,
-                    "url": qc.get("href") or "",
-                    "fileName": qc.get("title") or f"file.{ext}",
-                    "ext": ext,
-                    "mime": "image/jpeg" if kind == "image" else "application/octet-stream",
-                    "size": (params.get("fileSize") if isinstance(params, dict) else 0) or 0,
-                }
-                m = dict(m)
-                m["media"] = media
-                logger.info("Zalo: media from quoted %s (%s)", qtype, media.get("fileName"))
+                if "photo" in qtype or "gif" in qtype or "image" in qtype:
+                    kind = "image"
+                elif "voice" in qtype or "audio" in qtype:
+                    kind = "voice"
+                elif "video" in qtype:
+                    kind = "video"
+                else:
+                    kind = "file"
+                if href:
+                    media = {
+                        "kind": kind,
+                        "url": href,
+                        "fileName": qc.get("title") or params.get("fileName") or f"file.{ext}",
+                        "ext": ext,
+                        "mime": "image/jpeg"
+                        if kind == "image"
+                        else ("audio/aac" if kind == "voice" else "application/octet-stream"),
+                        "size": (params.get("fileSize") if isinstance(params, dict) else 0) or 0,
+                    }
+                    m = dict(m)
+                    m["media"] = media
+                    logger.info("Zalo: media from quoted %s (%s)", qtype, media.get("fileName"))
 
         # Cache inbound as SendMessageQuote so outbound replies quote the @mention.  (ASSISTANT_REPLY_QUOTE)
         if not hasattr(self, "_pending_reply_quote"):
@@ -3303,15 +3323,23 @@ class ZaloAdapter(BasePlatformAdapter):
         elif not media_urls and str(text or "").strip():
             text = self._as_attachment_followup(str(thread_id), text)
 
-        # Quoted reply: inject quoted text/title so the agent can resolve
-        # "tìm lời bài hát" against Multo / Cup of Joe without re-asking.
+        # Quoted reply (DM + group): inject quoted text/title/media label so the
+        # agent can read the old message the user replied to.
         try:
             raw_q = m.get("quoted") if isinstance(m.get("quoted"), dict) else None
             if not isinstance(raw_q, dict):
                 raw_q = m.get("quote") if isinstance(m.get("quote"), dict) else {}
             qsnip = quoted_context_snip(raw_q)
-            if qsnip and str(text or "").strip() and qsnip not in str(text):
-                text = f"{text}\n\n[Quoted message]\n{qsnip}"
+            if isinstance(raw_q, dict) and raw_q and not qsnip:
+                logger.info(
+                    "Zalo: quote present but empty snip thread=%s keys=%s msgType=%s",
+                    thread_id,
+                    sorted(str(k) for k in raw_q.keys())[:12],
+                    raw_q.get("msgType") or raw_q.get("cliMsgType") or "",
+                )
+            if qsnip and qsnip not in str(text or ""):
+                base = str(text or "").strip()
+                text = f"{base}\n\n[Quoted message]\n{qsnip}" if base else f"[Quoted message]\n{qsnip}"
                 self._as_flow("quote_context", thread_id=thread_id, chars=len(qsnip))
         except Exception:
             pass
@@ -3569,8 +3597,13 @@ class ZaloAdapter(BasePlatformAdapter):
         if self._own_id and str(self._own_id) in {str(x) for x in mentions}:
             return self._strip_leading_name(text) or text
 
-        # 2) Reply to one of the bot's messages.
-        if self._own_id and str(m.get("quotedOwnerId") or "") == str(self._own_id):
+        # 2) Reply to one of the bot's messages (ownerId or uidFrom from bridge).
+        q_owner = str(m.get("quotedOwnerId") or "").strip()
+        if not q_owner:
+            q = m.get("quote") if isinstance(m.get("quote"), dict) else {}
+            if isinstance(q, dict):
+                q_owner = str(q.get("ownerId") or q.get("uidFrom") or "").strip()
+        if self._own_id and q_owner and q_owner == str(self._own_id):
             return text or " "
 
         # 3) Text heuristic fallback (no reliable uid signal).
