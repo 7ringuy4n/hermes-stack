@@ -1,3 +1,13 @@
+## 2026-08-24 13:05 +07 — find_thread: normalized SoT only + entity→thread sync at startup
+
+- `find_thread` / context read **only** `zalo_threads` / `zalo_users` (no legacy `zalo_entities` name search).
+- Startup `sync_normalized_from_entities()`: backfill normalized tables from compat mirror; prune denied groups from `zalo_threads`.
+- Fixes LC group false `not_found` without search-time dedupe bypass.
+
+## 2026-08-24 13:00 +07 — find_thread: dedupe zalo_threads + zalo_entities matches
+
+- Superseded by normalized SoT sync above (do not rely on dual-table search).
+
 ## 2026-08-24 12:05 +07 — zalo-api: apply PG schema statement-by-statement
 
 - Root cause of post-quote “zalo-api not work”: `_ensure()` used one `conn.execute(SCHEMA)` (psycopg3 = one statement); after restore only `zalo_entities|settings|message_history` existed → `UndefinedTable` on `zalo_claims`/`zalo_threads`.
