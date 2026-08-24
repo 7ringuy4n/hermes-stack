@@ -158,6 +158,103 @@ def context_newest(items: List[Dict[str, Any]]) -> Tuple[str, str]:
     return str(last.get("file") or ""), str(last.get("text") or "")
 
 
+# Zalo sometimes sends numeric cliMsgType (e.g. 32 = photo) instead of chat.photo.
+ZALO_MSG_TYPE_NUM_MAP: Dict[str, str] = {
+    "1": "webchat",
+    "32": "chat.photo",
+    "31": "chat.voice",
+    "44": "chat.video.msg",
+    "46": "share.file",
+    "49": "chat.gif",
+}
+
+
+def normalize_zalo_msg_type(msg_type: Any) -> str:
+    mt = str(msg_type or "").strip()
+    return ZALO_MSG_TYPE_NUM_MAP.get(mt, mt)
+
+
+def quote_content_blob(quote: Dict[str, Any]) -> Dict[str, Any]:
+    """Best-effort content object for a quoted message (content + propertyExt)."""
+    if not isinstance(quote, dict):
+        return {}
+    qc = quote.get("content")
+    if qc is None:
+        qc = quote.get("msg") if quote.get("msg") is not None else quote.get("text")
+    if isinstance(qc, str) and qc.strip():
+        blob: Dict[str, Any] = {"title": qc.strip()}
+    elif isinstance(qc, dict):
+        blob = dict(qc)
+    else:
+        blob = {}
+    pe = quote.get("propertyExt") or quote.get("propExt")
+    if isinstance(pe, str):
+        try:
+            pe = json.loads(pe)
+        except Exception:
+            pe = None
+    if isinstance(pe, dict):
+        for key in ("href", "thumb", "hd", "title", "description", "params", "width", "height"):
+            if key not in blob and pe.get(key) is not None:
+                blob[key] = pe[key]
+    return blob
+
+
+def quote_is_media_type(msg_type: Any) -> bool:
+    mt = normalize_zalo_msg_type(msg_type).lower()
+    return any(tok in mt for tok in ("photo", "gif", "image", "voice", "video", "file", "share."))
+
+
+def extract_media_from_quote(quote: Any) -> Dict[str, Any] | None:
+    """Build inbound media dict from a quoted Zalo message (quote-reply to photo/file)."""
+    if not isinstance(quote, dict):
+        return None
+    qtype = normalize_zalo_msg_type(quote.get("msgType") or quote.get("cliMsgType") or "")
+    qc = quote_content_blob(quote)
+    href = str(qc.get("href") or qc.get("thumb") or "").strip()
+    params = qc.get("params") or {}
+    if isinstance(params, str):
+        try:
+            params = json.loads(params)
+        except Exception:
+            params = {}
+    if not isinstance(params, dict):
+        params = {}
+    if not href:
+        href = str(
+            params.get("hd")
+            or params.get("normal")
+            or params.get("m4a")
+            or params.get("oriUrl")
+            or ""
+        ).strip()
+    media_hint = bool(href) or quote_is_media_type(qtype)
+    if not media_hint or not href:
+        return None
+    mt_low = qtype.lower()
+    if "photo" in mt_low or "gif" in mt_low or "image" in mt_low:
+        kind = "image"
+    elif "voice" in mt_low or "audio" in mt_low:
+        kind = "voice"
+    elif "video" in mt_low:
+        kind = "video"
+    else:
+        kind = "file"
+    ext = (params.get("fileExt") if isinstance(params, dict) else None) or (
+        str(qc.get("title") or "bin").rsplit(".", 1)[-1]
+    )
+    return {
+        "kind": kind,
+        "url": href,
+        "fileName": qc.get("title") or params.get("fileName") or f"file.{ext}",
+        "ext": ext,
+        "mime": "image/jpeg"
+        if kind == "image"
+        else ("audio/aac" if kind == "voice" else "application/octet-stream"),
+        "size": (params.get("fileSize") if isinstance(params, dict) else 0) or 0,
+    }
+
+
 def quoted_context_snip(quote: Any, *, max_chars: int = 2000) -> str:
     """Plain text / file title from a Zalo quote payload for the agent prompt.
 
@@ -166,13 +263,14 @@ def quoted_context_snip(quote: Any, *, max_chars: int = 2000) -> str:
     """
     if not isinstance(quote, dict):
         return ""
-    qtype = str(quote.get("msgType") or quote.get("cliMsgType") or "").strip()
-    qc = quote.get("content")
-    if qc is None:
-        qc = quote.get("msg") if quote.get("msg") is not None else quote.get("text")
-    if isinstance(qc, str) and qc.strip():
-        body = qc.strip()
-    elif isinstance(qc, dict):
+    qtype = normalize_zalo_msg_type(quote.get("msgType") or quote.get("cliMsgType") or "")
+    qc_raw = quote.get("content")
+    if qc_raw is None:
+        qc_raw = quote.get("msg") if quote.get("msg") is not None else quote.get("text")
+    if isinstance(qc_raw, str) and qc_raw.strip():
+        body = qc_raw.strip()
+    else:
+        qc = quote_content_blob(quote)
         title = str(qc.get("title") or "").strip()
         desc = str(qc.get("description") or "").strip()
         href = str(qc.get("href") or qc.get("thumb") or "").strip()
@@ -208,8 +306,8 @@ def quoted_context_snip(quote: Any, *, max_chars: int = 2000) -> str:
                 body = "[quoted video]"
             elif "file" in low or "share" in low:
                 body = f"[quoted file{(': ' + file_name) if file_name else ''}]"
-    else:
-        body = str(quote.get("msg") or quote.get("text") or quote.get("body") or "").strip()
+        if not body:
+            body = str(quote.get("msg") or quote.get("text") or quote.get("body") or "").strip()
     if not body and qtype:
         body = f"[quoted message type={qtype}]"
     if not body:
