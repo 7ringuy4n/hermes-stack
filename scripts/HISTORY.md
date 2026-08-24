@@ -1,3 +1,17 @@
+## 2026-08-24 19:55 +07 — One schedule became many jobs; LC Group lost; 19:30 weather-only
+
+### Symptom
+Daily 06:00 LC Group and once 19:30 (poem + fuel + weather) saved, but list showed several rows at wrong clocks into DM. 19:30 fired weather only.
+
+### Root cause
+`hydrate_user_text` prepended prior turns with old HH:MM. `split_compound_requests` counted those clocks and zipped them onto skill instructions, dropping `vào Zalo LC Group`.
+
+### Fix (core)
+Clock-split and target extract use `strip_prior` current text only. Fan-out requires 2+ run-at clocks on the current bubble. Same clock + several skills = one schedule.
+
+### Prevent recurrence
+Never scan `[Prior conversation]` for schedule clocks or destination. Incidental times in a skill body (`6:00 AM` wakeup text) are not extra jobs.
+
 ## 2026-08-24 19:00 +07 — Daily schedule → poster / no save (heuristic bypass)
 
 ### Symptom

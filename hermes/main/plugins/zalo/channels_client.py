@@ -179,7 +179,11 @@ def extract_target_group_ref(text: str, plan: Optional[dict[str, Any]] = None) -
         val = _clean_group_ref(str(src.get(key) or ""))
         if val:
             return val
-    blob = (text or "").strip()
+    try:
+        from .classify_client import strip_prior_for_classify
+    except ImportError:
+        from classify_client import strip_prior_for_classify  # type: ignore
+    blob = strip_prior_for_classify(text or "")
     if not blob:
         return ""
     m = _TARGET_GROUP_RE.search(blob)
