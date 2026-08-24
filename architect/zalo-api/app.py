@@ -253,6 +253,10 @@ def _startup_sync_channels() -> None:
     except Exception:
         pass
     try:
+        zalo_store.sync_normalized_from_entities()
+    except Exception as e:
+        log.warning("zalo normalized sync from entities failed: %s", type(e).__name__)
+    try:
         _sync_registry_from_files()
     except Exception:
         pass
