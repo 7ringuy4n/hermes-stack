@@ -1,3 +1,19 @@
+## 2026-08-24 19:00 +07 — Daily schedule → poster / no save (heuristic bypass)
+
+### Symptom
+`đặt lịch chạy hằng ngày lúc 06:00 vào Zalo LC Group nội dung: mô tả thơ 4 dòng về trời xanh…, giá xăng, thời tiết` → DM photo or silence; schedules table empty.
+
+### Root cause
+1. Text-poster shortcut matched before schedule create (`4 dòng` + `anh` substring of `xanh`).
+2. Classify early-returned `schedule_heuristic_plan` before LLM — no `target_channel` / `process` / skill split from classify.json.
+
+### Fix (core)
+- Skip office/poster shortcuts when `looks_schedule_create`; harden `_DRAW` word boundaries.
+- Prefer LLM classify; enrich schedule heuristic only as post-LLM fallback; preserve split instructions in `force_timed`; extract `vào Zalo LC Group`.
+
+### Prevent recurrence
+Schedule-create prose must never take Dispatcher media shortcuts. Timed schedules with task `nội dung:` must hit classify.json (or enriched heuristic fallback), not a bare clock stub.
+
 ## 2026-08-24 18:15 +07 — Daily 06:00 LC group: no image/skills, !zalo hung
 
 ### Symptom
