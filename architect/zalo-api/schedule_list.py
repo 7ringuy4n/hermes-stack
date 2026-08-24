@@ -52,6 +52,33 @@ def prompt_is_clock_only(text: str) -> bool:
     return bool(t) and bool(_HHMM_PROMPT_RE.match(t))
 
 
+def schedule_destination_label(row: dict[str, Any]) -> str:
+    """Human destination for list lines (e.g. ``→ nhóm LC group``)."""
+    if not isinstance(row, dict):
+        return ""
+    origin = row.get("origin") if isinstance(row.get("origin"), dict) else {}
+    context = row.get("context") if isinstance(row.get("context"), dict) else {}
+    tt = str(
+        context.get("thread_type")
+        or origin.get("thread_type")
+        or context.get("chat_type")
+        or ""
+    ).lower()
+    name = str(
+        origin.get("target_name")
+        or context.get("target_channel")
+        or origin.get("chat_name")
+        or ""
+    ).strip()
+    if not name:
+        return ""
+    if tt in {"group", "g"} or str(context.get("chat_type") or "").lower() == "group":
+        return f"→ nhóm {name}"
+    if tt in {"user", "dm"} and name:
+        return f"→ DM {name}"
+    return f"→ {name}"
+
+
 def schedule_row_label(row: Any) -> str | None:
     if isinstance(row, str):
         line = row.strip()
@@ -87,9 +114,12 @@ def schedule_row_label(row: Any) -> str | None:
         or ""
     ).strip()
     payload = re.sub(r"\s+", " ", payload)[:120]
+    dest = schedule_destination_label(row)
     bits = [name]
     if schedule:
         bits.append(f"@ {schedule}")
+    if dest:
+        bits.append(dest)
     if payload and not prompt_is_clock_only(payload):
         bits.append(f"— {payload}")
     return " ".join(bits)[:240]

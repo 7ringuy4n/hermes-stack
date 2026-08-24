@@ -30,7 +30,11 @@ from schedule_crud import (  # noqa: E402
     take_all_flag,
     visible_jobs,
 )
-from schedule_list import schedule_clock_label, schedule_row_label  # noqa: E402
+from schedule_list import (  # noqa: E402
+    schedule_clock_label,
+    schedule_destination_label,
+    schedule_row_label,
+)
 
 
 def test_promote(tmp: Path) -> None:
@@ -221,6 +225,21 @@ def test_remove_resolve() -> None:
     print("PASS remove resolve: bulk indexes, dedupe, name, out-of-range")
 
 
+def test_destination_label() -> None:
+    job = {
+        "name": "poem",
+        "prompt": "xuân chưa tới",
+        "schedule": {"expr": "0 14 * * *"},
+        "origin": {"thread_id": "g1", "target_name": "LC group", "chat_name": "LC group"},
+        "context": {"thread_type": "group", "target_channel": "LC group"},
+    }
+    assert schedule_destination_label(job) == "→ nhóm LC group"
+    label = schedule_row_label(job) or ""
+    assert "→ nhóm LC group" in label, label
+    assert "poem" in label
+    print("PASS schedule list destination label")
+
+
 def main() -> int:
     fails = 0
     try:
@@ -233,6 +252,7 @@ def main() -> int:
         test_timer_flag_and_clock_label()
         test_remove_request_parse()
         test_remove_resolve()
+        test_destination_label()
     except AssertionError as e:
         print(f"FAIL {e}")
         fails = 1
