@@ -1690,6 +1690,17 @@ class ZaloAdapter(BasePlatformAdapter):
                 heartbeat(jid, wid)
 
             _pulse()
+            blocked, block_msg = await self._as_security_message_gate(
+                text=instruction,
+                thread_id=tid,
+                user_id=sender_id,
+                correlation_id=jid,
+            )
+            if blocked:
+                if block_msg:
+                    await self._as_gate_announce(tid, zalo_tt, block_msg)
+                complete_job(jid, {"ok": False, "blocked": "security"})
+                return
             await self.handle_message(event)
             idle = await self._as_wait_thread_idle(
                 iso, pulse=_pulse, arm_first=True
@@ -2383,6 +2394,16 @@ class ZaloAdapter(BasePlatformAdapter):
         turn_timeout = self._as_queue_turn_timeout_s()
         try:
             async def _run_turn() -> None:
+                blocked, block_msg = await self._as_security_message_gate(
+                    text=str(event.text or ""),
+                    thread_id=tid,
+                    user_id=sender_id,
+                    correlation_id=str(event.message_id or ""),
+                )
+                if blocked:
+                    if block_msg:
+                        await self._as_gate_announce(tid, thread_type, block_msg)
+                    return
                 await self.handle_message(event)
                 await self._as_autosend_late_files(tid, thread_type)
                 await self._as_compound_wait_part(tid)
@@ -3038,29 +3059,49 @@ class ZaloAdapter(BasePlatformAdapter):
                 raw_q = m.get("quote")
             quote = raw_q if isinstance(raw_q, dict) else {}
             qc = quote.get("content")
-            qtype = str(quote.get("msgType") or "")
-            if isinstance(qc, dict) and (qc.get("href") or qtype.startswith("share.") or qtype.startswith("chat.photo")):
+            qtype = str(quote.get("msgType") or quote.get("cliMsgType") or "").lower()
+            href = ""
+            if isinstance(qc, dict):
+                href = str(qc.get("href") or qc.get("thumb") or "").strip()
+            media_hint = bool(href) or any(
+                tok in qtype for tok in ("photo", "gif", "image", "voice", "video", "file", "share.")
+            )
+            if isinstance(qc, dict) and media_hint:
                 params = qc.get("params") or {}
                 if isinstance(params, str):
                     try:
                         params = json.loads(params)
                     except Exception:
                         params = {}
+                if not isinstance(params, dict):
+                    params = {}
+                if not href:
+                    href = str(params.get("hd") or params.get("m4a") or params.get("oriUrl") or "").strip()
                 ext = (params.get("fileExt") if isinstance(params, dict) else None) or (
                     (qc.get("title") or "bin").rsplit(".", 1)[-1]
                 )
-                kind = "image" if "photo" in qtype or "gif" in qtype else "file"
-                media = {
-                    "kind": kind,
-                    "url": qc.get("href") or "",
-                    "fileName": qc.get("title") or f"file.{ext}",
-                    "ext": ext,
-                    "mime": "image/jpeg" if kind == "image" else "application/octet-stream",
-                    "size": (params.get("fileSize") if isinstance(params, dict) else 0) or 0,
-                }
-                m = dict(m)
-                m["media"] = media
-                logger.info("Zalo: media from quoted %s (%s)", qtype, media.get("fileName"))
+                if "photo" in qtype or "gif" in qtype or "image" in qtype:
+                    kind = "image"
+                elif "voice" in qtype or "audio" in qtype:
+                    kind = "voice"
+                elif "video" in qtype:
+                    kind = "video"
+                else:
+                    kind = "file"
+                if href:
+                    media = {
+                        "kind": kind,
+                        "url": href,
+                        "fileName": qc.get("title") or params.get("fileName") or f"file.{ext}",
+                        "ext": ext,
+                        "mime": "image/jpeg"
+                        if kind == "image"
+                        else ("audio/aac" if kind == "voice" else "application/octet-stream"),
+                        "size": (params.get("fileSize") if isinstance(params, dict) else 0) or 0,
+                    }
+                    m = dict(m)
+                    m["media"] = media
+                    logger.info("Zalo: media from quoted %s (%s)", qtype, media.get("fileName"))
 
         # Cache inbound as SendMessageQuote so outbound replies quote the @mention.  (ASSISTANT_REPLY_QUOTE)
         if not hasattr(self, "_pending_reply_quote"):
@@ -3282,15 +3323,23 @@ class ZaloAdapter(BasePlatformAdapter):
         elif not media_urls and str(text or "").strip():
             text = self._as_attachment_followup(str(thread_id), text)
 
-        # Quoted reply: inject quoted text/title so the agent can resolve
-        # "tìm lời bài hát" against Multo / Cup of Joe without re-asking.
+        # Quoted reply (DM + group): inject quoted text/title/media label so the
+        # agent can read the old message the user replied to.
         try:
             raw_q = m.get("quoted") if isinstance(m.get("quoted"), dict) else None
             if not isinstance(raw_q, dict):
                 raw_q = m.get("quote") if isinstance(m.get("quote"), dict) else {}
             qsnip = quoted_context_snip(raw_q)
-            if qsnip and str(text or "").strip() and qsnip not in str(text):
-                text = f"{text}\n\n[Quoted message]\n{qsnip}"
+            if isinstance(raw_q, dict) and raw_q and not qsnip:
+                logger.info(
+                    "Zalo: quote present but empty snip thread=%s keys=%s msgType=%s",
+                    thread_id,
+                    sorted(str(k) for k in raw_q.keys())[:12],
+                    raw_q.get("msgType") or raw_q.get("cliMsgType") or "",
+                )
+            if qsnip and qsnip not in str(text or ""):
+                base = str(text or "").strip()
+                text = f"{base}\n\n[Quoted message]\n{qsnip}" if base else f"[Quoted message]\n{qsnip}"
                 self._as_flow("quote_context", thread_id=thread_id, chars=len(qsnip))
         except Exception:
             pass
@@ -3548,8 +3597,13 @@ class ZaloAdapter(BasePlatformAdapter):
         if self._own_id and str(self._own_id) in {str(x) for x in mentions}:
             return self._strip_leading_name(text) or text
 
-        # 2) Reply to one of the bot's messages.
-        if self._own_id and str(m.get("quotedOwnerId") or "") == str(self._own_id):
+        # 2) Reply to one of the bot's messages (ownerId or uidFrom from bridge).
+        q_owner = str(m.get("quotedOwnerId") or "").strip()
+        if not q_owner:
+            q = m.get("quote") if isinstance(m.get("quote"), dict) else {}
+            if isinstance(q, dict):
+                q_owner = str(q.get("ownerId") or q.get("uidFrom") or "").strip()
+        if self._own_id and q_owner and q_owner == str(self._own_id):
             return text or " "
 
         # 3) Text heuristic fallback (no reliable uid signal).
@@ -4690,6 +4744,107 @@ class ZaloAdapter(BasePlatformAdapter):
         if raw == "":
             return av_on
         return raw in {"1", "true", "yes", "on"}
+
+    def _as_security_worker_active(self) -> bool:
+        """True when Security Worker is intentionally enabled for this stack."""
+        import os
+        flag = (
+            os.getenv("ENABLE_SECURITY")
+            or os.getenv("WORKER_SECURITY")
+            or ""
+        ).strip().lower()
+        return flag in {"1", "true", "yes", "on", "active"}
+
+    async def _as_security_message_gate(
+        self,
+        *,
+        text: str,
+        thread_id: str,
+        user_id: str,
+        correlation_id: str = "",
+    ) -> tuple[bool, str]:
+        """Check inbound Zalo text with Security Worker before Hermes.
+
+        Returns (blocked, user_message). When Security Worker is inactive → allow.
+        When active but unreachable → fail closed (configurable via SECURITY_FAIL_OPEN=1).
+        """
+        import os
+        import uuid
+
+        if not self._as_security_worker_active():
+            return False, ""
+        body = (text or "").strip()
+        if not body:
+            return False, ""
+        base = (
+            os.getenv("SECURITY_MANAGER_URL")
+            or os.getenv("SECURITY_URL")
+            or "http://security-manager:8093"
+        ).rstrip("/")
+        corr = (correlation_id or "").strip() or f"zalo_{uuid.uuid4().hex[:12]}"
+        fail_open = (os.getenv("SECURITY_FAIL_OPEN") or "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        try:
+            import asyncio
+            import json as _json
+            import urllib.request
+
+            def _post() -> dict:
+                req = urllib.request.Request(
+                    base + "/v1/message-check",
+                    data=_json.dumps(
+                        {
+                            "text": body,
+                            "thread_id": str(thread_id or ""),
+                            "user_id": str(user_id or ""),
+                            "correlation_id": corr,
+                            "source": "zalo",
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=5.0) as resp:
+                    return _json.loads(resp.read().decode("utf-8") or "{}")
+
+            data = await asyncio.to_thread(_post)
+            if data.get("allowed") is False or str(data.get("action") or "") == "block":
+                msg = str(
+                    data.get("user_message")
+                    or self._as_ux_line(
+                        "ZALO_SECURITY_BLOCK_MSG",
+                        ("security", "blocked"),
+                        "Tin nhắn bị chặn bởi bảo mật.",
+                    )
+                )
+                self._as_flow(
+                    "security_message_blocked",
+                    thread_id=thread_id,
+                    user_id=user_id,
+                    correlation_id=corr,
+                )
+                return True, msg
+            return False, ""
+        except Exception as exc:
+            self._as_flow(
+                "security_message_unavailable",
+                thread_id=thread_id,
+                error=type(exc).__name__,
+                fail_open=fail_open,
+                correlation_id=corr,
+            )
+            if fail_open:
+                return False, ""
+            msg = self._as_ux_line(
+                "ZALO_SECURITY_UNAVAILABLE_MSG",
+                ("security", "unavailable"),
+                "Bảo mật tạm thời không sẵn sàng. Thử lại sau.",
+            )
+            return True, msg
 
     async def _as_av_gate(  # ASSISTANT_FILE_PIPELINE_v6
         self, thread_id, sender_id, local_path: str, media: dict

@@ -1,7 +1,29 @@
-﻿## 2026-08-23 11:10 +07 — valkey/memory/nine monitor, multi-clock schedule, OpenBao, classify intents
+## 2026-08-24 08:10 +07 — Zalo quote-reply: read old message in DM + group
+
+- Bridge `zaloClient.js`: extract quote from `quote|refMsg|reference`; map `ownerId`/`uidFrom`; RAW log `hasQuote` + `quoteKeys`; flatten attachment `params`.
+- Adapter + `quoted_context_snip`: inject quote even when caption empty (typed media placeholder); broader media-from-quote; reply-to-bot address uses `uidFrom` fallback (group).
+
+## 2026-08-24 08:00 +07 — Env-probe refuse harden; drop unused SQLITE_PATH; first-setup TZ
+
+- Secret probe + classify/SOUL/zalo-channel/safety: refuse env-file **existence** probes immediately (no path/size/backup lists); expand VI/EN env-file patterns; fix UTF-8 in policy JSON.
+- Compose: remove unused `SQLITE_PATH=/data/schedules.db` when `DATABASE_URL` is set (SQLite remains code fallback only).
+- Docs/first-setup: recommend host `timedatectl` timezone; `.env` never committed (placeholders only in `.env.example`).
+
+## 2026-08-24 07:30 +07 — Production update: Zalo PG context/claim, schedule PG, security gate, scoped update
+
+- Zalo PostgreSQL SoT: normalized `zalo_users` / `zalo_threads` / `zalo_group_members` / `zalo_claims`; `!zalo claim` stores `admin_user_id` + `claimed_thread_id`.
+- Hermes skill `zalo-context` + zalo-api `/v1/zalo/context|threads/find|claims/active` (no raw SQL to the model).
+- Channel resolve prefers PG; schedule skill forbids Home-substitution / invented confirmation waits.
+- Schedule-worker: optional `DATABASE_URL` Postgres store with `schedule_executions` + correlation/execution ids (SQLite remains migrate fallback).
+- Security: `/v1/message-check` before Hermes when Security Worker active (fail-closed by default).
+- `run.sh update <service…>` scoped recreate (`--no-deps`); refuses implicit postgres recreate.
+- Media-file skill: forced conditional worker vs OmniRouter policy.
+
+## 2026-08-23 11:10 +07 — valkey/memory/nine monitor, multi-clock schedule, OpenBao, classify intents
 
 - Monitor: Valkey/memory/nine dashboards and exporter signals.
 - Schedule: multi-clock jobs; OpenBao env wiring; classify intent hardening.
+
 ## 2026-08-23 18:15 +07 — Zalo bridge overlay: bundle markdownToZalo.js + verify
 
 - Root cause: overlay `zaloClient.js` (upstream main) imports `./markdownToZalo.js` but npm `hermes-zalo-plugin@1.0.x` does not ship it → bridge crash-loop, `:8787` down.
