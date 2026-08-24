@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from typing import Any, Callable
@@ -52,6 +53,19 @@ MAX_INSTRUCTIONS = 32
 CRON_CHARS = set("0123456789*,/-")
 DEFAULT_TIMEOUT_S = 70.0
 HTTP_ATTEMPTS = 1
+_PRIOR_BLOCK = re.compile(
+    r"\[Prior conversation\].*?\[/Prior conversation\]\s*",
+    re.I | re.S,
+)
+
+
+def strip_prior_for_classify(text: str) -> str:
+    """Current user ask only — drop Valkey hydrate wrappers (keep in sync with model-router)."""
+    blob = (text or "").strip()
+    if not blob:
+        return ""
+    cleaned = _PRIOR_BLOCK.sub("", blob).strip()
+    return cleaned or blob
 
 
 def sanitize_instructions(raw: Any, fallback: str) -> list[str]:
@@ -369,7 +383,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
 
 def classify_text(text: str, *, timezone: str = "Asia/Ho_Chi_Minh") -> dict[str, Any]:
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
-    blob = (text or "").strip()
+    blob = strip_prior_for_classify(text or "")
     if _planner is not None:
         try:
             return normalize_plan(_planner(blob, timezone=tz), blob, tz)
