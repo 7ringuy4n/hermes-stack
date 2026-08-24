@@ -1,3 +1,10 @@
+## 2026-08-24 19:00 +07 — Schedule create: skip poster shortcut + LLM classify first
+
+- Daily “06:00 vào Zalo LC Group nội dung: mô tả thơ 4 dòng… xanh…, giá xăng, thời tiết” was stolen by text-poster (`4 dòng` + `anh` inside `xanh`) → DM photo / no save; classify early schedule heuristic skipped LLM so `target_channel` / `process` / split never applied.
+- `media_shortcuts`: `looks_schedule_create` gates office/poster; `_DRAW` word-bounded so `xanh` ≠ `anh`.
+- Classify: disable pre-LLM schedule heuristic early-return; enrich post-LLM heuristic with `target_channel`, `schedule_delivery`, skill-split; `normalize_plan` keeps `schedule_delivery`; `force_timed` preserves multi-instruction splits.
+- Host: `extract_target_group_ref` matches `vào Zalo LC Group` (platform + display name).
+
 ## 2026-08-24 18:15 +07 — Daily LC-group task schedule: process+split, admin not blocked
 
 - Daily “06:00 vào Zalo LC Group nội dung: mô tả thơ + giá xăng + thời tiết” was treated as send-body (`nội dung:` ⇒ verbatim) with `target_channel` null; create flushed a leftover DM photo; `!zalo schedule list all` waited behind the inbound lock.

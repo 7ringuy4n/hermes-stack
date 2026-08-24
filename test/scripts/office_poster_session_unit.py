@@ -14,7 +14,7 @@ from office_file import (  # noqa: E402
     parse_office,
     parse_office_jobs,
 )
-from media_shortcuts import looks_office_create  # noqa: E402
+from media_shortcuts import looks_office_create, looks_schedule_create, looks_text_poster  # noqa: E402
 from text_poster import parse_text_poster  # noqa: E402
 
 
@@ -48,6 +48,21 @@ def main() -> int:
     spec = parse_text_poster("vẽ hình ảnh điền vào 5 dòng hello")
     assert spec and spec["phrase"].lower() == "hello", spec
 
+    # Real poster still matches; "xanh" must not trip _DRAW via "anh"; schedule never posters.
+    assert looks_text_poster('vẽ poster 5 dòng chữ "KHÁT QUÁ"') is True
+    import media_shortcuts as _ms  # noqa: E402
+
+    assert _ms._DRAW.search("trời xanh gió mát") is None
+    daily_sched = (
+        "đặt lịch chạy hằng ngày lúc 06:00 vào Zalo LC Group nội dung: "
+        "mô tả 1 bài thơ ngắn 4 dòng về trời xanh gió mát chim hót líu lo chào ngày mới, "
+        "cập nhật giá xăng E5 RON92 và E10 RON95 mới nhất, "
+        "dự báo thời tiết hồ chí minh trong ngày"
+    )
+    assert looks_schedule_create(daily_sched) is True
+    assert looks_text_poster(daily_sched) is False
+    assert looks_office_create(daily_sched) is False
+
     soul = (ROOT / "hermes" / "main" / "SOUL.md").read_text(encoding="utf-8")
     import re
 
@@ -56,7 +71,6 @@ def main() -> int:
         return 1
     # session module importable
     import session_memory  # noqa: F401
-    import media_shortcuts  # noqa: F401
 
     print("OK office/poster/soul/session units")
     return 0
