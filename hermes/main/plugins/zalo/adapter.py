@@ -304,6 +304,8 @@ from attachment import (  # noqa: E402
     file_extract_ack_message,
     image_ocr_ack_message,
     quoted_context_snip,
+    extract_media_from_quote,
+    normalize_zalo_msg_type,
     song_hint_from_filename,
     stage_shared_media,
     worker_media_path,
@@ -3057,51 +3059,17 @@ class ZaloAdapter(BasePlatformAdapter):
             raw_q = m.get("quoted")
             if not isinstance(raw_q, dict):
                 raw_q = m.get("quote")
-            quote = raw_q if isinstance(raw_q, dict) else {}
-            qc = quote.get("content")
-            qtype = str(quote.get("msgType") or quote.get("cliMsgType") or "").lower()
-            href = ""
-            if isinstance(qc, dict):
-                href = str(qc.get("href") or qc.get("thumb") or "").strip()
-            media_hint = bool(href) or any(
-                tok in qtype for tok in ("photo", "gif", "image", "voice", "video", "file", "share.")
-            )
-            if isinstance(qc, dict) and media_hint:
-                params = qc.get("params") or {}
-                if isinstance(params, str):
-                    try:
-                        params = json.loads(params)
-                    except Exception:
-                        params = {}
-                if not isinstance(params, dict):
-                    params = {}
-                if not href:
-                    href = str(params.get("hd") or params.get("m4a") or params.get("oriUrl") or "").strip()
-                ext = (params.get("fileExt") if isinstance(params, dict) else None) or (
-                    (qc.get("title") or "bin").rsplit(".", 1)[-1]
-                )
-                if "photo" in qtype or "gif" in qtype or "image" in qtype:
-                    kind = "image"
-                elif "voice" in qtype or "audio" in qtype:
-                    kind = "voice"
-                elif "video" in qtype:
-                    kind = "video"
-                else:
-                    kind = "file"
-                if href:
-                    media = {
-                        "kind": kind,
-                        "url": href,
-                        "fileName": qc.get("title") or params.get("fileName") or f"file.{ext}",
-                        "ext": ext,
-                        "mime": "image/jpeg"
-                        if kind == "image"
-                        else ("audio/aac" if kind == "voice" else "application/octet-stream"),
-                        "size": (params.get("fileSize") if isinstance(params, dict) else 0) or 0,
-                    }
+            if isinstance(raw_q, dict):
+                qmedia = extract_media_from_quote(raw_q)
+                if qmedia:
+                    media = qmedia
                     m = dict(m)
                     m["media"] = media
-                    logger.info("Zalo: media from quoted %s (%s)", qtype, media.get("fileName"))
+                    logger.info(
+                        "Zalo: media from quoted %s (%s)",
+                        normalize_zalo_msg_type(raw_q.get("msgType") or raw_q.get("cliMsgType")),
+                        media.get("fileName"),
+                    )
 
         # Cache inbound as SendMessageQuote so outbound replies quote the @mention.  (ASSISTANT_REPLY_QUOTE)
         if not hasattr(self, "_pending_reply_quote"):
@@ -3712,17 +3680,7 @@ class ZaloAdapter(BasePlatformAdapter):
         msg_type = quote.get("msgType")
         if msg_type is None:
             msg_type = quote.get("cliMsgType") or "webchat"
-        num_map = {
-            "1": "webchat",
-            "32": "chat.photo",
-            "31": "chat.voice",
-            "44": "chat.video.msg",
-            "46": "share.file",
-            "49": "chat.gif",
-        }
-        mt = str(msg_type)
-        if mt in num_map:
-            mt = num_map[mt]
+        mt = normalize_zalo_msg_type(msg_type)
         skip = {
             "share.file",
             "chat.voice",

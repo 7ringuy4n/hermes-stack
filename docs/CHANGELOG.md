@@ -1,3 +1,9 @@
+## 2026-08-24 09:00 +07 — Quote-reply to photo (type 32); backup omni router + OpenBao KV restore
+
+- Zalo quote `msgType=32` (photo) now maps to `chat.photo`; `extract_media_from_quote` pulls image URL from quote content/propertyExt for OCR.
+- Backup volumes: include `omni_router_data` (OmniRouter combos); restore stops `omni-router` before volume untar.
+- Restore OpenBao: re-import `kv-assistant-api-keys.json` into running OpenBao -dev + refresh `.env.openbao`.
+
 ## 2026-08-24 08:35 +07 — Restore valkey: use compose service `valkey` (not `redis`)
 
 - `assistant_stack_up_datastore` / `assistant_restore_valkey`: stop/start/ping resolved valkey container; compose `up … valkey` (fixes `no such service: redis` / `No such container: redis`).
