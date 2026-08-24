@@ -146,6 +146,24 @@ def _clean_group_ref(raw: str) -> str:
     ref = (raw or "").strip(" \t\"'“”.:-")
     if not ref or _GROUP_REF_NOISE_RE.match(ref):
         return ""
+    # Strip channel platform prefixes so classify "zalo LC group" → "LC group"
+    # (same variants as zalo-api channels_registry.resolve).
+    low = ref.lower()
+    for prefix in (
+        "zalo ",
+        "telegram ",
+        "lark ",
+        "discord ",
+        "slack ",
+        "whatsapp ",
+    ):
+        if low.startswith(prefix):
+            stripped = ref[len(prefix) :].strip(" \t\"'“”.:-")
+            if stripped:
+                ref = stripped
+            break
+    if not ref or _GROUP_REF_NOISE_RE.match(ref):
+        return ""
     return ref
 
 

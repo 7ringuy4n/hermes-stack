@@ -543,22 +543,28 @@ func injectZalo(sch scheduleRow, text string) error {
 	senderID := firstNonEmpty(strMap(sch.Origin, "user_id"), strMap(sch.Origin, "sender_id"), strMap(sch.Context, "sender_id"), threadID)
 	senderName := firstNonEmpty(strMap(sch.Context, "sender_name"), strMap(sch.Origin, "chat_name"), "user")
 	threadType := firstNonEmpty(strMap(sch.Context, "thread_type"), "user")
+	delivery := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		strMap(sch.Context, "schedule_delivery"),
+		strMap(sch.Origin, "schedule_delivery"),
+		"process",
+	)))
 	if threadID == "" {
 		return fmt.Errorf("missing zalo thread")
 	}
 	body, _ := json.Marshal(map[string]any{
 		"type": "message",
 		"payload": map[string]any{
-			"threadId":       threadID,
-			"threadType":     threadType,
-			"senderId":       senderID,
-			"senderName":     senderName,
-			"text":           text,
-			"isSelf":         false,
-			"scheduleFire":   true,
-			"scheduleId":     sch.ID,
-			"executionId":    strMap(sch.Origin, "execution_id"),
-			"correlationId":  strMap(sch.Origin, "correlation_id"),
+			"threadId":          threadID,
+			"threadType":        threadType,
+			"senderId":          senderID,
+			"senderName":        senderName,
+			"text":              text,
+			"isSelf":            false,
+			"scheduleFire":      true,
+			"scheduleDelivery":  delivery,
+			"scheduleId":        sch.ID,
+			"executionId":       strMap(sch.Origin, "execution_id"),
+			"correlationId":     strMap(sch.Origin, "correlation_id"),
 		},
 	})
 	req, err := http.NewRequest(http.MethodPost, zaloInject, bytes.NewReader(body))

@@ -1,3 +1,20 @@
+## 2026-08-24 16:30 +07 — Schedule fire paraphrased; target/list UX unclear
+
+### Symptom
+`2 phút nữa gửi vào zalo lc group nội dung: <poem>` saved OK and fired into LC group, but Hermes rewrote the poem. Save ack was only `Đã lưu lịch!` with no `→ nhóm`. List said `lịch chat này` without destination. Classify emitted `target_channel: "zalo lc group"`.
+
+### Root cause
+1. Every `scheduleFire` inject was treated as inbound chat → LLM paraphrase.
+2. UX/list did not surface destination when requester DM ≠ delivery group.
+3. Classify target_channel kept platform noise (`zalo …`).
+
+### Fix (core)
+- `schedule_delivery` verbatim vs process; adapter verbatim send; worker passes `scheduleDelivery`.
+- Classify + `_clean_group_ref` harden display-name targets; save/list show `→ nhóm …`.
+
+### Prevent recurrence
+Send-body schedules must set/store `schedule_delivery=verbatim` and never re-enter Hermes chat on fire.
+
 ## 2026-08-24 15:25 +07 — Cannot delete schedules of other groups from DM
 
 ### Symptom

@@ -2118,7 +2118,7 @@ def chat_command(
                 return {
                     "ok": True,
                     "handled": True,
-                    "reply": fmt_schedule_list(scoped, heading="lịch chat này"),
+                    "reply": fmt_schedule_list(scoped, heading="lịch (chat này + nhóm đã đặt)"),
                 }
             if vis:
                 return {
