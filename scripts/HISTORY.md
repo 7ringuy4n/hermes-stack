@@ -1,3 +1,17 @@
+## 2026-08-24 11:20 +07 — Quote-reply photo: only "[quoted image]", no OCR
+
+### Symptom
+After type-32 mapping, bot still says it only received `[quoted image]` and asks to send the photo directly. Hermes may also show "Recovered reply — gateway restarted".
+
+### Root cause
+Inbound Zalo `TQuote` fields are `cliMsgType` + `attach` (JSON string) + `msg` — not `content`/`href` like a normal message. Media extract looked only at `content`, so no URL → no download/OCR. Gateway watchdog restarts (event-loop hang) caused the recovered-reply banner.
+
+### Fix (core)
+Bridge merges/parses `attach` into quote content; attachment helpers read `attach`/`hdUrl`/`thumbUrl`/params; RAW logs attach preview.
+
+### Prevent recurrence
+Treat inbound quotes as TQuote shape; never assume Message.content for quoted media.
+
 ## 2026-08-24 09:00 +07 — Quote-reply to image: bot sees type=32 only
 
 ### Symptom

@@ -1,3 +1,9 @@
+## 2026-08-24 11:20 +07 — Quote photo: parse TQuote.attach JSON for real image URL
+
+- Bridge `_mapInboundQuote`: merge Zalo `attach` (JSON string) into quote content; RAW logs `cliMsgType` + attach preview.
+- Adapter/attachment: extract media from `attach`/`hdUrl`/`thumbUrl` (inbound TQuote has no `content.href`).
+- Fixes bot answering only `[quoted image]` with no OCR after quote-reply to a photo.
+
 ## 2026-08-24 09:00 +07 — Quote-reply to photo (type 32); backup omni router + OpenBao KV restore
 
 - Zalo quote `msgType=32` (photo) now maps to `chat.photo`; `extract_media_from_quote` pulls image URL from quote content/propertyExt for OCR.
