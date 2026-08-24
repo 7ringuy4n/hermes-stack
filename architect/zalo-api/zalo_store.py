@@ -95,9 +95,43 @@ CREATE INDEX IF NOT EXISTS zalo_claims_active_thread_idx
 
 KINDS = frozenset({"admin", "user", "dm", "group", "denied"})
 
+# Tables required after SCHEMA apply (psycopg Connection.execute accepts one statement).
+_REQUIRED_TABLES = (
+    "zalo_entities",
+    "zalo_settings",
+    "zalo_message_history",
+    "zalo_users",
+    "zalo_threads",
+    "zalo_group_members",
+    "zalo_claims",
+)
+
+
+def _schema_statements() -> list[str]:
+    """Split SCHEMA into single statements — psycopg3 execute() is one-command-only."""
+    out: list[str] = []
+    for part in SCHEMA.split(";"):
+        lines = [
+            ln
+            for ln in part.splitlines()
+            if ln.strip() and not ln.strip().startswith("--")
+        ]
+        cleaned = "\n".join(lines).strip()
+        if cleaned:
+            out.append(cleaned)
+    return out
+
 
 def available() -> bool:
     return bool(DSN) and _ensure()
+
+
+def ensure_schema(*, force: bool = False) -> bool:
+    """Apply full SCHEMA (statement-by-statement). force=True re-runs even if marked ready."""
+    global _ready
+    if force:
+        _ready = False
+    return _ensure()
 
 
 def _ensure() -> bool:
@@ -107,7 +141,6 @@ def _ensure() -> bool:
     if _ready and _pool is not None:
         return True
     try:
-        import psycopg
         from psycopg.rows import dict_row
         from psycopg_pool import ConnectionPool
 
@@ -119,13 +152,27 @@ def _ensure() -> bool:
                 kwargs={"row_factory": dict_row},
                 open=True,
             )
+        stmts = _schema_statements()
         with _pool.connection() as conn:
-            conn.execute(SCHEMA)
+            for stmt in stmts:
+                conn.execute(stmt)
+            missing = []
+            for name in _REQUIRED_TABLES:
+                row = conn.execute(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema='public' AND table_name=%s",
+                    (name,),
+                ).fetchone()
+                if not row:
+                    missing.append(name)
+            if missing:
+                raise RuntimeError(f"zalo schema incomplete after ensure: {', '.join(missing)}")
             conn.commit()
         _ready = True
+        log.info("zalo postgres schema ready (%d statements, %d tables)", len(stmts), len(_REQUIRED_TABLES))
         return True
     except Exception as e:
-        log.warning("zalo postgres unavailable: %s", type(e).__name__)
+        log.warning("zalo postgres unavailable: %s: %s", type(e).__name__, e)
         _ready = False
         return False
 
