@@ -9,7 +9,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
-from attachment import quoted_context_snip, song_hint_from_filename  # noqa: E402
+from attachment import (  # noqa: E402
+    extract_media_from_quote,
+    quoted_context_snip,
+    song_hint_from_filename,
+)
 from gateway_noise import strip_cron_delivery  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
@@ -58,6 +62,18 @@ def test_quoted_snip() -> None:
         }
     )
     assert "Multo" in title, title
+    photo = quoted_context_snip({"msgType": "32", "content": {}})
+    assert photo == "[quoted image]", photo
+    media = extract_media_from_quote(
+        {
+            "msgType": "32",
+            "content": {
+                "href": "https://cdn.example/photo.jpg",
+                "params": {"hd": "https://cdn.example/photo-hd.jpg", "fileExt": "jpg"},
+            },
+        }
+    )
+    assert media and media.get("kind") == "image" and media.get("url"), media
     print("PASS quoted_context_snip")
 
 
