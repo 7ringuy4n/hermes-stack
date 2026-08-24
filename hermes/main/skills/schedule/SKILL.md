@@ -33,13 +33,17 @@ Do not split a single-clock daily lịch into immediate async jobs.
 
 ## Deliver into a named Zalo group
 
-When classify JSON includes `target_channel` (group display name), Zalo adapter resolves it via zalo-api channel registry and rewrites schedule `origin.thread_id` to that group (requester stays `user_id`).
+When classify JSON includes `target_channel` (group display name), **always** resolve via skill **`zalo-context`** (`POST /v1/zalo/context` or `/v1/zalo/threads/find`) / zalo-api channel registry and rewrite schedule `origin.thread_id` to that group (requester stays `user_id`).
 
 If the group is unknown:
 
-- Tell the user to open that group and run `!zalo allow` / `!zalo label`, or DM `!zalo refresh`, then retry.
+- Tell admin to open that group and run `!zalo allow` / `!zalo label`, or DM `!zalo refresh`, then retry.
 - **Do not** ask for a raw chat ID.
 - **Do not** invent “send the request inside the group instead.”
+- **Do not** substitute the current DM / “Home” chat.
+- **Do not** invent a confirmation wait (no 60-minute hold). Fail fast with the allow/refresh instruction.
+
+When a sole-admin `!zalo claim` exists, outbound delivery for that context uses `claim.claimed_thread_id`, never the admin `user_id` alone.
 
 ## Must follow
 
@@ -48,8 +52,10 @@ If the group is unknown:
 3. Do not execute the inner task at create time.
 4. User wording: **lịch** (Vietnamese) or **schedule** (English). Never **cron** in chat.
 5. When the due payload runs, the delivered chat must be **body only** — never `Cronjob Response` / `job_id` / stop-reminder footers.
+6. Before naming a destination group, call **`zalo-context`**. Never guess.
 
 ## Related
 
+- `zalo-context` — resolve user/thread/claim ids (PostgreSQL via zalo-api)
 - `core/scheduling` — how to behave when a due payload arrives
 - Web search / media-file skills handle the inner work after fire

@@ -8,7 +8,7 @@
     "rest": "{n} more."
   },
   "secret_probe": {
-    "refuse": "Cannot provide secrets, credentials, or protected server paths."
+    "refuse": "Cannot provide secrets, credentials, environment files, or protected server paths."
   },
   "security": {
     "av_blocked": "This file was blocked (malware or test virus). It will not be learned.",

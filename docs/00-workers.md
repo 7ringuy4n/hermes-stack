@@ -10,7 +10,7 @@ Optional workers use **compose-scoped container names** (no global `container_na
 
 | Worker | `run.sh install` | What starts |
 |--------|------------------|-------------|
-| **Schedule** | `schedule` | Go SQLite schedule worker (`schedule-worker`) |
+| **Schedule** | `schedule` | Schedule worker (Postgres via `DATABASE_URL`; SQLite only if DSN unset) |
 | **Media** | `media` | Dispatcher, OCR, Jobs, Comfy CPU, SearXNG (bundled) |
 | **Security** | `security` | security-manager, authz, SIEM, policy-center + OpenBao |
 | **OpenBao only** | `openbao` | Same as `security` + `ENABLE_OPENBAO=1` |
@@ -30,6 +30,13 @@ Attachable extras (also via `install`):
 | Traefik / Gateway | `traefik`, `gateway` | Core defaults on; use to re-enable after `uninstall` |
 
 ## First setup (clean OS)
+
+Set the **host OS timezone** before first `up` so schedules and logs match wall clock (containers also read `TZ` from `.env`, default `Asia/Ho_Chi_Minh`):
+
+```bash
+sudo timedatectl set-timezone Asia/Ho_Chi_Minh   # or your region
+timedatectl status                               # confirm
+```
 
 ```bash
 cp .env.example .env

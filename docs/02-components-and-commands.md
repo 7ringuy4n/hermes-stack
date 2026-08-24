@@ -1,6 +1,6 @@
 # 02 — Components & commands
 
-**Before anything else:** copy `.env.example` → `.env` and set every `CHANGE_ME` secret.
+**Before anything else:** set the **host OS timezone** (`sudo timedatectl set-timezone Asia/Ho_Chi_Minh` or your region), then copy `.env.example` → `.env` and set every `CHANGE_ME` secret. Never commit `.env` (gitignored); only `.env.example` placeholders belong in the repo.
 
 ```bash
 cd /opt/assistant
