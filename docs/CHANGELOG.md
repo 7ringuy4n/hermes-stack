@@ -1,3 +1,9 @@
+## 2026-08-24 14:30 +07 — SOUL deception_hide block + schedule-worker public schema
+
+- SOUL.md: reworded queue-state rule to clear `deception_hide` threat pattern; added language examples (Spanish/Japanese/English) to pass multi-language unit.
+- `soul_deception_unit.py`: harden to catch broad 8-word deception window pattern.
+- `schedule-worker/store_pg.go`: qualify all DML/DDL as `public.schedules` / `public.schedule_executions`; `applyPgSchema()` splits statements, forces `search_path=public`, verifies tables before marking ready. Fixes `relation "schedules" does not exist` after restore when `wf.schedules` (workflow) also present.
+
 ## 2026-08-24 13:05 +07 — find_thread: normalized SoT only + entity→thread sync at startup
 
 - `find_thread` / context read **only** `zalo_threads` / `zalo_users` (no legacy `zalo_entities` name search).
