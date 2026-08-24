@@ -233,7 +233,13 @@ func scheduleItemHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, map[string]any{"ok": true, "schedule": row})
 	case http.MethodDelete:
-		if _, err := db.Exec(`DELETE FROM schedules WHERE id=?`, id); err != nil {
+		var err error
+		if usingPostgres() {
+			_, err = db.Exec(`DELETE FROM public.schedules WHERE id=$1`, id)
+		} else {
+			_, err = db.Exec(`DELETE FROM schedules WHERE id=?`, id)
+		}
+		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}

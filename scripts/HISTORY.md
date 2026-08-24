@@ -1,3 +1,20 @@
+## 2026-08-24 15:25 +07 — Cannot delete schedules of other groups from DM
+
+### Symptom
+`!zalo schedule list` in DM: empty. `list all` showed jobs. `!zalo schedule delete 1 2 3…` → “Không có lịch số 1 (đang có 0).” Relative create could still fire into LC group while admin could not clear those rows from DM.
+
+### Root cause
+1. `jobs_for_thread` only matched `origin.chat_id`/`thread_id` (destination group), not `requester_id`.
+2. Admin list merged workflow schedules only — not Go `schedule-worker` (adapter SoT).
+3. Digit remove did not fall back to the full visible pool after `list all`.
+4. Postgres DELETE still used unqualified `schedules`.
+
+### Fix (core)
+- Expand thread matching; merge schedule-worker into list; dual-delete worker+workflow; PG-qualified DELETE; classify+adapter delete with `target_channel`; repair classify.json JSON.
+
+### Prevent recurrence
+Any schedule created for a named group must remain listable/deletable from the requester chat and via `remove group <name>`.
+
 ## 2026-08-24 15:00 +07 — Schedule not triggered: relative-time next_run_at + fire_text verbatim
 
 ### Symptom
