@@ -1,3 +1,8 @@
+## 2026-08-24 19:55 +07 — Schedule: strip prior before clock-split and target extract
+
+- Hydrated `[Prior conversation]` clocks (14:01 / 11:49 / list `@ HH:MM`) were paired onto poem/fuel/weather → many jobs, wrong times, DM instead of LC Group; 19:30 fire sent only weather.
+- Host: `strip_prior_for_classify` on classify, clock-split, and `extract_target_group_ref`; fan-out only when the current message has 2+ run-at clocks (`lúc`/`at`/`@`); same clock + several skills stays one schedule; store `text` is the current bubble.
+
 ## 2026-08-24 19:00 +07 — Schedule create: skip poster shortcut + LLM classify first
 
 - Daily “06:00 vào Zalo LC Group nội dung: mô tả thơ 4 dòng… xanh…, giá xăng, thời tiết” was stolen by text-poster (`4 dòng` + `anh` inside `xanh`) → DM photo / no save; classify early schedule heuristic skipped LLM so `target_channel` / `process` / split never applied.

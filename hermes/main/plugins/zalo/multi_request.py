@@ -18,10 +18,11 @@ for _p in (_d, _shared):
     if _p.is_dir() and _s not in sys.path:
         sys.path.insert(0, _s)
 
-from classify_client import classify_text
+from classify_client import classify_text, strip_prior_for_classify
 
+# Run-at clocks only (lúc/at/@). Bare "6:00 AM" inside a skill body is not a second job.
 _CLOCK_HM = re.compile(
-    r"(?:(?:lúc|luc|at|@)\s*)?(\d{1,2})\s*[:hH]\s*(\d{2})\b",
+    r"(?:lúc|luc|at|@)\s*(\d{1,2})\s*[:hH]\s*(\d{2})\b",
     re.I,
 )
 
@@ -51,14 +52,20 @@ def _clock_pairs(text: str) -> List[Tuple[int, int]]:
 
 
 def _split_multi_clock_schedule(raw: str, instructions: List[str]) -> List[str] | None:
-    clocks = _clock_pairs(raw)
+    """Fan-out only when the *current* message has 2+ distinct run-at clocks.
+
+    Same clock + several skills stays one job. Do not zip leftover HH:MM from
+    hydrate/prior (or incidental times in a skill body) onto clock-less skills.
+    """
+    blob = strip_prior_for_classify(raw)
+    clocks = _clock_pairs(blob)
     if len(clocks) < 2:
         return None
     items = [str(x).strip() for x in instructions if str(x).strip()]
     if len(items) < 2:
         lines = [
             ln.strip()
-            for ln in re.split(r"\n+", raw)
+            for ln in re.split(r"\n+", blob)
             if ln.strip() and _clock_pairs(ln)
         ]
         distinct = {_clock_pairs(x)[0] for x in lines if _clock_pairs(x)}
@@ -79,25 +86,11 @@ def _split_multi_clock_schedule(raw: str, instructions: List[str]) -> List[str] 
 
     if len(per_clock) >= 2 and len(used) >= 2:
         return per_clock
-
-    if len(items) >= 2 and len(clocks) >= 2:
-        n = min(len(items), len(clocks))
-        if n >= 2:
-            paired: list[str] = []
-            for i in range(n):
-                h, m = clocks[i]
-                body = items[i]
-                if not _clock_pairs(body):
-                    body = f"lúc {h:02d}:{m:02d}: {body}"
-                paired.append(body)
-            distinct = {_clock_pairs(x)[0] for x in paired if _clock_pairs(x)}
-            if len(distinct) >= 2:
-                return paired
     return None
 
 
 def split_compound_requests(text: str) -> List[str]:
-    raw = (text or "").strip()
+    raw = strip_prior_for_classify(text or "")
     if not raw:
         return []
     plan = classify_text(raw)
@@ -133,7 +126,7 @@ def wrap_compound_part(index: int, total: int, body: str) -> str:
 
 
 def plan_instructions(text: str) -> List[str]:
-    raw = (text or "").strip()
+    raw = strip_prior_for_classify(text or "")
     if not raw:
         return []
     plan = classify_text(raw)
