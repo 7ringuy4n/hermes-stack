@@ -30,6 +30,7 @@ TASK_TYPES = (
     "media_generation",
     "file_processing",
     "create_schedule",
+    "delete_schedule",
     "knowledge",
     "search",
     "tool",
@@ -92,6 +93,8 @@ def normalize_execution(
         elif raw_cls == "schedule":
             raw_mode = "confirm"
     if wrapper and hint == "schedule":
+        if raw_type == "delete_schedule":
+            return "schedule", "delete_schedule", "confirm"
         return "schedule", "create_schedule", "confirm"
     return raw_cls, raw_type, raw_mode
 
@@ -167,10 +170,14 @@ def normalize_skill(src: dict[str, Any], hint: str, task_type: str) -> tuple[str
         inferred = ("media_file", "generate_media")
     elif hint == "tool" and task_type == "file_processing":
         inferred = ("media_file", "process_file")
+    elif hint == "schedule" and task_type == "delete_schedule":
+        inferred = ("schedule", "delete")
     if skill is None and inferred:
         skill, default_action = inferred
         if not action:
             action = default_action
+    if skill == "schedule" and task_type == "delete_schedule":
+        action = "delete"
     if skill and not action:
         action = (inferred or (None, "run"))[1] or "run"
     return skill, action
@@ -222,9 +229,13 @@ def failed_plan(timezone: str, error: str = "classify_llm_failed") -> dict[str, 
 def plan_schema_ok(plan: dict[str, Any]) -> bool:
     if not isinstance(plan, dict) or plan.get("ok") is False:
         return False
-    if str(plan.get("task_hint") or "") == "schedule" and not plan.get("cron_expr"):
-        return False
-    return True
+    if str(plan.get("task_hint") or "") != "schedule":
+        return True
+    action = str(plan.get("skill_action") or "").strip().lower()
+    task_type = str(plan.get("task_type") or "").strip().lower()
+    if action == "delete" or task_type == "delete_schedule":
+        return True
+    return bool(plan.get("cron_expr"))
 
 
 def _default_chat_combo_alias() -> str:
@@ -747,6 +758,16 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
     exec_cls, task_type, response_mode = normalize_execution(src, hint)
     skill, skill_action = normalize_skill(src, hint, task_type)
+    is_delete = hint == "schedule" and (
+        skill_action == "delete" or task_type == "delete_schedule"
+    )
+    if is_delete:
+        task_type = "delete_schedule"
+        skill = "schedule"
+        skill_action = "delete"
+        cadence = None
+        cron = None
+        process_original = False
     message = str(src.get("message") or "").strip()
     if not message:
         if len(instructions) == 1:
@@ -755,9 +776,12 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             message = "\n".join(instructions)
         else:
             message = fallback
-    process_original = src.get("process_original_message")
-    if not isinstance(process_original, bool):
-        process_original = hint != "schedule"
+    if is_delete:
+        process_original = False
+    else:
+        process_original = src.get("process_original_message")
+        if not isinstance(process_original, bool):
+            process_original = hint != "schedule"
     attachments_required = src.get("attachments_required")
     if not isinstance(attachments_required, bool):
         attachments_required = False
@@ -766,8 +790,8 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "task_hint": hint,
         "instructions": instructions,
         "task_details": normalize_task_details(src, instructions, hint),
-        "cadence": cadence if hint == "schedule" else None,
-        "cron_expr": cron if hint == "schedule" else None,
+        "cadence": None if is_delete else (cadence if hint == "schedule" else None),
+        "cron_expr": None if is_delete else (cron if hint == "schedule" else None),
         "timezone": tz,
         "execution_class": exec_cls,
         "task_type": task_type,
