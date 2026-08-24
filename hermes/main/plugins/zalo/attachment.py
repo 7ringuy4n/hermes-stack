@@ -159,20 +159,59 @@ def context_newest(items: List[Dict[str, Any]]) -> Tuple[str, str]:
 
 
 def quoted_context_snip(quote: Any, *, max_chars: int = 2000) -> str:
-    """Plain text / file title from a Zalo quote payload for the agent prompt."""
+    """Plain text / file title from a Zalo quote payload for the agent prompt.
+
+    Works for DM and group quote-replies. Prefer real body text; for media quotes
+    without captions still return a typed placeholder so Hermes can act.
+    """
     if not isinstance(quote, dict):
         return ""
+    qtype = str(quote.get("msgType") or quote.get("cliMsgType") or "").strip()
     qc = quote.get("content")
+    if qc is None:
+        qc = quote.get("msg") if quote.get("msg") is not None else quote.get("text")
     if isinstance(qc, str) and qc.strip():
         body = qc.strip()
     elif isinstance(qc, dict):
         title = str(qc.get("title") or "").strip()
         desc = str(qc.get("description") or "").strip()
-        href = str(qc.get("href") or "").strip()
-        parts = [p for p in (title, desc) if p]
+        href = str(qc.get("href") or qc.get("thumb") or "").strip()
+        params = qc.get("params") or {}
+        if isinstance(params, str):
+            try:
+                import json as _json
+
+                params = _json.loads(params)
+            except Exception:
+                params = {}
+        if not isinstance(params, dict):
+            params = {}
+        file_name = str(
+            params.get("fileName")
+            or params.get("title")
+            or qc.get("fileName")
+            or title
+            or ""
+        ).strip()
+        parts = [p for p in (title, desc, file_name) if p]
+        # Dedupe while preserving order
+        seen = set()
+        parts = [p for p in parts if not (p in seen or seen.add(p))]
         body = "\n".join(parts) if parts else (href[:180] if href else "")
+        if not body:
+            low = qtype.lower()
+            if "photo" in low or "gif" in low or "image" in low:
+                body = "[quoted image]"
+            elif "voice" in low or "audio" in low:
+                body = "[quoted voice]"
+            elif "video" in low:
+                body = "[quoted video]"
+            elif "file" in low or "share" in low:
+                body = f"[quoted file{(': ' + file_name) if file_name else ''}]"
     else:
-        body = str(quote.get("msg") or quote.get("text") or "").strip()
+        body = str(quote.get("msg") or quote.get("text") or quote.get("body") or "").strip()
+    if not body and qtype:
+        body = f"[quoted message type={qtype}]"
     if not body:
         return ""
     if len(body) > max_chars:

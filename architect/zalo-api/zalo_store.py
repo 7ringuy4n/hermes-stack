@@ -50,6 +50,47 @@ CREATE TABLE IF NOT EXISTS zalo_message_history (
 );
 CREATE INDEX IF NOT EXISTS zalo_message_history_thread_created_idx
   ON zalo_message_history (thread_id, created_at DESC);
+
+-- Normalized Zalo identity / routing (PostgreSQL SoT). zalo_entities kept as compat mirror.
+CREATE TABLE IF NOT EXISTS zalo_users (
+  zalo_user_id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL DEFAULT '',
+  raw_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS zalo_threads (
+  thread_id TEXT PRIMARY KEY,
+  thread_type TEXT NOT NULL DEFAULT 'dm',
+  display_name TEXT NOT NULL DEFAULT '',
+  owner_user_id TEXT,
+  raw_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS zalo_threads_type_name_idx
+  ON zalo_threads (thread_type, display_name);
+CREATE TABLE IF NOT EXISTS zalo_group_members (
+  thread_id TEXT NOT NULL,
+  zalo_user_id TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member',
+  raw_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (thread_id, zalo_user_id)
+);
+CREATE TABLE IF NOT EXISTS zalo_claims (
+  claim_id TEXT PRIMARY KEY,
+  admin_user_id TEXT NOT NULL,
+  claimed_thread_id TEXT NOT NULL,
+  claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE UNIQUE INDEX IF NOT EXISTS zalo_claims_one_active_admin_idx
+  ON zalo_claims (admin_user_id) WHERE active;
+CREATE INDEX IF NOT EXISTS zalo_claims_active_thread_idx
+  ON zalo_claims (claimed_thread_id) WHERE active;
 """
 
 KINDS = frozenset({"admin", "user", "dm", "group", "denied"})
@@ -167,6 +208,7 @@ def upsert_entity(
             (kind, eid, name, status, Json(meta_obj)),
         )
         conn.commit()
+    _mirror_entity_to_normalized(kind, eid, name=name, meta=meta_obj)
     return {"id": eid, "name": name, "status": status, "kind": kind}
 
 
@@ -345,3 +387,315 @@ def load_recent_turns(
         if role in {"user", "assistant"} and text:
             out.append({"role": role, "content": text})
     return out
+
+
+def _mirror_entity_to_normalized(kind: str, eid: str, *, name: str = "", meta: Optional[dict[str, Any]] = None) -> None:
+    """Keep zalo_users / zalo_threads in sync with zalo_entities writes."""
+    if not _ensure():
+        return
+    kind = (kind or "").strip().lower()
+    eid = (eid or "").strip()
+    if not eid:
+        return
+    from psycopg.types.json import Json
+
+    meta_obj = meta if isinstance(meta, dict) else {}
+    name = (name or "").strip()
+    with _pool.connection() as conn:
+        if kind in {"admin", "user", "dm"}:
+            conn.execute(
+                """
+                INSERT INTO zalo_users (zalo_user_id, display_name, raw_metadata, updated_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (zalo_user_id) DO UPDATE SET
+                  display_name = CASE
+                    WHEN EXCLUDED.display_name <> '' THEN EXCLUDED.display_name
+                    ELSE zalo_users.display_name END,
+                  raw_metadata = zalo_users.raw_metadata || EXCLUDED.raw_metadata,
+                  updated_at = NOW()
+                """,
+                (eid, name, Json(meta_obj)),
+            )
+            if kind == "dm":
+                conn.execute(
+                    """
+                    INSERT INTO zalo_threads (thread_id, thread_type, display_name, owner_user_id, raw_metadata, updated_at)
+                    VALUES (%s, 'dm', %s, %s, %s, NOW())
+                    ON CONFLICT (thread_id) DO UPDATE SET
+                      display_name = CASE
+                        WHEN EXCLUDED.display_name <> '' THEN EXCLUDED.display_name
+                        ELSE zalo_threads.display_name END,
+                      owner_user_id = COALESCE(EXCLUDED.owner_user_id, zalo_threads.owner_user_id),
+                      raw_metadata = zalo_threads.raw_metadata || EXCLUDED.raw_metadata,
+                      updated_at = NOW()
+                    """,
+                    (eid, name, eid, Json(meta_obj)),
+                )
+        elif kind == "group":
+            conn.execute(
+                """
+                INSERT INTO zalo_threads (thread_id, thread_type, display_name, raw_metadata, updated_at)
+                VALUES (%s, 'group', %s, %s, NOW())
+                ON CONFLICT (thread_id) DO UPDATE SET
+                  thread_type = 'group',
+                  display_name = CASE
+                    WHEN EXCLUDED.display_name <> '' THEN EXCLUDED.display_name
+                    ELSE zalo_threads.display_name END,
+                  raw_metadata = zalo_threads.raw_metadata || EXCLUDED.raw_metadata,
+                  updated_at = NOW()
+                """,
+                (eid, name, Json(meta_obj)),
+            )
+        conn.commit()
+
+
+def upsert_group_member(
+    thread_id: str,
+    zalo_user_id: str,
+    *,
+    role: str = "member",
+    meta: Optional[dict[str, Any]] = None,
+) -> bool:
+    tid = (thread_id or "").strip()
+    uid = (zalo_user_id or "").strip()
+    if not tid or not uid or not _ensure():
+        return False
+    from psycopg.types.json import Json
+
+    with _pool.connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO zalo_group_members (thread_id, zalo_user_id, role, raw_metadata, updated_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (thread_id, zalo_user_id) DO UPDATE SET
+              role = EXCLUDED.role,
+              raw_metadata = zalo_group_members.raw_metadata || EXCLUDED.raw_metadata,
+              updated_at = NOW()
+            """,
+            (tid, uid, (role or "member").strip() or "member", Json(meta if isinstance(meta, dict) else {})),
+        )
+        conn.commit()
+    return True
+
+
+def set_claim(
+    *,
+    admin_user_id: str,
+    claimed_thread_id: str,
+    metadata: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Persist sole-admin claim: authorization=user_id, delivery=thread_id."""
+    admin = (admin_user_id or "").strip()
+    thread = (claimed_thread_id or "").strip()
+    if not admin or not thread:
+        raise ValueError("admin_user_id and claimed_thread_id required")
+    if not _ensure():
+        raise RuntimeError("postgres unavailable")
+    import uuid
+    from psycopg.types.json import Json
+
+    claim_id = f"claim_{uuid.uuid4().hex[:16]}"
+    meta_obj = metadata if isinstance(metadata, dict) else {}
+    with _pool.connection() as conn:
+        conn.execute(
+            "UPDATE zalo_claims SET active=FALSE, metadata = metadata || '{\"deactivated\":true}'::jsonb WHERE admin_user_id=%s AND active",
+            (admin,),
+        )
+        conn.execute(
+            """
+            INSERT INTO zalo_claims (claim_id, admin_user_id, claimed_thread_id, active, metadata)
+            VALUES (%s, %s, %s, TRUE, %s)
+            """,
+            (claim_id, admin, thread, Json(meta_obj)),
+        )
+        conn.commit()
+    _mirror_entity_to_normalized("admin", admin, name=str(meta_obj.get("admin_name") or ""))
+    _mirror_entity_to_normalized(
+        "group" if admin != thread else "dm",
+        thread,
+        name=str(meta_obj.get("thread_name") or ""),
+        meta={"claim_id": claim_id},
+    )
+    return {
+        "claim_id": claim_id,
+        "admin_user_id": admin,
+        "claimed_thread_id": thread,
+        "active": True,
+    }
+
+
+def get_active_claim(admin_user_id: str = "") -> Optional[dict[str, Any]]:
+    if not _ensure():
+        return None
+    admin = (admin_user_id or "").strip()
+    with _pool.connection() as conn:
+        if admin:
+            row = conn.execute(
+                """
+                SELECT claim_id, admin_user_id, claimed_thread_id, claimed_at, active, metadata
+                FROM zalo_claims WHERE active AND admin_user_id=%s
+                ORDER BY claimed_at DESC LIMIT 1
+                """,
+                (admin,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT claim_id, admin_user_id, claimed_thread_id, claimed_at, active, metadata
+                FROM zalo_claims WHERE active
+                ORDER BY claimed_at DESC LIMIT 1
+                """
+            ).fetchone()
+    if not row:
+        return None
+    return {
+        "claim_id": str(row.get("claim_id") or ""),
+        "admin_user_id": str(row.get("admin_user_id") or ""),
+        "claimed_thread_id": str(row.get("claimed_thread_id") or ""),
+        "claimed_at": row.get("claimed_at").isoformat() if row.get("claimed_at") else None,
+        "active": bool(row.get("active")),
+        "metadata": row.get("metadata") if isinstance(row.get("metadata"), dict) else {},
+    }
+
+
+def find_thread(query: str) -> Optional[dict[str, Any]]:
+    """Resolve group/DM by exact thread_id or diacritic-insensitive display name."""
+    needle = (query or "").strip()
+    if not needle or not _ensure():
+        return None
+    import unicodedata
+
+    def _norm(s: str) -> str:
+        blob = unicodedata.normalize("NFD", str(s or ""))
+        blob = "".join(c for c in blob if unicodedata.category(c) != "Mn")
+        return blob.replace("đ", "d").replace("Đ", "D").lower().strip()
+
+    with _pool.connection() as conn:
+        row = conn.execute(
+            "SELECT thread_id, thread_type, display_name, owner_user_id, raw_metadata FROM zalo_threads WHERE thread_id=%s",
+            (needle,),
+        ).fetchone()
+        if row:
+            return dict(row)
+        rows = conn.execute(
+            "SELECT thread_id, thread_type, display_name, owner_user_id, raw_metadata FROM zalo_threads"
+        ).fetchall()
+    # also search legacy entities groups
+    groups = list_entities("group", status="active")
+    nneedle = _norm(needle)
+    exact: list[dict[str, Any]] = []
+    partial: list[dict[str, Any]] = []
+    for row in rows:
+        name = str(row.get("display_name") or "")
+        nname = _norm(name)
+        item = {
+            "thread_id": str(row.get("thread_id") or ""),
+            "thread_type": str(row.get("thread_type") or ""),
+            "display_name": name,
+            "owner_user_id": row.get("owner_user_id"),
+            "raw_metadata": row.get("raw_metadata") if isinstance(row.get("raw_metadata"), dict) else {},
+        }
+        if nname == nneedle:
+            exact.append(item)
+        elif nneedle and (nneedle in nname or nname in nneedle):
+            partial.append(item)
+    for g in groups:
+        gid = str(g.get("id") or "")
+        name = str(g.get("name") or "")
+        nname = _norm(name)
+        item = {
+            "thread_id": gid,
+            "thread_type": "group",
+            "display_name": name,
+            "owner_user_id": None,
+            "raw_metadata": {},
+        }
+        if gid == needle:
+            return item
+        if nname == nneedle:
+            exact.append(item)
+        elif nneedle and (nneedle in nname or nname in nneedle):
+            partial.append(item)
+    if len(exact) == 1:
+        return exact[0]
+    groups_exact = [x for x in exact if str(x.get("thread_type")) == "group"]
+    if len(groups_exact) == 1:
+        return groups_exact[0]
+    if len(partial) == 1:
+        return partial[0]
+    groups_partial = [x for x in partial if str(x.get("thread_type")) == "group"]
+    if len(groups_partial) == 1:
+        return groups_partial[0]
+    return None
+
+
+def get_thread_members(thread_id: str) -> list[dict[str, Any]]:
+    tid = (thread_id or "").strip()
+    if not tid or not _ensure():
+        return []
+    with _pool.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT thread_id, zalo_user_id, role, raw_metadata, updated_at
+            FROM zalo_group_members WHERE thread_id=%s ORDER BY zalo_user_id
+            """,
+            (tid,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_current_context(*, thread_id: str = "", user_id: str = "") -> dict[str, Any]:
+    """Canonical routing context for Hermes / workers (user_id ≠ thread_id)."""
+    tid = (thread_id or "").strip()
+    uid = (user_id or "").strip()
+    claim = get_active_claim(uid) if uid else get_active_claim()
+    thread: Optional[dict[str, Any]] = None
+    if tid and _ensure():
+        with _pool.connection() as conn:
+            row = conn.execute(
+                "SELECT thread_id, thread_type, display_name, owner_user_id FROM zalo_threads WHERE thread_id=%s",
+                (tid,),
+            ).fetchone()
+        if row:
+            thread = dict(row)
+        else:
+            for kind in ("group", "dm", "user"):
+                for ent in list_entities(kind, status="active"):
+                    if str(ent.get("id") or "") == tid:
+                        thread = {
+                            "thread_id": tid,
+                            "thread_type": "group" if kind == "group" else "dm",
+                            "display_name": str(ent.get("name") or ""),
+                            "owner_user_id": uid or None,
+                        }
+                        break
+                if thread:
+                    break
+    user_name = ""
+    if uid:
+        for ent in list_entities("user", status="active") + list_entities("admin", status="active"):
+            if str(ent.get("id") or "") == uid:
+                user_name = str(ent.get("name") or "")
+                break
+    deliver_thread = tid
+    if claim and claim.get("claimed_thread_id"):
+        # Prefer explicit claim for outbound worker/file delivery when set.
+        if not tid or tid == uid:
+            deliver_thread = str(claim["claimed_thread_id"])
+    return {
+        "user_id": uid or None,
+        "user_display_name": user_name or None,
+        "thread_id": tid or None,
+        "thread_type": (thread or {}).get("thread_type"),
+        "display_name": (thread or {}).get("display_name"),
+        "delivery_thread_id": deliver_thread or None,
+        "claim": (
+            {
+                "admin_user_id": claim.get("admin_user_id"),
+                "claimed_thread_id": claim.get("claimed_thread_id"),
+                "claim_id": claim.get("claim_id"),
+            }
+            if claim
+            else None
+        ),
+    }
