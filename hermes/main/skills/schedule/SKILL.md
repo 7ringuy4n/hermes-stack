@@ -1,6 +1,6 @@
 ---
 name: schedule
-description: "Create a lịch via the Go schedule worker. Store when-to-run only; Hermes processes the inner message when it is due."
+description: "Create or delete a lịch via the Go schedule worker. Store when-to-run only; Hermes processes the inner message when it is due."
 ---
 
 # Schedule skill
@@ -16,11 +16,22 @@ JSON body (deterministic fields from classifier JSON, not from parsing user pros
 - `cron_expr` — five-field cron from classify
 - `cadence` — `once` / `daily` / `weekly` / `monthly` / `yearly`
 - `timezone` — IANA zone (default `Asia/Ho_Chi_Minh`)
+- `next_run_at` — RFC3339 UTC when classify/host already knows the absolute fire time (required for relative “N phút nữa”)
 - `fire_text` — inner work only (`instructions` joined, or `message`). **Never** the “đặt lịch lúc HH:MM” wrapper
 - `text` — original inbound (audit only)
 - `origin` / `context` — thread routing so the worker can inject back into the conversation
 
-The worker stores the row in SQLite, waits, and sends `fire_text` back through the Hermes inbound pipeline (`scheduleFire` protocol flag). Hermes classifies that inner message again and routes through skills.
+The worker stores the row in SQLite/Postgres, waits, and sends `fire_text` back through the Hermes inbound pipeline (`scheduleFire` protocol flag). Hermes classifies that inner message again and routes through skills.
+
+## Delete / cancel
+
+When classify returns `task_type=delete_schedule` / `skill_action=delete`:
+
+- Resolve `target_channel` (if any) via **`zalo-context`** to the destination group thread id.
+- Delete every schedule-worker row whose `origin`/`context` thread_id, chat_id, requester_id, or sender_id matches that group (or the current chat when no target is named).
+- Confirm with a short count. Do not invent cron expressions.
+
+Admin CLI (same host): `!zalo schedule remove group <tên nhóm>` / `!zalo schedule remove all <số>` also deletes Go worker rows (not only `cron/jobs.json`).
 
 ## Multiple clocks vs one fire
 
