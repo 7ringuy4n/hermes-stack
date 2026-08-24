@@ -84,17 +84,54 @@ def schedule_enabled() -> bool:
     return _worker_flag_on()
 
 
+_TASK_DETAIL_TYPES = {
+    "search",
+    "media_generation",
+    "file_processing",
+    "knowledge",
+    "tool",
+    "coding",
+}
+
+
+def plan_is_task_work(plan: dict[str, Any] | None) -> bool:
+    """True when classify structured fields mean due work (skills), not a send-body."""
+    src = plan if isinstance(plan, dict) else {}
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    if len(parts) > 1:
+        return True
+    details = src.get("task_details")
+    if isinstance(details, list):
+        for item in details:
+            if not isinstance(item, dict):
+                continue
+            tt = str(item.get("task_type") or item.get("skill") or "").strip().lower()
+            if tt in _TASK_DETAIL_TYPES or tt in {"web_search", "media_file"}:
+                return True
+    types = src.get("attachment_types")
+    if isinstance(types, list) and any(str(x).strip() for x in types):
+        return True
+    if src.get("attachments_required") in {True, 1, "1", "true", "yes"}:
+        return True
+    return False
+
+
 def schedule_delivery_mode(plan: dict[str, Any] | None, original: str = "") -> str:
     """How the worker should deliver fire_text: ``verbatim`` (send as-is) or ``process`` (Hermes).
 
-    Prefer classify ``schedule_delivery``. Host safety-net: explicit ``nội dung:`` body ⇒ verbatim
-    so scheduled sends are never paraphrased by the LLM on fire.
+    Prefer classify ``schedule_delivery``. Task work (split skills / search / media) is never
+    verbatim even when wrapped in ``nội dung:``. Send-body fallback is exact ``nội dung:`` only
+    when classify did not mark task work.
     """
     src = plan if isinstance(plan, dict) else {}
     explicit = str(src.get("schedule_delivery") or "").strip().lower()
     if explicit in {"verbatim", "send", "deliver"}:
+        if plan_is_task_work(src):
+            return "process"
         return "verbatim"
     if explicit in {"process", "hermes", "classify"}:
+        return "process"
+    if plan_is_task_work(src):
         return "process"
     if exact_schedule_body(original):
         return "verbatim"
@@ -103,19 +140,27 @@ def schedule_delivery_mode(plan: dict[str, Any] | None, original: str = "") -> s
 
 def fire_text_from_plan(plan: dict[str, Any] | None, original: str = "") -> str:
     """Inner work only. Never fire the đặt lịch wrapper (that re-creates schedules)."""
+    src = plan if isinstance(plan, dict) else {}
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    delivery = schedule_delivery_mode(src, original)
+    if delivery == "verbatim":
+        exact = exact_schedule_body(original)
+        if exact:
+            return exact
+        msg = str(src.get("message") or "").strip()
+        if msg:
+            return msg
+        if parts:
+            return "\n".join(parts)
+        return (original or "").strip()
+    if parts:
+        return "\n".join(parts)
+    msg = str(src.get("message") or "").strip()
+    if msg:
+        return msg
     exact = exact_schedule_body(original)
     if exact:
         return exact
-    src = plan if isinstance(plan, dict) else {}
-    # Prefer message when it is the verbatim body; instructions may be action paraphrases.
-    msg = str(src.get("message") or "").strip()
-    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
-    if msg and (not parts or msg == parts[0] or len(msg) >= len(parts[0])):
-        return msg
-    if parts:
-        return "\n".join(parts)
-    if msg:
-        return msg
     return (original or "").strip()
 
 
