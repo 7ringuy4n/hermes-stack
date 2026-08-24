@@ -262,7 +262,7 @@ do_compact() {
   if [[ -d "${ASSISTANT_DATA_DIR:-/data/assistant}/workspace/.skill-drafts" ]]; then
     find "${ASSISTANT_DATA_DIR}/workspace/.skill-drafts" -type f -mtime +7 -delete 2>/dev/null || true
   fi
-  docker exec redis valkey-cli PING 2>/dev/null || docker exec redis redis-cli PING 2>/dev/null || true
+  docker exec valkey valkey-cli PING 2>/dev/null || docker exec valkey redis-cli PING 2>/dev/null || true
   echo "compact done"
 }
 
