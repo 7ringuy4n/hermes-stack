@@ -1,3 +1,7 @@
+## 2026-08-24 08:20 +07 — run.sh scoped update: skip hermes --scale for non-hermes services
+
+- `compose()`: only append `--scale hermes=N` on full-stack `up` or when `hermes` is in the service list. Fixes `run.sh update zalo-api …` failing with `no such service: hermes: disabled`.
+
 ## 2026-08-24 08:10 +07 — Zalo quote-reply: read old message in DM + group
 
 - Bridge `zaloClient.js`: extract quote from `quote|refMsg|reference`; map `ownerId`/`uidFrom`; RAW log `hasQuote` + `quoteKeys`; flatten attachment `params`.
