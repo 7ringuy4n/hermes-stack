@@ -1,3 +1,21 @@
+## 2026-08-24 15:00 +07 — Schedule not triggered: relative-time next_run_at + fire_text verbatim
+
+### Symptom
+User issued "2 phút nữa gửi vào LC group nội dung: xuân chưa tới…". Bot replied "Đã lưu lịch!" but message never fired. DB row showed `next_run_at = 2026-08-25 14:01` (next day) and `fire_text = "sẽ gửi tin nhắn vào nhóm LC group"` (paraphrase).
+
+### Root cause
+1. Classify returned `cron_expr "1 14 * * *"` only, no `next_run_at`. The 14:38 retry stored the row after 14:01; `nextDaily()` in the worker rolled it to next day.
+2. Classify paraphrased `instructions[0]` as "sẽ gửi tin nhắn vào nhóm LC group" instead of copying poem verbatim; `fire_text_from_plan` fell back to that paraphrase.
+
+### Fix (core)
+- `classify.json`: relative-time rule → emit `cron_expr` + `next_run_at` (RFC3339 UTC). Verbatim rule hardened for `nội dung:` body.
+- `schedule_client.py`: `next_run_at_from_relative()` parses N phút/giây/giờ offset; used as adapter safety-net.
+- `adapter.py`: compute and pass `next_run_at` to worker on schedule create.
+- `workflow_client.py`: `create_schedule` accepts `next_run_at`.
+
+### Prevent recurrence
+Any schedule with relative-time ("N phút nữa") must carry explicit `next_run_at`; worker only computes from cron when field absent.
+
 ## 2026-08-24 14:30 +07 — SOUL blocked + schedule-worker missing public schema
 
 ### Symptom

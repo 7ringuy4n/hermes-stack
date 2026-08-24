@@ -1,3 +1,12 @@
+## 2026-08-24 15:00 +07 — Schedule: relative-time next_run_at + verbatim fire_text
+
+- `classify.json`: added explicit rule — relative-time expressions ("N phút nữa", "sau N giờ") must emit both `cron_expr` AND `next_run_at` (RFC3339 UTC) so the worker never rolls to the next calendar day when HH:MM is already past.
+- `classify.json`: hardened VERBATIM rule — after `nội dung:` copy every word into `message`/`instructions` exactly; never paraphrase into an action description.
+- `schedule_client.py`: `next_run_at_from_relative(text, tz)` — parses relative offset (phút/giây/giờ, minutes/seconds/hours) and returns RFC3339 UTC; used by adapter as safety-net before calling schedule-worker.
+- `adapter.py` (`_as_try_workflow_submit`): compute `next_run_at` from relative text; pass to both `go_create_schedule` and `create_schedule`.
+- `workflow_client.py` `create_schedule`: accept `next_run_at` kwarg; forward in body.
+- Root cause: "2 phút nữa" at 13:54 → cron `1 14 * * *`; schedule stored at 13:55 but fire triggered at 14:04 reported endpoint missing (`/v1/zalo/send`). A retry at 14:38 stored the schedule AFTER 14:01 → worker set `next_run_at` to next day. Also `fire_text` was paraphrased ("sẽ gửi tin nhắn vào nhóm LC group") not verbatim poem.
+
 ## 2026-08-24 14:30 +07 — SOUL deception_hide block + schedule-worker public schema
 
 - SOUL.md: reworded queue-state rule to clear `deception_hide` threat pattern; added language examples (Spanish/Japanese/English) to pass multi-language unit.
