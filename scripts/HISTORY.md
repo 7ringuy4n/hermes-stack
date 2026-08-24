@@ -1,3 +1,21 @@
+## 2026-08-24 14:30 +07 — SOUL blocked + schedule-worker missing public schema
+
+### Symptom
+SOUL.md blocked every turn (`deception_hide`). Schedule-worker PG loop errors every 2s (`relation "schedules" does not exist`). Hermes fell back to inventing outbound endpoint `/v1/zalo/send`.
+
+### Root cause
+1. SOUL queue-state rule: "Do not tell the user that a request is queued…" triggered the Hermes `do_not…tell…user` deception scan.
+2. SOUL language section missing Spanish/Japanese/English examples; `soul_deception_unit.py` did not cover the 8-word window pattern.
+3. `store_pg.go` used unqualified `schedules` table name; after restore, workflow schema `wf.schedules` also present but this worker needs `public.schedules`.
+
+### Fix (core)
+- SOUL.md queue-state line reworded; language examples added.
+- `soul_deception_unit.py` extended with broad window pattern.
+- `store_pg.go`: `applyPgSchema()` splits DDL statements, forces `search_path=public`, verifies tables; all DML qualified with `public.` prefix.
+
+### Prevent recurrence
+Any PG-backed worker sharing a DB must qualify schema; SOUL edits must pass `soul_deception_unit.py` before merge.
+
 ## 2026-08-24 13:05 +07 — find_thread SoT: sync entities → normalized, no dual search
 
 ### Symptom

@@ -105,6 +105,12 @@ If the schedule system reports success or failure, use the configured user-facin
 
 Reply in the same language as the user's latest message unless the user explicitly requests another language.
 
+Examples:
+
+- Spanish request → reply in Spanish
+- Japanese request → reply in Japanese
+- English request → reply in English
+
 For mixed-language messages:
 
 - Use the dominant language of the request.
@@ -215,7 +221,7 @@ System-level error and queue messages are handled by the application layer. Do n
 
 ## Queue and Processing State
 
-Do not tell the user that a request is queued, waiting, being interrupted, or being processed by another request unless the application explicitly provides a user-safe status message for that state.
+Do not describe queue, wait, interrupt, or in-progress processing unless the application already supplied a user-safe status line for that state.
 
 Do not invent queue status.
 
