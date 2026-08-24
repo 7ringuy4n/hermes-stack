@@ -175,18 +175,30 @@ def normalize_zalo_msg_type(msg_type: Any) -> str:
 
 
 def quote_content_blob(quote: Dict[str, Any]) -> Dict[str, Any]:
-    """Best-effort content object for a quoted message (content + propertyExt)."""
+    """Best-effort content object for a quoted message (content + attach + propertyExt).
+
+    Inbound Zalo TQuote uses ``attach`` (JSON string) + ``cliMsgType`` + ``msg``,
+    not ``content``/``msgType`` like a normal TMessage.
+    """
     if not isinstance(quote, dict):
         return {}
+    blob: Dict[str, Any] = {}
+    attach = quote.get("attach")
+    if isinstance(attach, str) and attach.strip():
+        try:
+            attach = json.loads(attach)
+        except Exception:
+            attach = None
+    if isinstance(attach, dict):
+        blob.update(attach)
     qc = quote.get("content")
     if qc is None:
         qc = quote.get("msg") if quote.get("msg") is not None else quote.get("text")
     if isinstance(qc, str) and qc.strip():
-        blob: Dict[str, Any] = {"title": qc.strip()}
+        if not blob.get("title"):
+            blob["title"] = qc.strip()
     elif isinstance(qc, dict):
-        blob = dict(qc)
-    else:
-        blob = {}
+        blob = {**blob, **qc}
     pe = quote.get("propertyExt") or quote.get("propExt")
     if isinstance(pe, str):
         try:
@@ -194,10 +206,47 @@ def quote_content_blob(quote: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             pe = None
     if isinstance(pe, dict):
-        for key in ("href", "thumb", "hd", "title", "description", "params", "width", "height"):
+        for key in (
+            "href",
+            "thumb",
+            "hd",
+            "hdUrl",
+            "thumbUrl",
+            "normalUrl",
+            "oriUrl",
+            "rawUrl",
+            "title",
+            "description",
+            "params",
+            "width",
+            "height",
+        ):
             if key not in blob and pe.get(key) is not None:
                 blob[key] = pe[key]
     return blob
+
+
+def _quote_href_from_blob(qc: Dict[str, Any], params: Dict[str, Any]) -> str:
+    """Pick a downloadable URL from quote content/attach/params."""
+    for key in (
+        "href",
+        "thumb",
+        "hd",
+        "hdUrl",
+        "thumbUrl",
+        "normalUrl",
+        "oriUrl",
+        "rawUrl",
+        "url",
+    ):
+        val = str(qc.get(key) or "").strip()
+        if val.startswith("http"):
+            return val
+    for key in ("hd", "hdUrl", "normal", "normalUrl", "oriUrl", "rawUrl", "m4a", "thumb"):
+        val = str(params.get(key) or "").strip()
+        if val.startswith("http"):
+            return val
+    return ""
 
 
 def quote_is_media_type(msg_type: Any) -> bool:
@@ -209,9 +258,12 @@ def extract_media_from_quote(quote: Any) -> Dict[str, Any] | None:
     """Build inbound media dict from a quoted Zalo message (quote-reply to photo/file)."""
     if not isinstance(quote, dict):
         return None
+    # Prefer pre-built media from bridge when present.
+    pre = quote.get("media")
+    if isinstance(pre, dict) and str(pre.get("url") or "").startswith("http"):
+        return dict(pre)
     qtype = normalize_zalo_msg_type(quote.get("msgType") or quote.get("cliMsgType") or "")
     qc = quote_content_blob(quote)
-    href = str(qc.get("href") or qc.get("thumb") or "").strip()
     params = qc.get("params") or {}
     if isinstance(params, str):
         try:
@@ -220,14 +272,7 @@ def extract_media_from_quote(quote: Any) -> Dict[str, Any] | None:
             params = {}
     if not isinstance(params, dict):
         params = {}
-    if not href:
-        href = str(
-            params.get("hd")
-            or params.get("normal")
-            or params.get("m4a")
-            or params.get("oriUrl")
-            or ""
-        ).strip()
+    href = _quote_href_from_blob(qc, params)
     media_hint = bool(href) or quote_is_media_type(qtype)
     if not media_hint or not href:
         return None
@@ -243,6 +288,8 @@ def extract_media_from_quote(quote: Any) -> Dict[str, Any] | None:
     ext = (params.get("fileExt") if isinstance(params, dict) else None) or (
         str(qc.get("title") or "bin").rsplit(".", 1)[-1]
     )
+    if kind == "image" and (not ext or ext == "bin" or len(str(ext)) > 5):
+        ext = "jpg"
     return {
         "kind": kind,
         "url": href,
