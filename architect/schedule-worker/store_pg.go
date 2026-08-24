@@ -16,7 +16,7 @@ import (
 )
 
 const pgSchema = `
-CREATE TABLE IF NOT EXISTS schedules (
+CREATE TABLE IF NOT EXISTS public.schedules (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
   cron_expr TEXT NOT NULL,
@@ -32,9 +32,9 @@ CREATE TABLE IF NOT EXISTS schedules (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS schedules_due_idx ON schedules (enabled, next_run_at);
+CREATE INDEX IF NOT EXISTS schedules_due_idx ON public.schedules (enabled, next_run_at);
 
-CREATE TABLE IF NOT EXISTS schedule_executions (
+CREATE TABLE IF NOT EXISTS public.schedule_executions (
   execution_id TEXT PRIMARY KEY,
   schedule_id TEXT NOT NULL,
   correlation_id TEXT NOT NULL,
@@ -52,15 +52,59 @@ CREATE TABLE IF NOT EXISTS schedule_executions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS schedule_executions_sched_idx
-  ON schedule_executions (schedule_id, triggered_at DESC);
+  ON public.schedule_executions (schedule_id, triggered_at DESC);
 CREATE INDEX IF NOT EXISTS schedule_executions_corr_idx
-  ON schedule_executions (correlation_id);
+  ON public.schedule_executions (correlation_id);
 CREATE INDEX IF NOT EXISTS schedule_executions_thread_idx
-  ON schedule_executions (thread_id, triggered_at DESC);
+  ON public.schedule_executions (thread_id, triggered_at DESC);
 `
 
 func usingPostgres() bool {
 	return strings.TrimSpace(os.Getenv("DATABASE_URL")) != ""
+}
+
+func splitSQLStatements(blob string) []string {
+	out := []string{}
+	for _, part := range strings.Split(blob, ";") {
+		var lines []string
+		for _, ln := range strings.Split(part, "\n") {
+			trim := strings.TrimSpace(ln)
+			if trim == "" || strings.HasPrefix(trim, "--") {
+				continue
+			}
+			lines = append(lines, ln)
+		}
+		stmt := strings.TrimSpace(strings.Join(lines, "\n"))
+		if stmt != "" {
+			out = append(out, stmt)
+		}
+	}
+	return out
+}
+
+func applyPgSchema(pg *sql.DB) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	// Workflow owns wf.schedules. This worker stores in public.
+	if _, err := pg.ExecContext(ctx, "SET search_path TO public"); err != nil {
+		return err
+	}
+	for _, stmt := range splitSQLStatements(pgSchema) {
+		if _, err := pg.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("schema %q: %w", stmt[:min(48, len(stmt))], err)
+		}
+	}
+	var n int
+	if err := pg.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM information_schema.tables
+		 WHERE table_schema='public' AND table_name IN ('schedules','schedule_executions')`,
+	).Scan(&n); err != nil {
+		return err
+	}
+	if n < 2 {
+		return fmt.Errorf("public schedule tables incomplete (found %d of 2); wf.schedules is not this worker", n)
+	}
+	return nil
 }
 
 func openPostgres(dsn string) (*sql.DB, error) {
@@ -77,11 +121,11 @@ func openPostgres(dsn string) (*sql.DB, error) {
 		_ = pg.Close()
 		return nil, err
 	}
-	if _, err := pg.Exec(pgSchema); err != nil {
+	if err := applyPgSchema(pg); err != nil {
 		_ = pg.Close()
 		return nil, err
 	}
-	log.Printf("schedule-worker postgres store ready")
+	log.Printf("schedule-worker postgres store ready (public.schedules)")
 	return pg, nil
 }
 
@@ -99,7 +143,7 @@ SELECT id, name, cron_expr, timezone, cadence, text, fire_text,
        EXTRACT(EPOCH FROM last_fired_at)::bigint,
        CASE WHEN enabled THEN 1 ELSE 0 END,
        EXTRACT(EPOCH FROM created_at)::bigint
-FROM schedules
+FROM public.schedules
 WHERE enabled = TRUE AND next_run_at IS NOT NULL AND next_run_at <= to_timestamp($1)
 ORDER BY next_run_at ASC
 FOR UPDATE SKIP LOCKED
@@ -119,7 +163,7 @@ LIMIT 1`, now.Unix())
 	userID := firstNonEmpty(strMap(sch.Origin, "user_id"), strMap(sch.Origin, "sender_id"), strMap(sch.Context, "sender_id"))
 
 	if _, err := tx.Exec(`
-INSERT INTO schedule_executions
+INSERT INTO public.schedule_executions
   (execution_id, schedule_id, correlation_id, thread_id, user_id, status, triggered_at, updated_at)
 VALUES ($1,$2,$3,$4,NULLIF($5,''),'firing', NOW(), NOW())`,
 		execID, sch.ID, corrID, threadID, userID); err != nil {
@@ -127,7 +171,7 @@ VALUES ($1,$2,$3,$4,NULLIF($5,''),'firing', NOW(), NOW())`,
 	}
 
 	park := now.Add(30 * time.Minute).Unix()
-	if _, err := tx.Exec(`UPDATE schedules SET next_run_at=to_timestamp($1), updated_at=NOW() WHERE id=$2`, park, sch.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE public.schedules SET next_run_at=to_timestamp($1), updated_at=NOW() WHERE id=$2`, park, sch.ID); err != nil {
 		return nil, "", "", err
 	}
 	if err := tx.Commit(); err != nil {
@@ -138,7 +182,7 @@ VALUES ($1,$2,$3,$4,NULLIF($5,''),'firing', NOW(), NOW())`,
 
 func finalizeExecutionPG(execID, status, detail, errorCode string, sch scheduleRow, now time.Time) {
 	_, err := db.Exec(`
-UPDATE schedule_executions SET
+UPDATE public.schedule_executions SET
   status=$2,
   detail=$3,
   error_code=NULLIF($4,''),
@@ -153,18 +197,18 @@ WHERE execution_id=$1`, execID, status, detail, errorCode)
 	}
 	if status == "succeeded" {
 		if strings.EqualFold(sch.Cadence, "once") {
-			_, _ = db.Exec(`DELETE FROM schedules WHERE id=$1`, sch.ID)
+			_, _ = db.Exec(`DELETE FROM public.schedules WHERE id=$1`, sch.ID)
 			return
 		}
 		nxt := nextDaily(sch.CronExpr, sch.Timezone, now.Add(time.Second), 0)
 		if !nxt.After(now) {
 			nxt = now.Add(24 * time.Hour)
 		}
-		_, _ = db.Exec(`UPDATE schedules SET last_fired_at=to_timestamp($1), next_run_at=to_timestamp($2), updated_at=NOW() WHERE id=$3`,
+		_, _ = db.Exec(`UPDATE public.schedules SET last_fired_at=to_timestamp($1), next_run_at=to_timestamp($2), updated_at=NOW() WHERE id=$3`,
 			now.Unix(), nxt.Unix(), sch.ID)
 		return
 	}
-	_, _ = db.Exec(`UPDATE schedules SET next_run_at=to_timestamp($1), updated_at=NOW() WHERE id=$2`,
+	_, _ = db.Exec(`UPDATE public.schedules SET next_run_at=to_timestamp($1), updated_at=NOW() WHERE id=$2`,
 		now.Add(2*time.Minute).Unix(), sch.ID)
 }
 
@@ -211,7 +255,7 @@ func upsertSchedulePG(req upsertReq) (scheduleRow, error) {
 		next = nextDaily(cronExpr, tz, time.Now().UTC(), 0)
 	}
 	_, err := db.Exec(`
-INSERT INTO schedules (
+INSERT INTO public.schedules (
   id, name, cron_expr, timezone, cadence, text, fire_text,
   origin_json, context_json, next_run_at, enabled, created_at, updated_at
 ) VALUES (
@@ -245,7 +289,7 @@ SELECT id, name, cron_expr, timezone, cadence, text, fire_text,
        EXTRACT(EPOCH FROM last_fired_at)::bigint,
        CASE WHEN enabled THEN 1 ELSE 0 END,
        EXTRACT(EPOCH FROM created_at)::bigint
-FROM schedules ORDER BY created_at DESC`)
+FROM public.schedules ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -269,6 +313,6 @@ SELECT id, name, cron_expr, timezone, cadence, text, fire_text,
        EXTRACT(EPOCH FROM last_fired_at)::bigint,
        CASE WHEN enabled THEN 1 ELSE 0 END,
        EXTRACT(EPOCH FROM created_at)::bigint
-FROM schedules WHERE id=$1`, id)
+FROM public.schedules WHERE id=$1`, id)
 	return scanRow(row)
 }
