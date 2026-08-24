@@ -1,3 +1,17 @@
+## 2026-08-24 08:20 +07 — Scoped `run.sh update` fails on zalo-api (hermes scale)
+
+### Symptom
+`bash run.sh update hermes zalo-api …` stops after hermes with `no such service: hermes: disabled` on `up zalo-api`.
+
+### Root cause
+`compose()` always appended `--scale hermes=N` after scoped service names → invalid compose CLI for non-hermes updates.
+
+### Fix (core)
+Only add `--scale hermes=N` when no explicit services, or `hermes` is among them.
+
+### Prevent recurrence
+Any scoped `compose up <svc>` must not attach unrelated `--scale` targets.
+
 ## 2026-08-24 08:10 +07 — Quote reply: bot cannot read old message (DM + group)
 
 ### Symptom
