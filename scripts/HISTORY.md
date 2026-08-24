@@ -1,3 +1,28 @@
+## 2026-08-24 09:00 +07 — Quote-reply to image: bot sees type=32 only
+
+### Symptom
+User quotes an old **photo** and asks "đọc nội dung trong ảnh"; bot says it only received `[quoted message type=32]` with no image.
+
+### Root cause
+Zalo sends numeric `msgType=32` for photos. Snip/media-from-quote only matched string types like `chat.photo`.
+
+### Fix (core)
+`normalize_zalo_msg_type` + `extract_media_from_quote` in attachment; bridge maps numeric types; adapter uses shared helper.
+
+### Prevent recurrence
+Always normalize Zalo numeric msgType before media/quote handling.
+
+## 2026-08-24 09:00 +07 — Backup missing OmniRouter combos; OpenBao KV not restored
+
+### Symptom
+After restore, OmniRouter combos empty; OpenBao -dev lost API keys (only `.env.openbao` copied back).
+
+### Root cause
+Volume backup listed `nine_router_data` but not `omni_router_data`; OpenBao -dev is ephemeral with no KV re-import on restore.
+
+### Fix (core)
+Backup/restore `omni_router_data`; `restore_openbao_kv.py` imports KV export on restore.
+
 ## 2026-08-24 08:35 +07 — Restore fails: No such container: redis
 
 ### Symptom
