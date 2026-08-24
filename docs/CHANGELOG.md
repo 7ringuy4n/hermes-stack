@@ -1,3 +1,8 @@
+## 2026-08-24 08:10 +07 — Zalo quote-reply: read old message in DM + group
+
+- Bridge `zaloClient.js`: extract quote from `quote|refMsg|reference`; map `ownerId`/`uidFrom`; RAW log `hasQuote` + `quoteKeys`; flatten attachment `params`.
+- Adapter + `quoted_context_snip`: inject quote even when caption empty (typed media placeholder); broader media-from-quote; reply-to-bot address uses `uidFrom` fallback (group).
+
 ## 2026-08-24 08:00 +07 — Env-probe refuse harden; drop unused SQLITE_PATH; first-setup TZ
 
 - Secret probe + classify/SOUL/zalo-channel/safety: refuse env-file **existence** probes immediately (no path/size/backup lists); expand VI/EN env-file patterns; fix UTF-8 in policy JSON.

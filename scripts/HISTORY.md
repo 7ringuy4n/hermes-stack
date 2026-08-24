@@ -1,3 +1,19 @@
+## 2026-08-24 08:10 +07 — Quote reply: bot cannot read old message (DM + group)
+
+### Symptom
+User replies by quoting an older Zalo message (DM or group); bot answers as if no quoted content was attached (asks what to read / ignores quote).
+
+### Root cause
+1. Bridge only forwarded `data.quote`; some reply payloads use `refMsg`/`reference`, or put `uidFrom` without `ownerId` (group reply-to-bot gate misses).
+2. Hermes snip returned empty for media quotes without caption/title, and required non-empty user text before injecting `[Quoted message]`.
+3. Media-from-quote only matched narrow `chat.photo` / `share.*` prefixes.
+
+### Fix (core)
+`scripts/main/zalo-bridge/zaloClient.js` quote extract/map + RAW `hasQuote` diagnostics; `attachment.quoted_context_snip` media placeholders; adapter inject + media-from-quote + address fallback.
+
+### Prevent recurrence
+Always log hasQuote on inbound; snip must never drop a present quote object to silent empty when msgType is known.
+
 ## 2026-08-24 08:00 +07 — Env-file probe answered with path listing
 
 ### Symptom
