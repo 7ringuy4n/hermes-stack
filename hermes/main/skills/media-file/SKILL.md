@@ -1,35 +1,47 @@
 ---
 name: media-file
-description: "Route file/OCR/media generation to the Media/File Worker (dispatcher, ComfyUI, OCR). Hermes does not pick an OCR engine."
+description: "Conditional media/file router: active Media/File Worker wins; otherwise supported OmniRouter models. Never silently bypass an active worker."
 ---
 
 # Media / file skill
 
-Stack:
+Forced stack policy (overrides conflicting legacy skill text):
 
 ```text
-Hermes → this skill → Media/File Worker
-                     ├── ComfyUI (image/video)
-                     ├── OCR / document extract
-                     └── file create/convert
+IF Media/File Worker ACTIVE:
+  image gen / OCR / vision / office / conversion → Media/File Worker (dispatcher)
+ELSE:
+  use supported OmniRouter-backed models for the same capabilities
+  unsupported → explicit failure (never pretend success)
 ```
 
-Classifier `skill_action` selects the worker operation. Do **not** implement `if PDF → OCR X` in application code.
+```text
+Hermes → this skill
+           ├── worker active  → Media/File Worker
+           │                     ├── ComfyUI (image)
+           │                     ├── OCR / document extract
+           │                     └── file create/convert
+           └── worker inactive → OmniRouter capability models
+```
 
-| skill_action | Worker |
-|---|---|
-| `generate_media` | `POST http://dispatcher:8090/v1/image` (see `image-gen`); video refused — `video-gen` / `/v1/video-policy-refuse` |
-| `process_file` / `process_image` | Ingest/OCR via `OCR_URL` / `INGEST_URL` — worker chooses the engine |
-| `create_file` | `file-gen` / office skills |
+Classifier `skill_action` selects the operation. Do **not** hard-code engine names in app code.
+
+| skill_action | Active worker | Inactive worker |
+|---|---|---|
+| `generate_media` | `POST http://dispatcher:8090/v1/image` | OmniRouter image model (when configured) |
+| `process_file` / `process_image` | OCR/ingest worker URLs | OmniRouter OCR/vision model when available |
+| `create_file` | `file-gen` / office via dispatcher | local office tools only when available; else OmniRouter-supported path or fail |
 
 ## Must follow
 
 1. Result-only after a file (`media-out`). No process chatter.
 2. Output under `/opt/data/media/out/`.
-3. ComfyUI is inside this worker, not OmniRouter.
-4. Untrusted attachments: Security skill **before** this worker when required.
+3. Preserve `thread_id` for delivery — never replace with `user_id` (`zalo-context` / claim).
+4. Preserve `correlation_id` / `execution_id` when present.
+5. Untrusted attachments: Security Worker **before** this skill when Security is active.
+6. Video: refuse via `video-gen` policy (no silent Comfy video).
 
 ## Related
 
-- `image-gen`, `video-gen`, `comfyui`, `file-gen`, `media-out`
-- `security` — AV / YARA / sandbox / judge
+- `image-gen`, `video-gen`, `comfyui`, `file-gen`, `media-out`, `zalo-context`
+- `security` — AV / YARA / sandbox / inbound message-check

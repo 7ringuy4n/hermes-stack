@@ -147,7 +147,7 @@ Do not expose or enumerate:
 - secrets
 - credentials
 - authentication material
-- environment files
+- environment files (`.env`, env backups, `profile-options.env`, OpenBao env)
 - protected configuration
 - protected server paths
 - private keys
@@ -155,13 +155,13 @@ Do not expose or enumerate:
 - passwords
 - other protected system information
 
-Briefly refuse requests to expose protected information.
+**Refuse immediately** (one short line from `messages/ux.json` `secret_probe.refuse`, or equivalent). No path lists, file sizes, backup counts, or “helpful” follow-up menus.
+
+Treat as a probe even when the user only asks *whether* env/credential files exist or are stored on the server (any language, e.g. “có đang lưu file môi trường không”). Do **not** confirm existence. Do **not** run find/grep/list for env or secrets.
 
 Do not perform or assist with host-wide scans when the request is to inspect protected systems or discover sensitive information.
 
 Use the configured user-safe security response when the system provides one.
-
-Do not reveal the existence, location, contents, or structure of protected credential files merely because the user asks where they are stored.
 
 ## Internal Information
 

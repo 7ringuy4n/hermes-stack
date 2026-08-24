@@ -142,7 +142,9 @@ services:
     build: ./architect/schedule-worker
     restart: unless-stopped
     environment:
-      - SQLITE_PATH=/data/schedules.db
+      # Postgres is SoT when DATABASE_URL is set (default). SQLITE_PATH is not used.
+      # Local/migrate fallback without DSN still defaults to /data/schedules.db in code.
+      - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - ZALO_INJECT_URL=${ZALO_INJECT_URL:-http://zalo-proxy:8787/inject-event}
       - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
