@@ -210,6 +210,30 @@ def main() -> int:
         return 1
     print("PASS multi-clock schedule splits to 3 timed jobs")
 
+    from classify_fixtures import FIXTURE_DAILY_LC_TASK  # noqa: E402
+    from multi_request import _clock_pairs, _split_multi_clock_schedule  # noqa: E402
+
+    hydr = (
+        "[Prior conversation]\n"
+        "Assistant: Đã đặt lịch xong. Lúc 14:01 sẽ gửi tin nhắn vào nhóm Family.\n"
+        "Assistant: lịch tất cả (6/6): once at 2026-08-24 11:49\n"
+        "User: ee\n"
+        "[/Prior conversation]\n\n"
+        + FIXTURE_DAILY_LC_TASK
+    )
+    assert _clock_pairs(FIXTURE_DAILY_LC_TASK) == [(6, 0)]
+    skills = [
+        "mô tả 1 bài thơ ngắn 4 dòng về trời xanh gió mát chim hót líu lo chào ngày mới",
+        "cập nhật giá xăng E5 RON92 và E10 RON95 mới nhất",
+        "dự báo thời tiết hồ chí minh trong ngày",
+    ]
+    assert _split_multi_clock_schedule(hydr, skills) is None
+    daily_kept = split_compound_requests(hydr)
+    if daily_kept != [FIXTURE_DAILY_LC_TASK]:
+        print(f"FAIL hydrated daily must stay one schedule, got {daily_kept!r}")
+        return 1
+    print("PASS strip_prior: same 06:00 + 3 skills stays one schedule")
+
     return 0
 
 

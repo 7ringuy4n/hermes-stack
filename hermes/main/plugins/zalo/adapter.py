@@ -1466,6 +1466,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_enabled,
             )
             from .classify_client import classify_text, plan_compound_sequential, plan_is_async
+            from .classify_client import strip_prior_for_classify
             from .knowledge_cite import plan_is_knowledge
         except ImportError:
             from workflow_client import create_schedule, create_workflow, workflow_enabled  # type: ignore
@@ -1476,9 +1477,11 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_enabled,
             )
             from classify_client import classify_text, plan_compound_sequential, plan_is_async  # type: ignore
+            from classify_client import strip_prior_for_classify  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
+        current = strip_prior_for_classify(text) or str(text or "").strip()
         if not isinstance(plan, dict):
-            plan = classify_text(text)
+            plan = classify_text(current)
         if plan.get("ok") is False:
             # Omni/classify outages must not dead-end chat. Fall through to Hermes.
             logger.info(
@@ -1529,7 +1532,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     from channels_client import extract_target_group_ref, resolve_channel  # type: ignore
                 target_tid = thread_id
                 target_label = ""
-                ref = extract_target_group_ref(text, plan)
+                ref = extract_target_group_ref(current, plan)
                 if ref:
                     hit = resolve_channel(ref)
                     gid = str((hit or {}).get("external_id") or "").strip()
@@ -1585,7 +1588,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     from .multi_request import split_compound_requests
                 except ImportError:
                     from multi_request import split_compound_requests  # type: ignore
-                sched_parts = split_compound_requests(text) or [text]
+                sched_parts = split_compound_requests(current) or [current]
                 if len(sched_parts) > 1:
                     ok_n = 0
                     for part in sched_parts:
@@ -1619,7 +1622,7 @@ class ZaloAdapter(BasePlatformAdapter):
             except ImportError:
                 from channels_client import apply_schedule_delivery_target  # type: ignore
             origin, context, target_note = apply_schedule_delivery_target(
-                text=text,
+                text=current,
                 plan=plan,
                 origin=origin,
                 context=context,
@@ -1643,8 +1646,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 return True
             if target_note:
                 logger.info("[zalo] schedule %s", target_note)
-            fire_text = fire_text_from_plan(plan, text)
-            delivery = schedule_delivery_mode(plan, text)
+            fire_text = fire_text_from_plan(plan, current)
+            delivery = schedule_delivery_mode(plan, current)
             origin["schedule_delivery"] = delivery
             context["schedule_delivery"] = delivery
             # Compute next_run_at from relative-time expression in inbound text so
@@ -1654,11 +1657,11 @@ class ZaloAdapter(BasePlatformAdapter):
             except ImportError:
                 from schedule_client import next_run_at_from_relative  # type: ignore
             plan_next = (plan or {}).get("next_run_at") or ""
-            next_run_at = plan_next or next_run_at_from_relative(text, tz=str(plan.get("timezone") or "Asia/Ho_Chi_Minh")) or ""
+            next_run_at = plan_next or next_run_at_from_relative(current, tz=str(plan.get("timezone") or "Asia/Ho_Chi_Minh")) or ""
             if schedule_enabled():
                 data = go_create_schedule(
                     cron_expr=str(plan.get("cron_expr") or ""),
-                    text=text,
+                    text=current,
                     fire_text=fire_text,
                     origin=origin,
                     context=context,
@@ -1669,7 +1672,7 @@ class ZaloAdapter(BasePlatformAdapter):
             else:
                 data = create_schedule(
                     cron_expr=str(plan.get("cron_expr") or ""),
-                    text=text,
+                    text=current,
                     origin=origin,
                     context=context,
                     cadence=str(plan.get("cadence") or ""),
