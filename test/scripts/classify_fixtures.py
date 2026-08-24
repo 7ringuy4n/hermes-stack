@@ -445,6 +445,26 @@ _PLANS = {
     },
 }
 
+FIXTURE_DAILY_LC_TASK = (
+    "đặt lịch chạy hằng ngày lúc 06:00 vào Zalo LC Group nội dung: "
+    "mô tả 1 bài thơ ngắn 4 dòng về trời xanh gió mát chim hót líu lo chào ngày mới, "
+    "cập nhật giá xăng E5 RON92 và E10 RON95 mới nhất, "
+    "dự báo thời tiết hồ chí minh trong ngày"
+)
+_DAILY_LC_TASK = [
+    "mô tả 1 bài thơ ngắn 4 dòng về trời xanh gió mát chim hót líu lo chào ngày mới",
+    "cập nhật giá xăng E5 RON92 và E10 RON95 mới nhất",
+    "dự báo thời tiết hồ chí minh trong ngày",
+]
+_PLANS[FIXTURE_DAILY_LC_TASK] = {
+    "task_hint": "schedule",
+    "instructions": _DAILY_LC_TASK,
+    "cadence": "daily",
+    "cron_expr": "0 6 * * *",
+    "target_channel": "LC group",
+    "schedule_delivery": "process",
+}
+
 
 def _planner(text: str, timezone: str = "Asia/Ho_Chi_Minh") -> dict:
     raw = (text or "").strip()

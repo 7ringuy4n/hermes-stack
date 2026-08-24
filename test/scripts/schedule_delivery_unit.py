@@ -34,6 +34,13 @@ def test_clean_and_extract() -> None:
     plan = {"target_channel": "zalo lc group"}
     assert extract_target_group_ref("ignored", plan) == "lc group"
     assert extract_target_group_ref(DAILY, None).lower() == "lc group"
+    hydr = (
+        "[Prior conversation]\n"
+        "Assistant: Đã lưu lịch → nhóm Family @ 14:01\n"
+        "[/Prior conversation]\n\n"
+        + DAILY
+    )
+    assert extract_target_group_ref(hydr, None).lower() == "lc group"
     print("PASS clean/extract target_channel strips zalo prefix")
 
 
