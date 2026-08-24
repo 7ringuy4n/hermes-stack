@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 ## 2026-08-24 08:00 +07 — Env-probe refuse harden; drop unused SQLITE_PATH; first-setup TZ
 
 - Secret probe + classify/SOUL/zalo-channel/safety: refuse env-file **existence** probes immediately (no path/size/backup lists); expand VI/EN env-file patterns; fix UTF-8 in policy JSON.
@@ -21,7 +19,6 @@
 - Monitor: Valkey/memory/nine dashboards and exporter signals.
 - Schedule: multi-clock jobs; OpenBao env wiring; classify intent hardening.
 
->>>>>>> 45aa27b (fix(security): refuse env-file existence probes; schedule PG store; first-setup TZ)
 ## 2026-08-23 18:15 +07 — Zalo bridge overlay: bundle markdownToZalo.js + verify
 
 - Root cause: overlay `zaloClient.js` (upstream main) imports `./markdownToZalo.js` but npm `hermes-zalo-plugin@1.0.x` does not ship it → bridge crash-loop, `:8787` down.
