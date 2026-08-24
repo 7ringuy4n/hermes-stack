@@ -12,19 +12,24 @@ import urllib.error
 import urllib.request
 from typing import Any, Optional
 
-# "gửi vào nhóm Family", 'nhóm "Team A"', "group Family", "to group: Ops"
+# "gửi vào nhóm Family", 'nhóm "Team A"', "group Family", "to group: Ops",
+# "vào Zalo LC Group nội dung:" (platform prefix + display name, no "nhóm" word)
 _TARGET_GROUP_RE = re.compile(
     r"(?:"
     r"(?:gửi|gui|send|post|đăng|dang)\s+(?:vào|vao|to|vào\s+trong|vao\s+trong)\s+"
     r"(?:nhóm|nhom|group)\s*"
     r"|"
-    r"(?:vào|vao|to|trong|cho)\s+(?:nhóm|nhom|group)\s*"
+    r"(?:vào|vao|into|to|trong|cho)\s+(?:(?:zalo|telegram|lark|discord|slack)\s+)?"
+    r"(?:nhóm|nhom|group)\s*"
+    r"|"
+    r"(?:vào|vao|into|to)\s+(?:zalo|telegram|lark|discord|slack)\s+"
     r"|"
     r"(?:nhóm|nhom|group)\s*"
     r")"
     r"(?::|=|-)?\s*"
     r"[\"“]?([^\"”\n,;:]+?)[\"”]?"
     r"(?=\s*(?:lúc|luc|at|vào\s+\d|vao\s+\d|,|;|:|$|\n|hằng|hang|daily|mỗi|moi|"
+    r"nội\s*dung|noi\s*dung|content|"
     r"chào|chao|và\s+thực|va\s+thuc|and\s+do|và\s+làm|va\s+lam))",
     re.I,
 )

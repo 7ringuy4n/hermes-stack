@@ -47,6 +47,24 @@ def main() -> int:
         heuristic_plan(FIXTURE_INFOGRAPHIC_DAILY), FIXTURE_INFOGRAPHIC_DAILY, "Asia/Ho_Chi_Minh"
     )
     assert daily["task_hint"] == "schedule" and daily["cron_expr"] == "0 7 * * *", daily
+
+    daily_lc = (
+        "đặt lịch chạy hằng ngày lúc 06:00 vào Zalo LC Group nội dung: "
+        "mô tả 1 bài thơ ngắn 4 dòng về trời xanh gió mát chim hót líu lo chào ngày mới, "
+        "cập nhật giá xăng E5 RON92 và E10 RON95 mới nhất, "
+        "dự báo thời tiết hồ chí minh trong ngày"
+    )
+    raw_lc = schedule_heuristic_plan(daily_lc)
+    assert raw_lc and raw_lc["cron_expr"] == "0 6 * * *", raw_lc
+    assert raw_lc.get("schedule_delivery") == "process", raw_lc
+    assert (raw_lc.get("target_channel") or "").lower() == "lc group", raw_lc
+    assert len(raw_lc.get("instructions") or []) >= 3, raw_lc
+    plan_lc = normalize_plan(raw_lc, daily_lc, "Asia/Ho_Chi_Minh")
+    assert plan_schema_ok(plan_lc)
+    assert plan_lc.get("schedule_delivery") == "process"
+    assert (plan_lc.get("target_channel") or "").lower() == "lc group"
+    assert len(plan_lc["instructions"]) >= 3
+
     print("OK schedule classify heuristic + prior strip + 400 skip")
     return 0
 

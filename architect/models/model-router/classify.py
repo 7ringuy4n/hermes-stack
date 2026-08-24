@@ -442,7 +442,13 @@ def force_timed_schedule_plan(
     exact = verbatim_schedule_body(text)
     if exact:
         out["message"] = exact
-        out["instructions"] = [exact]
+        existing: list[str] = []
+        raw_ins = out.get("instructions")
+        if isinstance(raw_ins, list):
+            existing = [str(x).strip() for x in raw_ins if str(x).strip()]
+        # Preserve LLM/heuristic multi-skill splits; only collapse single-blob paraphrases.
+        if len(existing) < 2:
+            out["instructions"] = [exact]
     return out
 
 
@@ -581,10 +587,89 @@ _FUEL_KW = ("xăng", "xang", "ron92", "ron95", "e5", "e10", "gasoline", "fuel")
 _WEATHER_KW = ("thời tiết", "thoi tiet", "weather")
 _DRAW_KW = ("vẽ", "ve ", "draw", "hình", "hinh", "poster", "infographic", "video")
 _CITY_KW = ("hồ chí minh", "ho chi minh", "hcmc", "tp.hcm", "thành phố", "thanh pho")
+# Task-work verbs in schedule body → process + split (fallback when LLM is down).
+_TASK_BODY_VERB = re.compile(
+    r"(?:mô\s*tả|mo\s*ta|describe|cập\s*nhật|cap\s*nhat|update|"
+    r"dự\s*báo|du\s*bao|forecast|tìm\b|tim\b|search|vẽ|draw|"
+    r"giá\s*xăng|gia\s*xang|thời\s*tiết|thoi\s*tiet|weather|"
+    r"ocr|pdf|docx|xlsx)",
+    re.I,
+)
+_SPLIT_TASK_CLAUSE = re.compile(
+    r",\s*(?=(?:mô\s*tả|mo\s*ta|describe|cập\s*nhật|cap\s*nhat|update|"
+    r"dự\s*báo|du\s*bao|forecast|tìm\b|tim\b|search|vẽ|draw))",
+    re.I,
+)
+# "vào Zalo LC Group nội dung:" / "into group Family:"
+_INTO_CHANNEL = re.compile(
+    r"(?:vào|vao|into|to)\s+(?:(?:zalo|telegram|lark|discord|slack)\s+)?"
+    r"(?:nhóm\s+|nhom\s+|group\s+)?"
+    r"([^\n,;:]{2,80}?)"
+    r"(?=\s+(?:nội\s*dung|noi\s*dung|content|với\s*nội|voi\s*noi|,|;|:|$))",
+    re.I,
+)
+
+
+def _clean_heuristic_channel(raw: str) -> str:
+    ref = (raw or "").strip(" \t\"'“”.:-")
+    if not ref:
+        return ""
+    low = ref.lower()
+    for prefix in (
+        "zalo ",
+        "telegram ",
+        "lark ",
+        "discord ",
+        "slack ",
+        "whatsapp ",
+        "nhóm ",
+        "nhom ",
+        "group ",
+    ):
+        if low.startswith(prefix):
+            stripped = ref[len(prefix) :].strip(" \t\"'“”.:-")
+            if stripped:
+                ref = stripped
+                low = ref.lower()
+            break
+    return ref.strip()
+
+
+def _heuristic_target_channel(blob: str) -> str | None:
+    m = _INTO_CHANNEL.search(blob or "")
+    if not m:
+        return None
+    cleaned = _clean_heuristic_channel(m.group(1) or "")
+    if not cleaned or cleaned.lower() in {"nội dung", "noi dung", "content"}:
+        return None
+    return cleaned
+
+
+def _schedule_body_is_task(body: str) -> bool:
+    return bool(_TASK_BODY_VERB.search(body or ""))
+
+
+def _split_schedule_task_body(body: str) -> list[str]:
+    """Split multi-skill schedule body for fallback heuristic (LLM owns primary split)."""
+    raw = (body or "").strip()
+    if not raw:
+        return []
+    numbered = _parse_numbered_instructions(raw)
+    if len(numbered) >= 2:
+        return numbered
+    if not _schedule_body_is_task(raw):
+        return [raw]
+    parts = [p.strip(" ,.-") for p in _SPLIT_TASK_CLAUSE.split(raw) if p.strip(" ,.-")]
+    return parts if len(parts) >= 2 else [raw]
 
 
 def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
-    """Deterministic once/daily schedule when LLM classify is down (503/timeout)."""
+    """Deterministic once/daily schedule when LLM classify is down (503/timeout).
+
+    Enriched with target_channel, schedule_delivery, and skill-split instructions so
+    fallback still matches classify.json process/split rules. Prefer LLM first —
+    do not early-return this before classify_with_llm attempts.
+    """
     blob = (text or "").strip()
     if not blob or len(blob) > 2000:
         return None
@@ -619,19 +704,28 @@ def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
             ).strip()
     if not body:
         body = blob
-    return {
+    instructions = _split_schedule_task_body(body)
+    delivery = "process" if (
+        len(instructions) > 1 or _schedule_body_is_task(body)
+    ) else "verbatim"
+    target = _heuristic_target_channel(blob)
+    out: dict[str, Any] = {
         "task_hint": "schedule",
         "execution_class": "schedule",
         "task_type": "create_schedule",
         "response_mode": "confirm",
         "process_original_message": False,
         "message": body,
-        "instructions": [body],
+        "instructions": instructions,
         "cadence": cadence,
         "cron_expr": cron,
         "skill": "schedule",
         "skill_action": "create",
+        "schedule_delivery": delivery,
     }
+    if target:
+        out["target_channel"] = target
+    return out
 
 
 def _parse_numbered_instructions(blob: str) -> list[str]:
@@ -785,6 +879,8 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     attachments_required = src.get("attachments_required")
     if not isinstance(attachments_required, bool):
         attachments_required = False
+    delivery_raw = str(src.get("schedule_delivery") or "").strip().lower()
+    schedule_delivery = delivery_raw if delivery_raw in {"verbatim", "process"} else None
     return {
         "ok": True,
         "task_hint": hint,
@@ -813,6 +909,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             ).strip()
             or None
         ),
+        "schedule_delivery": schedule_delivery,
     }
 
 
@@ -839,13 +936,9 @@ async def classify_with_llm(
         )
         if plan_schema_ok(plan):
             return plan
-    # Unambiguous schedule clock → store without waiting on dead Omni combos.
-    early = schedule_heuristic_plan(blob)
-    if early:
-        plan = normalize_plan(early, blob, tz)
-        if plan_schema_ok(plan):
-            print("[classify] ok via schedule heuristic", flush=True)
-            return plan
+    # Do NOT early-return schedule_heuristic_plan here: complex daily/task schedules
+    # need classify.json for target_channel + schedule_delivery=process + skill split.
+    # Heuristic remains the post-LLM fallback via heuristic_plan().
     tmpl = str(cfg.get("user_template") or "Timezone: {timezone}\nMessage:\n{text}")
     headers = {"Content-Type": "application/json"}
     if n9_key:
