@@ -541,7 +541,10 @@ do_first_setup_openbao() {
   export STACK_ROOT="${STACK_ROOT:-$ROOT}"
   export ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-/data/assistant}"
   export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$ASSISTANT_DATA_DIR}"
-  python3 "${SCRIPTS_DIR}/first-setup-openbao.py"
+  python3 "${SCRIPTS_DIR}/first-setup-openbao.py" || return $?
+  # Re-export KV → data dir so compose env_file (hermes) picks up secrets after UI edits / re-seed.
+  python3 "${SCRIPTS_DIR}/load-openbao-env.py" \
+    || echo "WARN: load-openbao-env failed — re-run: bash run.sh load-openbao-env"
 }
 
 do_post_ready_learn() {
@@ -919,6 +922,7 @@ First setup:
 
 Security overlay:
   first-setup-openbao     # seed API keys → OpenBao UI (:8200); also on up|update
+  load-openbao-env        # pull KV → $ASSISTANT_DATA_DIR/.env.openbao for compose
   check-security          # smoke OpenBao / Grafana / AV / authz / …
   backup-sync-clouddrive  # when ENABLE_CLOUDDRIVE=1
 
@@ -1008,6 +1012,13 @@ case "$cmd" in
     ;;
   first-setup-openbao|setup-openbao)
     do_first_setup_openbao
+    ;;
+  load-openbao-env)
+    need_security load-openbao-env || exit 1
+    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
+    export ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-/data/assistant}"
+    export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$ASSISTANT_DATA_DIR}"
+    python3 "${SCRIPTS_DIR}/load-openbao-env.py"
     ;;
   setup-zalo)
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
