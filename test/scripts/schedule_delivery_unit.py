@@ -33,6 +33,7 @@ def test_clean_and_extract() -> None:
     assert _clean_group_ref("LC group") == "LC group"
     plan = {"target_channel": "zalo lc group"}
     assert extract_target_group_ref("ignored", plan) == "lc group"
+    assert extract_target_group_ref(DAILY, None).lower() == "lc group"
     print("PASS clean/extract target_channel strips zalo prefix")
 
 
