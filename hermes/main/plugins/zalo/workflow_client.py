@@ -71,6 +71,7 @@ def create_schedule(
     context: dict[str, Any] | None = None,
     schedule_id: str | None = None,
     cadence: str = "",
+    next_run_at: str | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "cron_expr": cron_expr,
@@ -83,6 +84,8 @@ def create_schedule(
     }
     if schedule_id:
         body["id"] = schedule_id
+    if next_run_at:
+        body["next_run_at"] = next_run_at
     return _req("POST", "/v1/schedules", body)
 
 
