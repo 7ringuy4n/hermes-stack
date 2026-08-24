@@ -1,3 +1,12 @@
+## 2026-08-24 15:25 +07 — Schedule delete other groups + list merge schedule-worker
+
+- Root cause of `!zalo schedule delete 1…` → “Không có lịch số 1 (đang có 0)”: DM list scoped only `origin.thread_id`; adapter-created “gửi vào nhóm” rows put the **group** on `thread_id` and the requester on `requester_id`, and zalo-api never merged Go `schedule-worker` rows into admin list.
+- `schedule_crud.job_origin_thread_ids`: also match requester/user/sender + context thread ids.
+- `zalo-api`: merge `SCHEDULE_URL` schedules (+ workflow) into `!zalo schedule list`; delete hits schedule-worker **and** workflow; digit remove retries against full visible pool; compose wires `SCHEDULE_URL` for zalo-api.
+- `schedule-worker`: Postgres DELETE uses `public.schedules`.
+- Classify: `delete_schedule` / `skill_action=delete` + `target_channel` for other groups; adapter deletes by resolved thread; schedule skill documents delete.
+- Fixed broken `classify.json` (literal newlines) so model-router can load the prompt again.
+
 ## 2026-08-24 15:00 +07 — Schedule: relative-time next_run_at + verbatim fire_text
 
 - `classify.json`: added explicit rule — relative-time expressions ("N phút nữa", "sau N giờ") must emit both `cron_expr` AND `next_run_at` (RFC3339 UTC) so the worker never rolls to the next calendar day when HH:MM is already past.

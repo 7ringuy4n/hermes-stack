@@ -116,20 +116,37 @@ def test_crud_visible() -> None:
 def test_thread_scope() -> None:
     dm = new_job(prompt="dm wakeup", expr="0 6 * * *", name="dm-job", sender="u1", thread="u1")
     grp = new_job(prompt="group brief", expr="0 7 * * *", name="grp-job", sender="u1", thread="g9")
-    jobs = [dm, grp]
-    assert [j["name"] for j in jobs_for_thread(jobs, "u1")] == ["dm-job"]
-    assert [j["name"] for j in jobs_for_thread(jobs, "g9")] == ["grp-job"]
+    # Cross-chat delivery: fire into group, requested from DM (schedule-worker shape).
+    cross = {
+        "id": "sch_cross",
+        "name": "cross-job",
+        "prompt": "poem",
+        "schedule": {"kind": "cron", "expr": "0 8 * * *"},
+        "origin": {
+            "thread_id": "g9",
+            "chat_id": "g9",
+            "user_id": "u1",
+            "requester_id": "u1",
+            "target_name": "LC group",
+        },
+        "context": {"thread_id": "g9", "sender_id": "u1"},
+        "enabled": True,
+    }
+    jobs = [dm, grp, cross]
+    # Requester u1 sees DM job + any group jobs they requested (user_id/requester_id).
+    assert {j["name"] for j in jobs_for_thread(jobs, "u1")} == {"dm-job", "grp-job", "cross-job"}
+    assert {j["name"] for j in jobs_for_thread(jobs, "g9")} == {"grp-job", "cross-job"}
     job, err = resolve_job(jobs_for_thread(jobs, "u1"), "1")
-    assert err == "" and job and job.get("name") == "dm-job"
+    assert err == "" and job and job.get("name") in {"dm-job", "grp-job", "cross-job"}
     job, err = resolve_job(jobs_for_thread(jobs, "g9"), "1")
-    assert err == "" and job and job.get("name") == "grp-job"
+    assert err == "" and job and job.get("name") in {"grp-job", "cross-job"}
     want_all, sel = take_all_flag("all 2 --time 7:00")
     assert want_all is True and sel.startswith("2")
     want_all, sel = take_all_flag("")
     assert want_all is False and sel == ""
     job, err = resolve_job(jobs, "")
     assert err and job is None
-    print("PASS thread scope + list all flag")
+    print("PASS thread scope + list all flag + cross-group requester match")
 
 
 def test_timer_flag_and_clock_label() -> None:
