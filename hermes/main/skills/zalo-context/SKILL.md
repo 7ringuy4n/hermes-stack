@@ -54,6 +54,7 @@ curl -sS "$ZALO_API_URL/v1/zalo/claims/active?admin_user_id=<uid>" \
 4. Schedule create / file / image / worker output for a claimed group must use `claimed_thread_id` (or resolved group `thread_id`), not the admin’s DM id.
 5. Prefer this skill over reading JSON allowlists or guessing from chat history.
 6. **Only** call the paths above (`/v1/zalo/context`, `/v1/zalo/threads/find`, `/v1/zalo/claims/active`, `/v1/zalo/threads/list`). **Do not** invent `/threads/search`, `/context/current`, `POST /threads`, or `POST /groups`.
+7. Thread lookup uses PostgreSQL **`zalo_threads`** (normalized SoT). If a group was just allowed, `!zalo refresh` or restart zalo-api syncs from entities — do not read `zalo_entities` directly.
 
 ## Related
 
