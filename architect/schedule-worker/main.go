@@ -53,6 +53,7 @@ var (
 	db          *sql.DB
 	mu          sync.Mutex
 	listen      = env("LISTEN", ":8110")
+	// Used only when DATABASE_URL is empty (local/migrate fallback). Compose does not set SQLITE_PATH.
 	sqlitePath  = env("SQLITE_PATH", "/data/schedules.db")
 	zaloInject  = env("ZALO_INJECT_URL", "http://zalo-proxy:8787/inject-event")
 	zaloToken   = strings.TrimSpace(os.Getenv("ZALO_PLUGIN_TOKEN"))
@@ -85,18 +86,23 @@ func envInt(key string, fallback int) int {
 
 func main() {
 	var err error
-	if err = os.MkdirAll(dirOf(sqlitePath), 0o755); err != nil {
-		log.Fatal(err)
-	}
-	db, err = sql.Open("sqlite", sqlitePath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-	if _, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`); err != nil {
-		log.Fatal(err)
-	}
-	if _, err = db.Exec(`
+	if dsn := strings.TrimSpace(os.Getenv("DATABASE_URL")); dsn != "" {
+		db, err = openPostgres(dsn)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		if err = os.MkdirAll(dirOf(sqlitePath), 0o755); err != nil {
+			log.Fatal(err)
+		}
+		db, err = sql.Open("sqlite", sqlitePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if _, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;`); err != nil {
+			log.Fatal(err)
+		}
+		if _, err = db.Exec(`
 CREATE TABLE IF NOT EXISTS schedules (
   id TEXT PRIMARY KEY,
   name TEXT,
@@ -112,9 +118,9 @@ CREATE TABLE IF NOT EXISTS schedules (
   enabled INTEGER DEFAULT 1,
   created_unix INTEGER
 );`); err != nil {
-		log.Fatal(err)
-	}
-	if _, err = db.Exec(`
+			log.Fatal(err)
+		}
+		if _, err = db.Exec(`
 CREATE TABLE IF NOT EXISTS schedule_fire_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   schedule_id TEXT NOT NULL,
@@ -123,14 +129,20 @@ CREATE TABLE IF NOT EXISTS schedule_fire_log (
   detail TEXT,
   fired_unix INTEGER NOT NULL
 );`); err != nil {
-		log.Fatal(err)
+			log.Fatal(err)
+		}
+		_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_fire_log_sched ON schedule_fire_log(schedule_id, fired_unix DESC);`)
+		_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_fire_log_thread ON schedule_fire_log(thread_id, fired_unix DESC);`)
 	}
-	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_fire_log_sched ON schedule_fire_log(schedule_id, fired_unix DESC);`)
-	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_fire_log_thread ON schedule_fire_log(thread_id, fired_unix DESC);`)
+	defer db.Close()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "schedule-worker"})
+		backend := "sqlite"
+		if usingPostgres() {
+			backend = "postgres"
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "schedule-worker", "store": backend})
 	})
 	mux.HandleFunc("/v1/schedules", schedulesHandler)
 	mux.HandleFunc("/v1/schedules/history", scheduleHistoryHandler)
@@ -152,7 +164,11 @@ CREATE TABLE IF NOT EXISTS schedule_fire_log (
 		}
 	}()
 
-	log.Printf("schedule-worker listen=%s sqlite=%s", listen, sqlitePath)
+	if usingPostgres() {
+		log.Printf("schedule-worker listen=%s store=postgres", listen)
+	} else {
+		log.Printf("schedule-worker listen=%s sqlite=%s", listen, sqlitePath)
+	}
 	log.Fatal(http.ListenAndServe(listen, mux))
 }
 
@@ -297,6 +313,9 @@ func listFireLog(scheduleID, threadID string, limit int) ([]map[string]any, erro
 }
 
 func upsert(req upsertReq) (scheduleRow, error) {
+	if usingPostgres() {
+		return upsertSchedulePG(req)
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	cron := strings.TrimSpace(req.CronExpr)
@@ -369,6 +388,9 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 func listSchedules() ([]scheduleRow, error) {
+	if usingPostgres() {
+		return listSchedulesPG()
+	}
 	rows, err := db.Query(`SELECT id,name,cron_expr,timezone,cadence,text,fire_text,origin_json,context_json,next_run_unix,last_fired_unix,enabled,created_unix FROM schedules ORDER BY next_run_unix`)
 	if err != nil {
 		return nil, err
@@ -386,6 +408,9 @@ func listSchedules() ([]scheduleRow, error) {
 }
 
 func getSchedule(id string) (scheduleRow, error) {
+	if usingPostgres() {
+		return getSchedulePG(id)
+	}
 	row := db.QueryRow(`SELECT id,name,cron_expr,timezone,cadence,text,fire_text,origin_json,context_json,next_run_unix,last_fired_unix,enabled,created_unix FROM schedules WHERE id=?`, id)
 	return scanRow(row)
 }
@@ -429,6 +454,9 @@ func scanRow(s scanner) (scheduleRow, error) {
 }
 
 func fireDue(now time.Time) []string {
+	if usingPostgres() {
+		return fireDuePG(now)
+	}
 	rows, err := listSchedules()
 	if err != nil {
 		log.Printf("list err %v", err)
@@ -465,6 +493,33 @@ func fireDue(now time.Time) []string {
 	return fired
 }
 
+func fireDuePG(now time.Time) []string {
+	fired := []string{}
+	for {
+		sch, execID, corrID, err := claimDueSchedulePG(now)
+		if err != nil {
+			log.Printf("claim due pg: %v", err)
+			return fired
+		}
+		if sch == nil {
+			return fired
+		}
+		// Propagate correlation into origin for downstream inject headers/metadata.
+		if sch.Origin == nil {
+			sch.Origin = map[string]any{}
+		}
+		sch.Origin["execution_id"] = execID
+		sch.Origin["correlation_id"] = corrID
+		if err := sendBack(*sch); err != nil {
+			log.Printf("fire %s err %v", sch.ID, err)
+			finalizeExecutionPG(execID, "failed", err.Error(), "fire_error", *sch, now)
+			continue
+		}
+		finalizeExecutionPG(execID, "succeeded", "handoff_accepted", "", *sch, now)
+		fired = append(fired, sch.ID+"/"+execID)
+	}
+}
+
 func sendBack(sch scheduleRow) error {
 	text := strings.TrimSpace(sch.FireText)
 	if text == "" {
@@ -488,13 +543,16 @@ func injectZalo(sch scheduleRow, text string) error {
 	body, _ := json.Marshal(map[string]any{
 		"type": "message",
 		"payload": map[string]any{
-			"threadId":     threadID,
-			"threadType":   threadType,
-			"senderId":     senderID,
-			"senderName":   senderName,
-			"text":         text,
-			"isSelf":       false,
-			"scheduleFire": true,
+			"threadId":       threadID,
+			"threadType":     threadType,
+			"senderId":       senderID,
+			"senderName":     senderName,
+			"text":           text,
+			"isSelf":         false,
+			"scheduleFire":   true,
+			"scheduleId":     sch.ID,
+			"executionId":    strMap(sch.Origin, "execution_id"),
+			"correlationId":  strMap(sch.Origin, "correlation_id"),
 		},
 	})
 	req, err := http.NewRequest(http.MethodPost, zaloInject, bytes.NewReader(body))
@@ -502,6 +560,15 @@ func injectZalo(sch scheduleRow, text string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if corr := strMap(sch.Origin, "correlation_id"); corr != "" {
+		req.Header.Set("X-Correlation-ID", corr)
+	}
+	if execID := strMap(sch.Origin, "execution_id"); execID != "" {
+		req.Header.Set("X-Execution-ID", execID)
+	}
+	if sch.ID != "" {
+		req.Header.Set("X-Schedule-ID", sch.ID)
+	}
 	if zaloToken != "" {
 		req.Header.Set("Authorization", "Bearer "+zaloToken)
 	}

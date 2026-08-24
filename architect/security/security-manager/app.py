@@ -16,6 +16,7 @@ import socket
 import subprocess
 import tarfile
 import tempfile
+import time
 import zipfile
 from enum import Enum
 from typing import Any, Optional
@@ -550,3 +551,95 @@ def _scan_bytes(data: bytes, filename: str, session_id: str) -> ScanResult:
             quarantine=True,
         )
     return ScanResult(verdict=Verdict.CLEAN, layers=layers)
+
+class MessageCheckReq(BaseModel):
+    text: str = ""
+    thread_id: str = ""
+    user_id: str = ""
+    correlation_id: str = ""
+    source: str = "zalo"
+
+
+@app.post("/v1/message-check")
+def message_check(req: MessageCheckReq) -> dict[str, Any]:
+    """Inbound Zalo text gate — before Hermes when Security Worker is active.
+
+    Fail-closed for high-risk credential/injection probes. Returns the adapter
+    contract: allowed + safe_payload + correlation_id.
+    """
+    text = (req.text or "").strip()
+    corr = (req.correlation_id or "").strip() or f"msg_{int(time.time())}"
+    if not text:
+        return {
+            "allowed": True,
+            "risk_level": "none",
+            "action": "allow",
+            "correlation_id": corr,
+            "safe_payload": {"text": ""},
+        }
+
+    low = text.lower()
+    risk = "none"
+    action = "allow"
+    high_markers = (
+        "ignore previous instructions",
+        "bo qua moi huong dan",
+        "exfiltrate",
+        "cat /etc/passwd",
+        "cat .env",
+        "printenv",
+        "api_key=",
+        "begin private key",
+    )
+    # Diacritic-folded Vietnamese probe (already lowercased input).
+    folded = (
+        low.replace("ả", "a").replace("à", "a").replace("á", "a").replace("ạ", "a")
+        .replace("ã", "a").replace("ă", "a").replace("ắ", "a").replace("ằ", "a")
+        .replace("ẳ", "a").replace("ẵ", "a").replace("ặ", "a")
+        .replace("ê", "e").replace("ế", "e").replace("ề", "e").replace("ể", "e")
+        .replace("ễ", "e").replace("ệ", "e")
+        .replace("ô", "o").replace("ố", "o").replace("ồ", "o").replace("ổ", "o")
+        .replace("ỗ", "o").replace("ộ", "o")
+        .replace("ơ", "o").replace("ớ", "o").replace("ờ", "o").replace("ở", "o")
+        .replace("ỡ", "o").replace("ợ", "o")
+        .replace("ư", "u").replace("ứ", "u").replace("ừ", "u").replace("ử", "u")
+        .replace("ữ", "u").replace("ự", "u")
+        .replace("ý", "y").replace("ỳ", "y").replace("ỷ", "y").replace("ỹ", "y")
+        .replace("ỵ", "y").replace("đ", "d")
+    )
+    if any(m in low or m in folded for m in high_markers):
+        risk = "high"
+        action = "block"
+        _notify_risk("Inbound text blocked", f"thread={req.thread_id} user={req.user_id}")
+        _flow(
+            "security_message_check",
+            correlation_id=corr,
+            thread_id=req.thread_id,
+            user_id=req.user_id,
+            risk_level=risk,
+            action=action,
+        )
+        return {
+            "allowed": False,
+            "risk_level": risk,
+            "action": action,
+            "correlation_id": corr,
+            "safe_payload": {},
+            "user_message": USER_RISK_MSG,
+        }
+
+    _flow(
+        "security_message_check",
+        correlation_id=corr,
+        thread_id=req.thread_id,
+        user_id=req.user_id,
+        risk_level=risk,
+        action=action,
+    )
+    return {
+        "allowed": True,
+        "risk_level": risk,
+        "action": action,
+        "correlation_id": corr,
+        "safe_payload": {"text": text},
+    }
