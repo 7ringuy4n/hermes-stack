@@ -692,9 +692,13 @@ export class ZaloClient extends EventEmitter {
         if (d.msgId && d.cliMsgId) {
           this._recordCliMsgId(d.msgId, d.cliMsgId);
         }
+        const qRaw = d.quote || d.refMsg || d.reference || null;
+        const qKeys =
+          qRaw && typeof qRaw === "object" ? Object.keys(qRaw).slice(0, 12).join(",") : "";
         console.log(
           `[zalo] RAW message: type=${isGroup ? "group" : "user"} thread=${message.threadId} ` +
             `from=${d.uidFrom} self=${message.isSelf} msgType=${d.msgType} ` +
+            `hasQuote=${qRaw ? 1 : 0} quoteKeys=${qKeys || "-"} ` +
             `content=${typeof d.content === "string" ? JSON.stringify(d.content).slice(0, 80) : JSON.stringify(d.content).slice(0, 400)}`,
         );
         const ev = this._normaliseMessage(message);
@@ -867,24 +871,76 @@ export class ZaloClient extends EventEmitter {
         : [],
       // uid of the owner of the quoted message (set when this is a reply). If it
       // equals our ownId, the user is replying to the bot.
-      quotedOwnerId: data.quote && data.quote.ownerId ? String(data.quote.ownerId) : "",
-      // Enough to build a SendMessageQuote for replies.
-      // assistant-stack: map data.quote (quoted message), not the current inbound fields.
-      quote: (() => {
-        const q = data.quote;
-        if (!q || typeof q !== "object") return null;
-        return {
-          content: typeof q.content === "string" ? q.content : q.content,
-          msgType: q.msgType,
-          propertyExt: q.propertyExt,
-          uidFrom: q.ownerId || q.uidFrom,
-          msgId: q.globalMsgId || q.msgId,
-          cliMsgId: q.cliMsgId,
-          ts: q.ts,
-          ttl: q.ttl,
-        };
+      // Zalo/zca may send ownerId and/or uidFrom depending on DM vs group / age.
+      quotedOwnerId: (() => {
+        const q = this._extractInboundQuote(data);
+        if (!q) return "";
+        return String(q.ownerId || q.uidFrom || q.fromUid || "");
       })(),
+      // Enough to build a SendMessageQuote for replies.
+      // assistant-stack: map quoted message fields (not the current inbound).
+      // Also accept refMsg/reference aliases — older replies sometimes omit data.quote.
+      quote: this._mapInboundQuote(data),
     };
+  }
+
+  /** Pick the best quote-like object from an inbound zca message data blob. */
+  _extractInboundQuote(data) {
+    if (!data || typeof data !== "object") return null;
+    const candidates = [data.quote, data.refMsg, data.reference, data.msgQuote];
+    for (const c of candidates) {
+      if (c && typeof c === "object") return c;
+    }
+    // Some payloads nest quote under content / propertyExt.
+    const content = data.content;
+    if (content && typeof content === "object") {
+      for (const c of [content.quote, content.refMsg]) {
+        if (c && typeof c === "object") return c;
+      }
+    }
+    return null;
+  }
+
+  /** Normalize quote for Hermes adapter (DM + group). Never invent ids. */
+  _mapInboundQuote(data) {
+    const q = this._extractInboundQuote(data);
+    if (!q) return null;
+    let content = q.content;
+    if (content == null) content = q.msg ?? q.text ?? q.body ?? q.qmsg ?? null;
+    // Flatten stringified attachment params so Hermes can snip titles / hrefs.
+    if (content && typeof content === "object") {
+      let params = content.params;
+      if (typeof params === "string") {
+        try {
+          params = JSON.parse(params);
+        } catch {
+          params = null;
+        }
+      }
+      if (params && typeof params === "object") {
+        content = { ...content, params };
+      }
+    }
+    const msgId = q.globalMsgId || q.msgId || q.gMsgID || q.messageId || "";
+    const cliMsgId = q.cliMsgId || q.clientMsgId || "";
+    const mapped = {
+      content,
+      msgType: q.msgType || q.cliMsgType || "",
+      propertyExt: q.propertyExt || q.propExt || null,
+      uidFrom: String(q.ownerId || q.uidFrom || q.fromUid || ""),
+      ownerId: String(q.ownerId || q.uidFrom || q.fromUid || ""),
+      msgId: msgId ? String(msgId) : "",
+      cliMsgId: cliMsgId ? String(cliMsgId) : "",
+      ts: q.ts || q.timestamp || "",
+      ttl: q.ttl,
+    };
+    // Drop entirely empty quote shells (no id and no content) — avoids fake context.
+    const hasBody =
+      (typeof mapped.content === "string" && mapped.content.trim()) ||
+      (mapped.content && typeof mapped.content === "object") ||
+      mapped.msgId ||
+      mapped.cliMsgId;
+    return hasBody ? mapped : null;
   }
 
   _threadTypeEnum(threadType) {

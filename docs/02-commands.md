@@ -39,6 +39,13 @@ Set secrets in `.env` **before** `up`. Optional workers are **not** in `.env.exa
 
 ## First setup (clean OS)
 
+Set the **host OS timezone** before first `up` (schedules/logs use wall clock; `.env` `TZ` defaults to `Asia/Ho_Chi_Minh`):
+
+```bash
+sudo timedatectl set-timezone Asia/Ho_Chi_Minh   # or your region
+timedatectl status
+```
+
 ```bash
 git clone <your-repo-url> /opt/assistant
 cd /opt/assistant

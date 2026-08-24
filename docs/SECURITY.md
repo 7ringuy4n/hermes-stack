@@ -52,6 +52,15 @@ file
 - Flat `internal` Docker network — segment edge / agent / data later.
 - `SECURITY_SANDBOX=1` still uses `docker-socket-proxy` (create/start containers). Prefer a dedicated sandbox broker / gVisor later — not Docker-from-an-AI-facing service.
 
+## Secrets and `.env`
+
+| Rule | Detail |
+|------|--------|
+| **Never commit** real `.env` / `.env.*` | Gitignored. Repo ships **`.env.example`** with `CHANGE_ME_*` placeholders only. |
+| **Runtime** | Deploy host may keep `/opt/assistant/.env` (and OpenBao-loaded env) — that is expected ops, not source. |
+| **Zalo secret probe** | Existence / list / scan questions about env files, tokens, credentials → **immediate short refuse** (`config/agent/secret-probe.json` + `messages/ux.json` `secret_probe.refuse`). No path/size/backup enumeration. |
+| **Classify + SOUL** | Host-secret probes are not chat research; Hermes must not confirm or list env files if a probe ever reaches the model. |
+
 ## Operator checklist
 
 1. Set `GATEWAY_API_KEYS` in `.env` before `ENABLE_API_GATEWAY=1`.

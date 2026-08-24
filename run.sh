@@ -488,9 +488,18 @@ do_destroy() {
 }
 
 do_update() {
-  # After: git pull  →  bash run.sh update
-  # Rebuilds/recreates stack from current tree; prunes disk.
-  # Router combo refresh: bash run.sh first-setup-llm | first-setup-omnirouter (not on every update).
+  # After: git pull  →  bash run.sh update [component...]
+  # With no args: rebuild whole stack (legacy).
+  # With args: update only named compose services (no global down; preserve volumes).
+  # Examples:
+  #   bash run.sh update hermes
+  #   bash run.sh update schedule-worker zalo-api
+  #   bash run.sh update all
+  local services=("$@")
+  if [[ ${#services[@]} -eq 0 || " ${services[*]} " == *" all "* ]]; then
+    services=()
+  fi
+
   do_backup_first "update" || return 1
   echo "==> update from current source"
   if [[ -d "${ROOT}/.git" ]]; then
@@ -499,6 +508,28 @@ do_update() {
   fi
 
   assistant_profile_summary
+
+  if [[ ${#services[@]} -gt 0 ]]; then
+    echo "==> component update: ${services[*]}"
+    echo "==> pull selected images (best-effort)"
+    compose pull "${services[@]}" || true
+    ensure_hermes_media_dirs
+    # Scoped recreate — never docker compose down; never touch postgres unless requested.
+    for svc in "${services[@]}"; do
+      if [[ "$svc" == "postgres" ]]; then
+        echo "WARN: refusing implicit postgres recreate — pass explicit confirmation via UPDATE_ALLOW_POSTGRES=1"
+        if [[ "${UPDATE_ALLOW_POSTGRES:-0}" != "1" ]]; then
+          continue
+        fi
+      fi
+      echo "==> up --no-deps --build $svc"
+      compose up -d --no-deps --build "$svc" || return $?
+    done
+    do_stop_disabled_optionals
+    compose ps
+    echo "OK: component update complete (${services[*]})"
+    return 0
+  fi
 
   echo "==> pull vendor images (best-effort)"
   compose pull || true
@@ -962,7 +993,7 @@ case "$cmd" in
   uninstall|disable) do_uninstall "$@" ;;
   add-components|enable-components|install-workers) do_add_components "$@" ;;
   remove-components|disable-components|remove-workers) do_remove_components "$@" ;;
-  update) do_update ;;
+  update) do_update "$@" ;;
   backup) ops backup "$@" ;;
   restore) ops restore "$@" ;;
   verify) ops verify "$@" ;;

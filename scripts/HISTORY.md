@@ -1,3 +1,50 @@
+## 2026-08-24 08:10 +07 — Quote reply: bot cannot read old message (DM + group)
+
+### Symptom
+User replies by quoting an older Zalo message (DM or group); bot answers as if no quoted content was attached (asks what to read / ignores quote).
+
+### Root cause
+1. Bridge only forwarded `data.quote`; some reply payloads use `refMsg`/`reference`, or put `uidFrom` without `ownerId` (group reply-to-bot gate misses).
+2. Hermes snip returned empty for media quotes without caption/title, and required non-empty user text before injecting `[Quoted message]`.
+3. Media-from-quote only matched narrow `chat.photo` / `share.*` prefixes.
+
+### Fix (core)
+`scripts/main/zalo-bridge/zaloClient.js` quote extract/map + RAW `hasQuote` diagnostics; `attachment.quoted_context_snip` media placeholders; adapter inject + media-from-quote + address fallback.
+
+### Prevent recurrence
+Always log hasQuote on inbound; snip must never drop a present quote object to silent empty when msgType is known.
+
+## 2026-08-24 08:00 +07 — Env-file probe answered with path listing
+
+### Symptom
+User asked whether the server stores environment files; bot confirmed existence and listed `.env`, `.env.openbao`, and backup `profile-options.env` paths/sizes.
+
+### Root cause
+1. Secret-probe policy did not match Vietnamese “file môi trường” existence phrasing → message reached Hermes.
+2. Skills/SOUL forbade scans but not soft “does it exist / is it stored” probes; model enumerated host paths.
+
+### Fix (core)
+Expand `config/agent/secret-probe.json` (+ gateway copy) for env-file existence phrases; harden classify prompt + SOUL + zalo-channel + safety + ux refuse; remove unused compose `SQLITE_PATH`; document host timezone at first setup; clarify `.env` is gitignored (example only in source).
+
+### Prevent recurrence
+Secret probe must block before LLM; classify/SOUL refuse with one line and no follow-up enumeration menus.
+
+## 2026-08-24 07:30 +07 — Trace LC schedule miss + durable PG/claim/context foundations
+
+### Symptom
+User asked to schedule into Zalo “LC group”; bot later claimed group missing, only “Home” connected, and a 60-minute confirmation window expired — while earlier `!zalo allow` + schedule fire had already delivered into LC.
+
+### Root cause
+1. First attempt ran before `!zalo allow` (allowlist empty) — correct miss.
+2. Hermes agent path invented a confirmation wait / Home substitution instead of fail-fast allow/refresh guidance and durable thread lookup.
+3. Claim stored only admin `user_id`; channel registry was JSON-primary; schedules still SQLite — incomplete SoT for identity vs delivery.
+
+### Fix (core scripts)
+PG Zalo normalized tables + claims; zalo-context skill/API; claim persists `claimed_thread_id`; schedule-worker Postgres path with execution/correlation ids; security message-check before Hermes; scoped `run.sh update`; media conditional routing skill text.
+
+### Prevent recurrence
+Always resolve named groups via zalo-context/PG before schedule/create; never swap `user_id`↔`thread_id`; never invent confirmation waits.
+
 ## 2026-08-23 18:15 +07 — Zalo bridge overlay: bundle markdownToZalo.js + verify
 
 - VPS trace: full `zaloClient.js` overlay without `markdownToZalo.js` → `ERR_MODULE_NOT_FOUND`, no bridge on `:8787`.

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import glob
 import json
+import logging
 import os
 import re
 import shutil
@@ -229,7 +230,8 @@ HERMES_SESSION_DIRS = (
     os.path.join(".hermes", "sessions"),
     os.path.join("state", "sessions"),
 )
-app = FastAPI(title="assistant-zalo-api", version="1.3.0")
+app = FastAPI(title="assistant-zalo-api", version="1.4.0")
+log = logging.getLogger("zalo-api")
 
 
 @app.on_event("startup")
@@ -1298,7 +1300,110 @@ def channels_upsert(
         kind=str(body.get("kind") or "group"),
         meta=body.get("meta") if isinstance(body.get("meta"), dict) else None,
     )
+    # Durable PG SoT (threads/users) — never rely on JSON registry alone.
+    kind = str(body.get("kind") or "group").strip().lower()
+    try:
+        if kind in {"group", "g"}:
+            zalo_store.upsert_entity(
+                "group",
+                eid,
+                name=str(body.get("name") or ""),
+                status="active",
+                meta=body.get("meta") if isinstance(body.get("meta"), dict) else None,
+            )
+        elif kind in {"user", "dm", "u"}:
+            zalo_store.upsert_entity(
+                "user",
+                eid,
+                name=str(body.get("name") or ""),
+                status="active",
+                meta=body.get("meta") if isinstance(body.get("meta"), dict) else None,
+            )
+            zalo_store.upsert_entity(
+                "dm",
+                eid,
+                name=str(body.get("name") or ""),
+                status="active",
+            )
+    except Exception as exc:
+        log.warning("channels upsert pg mirror failed: %s", type(exc).__name__)
     return {"ok": True, "channel": row}
+
+
+class ZaloContextQuery(BaseModel):
+    thread_id: str = ""
+    user_id: str = ""
+    query: str = ""
+
+
+@app.get("/v1/zalo/context")
+@app.post("/v1/zalo/context")
+def zalo_context(
+    body: Optional[ZaloContextQuery] = None,
+    thread_id: str = "",
+    user_id: str = "",
+    query: str = "",
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    """Controlled Zalo identity/routing context for Hermes (no raw SQL)."""
+    _auth(authorization, x_admin_token)
+    tid = (body.thread_id if body else "") or thread_id
+    uid = (body.user_id if body else "") or user_id
+    q = ((body.query if body else "") or query or "").strip()
+    found = zalo_store.find_thread(q) if q else None
+    if found and not tid:
+        tid = str(found.get("thread_id") or "")
+    ctx = zalo_store.get_current_context(thread_id=tid, user_id=uid)
+    if found:
+        ctx["resolved"] = {
+            "thread_id": found.get("thread_id"),
+            "thread_type": found.get("thread_type"),
+            "display_name": found.get("display_name"),
+        }
+    return {"ok": True, "context": ctx}
+
+
+@app.get("/v1/zalo/threads/find")
+@app.post("/v1/zalo/threads/find")
+def zalo_threads_find(
+    body: Optional[ZaloContextQuery] = None,
+    query: str = "",
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    q = ((body.query if body else "") or query or "").strip()
+    if not q:
+        raise HTTPException(400, "query required")
+    hit = zalo_store.find_thread(q)
+    if not hit:
+        return {"ok": False, "error": "not_found", "query": q}
+    return {"ok": True, "thread": hit}
+
+
+@app.get("/v1/zalo/claims/active")
+def zalo_claims_active(
+    admin_user_id: str = "",
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    claim = zalo_store.get_active_claim(admin_user_id)
+    return {"ok": True, "claim": claim}
+
+
+@app.get("/v1/zalo/threads/{thread_id}/members")
+def zalo_thread_members(
+    thread_id: str,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    tid = (thread_id or "").strip()
+    if not tid:
+        raise HTTPException(400, "thread_id required")
+    return {"ok": True, "thread_id": tid, "members": zalo_store.get_thread_members(tid)}
 
 
 class ZaloMessageHistoryBody(BaseModel):
@@ -1696,15 +1801,52 @@ def chat_command(
                 "reply": f"Đã có admin (uid={cur}). Chỉ admin mới !zalo admin transfer …",
             }
         _write_admin_user(sender, sender_name)
+        claim_thread = thread or sender
+        claim_meta = {
+            "admin_name": sender_name or _fetch_user_name(sender) or "",
+            "thread_name": here_name or ("DM" if kind == "dm" else ""),
+            "chat_type": kind,
+            "source": "zalo_claim",
+        }
+        claim_row = None
+        try:
+            claim_row = zalo_store.set_claim(
+                admin_user_id=sender,
+                claimed_thread_id=claim_thread,
+                metadata=claim_meta,
+            )
+        except Exception as exc:
+            log.warning("zalo claim persist failed: %s", type(exc).__name__)
+        zalo_store.upsert_entity(
+            "admin",
+            sender,
+            name=sender_name or _fetch_user_name(sender) or "",
+            status="active",
+            meta={"claimed_thread_id": claim_thread},
+        )
+        if kind == "group" and claim_thread:
+            zalo_store.upsert_entity(
+                "group",
+                claim_thread,
+                name=here_name or "",
+                status="active",
+                meta={"claimed_by": sender},
+            )
+        reply_lines = [
+            "OK: bạn là sole admin",
+            f"uid={sender}",
+            f"name={sender_name or _fetch_user_name(sender) or '(unknown)'}",
+            f"claimed_thread_id={claim_thread}",
+            f"chat={'DM' if kind == 'dm' else 'group'}",
+            "Chuyển quyền: !zalo admin transfer @tag",
+        ]
+        if claim_row and claim_row.get("claim_id"):
+            reply_lines.append(f"claim_id={claim_row['claim_id']}")
         return {
             "ok": True,
             "handled": True,
-            "reply": (
-                f"OK: bạn là sole admin\n"
-                f"uid={sender}\n"
-                f"name={sender_name or _fetch_user_name(sender) or '(unknown)'}\n"
-                f"Chuyển quyền: !zalo admin transfer @tag"
-            ),
+            "reply": "\n".join(reply_lines),
+            "claim": claim_row,
         }
 
     # admin / admin transfer / admin who — partially open for "who"
