@@ -35,11 +35,11 @@ The queue is infrastructure only — not a router.
 
 ## Schedule (must be fast to ack)
 
-1. Classify returns `task_hint=schedule` + cron + optional `target_channel`.
+1. Classify returns `task_hint=schedule` + cron + optional `target_channel` + `schedule_delivery`.
 2. Persist via Schedule Worker immediately (no Hermes LLM for the store).
-3. Ack the user with next run + schedule id.
-4. When due, Schedule Worker injects `fire_text` with `scheduleFire=true` into the target thread (group or DM).
-5. Hermes runs the inner work; mention-gate / rate-limit / inflight **must not** drop `scheduleFire`.
+3. Ack the user with next run + schedule id (+ `→ nhóm …` when delivering elsewhere).
+4. When due, Schedule Worker injects `fire_text` with `scheduleFire=true` (and `scheduleDelivery`) into the target thread (group or DM).
+5. **verbatim** delivery: host sends body as-is. **process** delivery: Hermes runs skills. Mention-gate / rate-limit / inflight **must not** drop `scheduleFire`.
 
 ## Security
 

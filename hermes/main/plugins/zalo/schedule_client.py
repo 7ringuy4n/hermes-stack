@@ -84,16 +84,36 @@ def schedule_enabled() -> bool:
     return _worker_flag_on()
 
 
+def schedule_delivery_mode(plan: dict[str, Any] | None, original: str = "") -> str:
+    """How the worker should deliver fire_text: ``verbatim`` (send as-is) or ``process`` (Hermes).
+
+    Prefer classify ``schedule_delivery``. Host safety-net: explicit ``nội dung:`` body ⇒ verbatim
+    so scheduled sends are never paraphrased by the LLM on fire.
+    """
+    src = plan if isinstance(plan, dict) else {}
+    explicit = str(src.get("schedule_delivery") or "").strip().lower()
+    if explicit in {"verbatim", "send", "deliver"}:
+        return "verbatim"
+    if explicit in {"process", "hermes", "classify"}:
+        return "process"
+    if exact_schedule_body(original):
+        return "verbatim"
+    return "process"
+
+
 def fire_text_from_plan(plan: dict[str, Any] | None, original: str = "") -> str:
     """Inner work only. Never fire the đặt lịch wrapper (that re-creates schedules)."""
     exact = exact_schedule_body(original)
     if exact:
         return exact
     src = plan if isinstance(plan, dict) else {}
+    # Prefer message when it is the verbatim body; instructions may be action paraphrases.
+    msg = str(src.get("message") or "").strip()
     parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    if msg and (not parts or msg == parts[0] or len(msg) >= len(parts[0])):
+        return msg
     if parts:
         return "\n".join(parts)
-    msg = str(src.get("message") or "").strip()
     if msg:
         return msg
     return (original or "").strip()
