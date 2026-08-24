@@ -1,4 +1,21 @@
+## 2026-08-24 18:15 +07 — Daily 06:00 LC group: no image/skills, !zalo hung
+
+### Symptom
+`đặt lịch chạy hằng ngày lúc 06:00 vào Zalo LC Group nội dung: mô tả thơ 4 dòng…, giá xăng E5/E10, thời tiết HCM` → DM photo in 2s, no save ack, `!zalo schedule list all` no reply. Image and admin CLI “not work”.
+
+### Root cause
+1. Classify `target_channel` null; `nội dung:` host defaulted **verbatim** on a **task** body.
+2. Skills not split (one blob); leftover autosend flushed an old image to DM.
+3. Per-thread inbound lock blocked `!zalo` while media/LLM turn was stuck.
+
+### Fix (core)
+Classify process + split skills + “vào Zalo LC Group”; host never verbatim on task work; admin bypasses inbound lock; cancel late autosend on new user text.
+
+### Prevent recurrence
+Task `nội dung:` (mô tả/cập nhật/dự báo/search/image) must be `schedule_delivery=process` with per-skill instructions. Admin CLI must not share the media-turn lock.
+
 ## 2026-08-24 16:30 +07 — Schedule fire paraphrased; target/list UX unclear
+
 
 ### Symptom
 `2 phút nữa gửi vào zalo lc group nội dung: <poem>` saved OK and fired into LC group, but Hermes rewrote the poem. Save ack was only `Đã lưu lịch!` with no `→ nhóm`. List said `lịch chat này` without destination. Classify emitted `target_channel: "zalo lc group"`.
