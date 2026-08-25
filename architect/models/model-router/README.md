@@ -32,7 +32,12 @@ OpenAI-compatible proxy between Hermes and LLM providers. Classifies **task_hint
 Hints: `normal` · `schedule` · `coding` · `tool` · `search` · `file` · `unknown`  
 Aliases: `general`/`chat` → `normal`, `code` → `coding`. Values `secret`/`blocked` are ignored (Secret Probe owns security).
 
-Prompt file: `config/classify.json` (admin-editable). Application code validates the JSON protocol only.
+Prompt files (SoT under Hermes skills):
+- Classify: `hermes/main/skills/classify/classify.json` → runtime `/opt/data/skills/classify/classify.json`
+- Outbound: `hermes/main/skills/outbound/outbound.json` → `/opt/data/skills/outbound/outbound.json`
+- Web search combo: `hermes/main/skills/web-search/web-search-combo.json` → `/opt/data/skills/web-search/web-search-combo.json`
+
+Bake fallbacks: `config/*.json` via `scripts/main/sync-model-router-skills.sh`. Application code validates protocol only.
 
 ## Providers
 

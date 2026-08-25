@@ -57,5 +57,5 @@
     "compression attempt",
     "vars() argument must have __dict__"
   ],
-  "outbound_note": "Agent status frames (Working / iteration N/M / model provider failed) are dropped by structural rules in gateway_noise.py plus LLM /v1/outbound. Do not grow this list for every new phrase — improve quiet-delivery skill and outbound.json instead."
+  "outbound_note": "Agent status frames (Working / iteration N/M / model provider failed) are dropped by structural rules in gateway_noise.py plus LLM /v1/outbound. Do not grow this list for every new phrase — improve quiet-delivery skill and skills/outbound/outbound.json instead."
 }

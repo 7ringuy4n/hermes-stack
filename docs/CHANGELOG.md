@@ -1,3 +1,21 @@
+## 2026-08-25 21:10 +07 — Model-router config JSON are Hermes skills
+
+- `classify` / `outbound` / `web-search-combo` SoT under `hermes/main/skills/`; bake fallbacks synced by `scripts/main/sync-model-router-skills.sh` on `run.sh update`.
+- Removed unused `heuristic.json` (never loaded; keyword lists are not classify SoT).
+- Router-worker env points at `/opt/data/skills/...` for all three.
+
+## 2026-08-25 21:05 +07 — Classify prompt is a Zalo skill (single SoT)
+
+- Editing classify in model-router/gateway copies drifted; operators updated the wrong file.
+- SoT: `hermes/main/skills/classify/classify.json` + skill docs. Router-worker mounts skills and loads that path; bake fallback synced via `scripts/main/sync-classify-skill.sh` on `run.sh update`.
+- Zalo/gateway clients only consume `POST /v1/classify` JSON — they do not own the prompt.
+
+## 2026-08-25 20:55 +07 — Classify list/inspect vs delete; group destination
+
+- Quoted “where is my reminder” asks were classified as delete and the host removed a real lịch; list/inspect stayed chat; process-group jobs could omit `target_channel`.
+- `classify.json`: list_schedule family; quoted create body never upgrades list to delete; process-group destination required in `target_channel` with inner-work-only instructions.
+- Host consumes `skill_action=list` (schema + adapter list path). No Vietnamese phrase NLU.
+
 ## 2026-08-25 20:20 +07 — Zalo host drops Vietnamese NLU; classify owns intent
 
 - Plugin phrase scanners still decided office/poster/schedule/destination/search from Vietnamese keyword lists, which cannot cover paraphrases and fought classify JSON.
