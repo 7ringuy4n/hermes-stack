@@ -652,14 +652,17 @@ _SPLIT_TASK_CLAUSE = re.compile(
     r"dự\s*báo|du\s*bao|forecast|tìm\b|tim\b|search|vẽ|draw))",
     re.I,
 )
-# "vào Zalo LC Group nội dung:" / "into group Family:"
+# "vào Zalo LC Group nội dung:" / "into group Family:" / "vào LC Group mô tả…"
 _INTO_CHANNEL = re.compile(
     r"(?:vào|vao|into|to)\s+(?:(?:zalo|telegram|lark|discord|slack)\s+)?"
     r"(?:nhóm\s+|nhom\s+|group\s+)?"
     r"([^\n,;:]{2,80}?)"
-    r"(?=\s+(?:nội\s*dung|noi\s*dung|content|với\s*nội|voi\s*noi|,|;|:|$))",
+    r"(?=\s+(?:nội\s*dung|noi\s*dung|content|với\s*nội|voi\s*noi|"
+    r"mô\s*tả|mo\s*ta|describe|cập\s*nhật|cap\s*nhat|update|"
+    r"dự\s*báo|du\s*bao|forecast|vẽ|draw|search|,|;|:|$))",
     re.I,
 )
+_LEAD_SEND = re.compile(r"^(?:gửi|gui|send)\s+", re.I)
 
 
 def _clean_heuristic_channel(raw: str) -> str:
@@ -695,6 +698,28 @@ def _heuristic_target_channel(blob: str) -> str | None:
     if not cleaned or cleaned.lower() in {"nội dung", "noi dung", "content"}:
         return None
     return cleaned
+
+
+def _inner_schedule_body(blob: str) -> str:
+    """Strip timing + destination shell; keep inner work or dictated send-body.
+
+    Protocol extract for heuristic fallback only — classify.json owns paraphrases.
+    """
+    raw = (blob or "").strip()
+    if not raw:
+        return ""
+    m_body = _CONTENT_AFTER.search(raw)
+    if m_body:
+        return (m_body.group(1) or "").strip()
+    body = raw
+    m_rel = _RELATIVE_DELAY.search(body)
+    if m_rel:
+        body = body[m_rel.end() :].strip(" ,.-:")
+    body = _LEAD_SEND.sub("", body).strip()
+    m_into = _INTO_CHANNEL.search(body)
+    if m_into:
+        body = body[m_into.end() :].strip(" ,.-:")
+    return body or raw
 
 
 def _schedule_body_is_task(body: str) -> bool:
@@ -751,15 +776,7 @@ def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
     # Relative once_after: delay_seconds only — never invent cron / next_run_at here.
     delay = delay_seconds_from_text(blob)
     if delay is not None and not extract_clock_cron(blob):
-        body = blob
-        m_body = _CONTENT_AFTER.search(blob)
-        if m_body:
-            body = m_body.group(1).strip()
-        else:
-            m_rel = _RELATIVE_DELAY.search(blob)
-            if m_rel:
-                body = blob[m_rel.end() :].strip(" ,.-:")
-        body = body or blob
+        body = _inner_schedule_body(blob)
         delivery = "process" if _schedule_body_is_task(body) else "verbatim"
         instructions = _split_schedule_task_body(body) if delivery == "process" else [body]
         out: dict[str, Any] = {
@@ -800,7 +817,7 @@ def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
     if m_body:
         body = m_body.group(1).strip()
     else:
-        # Drop the schedule wrapper; keep work after the clock.
+        # Drop the schedule wrapper; keep work after the clock / destination.
         cut = m_daily or m_once
         if cut:
             body = blob[cut.end() :].strip(" ,.-:")
@@ -810,6 +827,10 @@ def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
                 body,
                 flags=re.I,
             ).strip()
+        body = _LEAD_SEND.sub("", body).strip()
+        m_into = _INTO_CHANNEL.search(body)
+        if m_into:
+            body = body[m_into.end() :].strip(" ,.-:")
     if not body:
         body = blob
     instructions = _split_schedule_task_body(body)

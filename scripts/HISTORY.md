@@ -1,3 +1,17 @@
+## 2026-08-25 19:45 +07 — Group describe fire echoed the schedule ask
+
+### Symptom
+One-shot “send into named group + describe …” saved, then the group received the original schedule sentence instead of a description.
+
+### Root cause
+Classifier treated “gửi vào [group]” as dictated send (`verbatim`) and left timing/destination in `message`/`fire_text`. Host fell back to the create ask when no `nội dung:` marker existed.
+
+### Fix (core)
+Harden `classify.json` so destination + work verb is `process` with inner-work only. Heuristic strips destination before delivery choice. Host never fires a create-schedule shell as `fire_text`.
+
+### Prevent recurrence
+`message`/`instructions` must never contain relative-delay or “gửi vào [group]” wrappers; destination stays in `target_channel`.
+
 ## 2026-08-25 19:10 +07 — Verbatim fire stored then silently dropped
 
 ### Symptom
