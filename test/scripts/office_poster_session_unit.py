@@ -63,6 +63,16 @@ def main() -> int:
     assert looks_text_poster(daily_sched) is False
     assert looks_office_create(daily_sched) is False
 
+    # Image + txt compound must not take the single-file office shortcut.
+    from media_shortcuts import is_compound_media_file_request  # noqa: E402
+
+    img_txt = (
+        "vẽ 1 tấm hình trắng đen ghi vào chào buổi sáng, tạo 1 file text ghi vào đã xong"
+    )
+    assert is_compound_media_file_request(img_txt) is True
+    assert looks_office_create(img_txt) is False
+    assert looks_schedule_create("1 phút nữa gửi vào Zalo LC Group: hello") is True
+
     soul = (ROOT / "hermes" / "main" / "SOUL.md").read_text(encoding="utf-8")
     import re
 
