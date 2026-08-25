@@ -1,3 +1,8 @@
+## 2026-08-25 19:10 +07 — Verbatim schedule fire dropped by outbound filter
+
+- One-shot send-later jobs stored as verbatim, fired on time, then never appeared in chat. Adapter sent into the outbound noise filter; `/v1/outbound` labeled the dictated body as chatter and the send was discarded.
+- Host: verbatim `scheduleFire` skips the outbound noise filter. That filter is for Hermes-generated status lines, not a body the classifier already marked to deliver as-is.
+
 ## 2026-08-25 18:40 +07 — Schedule send-body stays verbatim; gateway classify import
 
 - One-shot “send this text later” jobs could be stored as process because the payload contained work-looking words, so fire injected into Hermes and never delivered. Gateway classify client crashed on import (`re` missing).
