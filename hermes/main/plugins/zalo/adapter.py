@@ -1589,6 +1589,71 @@ class ZaloAdapter(BasePlatformAdapter):
         if plan.get("task_hint") == "schedule" and not schedule_fire:
             skill_action = str(plan.get("skill_action") or "").strip().lower()
             task_type = str(plan.get("task_type") or "").strip().lower()
+            if skill_action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
+                try:
+                    from .schedule_client import (
+                        format_schedule_list_lines,
+                        schedule_enabled,
+                        schedules_for_thread,
+                    )
+                    from .channels_client import extract_target_group_ref, resolve_channel
+                except ImportError:
+                    from schedule_client import (  # type: ignore
+                        format_schedule_list_lines,
+                        schedule_enabled,
+                        schedules_for_thread,
+                    )
+                    from channels_client import extract_target_group_ref, resolve_channel  # type: ignore
+                target_tid = thread_id
+                target_label = ""
+                ref = extract_target_group_ref(current, plan)
+                if ref:
+                    hit = resolve_channel(ref)
+                    gid = str((hit or {}).get("external_id") or "").strip()
+                    if not gid:
+                        try:
+                            msg = self._as_ux_line(
+                                "ZALO_SCHEDULE_GROUP_NOT_FOUND_MSG",
+                                ("schedule", "group_not_found"),
+                                (
+                                    f"Chưa biết nhóm '{ref}'. Vào nhóm đó gửi !zalo allow / "
+                                    f"!zalo label, hoặc !zalo refresh rồi xem lịch lại."
+                                ),
+                                user_text=text,
+                            )
+                            await self._as_gate_announce(thread_id, thread_type, msg)
+                        except Exception:
+                            pass
+                        return True
+                    target_tid = gid
+                    target_label = str((hit or {}).get("name") or ref).strip()
+                if not schedule_enabled():
+                    try:
+                        msg = self._as_ux_line(
+                            "ZALO_SCHEDULE_LIST_UNAVAILABLE_MSG",
+                            ("schedule", "list_unavailable"),
+                            "Chưa bật schedule-worker nên chưa xem được lịch.",
+                            user_text=text,
+                        )
+                        await self._as_gate_announce(thread_id, thread_type, msg)
+                    except Exception:
+                        pass
+                    return True
+                rows = schedules_for_thread(target_tid)
+                base = format_schedule_list_lines(rows)
+                if target_label and rows:
+                    base = f"{base}\n(→ nhóm {target_label})"
+                try:
+                    msg = self._as_ux_line(
+                        "ZALO_SCHEDULE_LIST_MSG",
+                        ("schedule", "list"),
+                        base,
+                        user_text=text,
+                    )
+                    await self._as_gate_announce(thread_id, thread_type, msg)
+                except Exception:
+                    pass
+                return True
             if skill_action == "delete" or task_type == "delete_schedule":
                 try:
                     from .schedule_client import (

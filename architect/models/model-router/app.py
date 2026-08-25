@@ -11,7 +11,8 @@ Providers:
 
 Missing API keys skip that provider. Ollama optional. Nothing left → clear error.
 Admin-editable messages: messages/en.json
-Classify prompt: config/classify.json
+Classify / outbound / web-search combo SoT: hermes/main/skills/{classify,outbound,web-search}/…
+Runtime: /opt/data/skills/… when mounted; else config/*.json bake fallback (sync-model-router-skills.sh).
 """
 from __future__ import annotations
 

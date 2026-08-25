@@ -525,6 +525,12 @@ do_update() {
     echo "==> git HEAD: $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
     echo "    (run git pull yourself before update if you want remote changes)"
   fi
+  # Model-router prompt/config SoT lives in Hermes skills; keep bake fallback identical.
+  if [[ -f "${SCRIPTS_DIR}/sync-model-router-skills.sh" ]]; then
+    bash "${SCRIPTS_DIR}/sync-model-router-skills.sh" || echo "WARN: sync-model-router-skills failed"
+  elif [[ -f "${SCRIPTS_DIR}/sync-classify-skill.sh" ]]; then
+    bash "${SCRIPTS_DIR}/sync-classify-skill.sh" || echo "WARN: sync-classify-skill failed"
+  fi
 
   assistant_profile_summary
 
