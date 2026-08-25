@@ -109,15 +109,15 @@ def test_dictated_send_body_keeps_verbatim() -> None:
     print("PASS dictated send-body stays verbatim")
 
 
-def test_group_describe_is_process_not_wrapper() -> None:
-    """gửi vào group + mô tả (no nội dung:) must process; never fire the ask."""
+def test_group_describe_trusts_classify_process() -> None:
+    """Host trusts classify process + inner instructions; never fires the ask."""
     original = (
         "1 phút nữa gửi vào Zalo LC Group mô tả sự cô đơn khi không ai biết đến trợ lý"
     )
     inner = "mô tả sự cô đơn khi không ai biết đến trợ lý"
     plan = {
         "task_hint": "schedule",
-        "schedule_delivery": "verbatim",  # mis-label must not win over lead work verb
+        "schedule_delivery": "process",
         "schedule_form": "once_after",
         "delay_seconds": 60,
         "target_channel": "LC group",
@@ -128,14 +128,19 @@ def test_group_describe_is_process_not_wrapper() -> None:
     fire = fire_text_from_plan(plan, original)
     assert fire == inner
     assert "1 phút" not in fire and "gửi vào" not in fire.lower()
-    # Wrapper-only plan must not echo the create ask.
+    # create-ask must not be used as fire_text when it equals the inbound bubble
     bad = {
         "schedule_delivery": "verbatim",
         "message": original,
         "instructions": [original],
     }
     assert fire_text_from_plan(bad, original) == ""
-    print("PASS group describe is process; wrapper never fires")
+    # with nội dung: protocol, exact body wins
+    assert fire_text_from_plan(
+        {"schedule_delivery": "verbatim", "message": "x", "instructions": ["x"]},
+        "1 phút nữa nhắn tôi nội dung: hello world",
+    ) == "hello world"
+    print("PASS host trusts classify process; refuse fire_text==full ask")
 
 
 def main() -> int:
@@ -145,7 +150,7 @@ def main() -> int:
         test_task_noidung_never_verbatim()
         test_process_explicit()
         test_dictated_send_body_keeps_verbatim()
-        test_group_describe_is_process_not_wrapper()
+        test_group_describe_trusts_classify_process()
     except AssertionError as e:
         print(f"FAIL {e}")
         return 1
