@@ -174,7 +174,7 @@ def _clock_cron_from_text(text: str) -> str:
     return f"{minute} {hour} * * *"
 
 def exact_schedule_body(original: str) -> str:
-    """Prefer verbatim text after nội dung: so fire never uses a paraphrased plan."""
+    """Protocol body after nội dung:/content: (field delimiter — not NLU)."""
     raw = (original or "").strip()
     if not raw:
         return ""
@@ -238,51 +238,62 @@ def plan_is_task_work(plan: dict[str, Any] | None) -> bool:
 
 
 def schedule_delivery_mode(plan: dict[str, Any] | None, original: str = "") -> str:
-    """How the worker should deliver fire_text: ``verbatim`` (send as-is) or ``process`` (Hermes).
+    """How the worker should deliver fire_text: ``verbatim`` or ``process``.
 
-    Prefer classify ``schedule_delivery``. Structured task work (split skills / search / media)
-    is never verbatim even when wrapped in ``nội dung:``. A dictated send-body after
-    ``nội dung:`` stays verbatim when classify says so — payload words are not skills.
+    Source of truth is classify JSON ``schedule_delivery``. Host does not parse
+    user prose for verbs. Structured multi-skill plans force process. Default process.
     """
+    del original  # audit only — delivery is not inferred from the bubble
     src = plan if isinstance(plan, dict) else {}
     explicit = str(src.get("schedule_delivery") or "").strip().lower()
+    if plan_is_task_work(src):
+        return "process"
     if explicit in {"verbatim", "send", "deliver"}:
-        if plan_is_task_work(src):
-            return "process"
         return "verbatim"
     if explicit in {"process", "hermes", "classify"}:
         return "process"
-    if plan_is_task_work(src):
-        return "process"
-    if exact_schedule_body(original):
-        return "verbatim"
     return "process"
 
 
 def fire_text_from_plan(plan: dict[str, Any] | None, original: str = "") -> str:
-    """Inner work only. Never fire the đặt lịch wrapper (that re-creates schedules)."""
+    """Inner work from classify fields only. Never fire the create-schedule ask.
+
+    ``original`` is used solely for the protocol delimiter ``nội dung:`` /
+    ``content:`` when delivery is verbatim. If message/instructions still equal
+    the full inbound bubble, refuse (classify must emit inner work only).
+    """
     src = plan if isinstance(plan, dict) else {}
     parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
     delivery = schedule_delivery_mode(src, original)
+    orig = (original or "").strip()
+
+    def _not_full_ask(text: str) -> str:
+        t = (text or "").strip()
+        if not t or (orig and t == orig):
+            return ""
+        return t
+
     if delivery == "verbatim":
         exact = exact_schedule_body(original)
         if exact:
             return exact
-        msg = str(src.get("message") or "").strip()
+        msg = _not_full_ask(str(src.get("message") or ""))
         if msg:
             return msg
         if parts:
-            return "\n".join(parts)
-        return (original or "").strip()
+            return _not_full_ask("\n".join(parts))
+        return ""
     if parts:
-        return "\n".join(parts)
-    msg = str(src.get("message") or "").strip()
+        joined = _not_full_ask("\n".join(parts))
+        if joined:
+            return joined
+    msg = _not_full_ask(str(src.get("message") or ""))
     if msg:
         return msg
     exact = exact_schedule_body(original)
     if exact:
         return exact
-    return (original or "").strip()
+    return ""
 
 
 def _req(method: str, path: str, payload: Optional[dict] = None, timeout: float = 8.0) -> dict[str, Any]:
