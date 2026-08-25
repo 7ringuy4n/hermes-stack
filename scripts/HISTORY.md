@@ -1,3 +1,50 @@
+## 2026-08-25 08:05 +07 — Phrase scanners stole mixed jobs from classify
+
+### Symptom
+Mixed image+file bubbles could produce only a text file. Relative one-shot schedules and cross-thread sends depended on incomplete word lists, so paraphrases missed the intended path.
+
+### Root cause
+Dispatcher shortcuts and host extractors classified intent with phrase dictionaries before (or instead of) model-router JSON.
+
+### Fix (core)
+Harden classify so it owns paraphrases, mixed deliverables, immediate adapter deliver, and delay_seconds. Host consumes those fields; office shortcut runs only for a single classified file job.
+
+### Prevent recurrence
+Do not add natural-language dictionaries for schedule/media/destination. Extend `classify.json` and structured plan fields instead.
+
+## 2026-08-25 07:55 +07 — Classify still taught one-shot cron
+
+### Symptom
+Weak classify models could still emit invented `cron_expr` for one-shot schedules despite relative-delay harden rules.
+
+### Root cause
+Prompt contradictions: intent/keys/examples still implied cadence+cron for every schedule, including once_at / once_after.
+
+### Fix (core)
+Harden `classify.json` so only recurring schedules emit `cron_expr`. One-shot forms leave cron null; host resolves timing.
+
+### Prevent recurrence
+Any new schedule guidance in classify must name `schedule_form` and must not teach one-shot → cron.
+
+## 2026-08-25 07:45 +07 — Relative schedule wrong clock; image+txt collapsed
+
+### Symptom
+Relative one-shot group delivery confirmed at the wrong local clock; list did not show the new job. Compound image+text-file asks lost the image deliverable; some PDF creates bypassed Dispatcher.
+
+### Root cause
+1. Classify guided the model to compute absolute fire times into cron / next_run_at.
+2. Schema rejected delay-only plans.
+3. Host preferred model timestamps over runtime delay resolution.
+4. Office shortcut treated mixed image+file bubbles as a single file create.
+
+### Fix (core)
+- Harden classify for once_after + delay_seconds and multi-deliverable splits.
+- Accept delay-only schedules; host owns fire instant.
+- Skip office shortcut when image and file are requested together.
+
+### Prevent recurrence
+Classifier never resolves wall-clock for relative delays. Confirmations must come from schedule-worker/tool responses, not model prose.
+
 ## 2026-08-24 19:55 +07 — One schedule became many jobs; LC Group lost; 19:30 weather-only
 
 ### Symptom

@@ -1,3 +1,22 @@
+## 2026-08-25 08:05 +07 — Classify owns NLU; host consumes JSON not phrase lists
+
+- Phrase scanners for office/poster, relative delay, and group names cannot cover paraphrases; they swallowed mixed image+file jobs and fought the classifier on schedules and cross-thread sends.
+- `classify.json`: examples are not a dictionary; immediate deliver is adapter-not-admin-API; `task_details` carry `output_type`; delay is unit conversion only.
+- Host: classify before Dispatcher shortcuts; timing uses `delay_seconds` from the plan; destination uses `target_channel`; no invented one-minute default.
+
+## 2026-08-25 07:55 +07 — Classify prompt: one-shot schedules never emit cron
+
+- Relative and absolute one-shot schedules were still guided toward `cron_expr` in places, which let weak models invent wall-clock fires.
+- `classify.json`: `cron_expr` only for recurring; `once_at` / `once_after` keep cron null; explicit `skill_action=create`; timezone not guessed; destination vs content split; removed contradictory one-shot cron examples.
+- Host still resolves fire time (`delay_seconds` or clock prose). Schema accepts one-shot without classifier cron.
+
+## 2026-08-25 07:45 +07 — Classify once_after + multi-deliverable harden
+
+- Relative one-shot schedules could be saved or confirmed at the wrong clock; compound image+file asks could collapse to a single office job; some file creates bypassed Dispatcher.
+- Root cause: classify guided models to invent absolute fire times; delay-only plans failed schema; host preferred model timestamps; office shortcuts ran on mixed image+file bubbles.
+- Fix (core): harden classify for `once_after`/`delay_seconds` and multi-deliverable splits; accept delay-only plans; host runtime timing; skip office shortcut on image+file compounds.
+- Units: `schedule_once_after_unit.py`; extend heuristic + office/poster units.
+
 ## 2026-08-24 19:55 +07 — Schedule: strip prior before clock-split and target extract
 
 - Hydrated `[Prior conversation]` clocks (14:01 / 11:49 / list `@ HH:MM`) were paired onto poem/fuel/weather → many jobs, wrong times, DM instead of LC Group; 19:30 fire sent only weather.

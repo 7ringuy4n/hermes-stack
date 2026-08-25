@@ -16,9 +16,9 @@ _CONTENT_AFTER = re.compile(
 )
 # Protocol guard: prefer exact body after nội dung: if classify paraphrased.
 
-# Relative-time patterns: "N phút nữa", "sau N phút", "in N minutes", etc.
+# Relative-time patterns: "N phút nữa", "sau N phút", "in N minutes", "trong 1 giờ", etc.
 _RELATIVE_RE = re.compile(
-    r"(?:sau\s+|in\s+)?(\d+)\s*(phút|giây|giờ|phut|giay|gio|minute|minutes|second|seconds|hour|hours)\s*(?:nữa|nua)?",
+    r"(?:sau\s+|in\s+|trong\s+)?(\d+)\s*(phút|giây|giờ|phut|giay|gio|minute|minutes|second|seconds|hour|hours)\s*(?:nữa|nua)?",
     re.I,
 )
 _UNIT_SECONDS: dict[str, int] = {
@@ -34,23 +34,144 @@ def next_run_at_from_relative(text: str, tz: str = "Asia/Ho_Chi_Minh") -> str:
     Returns empty string when no relative-time expression is found; the worker
     then falls back to cron_expr resolution.
     """
+    secs = delay_seconds_from_text(text)
+    if secs is None:
+        return ""
+    return next_run_at_from_delay(secs, tz=tz)
+
+
+def delay_seconds_from_text(text: str) -> int | None:
+    """Parse relative delay seconds from user prose (authoritative host clock later)."""
     raw = (text or "").strip()
     m = _RELATIVE_RE.search(raw)
     if not m:
-        return ""
+        return None
     n = int(m.group(1))
     unit = m.group(2).lower()
-    secs = n * _UNIT_SECONDS.get(unit, 60)
-    import datetime
+    secs = n * _UNIT_SECONDS.get(unit, 0)
+    if secs <= 0 or secs > 86400 * 30:
+        return None
+    return secs
+
+
+def delay_seconds_from_plan(plan: dict[str, Any] | None) -> int | None:
+    src = plan if isinstance(plan, dict) else {}
+    raw = src.get("delay_seconds")
+    if raw is None or raw == "":
+        return None
     try:
-        import zoneinfo
-        loc = zoneinfo.ZoneInfo(tz)
-    except Exception:
-        loc = None
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0 or n > 86400 * 30:
+        return None
+    return n
+
+
+def next_run_at_from_delay(delay_seconds: int, tz: str = "Asia/Ho_Chi_Minh") -> str:
+    """RFC3339 UTC for now+delay using the host clock (never the LLM clock)."""
+    import datetime
+
+    _ = tz  # reserved for future local-display helpers; fire instant is UTC now+delay
     now_utc = datetime.datetime.now(datetime.timezone.utc)
-    fire_utc = now_utc + datetime.timedelta(seconds=secs)
+    fire_utc = now_utc + datetime.timedelta(seconds=int(delay_seconds))
     return fire_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
 
+
+def cron_from_next_run_at(next_run_at: str, tz: str = "Asia/Ho_Chi_Minh") -> str:
+    """Derive a once HH:MM cron placeholder for DB NOT NULL from an RFC3339 fire time."""
+    import datetime
+
+    raw = (next_run_at or "").strip()
+    if not raw:
+        return ""
+    try:
+        if raw.endswith("Z"):
+            dt = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        else:
+            dt = datetime.datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        try:
+            import zoneinfo
+
+            loc = zoneinfo.ZoneInfo(tz or "Asia/Ho_Chi_Minh")
+        except Exception:
+            loc = datetime.timezone(datetime.timedelta(hours=7))
+        local = dt.astimezone(loc)
+        return f"{local.minute} {local.hour} * * *"
+    except Exception:
+        return ""
+
+
+def resolve_schedule_timing(
+    plan: dict[str, Any] | None,
+    text: str,
+    tz: str = "Asia/Ho_Chi_Minh",
+) -> dict[str, Any]:
+    """Authoritative fire timing for create_schedule.
+
+    once_after / relative prose: host clock + delay_seconds. Never trust LLM
+    next_run_at or LLM-invented cron for relative delays.
+    """
+    src = plan if isinstance(plan, dict) else {}
+    zone = str(src.get("timezone") or tz or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
+    delay = delay_seconds_from_plan(src)
+    form = str(src.get("schedule_form") or "").strip().lower()
+    if delay is not None or form == "once_after":
+        if delay is None:
+            return {
+                "schedule_form": "once_after",
+                "delay_seconds": None,
+                "cadence": "once",
+                "cron_expr": "",
+                "next_run_at": "",
+            }
+        nxt = next_run_at_from_delay(delay, tz=zone)
+        cron = cron_from_next_run_at(nxt, tz=zone) or "0 0 * * *"
+        return {
+            "schedule_form": "once_after",
+            "delay_seconds": delay,
+            "cadence": "once",
+            "cron_expr": cron,
+            "next_run_at": nxt,
+        }
+    cron = str(src.get("cron_expr") or "").strip()
+    cadence = str(src.get("cadence") or "").strip().lower() or "once"
+    form_out = form or ("recurring" if cadence not in {"", "once"} else "once_at")
+    # once_at: classifier leaves cron null; derive storage cron from prose clock if needed.
+    if not cron and form_out == "once_at":
+        cron = _clock_cron_from_text(text) or ""
+    if not cron and form_out not in {"once_after"} and cadence == "once":
+        cron = _clock_cron_from_text(text) or ""
+    return {
+        "schedule_form": form_out,
+        "delay_seconds": None,
+        "cadence": cadence,
+        "cron_expr": cron,
+        "next_run_at": "",
+    }
+
+
+def _clock_cron_from_text(text: str) -> str:
+    """Protocol HH:MM → once-daily cron for worker storage (not classifier NLU)."""
+    m = re.search(
+        r"(?:lúc|luc|at|@)\s*(\d{1,2})\s*[:hH]\s*(\d{2})\b|\b(\d{1,2})\s*[:hH]\s*(\d{2})\b",
+        text or "",
+        re.I,
+    )
+    if not m:
+        return ""
+    h_raw = m.group(1) or m.group(3)
+    min_raw = m.group(2) or m.group(4)
+    try:
+        hour = int(h_raw)
+        minute = int(min_raw)
+    except (TypeError, ValueError):
+        return ""
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return ""
+    return f"{minute} {hour} * * *"
 
 def exact_schedule_body(original: str) -> str:
     """Prefer verbatim text after nội dung: so fire never uses a paraphrased plan."""
