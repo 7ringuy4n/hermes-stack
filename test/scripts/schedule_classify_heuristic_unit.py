@@ -88,6 +88,22 @@ def main() -> int:
     assert plan_schema_ok(plan_send)
     assert plan_send.get("schedule_delivery") == "verbatim"
 
+    group_desc = (
+        "1 phút nữa gửi vào Zalo LC Group mô tả sự cô đơn khi không ai biết đến trợ lý"
+    )
+    raw_gd = schedule_heuristic_plan(group_desc)
+    assert raw_gd and raw_gd.get("schedule_form") == "once_after", raw_gd
+    assert raw_gd.get("delay_seconds") == 60, raw_gd
+    assert raw_gd.get("schedule_delivery") == "process", raw_gd
+    assert (raw_gd.get("target_channel") or "").lower() == "lc group", raw_gd
+    body_gd = " ".join(raw_gd.get("instructions") or [])
+    assert "mô tả" in body_gd.lower() or "mo ta" in body_gd.lower(), raw_gd
+    assert "1 phút" not in body_gd and "phút nữa" not in body_gd, raw_gd
+    assert "gửi vào" not in body_gd.lower(), raw_gd
+    plan_gd = normalize_plan(raw_gd, group_desc, "Asia/Ho_Chi_Minh")
+    assert plan_schema_ok(plan_gd)
+    assert plan_gd.get("schedule_delivery") == "process"
+
     print("OK schedule classify heuristic + prior strip + 400 skip + once_after")
     return 0
 

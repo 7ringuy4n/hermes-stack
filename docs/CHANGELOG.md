@@ -1,3 +1,8 @@
+## 2026-08-25 19:45 +07 — Group send + describe is process; never fire schedule ask
+
+- Relative “send into group + describe …” jobs were stored as verbatim and posted the full schedule ask into the group.
+- `classify.json`: destination + work verb is `process`; `message`/`instructions` are inner work only (no timing/destination wrapper). Host refuses to fire a create-schedule shell as `fire_text`. Heuristic strips destination before choosing delivery.
+
 ## 2026-08-25 19:10 +07 — Verbatim schedule fire dropped by outbound filter
 
 - One-shot send-later jobs stored as verbatim, fired on time, then never appeared in chat. Adapter sent into the outbound noise filter; `/v1/outbound` labeled the dictated body as chatter and the send was discarded.
