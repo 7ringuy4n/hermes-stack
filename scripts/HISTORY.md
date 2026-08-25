@@ -1,3 +1,17 @@
+## 2026-08-25 19:10 +07 — Verbatim fire stored then silently dropped
+
+### Symptom
+Relative send-later lịch saved and fired; no Zalo message arrived.
+
+### Root cause
+Classify and host stored `schedule_delivery=verbatim`. At fire the adapter called send, then `/v1/outbound` treated the dictated body as process chatter and dropped it (`drop approval/resume chatter`).
+
+### Fix (core)
+Verbatim scheduleFire metadata skips the outbound noise filter. That filter stays for Hermes-generated lines only.
+
+### Prevent recurrence
+Do not run `/v1/outbound` on a payload the host already committed to deliver as-is.
+
 ## 2026-08-25 18:40 +07 — Dictated schedule body fired as process; gateway crash-loop
 
 ### Symptom
