@@ -138,14 +138,20 @@ def normalize_task_details(
         else:
             body = src
         cls, typ, mode = normalize_execution(body, hint, wrapper=False)
-        details.append(
-            {
-                "execution_class": cls,
-                "task_type": typ,
-                "response_mode": mode,
-                "depends_on": normalize_depends(item.get("depends_on") if item else [], i),
-            }
-        )
+        out_type = str((item or {}).get("output_type") or (item or {}).get("file_format") or "").strip().lower()
+        if out_type in {"text", "txt."}:
+            out_type = "txt"
+        if out_type not in {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}:
+            out_type = ""
+        row_out = {
+            "execution_class": cls,
+            "task_type": typ,
+            "response_mode": mode,
+            "depends_on": normalize_depends(item.get("depends_on") if item else [], i),
+        }
+        if out_type:
+            row_out["output_type"] = out_type
+        details.append(row_out)
     return details
 
 
@@ -235,7 +241,26 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
     task_type = str(plan.get("task_type") or "").strip().lower()
     if action == "delete" or task_type == "delete_schedule":
         return True
+    # once_after / once_at may omit cron_expr — host resolves fire time from delay or clock text.
+    if _coerce_delay_seconds(plan.get("delay_seconds")) is not None:
+        return True
+    form = str(plan.get("schedule_form") or "").strip().lower()
+    if form in {"once_after", "once_at"}:
+        return True
     return bool(plan.get("cron_expr"))
+
+
+def _coerce_delay_seconds(raw: Any) -> int | None:
+    """Accept positive int delay_seconds from classify JSON; reject junk."""
+    if raw is None or raw == "":
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0 or n > 86400 * 30:
+        return None
+    return n
 
 
 def _default_chat_combo_alias() -> str:
@@ -567,9 +592,31 @@ def sanitize_instructions(raw: Any, fallback: str) -> list[str]:
 
 _SCHEDULE_HINT = re.compile(
     r"đặt\s*lịch|dat\s*lich|\bschedule\b|\bcron\b|hằng\s*ngày|hang\s*ngay|"
-    r"daily\s+at|mỗi\s*sáng|moi\s*sang|chạy\s*một\s*lần|chay\s*mot\s*lan",
+    r"daily\s+at|mỗi\s*sáng|moi\s*sang|chạy\s*một\s*lần|chay\s*mot\s*lan|"
+    r"\d+\s*(?:phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)\s*(?:nữa|nua)?|"
+    r"(?:sau|in|trong)\s+\d+\s*(?:phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)",
     re.I,
 )
+# Protocol parse for relative delay — not NLU; mirrors schedule_client runtime resolver.
+_RELATIVE_DELAY = re.compile(
+    r"(?:sau\s+|in\s+|trong\s+)?(\d+)\s*"
+    r"(phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)\s*(?:nữa|nua)?",
+    re.I,
+)
+_RELATIVE_UNIT_SECONDS = {
+    "phút": 60,
+    "phut": 60,
+    "minute": 60,
+    "minutes": 60,
+    "giây": 1,
+    "giay": 1,
+    "second": 1,
+    "seconds": 1,
+    "giờ": 3600,
+    "gio": 3600,
+    "hour": 3600,
+    "hours": 3600,
+}
 _ONCE_AT = re.compile(
     r"(?:một\s*lần|mot\s*lan|once|chạy)?\s*(?:lúc|luc|at)\s*(\d{1,2})\s*[:hH]\s*(\d{2})",
     re.I,
@@ -663,6 +710,22 @@ def _split_schedule_task_body(body: str) -> list[str]:
     return parts if len(parts) >= 2 else [raw]
 
 
+def delay_seconds_from_text(text: str) -> int | None:
+    """Protocol extract of relative delay seconds from user prose (host authority)."""
+    m = _RELATIVE_DELAY.search(text or "")
+    if not m:
+        return None
+    try:
+        n = int(m.group(1))
+    except (TypeError, ValueError):
+        return None
+    unit = (m.group(2) or "").lower()
+    secs = n * _RELATIVE_UNIT_SECONDS.get(unit, 0)
+    if secs <= 0 or secs > 86400 * 30:
+        return None
+    return secs
+
+
 def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
     """Deterministic once/daily schedule when LLM classify is down (503/timeout).
 
@@ -675,6 +738,41 @@ def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
         return None
     if not _SCHEDULE_HINT.search(blob):
         return None
+    # Relative once_after: delay_seconds only — never invent cron / next_run_at here.
+    delay = delay_seconds_from_text(blob)
+    if delay is not None and not extract_clock_cron(blob):
+        body = blob
+        m_body = _CONTENT_AFTER.search(blob)
+        if m_body:
+            body = m_body.group(1).strip()
+        else:
+            m_rel = _RELATIVE_DELAY.search(blob)
+            if m_rel:
+                body = blob[m_rel.end() :].strip(" ,.-:")
+        body = body or blob
+        delivery = "process" if _schedule_body_is_task(body) else "verbatim"
+        instructions = _split_schedule_task_body(body) if delivery == "process" else [body]
+        out: dict[str, Any] = {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "execution_class": "schedule",
+            "response_mode": "confirm",
+            "process_original_message": False,
+            "skill": "schedule",
+            "skill_action": "create",
+            "cadence": "once",
+            "schedule_form": "once_after",
+            "delay_seconds": delay,
+            "cron_expr": None,
+            "next_run_at": None,
+            "message": body,
+            "instructions": instructions,
+            "schedule_delivery": delivery,
+        }
+        channel = _heuristic_target_channel(blob)
+        if channel:
+            out["target_channel"] = channel
+        return out
     cadence = "once"
     hh = mm = None
     m_daily = _DAILY_AT.search(blob)
@@ -846,9 +944,55 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     cadence = str(src.get("cadence") or "").strip().lower()
     if cadence not in CADENCES:
         cadence = "daily" if hint == "schedule" else "once"
-    cron = valid_cron(str(src.get("cron_expr") or ""))
-    if hint == "schedule" and not cron:
-        cron = extract_clock_cron(fallback)
+    delay = _coerce_delay_seconds(src.get("delay_seconds"))
+    schedule_form = str(src.get("schedule_form") or "").strip().lower()
+    if schedule_form not in {"once_at", "once_after", "recurring"}:
+        schedule_form = ""
+    if delay is not None:
+        schedule_form = "once_after"
+        cadence = "once"
+        cron = None
+    else:
+        # Classifier must not invent cron for one-shot; discard LLM cron for once_at.
+        llm_cron = valid_cron(str(src.get("cron_expr") or ""))
+        host_clock = extract_clock_cron(fallback)
+        if schedule_form == "once_after":
+            cron = None
+        elif schedule_form == "once_at" or (
+            not schedule_form
+            and hint == "schedule"
+            and cadence == "once"
+            and host_clock
+            and not any(
+                tok in (fallback or "").lower()
+                for tok in (
+                    "hằng ngày",
+                    "hang ngay",
+                    "mỗi ngày",
+                    "moi ngay",
+                    "daily",
+                    "mỗi tuần",
+                    "hang tuần",
+                    "weekly",
+                    "mỗi tháng",
+                    "monthly",
+                )
+            )
+        ):
+            schedule_form = "once_at"
+            cadence = "once"
+            # Host protocol fill for worker storage — not classifier invention.
+            cron = host_clock
+        elif schedule_form == "recurring" or cadence in {"daily", "weekly", "monthly", "yearly"}:
+            if not schedule_form:
+                schedule_form = "recurring"
+            cron = llm_cron or host_clock
+        else:
+            cron = llm_cron
+            if hint == "schedule" and not cron:
+                cron = host_clock
+            if schedule_form == "once_after":
+                cron = None
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
     exec_cls, task_type, response_mode = normalize_execution(src, hint)
     skill, skill_action = normalize_skill(src, hint, task_type)
@@ -861,6 +1005,8 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         skill_action = "delete"
         cadence = None
         cron = None
+        delay = None
+        schedule_form = ""
         process_original = False
     message = str(src.get("message") or "").strip()
     if not message:
@@ -888,6 +1034,14 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "task_details": normalize_task_details(src, instructions, hint),
         "cadence": None if is_delete else (cadence if hint == "schedule" else None),
         "cron_expr": None if is_delete else (cron if hint == "schedule" else None),
+        "delay_seconds": None if is_delete else (delay if hint == "schedule" else None),
+        "schedule_form": (
+            None
+            if is_delete
+            else ((schedule_form or None) if hint == "schedule" else None)
+        ),
+        # Classifier must not invent absolute fire time; host resolves once_after.
+        "next_run_at": None,
         "timezone": tz,
         "execution_class": exec_cls,
         "task_type": task_type,

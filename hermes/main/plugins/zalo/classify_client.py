@@ -174,14 +174,20 @@ def normalize_task_details(
         else:
             body = src
         cls, typ, mode = normalize_execution(body, hint, wrapper=False)
-        details.append(
-            {
-                "execution_class": cls,
-                "task_type": typ,
-                "response_mode": mode,
-                "depends_on": normalize_depends(item.get("depends_on") if item else [], i),
-            }
-        )
+        out_type = str((item or {}).get("output_type") or (item or {}).get("file_format") or "").strip().lower()
+        if out_type in {"text", "txt."}:
+            out_type = "txt"
+        if out_type not in {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}:
+            out_type = ""
+        row_out = {
+            "execution_class": cls,
+            "task_type": typ,
+            "response_mode": mode,
+            "depends_on": normalize_depends(item.get("depends_on") if item else [], i),
+        }
+        if out_type:
+            row_out["output_type"] = out_type
+        details.append(row_out)
     return details
 
 
@@ -246,6 +252,57 @@ def plan_compound_sequential(plan: dict[str, Any] | None) -> bool:
     return len(parts) >= 2
 
 
+def plan_skips_media_shortcut(plan: dict[str, Any] | None) -> bool:
+    """True when Dispatcher office/poster regex shortcuts must not run.
+
+    Classify JSON owns mixed image+file, schedules, and immediate delivers.
+    Phrase scanners must not swallow a sibling job.
+    """
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return True
+    hint = str(src.get("task_hint") or "").strip().lower()
+    if hint == "schedule":
+        return True
+    action = str(src.get("skill_action") or "").strip().lower()
+    if action in {"deliver", "send", "send_message"}:
+        return True
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    if len(parts) >= 2:
+        return True
+    types: set[str] = set()
+    if str(src.get("task_type") or "").strip().lower():
+        types.add(str(src.get("task_type") or "").strip().lower())
+    for detail in src.get("task_details") or []:
+        if isinstance(detail, dict) and str(detail.get("task_type") or "").strip():
+            types.add(str(detail.get("task_type") or "").strip().lower())
+    if "media_generation" in types:
+        return True
+    return False
+
+
+def plan_allows_office_shortcut(plan: dict[str, Any] | None) -> bool:
+    """Single file-create job from classify — Dispatcher may run without phrase-scan."""
+    src = plan if isinstance(plan, dict) else {}
+    if plan_skips_media_shortcut(src):
+        return False
+    if str(src.get("task_hint") or "").strip().lower() == "file":
+        return True
+    if str(src.get("task_type") or "").strip().lower() == "file_processing":
+        return True
+    return False
+
+
+def plan_is_immediate_deliver(plan: dict[str, Any] | None) -> bool:
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    action = str(src.get("skill_action") or "").strip().lower()
+    return action in {"deliver", "send", "send_message"}
+
+
 def plan_is_async(plan: dict[str, Any] | None) -> bool:
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
@@ -289,6 +346,45 @@ def failed_plan(timezone: str, error: str = "classify_unavailable") -> dict[str,
     }
 
 
+
+def _coerce_delay_seconds(raw):
+    if raw is None or raw == "":
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0 or n > 86400 * 30:
+        return None
+    return n
+
+
+_RELATIVE_DELAY_RE = re.compile(
+    r"(?:sau\s+|in\s+|trong\s+)?(\d+)\s*"
+    r"(phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)\s*(?:nữa|nua)?",
+    re.I,
+)
+_RELATIVE_UNIT_SECONDS = {
+    "phút": 60, "phut": 60, "minute": 60, "minutes": 60,
+    "giây": 1, "giay": 1, "second": 1, "seconds": 1,
+    "giờ": 3600, "gio": 3600, "hour": 3600, "hours": 3600,
+}
+
+
+def delay_seconds_from_text(text: str):
+    m = _RELATIVE_DELAY_RE.search(text or "")
+    if not m:
+        return None
+    try:
+        n = int(m.group(1))
+    except (TypeError, ValueError):
+        return None
+    unit = (m.group(2) or "").lower()
+    secs = n * _RELATIVE_UNIT_SECONDS.get(unit, 0)
+    if secs <= 0 or secs > 86400 * 30:
+        return None
+    return secs
+
 def plan_schema_ok(plan: dict[str, Any]) -> bool:
     if not isinstance(plan, dict) or plan.get("ok") is False:
         return False
@@ -297,6 +393,11 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
     action = str(plan.get("skill_action") or "").strip().lower()
     task_type = str(plan.get("task_type") or "").strip().lower()
     if action == "delete" or task_type == "delete_schedule":
+        return True
+    if _coerce_delay_seconds(plan.get("delay_seconds")) is not None:
+        return True
+    form = str(plan.get("schedule_form") or "").strip().lower()
+    if form in {"once_after", "once_at"}:
         return True
     return bool(plan.get("cron_expr"))
 
@@ -316,7 +417,30 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     cadence = str(src.get("cadence") or "").strip().lower()
     if cadence not in CADENCES:
         cadence = "daily" if hint == "schedule" else "once"
-    cron = valid_cron(str(src.get("cron_expr") or ""))
+    delay = _coerce_delay_seconds(src.get("delay_seconds"))
+    schedule_form = str(src.get("schedule_form") or "").strip().lower()
+    if schedule_form not in {"once_at", "once_after", "recurring"}:
+        schedule_form = ""
+    if delay is not None:
+        schedule_form = "once_after"
+        cadence = "once"
+        cron = None
+    else:
+        llm_cron = valid_cron(str(src.get("cron_expr") or ""))
+        # Clients may not have extract_clock_cron — keep LLM cron only for recurring.
+        if schedule_form == "once_after":
+            cron = None
+        elif schedule_form == "once_at":
+            cadence = "once"
+            cron = None
+        elif schedule_form == "recurring" or cadence in {"daily", "weekly", "monthly", "yearly"}:
+            if not schedule_form:
+                schedule_form = "recurring"
+            cron = llm_cron
+        else:
+            cron = llm_cron
+            if schedule_form == "once_after":
+                cron = None
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
     exec_cls, task_type, response_mode = normalize_execution(src, hint)
     skill, skill_action = normalize_skill(src, hint, task_type)
@@ -329,6 +453,8 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         skill_action = "delete"
         cadence = None
         cron = None
+        delay = None
+        schedule_form = ""
         process_original = False
     message = str(src.get("message") or "").strip()
     if not message:
@@ -347,6 +473,8 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     attachments_required = src.get("attachments_required")
     if not isinstance(attachments_required, bool):
         attachments_required = False
+    delivery_raw = str(src.get("schedule_delivery") or "").strip().lower()
+    schedule_delivery = delivery_raw if delivery_raw in {"verbatim", "process"} else None
     plan = {
         "ok": True,
         "task_hint": hint,
@@ -354,6 +482,13 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "task_details": normalize_task_details(src, instructions, hint),
         "cadence": None if is_delete else (cadence if hint == "schedule" else None),
         "cron_expr": None if is_delete else (cron if hint == "schedule" else None),
+        "delay_seconds": None if is_delete else (delay if hint == "schedule" else None),
+        "schedule_form": (
+            None
+            if is_delete
+            else ((schedule_form or None) if hint == "schedule" else None)
+        ),
+        "next_run_at": None,
         "timezone": tz,
         "execution_class": exec_cls,
         "task_type": task_type,
@@ -375,6 +510,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             ).strip()
             or None
         ),
+        "schedule_delivery": schedule_delivery,
     }
     if not plan_schema_ok(plan):
         return failed_plan(tz, "classify_invalid")
