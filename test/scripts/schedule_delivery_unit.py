@@ -91,12 +91,31 @@ def test_process_explicit() -> None:
     print("PASS explicit process")
 
 
+def test_dictated_send_body_keeps_verbatim() -> None:
+    """Classify verbatim must survive payload words that look like skills."""
+    body = "không cần chit chat, chỉ mô tả sự cô đơn trong im lặng"
+    original = f"1 phút nữa nhắn tôi nội dung:{body}"
+    plan = {
+        "task_hint": "schedule",
+        "schedule_delivery": "verbatim",
+        "schedule_form": "once_after",
+        "delay_seconds": 60,
+        "message": body,
+        "instructions": [body],
+    }
+    assert not plan_is_task_work(plan)
+    assert schedule_delivery_mode(plan, original) == "verbatim"
+    assert fire_text_from_plan(plan, original) == body
+    print("PASS dictated send-body stays verbatim")
+
+
 def main() -> int:
     try:
         test_clean_and_extract()
         test_verbatim_send_body()
         test_task_noidung_never_verbatim()
         test_process_explicit()
+        test_dictated_send_body_keeps_verbatim()
     except AssertionError as e:
         print(f"FAIL {e}")
         return 1

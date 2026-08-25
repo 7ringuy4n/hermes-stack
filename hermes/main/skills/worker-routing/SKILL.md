@@ -39,7 +39,7 @@ The queue is infrastructure only — not a router.
 2. Persist via Schedule Worker immediately (no Hermes LLM for the store). Do not run inner skills at create time.
 3. Ack the user with next run + schedule id (+ `→ nhóm …` when delivering elsewhere).
 4. When due, Schedule Worker injects `fire_text` with `scheduleFire=true` (and `scheduleDelivery`) into the target thread (group or DM).
-5. **verbatim**: host sends body as-is. **process**: Hermes runs **split** skills (search/media/…). Mention-gate / rate-limit / inflight **must not** drop `scheduleFire`. `!zalo` admin must not wait behind a stuck media turn.
+5. **verbatim**: host sends body as-is (dictated send-text, even if payload words look like skills). **process**: Hermes runs **split** skills (search/media/…). Mention-gate / rate-limit / inflight **must not** drop `scheduleFire`. `!zalo` admin must not wait behind a stuck media turn.
 
 ## Security
 
