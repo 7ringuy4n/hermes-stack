@@ -1,7 +1,7 @@
-"""HTTP client for model-router POST /v1/classify.
+"""HTTP client for model-router POST /v1/classify (classify skill prompt).
 
-Application code consumes structured JSON only. Tests may inject set_planner.
-Keep in sync with gateway and Zalo copies.
+Prompt SoT: hermes/main/skills/classify/classify.json. Gateway does not own the prompt.
+Keep schema enums in sync with model-router classify.py.
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ TASK_TYPES = (
     "media_generation",
     "file_processing",
     "create_schedule",
+    "list_schedule",
     "delete_schedule",
     "knowledge",
     "search",
@@ -116,8 +117,11 @@ def normalize_execution(
         elif raw_cls == "schedule":
             raw_mode = "confirm"
     if wrapper and hint == "schedule":
-        if raw_type == "delete_schedule":
+        action = str(src.get("skill_action") or "").strip().lower()
+        if raw_type == "delete_schedule" or action == "delete":
             return "schedule", "delete_schedule", "confirm"
+        if raw_type == "list_schedule" or action in {"list", "inspect", "show", "status"}:
+            return "schedule", "list_schedule", "confirm"
         return "schedule", "create_schedule", "confirm"
     return raw_cls, raw_type, raw_mode
 
@@ -201,12 +205,16 @@ def normalize_skill(src: dict[str, Any], hint: str, task_type: str) -> tuple[str
         inferred = ("media_file", "process_file")
     elif hint == "schedule" and task_type == "delete_schedule":
         inferred = ("schedule", "delete")
+    elif hint == "schedule" and task_type == "list_schedule":
+        inferred = ("schedule", "list")
     if skill is None and inferred:
         skill, default_action = inferred
         if not action:
             action = default_action
     if skill == "schedule" and task_type == "delete_schedule":
         action = "delete"
+    if skill == "schedule" and task_type == "list_schedule":
+        action = "list"
     if skill and not action:
         action = (inferred or (None, "run"))[1] or "run"
     return skill, action
@@ -355,6 +363,8 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
     task_type = str(plan.get("task_type") or "").strip().lower()
     if action == "delete" or task_type == "delete_schedule":
         return True
+    if action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
+        return True
     if _coerce_delay_seconds(plan.get("delay_seconds")) is not None:
         return True
     form = str(plan.get("schedule_form") or "").strip().lower()
@@ -408,10 +418,22 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     is_delete = hint == "schedule" and (
         skill_action == "delete" or task_type == "delete_schedule"
     )
+    is_list = hint == "schedule" and (
+        skill_action in {"list", "inspect", "show", "status"} or task_type == "list_schedule"
+    )
     if is_delete:
         task_type = "delete_schedule"
         skill = "schedule"
         skill_action = "delete"
+        cadence = None
+        cron = None
+        delay = None
+        schedule_form = ""
+        process_original = False
+    elif is_list:
+        task_type = "list_schedule"
+        skill = "schedule"
+        skill_action = "list"
         cadence = None
         cron = None
         delay = None
@@ -425,7 +447,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             message = "\n".join(instructions)
         else:
             message = fallback
-    if is_delete:
+    if is_delete or is_list:
         process_original = False
     else:
         process_original = src.get("process_original_message")
@@ -441,12 +463,12 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "task_hint": hint,
         "instructions": instructions,
         "task_details": normalize_task_details(src, instructions, hint),
-        "cadence": None if is_delete else (cadence if hint == "schedule" else None),
-        "cron_expr": None if is_delete else (cron if hint == "schedule" else None),
-        "delay_seconds": None if is_delete else (delay if hint == "schedule" else None),
+        "cadence": None if (is_delete or is_list) else (cadence if hint == "schedule" else None),
+        "cron_expr": None if (is_delete or is_list) else (cron if hint == "schedule" else None),
+        "delay_seconds": None if (is_delete or is_list) else (delay if hint == "schedule" else None),
         "schedule_form": (
             None
-            if is_delete
+            if (is_delete or is_list)
             else ((schedule_form or None) if hint == "schedule" else None)
         ),
         "next_run_at": None,
@@ -471,7 +493,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             ).strip()
             or None
         ),
-        "schedule_delivery": schedule_delivery,
+        "schedule_delivery": None if (is_delete or is_list) else schedule_delivery,
     }
     if not plan_schema_ok(plan):
         return failed_plan(tz, "classify_invalid")
