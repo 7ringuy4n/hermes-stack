@@ -1,3 +1,9 @@
+## 2026-08-25 20:20 +07 — Zalo host drops Vietnamese NLU; classify owns intent
+
+- Plugin phrase scanners still decided office/poster/schedule/destination/search from Vietnamese keyword lists, which cannot cover paraphrases and fought classify JSON.
+- Host: consume structured plan fields only; Dispatcher office shortcut runs only when classify allows a single file job; destination from `target_channel`; no lyric/attach verb dictionaries. Harden `classify.json` so families (office, live-data file+search, destination, lyrics) stay in the prompt.
+- Units updated to assert plan gates instead of host phrase scanners.
+
 ## 2026-08-25 19:50 +07 — Host trusts classify JSON; no verb-dictionary NLU
 
 - Schedule delivery was being re-decided in host/heuristic with Vietnamese verb lists, which cannot cover paraphrases and fought classify.

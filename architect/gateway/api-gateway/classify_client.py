@@ -249,6 +249,8 @@ def plan_skips_media_shortcut(plan: dict[str, Any] | None) -> bool:
     action = str(src.get("skill_action") or "").strip().lower()
     if action in {"deliver", "send", "send_message"}:
         return True
+    if str(src.get("skill") or "").strip().lower() == "web_search":
+        return True
     parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
     if len(parts) >= 2:
         return True
@@ -256,9 +258,13 @@ def plan_skips_media_shortcut(plan: dict[str, Any] | None) -> bool:
     if str(src.get("task_type") or "").strip().lower():
         types.add(str(src.get("task_type") or "").strip().lower())
     for detail in src.get("task_details") or []:
-        if isinstance(detail, dict) and str(detail.get("task_type") or "").strip():
+        if not isinstance(detail, dict):
+            continue
+        if str(detail.get("task_type") or "").strip():
             types.add(str(detail.get("task_type") or "").strip().lower())
-    if "media_generation" in types:
+        if str(detail.get("skill") or "").strip().lower() == "web_search":
+            return True
+    if "media_generation" in types or "search" in types:
         return True
     return False
 
@@ -339,32 +345,6 @@ def _coerce_delay_seconds(raw):
         return None
     return n
 
-
-_RELATIVE_DELAY_RE = re.compile(
-    r"(?:sau\s+|in\s+|trong\s+)?(\d+)\s*"
-    r"(phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)\s*(?:nữa|nua)?",
-    re.I,
-)
-_RELATIVE_UNIT_SECONDS = {
-    "phút": 60, "phut": 60, "minute": 60, "minutes": 60,
-    "giây": 1, "giay": 1, "second": 1, "seconds": 1,
-    "giờ": 3600, "gio": 3600, "hour": 3600, "hours": 3600,
-}
-
-
-def delay_seconds_from_text(text: str):
-    m = _RELATIVE_DELAY_RE.search(text or "")
-    if not m:
-        return None
-    try:
-        n = int(m.group(1))
-    except (TypeError, ValueError):
-        return None
-    unit = (m.group(2) or "").lower()
-    secs = n * _RELATIVE_UNIT_SECONDS.get(unit, 0)
-    if secs <= 0 or secs > 86400 * 30:
-        return None
-    return secs
 
 def plan_schema_ok(plan: dict[str, Any]) -> bool:
     if not isinstance(plan, dict) or plan.get("ok") is False:

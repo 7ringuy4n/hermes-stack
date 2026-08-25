@@ -3413,19 +3413,17 @@ class ZaloAdapter(BasePlatformAdapter):
         if isinstance(media, dict) and media_urls:
             attach_name = str(media.get("fileName") or "file")
             raw = (text or "").strip()
-            low = raw.lower()
+            tokens = raw.split()
             attach_bare = (
                 (not raw)
                 or raw == attach_name
                 or raw.strip("`") == attach_name
                 or (raw.startswith("{") and "fileExt" in raw)
                 or (
-                    len(raw) < 96
-                    and low.endswith((".xlsx", ".xls", ".docx", ".doc", ".pdf", ".txt", ".csv"))
-                    and "tạo" not in low
-                    and "xuất" not in low
-                    and "tom tat" not in low
-                    and "tóm tắt" not in low
+                    len(tokens) == 1
+                    and tokens[0].lower().endswith(
+                        (".xlsx", ".xls", ".docx", ".doc", ".pdf", ".txt", ".csv")
+                    )
                 )
             )
             kind_l = str(media.get("kind") or "").lower()
@@ -4916,30 +4914,9 @@ class ZaloAdapter(BasePlatformAdapter):
             return text
         self._as_flow("attach_followup", thread_id=thread_id, files=len(blocks))
         joined = "\n\n".join(reversed(blocks))
-        extra = ""
-        low = str(text or "").lower()
-        if any(
-            k in low
-            for k in (
-                "lời bài hát",
-                "loi bai hat",
-                "lyrics",
-                "lyric",
-                "lời nhạc",
-            )
-        ):
-            newest_name, _ = context_newest(items)
-            hint = song_hint_from_filename(newest_name) or newest_name
-            if hint:
-                extra = (
-                    f"\n\n[Lyric request] Newest attachment looks like `{newest_name}`. "
-                    f"Treat song as: {hint}. "
-                    "Web-search for the lyrics now (Router Worker /v1/search). "
-                    "Do not ask which song if the title/artist is already clear from the filename."
-                )
         return (
             f"{text}\n\n[Recent attachments in this chat — use them if the request refers to "
-            f"those files, otherwise ignore]\n{joined}{extra}"
+            f"those files, otherwise ignore]\n{joined}"
         )
 
     def _as_attachment_recall(self, thread_id: str) -> tuple[str, str]:

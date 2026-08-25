@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Unit: channel name extract + diacritic-insensitive resolve."""
+"""Unit: channel name from classify plan + diacritic-insensitive resolve."""
 from __future__ import annotations
 
-import json
 import sys
 import tempfile
 from pathlib import Path
@@ -19,23 +18,35 @@ import channels_registry as reg  # noqa: E402
 
 
 def test_extract() -> None:
-    assert extract_target_group_ref(
-        'đặt lịch hàng ngày 7:00 gửi vào nhóm Family: chào buổi sáng',
-        {},
-    ) == "Family"
-    assert extract_target_group_ref(
-        "schedule daily at 07:00 to group Ops hello",
-        {"target_channel": "Ops"},
-    ) == "Ops"
-    assert extract_target_group_ref(
-        "đặt lịch chạy một lần lúc 20:30 vào group Zalo LC group và thực hiện các việc sau "
-        "Chào buổi tối và chúc ngủ ngon",
-        {},
-    ) in {"Zalo LC group", "LC group"}
-    assert extract_target_group_ref(
-        "hello",
-        {"target_channel": "LC group"},
-    ) == "LC group"
+    # Host no longer phrase-scans; destination must come from classify JSON.
+    assert (
+        extract_target_group_ref(
+            "đặt lịch hàng ngày 7:00 gửi vào nhóm Family: chào buổi sáng",
+            {},
+        )
+        == ""
+    )
+    assert (
+        extract_target_group_ref(
+            "schedule daily at 07:00 to group Ops hello",
+            {"target_channel": "Ops"},
+        )
+        == "Ops"
+    )
+    assert (
+        extract_target_group_ref(
+            "ignored",
+            {"target_channel": "Zalo LC group"},
+        )
+        == "LC group"
+    )
+    assert (
+        extract_target_group_ref(
+            "hello",
+            {"target_channel": "LC group"},
+        )
+        == "LC group"
+    )
     assert extract_target_group_ref("hello", {}) == ""
 
 
@@ -70,8 +81,6 @@ def test_resolve_and_apply(tmp_path: Path) -> None:
         "execute": "hermes",
     }
 
-    # Patch resolve_channel used inside apply via channels_client HTTP — call registry directly path:
-    # apply uses HTTP; for unit we simulate by monkeypatching.
     import channels_client as cc
 
     def _fake_resolve(ref: str, *, platform: str = "zalo"):
@@ -80,7 +89,7 @@ def test_resolve_and_apply(tmp_path: Path) -> None:
     cc.resolve_channel = _fake_resolve  # type: ignore
     new_o, new_c, note = apply_schedule_delivery_target(
         text="đặt lịch 7:00 gửi vào nhóm Gia Dinh chào",
-        plan={},
+        plan={"target_channel": "Gia Dinh"},
         origin=origin,
         context=context,
         current_thread_type="user",

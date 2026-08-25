@@ -33,15 +33,17 @@ def test_clean_and_extract() -> None:
     assert _clean_group_ref("LC group") == "LC group"
     plan = {"target_channel": "zalo lc group"}
     assert extract_target_group_ref("ignored", plan) == "lc group"
-    assert extract_target_group_ref(DAILY, None).lower() == "lc group"
+    # Without classify target_channel, host must not invent a group from prose.
+    assert extract_target_group_ref(DAILY, None) == ""
+    assert extract_target_group_ref(DAILY, {}) == ""
     hydr = (
         "[Prior conversation]\n"
         "Assistant: Đã lưu lịch → nhóm Family @ 14:01\n"
         "[/Prior conversation]\n\n"
         + DAILY
     )
-    assert extract_target_group_ref(hydr, None).lower() == "lc group"
-    print("PASS clean/extract target_channel strips zalo prefix")
+    assert extract_target_group_ref(hydr, {"target_channel": "LC group"}).lower() == "lc group"
+    print("PASS clean/extract target_channel from classify only")
 
 
 def test_verbatim_send_body() -> None:
