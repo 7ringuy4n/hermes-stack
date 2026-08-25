@@ -240,9 +240,9 @@ def plan_is_task_work(plan: dict[str, Any] | None) -> bool:
 def schedule_delivery_mode(plan: dict[str, Any] | None, original: str = "") -> str:
     """How the worker should deliver fire_text: ``verbatim`` (send as-is) or ``process`` (Hermes).
 
-    Prefer classify ``schedule_delivery``. Task work (split skills / search / media) is never
-    verbatim even when wrapped in ``nội dung:``. Send-body fallback is exact ``nội dung:`` only
-    when classify did not mark task work.
+    Prefer classify ``schedule_delivery``. Structured task work (split skills / search / media)
+    is never verbatim even when wrapped in ``nội dung:``. A dictated send-body after
+    ``nội dung:`` stays verbatim when classify says so — payload words are not skills.
     """
     src = plan if isinstance(plan, dict) else {}
     explicit = str(src.get("schedule_delivery") or "").strip().lower()
