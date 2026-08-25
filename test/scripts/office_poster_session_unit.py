@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Office body + text-poster phrase extraction."""
+"""Office body + text-poster phrase extraction (Dispatcher) + classify-gated shortcut."""
 from __future__ import annotations
 
 import sys
@@ -14,7 +14,7 @@ from office_file import (  # noqa: E402
     parse_office,
     parse_office_jobs,
 )
-from media_shortcuts import looks_office_create, looks_schedule_create, looks_text_poster  # noqa: E402
+from classify_client import plan_allows_office_shortcut, plan_skips_media_shortcut  # noqa: E402
 from text_poster import parse_text_poster  # noqa: E402
 
 
@@ -31,16 +31,36 @@ def main() -> int:
         "chứa số 1  cũng gửi cho tôi"
     )
     assert is_compound_office_request(compound) is True
-    assert looks_office_create(compound) is False
+    # Host shortcut requires classify JSON — compound multi-instruction skips.
+    assert plan_allows_office_shortcut(
+        {
+            "ok": True,
+            "task_hint": "file",
+            "task_type": "file_processing",
+            "instructions": ["tạo pdf chứa 1", "tạo txt chứa 1"],
+        }
+    ) is False
 
-    # Same kind twice + "sau đó" is NOT detected here — classify/LLM must split.
     same_kind = "tạo pdf chứa 1 sau đó tạo pdf chứa 2"
     assert is_compound_office_request(same_kind) is False
-    assert looks_office_create("tạo 1 file pdf chứa số 1 và gửi cho tôi") is True
-    weather_pdf = "tạo 1 file pdf thể hiện thời tiết hồ chí minh hiện tại"
-    assert looks_office_create(weather_pdf) is False, weather_pdf
+    assert plan_allows_office_shortcut(
+        {
+            "ok": True,
+            "task_hint": "file",
+            "task_type": "file_processing",
+            "instructions": ["tạo 1 file pdf chứa số 1 và gửi cho tôi"],
+        }
+    ) is True
+    weather_pdf = {
+        "ok": True,
+        "task_hint": "file",
+        "task_type": "file_processing",
+        "skill": "web_search",
+        "instructions": ["tạo 1 file pdf thể hiện thời tiết hồ chí minh hiện tại"],
+    }
+    assert plan_skips_media_shortcut(weather_pdf) is True
+    assert plan_allows_office_shortcut(weather_pdf) is False
     assert parse_office(compound) == (".pdf", "1"), parse_office(compound)
-    # Dispatcher does not regex-split compounds — classify emits one instruction per file.
     assert parse_office_jobs(compound) == [parse_office(compound)], parse_office_jobs(compound)
 
     spec = parse_text_poster("vẽ hình ảnh điền vào 5 dòng hello và gửi cho tôi")
@@ -48,30 +68,32 @@ def main() -> int:
     spec = parse_text_poster("vẽ hình ảnh điền vào 5 dòng hello")
     assert spec and spec["phrase"].lower() == "hello", spec
 
-    # Real poster still matches; "xanh" must not trip _DRAW via "anh"; schedule never posters.
-    assert looks_text_poster('vẽ poster 5 dòng chữ "KHÁT QUÁ"') is True
-    import media_shortcuts as _ms  # noqa: E402
+    # Real poster still parses on Dispatcher; schedule plans skip host office shortcut.
+    assert parse_text_poster('vẽ poster 5 dòng chữ "KHÁT QUÁ"')
+    daily_sched = {
+        "ok": True,
+        "task_hint": "schedule",
+        "task_type": "create_schedule",
+        "instructions": ["mô tả thơ"],
+    }
+    assert plan_skips_media_shortcut(daily_sched) is True
+    assert plan_allows_office_shortcut(daily_sched) is False
 
-    assert _ms._DRAW.search("trời xanh gió mát") is None
-    daily_sched = (
-        "đặt lịch chạy hằng ngày lúc 06:00 vào Zalo LC Group nội dung: "
-        "mô tả 1 bài thơ ngắn 4 dòng về trời xanh gió mát chim hót líu lo chào ngày mới, "
-        "cập nhật giá xăng E5 RON92 và E10 RON95 mới nhất, "
-        "dự báo thời tiết hồ chí minh trong ngày"
-    )
-    assert looks_schedule_create(daily_sched) is True
-    assert looks_text_poster(daily_sched) is False
-    assert looks_office_create(daily_sched) is False
-
-    # Image + txt compound must not take the single-file office shortcut.
-    from media_shortcuts import is_compound_media_file_request  # noqa: E402
-
-    img_txt = (
-        "vẽ 1 tấm hình trắng đen ghi vào chào buổi sáng, tạo 1 file text ghi vào đã xong"
-    )
-    assert is_compound_media_file_request(img_txt) is True
-    assert looks_office_create(img_txt) is False
-    assert looks_schedule_create("1 phút nữa gửi vào Zalo LC Group: hello") is True
+    img_txt = {
+        "ok": True,
+        "task_hint": "tool",
+        "task_type": "media_generation",
+        "instructions": [
+            "vẽ 1 tấm hình trắng đen ghi vào chào buổi sáng",
+            "tạo 1 file text ghi vào đã xong",
+        ],
+        "task_details": [
+            {"task_type": "media_generation", "output_type": "image"},
+            {"task_type": "file_processing", "output_type": "txt"},
+        ],
+    }
+    assert plan_skips_media_shortcut(img_txt) is True
+    assert plan_allows_office_shortcut(img_txt) is False
 
     soul = (ROOT / "hermes" / "main" / "SOUL.md").read_text(encoding="utf-8")
     import re
@@ -79,7 +101,6 @@ def main() -> int:
     if re.search(r"do\s+not\s+tell\s+the\s+user", soul, re.I):
         print("FAIL SOUL still has deception_hide trigger phrase", file=sys.stderr)
         return 1
-    # session module importable
     import session_memory  # noqa: F401
 
     print("OK office/poster/soul/session units")
