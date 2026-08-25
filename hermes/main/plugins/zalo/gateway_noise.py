@@ -11,6 +11,10 @@ Layers (fail-closed for status frames):
 Do not grow large keyword lists for natural language. Prefer skills
 (``quiet-delivery``, ``zalo-channel``, ``media-out``) so Hermes does not emit
 process chatter. Code only strips what the agent still leaks.
+
+Schedule ``verbatim`` fires are user-dictated send-bodies. The adapter skips this
+filter for those sends (``skip_outbound_filter``). ``/v1/outbound`` is for
+Hermes-generated lines, not a payload the host already committed to deliver.
 """
 from __future__ import annotations
 
