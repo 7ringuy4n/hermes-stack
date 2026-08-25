@@ -31,3 +31,4 @@ Those lines are **internal**. Stay silent until there is a real result.
 - `core/scheduling` / `schedule` — due payloads; never Hermes CLI cron wrappers
 - `media-out` / `image-gen` — file turns
 - Adapter strips residual cron wrappers and status frames in code; this skill stops them at the source
+- Outbound LLM filter prompt SoT: `hermes/main/skills/outbound/outbound.json` (`POST /v1/outbound`)

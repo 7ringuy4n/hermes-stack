@@ -1,3 +1,45 @@
+## 2026-08-25 21:10 +07 — Model-router config folder was a second SoT
+
+### Symptom
+Operators edited `architect/models/model-router/config/*.json` while skills/docs pointed elsewhere; classify/outbound/web-search combo drifted after updates.
+
+### Root cause
+Router prompts lived under model-router bake config instead of Hermes skills.
+
+### Fix (core)
+SoT: `skills/classify`, `skills/outbound`, `skills/web-search/web-search-combo.json`. Sync bake on update. Drop unused `heuristic.json` (never loaded).
+
+### Prevent recurrence
+Edit skill JSON only; never hand-edit bake copies. Do not reintroduce keyword NLU files.
+
+## 2026-08-25 21:05 +07 — Classify prompt lived in three places
+
+### Symptom
+Prompt hardenings were re-applied under model-router/config while Zalo/gateway clients and docs pointed at different paths, so behavior drifted after updates.
+
+### Root cause
+`classify.json` was treated as a model-router-only file instead of the inbound Zalo classify skill contract.
+
+### Fix (core)
+Move SoT to `hermes/main/skills/classify/`. Router mounts skills and reads that file. Sync bake fallback on update. Document that every Zalo message classifies purpose via this skill.
+
+### Prevent recurrence
+Edit only the skill `classify.json`. Do not hand-edit the bake copy.
+
+## 2026-08-25 20:55 +07 — List ask deleted a schedule
+
+### Symptom
+Users asking where a reminder was (often while quoting the create message) got “Đã xóa 1 lịch” instead of a list. Bare list phrasing stayed chat.
+
+### Root cause
+Classify had no strong list/inspect family; quoted create context was treated as delete. Host normalize forced non-delete schedules to create_schedule, so list could not survive schema.
+
+### Fix (core)
+Harden `classify.json` for list vs delete and process-group `target_channel`. Accept `list_schedule` in classify clients; adapter lists via schedule-worker when `skill_action=list`.
+
+### Prevent recurrence
+Never map where/list/show/inspect to delete. Quotes do not change the current ask’s action.
+
 ## 2026-08-25 20:20 +07 — Zalo still phrase-scanned Vietnamese for intent
 
 ### Symptom

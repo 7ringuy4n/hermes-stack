@@ -337,6 +337,29 @@ def schedules_for_thread(thread_id: str) -> list[dict[str, Any]]:
     return out
 
 
+def format_schedule_list_lines(rows: list[dict[str, Any]] | None) -> str:
+    """Human list from schedule-worker rows (structured fields only)."""
+    items = [r for r in (rows or []) if isinstance(r, dict)]
+    if not items:
+        return "Chưa có lịch nào."
+    lines: list[str] = []
+    for i, row in enumerate(items, start=1):
+        sid = str(row.get("id") or "").strip() or "?"
+        nxt = str(row.get("next_run_at") or "").strip()
+        cron = str(row.get("cron_expr") or "").strip()
+        cadence = str(row.get("cadence") or "").strip()
+        origin = row.get("origin") if isinstance(row.get("origin"), dict) else {}
+        dest = str(
+            origin.get("target_name")
+            or origin.get("chat_name")
+            or ""
+        ).strip()
+        when = nxt or (f"cron {cron}" if cron else cadence or "—")
+        tail = f" → nhóm {dest}" if dest else ""
+        lines.append(f"{i}. {sid} @ {when}{tail}")
+    return "Lịch đang có ({n}):\n{body}".format(n=len(lines), body="\n".join(lines))
+
+
 def delete_schedules_for_thread(thread_id: str) -> list[str]:
     """Delete every schedule tied to a destination/requester thread. Returns deleted ids."""
     deleted: list[str] = []

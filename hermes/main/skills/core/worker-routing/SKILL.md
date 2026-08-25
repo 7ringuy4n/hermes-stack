@@ -59,4 +59,4 @@ If a required worker is disabled, say so in one line — do not invent a local s
 ## Related skills
 
 - `schedule`, `web-search`, `media-file`, `security`, `core/scheduling`
-- Classifier contract: `architect/models/model-router/config/classify.json`
+- Classifier contract: `hermes/main/skills/classify/classify.json` (skill SoT; model-router loads it)
