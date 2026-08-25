@@ -1224,6 +1224,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 "as_skip_autosend": True,
                 "as_skip_inflight": True,
                 "as_skip_quote": True,
+                "skip_outbound_filter": True,
                 "schedule_fire": True,
                 "schedule_delivery": "verbatim",
             },
