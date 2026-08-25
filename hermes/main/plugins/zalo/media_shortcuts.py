@@ -41,12 +41,16 @@ _SCHEDULE_CREATE = re.compile(
     r"(?:đặt\s*lịch|dat\s*lich|ặt\s*lịch|\bschedule\b|\bcron\b|"
     r"hằng\s*ngày|hang\s*ngay|mỗi\s*ngày|moi\s*ngay|daily\s+at|"
     r"chạy\s+một\s+lần|chay\s+mot\s+lan|one[\s-]?shot|run\s+once|"
-    r"mỗi\s*sáng|moi\s*sang)",
+    r"mỗi\s*sáng|moi\s*sang|"
+    r"\d+\s*(?:phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)\s*(?:nữa|nua)?|"
+    r"(?:sau|in|trong)\s+\d+\s*(?:phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?))",
     re.I,
 )
 _SCHEDULE_CLOCK = re.compile(
     r"(?:lúc|luc|at|@)\s*\d{1,2}\s*[:hH]\s*\d{2}"
-    r"|\b\d{1,2}\s*[:hH]\s*\d{2}\b",
+    r"|\b\d{1,2}\s*[:hH]\s*\d{2}\b"
+    r"|\d+\s*(?:phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)\s*(?:nữa|nua)?"
+    r"|(?:sau|in|trong)\s+\d+\s*(?:phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)",
     re.I,
 )
 # Live/external facts must be fetched before office shortcut (classify/workflow owns the split).
@@ -57,6 +61,11 @@ _LIVE_FACT = re.compile(
 )
 _INLINE_BODY = re.compile(
     r"đi[eề]n|dien|ch[uứ]a|chua|(?:ch[iỉ]\s+)?(?:số|so)\s+",
+    re.I,
+)
+# Image/scene ask + office file in one bubble → classify/workflow must split (not office shortcut).
+_MEDIA_DRAW = re.compile(
+    r"(?<!\w)(?:vẽ|ve|draw|image|hình|hinh|ảnh|anh|tấm\s+hình|tam\s+hinh)(?!\w)",
     re.I,
 )
 
@@ -113,6 +122,16 @@ def dispatcher_url() -> str:
     return (os.getenv("DISPATCHER_URL") or "http://dispatcher:8090").rstrip("/")
 
 
+def is_compound_media_file_request(text: str) -> bool:
+    """True when user asks for image/scene AND an office file in one bubble."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if not _MEDIA_DRAW.search(raw):
+        return False
+    return bool(_OFFICE_KIND.search(raw) and _OFFICE.search(raw))
+
+
 def looks_office_create(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > 500:
@@ -121,6 +140,9 @@ def looks_office_create(text: str) -> bool:
         return False
     # Compound multi-file asks must not take the single-file Dispatcher shortcut.
     if is_compound_office_request(t):
+        return False
+    # Image + file in one message: leave to classify/workflow (image must not become PDF/TXT).
+    if is_compound_media_file_request(t):
         return False
     # Live-data PDF/doc (weather, prices) without inline body → workflow must fetch first.
     if _LIVE_FACT.search(t) and not _INLINE_BODY.search(t):
@@ -160,8 +182,14 @@ def _post(path: str, body: dict, timeout: float = 60.0) -> Dict[str, Any]:
         return json.loads(resp.read().decode("utf-8") or "{}")
 
 
-def run_office_create(text: str, thread_id: str, thread_type: str = "user") -> Optional[dict]:
-    if not looks_office_create(text):
+def run_office_create(
+    text: str,
+    thread_id: str,
+    thread_type: str = "user",
+    *,
+    classified: bool = False,
+) -> Optional[dict]:
+    if not classified and not looks_office_create(text):
         return None
     try:
         out = _post(
