@@ -1,3 +1,14 @@
+## 2026-08-25 19:50 +07 — Host trusts classify JSON; no verb-dictionary NLU
+
+- Schedule delivery was being re-decided in host/heuristic with Vietnamese verb lists, which cannot cover paraphrases and fought classify.
+- Host: consume `schedule_delivery` + `message`/`instructions` only; protocol delimiter `nội dung:` for verbatim body; refuse fire_text that equals the full inbound ask. Heuristic: `nội dung:` → verbatim once_after, else process — no work-verb regex.
+- Intent ownership stays in `classify.json`.
+
+## 2026-08-25 19:45 +07 — Group send + describe is process; never fire schedule ask
+
+- Relative “send into group + describe …” jobs were stored as verbatim and posted the full schedule ask into the group.
+- `classify.json`: destination + work verb is `process`; `message`/`instructions` are inner work only (no timing/destination wrapper). Host refuses to fire a create-schedule shell as `fire_text`. Heuristic strips destination before choosing delivery.
+
 ## 2026-08-25 19:10 +07 — Verbatim schedule fire dropped by outbound filter
 
 - One-shot send-later jobs stored as verbatim, fired on time, then never appeared in chat. Adapter sent into the outbound noise filter; `/v1/outbound` labeled the dictated body as chatter and the send was discarded.
