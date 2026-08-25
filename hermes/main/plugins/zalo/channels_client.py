@@ -12,31 +12,6 @@ import urllib.error
 import urllib.request
 from typing import Any, Optional
 
-# "gửi vào nhóm Family", 'nhóm "Team A"', "group Family", "to group: Ops",
-# "vào Zalo LC Group nội dung:" (platform prefix + display name, no "nhóm" word)
-_TARGET_GROUP_RE = re.compile(
-    r"(?:"
-    r"(?:gửi|gui|send|post|đăng|dang)\s+(?:vào|vao|to|vào\s+trong|vao\s+trong)\s+"
-    r"(?:nhóm|nhom|group)\s*"
-    r"|"
-    r"(?:vào|vao|into|to|trong|cho)\s+(?:(?:zalo|telegram|lark|discord|slack)\s+)?"
-    r"(?:nhóm|nhom|group)\s*"
-    r"|"
-    r"(?:vào|vao|into|to)\s+(?:zalo|telegram|lark|discord|slack)\s+"
-    r"|"
-    r"(?:nhóm|nhom|group)\s*"
-    r")"
-    r"(?::|=|-)?\s*"
-    r"[\"“]?([^\"”\n,;:]+?)[\"”]?"
-    r"(?=\s*(?:lúc|luc|at|vào\s+\d|vao\s+\d|,|;|:|$|\n|hằng|hang|daily|mỗi|moi|"
-    r"nội\s*dung|noi\s*dung|content|"
-    r"chào|chao|và\s+thực|va\s+thuc|and\s+do|và\s+làm|va\s+lam))",
-    re.I,
-)
-_TARGET_GROUP_LOOSE_RE = re.compile(
-    r"(?:nhóm|nhom|group)\s*[:=\-]?\s*[\"“]?([^\"”\n,;:]{2,80})[\"”]?",
-    re.I,
-)
 # Allow-list / admin status phrases — never treat as a group display name.
 _GROUP_REF_NOISE_RE = re.compile(
     r"(?i)^\s*(?:"
@@ -173,31 +148,11 @@ def _clean_group_ref(raw: str) -> str:
 
 
 def extract_target_group_ref(text: str, plan: Optional[dict[str, Any]] = None) -> str:
-    """Pull a group name/id from classify plan or schedule wording."""
+    """Display name from classify JSON only. Host does not phrase-scan the bubble."""
+    del text  # destination is not inferred from user prose
     src = plan if isinstance(plan, dict) else {}
     for key in ("target_channel", "deliver_to", "target_group", "group_name"):
         val = _clean_group_ref(str(src.get(key) or ""))
-        if val:
-            return val
-    # A real classify plan owns destination. Empty {} is not a plan — tests/legacy
-    # may still phrase-scan. Do not overlay regex on LLM output (misses paraphrases).
-    if str(src.get("task_hint") or "").strip():
-        return ""
-    try:
-        from .classify_client import strip_prior_for_classify
-    except ImportError:
-        from classify_client import strip_prior_for_classify  # type: ignore
-    blob = strip_prior_for_classify(text or "")
-    if not blob:
-        return ""
-    m = _TARGET_GROUP_RE.search(blob)
-    if m:
-        val = _clean_group_ref(m.group(1) or "")
-        if val:
-            return val
-    m2 = _TARGET_GROUP_LOOSE_RE.search(blob)
-    if m2:
-        val = _clean_group_ref(m2.group(1) or "")
         if val:
             return val
     return ""

@@ -14,44 +14,7 @@ _CONTENT_AFTER = re.compile(
     r"(?:với\s*nội\s*dung|voi\s*noi\s*dung|nội\s*dung|noi\s*dung|content)\s*[:\-]?\s*(.+)$",
     re.I | re.S,
 )
-# Protocol guard: prefer exact body after nội dung: if classify paraphrased.
-
-# Relative-time patterns: "N phút nữa", "sau N phút", "in N minutes", "trong 1 giờ", etc.
-_RELATIVE_RE = re.compile(
-    r"(?:sau\s+|in\s+|trong\s+)?(\d+)\s*(phút|giây|giờ|phut|giay|gio|minute|minutes|second|seconds|hour|hours)\s*(?:nữa|nua)?",
-    re.I,
-)
-_UNIT_SECONDS: dict[str, int] = {
-    "phút": 60, "phut": 60, "minute": 60, "minutes": 60,
-    "giây": 1, "giay": 1, "second": 1, "seconds": 1,
-    "giờ": 3600, "gio": 3600, "hour": 3600, "hours": 3600,
-}
-
-
-def next_run_at_from_relative(text: str, tz: str = "Asia/Ho_Chi_Minh") -> str:
-    """Return RFC3339 UTC timestamp for relative-time schedules ('N phút nữa').
-
-    Returns empty string when no relative-time expression is found; the worker
-    then falls back to cron_expr resolution.
-    """
-    secs = delay_seconds_from_text(text)
-    if secs is None:
-        return ""
-    return next_run_at_from_delay(secs, tz=tz)
-
-
-def delay_seconds_from_text(text: str) -> int | None:
-    """Parse relative delay seconds from user prose (authoritative host clock later)."""
-    raw = (text or "").strip()
-    m = _RELATIVE_RE.search(raw)
-    if not m:
-        return None
-    n = int(m.group(1))
-    unit = m.group(2).lower()
-    secs = n * _UNIT_SECONDS.get(unit, 0)
-    if secs <= 0 or secs > 86400 * 30:
-        return None
-    return secs
+# Protocol delimiter only — not intent NLU.
 
 
 def delay_seconds_from_plan(plan: dict[str, Any] | None) -> int | None:
@@ -139,7 +102,7 @@ def resolve_schedule_timing(
     cron = str(src.get("cron_expr") or "").strip()
     cadence = str(src.get("cadence") or "").strip().lower() or "once"
     form_out = form or ("recurring" if cadence not in {"", "once"} else "once_at")
-    # once_at: classifier leaves cron null; derive storage cron from prose clock if needed.
+    # once_at: classifier leaves cron null; derive storage cron from HH:MM protocol.
     if not cron and form_out == "once_at":
         cron = _clock_cron_from_text(text) or ""
     if not cron and form_out not in {"once_after"} and cadence == "once":
@@ -155,15 +118,11 @@ def resolve_schedule_timing(
 
 def _clock_cron_from_text(text: str) -> str:
     """Protocol HH:MM → once-daily cron for worker storage (not classifier NLU)."""
-    m = re.search(
-        r"(?:lúc|luc|at|@)\s*(\d{1,2})\s*[:hH]\s*(\d{2})\b|\b(\d{1,2})\s*[:hH]\s*(\d{2})\b",
-        text or "",
-        re.I,
-    )
+    m = re.search(r"\b(\d{1,2})\s*[:hH]\s*(\d{2})\b", text or "")
     if not m:
         return ""
-    h_raw = m.group(1) or m.group(3)
-    min_raw = m.group(2) or m.group(4)
+    h_raw = m.group(1)
+    min_raw = m.group(2)
     try:
         hour = int(h_raw)
         minute = int(min_raw)
