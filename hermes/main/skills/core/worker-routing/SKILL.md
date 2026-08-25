@@ -38,7 +38,7 @@ When `instructions[]` has **N > 1** distinct deliverables:
 
 When inbound carries `scheduleFire: true`:
 
-- If `scheduleDelivery` / `schedule_delivery` is **`verbatim`** (or `send`/`deliver`): the host **sends `fire_text` as-is** — do not paraphrase or re-chat.
+- If `scheduleDelivery` / `schedule_delivery` is **`verbatim`** (or `send`/`deliver`): the host **sends `fire_text` as-is** — do not paraphrase or re-chat. Dictated send-bodies stay verbatim even when the payload contains words that look like skills.
 - If delivery is **`process`** (default for task schedules): treat payload as **inner work only** (not “đặt lịch lúc HH:MM”), classify again if needed, then route per table above.
 - **Do not** create another schedule for the same fire.
 
