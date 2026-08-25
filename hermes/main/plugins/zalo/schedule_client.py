@@ -184,6 +184,20 @@ def exact_schedule_body(original: str) -> str:
     return (m.group(1) or "").strip().strip("\"' ")
 
 
+_SCHEDULE_SHELL_RE = re.compile(
+    r"(?is)^\s*(?:"
+    r"(?:\d+\s*(?:phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)\s*(?:nữa|nua)?)"
+    r"|(?:đặt\s*lịch|dat\s*lich|ặt\s*lịch|schedule\b|remind\b)"
+    r"|(?:sau\s+|in\s+|trong\s+)\d+"
+    r")"
+)
+
+
+def _is_schedule_shell(text: str) -> bool:
+    """True when text still looks like the create-schedule ask (must not fire)."""
+    return bool(_SCHEDULE_SHELL_RE.match((text or "").strip()))
+
+
 def _worker_flag_on() -> bool:
     raw = (os.getenv("SCHEDULE_WORKER") or "0").strip().lower()
     return raw in {"1", "on", "true", "yes"}
@@ -214,6 +228,12 @@ _TASK_DETAIL_TYPES = {
     "coding",
 }
 
+_LEAD_WORK_VERB = re.compile(
+    r"^\s*(?:mô\s*tả|mo\s*ta|describe|cập\s*nhật|cap\s*nhat|update|"
+    r"dự\s*báo|du\s*bao|forecast|vẽ|draw|search|tìm\b|tim\b)\b",
+    re.I,
+)
+
 
 def plan_is_task_work(plan: dict[str, Any] | None) -> bool:
     """True when classify structured fields mean due work (skills), not a send-body."""
@@ -243,17 +263,28 @@ def schedule_delivery_mode(plan: dict[str, Any] | None, original: str = "") -> s
     Prefer classify ``schedule_delivery``. Structured task work (split skills / search / media)
     is never verbatim even when wrapped in ``nội dung:``. A dictated send-body after
     ``nội dung:`` stays verbatim when classify says so — payload words are not skills.
+    Without a ``nội dung:`` marker, a lead work verb means produce-at-fire (process).
     """
     src = plan if isinstance(plan, dict) else {}
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    msg = str(src.get("message") or "").strip()
     explicit = str(src.get("schedule_delivery") or "").strip().lower()
     if explicit in {"verbatim", "send", "deliver"}:
         if plan_is_task_work(src):
             return "process"
+        if not exact_schedule_body(original):
+            candidate = msg or (parts[0] if parts else "")
+            if _LEAD_WORK_VERB.match(candidate):
+                return "process"
         return "verbatim"
     if explicit in {"process", "hermes", "classify"}:
         return "process"
     if plan_is_task_work(src):
         return "process"
+    if not exact_schedule_body(original):
+        candidate = msg or (parts[0] if parts else "")
+        if _LEAD_WORK_VERB.match(candidate):
+            return "process"
     if exact_schedule_body(original):
         return "verbatim"
     return "process"
@@ -269,20 +300,25 @@ def fire_text_from_plan(plan: dict[str, Any] | None, original: str = "") -> str:
         if exact:
             return exact
         msg = str(src.get("message") or "").strip()
-        if msg:
+        if msg and not _is_schedule_shell(msg):
             return msg
         if parts:
-            return "\n".join(parts)
-        return (original or "").strip()
+            joined = "\n".join(parts)
+            if not _is_schedule_shell(joined):
+                return joined
+        # Refuse to dump the create-schedule ask back into chat.
+        return ""
     if parts:
-        return "\n".join(parts)
+        joined = "\n".join(parts)
+        if not _is_schedule_shell(joined):
+            return joined
     msg = str(src.get("message") or "").strip()
-    if msg:
+    if msg and not _is_schedule_shell(msg):
         return msg
     exact = exact_schedule_body(original)
     if exact:
         return exact
-    return (original or "").strip()
+    return ""
 
 
 def _req(method: str, path: str, payload: Optional[dict] = None, timeout: float = 8.0) -> dict[str, Any]:
