@@ -634,35 +634,14 @@ _FUEL_KW = ("xăng", "xang", "ron92", "ron95", "e5", "e10", "gasoline", "fuel")
 _WEATHER_KW = ("thời tiết", "thoi tiet", "weather")
 _DRAW_KW = ("vẽ", "ve ", "draw", "hình", "hinh", "poster", "infographic", "video")
 _CITY_KW = ("hồ chí minh", "ho chi minh", "hcmc", "tp.hcm", "thành phố", "thanh pho")
-# Fallback when LLM is down (classify.json owns paraphrases). Lead "mô tả" is a
-# generate-job; the same word mid-sentence in a dictated send-body is payload.
-_TASK_BODY_LEAD_DESCRIBE = re.compile(
-    r"^\s*(?:mô\s*tả|mo\s*ta|describe)\b",
-    re.I,
-)
-_TASK_BODY_VERB = re.compile(
-    r"(?:cập\s*nhật|cap\s*nhat|update|"
-    r"dự\s*báo|du\s*bao|forecast|tìm\b|tim\b|search|vẽ|draw|"
-    r"giá\s*xăng|gia\s*xang|thời\s*tiết|thoi\s*tiet|weather|"
-    r"ocr|pdf|docx|xlsx)",
-    re.I,
-)
-_SPLIT_TASK_CLAUSE = re.compile(
-    r",\s*(?=(?:mô\s*tả|mo\s*ta|describe|cập\s*nhật|cap\s*nhat|update|"
-    r"dự\s*báo|du\s*bao|forecast|tìm\b|tim\b|search|vẽ|draw))",
-    re.I,
-)
-# "vào Zalo LC Group nội dung:" / "into group Family:" / "vào LC Group mô tả…"
+# Destination display name only — stop at protocol delimiters (not work-verb NLU).
 _INTO_CHANNEL = re.compile(
     r"(?:vào|vao|into|to)\s+(?:(?:zalo|telegram|lark|discord|slack)\s+)?"
     r"(?:nhóm\s+|nhom\s+|group\s+)?"
     r"([^\n,;:]{2,80}?)"
-    r"(?=\s+(?:nội\s*dung|noi\s*dung|content|với\s*nội|voi\s*noi|"
-    r"mô\s*tả|mo\s*ta|describe|cập\s*nhật|cap\s*nhat|update|"
-    r"dự\s*báo|du\s*bao|forecast|vẽ|draw|search|,|;|:|$))",
+    r"(?=\s+(?:nội\s*dung|noi\s*dung|content|với\s*nội|voi\s*noi|,|;|:|$))",
     re.I,
 )
-_LEAD_SEND = re.compile(r"^(?:gửi|gui|send)\s+", re.I)
 
 
 def _clean_heuristic_channel(raw: str) -> str:
@@ -701,9 +680,9 @@ def _heuristic_target_channel(blob: str) -> str | None:
 
 
 def _inner_schedule_body(blob: str) -> str:
-    """Strip timing + destination shell; keep inner work or dictated send-body.
+    """Protocol extract: body after nội dung:/content:, else after relative delay.
 
-    Protocol extract for heuristic fallback only — classify.json owns paraphrases.
+    No verb dictionaries — LLM classify owns paraphrases and destination/work split.
     """
     raw = (blob or "").strip()
     if not raw:
@@ -711,38 +690,21 @@ def _inner_schedule_body(blob: str) -> str:
     m_body = _CONTENT_AFTER.search(raw)
     if m_body:
         return (m_body.group(1) or "").strip()
-    body = raw
-    m_rel = _RELATIVE_DELAY.search(body)
+    m_rel = _RELATIVE_DELAY.search(raw)
     if m_rel:
-        body = body[m_rel.end() :].strip(" ,.-:")
-    body = _LEAD_SEND.sub("", body).strip()
-    m_into = _INTO_CHANNEL.search(body)
-    if m_into:
-        body = body[m_into.end() :].strip(" ,.-:")
-    return body or raw
-
-
-def _schedule_body_is_task(body: str) -> bool:
-    raw = (body or "").strip()
-    if not raw:
-        return False
-    if _TASK_BODY_LEAD_DESCRIBE.match(raw):
-        return True
-    return bool(_TASK_BODY_VERB.search(raw))
+        return raw[m_rel.end() :].strip(" ,.-:")
+    return raw
 
 
 def _split_schedule_task_body(body: str) -> list[str]:
-    """Split multi-skill schedule body for fallback heuristic (LLM owns primary split)."""
+    """Numbered-list split only (protocol). Skill split belongs to classify.json."""
     raw = (body or "").strip()
     if not raw:
         return []
     numbered = _parse_numbered_instructions(raw)
     if len(numbered) >= 2:
         return numbered
-    if not _schedule_body_is_task(raw):
-        return [raw]
-    parts = [p.strip(" ,.-") for p in _SPLIT_TASK_CLAUSE.split(raw) if p.strip(" ,.-")]
-    return parts if len(parts) >= 2 else [raw]
+    return [raw]
 
 
 def delay_seconds_from_text(text: str) -> int | None:
@@ -777,8 +739,13 @@ def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
     delay = delay_seconds_from_text(blob)
     if delay is not None and not extract_clock_cron(blob):
         body = _inner_schedule_body(blob)
-        delivery = "process" if _schedule_body_is_task(body) else "verbatim"
-        instructions = _split_schedule_task_body(body) if delivery == "process" else [body]
+        # Protocol: nội dung:/content: → dictated send-body (verbatim). Else process
+        # (LLM owns "gửi vào group + describe" vs poem — heuristic must not NLU).
+        has_content_marker = bool(_CONTENT_AFTER.search(blob))
+        delivery = "verbatim" if has_content_marker else "process"
+        instructions = _split_schedule_task_body(body)
+        if len(instructions) > 1:
+            delivery = "process"
         out: dict[str, Any] = {
             "task_hint": "schedule",
             "task_type": "create_schedule",
@@ -812,31 +779,26 @@ def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
     if hh is None or mm is None or not (0 <= hh <= 23 and 0 <= mm <= 59):
         return None
     cron = f"{mm} {hh} * * *"
-    body = blob
-    m_body = _CONTENT_AFTER.search(blob)
-    if m_body:
-        body = m_body.group(1).strip()
-    else:
-        # Drop the schedule wrapper; keep work after the clock / destination.
-        cut = m_daily or m_once
-        if cut:
-            body = blob[cut.end() :].strip(" ,.-:")
-            body = re.sub(
-                r"^(?:với\s*nội\s*dung|voi\s*noi\s*dung|nội\s*dung|noi\s*dung)\s*[:\-]?\s*",
-                "",
-                body,
-                flags=re.I,
-            ).strip()
-        body = _LEAD_SEND.sub("", body).strip()
-        m_into = _INTO_CHANNEL.search(body)
-        if m_into:
-            body = body[m_into.end() :].strip(" ,.-:")
+    body = _inner_schedule_body(blob)
     if not body:
         body = blob
+    # Clock path without nội dung: keep remnant after clock when no content marker.
+    if not _CONTENT_AFTER.search(blob):
+        cut = m_daily or m_once
+        if cut:
+            remnant = blob[cut.end() :].strip(" ,.-:")
+            remnant = re.sub(
+                r"^(?:với\s*nội\s*dung|voi\s*noi\s*dung|nội\s*dung|noi\s*dung)\s*[:\-]?\s*",
+                "",
+                remnant,
+                flags=re.I,
+            ).strip()
+            if remnant:
+                body = remnant
     instructions = _split_schedule_task_body(body)
-    delivery = "process" if (
-        len(instructions) > 1 or _schedule_body_is_task(body)
-    ) else "verbatim"
+    # Clock / recurring schedules: heuristic always process (skill split is LLM).
+    # Dictated once_after + nội dung: is handled in the once_after branch above.
+    delivery = "process"
     target = _heuristic_target_channel(blob)
     out: dict[str, Any] = {
         "task_hint": "schedule",

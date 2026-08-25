@@ -1,3 +1,17 @@
+## 2026-08-25 19:50 +07 — Verb regex was fake NLU on the host
+
+### Symptom
+Fixes kept adding Vietnamese/English verb lists in host and heuristic to choose verbatim vs process.
+
+### Root cause
+Classify owns paraphrases; host dictionaries cannot and must not.
+
+### Fix (core)
+Remove lead-verb / schedule-shell regex from host. Trust `schedule_delivery` and plan fields. Heuristic uses only the `nội dung:` protocol marker (verbatim once_after) vs default process. Refuse fire_text identical to the full inbound ask.
+
+### Prevent recurrence
+Do not grow natural-language dictionaries for schedule delivery. Harden `classify.json` instead.
+
 ## 2026-08-25 19:45 +07 — Group describe fire echoed the schedule ask
 
 ### Symptom
