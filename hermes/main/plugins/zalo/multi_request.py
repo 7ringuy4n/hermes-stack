@@ -20,11 +20,8 @@ for _p in (_d, _shared):
 
 from classify_client import classify_text, strip_prior_for_classify
 
-# Run-at clocks only (lúc/at/@). Bare "6:00 AM" inside a skill body is not a second job.
-_CLOCK_HM = re.compile(
-    r"(?:lúc|luc|at|@)\s*(\d{1,2})\s*[:hH]\s*(\d{2})\b",
-    re.I,
-)
+# Protocol HH:MM inside classify instructions (not inbound prose NLU).
+_CLOCK_HM = re.compile(r"\b(\d{1,2})\s*[:hH]\s*(\d{2})\b")
 
 
 def looks_like_schedule_job(text: str) -> bool:
@@ -52,25 +49,13 @@ def _clock_pairs(text: str) -> List[Tuple[int, int]]:
 
 
 def _split_multi_clock_schedule(raw: str, instructions: List[str]) -> List[str] | None:
-    """Fan-out only when the *current* message has 2+ distinct run-at clocks.
+    """Fan-out when classify already emitted 2+ instructions with distinct HH:MM.
 
-    Same clock + several skills stays one job. Do not zip leftover HH:MM from
-    hydrate/prior (or incidental times in a skill body) onto clock-less skills.
+    Same clock + several skills stays one job. Do not scan inbound prose.
     """
-    blob = strip_prior_for_classify(raw)
-    clocks = _clock_pairs(blob)
-    if len(clocks) < 2:
-        return None
+    del raw
     items = [str(x).strip() for x in instructions if str(x).strip()]
     if len(items) < 2:
-        lines = [
-            ln.strip()
-            for ln in re.split(r"\n+", blob)
-            if ln.strip() and _clock_pairs(ln)
-        ]
-        distinct = {_clock_pairs(x)[0] for x in lines if _clock_pairs(x)}
-        if len(lines) >= 2 and len(distinct) >= 2:
-            return lines
         return None
 
     per_clock: list[str] = []
@@ -107,20 +92,9 @@ def wrap_compound_part(index: int, total: int, body: str) -> str:
     text = (body or "").strip()
     if not text:
         return text
-    low = text.lower()
-    topic = (
-        "Nếu đây là tìm/tóm tắt giá xăng: chỉ báo giá nhiên liệu (E5/E10…), không mô tả thời tiết.\n"
-        if any(k in low for k in ("xăng", "xang", "e5", "e10", "ron92", "ron95", "fuel"))
-        else "Nếu đây là thời tiết: chỉ báo thời tiết/địa điểm được hỏi, không báo giá xăng.\n"
-        if any(k in low for k in ("thời tiết", "thoi tiet", "weather"))
-        else "Nếu đây là chào/chúc: chỉ gửi lời chào/chúc, không tìm kiếm web.\n"
-        if any(k in low for k in ("chào", "chao", "chúc", "chuc", "greeting", "hello"))
-        else ""
-    )
     return (
         f"Yêu cầu {index}/{total} — chỉ làm đúng việc này, rồi dừng. "
         f"Không làm các mục khác.\n"
-        f"{topic}"
         f"{text}"
     )
 
