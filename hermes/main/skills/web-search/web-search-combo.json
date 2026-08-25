@@ -1,0 +1,14 @@
+{
+  "combo": "websearch",
+  "description": "Hermes-facing search via OmniRoute gateway. Omni UI owns Search providers and failover (Tavily → Firecrawl → SearXNG). Router Worker proxies with backend omni.",
+  "backends": ["omni"],
+  "extract_backends": ["tavily", "firecrawl"],
+  "max_results": 3,
+  "notes": [
+    "Default backend omni → OmniRoute POST /v1/search (Bearer OMNIROUTER_API_KEY).",
+    "OMNIROUTER_SEARCH_PROVIDERS default: tavily-search,firecrawl-search,searxng-search.",
+    "Per-provider timeout WEB_SEARCH_PROVIDER_TIMEOUT_S (default 20s) so failover stays bounded.",
+    "Override WEB_BACKENDS=tavily,firecrawl,searxng for direct adapters when Omni is off.",
+    "Extract stays on Router Worker (SearXNG cannot extract)."
+  ]
+}

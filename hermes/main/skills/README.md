@@ -11,9 +11,11 @@
 | **Coding** | `coding/*` + `coding/SKILL.md` router | Debug, review, security, git, testing |
 | **Communication** | `communication/*` | Email, chat tone, translation, **friendly-response** (default), **vi-people-terms** (Vietnamese people/gender) |
 | **Documents** | `file-gen` / `documents` (create+send via Dispatcher); advanced local `*-tools-local` only | |
-| **Web** | `web-search`, `searxng*`, `tavily`, `firecrawl` | OmniRouter → SearXNG |
+| **Web** | `web-search`, `searxng*`, `tavily`, `firecrawl` | OmniRouter → SearXNG; combo SoT `web-search/web-search-combo.json` |
 | **Core routing** | `core/worker-routing` | Classifier JSON → skill → worker table |
 | **Schedule** | `schedule` | Go schedule worker (SQLite). Hermes does not tick cron. |
+| **Classify** | `classify` | Inbound purpose JSON (`classify.json` SoT). Zalo/host call `POST /v1/classify`. |
+| **Outbound** | `outbound` | Outbound send\|drop filter (`outbound.json` SoT). Host call `POST /v1/outbound`. |
 | **Media/file** | `media-file`, `image-gen`, `media-out`, `comfyui`, `file-gen` | Worker owns OCR/ComfyUI |
 | **Security** | `security` | AV/YARA/sandbox/judge worker; not a classify `task_hint` |
 | **Vendor** | `vendor/*` | Upstream packs + `ATTRIBUTION.md` / licenses |

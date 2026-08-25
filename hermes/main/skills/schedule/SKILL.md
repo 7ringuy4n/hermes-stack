@@ -39,7 +39,16 @@ When classify returns `task_type=delete_schedule` / `skill_action=delete`:
 - Delete every schedule-worker row whose `origin`/`context` thread_id, chat_id, requester_id, or sender_id matches that group (or the current chat when no target is named).
 - Confirm with a short count. Do not invent cron expressions.
 
+## List / inspect
+
+When classify returns `task_type=list_schedule` / `skill_action=list`:
+
+- Resolve `target_channel` (if any) the same way as delete.
+- List schedule-worker rows for that thread (or current chat). Do **not** create or delete.
+- A quoted prior create body does not change list into delete — only an explicit cancel/remove ask does.
+
 Admin CLI (same host): `!zalo schedule remove group <tên nhóm>` / `!zalo schedule remove all <số>` also deletes Go worker rows (not only `cron/jobs.json`).
+`!zalo schedule list` / `list all` remains available for admins.
 
 ## Multiple clocks vs one fire
 
