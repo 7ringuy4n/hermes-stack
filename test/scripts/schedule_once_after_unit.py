@@ -18,10 +18,10 @@ from classify import (  # noqa: E402
 from schedule_client import (  # noqa: E402
     resolve_schedule_timing,
 )
-from media_shortcuts import (  # noqa: E402
-    is_compound_media_file_request,
-    looks_office_create,
-    looks_schedule_create,
+from classify_client import (  # noqa: E402
+    plan_allows_office_shortcut,
+    plan_is_immediate_deliver,
+    plan_skips_media_shortcut,
 )
 
 
@@ -38,7 +38,6 @@ def main() -> int:
     assert plan.get("cron_expr") in (None, ""), plan
     assert plan.get("next_run_at") in (None, ""), plan
 
-    # LLM invents cron + next_run_at — host must still prefer delay / relative text.
     poisoned = normalize_plan(
         {
             "task_hint": "schedule",
@@ -60,22 +59,14 @@ def main() -> int:
     assert timing["schedule_form"] == "once_after"
     assert timing["delay_seconds"] == 60
     assert timing["next_run_at"].endswith("Z")
-    # Must not keep the invented 17:31 cron as the fire authority.
     assert "17" not in (timing["next_run_at"] or "")
 
-    # Host must not invent a delay from prose when classify omitted delay_seconds.
     missing = resolve_schedule_timing(
         {"task_hint": "schedule", "schedule_form": "once_after", "delay_seconds": None},
         rel,
         "Asia/Ho_Chi_Minh",
     )
     assert not missing.get("next_run_at"), missing
-
-    from classify_client import (  # noqa: E402
-        plan_allows_office_shortcut,
-        plan_is_immediate_deliver,
-        plan_skips_media_shortcut,
-    )
 
     mixed = {
         "ok": True,
@@ -94,13 +85,20 @@ def main() -> int:
     )
     assert plan_is_immediate_deliver({"ok": True, "task_hint": "schedule", "skill_action": "create"}) is False
 
-    # Image + txt must not take office shortcut.
-    compound = "vẽ 1 tấm hình trắng đen ghi vào chào buổi sáng, tạo 1 file text ghi vào đã xong"
-    assert is_compound_media_file_request(compound) is True
-    assert looks_office_create(compound) is False
-    assert looks_schedule_create("2 phút nữa gửi hello") is True
+    compound = {
+        "ok": True,
+        "task_hint": "tool",
+        "instructions": [
+            "vẽ 1 tấm hình trắng đen ghi vào chào buổi sáng",
+            "tạo 1 file text ghi vào đã xong",
+        ],
+    }
+    assert plan_skips_media_shortcut(compound) is True
+    assert plan_allows_office_shortcut(compound) is False
+    assert plan_skips_media_shortcut(
+        {"ok": True, "task_hint": "schedule", "instructions": ["hello"]}
+    ) is True
 
-    # once_at: LLM cron discarded; host may fill from clock prose later.
     once = normalize_plan(
         {
             "task_hint": "schedule",
@@ -114,7 +112,7 @@ def main() -> int:
         "Asia/Ho_Chi_Minh",
     )
     assert once.get("schedule_form") == "once_at", once
-    assert once.get("cron_expr") == "50 9 * * *", once  # host clock fill, not 17:31
+    assert once.get("cron_expr") == "50 9 * * *", once
     assert plan_schema_ok(once)
 
     print("OK once_after + media compound guards")

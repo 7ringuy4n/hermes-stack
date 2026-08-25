@@ -1,3 +1,17 @@
+## 2026-08-25 20:20 +07 — Zalo still phrase-scanned Vietnamese for intent
+
+### Symptom
+Office/poster/schedule/destination/search paths could still be chosen by host regex and keyword lists even after classify owned delivery mode.
+
+### Root cause
+`plugins/zalo` kept semantic scanners (`looks_*`, group-name extractors, topic wraps, lyric keywords) that inferred task_hint / routing from user prose.
+
+### Fix (core)
+Remove those scanners. Host consumes classify JSON only. Harden `classify.json` for ownership, live-data files, destination, and lyric/search families. Units assert plan gates.
+
+### Prevent recurrence
+Do not add Vietnamese natural-language dictionaries under `plugins/zalo`. Extend `classify.json` and structured fields instead.
+
 ## 2026-08-25 19:50 +07 — Verb regex was fake NLU on the host
 
 ### Symptom
