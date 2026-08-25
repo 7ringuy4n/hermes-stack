@@ -1465,7 +1465,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_delivery_mode,
                 schedule_enabled,
             )
-            from .classify_client import classify_text, plan_compound_sequential, plan_is_async
+            from .classify_client import classify_text, plan_compound_sequential, plan_is_async, plan_is_immediate_deliver
             from .classify_client import strip_prior_for_classify
             from .knowledge_cite import plan_is_knowledge
         except ImportError:
@@ -1476,7 +1476,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_delivery_mode,
                 schedule_enabled,
             )
-            from classify_client import classify_text, plan_compound_sequential, plan_is_async  # type: ignore
+            from classify_client import classify_text, plan_compound_sequential, plan_is_async, plan_is_immediate_deliver  # type: ignore
             from classify_client import strip_prior_for_classify  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
         current = strip_prior_for_classify(text) or str(text or "").strip()
@@ -1489,6 +1489,77 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan.get("error"),
             )
             return False
+        if plan_is_immediate_deliver(plan) and not schedule_fire:
+            try:
+                from .channels_client import apply_schedule_delivery_target
+            except ImportError:
+                from channels_client import apply_schedule_delivery_target  # type: ignore
+            dest_origin = {
+                "platform": "zalo",
+                "chat_id": thread_id,
+                "thread_id": thread_id,
+                "user_id": sender_id,
+                "chat_name": sender_name,
+            }
+            dest_ctx = {
+                "thread_id": thread_id,
+                "thread_type": thread_type,
+                "chat_type": chat_type,
+                "sender_id": sender_id,
+                "sender_name": sender_name,
+            }
+            dest_origin, dest_ctx, target_note = apply_schedule_delivery_target(
+                text=current,
+                plan=plan,
+                origin=dest_origin,
+                context=dest_ctx,
+                current_thread_type=thread_type,
+            )
+            if target_note and str(target_note).startswith("group_not_found:"):
+                ref = target_note.split(":", 1)[-1]
+                try:
+                    msg = self._as_ux_line(
+                        "ZALO_SCHEDULE_GROUP_NOT_FOUND_MSG",
+                        ("schedule", "group_not_found"),
+                        (
+                            f"Chưa biết nhóm '{ref}'. Vào nhóm đó gửi !zalo allow / "
+                            f"!zalo label, hoặc !zalo refresh rồi gửi lại."
+                        ),
+                        user_text=text,
+                    )
+                    await self._as_gate_announce(thread_id, thread_type, msg)
+                except Exception:
+                    pass
+                return True
+            body = fire_text_from_plan(plan, current)
+            dest_id = str(dest_origin.get("thread_id") or thread_id)
+            dest_type = str(dest_ctx.get("thread_type") or thread_type)
+            try:
+                await self.send(
+                    chat_id=dest_id,
+                    content=body,
+                    metadata={
+                        "thread_type": "group" if dest_type == "group" else "user",
+                        "as_skip_timing": True,
+                        "skip_outbound_filter": True,
+                    },
+                )
+            except Exception:
+                logger.warning("[zalo] immediate deliver failed dest=%s", dest_id)
+                return True
+            dest_name = str(dest_origin.get("target_name") or dest_origin.get("chat_name") or "").strip()
+            if dest_id != str(thread_id) and dest_name:
+                try:
+                    ack = self._as_ux_line(
+                        "ZALO_DELIVERED_MSG",
+                        ("schedule", "saved"),
+                        f"Đã gửi → nhóm {dest_name}.",
+                        user_text=text,
+                    )
+                    await self._as_gate_announce(thread_id, thread_type, ack)
+                except Exception:
+                    pass
+            return True
         if plan_is_knowledge(plan):
             await self._as_knowledge_cite_reply(
                 {"text": text},
@@ -1650,32 +1721,51 @@ class ZaloAdapter(BasePlatformAdapter):
             delivery = schedule_delivery_mode(plan, current)
             origin["schedule_delivery"] = delivery
             context["schedule_delivery"] = delivery
-            # Compute next_run_at from relative-time expression in inbound text so
-            # the worker does not roll to the next calendar day for "N phút nữa".
+            # Authoritative timing: once_after uses host clock + delay_seconds.
+            # Never prefer LLM-invented next_run_at / cron for relative delays.
             try:
-                from .schedule_client import next_run_at_from_relative
+                from .schedule_client import resolve_schedule_timing
             except ImportError:
-                from schedule_client import next_run_at_from_relative  # type: ignore
-            plan_next = (plan or {}).get("next_run_at") or ""
-            next_run_at = plan_next or next_run_at_from_relative(current, tz=str(plan.get("timezone") or "Asia/Ho_Chi_Minh")) or ""
+                from schedule_client import resolve_schedule_timing  # type: ignore
+            timing = resolve_schedule_timing(
+                plan,
+                current,
+                tz=str((plan or {}).get("timezone") or "Asia/Ho_Chi_Minh"),
+            )
+            next_run_at = str(timing.get("next_run_at") or "")
+            cron_expr = str(timing.get("cron_expr") or plan.get("cron_expr") or "")
+            cadence = str(timing.get("cadence") or plan.get("cadence") or "")
+            if str(timing.get("schedule_form") or "") == "once_after" and not next_run_at:
+                logger.warning("[zalo] once_after missing delay_seconds from classify")
+                try:
+                    msg = self._as_ux_line(
+                        "ZALO_SCHEDULE_FAILED_MSG",
+                        ("schedule", "failed"),
+                        "Could not save this lịch. Please send it again.",
+                        user_text=text,
+                    )
+                    await self._as_gate_announce(thread_id, thread_type, msg)
+                except Exception:
+                    pass
+                return True
             if schedule_enabled():
                 data = go_create_schedule(
-                    cron_expr=str(plan.get("cron_expr") or ""),
+                    cron_expr=cron_expr,
                     text=current,
                     fire_text=fire_text,
                     origin=origin,
                     context=context,
-                    cadence=str(plan.get("cadence") or ""),
+                    cadence=cadence,
                     timezone=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
                     next_run_at=next_run_at or None,
                 )
             else:
                 data = create_schedule(
-                    cron_expr=str(plan.get("cron_expr") or ""),
+                    cron_expr=cron_expr,
                     text=current,
                     origin=origin,
                     context=context,
-                    cadence=str(plan.get("cadence") or ""),
+                    cadence=cadence,
                     next_run_at=next_run_at or None,
                 )
             if data.get("ok"):
@@ -3494,29 +3584,25 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception:
             pass
 
-        # Deterministic office / text-poster via Dispatcher (skip agent rewrite).
+        # Office create only when classify says a single file job. Mixed image+file
+        # and schedules must not be swallowed by Dispatcher phrase shortcuts.
         bare_text = str(text or "").strip()
         if bare_text and not media_urls:
             try:
-                from .media_shortcuts import run_office_create, run_text_poster
+                from .classify_client import classify_text, plan_allows_office_shortcut, plan_skips_media_shortcut
+                from .media_shortcuts import run_office_create
             except ImportError:
-                from media_shortcuts import run_office_create, run_text_poster  # type: ignore
+                from classify_client import classify_text, plan_allows_office_shortcut, plan_skips_media_shortcut  # type: ignore
+                from media_shortcuts import run_office_create  # type: ignore
             shortcut = None
             try:
-                shortcut = run_office_create(bare_text, str(thread_id), str(thread_type))
-                if shortcut:
-                    self._as_flow("office_shortcut", thread_id=thread_id, file=shortcut.get("file"))
-                else:
-                    shortcut = run_text_poster(bare_text, str(thread_id), str(thread_type))
+                early_plan = classify_text(bare_text)
+                if plan_allows_office_shortcut(early_plan) and not plan_skips_media_shortcut(early_plan):
+                    shortcut = run_office_create(
+                        bare_text, str(thread_id), str(thread_type), classified=True
+                    )
                     if shortcut:
-                        self._as_flow(
-                            "poster_shortcut",
-                            thread_id=thread_id,
-                            file=shortcut.get("file"),
-                            backend=shortcut.get("backend"),
-                            phrase=shortcut.get("phrase"),
-                            n=shortcut.get("n"),
-                        )
+                        self._as_flow("office_shortcut", thread_id=thread_id, file=shortcut.get("file"))
             except Exception as e:
                 logger.warning("Zalo: media shortcut error: %s", type(e).__name__)
                 shortcut = None

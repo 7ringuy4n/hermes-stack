@@ -65,7 +65,17 @@ def main() -> int:
     assert (plan_lc.get("target_channel") or "").lower() == "lc group"
     assert len(plan_lc["instructions"]) >= 3
 
-    print("OK schedule classify heuristic + prior strip + 400 skip")
+    rel = "1 phút nữa gửi vào Zalo LC Group: chào buổi sáng"
+    raw_rel = schedule_heuristic_plan(rel)
+    assert raw_rel and raw_rel.get("schedule_form") == "once_after", raw_rel
+    assert raw_rel.get("delay_seconds") == 60, raw_rel
+    assert not raw_rel.get("cron_expr"), raw_rel
+    plan_rel = normalize_plan(raw_rel, rel, "Asia/Ho_Chi_Minh")
+    assert plan_schema_ok(plan_rel)
+    assert plan_rel.get("delay_seconds") == 60
+    assert not plan_rel.get("cron_expr")
+
+    print("OK schedule classify heuristic + prior strip + 400 skip + once_after")
     return 0
 
 
