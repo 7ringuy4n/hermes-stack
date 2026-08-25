@@ -1,3 +1,9 @@
+## 2026-08-25 18:40 +07 — Schedule send-body stays verbatim; gateway classify import
+
+- One-shot “send this text later” jobs could be stored as process because the payload contained work-looking words, so fire injected into Hermes and never delivered. Gateway classify client crashed on import (`re` missing).
+- `classify.json`: dictated send-body after `nội dung:` is `schedule_delivery=verbatim`; assistant task-lists remain `process`. Host consumes that field. Heuristic fallback no longer treats mid-sentence describe-words as skills.
+- Gateway `classify_client.py` imports `re` so relative-delay helpers load.
+
 ## 2026-08-25 08:05 +07 — Classify owns NLU; host consumes JSON not phrase lists
 
 - Phrase scanners for office/poster, relative delay, and group names cannot cover paraphrases; they swallowed mixed image+file jobs and fought the classifier on schedules and cross-thread sends.

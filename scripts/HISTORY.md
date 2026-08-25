@@ -1,3 +1,18 @@
+## 2026-08-25 18:40 +07 — Dictated schedule body fired as process; gateway crash-loop
+
+### Symptom
+Relative one-shot send-later jobs saved, then never delivered. API gateway restarted on classify client import.
+
+### Root cause
+1. Classify treated any `nội dung:` containing describe-like words as assistant task-work (`process`), so fire went through Hermes and hung.
+2. Gateway `classify_client.py` compiled a regex without importing `re`.
+
+### Fix (core)
+Harden `classify.json` so dictated send-bodies are `verbatim` and skill-lists stay `process`. Host consumes `schedule_delivery`. Heuristic fallback only treats lead describe-verbs as generate-jobs. Add the missing gateway import.
+
+### Prevent recurrence
+Do not keyword-spot payload words to choose process vs verbatim. Classifier JSON owns that decision.
+
 ## 2026-08-25 08:05 +07 — Phrase scanners stole mixed jobs from classify
 
 ### Symptom

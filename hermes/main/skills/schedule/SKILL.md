@@ -28,8 +28,8 @@ JSON body (deterministic fields from classifier JSON + **host-resolved** fire ti
 
 | Mode | When | Fire behavior |
 |---|---|---|
-| **verbatim** | User asked to **send/post** a fixed body (poem/quote; no work verbs) | Adapter sends `fire_text` **exactly** — no LLM paraphrase |
-| **process** | User asked to **do work** at a time (mô tả/search/weather/image/OCR), even if wrapped in `nội dung:` | Inject with `scheduleFire`; Hermes runs **split** skills; never dump the task list as the chat text |
+| **verbatim** | User asked to **send/post** a dictated body (`nhắn tôi` / `gửi` + `nội dung:`). Payload words are not skills. | Adapter sends `fire_text` **exactly** — no LLM paraphrase |
+| **process** | User asked to **do work** at a time (generate/search/weather/image/OCR), even if wrapped in `nội dung:` | Inject with `scheduleFire`; Hermes runs **split** skills; never dump the task list as the chat text |
 
 ## Delete / cancel
 

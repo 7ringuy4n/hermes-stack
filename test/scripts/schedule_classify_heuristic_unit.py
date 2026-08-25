@@ -75,6 +75,19 @@ def main() -> int:
     assert plan_rel.get("delay_seconds") == 60
     assert not plan_rel.get("cron_expr")
 
+    send_me = (
+        "1 phút nữa nhắn tôi nội dung: không cần chit chat, "
+        "chỉ mô tả sự cô đơn trong im lặng"
+    )
+    raw_send = schedule_heuristic_plan(send_me)
+    assert raw_send and raw_send.get("schedule_form") == "once_after", raw_send
+    assert raw_send.get("delay_seconds") == 60, raw_send
+    assert raw_send.get("schedule_delivery") == "verbatim", raw_send
+    assert len(raw_send.get("instructions") or []) == 1, raw_send
+    plan_send = normalize_plan(raw_send, send_me, "Asia/Ho_Chi_Minh")
+    assert plan_schema_ok(plan_send)
+    assert plan_send.get("schedule_delivery") == "verbatim"
+
     print("OK schedule classify heuristic + prior strip + 400 skip + once_after")
     return 0
 
