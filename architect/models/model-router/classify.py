@@ -634,9 +634,14 @@ _FUEL_KW = ("xăng", "xang", "ron92", "ron95", "e5", "e10", "gasoline", "fuel")
 _WEATHER_KW = ("thời tiết", "thoi tiet", "weather")
 _DRAW_KW = ("vẽ", "ve ", "draw", "hình", "hinh", "poster", "infographic", "video")
 _CITY_KW = ("hồ chí minh", "ho chi minh", "hcmc", "tp.hcm", "thành phố", "thanh pho")
-# Task-work verbs in schedule body → process + split (fallback when LLM is down).
+# Fallback when LLM is down (classify.json owns paraphrases). Lead "mô tả" is a
+# generate-job; the same word mid-sentence in a dictated send-body is payload.
+_TASK_BODY_LEAD_DESCRIBE = re.compile(
+    r"^\s*(?:mô\s*tả|mo\s*ta|describe)\b",
+    re.I,
+)
 _TASK_BODY_VERB = re.compile(
-    r"(?:mô\s*tả|mo\s*ta|describe|cập\s*nhật|cap\s*nhat|update|"
+    r"(?:cập\s*nhật|cap\s*nhat|update|"
     r"dự\s*báo|du\s*bao|forecast|tìm\b|tim\b|search|vẽ|draw|"
     r"giá\s*xăng|gia\s*xang|thời\s*tiết|thoi\s*tiet|weather|"
     r"ocr|pdf|docx|xlsx)",
@@ -693,7 +698,12 @@ def _heuristic_target_channel(blob: str) -> str | None:
 
 
 def _schedule_body_is_task(body: str) -> bool:
-    return bool(_TASK_BODY_VERB.search(body or ""))
+    raw = (body or "").strip()
+    if not raw:
+        return False
+    if _TASK_BODY_LEAD_DESCRIBE.match(raw):
+        return True
+    return bool(_TASK_BODY_VERB.search(raw))
 
 
 def _split_schedule_task_body(body: str) -> list[str]:
