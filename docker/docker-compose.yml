@@ -318,6 +318,9 @@ services:
       - OMNIROUTER_CLASSIFY_COMBO=${OMNIROUTER_CLASSIFY_COMBO:-classifier}
       - MODEL_ROUTER_CLASSIFY_MODEL=${MODEL_ROUTER_CLASSIFY_MODEL:-${OMNIROUTER_CLASSIFY_COMBO:-classifier}}
       - MODEL_ROUTER_OUTBOUND_MODEL=${MODEL_ROUTER_OUTBOUND_MODEL:-${OMNIROUTER_DEFAULT_COMBO:-hermes}}
+      - MODEL_ROUTER_CLASSIFY=${MODEL_ROUTER_CLASSIFY:-/opt/data/skills/classify/classify.json}
+      - MODEL_ROUTER_OUTBOUND=${MODEL_ROUTER_OUTBOUND:-/opt/data/skills/outbound/outbound.json}
+      - WEB_SEARCH_COMBO_PATH=${WEB_SEARCH_COMBO_PATH:-/opt/data/skills/web-search/web-search-combo.json}
       - MODEL_ROUTER_PORT=8096
       # Web search: default omni proxies to Omni UI (Tavily → Firecrawl → SearXNG).
       # Override WEB_BACKENDS=tavily,firecrawl,searxng only when Omni is off.
@@ -332,6 +335,9 @@ services:
       - SEARXNG_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
       - WEB_SEARCH_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      # Classify prompt SoT lives in Hermes skills (single edit surface).
+      - ./hermes/main/skills:/opt/data/skills:ro
     ports:
       - "127.0.0.1:${MODEL_ROUTER_HOST_PORT:-8096}:8096"
     extra_hosts:
