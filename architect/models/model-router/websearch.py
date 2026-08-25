@@ -23,12 +23,31 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parent
-COMBO_PATH = Path(
-    os.environ.get(
-        "WEB_SEARCH_COMBO_PATH",
-        str(ROOT / "config" / "web-search-combo.json"),
+
+
+def _resolve_combo_path() -> Path:
+    """Prefer Hermes web-search skill combo; fall back to baked config copy."""
+    env = (os.environ.get("WEB_SEARCH_COMBO_PATH") or "").strip()
+    if env:
+        p = Path(env)
+        if p.is_file():
+            return p
+    skill_rel = Path("web-search") / "web-search-combo.json"
+    candidates = (
+        Path("/opt/data/skills") / skill_rel,
+        ROOT.parents[2] / "hermes" / "main" / "skills" / skill_rel,
+        ROOT / "config" / "web-search-combo.json",
     )
-)
+    for p in candidates:
+        try:
+            if p.is_file():
+                return p
+        except OSError:
+            continue
+    return ROOT / "config" / "web-search-combo.json"
+
+
+COMBO_PATH = _resolve_combo_path()
 MESSAGES_PATH = Path(
     os.environ.get(
         "WEB_SEARCH_MESSAGES",

@@ -42,7 +42,7 @@ Media/File worker.
 | `OMNIROUTER_SEARCH_PROVIDERS` | Default `tavily-search,firecrawl-search,searxng-search` |
 | `WEB_SEARCH_PROVIDER_TIMEOUT_S` | Per-provider HTTP timeout (default 20s) for fast failover |
 | `WEB_BACKENDS` | Default `omni` (proxy). Use `tavily,firecrawl,searxng` only if Omni is off |
-| `config/web-search-combo.json` | Router Worker combo (`backends: ["omni"]`) |
+| `hermes/main/skills/web-search/web-search-combo.json` | SoT combo (`backends: ["omni"]`); bake fallback under model-router `config/` |
 | `WEB_EXTRACT_BACKENDS` | Extract order (`tavily,firecrawl`) |
 | `OMNIROUTER_API_KEY` / `OMNIROUTER_BASE_URL` | Required for `omni` backend |
 
