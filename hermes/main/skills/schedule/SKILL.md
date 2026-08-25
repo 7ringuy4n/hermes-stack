@@ -19,7 +19,7 @@ JSON body (deterministic fields from classifier JSON + **host-resolved** fire ti
 - `cadence` — `once` / `daily` / `weekly` / `monthly` / `yearly`
 - `timezone` — IANA zone (default `Asia/Ho_Chi_Minh`)
 - `next_run_at` — RFC3339 UTC from **host/tool response only**. Classifier must leave this null. Do not compute now+offset in the model.
-- `fire_text` — inner work only (`message` / `instructions` joined). **Never** the “đặt lịch lúc HH:MM” wrapper
+- `fire_text` — inner work only (`message` / `instructions` joined). **Never** the “đặt lịch lúc HH:MM” / “N phút nữa gửi vào…” wrapper
 - `text` — original inbound (audit only)
 - `origin` / `context` — thread routing so the worker can inject back into the conversation
 - `context.schedule_delivery` — `verbatim` (send body as-is) or `process` (Hermes runs skills)
@@ -29,7 +29,7 @@ JSON body (deterministic fields from classifier JSON + **host-resolved** fire ti
 | Mode | When | Fire behavior |
 |---|---|---|
 | **verbatim** | User asked to **send/post** a dictated body (`nhắn tôi` / `gửi` + `nội dung:`). Payload words are not skills. | Adapter sends `fire_text` **exactly** — no LLM paraphrase, no outbound noise filter |
-| **process** | User asked to **do work** at a time (generate/search/weather/image/OCR), even if wrapped in `nội dung:` | Inject with `scheduleFire`; Hermes runs **split** skills; never dump the task list as the chat text |
+| **process** | User asked to **do work** at a time (`gửi vào [group] mô tả/describe…`, search/weather/image/OCR), even if wrapped in `nội dung:` | Inject with `scheduleFire`; Hermes runs **split** skills; never dump the schedule ask or task list as the chat text |
 
 ## Delete / cancel
 
