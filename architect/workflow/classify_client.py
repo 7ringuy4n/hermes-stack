@@ -22,7 +22,12 @@ TASK_TYPES = (
     "media_generation",
     "file_processing",
     "create_schedule",
+    "list_schedule",
     "delete_schedule",
+    "pause_schedule",
+    "resume_schedule",
+    "update_schedule",
+    "run_schedule",
     "knowledge",
     "search",
     "tool",
@@ -115,8 +120,19 @@ def normalize_execution(
         elif raw_cls == "schedule":
             raw_mode = "confirm"
     if wrapper and hint == "schedule":
-        if raw_type == "delete_schedule":
+        action = str(src.get("skill_action") or "").strip().lower()
+        if raw_type == "delete_schedule" or action == "delete":
             return "schedule", "delete_schedule", "confirm"
+        if raw_type == "list_schedule" or action in {"list", "inspect", "show", "status"}:
+            return "schedule", "list_schedule", "confirm"
+        if raw_type == "pause_schedule" or action == "pause":
+            return "schedule", "pause_schedule", "confirm"
+        if raw_type == "resume_schedule" or action == "resume":
+            return "schedule", "resume_schedule", "confirm"
+        if raw_type == "update_schedule" or action == "update":
+            return "schedule", "update_schedule", "confirm"
+        if raw_type == "run_schedule" or action in {"run_now", "run"}:
+            return "schedule", "run_schedule", "confirm"
         return "schedule", "create_schedule", "confirm"
     return raw_cls, raw_type, raw_mode
 
@@ -284,6 +300,31 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
     task_type = str(plan.get("task_type") or "").strip().lower()
     if action == "delete" or task_type == "delete_schedule":
         return True
+    if action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
+        return True
+    if action in {"pause", "resume", "update", "run_now", "run"} or task_type in {
+        "pause_schedule",
+        "resume_schedule",
+        "update_schedule",
+        "run_schedule",
+    }:
+        return True
+    form = str(plan.get("schedule_form") or "").strip().lower()
+    if form in {"once_after", "once_at"}:
+        return True
+    try:
+        delay = int(plan.get("delay_seconds"))
+        if delay > 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    tasks = plan.get("tasks")
+    if isinstance(tasks, list):
+        for item in tasks:
+            if isinstance(item, dict) and (
+                item.get("delay_seconds") or str(item.get("schedule_form") or "") in {"once_after", "once_at"}
+            ):
+                return True
     return bool(plan.get("cron_expr"))
 
 

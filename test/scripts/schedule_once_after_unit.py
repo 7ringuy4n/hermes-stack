@@ -16,6 +16,8 @@ from classify import (  # noqa: E402
     plan_schema_ok,
 )
 from schedule_client import (  # noqa: E402
+    independent_schedule_plans,
+    next_run_at_from_delay,
     resolve_schedule_timing,
 )
 from classify_client import (  # noqa: E402
@@ -77,6 +79,31 @@ def main() -> int:
     )
     skew = abs((parsed - datetime.datetime.now(datetime.timezone.utc)).total_seconds() - 60)
     assert skew < 5, timing
+
+    receipt = datetime.datetime(2026, 8, 26, 4, 0, 0, tzinfo=datetime.timezone.utc)
+    stamped = next_run_at_from_delay(90, received_at=receipt)
+    assert stamped == "2026-08-26T04:01:30Z", stamped
+    late = resolve_schedule_timing(
+        poisoned,
+        rel,
+        "Asia/Ho_Chi_Minh",
+        received_at=receipt,
+    )
+    assert late["next_run_at"] == "2026-08-26T04:01:00Z", late
+
+    jobs = independent_schedule_plans(
+        {
+            "task_hint": "schedule",
+            "delay_seconds": None,
+            "tasks": [
+                {"task_hint": "schedule", "delay_seconds": 60, "instructions": ["a"]},
+                {"task_hint": "schedule", "delay_seconds": 90, "instructions": ["b"]},
+                {"task_hint": "schedule", "delay_seconds": 120, "instructions": ["c"]},
+            ],
+        }
+    )
+    assert len(jobs) == 3, jobs
+    assert [j.get("delay_seconds") for j in jobs] == [60, 90, 120]
 
     missing = resolve_schedule_timing(
         {"task_hint": "schedule", "schedule_form": "once_after", "delay_seconds": None},
