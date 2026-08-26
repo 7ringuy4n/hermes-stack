@@ -7,7 +7,8 @@ host scan cannot list secrets. Re-run: bash run.sh load-openbao-env before the n
 compose recreate when ENABLE_OPENBAO=1.
 
 Also strips seeded API-key values from ROOT/.env (keys kept empty) so the stack
-.env is flags/bootstrap only.
+.env is flags/bootstrap only — except compose-interpolated host keys that
+`load-openbao-env` re-fills from OpenBao before the next up|update.
 """
 from __future__ import annotations
 
@@ -24,14 +25,9 @@ DATA_DIR = Path(
 )
 
 # Wipe values that OpenBao can re-export. Do NOT scrub compose-interpolated
-# required host keys (MEMORY_DB_PASSWORD, HERMES_DASHBOARD_*, API_SERVER_KEY) —
-# docker compose ${VAR:?} reads ROOT/.env at parse time, not only env_file.
+# required host keys — docker compose ${VAR} / ${VAR:?} reads ROOT/.env at
+# parse time. load-openbao-env re-fills the rest before up|update.
 SCRUB_VALUE_KEYS = (
-    "N9ROUTER_API_KEY",
-    "N9ROUTER_INITIAL_PASSWORD",
-    "OMNIROUTER_API_KEY",
-    "OMNIROUTER_INITIAL_PASSWORD",
-    "GATEWAY_API_KEYS",
     "TAVILY_API_KEY",
     "FIRECRAWL_API_KEY",
     "ZALO_API_TOKEN",
