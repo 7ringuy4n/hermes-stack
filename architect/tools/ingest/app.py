@@ -1293,6 +1293,24 @@ def learn_submit(req: LearnSubmit) -> dict[str, Any]:
     name = (req.document_name or "zalo-learn").strip() or "zalo-learn"
     if not text and not req.path and not caption:
         raise HTTPException(400, "text or path required")
+    # Blank / whitespace-only extracts must not open Knowledge pending.
+    # Host should skip these; ingest fail-closes if a path-only blank arrives.
+    compact = "".join((text or "").split())
+    if not compact:
+        _flow(
+            "learn_blocked_empty",
+            sender_id=req.sender_id,
+            name=name,
+            thread_id=req.thread_id,
+        )
+        return {
+            "ok": False,
+            "status": "blocked",
+            "blocked": True,
+            "reason": "EMPTY_EXTRACT",
+            "pending_id": None,
+            "notified": False,
+        }
     # Secret / env probes must never become learnable knowledge.
     probe_blob = "\n".join(x for x in (caption, name, text[:20000]) if x)
     if _secret_probe_blocked(probe_blob):

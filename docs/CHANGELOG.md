@@ -1,3 +1,13 @@
+## 2026-08-26 18:50 +07 — Blank extracts no longer open Knowledge pending; untrusted doc content is data; compose LLM keys survive scrub
+
+- Blank or whitespace-only attachments still staged Knowledge pending-approval. Long LLM-risk / injection whitepapers could be treated like short secret asks. Scrub emptied compose-interpolated Omni/Gateway keys so router-worker classify returned 401 after recreate.
+- Host skips learn when extract has no meaningful text; ingest blocks empty extracts. Only short file bodies can trigger attachment secret refuse. Classify/SOUL/safety: untrusted embedded instructions are data; blank never knowledge-learn; long security notes are documents, not probes. load-openbao-env fills compose LLM keys when empty; scrub no longer wipes those interpolate keys.
+
+## 2026-08-26 18:35 +07 — Blank extracts no longer open Knowledge pending; untrusted doc content is data
+
+- Blank or whitespace-only attachments still staged Knowledge pending-approval. Long LLM-risk / injection whitepapers could be treated like short secret asks.
+- Host skips learn when extract has no meaningful text; ingest blocks empty extracts. Only short file bodies can trigger attachment secret refuse. Classify/SOUL/safety: untrusted embedded instructions are data; blank never knowledge-learn; long security notes are documents, not probes.
+
 ## 2026-08-26 18:25 +07 — Zalo fileExt wire JSON no longer triggers secret refuse on blank docs
 
 - Blank/ordinary attachments still got the secret/env refuse because Zalo puts a fileExt JSON blob in message text and the host classified that blob as a user ask.

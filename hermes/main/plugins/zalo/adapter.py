@@ -3225,6 +3225,28 @@ class ZaloAdapter(BasePlatformAdapter):
             out.append(p)
         return "\n".join(out)
 
+    def _as_meaningful_learn_text(self, text: str) -> bool:
+        """True when extract has real content worth knowledge-learn staging."""
+        body = str(text or "").strip()
+        if not body:
+            return False
+        # Whitespace-only / empty-looking extracts (blank docs) must not stage learn.
+        compact = "".join(body.split())
+        return bool(compact)
+
+    def _as_short_secret_ask_body(self, text: str) -> str:
+        """Only short extracted bodies can be user-style secret asks.
+
+        Long security whitepapers (injection examples, LLM risk notes) are document
+        content — not a human secret probe. Keep threshold well above 1.txt/2.txt.
+        """
+        body = str(text or "").strip()
+        if not body:
+            return ""
+        if len(body) > 600:
+            return ""
+        return body
+
     async def _as_secret_probe_drop(self, m, sender_id, thread_id, thread_type, text=None) -> bool:  # ASSISTANT_SECRET_PROBE_v7
         """Optional literal marker gate. Soft secret/env intent is classify-owned.
 
@@ -3903,9 +3925,10 @@ class ZaloAdapter(BasePlatformAdapter):
             # Do not wait on the agent — Omni capacity-busy 503 left users silent
             # after Knowledge-pending while csv/xlsx/mp4 never got a content reply.
             if attach_bare:
-                # File body that is itself a secret/env ask → refuse (risk docs).
-                # Blank/empty ordinary extracts continue with the normal extract ack.
-                body = str(excerpt or "").strip()
+                # Short file body that is itself a secret/env ask → refuse (risk txt).
+                # Long docs (security whitepapers / injection examples) stay file OCR.
+                # Blank/empty extracts continue with the normal extract ack (no learn).
+                body = self._as_short_secret_ask_body(excerpt or "")
                 if body and (
                     self._as_secret_probe_text(body)
                     or self._as_classify_secret_refuse(body)
@@ -5901,12 +5924,12 @@ class ZaloAdapter(BasePlatformAdapter):
                     except Exception:
                         pass
                     return
-                # Content gate: user ask and/or extracted body that is itself a secret ask.
-                # Never treat Zalo fileExt JSON or filename-alone as the ask.
+                # Content gate: user ask and/or SHORT extracted body that is a secret ask.
+                # Long security docs (injection examples) are not short secret asks.
                 ask_blob = self._as_user_secret_ask_blob(
                     user_text, media if isinstance(media, dict) else {}
                 )
-                body_ask = str(ocr_text or "").strip()[:20000]
+                body_ask = self._as_short_secret_ask_body(ocr_text or "")
                 gate_blob = "\n".join(x for x in (ask_blob, body_ask) if x)
                 if gate_blob and (
                     self._as_secret_probe_text(gate_blob)
@@ -5916,6 +5939,20 @@ class ZaloAdapter(BasePlatformAdapter):
                     self._as_flow(
                         "learn_skip",
                         reason="classify_secret_content",
+                        thread_id=thread_id,
+                        file=file_name,
+                    )
+                    try:
+                        await asyncio.to_thread(dest.unlink)
+                    except Exception:
+                        pass
+                    return
+
+                # Blank / whitespace-only extracts must never open Knowledge pending.
+                if not self._as_meaningful_learn_text(ocr_text or ""):
+                    self._as_flow(
+                        "learn_skip",
+                        reason="empty_extract",
                         thread_id=thread_id,
                         file=file_name,
                     )

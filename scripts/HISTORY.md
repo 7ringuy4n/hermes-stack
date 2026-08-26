@@ -1,3 +1,34 @@
+## 2026-08-26 18:50 +07 — Blank docs still opened Knowledge pending; classify 401 after scrub
+
+### Symptom
+Blank/whitespace-only attachments could still notify Knowledge pending-approval. Long security/LLM-risk documents could be mistaken for short secret asks. After env scrub, router-worker classify failed with Omni 401.
+
+### Root cause
+1. File pipeline submitted learn with path even when OCR/extract was empty.
+2. Attachment secret gate classified full long documents the same as short risk txt bodies.
+3. Scrub wiped compose-interpolated Omni/Gateway keys from ROOT/.env while router-worker reads them via compose `${VAR}`.
+
+### Fix (core)
+Skip learn on empty/whitespace extracts (host + ingest). Short-body-only secret refuse for attachment content. Classify/SOUL/safety: untrusted content is data; blank never learn; long risk notes are documents. load-openbao-env fills compose LLM keys when empty; scrub skips those interpolate keys.
+
+### Prevent recurrence
+Never stage knowledge without meaningful text. Do not treat security whitepapers as user secret probes. Keep compose-interpolated LLM keys fillable from OpenBao before up|update.
+
+## 2026-08-26 18:35 +07 — Blank docs still opened Knowledge pending
+
+### Symptom
+Blank/whitespace-only attachments could still notify Knowledge pending-approval. Long security/LLM-risk documents could be mistaken for short secret asks.
+
+### Root cause
+1. File pipeline submitted learn with path even when OCR/extract was empty.
+2. Attachment secret gate classified full long documents the same as short risk txt bodies.
+
+### Fix (core)
+Skip learn on empty/whitespace extracts (host + ingest). Short-body-only secret refuse for attachment content. Classify/SOUL/safety: untrusted content is data; blank never learn; long risk notes are documents.
+
+### Prevent recurrence
+Never stage knowledge without meaningful text. Do not treat security whitepapers as user secret probes.
+
 ## 2026-08-26 18:25 +07 — Blank attachments still refused via Zalo fileExt JSON
 
 ### Symptom
