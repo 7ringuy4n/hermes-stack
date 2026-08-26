@@ -5440,20 +5440,19 @@ class ZaloAdapter(BasePlatformAdapter):
 
         if not local_path:
             return False
-        # Caption/filename secret intent: classify owns refuse (no keyword lists).
-        probe_blob = "\n".join(
+        # Secret refuse only on an explicit ask (caption/user text). Filename alone
+        # and a prior learn-skip mark must NOT abort innocent blank/docs attachments.
+        ask_blob = "\n".join(
             x
             for x in (
                 str(user_text or "").strip(),
-                str((media or {}).get("fileName") or "").strip(),
                 str((media or {}).get("caption") or "").strip(),
             )
             if x
         )
-        if probe_blob and (
-            self._as_learn_skip_hit(thread_id, sender_id)
-            or self._as_secret_probe_text(probe_blob)
-            or self._as_classify_secret_refuse(probe_blob)
+        if ask_blob and (
+            self._as_secret_probe_text(ask_blob)
+            or self._as_classify_secret_refuse(ask_blob)
         ):
             self._as_learn_skip_mark(thread_id, sender_id)
             self._as_flow(
@@ -5467,7 +5466,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     "ZALO_SECRET_PROBE_REFUSE",
                     ("secret_probe", "refuse"),
                     "Cannot provide secrets or confidential documents.",
-                    user_text=probe_blob,
+                    user_text=ask_blob,
                 )
                 await self.send(
                     chat_id=str(thread_id),
@@ -5803,21 +5802,32 @@ class ZaloAdapter(BasePlatformAdapter):
                                 error=type(e).__name__,
                             )
 
-                probe_blob = "\n".join(
+                # Learn-skip from a prior secret turn: skip staging only (no refuse).
+                if self._as_learn_skip_hit(thread_id, sender_id):
+                    self._as_flow(
+                        "learn_skip",
+                        reason="prior_secret_turn",
+                        thread_id=thread_id,
+                        file=file_name,
+                    )
+                    try:
+                        await asyncio.to_thread(dest.unlink)
+                    except Exception:
+                        pass
+                    return
+                # Content gate: user ask and/or extracted body that is itself a secret ask.
+                # Never classify filename-alone (blank.docx / docs.docx false positives).
+                ask_blob = "\n".join(
                     x
                     for x in (
                         str(user_text or "").strip(),
-                        str(file_name or "").strip(),
                         str(ocr_text or "").strip()[:20000],
                     )
                     if x
                 )
-                if self._as_learn_skip_hit(thread_id, sender_id) or (
-                    probe_blob
-                    and (
-                        self._as_secret_probe_text(probe_blob)
-                        or self._as_classify_secret_refuse(probe_blob)
-                    )
+                if ask_blob and (
+                    self._as_secret_probe_text(ask_blob)
+                    or self._as_classify_secret_refuse(ask_blob)
                 ):
                     self._as_learn_skip_mark(thread_id, sender_id)
                     self._as_flow(

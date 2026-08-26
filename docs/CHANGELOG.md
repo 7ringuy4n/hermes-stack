@@ -1,3 +1,8 @@
+## 2026-08-26 18:10 +07 — Blank/ordinary attachments no longer get secret-probe refuse
+
+- Bare blank or ordinary office/pdf/image attachments could receive the secret/env refuse line after a prior secret turn or when only the filename was classified. Post-deploy env scrub could also empty compose-required host keys so the next update failed.
+- Classify SECRET/ENV requires an explicit secret-seeking ask; bare/blank/filename-only attachments stay file OCR/read. Host AV/learn gates refuse only on caption/user ask (or extracted body that is itself a secret ask), and learn-skip no longer aborts the whole turn with a refuse. Scrub skips compose-required `.env` keys; load OpenBao env before compose up|update.
+
 ## 2026-08-26 16:55 +07 — Secret-probe policy uses one empty block_patterns list
 
 - Separate input/output marker lists duplicated an unused keyword gate after classify already owned soft secret intent.
