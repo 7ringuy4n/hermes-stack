@@ -64,9 +64,6 @@ echo -n "hermes_to_model_router="
 docker exec assistant-hermes-1 python3 -c "import urllib.request; urllib.request.urlopen('http://model-router:8096/health', timeout=5); print('ok')" 2>/dev/null || echo fail
 echo "mr_health=$(curl -sS -m 5 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:8096/health || echo fail)"
 echo "omni_root=$(curl -sS -m 5 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:20129/ || echo fail)"
-if [[ -n "${{OLLAMA_BASE_URL:-}}" && -n "${{OLLAMA_MODEL:-}}" ]]; then
-  echo "OLLAMA_LAB=1"
-fi
 KEY="${{API_SERVER_KEY:-}}"
 if [[ -n "$KEY" ]]; then
   t0=$(date +%s%3N)
@@ -104,7 +101,6 @@ echo DEFAULTS_LAB_DONE
             note("model_router", "PASS", "connected")
         omni_flag_on = "OMNI=1" in out
         omni_running = "omni=running" in out
-        ollama_lab = "OLLAMA_LAB=1" in out
         if omni_flag_on != omni_running:
             note("omni_match", "FAIL", "flag vs container mismatch")
             fails += 1
@@ -121,11 +117,8 @@ echo DEFAULTS_LAB_DONE
                 if len(parts) >= 2 and parts[0] == "200" and parts[1].isdigit():
                     ms = int(parts[1])
                     if ms > SLO_MS:
-                        if ollama_lab:
-                            note("ping_slo", "SLOW", f"{ms}ms > {SLO_MS}ms (local Ollama CPU lab)")
-                        else:
-                            note("ping_slo", "FAIL", f"{ms}ms > {SLO_MS}ms simple-message SLO")
-                            fails += 1
+                        note("ping_slo", "FAIL", f"{ms}ms > {SLO_MS}ms simple-message SLO")
+                        fails += 1
                     else:
                         note("ping_slo", "PASS", f"{ms}ms")
         path = OUT / f"defaults-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
