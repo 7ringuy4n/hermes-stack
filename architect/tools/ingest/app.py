@@ -154,6 +154,7 @@ class LearnSubmit(BaseModel):
     thread_id: Optional[str] = None
     sender_id: Optional[str] = None
     sender_name: Optional[str] = None
+    caption: Optional[str] = None
 
 
 class LearnId(BaseModel):
@@ -426,6 +427,12 @@ def _pending_put(item: dict[str, Any]) -> None:
 
 def _pending_del(pid: str) -> int:
     return int(_rdb().hdel(PENDING_HASH, pid))
+
+
+def _secret_probe_blocked(text: str) -> bool:
+    from secret_gate import secret_probe_blocked
+
+    return bool(secret_probe_blocked(text))
 
 
 def _match_pending(selector: str) -> list[dict[str, Any]]:
@@ -1282,30 +1289,49 @@ def search(req: SearchReq) -> dict[str, Any]:
 def learn_submit(req: LearnSubmit) -> dict[str, Any]:
     """Zalo knowledge-learn: stage pending until admin approves."""
     text = (req.text or "").strip()
-    if not text and not req.path:
+    caption = (req.caption or "").strip()
+    name = (req.document_name or "zalo-learn").strip() or "zalo-learn"
+    if not text and not req.path and not caption:
         raise HTTPException(400, "text or path required")
+    # Secret / env probes must never become learnable knowledge.
+    probe_blob = "\n".join(x for x in (caption, name, text[:20000]) if x)
+    if _secret_probe_blocked(probe_blob):
+        _flow(
+            "learn_blocked_secret",
+            sender_id=req.sender_id,
+            name=name,
+            thread_id=req.thread_id,
+        )
+        return {
+            "ok": False,
+            "status": "blocked",
+            "blocked": True,
+            "reason": "SECRET_POLICY",
+            "pending_id": None,
+            "notified": False,
+        }
     pid = uuid.uuid4().hex[:8]
     item = {
         "pending_id": pid,
         "status": "pending",
         "text": text,
         "path": req.path,
-        "document_name": req.document_name or "zalo-learn",
+        "document_name": name,
         "source": req.source or "zalo",
         "workspace_id": req.workspace_id,
         "thread_id": req.thread_id,
         "sender_id": req.sender_id,
         "sender_name": req.sender_name,
+        "caption": caption,
         "submitted_at": time.time(),
     }
     _pending_put(item)
     who = _sender_from_label(req.sender_id, req.sender_name)
-    name = item["document_name"]
     notified = _learn_notify(
         "pending",
         id=pid,
         name=name,
-        preview=_preview(text) or "(file/OCR)",
+        preview=_preview(text or caption) or "(file/OCR)",
         **{"from": who},
     )
     _flow("learn_pending", pending_id=pid, sender_id=req.sender_id, notified=notified)

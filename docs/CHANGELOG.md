@@ -1,3 +1,8 @@
+## 2026-08-26 16:50 +07 — Secret/env intent is classify-owned; knowledge-learn skips on refuse; scrub plaintext env
+
+- Soft secret/env asks and file captions were gated by growing keyword lists in secret-probe policy, and Knowledge pending-approval could still fire after a refuse. Host `.env` / `.env.openbao` exports could remain after deploy or restore.
+- secret-probe policy is classify-owned with empty marker lists. Classify SECRET/ENV + safety skill map paraphrases (including file captions). Host marks learn-skip on classify refuse and before file learn submit. After up|update|restore, scrub plaintext OpenBao exports and wipe seeded API-key values from stack `.env`.
+
 ## 2026-08-26 16:10 +07 — Secret probe no longer embeds deny lists or regex
 
 - Soft env-storage asks could miss Python defaults, and phrase regex duplicated classify. Quote/@mention captions could hide probe text in the quoted payload while the host still fell through to Hermes and greeted.
