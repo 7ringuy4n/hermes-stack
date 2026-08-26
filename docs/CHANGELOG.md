@@ -1,3 +1,13 @@
+## 2026-08-26 16:10 +07 — Secret probe no longer embeds deny lists or regex
+
+- Soft env-storage asks could miss Python defaults, and phrase regex duplicated classify. Quote/@mention captions could hide probe text in the quoted payload while the host still fell through to Hermes and greeted.
+- Probe loads markers only from `secret-probe.json` (literal match, fail closed if missing). No `_DEFAULT_*`, no `re`. Host probes outer text plus quoted message/file title; classify refuse with `process_original_message=false` is delivered without Hermes. Classify/SOUL/safety/zalo-channel cover paraphrases and quote envelopes. Ops alert when policy is missing.
+
+## 2026-08-26 15:30 +07 — Env-variable storage asks fell through to Hermes greeting
+
+- Soft asks about how/where environment variables are stored on the server missed secret-probe (file-only phrases) and classify refuse with `process_original_message=false` was ignored, so Hermes answered with a greeting instead of a refuse line.
+- Expand secret-probe for environment-variable phrasing; harden classify SECRET/ENV + SOUL/safety/zalo-channel; host sends classify refuse when `process_original_message` is false (no Hermes hop).
+
 ## 2026-08-26 11:20 +07 — Independent timed jobs stay schedule and fan out without a second classify hop
 
 - A bubble with several relative delays could be dropped as invalid classify (wrapper had no top-level delay), or split into inner strings and classified again so timing was lost. Pause/resume/update could be forced through create.
