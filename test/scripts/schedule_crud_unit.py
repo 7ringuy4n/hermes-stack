@@ -61,7 +61,7 @@ def test_parse() -> None:
     assert parse_hhmm_cron("6:00") == "0 6 * * *"
     assert parse_hhmm_cron("18:30") == "30 18 * * *"
     assert parse_hhmm_cron("6h") == "0 6 * * *"
-    assert parse_hhmm_cron("6h sáng") == "0 6 * * *"
+    assert parse_hhmm_cron("6h sáng") is None
     expr, name, prompt = split_add_args("6:00 Gửi giá xăng")
     assert expr == "0 6 * * *" and "xăng" in prompt
     expr, name, prompt = split_add_args("0 7 * * * Morning brief")

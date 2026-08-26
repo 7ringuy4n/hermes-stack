@@ -3,18 +3,25 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import urllib.error
 import urllib.request
 from typing import Any, Optional
 
 DEFAULT_URL = "http://schedule-worker:8110"
 
-_CONTENT_AFTER = re.compile(
-    r"(?:với\s*nội\s*dung|voi\s*noi\s*dung|nội\s*dung|noi\s*dung|content)\s*[:\-]?\s*(.+)$",
-    re.I | re.S,
-)
-# Protocol delimiter only — not intent NLU.
+
+def cron_from_clock_hm(clock_hm: str) -> str:
+    """JSON clock_hm ``HH:MM`` → storage cron. Digits only; not user-prose scan."""
+    raw = (clock_hm or "").strip().replace("h", ":").replace("H", ":")
+    if raw.count(":") != 1:
+        return ""
+    left, right = raw.split(":", 1)
+    if not left.isdigit() or not right.isdigit():
+        return ""
+    hour, minute = int(left), int(right)
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return ""
+    return f"{minute} {hour} * * *"
 
 
 def delay_seconds_from_plan(plan: dict[str, Any] | None) -> int | None:
@@ -78,6 +85,7 @@ def resolve_schedule_timing(
     next_run_at or LLM-invented cron for relative delays.
     """
     src = plan if isinstance(plan, dict) else {}
+    _ = text
     zone = str(src.get("timezone") or tz or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
     delay = delay_seconds_from_plan(src)
     form = str(src.get("schedule_form") or "").strip().lower()
@@ -102,11 +110,9 @@ def resolve_schedule_timing(
     cron = str(src.get("cron_expr") or "").strip()
     cadence = str(src.get("cadence") or "").strip().lower() or "once"
     form_out = form or ("recurring" if cadence not in {"", "once"} else "once_at")
-    # once_at: classifier leaves cron null; derive storage cron from HH:MM protocol.
+    # once_at: classifier leaves cron null; storage cron from JSON clock_hm only.
     if not cron and form_out == "once_at":
-        cron = _clock_cron_from_text(text) or ""
-    if not cron and form_out not in {"once_after"} and cadence == "once":
-        cron = _clock_cron_from_text(text) or ""
+        cron = cron_from_clock_hm(str(src.get("clock_hm") or ""))
     return {
         "schedule_form": form_out,
         "delay_seconds": None,
@@ -116,31 +122,10 @@ def resolve_schedule_timing(
     }
 
 
-def _clock_cron_from_text(text: str) -> str:
-    """Protocol HH:MM → once-daily cron for worker storage (not classifier NLU)."""
-    m = re.search(r"\b(\d{1,2})\s*[:hH]\s*(\d{2})\b", text or "")
-    if not m:
-        return ""
-    h_raw = m.group(1)
-    min_raw = m.group(2)
-    try:
-        hour = int(h_raw)
-        minute = int(min_raw)
-    except (TypeError, ValueError):
-        return ""
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        return ""
-    return f"{minute} {hour} * * *"
-
 def exact_schedule_body(original: str) -> str:
-    """Protocol body after nội dung:/content: (field delimiter — not NLU)."""
-    raw = (original or "").strip()
-    if not raw:
-        return ""
-    m = _CONTENT_AFTER.search(raw)
-    if not m:
-        return ""
-    return (m.group(1) or "").strip().strip("\"' ")
+    """Inner body comes from classify JSON. Host does not scan nội dung: in prose."""
+    del original
+    return ""
 
 
 def _worker_flag_on() -> bool:

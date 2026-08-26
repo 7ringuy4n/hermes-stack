@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -43,25 +42,20 @@ PROTOCOL_DROP_DEFAULT = (
 )
 
 # Hermes agent status envelopes (deterministic gateway protocol shapes).
-_AGENT_STATUS_RE = re.compile(
-    r"(?is)^(?:"
-    r"[\u23f3\u26a0\ufe0f\u2757\u23f1]|"  # hourglass / warning / heavy / stopwatch
-    r"working\b|"
-    r"iteration\s+\d+\s*/\s*\d+|"
-    r"receiving\s+stream|"
-    r"model\s+provider\s+failed|"
-    r"kept\s+raw\s+provider|"
-    r"check\s+gateway\s+logs|"
-    r"first-time\s+tip|"
-    r"interrupting\s+current\s+task|"
-    r"/busy\b"
-    r")"
+_STATUS_STARTS = ("working",)
+_STATUS_MARKS = (
+    "iteration ",
+    "receiving stream",
+    "model provider failed",
+    "kept raw provider",
+    "check gateway logs",
+    "first-time tip",
+    "interrupting current task",
+    "/busy",
+    "raw provider details",
+    "check gateway logs for diagnostics",
 )
-_ITERATION_RE = re.compile(r"(?i)\biteration\s+\d+\s*/\s*\d+")
-_WORKING_LINE_RE = re.compile(r"(?i)^\s*(?:[\u23f3\u26a0\ufe0f]+\s*)?working\b")
-_PROVIDER_FAIL_RE = re.compile(
-    r"(?i)model\s+provider\s+failed|raw\s+provider\s+details|check\s+gateway\s+logs\s+for\s+diagnostics"
-)
+_STATUS_LEAD = "⏳⚠⚠️❗⏱"
 
 
 def _ux_path() -> Path:
@@ -102,13 +96,15 @@ def is_agent_status_frame(content: str) -> bool:
     t = (content or "").strip()
     if not t:
         return True
-    if _ITERATION_RE.search(t):
-        return True
-    if _WORKING_LINE_RE.search(t):
-        return True
-    if _PROVIDER_FAIL_RE.search(t):
-        return True
-    if _AGENT_STATUS_RE.search(t) and len(t) < 400:
+    low = t.lower()
+    head = low.lstrip()
+    for start in _STATUS_STARTS:
+        if head.startswith(start):
+            return True
+    for mark in _STATUS_MARKS:
+        if mark in low:
+            return True
+    if t[0] in _STATUS_LEAD and len(t) < 400:
         return True
     return False
 
@@ -169,8 +165,15 @@ def strip_cron_delivery(content: str) -> str:
             cut = pos
     if cut >= 0:
         t = t[:cut].rstrip()
-    t = re.sub(r"(?im)^\(?\s*job_id\s*:\s*[^)\n]+\)?\s*$", "", t).strip()
-    t = re.sub(r"\n{3,}", "\n\n", t).strip()
+    keep: list[str] = []
+    for line in t.splitlines():
+        s = line.strip().lower().strip("()")
+        if s.startswith("job_id") and ":" in s:
+            continue
+        keep.append(line)
+    t = "\n".join(keep).strip()
+    while "\n\n\n" in t:
+        t = t.replace("\n\n\n", "\n\n")
     return t if t else raw
 
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import urllib.error
 import urllib.request
 from typing import Any, Callable
@@ -234,7 +233,29 @@ def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
         ttype = str(item.get("task_type") or "").strip().lower()
         if ttype not in TASK_TYPES:
             ttype = HINT_EXECUTION.get(hint, ("interactive", "chat", "ack_then_deliver"))[1]
-        out.append({"task_hint": hint, "task_type": ttype})
+        row: dict[str, Any] = {"task_hint": hint, "task_type": ttype}
+        for key in (
+            "skill",
+            "skill_action",
+            "schedule_form",
+            "cadence",
+            "target_channel",
+            "schedule_delivery",
+            "output_type",
+        ):
+            val = item.get(key)
+            if val not in (None, ""):
+                row[key] = val
+        delay = _coerce_delay_seconds(item.get("delay_seconds"))
+        if delay is not None:
+            row["delay_seconds"] = delay
+        cron = valid_cron(str(item.get("cron_expr") or ""))
+        if cron:
+            row["cron_expr"] = cron
+        instr = sanitize_instructions(item.get("instructions"), "")
+        if instr:
+            row["instructions"] = instr
+        out.append(row)
     return out
 
 
@@ -365,6 +386,8 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
         return True
     if action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
         return True
+    if plan.get("uncertain") is True:
+        return True
     if _coerce_delay_seconds(plan.get("delay_seconds")) is not None:
         return True
     form = str(plan.get("schedule_form") or "").strip().lower()
@@ -398,7 +421,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         cron = None
     else:
         llm_cron = valid_cron(str(src.get("cron_expr") or ""))
-        # Clients may not have extract_clock_cron — keep LLM cron only for recurring.
+        # One-shot cron is host storage after schedule_form; classifier cron is recurring only.
         if schedule_form == "once_after":
             cron = None
         elif schedule_form == "once_at":
@@ -494,13 +517,31 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             or None
         ),
         "schedule_delivery": None if (is_delete or is_list) else schedule_delivery,
+        "output_type": str(src.get("output_type") or "").strip() or None,
+        "clock_hm": None if (is_delete or is_list) else (str(src.get("clock_hm") or "").strip() or None),
+        "poster_n": src.get("poster_n"),
+        "poster_phrase": (str(src.get("poster_phrase") or "").strip() or None),
+        "poster_bw": src.get("poster_bw") if isinstance(src.get("poster_bw"), bool) else None,
+        "uncertain": bool(src.get("uncertain") is True),
+        "missing": [
+            str(x).strip().lower()
+            for x in (src.get("missing") or [])
+            if str(x).strip().lower() in {"time", "destination", "output_type"}
+        ],
     }
     if not plan_schema_ok(plan):
         return failed_plan(tz, "classify_invalid")
     return plan
 
 
-def classify_text(text: str, *, timezone: str = "Asia/Ho_Chi_Minh") -> dict[str, Any]:
+def classify_text(
+    text: str,
+    *,
+    timezone: str = "Asia/Ho_Chi_Minh",
+    thread: str = "unknown",
+    attachments: str = "none",
+    quoted: str = "none",
+) -> dict[str, Any]:
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
     blob = (text or "").strip()
     if _planner is not None:
@@ -511,7 +552,16 @@ def classify_text(text: str, *, timezone: str = "Asia/Ho_Chi_Minh") -> dict[str,
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
     base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
-    payload = json.dumps({"text": blob, "timezone": tz}, ensure_ascii=False).encode("utf-8")
+    payload = json.dumps(
+        {
+            "text": blob,
+            "timezone": tz,
+            "thread": thread or "unknown",
+            "attachments": attachments or "none",
+            "quoted": quoted or "none",
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
     timeout = float(os.environ.get("MODEL_ROUTER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
     last_error = "classify_unavailable"
     for _attempt in range(HTTP_ATTEMPTS):
