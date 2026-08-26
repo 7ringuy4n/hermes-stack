@@ -1482,7 +1482,10 @@ class ZaloAdapter(BasePlatformAdapter):
             from knowledge_cite import plan_is_knowledge  # type: ignore
         current = strip_prior_for_classify(text) or str(text or "").strip()
         if not isinstance(plan, dict):
-            plan = classify_text(current)
+            plan = classify_text(
+                current,
+                thread=("group" if str(thread_type or "").lower() == "group" else "dm"),
+            )
         if plan.get("ok") is False:
             # Omni/classify outages must not dead-end chat. Fall through to Hermes.
             logger.info(
@@ -3653,20 +3656,53 @@ class ZaloAdapter(BasePlatformAdapter):
         bare_text = str(text or "").strip()
         if bare_text and not media_urls:
             try:
-                from .classify_client import classify_text, plan_allows_office_shortcut, plan_skips_media_shortcut
-                from .media_shortcuts import run_office_create
+                from .classify_client import (
+                    classify_text,
+                    plan_allows_office_shortcut,
+                    plan_allows_poster_shortcut,
+                    plan_output_type,
+                    plan_skips_media_shortcut,
+                )
+                from .media_shortcuts import run_office_create, run_text_poster
             except ImportError:
-                from classify_client import classify_text, plan_allows_office_shortcut, plan_skips_media_shortcut  # type: ignore
-                from media_shortcuts import run_office_create  # type: ignore
+                from classify_client import (  # type: ignore
+                    classify_text,
+                    plan_allows_office_shortcut,
+                    plan_allows_poster_shortcut,
+                    plan_output_type,
+                    plan_skips_media_shortcut,
+                )
+                from media_shortcuts import run_office_create, run_text_poster  # type: ignore
             shortcut = None
             try:
                 early_plan = classify_text(bare_text)
+                inner = ""
+                ins = early_plan.get("instructions") or []
+                if isinstance(ins, list) and ins:
+                    inner = str(ins[0] or "").strip()
+                work = inner or bare_text
                 if plan_allows_office_shortcut(early_plan) and not plan_skips_media_shortcut(early_plan):
                     shortcut = run_office_create(
-                        bare_text, str(thread_id), str(thread_type), classified=True
+                        work,
+                        str(thread_id),
+                        str(thread_type),
+                        classified=True,
+                        output_type=plan_output_type(early_plan),
                     )
                     if shortcut:
                         self._as_flow("office_shortcut", thread_id=thread_id, file=shortcut.get("file"))
+                elif plan_allows_poster_shortcut(early_plan):
+                    shortcut = run_text_poster(
+                        work,
+                        str(thread_id),
+                        str(thread_type),
+                        classified=True,
+                        poster_n=early_plan.get("poster_n"),
+                        poster_phrase=str(early_plan.get("poster_phrase") or work),
+                        poster_bw=early_plan.get("poster_bw"),
+                    )
+                    if shortcut:
+                        self._as_flow("poster_shortcut", thread_id=thread_id, file=shortcut.get("file"))
             except Exception as e:
                 logger.warning("Zalo: media shortcut error: %s", type(e).__name__)
                 shortcut = None

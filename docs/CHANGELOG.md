@@ -1,3 +1,29 @@
+## 2026-08-26 08:40 +07 — Office shortcut no longer dies on Zalo send timeout
+
+- Dispatcher office-file waited on bridge send (90s) while the Hermes shortcut aborted at 45s, then a text fallback ran.
+- Write the file, treat send timeout as a warning, wait 120s at the shortcut. Dispatcher auto mode no longer scans user prose for research/upload.
+
+## 2026-08-26 08:20 +07 — Workflow cadence no longer guessed from prose
+
+- Workflow still inferred once/daily/weekly from Vietnamese and English phrase lists, and clock helpers still accepted sáng/chiều/tối.
+- Cadence is classify JSON (or an explicit enum). Digit clocks stay HH:MM / `Nh` protocol; leftover words are rejected.
+
+## 2026-08-26 07:35 +07 — Host Python no longer phrase-scans user intent
+
+- Dispatcher, memory-manager, schedule helpers, and Zalo shortcuts still inferred office kind, poster spec, media mode, and clocks from user prose.
+- Intent SoT is classify JSON (`output_type`, `poster_*`, `clock_hm`, `delay_seconds`). Host writes files and maps storage cron from those fields only. Valkey prior-strip and agent-status filters use string protocol, not language dictionaries.
+
+## 2026-08-26 07:20 +07 — Classify Python no longer phrase-scans schedules
+
+- Classify still inferred schedule, delay, clock, destination, and numbered splits from user prose when the LLM was down or as a host fill.
+- SoT is classify JSON from the skill prompt. Router validates enums and cron tokens only; 503/invalid classify fails open. Host maps HH:MM digits to storage cron only after `schedule_form=once_at`.
+
+## 2026-08-26 07:05 +07 — Classify skill prompt split into parts (one hop)
+
+- Classify policy lived as one oversized JSON string, which drifted and was hard to edit.
+- SoT: `hermes/main/skills/classify/parts/` assembled at load into a single system prompt; bake `config/classify.json` is the assembled fallback. Still one `POST /v1/classify`.
+- Host may pass thread/attachment/quoted facts in the user template. Keyword infographic fallback removed; classify JSON remains intent SoT.
+
 ## 2026-08-25 21:10 +07 — Model-router config JSON are Hermes skills
 
 - `classify` / `outbound` / `web-search-combo` SoT under `hermes/main/skills/`; bake fallbacks synced by `scripts/main/sync-model-router-skills.sh` on `run.sh update`.

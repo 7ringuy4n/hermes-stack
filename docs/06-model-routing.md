@@ -19,7 +19,7 @@ Hermes → INPUT Secret Probe → task_hint → model-router
 1. `X-Task-Type` (`normal|schedule|coding|tool|search|file|unknown`; aliases `general`→`normal`)
 2. Hermes `metadata.task_hint` / `task_type`
 3. Default → **normal** (fast path). Never `SECRET` as a task type.
-4. Multi-task / schedule intercept: `POST /v1/classify` (LLM JSON). Prompt SoT: Hermes skill [`hermes/main/skills/classify/classify.json`](../hermes/main/skills/classify/classify.json) (mounted into router-worker). Related SoTs: [`outbound`](../hermes/main/skills/outbound/outbound.json), [`web-search-combo`](../hermes/main/skills/web-search/web-search-combo.json). Bake fallbacks under `architect/models/model-router/config/` via `scripts/main/sync-model-router-skills.sh`.
+4. Multi-task / schedule intercept: `POST /v1/classify` (LLM JSON). Prompt SoT: Hermes skill [`hermes/main/skills/classify/`](../hermes/main/skills/classify/) — `classify.json` envelope plus `parts/` assembled into one system string (one hop). Related SoTs: [`outbound`](../hermes/main/skills/outbound/outbound.json), [`web-search-combo`](../hermes/main/skills/web-search/web-search-combo.json). Bake fallbacks under `architect/models/model-router/config/` via `scripts/main/sync-model-router-skills.sh`.
    Fast Dispatcher fields on the same JSON: `execution_class` (`interactive`|`async`|`schedule`), `task_type`, `response_mode` (`ack_then_deliver`|`confirm`; never `direct`).
    All user-facing answers route through model-router workers (Hermes chat combo, web_search, media_file, schedule). Classify only structures work — it never replies to the user.
    Zalo inbound always classifies purpose through this skill contract before routing.

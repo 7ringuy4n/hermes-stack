@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -14,6 +13,16 @@ from pydantic import BaseModel
 log = logging.getLogger("office_file")
 
 _OFFICE_OK = {".txt", ".csv", ".md", ".xlsx", ".docx", ".pdf"}
+_KIND_EXT = {
+    "pdf": ".pdf",
+    "txt": ".txt",
+    "text": ".txt",
+    "docx": ".docx",
+    "xlsx": ".xlsx",
+    "csv": ".csv",
+    "md": ".md",
+    "markdown": ".md",
+}
 
 # Prefer Unicode TTFs so Vietnamese PDF does not fall back to .txt
 _FONT_CANDIDATES = (
@@ -22,19 +31,13 @@ _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
 )
 
-_OFFICE_KIND = re.compile(
-    r"\b(pdf|docx|xlsx|csv|txt|text|markdown|\.md)\b",
-    re.I,
-)
-# Multi-kind gate only (skip single-shot shortcut). Classify LLM owns task split.
-
-
 class OfficeFileReq(BaseModel):
     prompt: str = ""
     thread_id: str = ""
     thread_type: str = "user"
     caption: str = ""
     filename: Optional[str] = None
+    output_type: Optional[str] = None
 
 
 def _enabled() -> bool:
@@ -45,115 +48,26 @@ def _enabled() -> bool:
     return v not in {"0", "false", "no", "off"}
 
 
-def _norm_office_kind(token: str) -> str:
-    t = (token or "").lower().lstrip(".")
-    if t in {"text", "txt"}:
-        return "txt"
-    if t in {"md", "markdown"}:
-        return "md"
-    return t
-
-
 def is_compound_office_request(text: str) -> bool:
-    """True when 2+ distinct office kinds appear — skip single-shot shortcut.
-
-    Conjunction/clause splitting is classify's job (LLM). This only detects
-    multi-kind prompts so the Zalo shortcut does not swallow a compound ask.
-    """
-    raw = (text or "").strip()
-    if not raw:
-        return False
-    kinds = {_norm_office_kind(k) for k in _OFFICE_KIND.findall(raw)}
-    return len(kinds) >= 2
+    """Compounds are classify's job. Host never scans kinds in user prose."""
+    del text
+    return False
 
 
-def _office_ext(low: str) -> str:
-    if re.search(r"xlsx|excel|\.xls", low):
-        return ".xlsx"
-    if re.search(r"\bcsv\b", low):
-        return ".csv"
-    if re.search(r"docx|word|\.doc\b", low):
-        return ".docx"
-    if re.search(r"\bpdf\b", low):
-        return ".pdf"
-    if re.search(r"\bmd\b|markdown", low):
-        return ".md"
-    if re.search(r"\b(?:txt|text)\b", low):
-        return ".txt"
-    return ".txt"
+def parse_office(prompt: str, output_type: str = "") -> tuple[str, str]:
+    """Return (ext, body) from classify inner work + output_type. No prose NLU."""
+    body = (prompt or "").strip() or " "
+    kind = (output_type or "").strip().lower().lstrip(".")
+    ext = _KIND_EXT.get(kind, ".txt")
+    return ext, body
 
 
-def _clean_office_body(raw: str, body: str) -> str:
-    """Prefer 'chứa số N' payload; strip trailing delivery phrases only."""
-    compact = re.search(
-        r"(?:ch[uứ]a|chua|contain|đi[eề]n|dien)\s+(?:số|so)\s+(\S+)",
-        raw,
-        re.I,
-    )
-    if compact:
-        body = compact.group(1).strip().strip(",.;")
-    else:
-        # Compound tails are classify's job; only strip delivery phrases here.
-        body = re.sub(r"^(số|so)\s+", "", body, flags=re.I).strip()
-        body = re.sub(
-            r"\s*(?:và\s+)?(?:gửi|gui|send|gởi)\s+(?:cho\s+)?(?:tôi|toi|me)\s*$",
-            "",
-            body,
-            flags=re.I,
-        ).strip()
-        body = re.sub(r"\s+và\s*$", "", body, flags=re.I).strip()
-
-    m2 = re.search(
-        r"(\d+)\s*dòng\s*(in\s*hoa)?\s*[\"“]?(.+?)[\"”]?\s*$",
-        body,
-        re.I | re.S,
-    )
-    if m2:
-        n = max(1, min(int(m2.group(1)), 100))
-        line = (m2.group(3) or "").strip().strip('"').strip("'")
-        if m2.group(2):
-            line = line.upper()
-        body = "\n".join([line] * n)
-
-    if not body:
-        body = " "
-    return body
-
-
-def parse_office(prompt: str) -> tuple[str, str]:
-    """Return (ext, body). UTF-8 Vietnamese prompts."""
-    raw = (prompt or "").strip()
-    low = raw.lower()
-    ext = _office_ext(low)
-
-    body = raw
-    m = re.search(
-        r"(?:đi[eề]n|dien|ghi|vi[eế]t|viet|ch[uứ]a|chua|contain|n[oộ]i dung|noi dung)"
-        r"\s*(?:vào|vao|:)?\s*(.+)$",
-        raw,
-        re.I | re.S,
-    )
-    if m:
-        body = m.group(1).strip()
-    else:
-        # "tạo file pdf chỉ số 1" / "... so 1" without điền/chứa
-        m_num = re.search(r"(?:ch[iỉ]\s+)?(?:số|so)\s+(.+)$", raw, re.I | re.S)
-        if m_num:
-            body = m_num.group(1).strip()
-
-    return ext, _clean_office_body(raw, body)
-
-
-def parse_office_jobs(prompt: str) -> list[tuple[str, str]]:
-    """One office prompt → one job.
-
-    Compound multi-file asks are split by classify into separate instructions;
-    each instruction hits /v1/office-file once. Do not regex-split compounds here.
-    """
+def parse_office_jobs(prompt: str, output_type: str = "") -> list[tuple[str, str]]:
+    """One office prompt → one job. Classify already split compounds."""
     raw = (prompt or "").strip()
     if not raw:
         return []
-    return [parse_office(raw)]
+    return [parse_office(raw, output_type)]
 
 
 def _pdf_font():
@@ -255,7 +169,7 @@ def register_office_file(
         if not req.thread_id:
             raise HTTPException(400, "thread_id required")
 
-        jobs = parse_office_jobs(prompt)
+        jobs = parse_office_jobs(prompt, req.output_type or "")
         if not jobs:
             raise HTTPException(400, "prompt required")
         for ext, _body in jobs:
@@ -288,13 +202,13 @@ def register_office_file(
                     filename=dest.name,
                     lock_thread=True,
                 )
-            except HTTPException as e:
+            except Exception as e:  # noqa: BLE001
                 # File is on disk under media/out — Hermes autosend can still deliver.
-                zalo_error = e.detail
+                zalo_error = str(getattr(e, "detail", None) or e)[:300]
                 log.warning(
                     "office-file wrote %s but zalo send failed: %s",
                     dest.name,
-                    e.detail,
+                    type(e).__name__,
                 )
             files.append(
                 {

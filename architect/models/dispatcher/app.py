@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import itertools
 import os
-import re
 import shutil
 import subprocess
 import threading
@@ -176,6 +175,9 @@ class ImageReq(BaseModel):
     filename: Optional[str] = None
     provider: Optional[str] = None  # comfy-cpu|comfy-gpu|omni|text
     mode: Optional[str] = None  # text|poster → exact glyph poster, skip diffusion
+    poster_n: Optional[int] = None
+    poster_phrase: Optional[str] = None
+    poster_bw: Optional[bool] = None
     thread_id: Optional[str] = None
     thread_type: str = "group"
     send_zalo: bool = False
@@ -228,29 +230,10 @@ async def health() -> dict[str, Any]:
 def mode_switch(req: ModeReq) -> dict[str, Any]:
     """Return which skill/mode Hermes should prefer (soft switch, not slash-required)."""
     m = req.mode.strip().lower()
-    text = (req.text or "").lower()
     if m not in {"chat", "research", "upload", "code", "auto"}:
         raise HTTPException(400, "mode must be chat|research|upload|code|auto")
     if m == "auto":
-        if req.has_media or any(k in text for k in ("phân tích", "đọc ảnh", "ocr", "đây là gì")):
-            m = "upload"
-        elif any(
-            k in text
-            for k in (
-                "giá",
-                "tin tức",
-                "search",
-                "tra cứu",
-                "tóm tắt",
-                "tom tat",
-                "http",
-            )
-        ):
-            m = "research"
-        elif any(k in text for k in ("code", "bug", "stacktrace", "function", "refactor")):
-            m = "code"
-        else:
-            m = "chat"
+        m = "upload" if req.has_media else "chat"
     hints = {
         "chat": "Use skill chat + common-rules.",
         "research": "Use skill research; web→/v1/search.",
@@ -295,7 +278,7 @@ def _whisper_transcribe(path: Path, language: Optional[str] = None) -> str:
         beam_size=1,
     )
     parts = [seg.text.strip() for seg in segments if seg.text and seg.text.strip()]
-    text = re.sub(r"\s+", " ", " ".join(parts)).strip()
+    text = " ".join(" ".join(parts).split()).strip()
     if not text:
         raise RuntimeError("whisper returned empty transcript")
     return text
@@ -888,10 +871,15 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
         raise HTTPException(400, _msg("prompt_required", "A prompt is required."))
 
     mode = (req.mode or req.provider or "").strip().lower()
-    poster = parse_text_poster(prompt)
-    if mode in {"text", "poster", "text-poster"} or poster:
-        if not poster:
-            poster = {"phrase": prompt[:80], "n": 1, "bw": True, "raw": prompt}
+    poster = parse_text_poster(
+        prompt,
+        phrase=str(req.poster_phrase or ""),
+        n=req.poster_n,
+        bw=req.poster_bw,
+    )
+    if mode in {"text", "poster", "text-poster"} and not poster:
+        poster = {"phrase": prompt[:80], "n": 1, "bw": True, "raw": prompt}
+    if poster:
         name = req.filename or f"text-{uuid.uuid4().hex[:10]}.png"
         if not name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
             name += ".png"
