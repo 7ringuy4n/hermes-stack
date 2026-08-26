@@ -1,3 +1,73 @@
+## 2026-08-26 08:40 +07 — Office shortcut timed out while the PDF send was still in flight
+
+### Symptom
+PDF write succeeded, but the user got a text fallback. Shortcut waited 45s; Dispatcher send waited 90s. Send timeout crashed office-file.
+
+### Root cause
+Shortcut timeout shorter than bridge send. office-file only caught HTTPException, not ReadTimeout. Dispatcher /v1/mode still scanned Vietnamese/English verbs.
+
+### Fix (core)
+Catch send failures after write; shortcut wait 120s. Auto mode uses media flag only.
+
+### Prevent recurrence
+Shortcut wait must exceed Dispatcher Zalo send timeout. Do not infer mode from user-language word lists.
+
+## 2026-08-26 08:20 +07 — Workflow cadence still scanned user prose
+
+### Symptom
+Cadence and some clock helpers still chose once/daily/weekly or AM/PM from Vietnamese/English words when classify JSON omitted cadence.
+
+### Root cause
+`plan.infer_cadence_heuristic` and `schedule_tz.parse_hhmm` duplicated classify.
+
+### Fix (core)
+Remove those scanners. Cadence is classify JSON or an explicit enum. Digit clocks only.
+
+### Prevent recurrence
+Do not add language AM/PM or cadence dictionaries to host Python.
+
+## 2026-08-26 07:35 +07 — Host still scanned user prose for office, poster, and clocks
+
+### Symptom
+Office kind/body, text-poster N/phrase, memory mode, and once_at fire time could still be chosen from Vietnamese/English regex in Dispatcher, memory-manager, and schedule helpers.
+
+### Root cause
+Those modules duplicated classify. Phrase lists cannot cover paraphrases and fought structured JSON.
+
+### Fix (core)
+Remove those scanners. Classify emits `output_type`, `poster_n` / `poster_phrase` / `poster_bw`, and `clock_hm`. Host consumes those fields. Prior-conversation strip and status-frame filters are string protocol.
+
+### Prevent recurrence
+Do not add user-language regex to host/classifier Python. Extend `skills/classify/parts/` and structured fields.
+
+## 2026-08-26 07:20 +07 — Classify Python still scanned schedule prose
+
+### Symptom
+Schedule, delay, clock, destination, and numbered-list intent could still be chosen from user text inside the classifier module when the LLM failed or as a host fill.
+
+### Root cause
+Regex fallbacks and clock extraction in classify Python duplicated the LLM job and fought structured JSON.
+
+### Fix (core)
+Remove those scanners. Normalize keeps JSON fields only. Fail open when classify is down. Harden the schedule skill part so delay, cron, destination, and split are emitted by the model. Host digit-clock mapping stays after `once_at`.
+
+### Prevent recurrence
+Do not add phrase scanners to classify Python. Extend `skills/classify/parts/` and consume JSON.
+
+## 2026-08-26 07:05 +07 — Classify prompt was one unmaintainable JSON string
+
+### Symptom
+Operators could not edit classify policy without scrolling a 20k-character embedded string; copies drifted from the skill SoT.
+
+### Root cause
+All taxonomy, schedule, media, delivery, and schema rules lived in a single `system` field.
+
+### Fix (core)
+Split the skill into `parts/` (core, schedule, media, delivery, schema). Router assembles them into one LLM hop. Sync writes an assembled bake fallback. Remove keyword infographic NLU from the offline heuristic.
+
+### Prevent recurrence
+Edit the matching part file, not the bake JSON. Do not add a second classify call. Do not restore substring intent lists.
+
 ## 2026-08-25 21:10 +07 — Model-router config folder was a second SoT
 
 ### Symptom

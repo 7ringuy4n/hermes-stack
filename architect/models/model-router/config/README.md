@@ -4,7 +4,7 @@
 
 | Bake file | Hermes skill SoT |
 |-----------|------------------|
-| `classify.json` | [`hermes/main/skills/classify/classify.json`](../../../../hermes/main/skills/classify/classify.json) |
+| `classify.json` | [`hermes/main/skills/classify/`](../../../../hermes/main/skills/classify/) (envelope + `parts/`; bake is assembled `system`) |
 | `outbound.json` | [`hermes/main/skills/outbound/outbound.json`](../../../../hermes/main/skills/outbound/outbound.json) |
 | `web-search-combo.json` | [`hermes/main/skills/web-search/web-search-combo.json`](../../../../hermes/main/skills/web-search/web-search-combo.json) |
 
@@ -14,10 +14,6 @@ Sync:
 bash scripts/main/sync-model-router-skills.sh
 ```
 
-Runtime (`router-worker`) mounts `./hermes/main/skills` → `/opt/data/skills` and sets:
+Runtime (`router-worker`) mounts `./hermes/main/skills` → `/opt/data/skills` and assembles classify parts at load. Bake `classify.json` is self-contained for image COPY.
 
-- `MODEL_ROUTER_CLASSIFY=/opt/data/skills/classify/classify.json`
-- `MODEL_ROUTER_OUTBOUND=/opt/data/skills/outbound/outbound.json`
-- `WEB_SEARCH_COMBO_PATH=/opt/data/skills/web-search/web-search-combo.json`
-
-`heuristic.json` was removed — never loaded by code; keyword NLU belongs in classify LLM prompt, not substring lists.
+`heuristic.json` was removed — never loaded; keyword lists are not classify SoT.

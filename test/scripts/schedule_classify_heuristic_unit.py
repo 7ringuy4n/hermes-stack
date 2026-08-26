@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Schedule heuristic + classify skip HTTP codes."""
+"""Classify skip HTTP + prior strip; LLM JSON is schedule intent SoT (no regex)."""
 from __future__ import annotations
 
 import sys
@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
+sys.path.insert(0, str(ROOT / "test" / "scripts"))
 
 from classify import (  # noqa: E402
     _CLASSIFY_SKIP_HTTP,
@@ -14,8 +15,14 @@ from classify import (  # noqa: E402
     heuristic_plan,
     normalize_plan,
     plan_schema_ok,
-    schedule_heuristic_plan,
     strip_prior_for_classify,
+)
+from classify_fixtures import (  # noqa: E402
+    FIXTURE_EN4,
+    FIXTURE_INFOGRAPHIC_DAILY,
+    FIXTURE_INFOGRAPHIC_VI,
+    FIXTURE_DAILY_LC_TASK,
+    _planner,
 )
 
 
@@ -32,75 +39,123 @@ def main() -> int:
     bare = strip_prior_for_classify(wrapped)
     assert "[Prior conversation]" not in bare
     assert "đặt lịch" in bare
-    raw = schedule_heuristic_plan(bare)
-    assert raw and raw["cron_expr"] == "17 20 * * *", raw
-    plan = normalize_plan(raw, bare, "Asia/Ho_Chi_Minh")
-    assert plan_schema_ok(plan)
-    sys.path.insert(0, str(ROOT / "test" / "scripts"))
-    from classify_fixtures import FIXTURE_EN4, FIXTURE_INFOGRAPHIC_VI, FIXTURE_INFOGRAPHIC_DAILY  # noqa: E402
+    # Classify Python must not phrase-scan schedule/destination/delay.
+    assert heuristic_plan(bare) is None
+    once_llm = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "schedule_form": "once_at",
+            "cadence": "once",
+            "instructions": ["chúc mọi người buổi tối"],
+            "schedule_delivery": "verbatim",
+            "process_original_message": False,
+        },
+        bare,
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_schema_ok(once_llm)
+    assert once_llm.get("schedule_form") == "once_at"
+    assert once_llm.get("cron_expr") in (None, "")
 
-    en4 = normalize_plan(heuristic_plan(FIXTURE_EN4), FIXTURE_EN4, "Asia/Ho_Chi_Minh")
+    en4 = normalize_plan(_planner(FIXTURE_EN4), FIXTURE_EN4, "Asia/Ho_Chi_Minh")
     assert en4["task_hint"] == "tool" and len(en4["instructions"]) == 4, en4
-    info = normalize_plan(heuristic_plan(FIXTURE_INFOGRAPHIC_VI), FIXTURE_INFOGRAPHIC_VI, "Asia/Ho_Chi_Minh")
-    assert info["task_hint"] == "tool" and len(info["instructions"]) == 1, info
+    assert heuristic_plan(FIXTURE_EN4) is None
+    assert heuristic_plan(FIXTURE_INFOGRAPHIC_VI) is None
+    assert heuristic_plan(FIXTURE_INFOGRAPHIC_DAILY) is None
     daily = normalize_plan(
-        heuristic_plan(FIXTURE_INFOGRAPHIC_DAILY), FIXTURE_INFOGRAPHIC_DAILY, "Asia/Ho_Chi_Minh"
+        _planner(FIXTURE_INFOGRAPHIC_DAILY), FIXTURE_INFOGRAPHIC_DAILY, "Asia/Ho_Chi_Minh"
     )
     assert daily["task_hint"] == "schedule" and daily["cron_expr"] == "0 7 * * *", daily
 
-    daily_lc = (
-        "đặt lịch chạy hằng ngày lúc 06:00 vào Zalo LC Group nội dung: "
-        "mô tả 1 bài thơ ngắn 4 dòng về trời xanh gió mát chim hót líu lo chào ngày mới, "
-        "cập nhật giá xăng E5 RON92 và E10 RON95 mới nhất, "
-        "dự báo thời tiết hồ chí minh trong ngày"
-    )
-    raw_lc = schedule_heuristic_plan(daily_lc)
-    assert raw_lc and raw_lc["cron_expr"] == "0 6 * * *", raw_lc
-    assert raw_lc.get("schedule_delivery") == "process", raw_lc
-    assert (raw_lc.get("target_channel") or "").lower() == "lc group", raw_lc
-    # Heuristic does not skill-split (no verb NLU); LLM classify owns multi-instruction.
-    assert len(raw_lc.get("instructions") or []) >= 1, raw_lc
-    plan_lc = normalize_plan(raw_lc, daily_lc, "Asia/Ho_Chi_Minh")
+    daily_lc = FIXTURE_DAILY_LC_TASK
+    assert heuristic_plan(daily_lc) is None
+    plan_lc = normalize_plan(_planner(daily_lc), daily_lc, "Asia/Ho_Chi_Minh")
     assert plan_schema_ok(plan_lc)
     assert plan_lc.get("schedule_delivery") == "process"
     assert (plan_lc.get("target_channel") or "").lower() == "lc group"
+    assert plan_lc.get("cron_expr") == "0 6 * * *"
+    assert len(plan_lc.get("instructions") or []) >= 1
 
     rel = "1 phút nữa gửi vào Zalo LC Group: chào buổi sáng"
-    raw_rel = schedule_heuristic_plan(rel)
-    assert raw_rel and raw_rel.get("schedule_form") == "once_after", raw_rel
-    assert raw_rel.get("delay_seconds") == 60, raw_rel
-    assert not raw_rel.get("cron_expr"), raw_rel
-    plan_rel = normalize_plan(raw_rel, rel, "Asia/Ho_Chi_Minh")
+    assert heuristic_plan(rel) is None
+    plan_rel = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "schedule_form": "once_after",
+            "delay_seconds": 60,
+            "target_channel": "LC group",
+            "schedule_delivery": "process",
+            "instructions": ["chào buổi sáng"],
+            "process_original_message": False,
+        },
+        rel,
+        "Asia/Ho_Chi_Minh",
+    )
     assert plan_schema_ok(plan_rel)
     assert plan_rel.get("delay_seconds") == 60
     assert not plan_rel.get("cron_expr")
+    assert (plan_rel.get("target_channel") or "").lower() == "lc group"
 
     send_me = (
         "1 phút nữa nhắn tôi nội dung: không cần chit chat, "
         "chỉ mô tả sự cô đơn trong im lặng"
     )
-    raw_send = schedule_heuristic_plan(send_me)
-    assert raw_send and raw_send.get("schedule_form") == "once_after", raw_send
-    assert raw_send.get("delay_seconds") == 60, raw_send
-    assert raw_send.get("schedule_delivery") == "verbatim", raw_send
-    assert len(raw_send.get("instructions") or []) == 1, raw_send
-    plan_send = normalize_plan(raw_send, send_me, "Asia/Ho_Chi_Minh")
+    assert heuristic_plan(send_me) is None
+    plan_send = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "schedule_form": "once_after",
+            "delay_seconds": 60,
+            "schedule_delivery": "verbatim",
+            "message": "không cần chit chat, chỉ mô tả sự cô đơn trong im lặng",
+            "instructions": ["không cần chit chat, chỉ mô tả sự cô đơn trong im lặng"],
+            "process_original_message": False,
+        },
+        send_me,
+        "Asia/Ho_Chi_Minh",
+    )
     assert plan_schema_ok(plan_send)
     assert plan_send.get("schedule_delivery") == "verbatim"
+    assert len(plan_send.get("instructions") or []) == 1
 
     group_desc = (
         "1 phút nữa gửi vào Zalo LC Group mô tả sự cô đơn khi không ai biết đến trợ lý"
     )
-    raw_gd = schedule_heuristic_plan(group_desc)
-    assert raw_gd and raw_gd.get("schedule_form") == "once_after", raw_gd
-    assert raw_gd.get("delay_seconds") == 60, raw_gd
-    # No nội dung: marker → process (LLM owns inner body + destination).
-    assert raw_gd.get("schedule_delivery") == "process", raw_gd
-    plan_gd = normalize_plan(raw_gd, group_desc, "Asia/Ho_Chi_Minh")
+    assert heuristic_plan(group_desc) is None
+    plan_gd = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "schedule_form": "once_after",
+            "delay_seconds": 60,
+            "schedule_delivery": "process",
+            "target_channel": "LC group",
+            "instructions": ["mô tả sự cô đơn khi không ai biết đến trợ lý"],
+            "process_original_message": False,
+        },
+        group_desc,
+        "Asia/Ho_Chi_Minh",
+    )
     assert plan_schema_ok(plan_gd)
     assert plan_gd.get("schedule_delivery") == "process"
+    assert (plan_gd.get("target_channel") or "").lower() == "lc group"
 
-    print("OK schedule classify heuristic + prior strip + 400 skip + once_after")
+    no_invent = normalize_plan(
+        {"task_hint": "schedule", "instructions": ["hello"], "cadence": "once"},
+        "hello at 17:57",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert no_invent.get("cron_expr") in (None, "")
+    assert plan_schema_ok(no_invent) is False
+
+    print("OK classify skip + prior strip; LLM JSON schedule SoT; no regex heuristic")
     return 0
 
 
