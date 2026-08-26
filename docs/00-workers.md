@@ -91,12 +91,11 @@ bash run.sh uninstall gateway          # turn API Gateway off
 bash run.sh install traefik            # turn back on
 ```
 
-Runtime / core flags (Omni, 9Router, queue, Qwen, Ollama) — use `add-components` then **`update`** on a running host:
+Runtime / core flags (Omni, 9Router, inbound queue) — use `add-components` then **`update`** on a running host:
 
 ```bash
 bash run.sh add-components ENABLE_9ROUTER=1 --update
 bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
-bash run.sh add-components ENABLE_QWEN=1 OLLAMA_BASE_URL=http://host.docker.internal:11434 OLLAMA_MODEL=qwen3.5:2b-instruct --update
 ```
 
 First deploy only: `bash run.sh up` after editing `.env` secrets (before any workers installed).

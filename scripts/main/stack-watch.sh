@@ -284,14 +284,6 @@ heal_by_health() {
     fi
   fi
 
-  if [[ "${ENABLE_QWEN:-0}" == "1" && -n "${OLLAMA_BASE_URL:-}" ]]; then
-    if ! bash "${ROOT}/scripts/main/ensure-ollama.sh" >/dev/null 2>&1; then
-      log "ollama down while ENABLE_QWEN=1 — ensure-ollama failed"
-      failed=1
-      mark_failed router-worker
-    fi
-  fi
-
   if [[ "$failed" -ne 0 ]]; then
     local fails cooldown_sec
     fails="$(read_fail_count)"

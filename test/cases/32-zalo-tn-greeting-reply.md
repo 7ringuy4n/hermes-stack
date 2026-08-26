@@ -12,7 +12,7 @@ Catch “no response” regressions on short Vietnamese greetings (chat-only, no
 - Bridge logged in, Hermes SSE connected (`sseClients >= 1`)
 - Tn present in `zalo_admin_users.txt` (id|Tn)
 - Omni combo `hermes` has at least one healthy chat model
-- When `ENABLE_QWEN=1`: `QWEN_API_KEY` (or DashScope/Alibaba alias) set and case 38 preflight PASS
+- Case 38 Omni combo preflight PASS
 
 ## Steps
 

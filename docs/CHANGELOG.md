@@ -1,3 +1,8 @@
+## 2026-08-26 09:25 +07 — Leftover local-LLM operator path removed
+
+- Chat and classify already default to Omni OpenCode, but operator scripts and docs still documented turning a local LLM path back on.
+- That enable path is gone from compose, add-components, stack-watch, and post-lab restore. first-setup still clears leftover env pins and leftover Omni Ollama/Qwen connections. Live OpenCode-family combo members (`oc/*`, `opencode/*`, `opencode-go/*`) stay; only non-OpenCode leftovers are stripped.
+
 ## 2026-08-26 08:40 +07 — Office shortcut no longer dies on Zalo send timeout
 
 - Dispatcher office-file waited on bridge send (90s) while the Hermes shortcut aborted at 45s, then a text fallback ran.
