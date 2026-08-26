@@ -1,3 +1,8 @@
+## 2026-08-26 16:55 +07 — Secret-probe policy uses one empty block_patterns list
+
+- Separate input/output marker lists duplicated an unused keyword gate after classify already owned soft secret intent.
+- Policy and probe modules use a single `block_patterns` field (default empty). Soft secret/env intent stays classify-owned.
+
 ## 2026-08-26 16:50 +07 — Secret/env intent is classify-owned; knowledge-learn skips on refuse; scrub plaintext env
 
 - Soft secret/env asks and file captions were gated by growing keyword lists in secret-probe policy, and Knowledge pending-approval could still fire after a refuse. Host `.env` / `.env.openbao` exports could remain after deploy or restore.

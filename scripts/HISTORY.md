@@ -1,3 +1,17 @@
+## 2026-08-26 16:55 +07 — Dual secret-probe marker lists collapsed
+
+### Symptom
+Policy still carried separate input and output marker arrays after soft intent moved to classify.
+
+### Root cause
+Schema kept two lists for a gate that is classify-owned and empty by default.
+
+### Fix (core)
+Single `block_patterns` (default empty) in secret-probe policy and probe/ingest readers.
+
+### Prevent recurrence
+Do not reintroduce input/output keyword dictionaries for soft secret intent — strengthen classify.
+
 ## 2026-08-26 16:50 +07 — Secret file ask still opened knowledge-learn; probe keywords grew
 
 ### Symptom

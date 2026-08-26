@@ -7,8 +7,9 @@ Keep in sync with hermes/main/plugins/zalo/secret_probe.py and
 architect/gateway/api-gateway/secret_probe.py.
 
 No embedded deny lists. No regex. Soft secret/env intent is owned by
-classify (intent_owner=classify). Optional literal markers may be empty.
-Missing/unreadable policy when SECRET_PROBE_POLICY is set → fail closed.
+classify (intent_owner=classify). Optional literal markers live in one
+block_patterns list (default empty). Missing/unreadable policy when
+SECRET_PROBE_POLICY is set → fail closed.
 """
 from __future__ import annotations
 
@@ -42,8 +43,7 @@ def _policy_candidates() -> list[Path]:
 
 
 _policy: dict[str, Any] | None = None
-_input_markers: list[str] = []
-_output_markers: list[str] = []
+_block_markers: list[str] = []
 _policy_ok: bool = False
 _classify_owned: bool = False
 
@@ -59,6 +59,24 @@ def _normalize_markers(items: Any) -> list[str]:
     return out
 
 
+def _markers_from_policy(data: dict[str, Any]) -> list[str]:
+    """Single block_patterns list. Legacy input/output keys merge if present."""
+    primary = _normalize_markers(data.get("block_patterns"))
+    if primary or "block_patterns" in data:
+        return primary
+    # Backward compat until all copies use block_patterns.
+    merged: list[str] = []
+    seen: set[str] = set()
+    for key in ("input_block_patterns", "output_block_patterns"):
+        for m in _normalize_markers(data.get(key)):
+            k = m.casefold()
+            if k in seen:
+                continue
+            seen.add(k)
+            merged.append(m)
+    return merged
+
+
 def _read_policy_file(path: Path) -> dict[str, Any] | None:
     try:
         raw = path.read_text(encoding="utf-8")
@@ -72,15 +90,19 @@ def _read_policy_file(path: Path) -> dict[str, Any] | None:
         return None
     if not isinstance(data, dict):
         return None
-    # Valid when schema present even if marker lists are empty (classify-owned).
-    if not (data.get("schema") or data.get("intent_owner") is not None
-            or "input_block_patterns" in data or "output_block_patterns" in data):
+    if not (
+        data.get("schema")
+        or data.get("intent_owner") is not None
+        or "block_patterns" in data
+        or "input_block_patterns" in data
+        or "output_block_patterns" in data
+    ):
         return None
     return data
 
 
 def _load_policy() -> None:
-    global _policy, _input_markers, _output_markers, _policy_ok, _classify_owned
+    global _policy, _block_markers, _policy_ok, _classify_owned
     if _policy is not None:
         return
     data: dict[str, Any] | None = None
@@ -94,27 +116,22 @@ def _load_policy() -> None:
         break
     if data is None:
         _policy = {}
-        _input_markers = []
-        _output_markers = []
+        _block_markers = []
         _policy_ok = False
         _classify_owned = False
         return
     _policy = data
-    _input_markers = _normalize_markers(data.get("input_block_patterns"))
-    _output_markers = _normalize_markers(data.get("output_block_patterns"))
+    _block_markers = _markers_from_policy(data)
     owner = str(data.get("intent_owner") or "").strip().casefold()
-    _classify_owned = owner in {"classify", "llm", "nlu"} or (
-        not _input_markers and not _output_markers
-    )
+    _classify_owned = owner in {"classify", "llm", "nlu"} or (not _block_markers)
     _policy_ok = True
 
 
 def reload_policy() -> None:
     """Clear cache (tests / after admin edits)."""
-    global _policy, _input_markers, _output_markers, _policy_ok, _classify_owned
+    global _policy, _block_markers, _policy_ok, _classify_owned
     _policy = None
-    _input_markers = []
-    _output_markers = []
+    _block_markers = []
     _policy_ok = False
     _classify_owned = False
 
@@ -136,11 +153,10 @@ def probe(text: str, *, direction: Literal["input", "output"] = "input") -> dict
     blob = (text or "").strip()
     if not blob:
         return {"status": "SAFE", "reason": None}
-    markers = _output_markers if direction == "output" else _input_markers
-    if not markers:
-        # Classify/skills own soft secret intent — no keyword gate.
+    if not _block_markers:
         return {"status": "SAFE", "reason": "CLASSIFY_OWNED" if _classify_owned else None}
-    if _marker_hit(blob, markers, casefold=(direction == "input")):
+    # Same marker list for input and output when using block_patterns.
+    if _marker_hit(blob, _block_markers, casefold=(direction == "input")):
         return {"status": "BLOCKED", "reason": "SECRET_POLICY"}
     return {"status": "SAFE", "reason": None}
 
