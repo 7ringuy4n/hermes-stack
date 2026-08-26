@@ -302,6 +302,7 @@ from attachment import (  # noqa: E402
     context_merge,
     context_newest,
     file_extract_ack_message,
+    archive_password_ack_message,
     image_ocr_ack_message,
     quoted_context_snip,
     extract_media_from_quote,
@@ -3837,7 +3838,20 @@ class ZaloAdapter(BasePlatformAdapter):
                 or (
                     len(tokens) == 1
                     and tokens[0].lower().endswith(
-                        (".xlsx", ".xls", ".docx", ".doc", ".pdf", ".txt", ".csv")
+                        (
+                            ".xlsx",
+                            ".xls",
+                            ".docx",
+                            ".doc",
+                            ".pdf",
+                            ".txt",
+                            ".csv",
+                            ".zip",
+                            ".7z",
+                            ".rar",
+                            ".tar",
+                            ".tgz",
+                        )
                     )
                 )
             )
@@ -3852,7 +3866,11 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
             )
             extract_task = asyncio.create_task(
-                self._as_attachment_text(media_urls[0], attach_name)
+                self._as_attachment_text(
+                    media_urls[0],
+                    attach_name,
+                    caption=str(text or ""),
+                )
             )
         elif isinstance(media, dict) and media.get("url") and not media_urls:
             logger.warning("Zalo: media download empty %s", media.get("fileName") or "file")
@@ -3895,9 +3913,41 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception as e:
                 logger.warning("Zalo: attachment read failed: %s", type(e).__name__)
                 excerpt = ""
-            # Office/text SoT is ingest/OCR workers — never pass binaries to Hermes
-            # (local docx/terminal/zipfile forensics). Whitespace-only = blank.
             attach_kind = attachment_kind(attach_name)
+            if excerpt in {"__AS_ARCHIVE_PASSWORD__", "__AS_ARCHIVE_BAD_PASSWORD__"}:
+                bad = excerpt == "__AS_ARCHIVE_BAD_PASSWORD__"
+                ack = archive_password_ack_message(attach_name, bad=bad)
+                self._as_flow(
+                    "attach_archive_password",
+                    file=attach_name,
+                    thread_id=thread_id,
+                    bad=bad,
+                )
+                try:
+                    await self.send(
+                        chat_id=str(thread_id),
+                        content=ack,
+                        metadata={
+                            "thread_type": "group" if thread_type == "group" else "user",
+                            "as_skip_timing": True,
+                            "as_skip_autosend": True,
+                            "as_skip_dest": True,
+                            "skip_outbound_filter": True,
+                        },
+                    )
+                except Exception as e:
+                    logger.warning("Zalo: archive password ack failed: %s", type(e).__name__)
+                try:
+                    self._as_inflight_done(str(thread_id), {})
+                except Exception:
+                    pass
+                try:
+                    self._as_queue_kick(str(thread_id))
+                except Exception:
+                    pass
+                return
+            # Office/text/archive SoT is ingest/OCR workers — never pass binaries to Hermes
+            # (local docx/terminal/zipfile forensics). Whitespace-only = blank.
             excerpt_meaningful = self._as_meaningful_learn_text(excerpt or "")
             excerpt_for_prompt = excerpt if excerpt_meaningful else ""
             if excerpt_meaningful:
@@ -3910,7 +3960,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     attach_name,
                     f"[Attached file: {attach_name}]",
                 )
-            if attach_kind in {"office", "text"}:
+            if attach_kind in {"office", "text", "archive"}:
                 # Worker extract already ran; strip paths so Hermes cannot open the package.
                 media_urls = []
                 media_types = []
@@ -3935,12 +3985,12 @@ class ZaloAdapter(BasePlatformAdapter):
                 len(excerpt_for_prompt),
                 attach_kind,
             )
-            # Bare attachment OR blank office/text: deterministic worker extract ack.
+            # Bare attachment OR blank office/text/archive: deterministic worker extract ack.
             # Do not wait on the agent — Omni capacity-busy 503 left users silent
             # after Knowledge-pending while csv/xlsx/mp4 never got a content reply.
-            # Blank docx must not fall through to Hermes local docx/terminal tools.
+            # Blank docx / empty zip must not fall through to Hermes local tools.
             host_ack = attach_bare or (
-                attach_kind in {"office", "text"} and not excerpt_meaningful
+                attach_kind in {"office", "text", "archive"} and not excerpt_meaningful
             )
             if host_ack:
                 # Short file body that is itself a secret/env ask → refuse (risk txt).
@@ -5239,10 +5289,67 @@ class ZaloAdapter(BasePlatformAdapter):
             return ""
         return str(data.get("text") or data.get("markdown") or data.get("transcript") or "").strip()
 
-    async def _as_attachment_text(self, local_path: str, file_name: str = "") -> str:
+    def _as_archive_password_from_caption(self, text: str) -> str:
+        """Optional archive password from caption prefixes (not intent regex)."""
+        raw = str(text or "").strip()
+        if not raw:
+            return ""
+        low = raw.casefold()
+        for prefix in (
+            "password:",
+            "password :",
+            "pw:",
+            "pwd:",
+            "mật khẩu:",
+            "mat khau:",
+            "matkhau:",
+        ):
+            if low.startswith(prefix):
+                return raw[len(prefix) :].strip()
+        return ""
+
+    async def _as_archive_worker_text(
+        self, url: str, payload: dict, *, timeout_s: float
+    ) -> str:
+        """Like _as_worker_text but maps archive password/errors to sentinels."""
+        import aiohttp
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=timeout_s)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, json=payload) as resp:
+                    body = await resp.text()
+                    if resp.status >= 300:
+                        self._as_flow(
+                            "attach_worker_fail",
+                            url=url,
+                            status=resp.status,
+                        )
+                        if resp.status == 404:
+                            return "__AS_WORKER_404__"
+                        return ""
+            data = json.loads(body or "{}")
+        except Exception as e:
+            self._as_flow("attach_worker_error", url=url, error=type(e).__name__)
+            return ""
+        if not isinstance(data, dict):
+            return ""
+        reason = str(data.get("reason") or "").strip()
+        if reason == "password_required":
+            return "__AS_ARCHIVE_PASSWORD__"
+        if reason == "bad_password":
+            return "__AS_ARCHIVE_BAD_PASSWORD__"
+        if reason in {"unsupported", "bad_archive"} and not data.get("ok"):
+            return ""
+        return str(data.get("text") or data.get("markdown") or data.get("transcript") or "").strip()
+
+    async def _as_attachment_text(
+        self, local_path: str, file_name: str = "", *, caption: str = ""
+    ) -> str:
         """Readable text for one inbound file, routed to the worker that owns it.
 
         text  → read locally · ocr → OCR worker · office → Ingest worker
+        archive → Ingest `/v1/extract-archive` (media members only; optional password)
         av    → Media worker `/v1/media/text` (transcript + keyframe OCR)
         """
         import os
@@ -5295,6 +5402,18 @@ class ZaloAdapter(BasePlatformAdapter):
                     f"{ingest_url}/v1/extract-text",
                     {"path": worker_path, "max_chars": ATTACHMENT_TEXT_CHARS},
                     timeout_s=ATTACHMENT_OFFICE_TIMEOUT_S,
+                )
+            case "archive":
+                # Zip/7z/rar/tar → media members only. Never Hermes terminal unzip.
+                ingest_url = (os.getenv("INGEST_URL") or "http://ingest:8099").rstrip("/")
+                payload: dict = {"path": worker_path, "max_chars": ATTACHMENT_TEXT_CHARS}
+                pwd = self._as_archive_password_from_caption(caption)
+                if pwd:
+                    payload["password"] = pwd
+                text = await self._as_archive_worker_text(
+                    f"{ingest_url}/v1/extract-archive",
+                    payload,
+                    timeout_s=max(ATTACHMENT_OFFICE_TIMEOUT_S, 90.0),
                 )
             case "av":
                 media_url = (
@@ -5410,6 +5529,13 @@ class ZaloAdapter(BasePlatformAdapter):
                 "Nói thẳng một dòng là chưa đọc được nội dung media và hỏi user muốn xử lý gì "
                 "(tóm tắt khi bật transcript, tách âm thanh, lấy khung hình). "
                 "Cấm nói đã tóm tắt, cấm hỏi user dán nội dung."
+            )
+        if kind == "archive":
+            return (
+                f"[Tin kèm archive: {file_name}]\n"
+                "Archive không có media để đọc (chỉ xử lý ảnh/pdf/office/text/av; bỏ file khác "
+                "và archive lồng nhau). Nói ngắn và hỏi user gửi lại đúng media. "
+                "Cấm terminal/unzip/zipfile forensics."
             )
         return (
             f"[Tin kèm file: {file_name}]\n"

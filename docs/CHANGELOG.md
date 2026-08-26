@@ -1,3 +1,13 @@
+## 2026-08-26 19:40 +07 — Archives (zip/7z/rar/tar) extract media only; password asked, never forced
+
+- Compressed chat attachments (zip/7z/rar/tar) needed a worker path that expands only media and handles password-protected packs without Hermes terminal unzip.
+- Ingest `/v1/extract-archive` supports zip/7z/rar/tar with optional password; media members only; nested archives skipped. Host routes archive kinds there, asks for password when required, strips archive paths before Hermes. Classify: media_file reads; never brute-force passwords.
+
+## 2026-08-26 19:35 +07 — Zip attachments extract media members only via ingest
+
+- Compressed chat attachments could fall through to Hermes terminal/unzip, or expand non-media payloads.
+- Ingest `/v1/extract-archive` unpacks zip and processes media members only (skip nested archives and non-media). Host routes `.zip` through that worker, strips archive paths before Hermes, and acks empty archives. Classify/SOUL/worker-routing: archives are media_file reads — media only.
+
 ## 2026-08-26 19:20 +07 — Blank office attachments use ingest extract ack, not Hermes docx tools
 
 - Bare or blank `.docx`/office chats could still reach Hermes with a local file path, so the agent used the local docx skill / terminal / zipfile and replied with package forensics.

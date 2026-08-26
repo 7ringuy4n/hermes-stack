@@ -15,6 +15,8 @@ AV_EXTS = (
     ".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi",
     ".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".flac",
 )
+ARCHIVE_EXTS = (".zip", ".7z", ".rar", ".tar", ".tgz")
+
 
 TEXT_CHARS = 20000
 CONTEXT_CHARS = 8000
@@ -27,7 +29,7 @@ _WORKER_MEDIA_ROOT = "/data/media/"
 
 
 def attachment_kind(file_name: str) -> str:
-    """Which worker can read this file: text | ocr | office | av | none."""
+    """Which worker can read this file: text | ocr | office | av | archive | none."""
     low = (file_name or "").lower()
     if low.endswith(TEXT_EXTS):
         return "text"
@@ -37,6 +39,10 @@ def attachment_kind(file_name: str) -> str:
         return "office"
     if low.endswith(AV_EXTS):
         return "av"
+    if low.endswith((".tar.gz", ".tar.bz2", ".tar.xz")):
+        return "archive"
+    if low.endswith(ARCHIVE_EXTS):
+        return "archive"
     return "none"
 
 
@@ -409,6 +415,21 @@ def image_ocr_ack_message(excerpt: str, *, max_chars: int = 1800) -> str:
     )
 
 
+def archive_password_ack_message(file_name: str, *, bad: bool = False) -> str:
+    """Ask the user for an archive password — never attempt brute force."""
+    name = (file_name or "archive").strip() or "archive"
+    if bad:
+        return (
+            f"Mật khẩu không đúng cho archive `{name}`. "
+            "Gửi lại file kèm mật khẩu đúng trong caption (ví dụ: `password: ...`)."
+        )
+    return (
+        f"Archive `{name}` đang được bảo vệ bằng mật khẩu. "
+        "Gửi lại kèm mật khẩu trong caption (ví dụ: `password: ...`). "
+        "Chỉ giải nén file media bên trong — không mở file khác."
+    )
+
+
 def file_extract_ack_message(
     file_name: str,
     excerpt: str,
@@ -437,6 +458,11 @@ def file_extract_ack_message(
                 f"Đã nhận file `{name}`. File trống — không có nội dung chữ để trích xuất. "
                 "Gửi file có nội dung hoặc nói rõ bạn muốn mình làm gì tiếp."
             )
+        if k == "archive":
+            return (
+                f"Đã nhận archive `{name}`. Không có media (ảnh/pdf/office/text/av) bên trong "
+                "để đọc — chỉ xử lý file media, bỏ qua file khác và archive lồng nhau."
+            )
         return (
             f"Đã nhận file `{name}`. Chưa đọc được nội dung. "
             "Gửi lại hoặc đổi định dạng giúp mình."
@@ -445,6 +471,8 @@ def file_extract_ack_message(
         body = body[:max_chars].rstrip() + "…"
     if k == "av":
         head = f"Đã đọc media `{name}` (transcript / chữ trên khung hình):"
+    elif k == "archive":
+        head = f"Đã giải nén `{name}` (chỉ media):"
     else:
         head = f"Đã đọc file `{name}`:"
     return (
