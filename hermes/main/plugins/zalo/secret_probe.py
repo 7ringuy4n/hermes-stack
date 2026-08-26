@@ -4,54 +4,26 @@ Statuses: SAFE | BLOCKED | REVIEW
 Never treat SECRET as a task_hint. Do not return or log raw secrets.
 Policy file: config/agent/secret-probe.json (SECRET_PROBE_POLICY).
 Keep in sync with architect/security/secret-probe/probe.py.
+
+No embedded deny lists. No regex. Markers come only from the policy file.
+Missing/empty policy → fail closed (BLOCKED).
 """
 from __future__ import annotations
 
 import json
 import os
-import re
 from pathlib import Path
 from typing import Any, Literal
 
 Status = Literal["SAFE", "BLOCKED", "REVIEW"]
-
-# Last-resort defaults if every policy file is missing/empty (fail closed for common paths).
-_DEFAULT_INPUT = (
-    "secret",
-    "password",
-    "passwd",
-    "credentials",
-    ".env",
-    "env file",
-    "file env",
-    "environment file",
-    "file môi trường",
-    "file moi truong",
-    "api_key",
-    "private key",
-    "private_key",
-    "/opt/assistant",
-    "/opt/data",
-    "/data/assistant",
-    "/etc/shadow",
-    "openbao",
-)
-_DEFAULT_OUTPUT = (
-    "sk-",
-    "tvly-",
-    "BEGIN PRIVATE KEY",
-    "BEGIN OPENSSH PRIVATE KEY",
-    "OPENBAO_DEV_ROOT_TOKEN",
-    "HERMES_DASHBOARD_PASSWORD",
-    "N9ROUTER_INITIAL_PASSWORD",
-)
 
 
 def _policy_candidates() -> list[Path]:
     out: list[Path] = []
     env = (os.environ.get("SECRET_PROBE_POLICY") or "").strip()
     if env:
-        out.append(Path(env))
+        # Explicit override: only this path (missing → fail closed).
+        return [Path(env)]
     out.extend(
         (
             Path("/opt/data/secret-probe.json"),
@@ -69,15 +41,20 @@ def _policy_candidates() -> list[Path]:
 
 
 _policy: dict[str, Any] | None = None
-_input_re: re.Pattern[str] | None = None
-_output_re: re.Pattern[str] | None = None
+_input_markers: list[str] = []
+_output_markers: list[str] = []
+_policy_ok: bool = False
 
 
-def _compile_list(items: list[str]) -> re.Pattern[str] | None:
-    parts = [re.escape(str(x).strip()) for x in items if str(x).strip()]
-    if not parts:
-        return None
-    return re.compile("|".join(parts), re.I)
+def _normalize_markers(items: Any) -> list[str]:
+    out: list[str] = []
+    if not isinstance(items, list):
+        return out
+    for x in items:
+        s = str(x or "").strip()
+        if s:
+            out.append(s)
+    return out
 
 
 def _read_policy_file(path: Path) -> dict[str, Any] | None:
@@ -93,18 +70,18 @@ def _read_policy_file(path: Path) -> dict[str, Any] | None:
         return None
     if not isinstance(data, dict):
         return None
-    inputs = data.get("input_block_patterns") or []
-    outputs = data.get("output_block_patterns") or []
+    inputs = _normalize_markers(data.get("input_block_patterns"))
+    outputs = _normalize_markers(data.get("output_block_patterns"))
     if not inputs and not outputs:
         return None
     return data
 
 
-def _load_policy() -> dict[str, Any]:
-    global _policy, _input_re, _output_re
+def _load_policy() -> None:
+    global _policy, _input_markers, _output_markers, _policy_ok
     if _policy is not None:
-        return _policy
-    data: dict[str, Any] = {}
+        return
+    data: dict[str, Any] | None = None
     for p in _policy_candidates():
         if not p.is_file():
             continue
@@ -113,36 +90,48 @@ def _load_policy() -> dict[str, Any]:
             continue
         data = loaded
         break
-    if not data:
-        data = {
-            "schema": "assistant-secret-probe-v1",
-            "input_block_patterns": list(_DEFAULT_INPUT),
-            "output_block_patterns": list(_DEFAULT_OUTPUT),
-        }
+    if data is None:
+        _policy = {}
+        _input_markers = []
+        _output_markers = []
+        _policy_ok = False
+        return
     _policy = data
-    _input_re = _compile_list(list(data.get("input_block_patterns") or []))
-    _output_re = _compile_list(list(data.get("output_block_patterns") or []))
-    return data
+    _input_markers = _normalize_markers(data.get("input_block_patterns"))
+    _output_markers = _normalize_markers(data.get("output_block_patterns"))
+    _policy_ok = bool(_input_markers or _output_markers)
 
 
 def reload_policy() -> None:
     """Clear cache (tests / after admin edits)."""
-    global _policy, _input_re, _output_re
+    global _policy, _input_markers, _output_markers, _policy_ok
     _policy = None
-    _input_re = None
-    _output_re = None
+    _input_markers = []
+    _output_markers = []
+    _policy_ok = False
+
+
+def _marker_hit(blob: str, markers: list[str], *, casefold: bool) -> bool:
+    hay = blob.casefold() if casefold else blob
+    for marker in markers:
+        needle = marker.casefold() if casefold else marker
+        if needle and needle in hay:
+            return True
+    return False
 
 
 def probe(text: str, *, direction: Literal["input", "output"] = "input") -> dict[str, Any]:
     """Return {status, reason}. Never includes the source text."""
     _load_policy()
+    if not _policy_ok:
+        return {"status": "BLOCKED", "reason": "POLICY_MISSING"}
     blob = (text or "").strip()
     if not blob:
         return {"status": "SAFE", "reason": None}
-    pat = _output_re if direction == "output" else _input_re
-    if pat is None:
-        return {"status": "SAFE", "reason": None}
-    if pat.search(blob.lower() if direction == "input" else blob):
+    markers = _output_markers if direction == "output" else _input_markers
+    if not markers:
+        return {"status": "BLOCKED", "reason": "POLICY_MISSING"}
+    if _marker_hit(blob, markers, casefold=(direction == "input")):
         return {"status": "BLOCKED", "reason": "SECRET_POLICY"}
     return {"status": "SAFE", "reason": None}
 

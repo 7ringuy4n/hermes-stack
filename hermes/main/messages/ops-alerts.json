@@ -10,5 +10,6 @@
   "openvpn_disabled": "OpenVPN is off. Set ENABLE_OPENVPN=1, then export a client profile.",
   "openvpn_not_ready": "OpenVPN container is not ready. Initialize PKI before client export.",
   "media_gen_failed": "Could not generate media. Try a simpler request or try again later.",
-  "no_model_available": "No model available. Check 9router / OmniRouter / fallback providers."
+  "no_model_available": "No model available. Check 9router / OmniRouter / fallback providers.",
+  "secret_probe_policy_missing": "Secret-probe policy file is missing or empty. Requests that need the policy are refused until it is restored."
 }
