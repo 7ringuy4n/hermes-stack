@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Office body + text-poster phrase extraction (Dispatcher) + classify-gated shortcut."""
+"""Office body + text-poster from classify JSON fields (no prose regex)."""
 from __future__ import annotations
 
 import sys
@@ -14,23 +14,29 @@ from office_file import (  # noqa: E402
     parse_office,
     parse_office_jobs,
 )
-from classify_client import plan_allows_office_shortcut, plan_skips_media_shortcut  # noqa: E402
+from classify_client import (  # noqa: E402
+    plan_allows_office_shortcut,
+    plan_allows_poster_shortcut,
+    plan_skips_media_shortcut,
+)
 from text_poster import parse_text_poster  # noqa: E402
 
 
 def main() -> int:
-    ext, body = parse_office("tạo 1 file pdf và điền vào số 1")
+    ext, body = parse_office("1", "pdf")
     assert ext == ".pdf" and body == "1", (ext, body)
-    ext, body = parse_office("tạo file PDF chỉ chứa số 1")
-    assert ext == ".pdf" and body == "1", (ext, body)
-    ext, body = parse_office("tạo 1 file pdf điền số 1 gửi cho tôi")
-    assert ext == ".pdf" and body == "1", (ext, body)
+    ext, body = parse_office("hello", "txt")
+    assert ext == ".txt" and body == "hello", (ext, body)
+    # Host must not extract kind/body from Vietnamese wrappers.
+    wrapped = "tạo 1 file pdf và điền vào số 1"
+    ext, body = parse_office(wrapped, "")
+    assert ext == ".txt" and body == wrapped, (ext, body)
 
     compound = (
         "tạo 1 file pdf chứa số 1 và gửi cho tôi, sau đó tạo 1 file text "
         "chứa số 1  cũng gửi cho tôi"
     )
-    assert is_compound_office_request(compound) is True
+    assert is_compound_office_request(compound) is False
     # Host shortcut requires classify JSON — compound multi-instruction skips.
     assert plan_allows_office_shortcut(
         {
@@ -41,14 +47,13 @@ def main() -> int:
         }
     ) is False
 
-    same_kind = "tạo pdf chứa 1 sau đó tạo pdf chứa 2"
-    assert is_compound_office_request(same_kind) is False
     assert plan_allows_office_shortcut(
         {
             "ok": True,
             "task_hint": "file",
             "task_type": "file_processing",
-            "instructions": ["tạo 1 file pdf chứa số 1 và gửi cho tôi"],
+            "output_type": "pdf",
+            "instructions": ["1"],
         }
     ) is True
     weather_pdf = {
@@ -60,16 +65,15 @@ def main() -> int:
     }
     assert plan_skips_media_shortcut(weather_pdf) is True
     assert plan_allows_office_shortcut(weather_pdf) is False
-    assert parse_office(compound) == (".pdf", "1"), parse_office(compound)
-    assert parse_office_jobs(compound) == [parse_office(compound)], parse_office_jobs(compound)
+    assert parse_office_jobs("1", "pdf") == [(".pdf", "1")]
 
-    spec = parse_text_poster("vẽ hình ảnh điền vào 5 dòng hello và gửi cho tôi")
+    assert parse_text_poster("vẽ hình ảnh điền vào 5 dòng hello và gửi cho tôi") is None
+    spec = parse_text_poster(phrase="hello", n=5, bw=False)
     assert spec and spec["n"] == 5 and spec["phrase"].lower() == "hello", spec
-    spec = parse_text_poster("vẽ hình ảnh điền vào 5 dòng hello")
-    assert spec and spec["phrase"].lower() == "hello", spec
+    assert plan_allows_poster_shortcut(
+        {"ok": True, "poster_n": 5, "poster_phrase": "hello", "task_hint": "tool"}
+    ) is True
 
-    # Real poster still parses on Dispatcher; schedule plans skip host office shortcut.
-    assert parse_text_poster('vẽ poster 5 dòng chữ "KHÁT QUÁ"')
     daily_sched = {
         "ok": True,
         "task_hint": "schedule",
@@ -96,14 +100,13 @@ def main() -> int:
     assert plan_allows_office_shortcut(img_txt) is False
 
     soul = (ROOT / "hermes" / "main" / "SOUL.md").read_text(encoding="utf-8")
-    import re
-
-    if re.search(r"do\s+not\s+tell\s+the\s+user", soul, re.I):
+    needle = "do not tell the user"
+    if needle in soul.lower():
         print("FAIL SOUL still has deception_hide trigger phrase", file=sys.stderr)
         return 1
     import session_memory  # noqa: F401
 
-    print("OK office/poster/soul/session units")
+    print("OK office/poster from classify JSON + soul/session")
     return 0
 
 

@@ -3,24 +3,50 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from typing import Any
 
 ZALO_SCHEDULE_LIST_LIMIT = max(1, int(os.environ.get("ZALO_SCHEDULE_LIST_LIMIT", "10") or "10"))
-_SCHEDULE_INTERNAL_RE = re.compile(
-    r"daily[-_]?optimize|optimize[-_]?rules|new.?session|rotate.?session|clearsession",
-    re.I,
+_INTERNAL_MARKS = (
+    "daily-optimize",
+    "optimize-rules",
+    "new-session",
+    "rotate-session",
+    "clearsession",
 )
-_CRON_SESSION_RE = re.compile(r"cron_[a-z0-9_-]+", re.I)
-_EMPTY_CRON_RE = re.compile(r"^\s*no scheduled jobs?\b", re.I)
-_CLOCK_PROMPT_RE = re.compile(
-    r"^(?:timer|hẹn\s*giờ|hen\s*gio|lúc|luc|at)\s+",
-    re.I,
-)
-_HHMM_PROMPT_RE = re.compile(
-    r"^\d{1,2}\s*[:h]\s*\d{2}(?:\s*(?:am|pm|sáng|sang|chiều|chieu|tối|toi))?\s*$",
-    re.I,
-)
+
+
+def _is_internal_text(s: str) -> bool:
+    low = (s or "").lower().replace("_", "-")
+    return any(m in low for m in _INTERNAL_MARKS)
+
+
+def _redact_cron_session(line: str) -> str:
+    out: list[str] = []
+    i = 0
+    low = line.lower()
+    while True:
+        j = low.find("cron_", i)
+        if j < 0:
+            out.append(line[i:])
+            break
+        out.append(line[i:j])
+        k = j + 5
+        while k < len(line) and (line[k].isalnum() or line[k] in "_-"):
+            k += 1
+        out.append("(session)")
+        i = k
+        low = line.lower()
+    return "".join(out)
+
+
+def _redact_paths(line: str) -> str:
+    bits: list[str] = []
+    for tok in line.split(" "):
+        if tok.startswith("/opt/") or tok.startswith("/data/"):
+            bits.append("(path)")
+        else:
+            bits.append(tok)
+    return " ".join(bits)
 
 
 def cron_expr_clock(expr: str) -> str:
@@ -48,8 +74,31 @@ def schedule_clock_label(schedule: Any) -> str:
 
 
 def prompt_is_clock_only(text: str) -> bool:
-    t = _CLOCK_PROMPT_RE.sub("", (text or "").strip()).strip()
-    return bool(t) and bool(_HHMM_PROMPT_RE.match(t))
+    """True when the stored prompt is only a digit clock (optional CLI prefix)."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    tokens = t.split(None, 1)
+    if tokens[0].lower() in {"timer", "time", "schedule"} and len(tokens) > 1:
+        t = tokens[1].strip()
+    raw = t.lower().replace(" ", "")
+    for ch in raw:
+        if ch not in "0123456789:h":
+            return False
+    clock = raw.replace("h", ":", 1) if "h" in raw and ":" not in raw else raw.replace("h", ":")
+    if clock.count(":") != 1:
+        return False
+    left, right = clock.split(":", 1)
+    if not left.isdigit():
+        return False
+    if right == "":
+        minute = 0
+    elif right.isdigit() and len(right) <= 2:
+        minute = int(right)
+    else:
+        return False
+    hour = int(left)
+    return 0 <= hour <= 23 and 0 <= minute <= 59
 
 
 def schedule_destination_label(row: dict[str, Any]) -> str:
@@ -82,19 +131,18 @@ def schedule_destination_label(row: dict[str, Any]) -> str:
 def schedule_row_label(row: Any) -> str | None:
     if isinstance(row, str):
         line = row.strip()
-        if not line or _EMPTY_CRON_RE.match(line):
+        if not line or line.lower().startswith("no scheduled job"):
             return None
         if line.lower().startswith("create one with"):
             return None
-        if _SCHEDULE_INTERNAL_RE.search(line):
+        if _is_internal_text(line):
             return None
-        line = _CRON_SESSION_RE.sub("(session)", line)
-        line = re.sub(r"/(?:opt|data)/[^\s]+", "(path)", line)
+        line = _redact_paths(_redact_cron_session(line))
         return line[:240]
     if not isinstance(row, dict):
         return None
     name = str(row.get("name") or row.get("id") or row.get("job_id") or "").strip()
-    if not name or _SCHEDULE_INTERNAL_RE.search(name):
+    if not name or _is_internal_text(name):
         return None
     schedule = schedule_clock_label(
         row.get("schedule")
@@ -113,7 +161,7 @@ def schedule_row_label(row: Any) -> str | None:
         or row.get("description")
         or ""
     ).strip()
-    payload = re.sub(r"\s+", " ", payload)[:120]
+    payload = " ".join(payload.split())[:120]
     dest = schedule_destination_label(row)
     bits = [name]
     if schedule:
@@ -132,8 +180,9 @@ def fmt_hermes_cron_list(
     title = (heading or "lịch Hermes").strip() or "lịch Hermes"
     text = (raw or "").strip()
     if not text or text.lower().startswith("(no hermes cron"):
-        return "Lịch trống hoặc không đọc được (Hermes chưa sẵn sàng)."
-    if _EMPTY_CRON_RE.search(text.splitlines()[0] if text.splitlines() else text):
+        return "Lịch trống hoặc không đọc được."
+    first = (text.splitlines()[0] if text.splitlines() else text).strip().lower()
+    if first.startswith("no scheduled job"):
         return "Lịch trống (chưa có lịch nào)."
     rows: list[str] = []
     parsed: Any = None
