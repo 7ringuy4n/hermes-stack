@@ -1560,7 +1560,13 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_delivery_mode,
                 schedule_enabled,
             )
-            from .classify_client import classify_text, plan_compound_sequential, plan_is_async, plan_is_immediate_deliver
+            from .classify_client import (
+                classify_text,
+                plan_compound_sequential,
+                plan_is_async,
+                plan_is_host_direct_reply,
+                plan_is_immediate_deliver,
+            )
             from .classify_client import strip_prior_for_classify
             from .knowledge_cite import plan_is_knowledge
         except ImportError:
@@ -1571,7 +1577,13 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_delivery_mode,
                 schedule_enabled,
             )
-            from classify_client import classify_text, plan_compound_sequential, plan_is_async, plan_is_immediate_deliver  # type: ignore
+            from classify_client import (  # type: ignore
+                classify_text,
+                plan_compound_sequential,
+                plan_is_async,
+                plan_is_host_direct_reply,
+                plan_is_immediate_deliver,
+            )
             from classify_client import strip_prior_for_classify  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
         if received_at is None:
@@ -1589,6 +1601,27 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan.get("error"),
             )
             return False
+        if plan_is_host_direct_reply(plan) and not schedule_fire:
+            body = str(plan.get("message") or "").strip()
+            if not body:
+                body = "\n".join(
+                    str(x).strip()
+                    for x in (plan.get("instructions") or [])
+                    if str(x).strip()
+                )
+            try:
+                await self.send(
+                    chat_id=str(thread_id),
+                    content=body,
+                    metadata={
+                        "thread_type": "group" if thread_type == "group" else "user",
+                        "as_skip_timing": True,
+                        "skip_outbound_filter": True,
+                    },
+                )
+            except Exception:
+                logger.warning("[zalo] host direct reply failed thread=%s", thread_id)
+            return True
         if plan_is_immediate_deliver(plan) and not schedule_fire:
             try:
                 from .channels_client import apply_schedule_delivery_target
@@ -3058,17 +3091,50 @@ class ZaloAdapter(BasePlatformAdapter):
                     continue
         return name
 
-    async def _as_secret_probe_drop(self, m, sender_id, thread_id, thread_type, text=None) -> bool:  # ASSISTANT_SECRET_PROBE_v4
-        """Hit = short refuse + notify admin. No LLM. No admin/authz bypass."""
+    def _as_secret_probe_envelope(self, m, text=None) -> str:
+        """Outer text + quoted message/file title for probe (tag/quote/file)."""
+        parts: list[str] = []
+        outer = "" if text is None else str(text)
+        if isinstance(m, dict) and not str(outer).strip():
+            outer = str(m.get("text") or m.get("content") or m.get("message") or m.get("msg") or "")
+        if str(outer).strip():
+            parts.append(str(outer).strip())
+        raw_q = None
+        if isinstance(m, dict):
+            raw_q = m.get("quoted") if isinstance(m.get("quoted"), dict) else m.get("quote")
+        if isinstance(raw_q, dict):
+            snip = quoted_context_snip(raw_q)
+            if snip:
+                parts.append(snip)
+            qmedia = extract_media_from_quote(raw_q)
+            if isinstance(qmedia, dict):
+                fn = str(qmedia.get("fileName") or "").strip()
+                if fn:
+                    parts.append(fn)
+        # de-dupe while preserving order
+        seen: set[str] = set()
+        out: list[str] = []
+        for p in parts:
+            key = p.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(p)
+        return "\n".join(out)
+
+    async def _as_secret_probe_drop(self, m, sender_id, thread_id, thread_type, text=None) -> bool:  # ASSISTANT_SECRET_PROBE_v5
+        """Hit = short refuse + notify admin. No LLM. No admin/authz bypass.
+
+        Scans outer text plus quoted message / quoted file name so @tag + quote
+        cannot hide a secret probe inside the quoted payload.
+        """
         import json
         import os
         import urllib.request
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
-        orig = "" if text is None else str(text)
-        if isinstance(m, dict) and not str(orig).strip():
-            orig = str(m.get("text") or m.get("content") or m.get("message") or m.get("msg") or "")
+        orig = self._as_secret_probe_envelope(m, text)
         if not self._as_secret_probe_text(orig):
             return False
         sid = str(sender_id or "").strip() or "unknown"

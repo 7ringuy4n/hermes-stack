@@ -1,9 +1,12 @@
-"""Secret Probe — keep in sync with architect/security/secret-probe/probe.py."""
+"""Secret Probe — keep in sync with architect/security/secret-probe/probe.py.
+
+No embedded deny lists. No regex. Markers come only from the policy file.
+Missing/empty policy → fail closed (BLOCKED).
+"""
 from __future__ import annotations
 
 import json
 import os
-import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -14,7 +17,7 @@ def _policy_candidates() -> list[Path]:
     out: list[Path] = []
     env = (os.environ.get("SECRET_PROBE_POLICY") or "").strip()
     if env:
-        out.append(Path(env))
+        return [Path(env)]
     out.extend(
         (
             Path("/app/secret-probe.json"),
@@ -22,6 +25,7 @@ def _policy_candidates() -> list[Path]:
         )
     )
     here = Path(__file__).resolve().parent
+    out.append(here / "secret-probe.json")
     for p in [here, *here.parents]:
         cand = p / "config" / "agent" / "secret-probe.json"
         out.append(cand)
@@ -31,45 +35,95 @@ def _policy_candidates() -> list[Path]:
 
 
 _policy: dict[str, Any] | None = None
-_input_re: re.Pattern[str] | None = None
-_output_re: re.Pattern[str] | None = None
+_input_markers: list[str] = []
+_output_markers: list[str] = []
+_policy_ok: bool = False
 
 
-def _compile_list(items: list[str]) -> re.Pattern[str] | None:
-    parts = [re.escape(str(x).strip()) for x in items if str(x).strip()]
-    if not parts:
+def _normalize_markers(items: Any) -> list[str]:
+    out: list[str] = []
+    if not isinstance(items, list):
+        return out
+    for x in items:
+        s = str(x or "").strip()
+        if s:
+            out.append(s)
+    return out
+
+
+def _read_policy_file(path: Path) -> dict[str, Any] | None:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
         return None
-    return re.compile("|".join(parts), re.I)
+    if not raw.strip():
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    inputs = _normalize_markers(data.get("input_block_patterns"))
+    outputs = _normalize_markers(data.get("output_block_patterns"))
+    if not inputs and not outputs:
+        return None
+    return data
 
 
-def _load_policy() -> dict[str, Any]:
-    global _policy, _input_re, _output_re
+def _load_policy() -> None:
+    global _policy, _input_markers, _output_markers, _policy_ok
     if _policy is not None:
-        return _policy
-    data: dict[str, Any] = {}
+        return
+    data: dict[str, Any] | None = None
     for p in _policy_candidates():
         if not p.is_file():
             continue
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            break
-        except (OSError, json.JSONDecodeError):
+        loaded = _read_policy_file(p)
+        if loaded is None:
             continue
+        data = loaded
+        break
+    if data is None:
+        _policy = {}
+        _input_markers = []
+        _output_markers = []
+        _policy_ok = False
+        return
     _policy = data
-    _input_re = _compile_list(list(data.get("input_block_patterns") or []))
-    _output_re = _compile_list(list(data.get("output_block_patterns") or []))
-    return data
+    _input_markers = _normalize_markers(data.get("input_block_patterns"))
+    _output_markers = _normalize_markers(data.get("output_block_patterns"))
+    _policy_ok = bool(_input_markers or _output_markers)
+
+
+def reload_policy() -> None:
+    global _policy, _input_markers, _output_markers, _policy_ok
+    _policy = None
+    _input_markers = []
+    _output_markers = []
+    _policy_ok = False
+
+
+def _marker_hit(blob: str, markers: list[str], *, casefold: bool) -> bool:
+    hay = blob.casefold() if casefold else blob
+    for marker in markers:
+        needle = marker.casefold() if casefold else marker
+        if needle and needle in hay:
+            return True
+    return False
 
 
 def probe(text: str, *, direction: Literal["input", "output"] = "input") -> dict[str, Any]:
     _load_policy()
+    if not _policy_ok:
+        return {"status": "BLOCKED", "reason": "POLICY_MISSING"}
     blob = (text or "").strip()
     if not blob:
         return {"status": "SAFE", "reason": None}
-    pat = _output_re if direction == "output" else _input_re
-    if pat is None:
-        return {"status": "SAFE", "reason": None}
-    if pat.search(blob.lower() if direction == "input" else blob):
+    markers = _output_markers if direction == "output" else _input_markers
+    if not markers:
+        return {"status": "BLOCKED", "reason": "POLICY_MISSING"}
+    if _marker_hit(blob, markers, casefold=(direction == "input")):
         return {"status": "BLOCKED", "reason": "SECRET_POLICY"}
     return {"status": "SAFE", "reason": None}
 
