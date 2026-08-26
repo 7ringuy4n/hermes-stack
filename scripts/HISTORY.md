@@ -1,3 +1,17 @@
+## 2026-08-26 11:20 +07 — Multi-delay schedule bubbles got no reply
+
+### Symptom
+One message with several sequential relative delays could produce no assistant reply. Pause/resume/update on an existing lịch could create a new job instead of changing the matched one.
+
+### Root cause
+Classify schema required top-level delay/cron, so a wrapper with only `tasks[]` timing was `classify_invalid` and fell through. Schedule fanout re-classified inner instruction text and dropped delays. Host clock used processing time, not request receipt. Wrapper `task_hint=schedule` always forced create.
+
+### Fix (core)
+Prompt: keep timed intent as schedule; independent `tasks[]`; accumulate relative delays from receipt; resolution/selector/timezone source. Host: schema accepts `tasks[]`; fanout without a second classify hop; `request_received_at + delay_seconds`; lifecycle via selector + upsert enabled; transform maps to process at fire.
+
+### Prevent recurrence
+Do not re-classify schedule parts. Do not invent schedule ids. Do not default omitted cadence to daily. Classify timeout must cover a multi-job JSON answer.
+
 ## 2026-08-26 09:25 +07 — Operator scripts still offered a removed local LLM path
 
 ### Symptom

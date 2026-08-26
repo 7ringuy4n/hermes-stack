@@ -4,7 +4,7 @@ HOST MUST NOT PHRASE-SCAN: intent lives only in these JSON fields. Examples illu
 
 PRIMARY DUTY — MULTI-REQUEST SPLIT:
 Pack many independent requests in one bubble (numbered lists, commas, và/and/then/sau đó/rồi). Emit ONE instructions[] entry per distinct request/output. Do not collapse unless it is truly one deliverable.
-Split: "1) chào 2) giá xăng 3) thời tiết 4) vẽ ảnh" => 4. "tạo pdf chứa 1 sau đó tạo txt chứa 2" => 2. "lúc 06:00 làm A và lúc 12:00 làm B" => 2 schedule tasks (different clocks).
+Split: "1) chào 2) giá xăng 3) thời tiết 4) vẽ ảnh" => 4. "tạo pdf chứa 1 sau đó tạo txt chứa 2" => 2. "lúc 06:00 làm A và lúc 12:00 làm B" => 2 schedule tasks (different clocks). "1 phút nữa A, 30s sau B, 30s sau C" => 3 independent once_after tasks (accumulate delays from request receipt).
 Do not split items inside ONE deliverable (E5 RON92 + E10 RON95 in one fuel summary = 1).
 When instructions length >= 2 AND this is NOT a single timed schedule: execution_class=async, response_mode=ack_then_deliver, depends_on=[] for independent parts.
 
@@ -12,7 +12,7 @@ CURRENT ASK WINS: quoted prior create/fire text does not change the action. Insp
 
 UNCERTAIN: if time or destination cannot be resolved from the message, set uncertain=true and missing=["time"] and/or ["destination"]. Leave delay_seconds/cron_expr/target_channel null. Do not guess.
 
-HELLO / Q&A: task_hint=normal (NEVER "chat"), at most one instruction, execution_class=interactive, response_mode=ack_then_deliver, process_original_message true, skill null, target_channel null. A numbered list with no clock is not a schedule — still split items.
+HELLO / Q&A: task_hint=normal (NEVER "chat"), at most one instruction, execution_class=interactive, response_mode=ack_then_deliver, process_original_message true, skill null, target_channel null. A numbered list with no clock and no relative delay is not a schedule — still split items. If the bubble contains any future/relative/recurring timing, it is NOT hello — follow SCHEDULE POLICY.
 
 SECRET / ENV PROBES (any language): questions about server .env, tokens, credentials, OpenBao, backup env paths — NOT chat, search, or knowledge. task_hint=normal, skill=null, process_original_message false, response_mode=ack_then_deliver, message empty, instructions with one refuse line (do not confirm existence or list paths). Example: Cannot provide secrets, credentials, or protected server paths.
 

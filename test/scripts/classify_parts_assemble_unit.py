@@ -23,10 +23,13 @@ def main() -> int:
     system = assemble_classify_system(skill, env)
     assert "PRIMARY DUTY" in system
     assert "SCHEDULE POLICY" in system
+    assert "NEVER DOWNGRADE TIMED INTENT" in system
     assert "Host does not scan" in system
     assert "FILE / MEDIA POLICY" in system
     assert "DELIVERY POLICY" in system
     assert "OUTPUT SCHEMA" in system
+    assert "schedule_resolution" in system
+    assert "schedule_request_received_at" in system
     assert env.get("parts") == ["core", "schedule", "media", "delivery", "schema"]
     assert str(CFG_PATH).replace("\\", "/").endswith("skills/classify/classify.json"), CFG_PATH
 
@@ -63,6 +66,86 @@ def main() -> int:
     assert len(multi.get("tasks") or []) == 2, multi.get("tasks")
     assert multi["tasks"][0].get("target_channel") == "LC group"
     assert multi["tasks"][1].get("delay_seconds") == 60
+
+    triple = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "instructions": ["inner A"],
+            "tasks": [
+                {
+                    "task_hint": "schedule",
+                    "task_type": "create_schedule",
+                    "schedule_form": "once_after",
+                    "delay_seconds": 60,
+                    "instructions": ["không cần chit chat"],
+                    "schedule_delivery": "verbatim",
+                    "schedule_resolution": "clear",
+                    "confirmation_required": False,
+                },
+                {
+                    "task_hint": "schedule",
+                    "task_type": "create_schedule",
+                    "schedule_form": "once_after",
+                    "delay_seconds": 90,
+                    "instructions": ["muốn được phục vụ"],
+                    "schedule_delivery": "process",
+                    "schedule_resolution": "clear",
+                    "confirmation_required": False,
+                },
+                {
+                    "task_hint": "schedule",
+                    "task_type": "create_schedule",
+                    "schedule_form": "once_after",
+                    "delay_seconds": 120,
+                    "instructions": ["sẵn sàng phụ việc"],
+                    "schedule_delivery": "process",
+                    "schedule_resolution": "clear",
+                    "confirmation_required": False,
+                },
+            ],
+            "process_original_message": False,
+        },
+        "1 phút nữa A, 30s sau B, 30s sau C",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_schema_ok(triple), triple
+    assert len(triple.get("tasks") or []) == 3, triple.get("tasks")
+    assert [t.get("delay_seconds") for t in triple["tasks"]] == [60, 90, 120]
+
+    pause = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "pause_schedule",
+            "skill_action": "pause",
+            "schedule_selector": {
+                "id": "sch_invented",
+                "name": "weather",
+                "match": {"content_hint": "thời tiết", "time_hint": "06:00"},
+            },
+            "instructions": ["tạm dừng lịch thời tiết"],
+        },
+        "tạm dừng lịch thời tiết 06:00",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_schema_ok(pause), pause
+    assert pause.get("task_type") == "pause_schedule"
+    assert pause.get("skill_action") == "pause"
+    assert (pause.get("schedule_selector") or {}).get("id") is None
+
+    transform = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "schedule_form": "once_after",
+            "delay_seconds": 30,
+            "schedule_delivery": "transform",
+            "instructions": ["dịch sang tiếng Anh: hello"],
+        },
+        "30s nữa dịch hello",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert transform.get("schedule_delivery") == "transform"
 
     unsure = normalize_plan(
         {

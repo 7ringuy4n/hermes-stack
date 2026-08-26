@@ -1,3 +1,8 @@
+## 2026-08-26 11:20 +07 — Independent timed jobs stay schedule and fan out without a second classify hop
+
+- A bubble with several relative delays could be dropped as invalid classify (wrapper had no top-level delay), or split into inner strings and classified again so timing was lost. Pause/resume/update could be forced through create.
+- Classify prompt: never downgrade timed intent to normal; emit independent `tasks[]` with accumulated `delay_seconds` from request receipt; `schedule_resolution` / `timezone_source` / `schedule_selector` (id always null). Host: `plan_schema_ok` accepts `tasks[]` timing; fanout uses those objects without another LLM hop; fire time is `request_received_at + delay_seconds`; transform delivery is process at fire; lifecycle uses selector match + upsert `enabled` (no invented ids). Cadence is no longer defaulted to daily when omitted. Classify hop budget is 90s with a token cap so multi-job JSON can finish.
+
 ## 2026-08-26 09:25 +07 — Leftover local-LLM operator path removed
 
 - Chat and classify already default to Omni OpenCode, but operator scripts and docs still documented turning a local LLM path back on.

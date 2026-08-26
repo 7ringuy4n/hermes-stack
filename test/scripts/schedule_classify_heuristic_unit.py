@@ -147,6 +147,40 @@ def main() -> int:
     assert plan_gd.get("schedule_delivery") == "process"
     assert (plan_gd.get("target_channel") or "").lower() == "lc group"
 
+    wrapper_tasks = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "instructions": ["inner"],
+            "tasks": [
+                {
+                    "task_hint": "schedule",
+                    "schedule_form": "once_after",
+                    "delay_seconds": 60,
+                    "instructions": ["a"],
+                },
+                {
+                    "task_hint": "schedule",
+                    "schedule_form": "once_after",
+                    "delay_seconds": 90,
+                    "instructions": ["b"],
+                },
+                {
+                    "task_hint": "schedule",
+                    "schedule_form": "once_after",
+                    "delay_seconds": 120,
+                    "instructions": ["c"],
+                },
+            ],
+            "process_original_message": False,
+        },
+        "1 phút nữa A, 30s sau B, 30s sau C",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_schema_ok(wrapper_tasks), wrapper_tasks
+    assert len(wrapper_tasks.get("tasks") or []) == 3
+
     no_invent = normalize_plan(
         {"task_hint": "schedule", "instructions": ["hello"], "cadence": "once"},
         "hello at 17:57",
