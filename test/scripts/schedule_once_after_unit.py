@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""once_after delay_seconds + host timing resolution (no LLM clock)."""
+"""once_after delay_seconds + host timing resolution (no classify regex)."""
 from __future__ import annotations
 
+import datetime
 import sys
 from pathlib import Path
 
@@ -10,10 +11,9 @@ sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
 from classify import (  # noqa: E402
-    delay_seconds_from_text,
+    heuristic_plan,
     normalize_plan,
     plan_schema_ok,
-    schedule_heuristic_plan,
 )
 from schedule_client import (  # noqa: E402
     resolve_schedule_timing,
@@ -27,12 +27,23 @@ from classify_client import (  # noqa: E402
 
 def main() -> int:
     rel = "1 phút nữa gửi vào Zalo LC Group: em muốn hầu hạ Boss Hải"
-    assert delay_seconds_from_text(rel) == 60, delay_seconds_from_text(rel)
-    raw = schedule_heuristic_plan(rel)
-    assert raw and raw.get("schedule_form") == "once_after", raw
-    assert raw.get("delay_seconds") == 60, raw
-    assert raw.get("cron_expr") in (None, ""), raw
-    plan = normalize_plan(raw, rel, "Asia/Ho_Chi_Minh")
+    assert heuristic_plan(rel) is None
+    plan = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "schedule_form": "once_after",
+            "delay_seconds": 60,
+            "cron_expr": None,
+            "cadence": "once",
+            "instructions": ["em muốn hầu hạ Boss Hải"],
+            "target_channel": "LC group",
+            "process_original_message": False,
+        },
+        rel,
+        "Asia/Ho_Chi_Minh",
+    )
     assert plan_schema_ok(plan), plan
     assert plan.get("delay_seconds") == 60, plan
     assert plan.get("cron_expr") in (None, ""), plan
@@ -58,8 +69,14 @@ def main() -> int:
     timing = resolve_schedule_timing(poisoned, rel, "Asia/Ho_Chi_Minh")
     assert timing["schedule_form"] == "once_after"
     assert timing["delay_seconds"] == 60
-    assert timing["next_run_at"].endswith("Z")
-    assert "17" not in (timing["next_run_at"] or "")
+    nxt = timing["next_run_at"]
+    assert nxt.endswith("Z"), timing
+    assert "T17:31:" not in nxt, timing
+    parsed = datetime.datetime.strptime(nxt, "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=datetime.timezone.utc
+    )
+    skew = abs((parsed - datetime.datetime.now(datetime.timezone.utc)).total_seconds() - 60)
+    assert skew < 5, timing
 
     missing = resolve_schedule_timing(
         {"task_hint": "schedule", "schedule_form": "once_after", "delay_seconds": None},
@@ -99,23 +116,39 @@ def main() -> int:
         {"ok": True, "task_hint": "schedule", "instructions": ["hello"]}
     ) is True
 
+    once_text = "đặt lịch lúc 09:50 với nội dung hello"
     once = normalize_plan(
         {
             "task_hint": "schedule",
             "schedule_form": "once_at",
+            "clock_hm": "09:50",
             "cron_expr": "31 17 * * *",
             "cadence": "once",
             "instructions": ["hello"],
             "process_original_message": False,
         },
-        "đặt lịch lúc 09:50 với nội dung hello",
+        once_text,
         "Asia/Ho_Chi_Minh",
     )
     assert once.get("schedule_form") == "once_at", once
-    assert once.get("cron_expr") == "50 9 * * *", once
+    assert once.get("cron_expr") in (None, ""), once
+    assert once.get("clock_hm") == "09:50", once
     assert plan_schema_ok(once)
+    stored = resolve_schedule_timing(once, once_text, "Asia/Ho_Chi_Minh")
+    assert stored.get("cron_expr") == "50 9 * * *", stored
+    no_field = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "schedule_form": "once_at",
+            "instructions": ["hello"],
+            "process_original_message": False,
+        },
+        once_text,
+        "Asia/Ho_Chi_Minh",
+    )
+    assert not resolve_schedule_timing(no_field, once_text, "Asia/Ho_Chi_Minh").get("cron_expr")
 
-    print("OK once_after + media compound guards")
+    print("OK once_after JSON delay + host clock protocol + media compound guards")
     return 0
 
 

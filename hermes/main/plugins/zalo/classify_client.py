@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import urllib.error
 import urllib.request
 from typing import Any, Callable
@@ -55,19 +54,57 @@ MAX_INSTRUCTIONS = 32
 CRON_CHARS = set("0123456789*,/-")
 DEFAULT_TIMEOUT_S = 70.0
 HTTP_ATTEMPTS = 1
-_PRIOR_BLOCK = re.compile(
-    r"\[Prior conversation\].*?\[/Prior conversation\]\s*",
-    re.I | re.S,
-)
+_PRIOR_START = "[prior conversation]"
+_PRIOR_END = "[/prior conversation]"
+_OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
 
 
 def strip_prior_for_classify(text: str) -> str:
     """Current user ask only — drop Valkey hydrate wrappers (keep in sync with model-router)."""
-    blob = (text or "").strip()
-    if not blob:
-        return ""
-    cleaned = _PRIOR_BLOCK.sub("", blob).strip()
-    return cleaned or blob
+    blob = text or ""
+    while True:
+        low = blob.lower()
+        start = low.find(_PRIOR_START)
+        if start < 0:
+            break
+        end = low.find(_PRIOR_END, start)
+        if end < 0:
+            break
+        blob = blob[:start] + blob[end + len(_PRIOR_END) :]
+    cleaned = blob.strip()
+    return cleaned or (text or "").strip()
+
+
+def _coerce_output_type(raw: Any) -> str:
+    ot = str(raw or "").strip().lower()
+    if ot in {"text", "txt."}:
+        ot = "txt"
+    return ot if ot in _OUTPUT_TYPES else ""
+
+
+def _coerce_clock_hm(raw: Any) -> str | None:
+    s = str(raw or "").strip().replace("h", ":").replace("H", ":")
+    if not s or s.count(":") != 1:
+        return None
+    left, right = s.split(":", 1)
+    if not left.isdigit() or not right.isdigit():
+        return None
+    hour, minute = int(left), int(right)
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _coerce_poster_n(raw: Any) -> int | None:
+    if raw is None or raw == "":
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if n < 1 or n > 80:
+        return None
+    return n
 
 
 def sanitize_instructions(raw: Any, fallback: str) -> list[str]:
@@ -248,7 +285,29 @@ def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
         ttype = str(item.get("task_type") or "").strip().lower()
         if ttype not in TASK_TYPES:
             ttype = HINT_EXECUTION.get(hint, ("interactive", "chat", "ack_then_deliver"))[1]
-        out.append({"task_hint": hint, "task_type": ttype})
+        row: dict[str, Any] = {"task_hint": hint, "task_type": ttype}
+        for key in (
+            "skill",
+            "skill_action",
+            "schedule_form",
+            "cadence",
+            "target_channel",
+            "schedule_delivery",
+            "output_type",
+        ):
+            val = item.get(key)
+            if val not in (None, ""):
+                row[key] = val
+        delay = _coerce_delay_seconds(item.get("delay_seconds"))
+        if delay is not None:
+            row["delay_seconds"] = delay
+        cron = valid_cron(str(item.get("cron_expr") or ""))
+        if cron:
+            row["cron_expr"] = cron
+        instr = sanitize_instructions(item.get("instructions"), "")
+        if instr:
+            row["instructions"] = instr
+        out.append(row)
     return out
 
 
@@ -305,6 +364,33 @@ def plan_allows_office_shortcut(plan: dict[str, Any] | None) -> bool:
     if str(src.get("task_type") or "").strip().lower() == "file_processing":
         return True
     return False
+
+
+def plan_output_type(plan: dict[str, Any] | None) -> str:
+    src = plan if isinstance(plan, dict) else {}
+    ot = _coerce_output_type(src.get("output_type"))
+    if ot:
+        return ot
+    details = src.get("task_details")
+    if isinstance(details, list) and details and isinstance(details[0], dict):
+        return _coerce_output_type(details[0].get("output_type"))
+    return ""
+
+
+def plan_allows_poster_shortcut(plan: dict[str, Any] | None) -> bool:
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    if len(parts) >= 2:
+        return False
+    if str(src.get("skill") or "").strip().lower() == "web_search":
+        return False
+    if str(src.get("poster_phrase") or "").strip():
+        return True
+    return _coerce_poster_n(src.get("poster_n")) is not None
 
 
 def plan_is_immediate_deliver(plan: dict[str, Any] | None) -> bool:
@@ -384,6 +470,8 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
         return True
     if action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
         return True
+    if plan.get("uncertain") is True:
+        return True
     if _coerce_delay_seconds(plan.get("delay_seconds")) is not None:
         return True
     form = str(plan.get("schedule_form") or "").strip().lower()
@@ -417,7 +505,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         cron = None
     else:
         llm_cron = valid_cron(str(src.get("cron_expr") or ""))
-        # Clients may not have extract_clock_cron — keep LLM cron only for recurring.
+        # One-shot cron is host storage after schedule_form; classifier cron is recurring only.
         if schedule_form == "once_after":
             cron = None
         elif schedule_form == "once_at":
@@ -513,13 +601,31 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             or None
         ),
         "schedule_delivery": None if (is_delete or is_list) else schedule_delivery,
+        "output_type": _coerce_output_type(src.get("output_type")) or None,
+        "clock_hm": None if (is_delete or is_list) else _coerce_clock_hm(src.get("clock_hm")),
+        "poster_n": _coerce_poster_n(src.get("poster_n")),
+        "poster_phrase": (str(src.get("poster_phrase") or "").strip()[:80] or None),
+        "poster_bw": src.get("poster_bw") if isinstance(src.get("poster_bw"), bool) else None,
+        "uncertain": bool(src.get("uncertain") is True),
+        "missing": [
+            str(x).strip().lower()
+            for x in (src.get("missing") or [])
+            if str(x).strip().lower() in {"time", "destination", "output_type"}
+        ],
     }
     if not plan_schema_ok(plan):
         return failed_plan(tz, "classify_invalid")
     return plan
 
 
-def classify_text(text: str, *, timezone: str = "Asia/Ho_Chi_Minh") -> dict[str, Any]:
+def classify_text(
+    text: str,
+    *,
+    timezone: str = "Asia/Ho_Chi_Minh",
+    thread: str = "unknown",
+    attachments: str = "none",
+    quoted: str = "none",
+) -> dict[str, Any]:
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
     blob = strip_prior_for_classify(text or "")
     if _planner is not None:
@@ -530,7 +636,16 @@ def classify_text(text: str, *, timezone: str = "Asia/Ho_Chi_Minh") -> dict[str,
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
     base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
-    payload = json.dumps({"text": blob, "timezone": tz}, ensure_ascii=False).encode("utf-8")
+    payload = json.dumps(
+        {
+            "text": blob,
+            "timezone": tz,
+            "thread": thread or "unknown",
+            "attachments": attachments or "none",
+            "quoted": quoted or "none",
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
     timeout = float(os.environ.get("MODEL_ROUTER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
     last_error = "classify_unavailable"
     for _attempt in range(HTTP_ATTEMPTS):

@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import time
 import uuid
 from datetime import datetime, timezone
@@ -242,10 +241,11 @@ class ContextReq(BaseModel):
     thread_id: Optional[str] = None
     budget_tokens: int = Field(default=DEFAULT_BUDGET, ge=2000, le=200000)
     max_memories: int = Field(default=6, ge=0, le=20)
+    task_hint: Optional[str] = None
 
 
 def _hash(content: str, typ: str) -> str:
-    norm = re.sub(r"\s+", " ", content.strip().lower())
+    norm = " ".join(content.strip().lower().split())
     return hashlib.sha256(f"{typ}|{norm}".encode()).hexdigest()[:32]
 
 
@@ -427,89 +427,49 @@ MODE_SKILLS = {
 }
 
 
+_HINT_MODE = {
+    "file": "file-gen",
+    "coding": "code",
+    "search": "research",
+    "knowledge": "research",
+    "tool": "outbound-media",
+    "schedule": "chat",
+    "normal": "chat",
+    "unknown": "chat",
+}
+_SOCIAL_HOSTS = (
+    "youtube.com",
+    "youtu.be",
+    "tiktok.com",
+    "vm.tiktok.com",
+    "douyin.com",
+    "facebook.com",
+    "fb.watch",
+    "fb.com/watch",
+)
+_AV_HOSTS = _SOCIAL_HOSTS + ("spotify.com", "soundcloud.com")
+
+
 def _has_social_video_url(t: str) -> bool:
-    return bool(
-        re.search(
-            r"youtube\.com|youtu\.be|tiktok\.com|vm\.tiktok\.com|douyin\.com|"
-            r"facebook\.com|fb\.watch|fb\.com/watch",
-            t,
-        )
-    )
+    low = (t or "").lower()
+    return any(h in low for h in _SOCIAL_HOSTS)
 
 
 def _has_av_url(t: str) -> bool:
-    return _has_social_video_url(t) or bool(
-        re.search(r"spotify\.com|soundcloud\.com", t)
-    )
+    low = (t or "").lower()
+    return any(h in low for h in _AV_HOSTS)
 
 
-def _wants_video_summary(t: str) -> bool:
-    if not _has_social_video_url(t):
-        return False
-    if re.search(
-        r"tr[ií]ch\s*l[oờ]i|lyrics|transcript|ph[uụ]\s*[đd][eề]|t[oó]m\s*t[aắ]t|summary|summarize|"
-        r"n[oộ]i dung|n[oó]i g[iì]|b[ih]t g[iì]|caption|subtitles?",
-        t,
-    ):
-        return True
-    # Link-only paste (no explicit watch/listen) → assume summary intent
-    return not re.search(r"\b(xem|nghe|coi|watch|listen|play|ph[aá]t)\b", t)
-
-
-def _wants_av_watch_only(t: str) -> bool:
-    if re.search(
-        r"\b(xem|nghe|coi|watch|listen|play|ph[aá]t)\b.*(youtube|tiktok|facebook|fb\.|mp3|mp4|livestream|nh[aạ]c|live)|"
-        r"(youtube|tiktok|facebook|fb\.|mp3|mp4|livestream|nh[aạ]c|live).*\b(xem|nghe|coi|watch|listen|play|ph[aá]t)\b",
-        t,
-    ):
-        return not re.search(
-            r"tr[ií]ch\s*l[oờ]i|lyrics|transcript|ph[uụ]\s*[đd][eề]|t[oó]m\s*t[aắ]t|summary|summarize",
-            t,
-        )
-    return bool(re.search(r"\.(mp3|mp4|mkv|webm|mov|avi|wav|flac|m4a)\b", t))
-
-
-def _infer_mode(text: str, has_media: bool) -> str:
-    t = text.lower()
-    if re.search(
-        r"chi[eế]n tranh|nga|ukraine|russia|ch[ií]nh tr[iị]|b[aầ]u c[uử]|ch[uủ]ng t[oộ]c|gi[oớ]i t[ií]nh|hate",
-        t,
-    ):
-        return "content-policy"
-    if has_media and not re.search(
-        r"t[aạ]o\s*(file|excel|word|pdf|b[aả]ng)|xu[aấ]t\s*(file|excel|xlsx)",
-        t,
-    ):
+def _infer_mode(text: str, has_media: bool, task_hint: str = "") -> str:
+    hint = (task_hint or "").strip().lower()
+    if hint in _HINT_MODE:
+        return _HINT_MODE[hint]
+    if has_media:
         return "upload"
-    if re.search(
-        r"t[aạ]o\s*(file|excel|word|pdf|b[aả]ng)|xu[aấ]t\s*(file|excel|xlsx|csv|b[aả]ng)|"
-        r"l[aà]m\s*(file|b[aả]ng)",
-        t,
-    ):
-        if re.search(r"\.(mp3|mp4|wav|flac|mov|mkv|webm)\b|nh[aạ]c|video\s*clip", t):
-            return "no-av-watch"
-        return "file-gen"
-    if re.search(
-        r"g[uử]i pdf|upload file|b[aằ]ng ch[uứ]ng|prove|manual", t
-    ) and not re.search(
-        r"t[aạ]o|xu[aấ]t|l[aà]m file", t
-    ):
-        return "no-outbound-doc"
-    if re.search(
-        r"(t[aạ]o|v[eẽ]|gen(erate)?).{0,80}(h[iì]nh|ảnh|anh|jpeg|jpg|png|poster)",
-        t,
-    ) and not re.search(r"\.(xlsx|docx|pdf|csv|txt)\b", t):
-        return "outbound-media"
-    if _wants_video_summary(t):
+    if _has_social_video_url(text):
         return "video-summary"
-    if _wants_av_watch_only(t) or (_has_av_url(t) and not _has_social_video_url(t)):
+    if _has_av_url(text):
         return "no-av-watch"
-    if has_media or re.search(r"ph[aâ]n t[ií]ch|ocr|[đd][aâ]y l[aà] g[iì]", t):
-        return "upload"
-    if re.search(r"gi[aá]|tin|search|http|t[oó]m t[aắ]t", t):
-        return "research"
-    if re.search(r"code|bug|stacktrace|refactor", t):
-        return "code"
     return "chat"
 
 
@@ -518,7 +478,7 @@ def assemble_context(req: ContextReq) -> dict[str, Any]:
     """Context Manager gate: mode + few skills + top memories within token budget."""
     t0 = time.time()
     try:
-        mode = _infer_mode(req.text, req.has_media)
+        mode = _infer_mode(req.text, req.has_media, req.task_hint or "")
         skills = MODE_SKILLS.get(mode, MODE_SKILLS["chat"])
 
         mem_budget = min(req.budget_tokens // 4, 4000)  # ~25% for memories max

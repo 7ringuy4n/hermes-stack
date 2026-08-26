@@ -2,7 +2,6 @@
 """Render exact text posters (N copies of a phrase). Do not use diffusion for this."""
 from __future__ import annotations
 
-import re
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional
@@ -17,57 +16,26 @@ _FONTS = (
     "C:/Windows/Fonts/tahoma.ttf",
 )
 
-_POSTER_HINT = re.compile(
-    r"điền|dien vao|fill\s+(in|with)|write|chữ|chu |poster|dòng|dong |"
-    r"\blines?\b|hàng chữ|in chữ|text on",
-    re.I,
-)
-_BW = re.compile(
-    r"trắng\s*đen|đen\s*trắng|trang den|black\s*and\s*white|\bb/?w\b|"
-    r"grayscale|grey\s*scale|monochrome",
-    re.I,
-)
-_N_LINES = re.compile(r"(\d+)\s*(?:dòng|dong|lines?|hàng)", re.I)
-_QUOTED = re.compile(r"[\"“”«»']([^\"“”«»']{1,80})[\"“”«»']")
-# Renderer parser for /v1/image mode=text-poster. Classify must keep N/phrase/B&W verbatim.
-
-
-def parse_text_poster(prompt: str) -> Optional[dict[str, Any]]:
-    """If the user wants exact glyphs (N lines of a phrase), return spec; else None."""
-    text = (prompt or "").strip()
+def parse_text_poster(
+    prompt: str = "",
+    *,
+    phrase: str = "",
+    n: int | None = None,
+    bw: bool | None = None,
+) -> Optional[dict[str, Any]]:
+    """Build a poster spec from classify JSON fields. Does not scan user prose."""
+    text = (phrase or "").strip() or (prompt or "").strip()
     if not text:
         return None
-    quoted = _QUOTED.findall(text)
-    n_m = _N_LINES.search(text)
-    hint = bool(_POSTER_HINT.search(text))
-    if not quoted and not (hint and n_m):
+    if n is None and not phrase:
         return None
-    if not hint and not n_m:
-        return None
-    phrase = (quoted[-1] if quoted else "").strip()
-    if not phrase and n_m:
-        # "10 dòng KHÁT QUÁ" / "5 dòng hello và gửi cho tôi" without quotes
-        after = text[n_m.end() :].strip(" :,-")
-        after = _QUOTED.sub("", after).strip()
-        after = re.sub(r"^(với|with|of|là|vào|vao)\s+", "", after, flags=re.I).strip()
-        after = re.sub(
-            r"\s*(?:và\s+)?(?:gửi|gui|send|gởi)\s+(?:cho\s+)?(?:tôi|toi|me)\s*$",
-            "",
-            after,
-            flags=re.I,
-        ).strip()
-        # Prefer the first token when the rest is delivery/noise
-        tok = re.match(r"([^\s,.;:]+)", after)
-        phrase = (tok.group(1) if tok else after)[:80] if after else ""
-    if not phrase:
-        return None
-    n = int(n_m.group(1)) if n_m else 1
-    n = max(1, min(n, 80))
+    count = 1 if n is None else int(n)
+    count = max(1, min(count, 80))
     return {
-        "phrase": phrase,
-        "n": n,
-        "bw": bool(_BW.search(text)),
-        "raw": text,
+        "phrase": text[:80],
+        "n": count,
+        "bw": bool(bw) if bw is not None else True,
+        "raw": prompt or text,
     }
 
 
