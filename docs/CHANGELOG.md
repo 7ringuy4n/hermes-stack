@@ -1,3 +1,8 @@
+## 2026-08-26 18:25 +07 — Zalo fileExt wire JSON no longer triggers secret refuse on blank docs
+
+- Blank/ordinary attachments still got the secret/env refuse because Zalo puts a fileExt JSON blob in message text and the host classified that blob as a user ask.
+- Host secret-ask gate ignores wire/fileExt JSON and filename-alone; refuse only on a real caption/ask or an extracted file body that is itself a secret ask (risk docs). Classify notes fileExt envelopes are not secret probes.
+
 ## 2026-08-26 18:10 +07 — Blank/ordinary attachments no longer get secret-probe refuse
 
 - Bare blank or ordinary office/pdf/image attachments could receive the secret/env refuse line after a prior secret turn or when only the filename was classified. Post-deploy env scrub could also empty compose-required host keys so the next update failed.

@@ -1,3 +1,17 @@
+## 2026-08-26 18:25 +07 — Blank attachments still refused via Zalo fileExt JSON
+
+### Symptom
+Blank/ordinary Security-folder attachments still received the secret/env refuse line after the prior filename-only fix.
+
+### Root cause
+Zalo inbound text for files is often a fileExt/wire JSON blob. The AV secret gate classified that JSON as the user ask.
+
+### Fix (core)
+`_as_user_secret_ask_blob` drops wire JSON and filename-alone. Attachment body that is itself a secret ask still refuses (risk docs). Classify: fileExt envelopes are not secret probes.
+
+### Prevent recurrence
+Never treat channel wire metadata as a secret-seeking caption.
+
 ## 2026-08-26 18:10 +07 — Blank docs got secret refuse
 
 ### Symptom
