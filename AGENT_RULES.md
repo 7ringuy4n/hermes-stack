@@ -890,13 +890,13 @@ After **all** rounds finish, **before stopping the host**, run post-lab restore
 
 After the **final** lab round, before stopping the VPS or declaring complete:
 
-1.  `bash scripts/main/post-lab-restore.sh` — local Qwen (when enabled), Zalo
-    session, health matrix, Qwen preflight (case 38), router chat smoke.
+1.  `bash scripts/main/post-lab-restore.sh` — Omni OpenCode combos, Zalo
+    session, health matrix, router chat smoke.
 2.  Confirm connectivity: bridge `loggedIn` + `sseClients≥1`, zalo-api,
     model-router, Hermes (no crash-loop in recent logs).
-3.  Do **not** leave `ENABLE_QWEN=1` with empty `hermes`/`classifier` combos
-    or missing Ollama — that breaks manual Zalo chat (configuration gap, not a
-    bridge bug). See [`test/RULES.md`](./test/RULES.md) § Post-lab restore.
+3.  Do **not** leave empty `hermes`/`classifier` combos — that breaks
+    manual Zalo chat (configuration gap, not a bridge bug). See
+    [`test/RULES.md`](./test/RULES.md) § Post-lab restore.
 
 ------------------------------------------------------------------------
 

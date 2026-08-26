@@ -26,6 +26,5 @@ Same default-`main` / local-`temp` split: [`hermes/`](../hermes/README.md).
 
 ## Lab notes
 
-- Qwen lab performance: [docs/QWEN_PERFORMANCE.md](../docs/QWEN_PERFORMANCE.md)
 - Ops history: [HISTORY.md](./HISTORY.md)
 - Workers: [docs/00-workers.md](../docs/00-workers.md)

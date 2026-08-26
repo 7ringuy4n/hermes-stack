@@ -35,7 +35,7 @@ UNITS: list[tuple[str, str]] = [
     ("ocr_refuse_unit.py", "35"),
     ("paddle_ocr_unit.py", "36"),
     ("omni_rotate_noreply_unit.py", "37"),
-    ("qwen_parallel_recommend_unit.py", "qwen-par"),
+    ("zalo_workflow_parallel_unit.py", "wf-par"),
     ("soul_deception_unit.py", "soul"),
     ("workflow_cadence_unit.py", "wf"),
     ("zalo_store_unit.py", "zalo-store"),
@@ -43,7 +43,7 @@ UNITS: list[tuple[str, str]] = [
 
 VPS: list[tuple[str, str]] = [
     ("vps_health_check.py", "health"),
-    ("qwen_combo_preflight.py", "38"),
+    ("omni_combo_preflight.py", "38"),
     ("zalo_tn_greeting_inject.py", "32"),
     ("zalo_latency_lab.py", "17"),
     ("zalo_special_four_lab.py", "25"),
@@ -51,7 +51,6 @@ VPS: list[tuple[str, str]] = [
     ("file_pipeline_security_lab.py", "19"),
     ("grafana_integration_lab.py", "20"),
     ("defaults_routers_lab.py", "21"),
-    ("zalo_tn_qwen_parallel_sizing.py", "qwen-par"),
     ("zalo_tn_history_regression.py", "history"),
 ]
 
@@ -112,12 +111,9 @@ def main() -> int:
             if filt and case not in filt and name not in filt:
                 continue
             c, rc, tail = run_script(name, case)
-            if rc == 2 and "preflight" in name:
-                status = "EXPECTED(2)"
-            else:
-                status = "PASS" if rc == 0 else f"FAIL({rc})"
-                if rc not in (0, 2):
-                    fails += 1
+            status = "PASS" if rc == 0 else f"FAIL({rc})"
+            if rc != 0:
+                fails += 1
             rows.append(f"| vps | {c} | {name} | {status} | `{tail[:120]}` |")
             print(f"[vps {c}] {status} {name}", flush=True)
 
@@ -126,7 +122,7 @@ def main() -> int:
         "| kind | case | script | result | tail |\n"
         "|------|------|--------|--------|------|\n"
         + "\n".join(rows)
-        + f"\n\n**Fails (excl. expected exit 2):** {fails}\n"
+        + f"\n\n**Fails:** {fails}\n"
     )
     (OUT / "SUMMARY.md").write_text(md, encoding="utf-8")
     print(f"SUMMARY {OUT / 'SUMMARY.md'} fails={fails}", flush=True)

@@ -5,10 +5,11 @@
 2) Read/create Default Key → OMNIROUTER_API_KEY
 3) Ensure OpenCode provider; fill chat combo ``hermes`` with cloud ``oc/*`` members
 4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members (Omni route)
-5) Clear ENABLE_QWEN + OLLAMA_* pins in .env so model-router will not fall back to broken local Ollama
-6) Set combo strategy preference (round-robin)
-7) Ensure Search: Tavily (1) → Firecrawl (2) → local SearXNG (3); block ollama-search
-8) Point Hermes at model-router; recreate router-worker for the key
+5) Clear leftover local-LLM pins in .env (removed product path)
+6) Deactivate leftover Ollama / Alibaba-Qwen Omni connections; drop leftover qwen-fast combos
+7) Set combo strategy preference (round-robin)
+8) Ensure Search: Tavily (1) → Firecrawl (2) → local SearXNG (3); block ollama-search
+9) Point Hermes at model-router; recreate router-worker for the key
 
 Stack sends combo *names* as OpenAI ``model``. Chat = ``hermes``; classify = ``classifier``.
 """
@@ -25,16 +26,6 @@ import urllib.parse
 import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
-
-# Local helpers (omnirouter_qwen) live next to this script.
-_SCRIPT_DIR = Path(__file__).resolve().parent
-if str(_SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPT_DIR))
-
-try:
-    from omnirouter_qwen import combo_model_entry as _combo_model_entry
-except ImportError:
-    from omnirouter_qwen import combo_model_entry as _combo_model_entry  # type: ignore
 
 ROOT = Path(os.environ.get("STACK_ROOT", "/opt/assistant"))
 PORT = int(os.environ.get("OMNIROUTER_HOST_PORT", "20129"))
@@ -78,6 +69,62 @@ def set_env_key(path: Path, key: str, value: str) -> None:
     else:
         text = text.rstrip() + "\n" + line + "\n"
     path.write_text(text, encoding="utf-8")
+
+
+def _provider_id_for_model(model_id: str) -> str:
+    prefix = (model_id or "").split("/", 1)[0].strip().lower()
+    return {
+        "ollamacloud": "ollama-cloud",
+        "cf": "cloudflare-ai",
+        "oc": "opencode",
+    }.get(prefix, prefix)
+
+
+def _combo_slug(model_id: str) -> str:
+    out: list[str] = []
+    dash = False
+    for ch in model_id or "":
+        if ch.isalnum():
+            out.append(ch.lower())
+            dash = False
+        elif not dash:
+            out.append("-")
+            dash = True
+    return "".join(out).strip("-")[:60]
+
+
+def _combo_model_entry(combo_name: str, index: int, model_id: str) -> dict:
+    return {
+        "id": f"{combo_name}-model-{index}-{_combo_slug(model_id)}",
+        "kind": "model",
+        "model": model_id,
+        "providerId": _provider_id_for_model(model_id),
+        "weight": 0,
+    }
+
+
+def _is_opencode_model_id(mid: str) -> bool:
+    """Cloud OpenCode ids — not host Ollama / Alibaba leftovers."""
+    m = (mid or "").strip().lower()
+    return (
+        m.startswith("oc/")
+        or m.startswith("opencode/")
+        or m.startswith("opencode-go/")
+    )
+
+
+def _combo_model_ids(combo: dict | None) -> list[str]:
+    if not combo:
+        return []
+    out: list[str] = []
+    for m in combo.get("models") or combo.get("members") or []:
+        if isinstance(m, str) and m.strip():
+            out.append(m.strip())
+        elif isinstance(m, dict):
+            mid = m.get("model") or m.get("fullModel") or m.get("id") or m.get("name")
+            if isinstance(mid, str) and mid.strip():
+                out.append(mid.strip())
+    return out
 
 
 def http_json(opener, method: str, url: str, body: dict | None = None, timeout: int = 25):
@@ -218,14 +265,17 @@ def list_oc_models(opener) -> list[str]:
         for row in data.get("models") or []:
             if not isinstance(row, dict):
                 continue
-            if str(row.get("provider") or "").lower() not in {"oc", "opencode"}:
+            if str(row.get("provider") or "").lower() not in {"oc", "opencode", "opencode-go"}:
                 continue
             if row.get("available") is False:
                 continue
             full = row.get("fullModel") or row.get("model")
             if isinstance(full, str) and full.strip():
                 mid = full.strip()
-                oc.append(mid if mid.startswith("oc/") else f"oc/{mid}")
+                if _is_opencode_model_id(mid):
+                    oc.append(mid)
+                elif "/" not in mid:
+                    oc.append(f"oc/{mid}")
     except Exception as e:
         print(f"WARN /api/models oc scan failed ({e})")
 
@@ -292,17 +342,42 @@ def ensure_opencode_combo(
     description: str,
     member_limit: int | None = None,
 ) -> str:
-    """Fill Omni combo with cloud OpenCode ``oc/*`` members (default setup)."""
+    """Fill Omni combo with cloud OpenCode members when empty; keep live oc/opencode/opencode-go."""
     drop_probe_combos(opener)
-    oc = [m for m in list_oc_models(opener) if str(m).startswith(("oc/", "opencode/"))]
-    if not oc:
-        raise SystemExit(f"no oc/* OpenCode Free models for combo {name!r}")
-    if member_limit is not None and member_limit > 0:
-        oc = oc[:member_limit]
-    models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(oc)]
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = data.get("combos") or []
     existing = next((c for c in combos if (c.get("name") or "") == name), None)
+    ids = _combo_model_ids(existing)
+    good = [mid for mid in ids if _is_opencode_model_id(mid)]
+    leftover = [mid for mid in ids if not _is_opencode_model_id(mid)]
+    if leftover:
+        print(f"==> strip leftover non-OpenCode members from {name}: {leftover[:8]!r}")
+    if good:
+        if leftover:
+            models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(good)]
+            payload = {
+                "name": name,
+                "models": models,
+                "strategy": COMBO_STRATEGY,
+                "description": description,
+            }
+            if not existing or not existing.get("id"):
+                raise SystemExit(f"combo {name} missing id while stripping leftovers")
+            status, body = http_json(
+                opener, "PUT", f"{BASE}/api/combos/{existing['id']}", payload
+            )
+            if status not in (200, 201):
+                raise SystemExit(f"combo {name} strip leftover failed: {body}")
+            print(f"==> kept combo {name} OpenCode-family n={len(good)} first={good[:3]}")
+        else:
+            print(f"==> keep combo {name} OpenCode-family n={len(good)} first={good[:3]}")
+        return name
+    oc = [m for m in list_oc_models(opener) if _is_opencode_model_id(str(m))]
+    if not oc:
+        raise SystemExit(f"no OpenCode cloud models for combo {name!r}")
+    if member_limit is not None and member_limit > 0:
+        oc = oc[:member_limit]
+    models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(oc)]
     payload = {
         "name": name,
         "models": models,
@@ -690,8 +765,8 @@ def pin_image_backends(env: dict[str, str]) -> None:
     print(f"OK: pinned IMAGE_BACKENDS={want} (Comfy → Omni fallback; not Hermes image_generation tool)")
 
 
-def clear_local_qwen_ollama_pins(env: dict[str, str]) -> None:
-    """Default product path is Omni OpenCode — strip leftover lab Qwen/Ollama pins."""
+def clear_removed_local_llm_pins(env: dict[str, str]) -> None:
+    """Strip leftover local-LLM flags from older installs (product path is Omni OpenCode)."""
     changed = False
     for key, want in (
         ("ENABLE_QWEN", "0"),
@@ -700,6 +775,8 @@ def clear_local_qwen_ollama_pins(env: dict[str, str]) -> None:
         ("OLLAMA_MODEL", ""),
         ("OLLAMA_DOCKER_URL", ""),
         ("OLLAMA_HOST_URL", ""),
+        ("OMNIROUTER_QWEN_ONLY_PROVIDERS", "0"),
+        ("OMNIROUTER_QWEN_FAST_COMBO", ""),
     ):
         cur = (env.get(key) or "").strip()
         if cur != want:
@@ -711,7 +788,48 @@ def clear_local_qwen_ollama_pins(env: dict[str, str]) -> None:
     os.environ["OLLAMA_BASE_URL"] = ""
     os.environ["OLLAMA_MODEL"] = ""
     if not changed:
-        print("OK: ENABLE_QWEN/OLLAMA_* already cleared for OpenCode default")
+        print("OK: leftover local-LLM pins already cleared")
+
+
+def deactivate_removed_local_llm_providers(opener) -> None:
+    """Turn off leftover Ollama / Alibaba-Qwen Omni connections from older installs."""
+    _, data = http_json(opener, "GET", f"{BASE}/api/providers")
+    for row in data.get("connections") or []:
+        cid = row.get("id")
+        if not cid:
+            continue
+        prov = str(row.get("provider") or "").strip().lower()
+        name = str(row.get("name") or "").strip().lower()
+        drop = prov == "ollama" or (
+            prov == "alibaba" and name in {"qwen", "dashscope", "local-qwen"}
+        )
+        if not drop or row.get("isActive") is False:
+            continue
+        try:
+            http_json(
+                opener,
+                "PUT",
+                f"{BASE}/api/providers/{cid}",
+                {"isActive": False},
+            )
+            print(f"==> deactivated leftover provider {prov}/{name} id={cid}")
+        except Exception as e:
+            print(f"WARN deactivate {prov}/{name}: {e}")
+
+
+def drop_removed_qwen_combos(opener) -> None:
+    """Delete leftover Qwen-named combos that conflict with OpenCode hermes/classifier."""
+    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    for row in data.get("combos") or []:
+        name = (row.get("name") or "").strip()
+        cid = row.get("id")
+        if name not in {"qwen-fast", "qwen"} or not cid:
+            continue
+        print(f"==> delete leftover combo {name}")
+        try:
+            http_json(opener, "DELETE", f"{BASE}/api/combos/{cid}")
+        except Exception as e:
+            print(f"WARN delete {name}: {e}")
 
 
 def assert_combo_oc_only(opener, name: str) -> None:
@@ -721,21 +839,13 @@ def assert_combo_oc_only(opener, name: str) -> None:
     combo = next((c for c in combos if (c.get("name") or "") == name), None)
     if not combo:
         raise SystemExit(f"combo {name!r} missing after OpenCode fill")
-    models = combo.get("models") or combo.get("members") or []
-    ids: list[str] = []
-    for m in models:
-        if isinstance(m, str) and m.strip():
-            ids.append(m.strip())
-        elif isinstance(m, dict):
-            mid = m.get("model") or m.get("fullModel") or m.get("id") or m.get("name")
-            if isinstance(mid, str) and mid.strip():
-                ids.append(mid.strip())
+    ids = _combo_model_ids(combo)
     if not ids:
         raise SystemExit(f"combo {name!r} has zero members after OpenCode fill")
-    bad = [mid for mid in ids if not (mid.startswith("oc/") or mid.startswith("opencode/"))]
+    bad = [mid for mid in ids if not _is_opencode_model_id(mid)]
     if bad:
         raise SystemExit(
-            f"combo {name!r} has non-OpenCode members {bad[:8]!r} — expected oc/* only"
+            f"combo {name!r} has non-OpenCode members {bad[:8]!r} — expected oc/opencode/opencode-go"
         )
     print(f"OK: combo {name} OpenCode-only n={len(ids)} first={ids[:3]}")
 
@@ -755,9 +865,11 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_API_KEY", key)
     print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
 
-    clear_local_qwen_ollama_pins(env)
+    clear_removed_local_llm_pins(env)
     unblock_opencode(opener)
     ensure_opencode_provider(opener)
+    deactivate_removed_local_llm_providers(opener)
+    drop_removed_qwen_combos(opener)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
     assert_combo_oc_only(opener, combo)
