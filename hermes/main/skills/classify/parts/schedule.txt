@@ -1,0 +1,20 @@
+SCHEDULE POLICY — classifier never invents now, timezone offset, or next_run_at (always null). Host resolves fire time from YOUR JSON only (delay_seconds / schedule_form). Host does not scan the message for phút/lúc/vào/nhóm. If you omit delay_seconds, cron_expr, or target_channel, the job cannot be stored. Use the Timezone line only as context for local clock phrases.
+
+CREATE (timed reminder / once / recurring):
+task_hint=schedule, task_type=create_schedule, execution_class=schedule, skill=schedule, skill_action=create, response_mode=confirm, process_original_message false.
+message and instructions = INNER WORK only. Never put timing, destination phrases, or "đặt lịch" into message/instructions.
+
+TEMPORAL FORMS (exactly one per create task):
+1) once_after — relative delay. schedule_form=once_after, delay_seconds=<integer seconds>, cadence=once, cron_expr=null. Convert units yourself (1 minute=60). Never add delay to a wall clock.
+2) once_at — absolute local clock/date. schedule_form=once_at, cadence=once, cron_expr=null, delay_seconds=null, clock_hm="HH:MM" (24h digits you extract). Host does not scan the user message for clocks.
+3) recurring — mỗi ngày / hằng ngày / weekly / monthly. schedule_form=recurring, cron_expr required (five-field), delay_seconds=null. You compute the five fields from the local clock phrase.
+Forbidden mixes: once_at+cron_expr from the classifier; once_after+cron_expr; recurring+delay_seconds.
+Same clock + several skills = ONE create task; split instructions[] by skill. Different clocks = separate tasks[] entries, each with its own form/delay/cron/channel. Do not execute inner work at create time.
+
+LIST / INSPECT (where / show / xem / liệt kê / lịch đâu / chưa nhắc / check reminders):
+task_type=list_schedule, skill_action=list. cron_expr, delay_seconds, schedule_form, schedule_delivery MUST be null. Do NOT create. Do NOT delete. Quotes of old create bodies do not upgrade this to delete.
+
+DELETE / cancel (only explicit remove/cancel/delete; đâu/where/list/show are NOT delete):
+task_type=delete_schedule, skill_action=delete. Do not invent a new reminder.
+
+Schedule management is never create_schedule. Do not emit pause/resume/update unless those types exist. Never claim a schedule was saved.

@@ -1,0 +1,30 @@
+OUTPUT SCHEMA — minified JSON only. Output ONLY these keys.
+
+task_hint: normal|schedule|coding|tool|search|file|knowledge|unknown (never "chat")
+execution_class: interactive|async|schedule
+task_type: chat|media_generation|file_processing|create_schedule|list_schedule|delete_schedule|knowledge|search|tool|coding
+response_mode: ack_then_deliver|confirm (never direct)
+process_original_message: bool
+message: string
+instructions: string array — one entry per distinct job
+attachments_required: bool
+attachment_types: image|file|audio|video array
+skill: media_file|web_search|schedule|security|knowledge or null
+skill_action: create|delete|list|deliver|process_file|generate_media|search|lookup or null
+cadence: once|daily|weekly|monthly|yearly or null
+schedule_form: once_at|once_after|recurring or null
+delay_seconds: int or null — once_after only
+clock_hm: "HH:MM" or null — once_at only (24h digits)
+cron_expr: five-field cron or null — recurring only
+next_run_at: always null from classifier
+target_channel: string or null — display name only
+schedule_delivery: verbatim|process or null
+output_type: image|pdf|txt|docx|xlsx|csv|md or null
+poster_n: int or null — text poster line count
+poster_phrase: string or null — exact poster glyphs
+poster_bw: bool or null
+task_details: array of {task_type, output_type, depends_on?} when mixed or instructions length>=2
+depends_on: 0-based int array
+uncertain: bool (omit or false when sure)
+missing: string array (time|destination|output_type) when uncertain
+tasks: optional array of independent jobs. Each may include task_hint, task_type, skill, skill_action, instructions, schedule_form, delay_seconds, clock_hm, cron_expr, cadence, target_channel, schedule_delivery, output_type, poster_n, poster_phrase, depends_on. Use tasks[] when two+ creates have different clocks or destinations. Omit tasks[] for a single wrapper job.

@@ -1,14 +1,12 @@
 """LLM classify — structured task_hint + instructions. No NLU in this module.
 
 Parses JSON protocol from the model. Validates enums and cron tokens only.
-Timed schedule detection (đặt lịch + HH:MM) is a protocol guard so weak classify
-models cannot demote a once-at-clock message into immediate async workflow.
+Prompt SoT: Hermes skill parts under skills/classify/ (assembled into one system hop).
 """
 from __future__ import annotations
 
 import json
 import os
-import re
 import time
 from pathlib import Path
 from typing import Any
@@ -230,7 +228,7 @@ def normalize_skill(src: dict[str, Any], hint: str, task_type: str) -> tuple[str
 def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
-    rows = raw[:count] if count else raw
+    rows = raw[: max(count, len(raw))] if count else raw
     out: list[dict[str, Any]] = []
     for item in rows:
         if not isinstance(item, dict):
@@ -240,8 +238,58 @@ def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
             continue
         ttype = str(item.get("task_type") or "").strip().lower()
         if ttype not in TASK_TYPES:
-            ttype = HINT_EXECUTION.get(hint, ("interactive", "chat", "direct"))[1]
-        out.append({"task_hint": hint, "task_type": ttype})
+            ttype = HINT_EXECUTION.get(hint, ("interactive", "chat", "ack_then_deliver"))[1]
+        skill, action = normalize_skill(item, hint, ttype)
+        form = str(item.get("schedule_form") or "").strip().lower()
+        if form not in {"once_at", "once_after", "recurring"}:
+            form = ""
+        delay = _coerce_delay_seconds(item.get("delay_seconds"))
+        cron = valid_cron(str(item.get("cron_expr") or ""))
+        if delay is not None:
+            form = "once_after"
+            cron = None
+        elif form in {"once_after", "once_at"}:
+            cron = None
+        cadence = str(item.get("cadence") or "").strip().lower()
+        if cadence not in CADENCES:
+            cadence = ""
+        delivery = str(item.get("schedule_delivery") or "").strip().lower()
+        if delivery not in {"verbatim", "process"}:
+            delivery = ""
+        channel = str(item.get("target_channel") or "").strip() or None
+        instr = sanitize_instructions(item.get("instructions"), "")
+        row: dict[str, Any] = {"task_hint": hint, "task_type": ttype}
+        if skill:
+            row["skill"] = skill
+        if action:
+            row["skill_action"] = action
+        if instr:
+            row["instructions"] = instr
+        if form:
+            row["schedule_form"] = form
+        if delay is not None:
+            row["delay_seconds"] = delay
+        clock_hm = _coerce_clock_hm(item.get("clock_hm"))
+        if clock_hm:
+            row["clock_hm"] = clock_hm
+        if cron:
+            row["cron_expr"] = cron
+        ot = _coerce_output_type(item.get("output_type"))
+        if ot:
+            row["output_type"] = ot
+        poster_n = _coerce_poster_n(item.get("poster_n"))
+        if poster_n is not None:
+            row["poster_n"] = poster_n
+        phrase = str(item.get("poster_phrase") or "").strip()
+        if phrase:
+            row["poster_phrase"] = phrase[:80]
+        if cadence:
+            row["cadence"] = cadence
+        if channel:
+            row["target_channel"] = channel
+        if delivery:
+            row["schedule_delivery"] = delivery
+        out.append(row)
     return out
 
 
@@ -267,6 +315,8 @@ def failed_plan(timezone: str, error: str = "classify_llm_failed") -> dict[str, 
         "skill_action": None,
         "tasks": [],
         "target_channel": None,
+        "uncertain": False,
+        "missing": [],
     }
 
 
@@ -281,7 +331,9 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
         return True
     if action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
         return True
-    # once_after / once_at may omit cron_expr — host resolves fire time from delay or clock text.
+    if plan.get("uncertain") is True:
+        return True
+    # once_after / once_at may omit cron_expr — host resolves fire time from JSON delay or HH:MM digits after schedule_form.
     if _coerce_delay_seconds(plan.get("delay_seconds")) is not None:
         return True
     form = str(plan.get("schedule_form") or "").strip().lower()
@@ -339,19 +391,57 @@ _classify_skip_until: dict[str, float] = {}
 _CLASSIFY_SKIP_TTL_S = float(os.environ.get("CLASSIFY_SKIP_TTL_S") or "300")
 # Upstream dead / inactive / bad gateway / wrong-schema members — skip that combo briefly.
 _CLASSIFY_SKIP_HTTP = {400, 401, 403, 404, 429, 502, 503}
-_PRIOR_BLOCK = re.compile(
-    r"\[Prior conversation\].*?\[/Prior conversation\]\s*",
-    re.I | re.S,
-)
+_OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
+_PRIOR_START = "[prior conversation]"
+_PRIOR_END = "[/prior conversation]"
 
 
 def strip_prior_for_classify(text: str) -> str:
     """Classify must see the current user ask only — not Valkey hydrate wrappers."""
-    blob = (text or "").strip()
-    if not blob:
-        return ""
-    cleaned = _PRIOR_BLOCK.sub("", blob).strip()
-    return cleaned or blob
+    blob = text or ""
+    while True:
+        low = blob.lower()
+        start = low.find(_PRIOR_START)
+        if start < 0:
+            break
+        end = low.find(_PRIOR_END, start)
+        if end < 0:
+            break
+        blob = blob[:start] + blob[end + len(_PRIOR_END) :]
+    cleaned = blob.strip()
+    return cleaned or (text or "").strip()
+
+
+def _coerce_output_type(raw: Any) -> str:
+    ot = str(raw or "").strip().lower()
+    if ot in {"text", "txt."}:
+        ot = "txt"
+    return ot if ot in _OUTPUT_TYPES else ""
+
+
+def _coerce_clock_hm(raw: Any) -> str | None:
+    s = str(raw or "").strip().replace("h", ":").replace("H", ":")
+    if not s or s.count(":") != 1:
+        return None
+    left, right = s.split(":", 1)
+    if not left.isdigit() or not right.isdigit():
+        return None
+    hour, minute = int(left), int(right)
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _coerce_poster_n(raw: Any) -> int | None:
+    if raw is None or raw == "":
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if n < 1 or n > 80:
+        return None
+    return n
 
 
 def _classify_body_is_schema_dead(status: int, body: str) -> bool:
@@ -414,16 +504,66 @@ def _outbound_llm_model(cfg: dict[str, Any], override: str | None = None) -> str
     return _default_chat_combo_alias()
 
 
+def assemble_classify_system(skill_dir: Path, data: dict[str, Any]) -> str:
+    """Join classify parts/*.txt into one system prompt. Bake JSON may already have system."""
+    names = data.get("parts")
+    chunks: list[str] = []
+    if isinstance(names, list):
+        for raw in names:
+            name = str(raw or "").strip()
+            if not name or "/" in name or "\\" in name or name.startswith("."):
+                continue
+            path = skill_dir / "parts" / f"{name}.txt"
+            try:
+                if path.is_file():
+                    text = path.read_text(encoding="utf-8").strip()
+                    if text:
+                        chunks.append(text)
+            except OSError:
+                continue
+    if chunks:
+        return "\n\n".join(chunks)
+    return str(data.get("system") or "").strip()
+
+
 def _load_cfg() -> dict[str, Any]:
     try:
-        return json.loads(CFG_PATH.read_text(encoding="utf-8"))
+        data = json.loads(CFG_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {
-            "timeout_s": 8,
-            "temperature": 0,
-            "system": "Return JSON with task_hint, instructions, cadence, cron_expr.",
-            "user_template": "Timezone: {timezone}\nMessage:\n{text}",
-        }
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    system = assemble_classify_system(CFG_PATH.parent, data)
+    if not system:
+        system = "Return JSON with task_hint, instructions, cadence, cron_expr."
+    data["system"] = system
+    if not str(data.get("user_template") or "").strip():
+        data["user_template"] = (
+            "Timezone: {timezone}\nThread: {thread}\nAttachments: {attachments}\n"
+            "Quoted: {quoted}\nMessage:\n{text}"
+        )
+    data.setdefault("timeout_s", 20)
+    data.setdefault("temperature", 0)
+    return data
+
+
+def _fill_user_template(
+    tmpl: str,
+    *,
+    timezone: str,
+    text: str,
+    thread: str = "unknown",
+    attachments: str = "none",
+    quoted: str = "none",
+) -> str:
+    """Replace known placeholders only — user text may contain braces."""
+    return (
+        tmpl.replace("{timezone}", timezone)
+        .replace("{thread}", thread or "unknown")
+        .replace("{attachments}", attachments or "none")
+        .replace("{quoted}", quoted or "none")
+        .replace("{text}", text)
+    )
 
 
 def valid_cron(expr: str) -> str | None:
@@ -434,99 +574,6 @@ def valid_cron(expr: str) -> str | None:
         if not p or any(ch not in CRON_CHARS for ch in p):
             return None
     return " ".join(parts)
-
-
-_SCHEDULE_TRIGGER = re.compile(
-    r"(?:đặt\s*lịch|dat\s*lich|ặt\s*lịch|schedule|chạy\s+một\s+lần|"
-    r"chay\s+mot\s+lan|one[\s-]?shot|run\s+once)",
-    re.I,
-)
-_CLOCK_HM = re.compile(
-    r"(?:lúc|luc|at|@)\s*(\d{1,2})\s*[:hH]\s*(\d{2})\b|"
-    r"\b(\d{1,2})\s*[:hH]\s*(\d{2})\b",
-    re.I,
-)
-
-
-def extract_clock_cron(text: str) -> str | None:
-    """Build once-daily cron ``M H * * *`` from the first HH:MM in prose."""
-    blob = text or ""
-    m = _CLOCK_HM.search(blob)
-    if not m:
-        return None
-    h_raw = m.group(1) or m.group(3)
-    min_raw = m.group(2) or m.group(4)
-    try:
-        hour = int(h_raw)
-        minute = int(min_raw)
-    except (TypeError, ValueError):
-        return None
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        return None
-    return valid_cron(f"{minute} {hour} * * *")
-
-
-def looks_like_timed_schedule(text: str) -> bool:
-    """True when user prose asks to schedule work at a clock time."""
-    blob = (text or "").strip()
-    if not blob:
-        return False
-    if not _SCHEDULE_TRIGGER.search(blob):
-        return False
-    return extract_clock_cron(blob) is not None
-
-
-def force_timed_schedule_plan(
-    src: dict[str, Any],
-    text: str,
-) -> dict[str, Any]:
-    """Override weak LLM demotions: timed đặt-lịch must stay task_hint=schedule.
-
-    Lab failure: mixed greeting+fuel+weather with ``đặt lịch lúc HH:MM`` was
-    classified as immediate async → 3 sequential compound jobs instead of one
-    lịch confirm + fire later.
-    """
-    out = dict(src) if isinstance(src, dict) else {}
-    if not looks_like_timed_schedule(text):
-        return out
-    cron = valid_cron(str(out.get("cron_expr") or "")) or extract_clock_cron(text)
-    if not cron:
-        return out
-    out["task_hint"] = "schedule"
-    out["cron_expr"] = cron
-    cadence = str(out.get("cadence") or "").strip().lower()
-    if cadence not in CADENCES:
-        out["cadence"] = "once"
-    out["execution_class"] = "schedule"
-    out["task_type"] = "create_schedule"
-    out["response_mode"] = "confirm"
-    out["process_original_message"] = False
-    out["skill"] = "schedule"
-    if out.get("skill_action") in (None, "", "null"):
-        out["skill_action"] = "create"
-    exact = verbatim_schedule_body(text)
-    if exact:
-        out["message"] = exact
-        existing: list[str] = []
-        raw_ins = out.get("instructions")
-        if isinstance(raw_ins, list):
-            existing = [str(x).strip() for x in raw_ins if str(x).strip()]
-        # Preserve LLM/heuristic multi-skill splits; only collapse single-blob paraphrases.
-        if len(existing) < 2:
-            out["instructions"] = [exact]
-    return out
-
-
-def verbatim_schedule_body(text: str) -> str | None:
-    """Exact reminder body after nội dung: — never trust a paraphrased LLM rewrite."""
-    blob = (text or "").strip()
-    if not blob:
-        return None
-    m = _CONTENT_AFTER.search(blob)
-    if not m:
-        return None
-    body = (m.group(1) or "").strip().strip("\"' ")
-    return body or None
 
 
 def _coerce_message_field(val: Any) -> str:
@@ -630,342 +677,14 @@ def sanitize_instructions(raw: Any, fallback: str) -> list[str]:
     return out
 
 
-_SCHEDULE_HINT = re.compile(
-    r"đặt\s*lịch|dat\s*lich|\bschedule\b|\bcron\b|hằng\s*ngày|hang\s*ngay|"
-    r"daily\s+at|mỗi\s*sáng|moi\s*sang|chạy\s*một\s*lần|chay\s*mot\s*lan|"
-    r"\d+\s*(?:phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)\s*(?:nữa|nua)?|"
-    r"(?:sau|in|trong)\s+\d+\s*(?:phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)",
-    re.I,
-)
-# Protocol parse for relative delay — not NLU; mirrors schedule_client runtime resolver.
-_RELATIVE_DELAY = re.compile(
-    r"(?:sau\s+|in\s+|trong\s+)?(\d+)\s*"
-    r"(phút|giây|giờ|phut|giay|gio|minutes?|seconds?|hours?)\s*(?:nữa|nua)?",
-    re.I,
-)
-_RELATIVE_UNIT_SECONDS = {
-    "phút": 60,
-    "phut": 60,
-    "minute": 60,
-    "minutes": 60,
-    "giây": 1,
-    "giay": 1,
-    "second": 1,
-    "seconds": 1,
-    "giờ": 3600,
-    "gio": 3600,
-    "hour": 3600,
-    "hours": 3600,
-}
-_ONCE_AT = re.compile(
-    r"(?:một\s*lần|mot\s*lan|once|chạy)?\s*(?:lúc|luc|at)\s*(\d{1,2})\s*[:hH]\s*(\d{2})",
-    re.I,
-)
-_DAILY_AT = re.compile(
-    r"(?:hằng\s*ngày|hang\s*ngay|mỗi\s*ngày|moi\s*ngay|daily)\s*(?:lúc|luc|at)?\s*(\d{1,2})\s*[:hH]\s*(\d{2})",
-    re.I,
-)
-_CONTENT_AFTER = re.compile(
-    r"(?:với\s*nội\s*dung|voi\s*noi\s*dung|nội\s*dung|noi\s*dung)\s*[:\-]?\s*(.+)$",
-    re.I | re.S,
-)
-_NUMBERED_LINE = re.compile(r"^\s*\d+[.)]\s+(.+)$", re.MULTILINE)
-_FUEL_KW = ("xăng", "xang", "ron92", "ron95", "e5", "e10", "gasoline", "fuel")
-_WEATHER_KW = ("thời tiết", "thoi tiet", "weather")
-_DRAW_KW = ("vẽ", "ve ", "draw", "hình", "hinh", "poster", "infographic", "video")
-_CITY_KW = ("hồ chí minh", "ho chi minh", "hcmc", "tp.hcm", "thành phố", "thanh pho")
-# Destination display name only — stop at protocol delimiters (not work-verb NLU).
-_INTO_CHANNEL = re.compile(
-    r"(?:vào|vao|into|to)\s+(?:(?:zalo|telegram|lark|discord|slack)\s+)?"
-    r"(?:nhóm\s+|nhom\s+|group\s+)?"
-    r"([^\n,;:]{2,80}?)"
-    r"(?=\s+(?:nội\s*dung|noi\s*dung|content|với\s*nội|voi\s*noi|,|;|:|$))",
-    re.I,
-)
-
-
-def _clean_heuristic_channel(raw: str) -> str:
-    ref = (raw or "").strip(" \t\"'“”.:-")
-    if not ref:
-        return ""
-    low = ref.lower()
-    for prefix in (
-        "zalo ",
-        "telegram ",
-        "lark ",
-        "discord ",
-        "slack ",
-        "whatsapp ",
-        "nhóm ",
-        "nhom ",
-        "group ",
-    ):
-        if low.startswith(prefix):
-            stripped = ref[len(prefix) :].strip(" \t\"'“”.:-")
-            if stripped:
-                ref = stripped
-                low = ref.lower()
-            break
-    return ref.strip()
-
-
-def _heuristic_target_channel(blob: str) -> str | None:
-    m = _INTO_CHANNEL.search(blob or "")
-    if not m:
-        return None
-    cleaned = _clean_heuristic_channel(m.group(1) or "")
-    if not cleaned or cleaned.lower() in {"nội dung", "noi dung", "content"}:
-        return None
-    return cleaned
-
-
-def _inner_schedule_body(blob: str) -> str:
-    """Protocol extract: body after nội dung:/content:, else after relative delay.
-
-    No verb dictionaries — LLM classify owns paraphrases and destination/work split.
-    """
-    raw = (blob or "").strip()
-    if not raw:
-        return ""
-    m_body = _CONTENT_AFTER.search(raw)
-    if m_body:
-        return (m_body.group(1) or "").strip()
-    m_rel = _RELATIVE_DELAY.search(raw)
-    if m_rel:
-        return raw[m_rel.end() :].strip(" ,.-:")
-    return raw
-
-
-def _split_schedule_task_body(body: str) -> list[str]:
-    """Numbered-list split only (protocol). Skill split belongs to classify.json."""
-    raw = (body or "").strip()
-    if not raw:
-        return []
-    numbered = _parse_numbered_instructions(raw)
-    if len(numbered) >= 2:
-        return numbered
-    return [raw]
-
-
-def delay_seconds_from_text(text: str) -> int | None:
-    """Protocol extract of relative delay seconds from user prose (host authority)."""
-    m = _RELATIVE_DELAY.search(text or "")
-    if not m:
-        return None
-    try:
-        n = int(m.group(1))
-    except (TypeError, ValueError):
-        return None
-    unit = (m.group(2) or "").lower()
-    secs = n * _RELATIVE_UNIT_SECONDS.get(unit, 0)
-    if secs <= 0 or secs > 86400 * 30:
-        return None
-    return secs
-
-
-def schedule_heuristic_plan(text: str) -> dict[str, Any] | None:
-    """Deterministic once/daily schedule when LLM classify is down (503/timeout).
-
-    Enriched with target_channel, schedule_delivery, and skill-split instructions so
-    fallback still matches classify.json process/split rules. Prefer LLM first —
-    do not early-return this before classify_with_llm attempts.
-    """
-    blob = (text or "").strip()
-    if not blob or len(blob) > 2000:
-        return None
-    if not _SCHEDULE_HINT.search(blob):
-        return None
-    # Relative once_after: delay_seconds only — never invent cron / next_run_at here.
-    delay = delay_seconds_from_text(blob)
-    if delay is not None and not extract_clock_cron(blob):
-        body = _inner_schedule_body(blob)
-        # Protocol: nội dung:/content: → dictated send-body (verbatim). Else process
-        # (LLM owns "gửi vào group + describe" vs poem — heuristic must not NLU).
-        has_content_marker = bool(_CONTENT_AFTER.search(blob))
-        delivery = "verbatim" if has_content_marker else "process"
-        instructions = _split_schedule_task_body(body)
-        if len(instructions) > 1:
-            delivery = "process"
-        out: dict[str, Any] = {
-            "task_hint": "schedule",
-            "task_type": "create_schedule",
-            "execution_class": "schedule",
-            "response_mode": "confirm",
-            "process_original_message": False,
-            "skill": "schedule",
-            "skill_action": "create",
-            "cadence": "once",
-            "schedule_form": "once_after",
-            "delay_seconds": delay,
-            "cron_expr": None,
-            "next_run_at": None,
-            "message": body,
-            "instructions": instructions,
-            "schedule_delivery": delivery,
-        }
-        channel = _heuristic_target_channel(blob)
-        if channel:
-            out["target_channel"] = channel
-        return out
-    cadence = "once"
-    hh = mm = None
-    m_daily = _DAILY_AT.search(blob)
-    m_once = _ONCE_AT.search(blob)
-    if m_daily:
-        cadence = "daily"
-        hh, mm = int(m_daily.group(1)), int(m_daily.group(2))
-    elif m_once:
-        hh, mm = int(m_once.group(1)), int(m_once.group(2))
-    if hh is None or mm is None or not (0 <= hh <= 23 and 0 <= mm <= 59):
-        return None
-    cron = f"{mm} {hh} * * *"
-    body = _inner_schedule_body(blob)
-    if not body:
-        body = blob
-    # Clock path without nội dung: keep remnant after clock when no content marker.
-    if not _CONTENT_AFTER.search(blob):
-        cut = m_daily or m_once
-        if cut:
-            remnant = blob[cut.end() :].strip(" ,.-:")
-            remnant = re.sub(
-                r"^(?:với\s*nội\s*dung|voi\s*noi\s*dung|nội\s*dung|noi\s*dung)\s*[:\-]?\s*",
-                "",
-                remnant,
-                flags=re.I,
-            ).strip()
-            if remnant:
-                body = remnant
-    instructions = _split_schedule_task_body(body)
-    # Clock / recurring schedules: heuristic always process (skill split is LLM).
-    # Dictated once_after + nội dung: is handled in the once_after branch above.
-    delivery = "process"
-    target = _heuristic_target_channel(blob)
-    out: dict[str, Any] = {
-        "task_hint": "schedule",
-        "execution_class": "schedule",
-        "task_type": "create_schedule",
-        "response_mode": "confirm",
-        "process_original_message": False,
-        "message": body,
-        "instructions": instructions,
-        "cadence": cadence,
-        "cron_expr": cron,
-        "skill": "schedule",
-        "skill_action": "create",
-        "schedule_delivery": delivery,
-    }
-    if target:
-        out["target_channel"] = target
-    return out
-
-
-def _parse_numbered_instructions(blob: str) -> list[str]:
-    items: list[str] = []
-    for m in _NUMBERED_LINE.finditer(blob):
-        s = m.group(1).strip()
-        if s:
-            items.append(s)
-    return items
-
-
-def infographic_weather_fuel_plan(text: str) -> dict[str, Any] | None:
-    """One-shot weather+fuel infographic when classify LLM is down (case 26)."""
-    blob = (text or "").strip()
-    if not blob or len(blob) > 4000:
-        return None
-    if len(_parse_numbered_instructions(blob)) >= 2:
-        return None
-    low = blob.lower()
-    fuel = any(k in low for k in _FUEL_KW)
-    weather = any(k in low for k in _WEATHER_KW)
-    draw = any(k in low for k in _DRAW_KW)
-    city = any(k in low for k in _CITY_KW)
-    if not (fuel and (weather or draw) and (city or draw)):
-        return None
-    return {
-        "task_hint": "tool",
-        "execution_class": "async",
-        "task_type": "media_generation",
-        "response_mode": "ack_then_deliver",
-        "process_original_message": True,
-        "instructions": [blob],
-    }
-
-
-def numbered_list_heuristic_plan(text: str) -> dict[str, Any] | None:
-    """Multi-part numbered asks when classify LLM returns garbage (case 25 / FIFO)."""
-    blob = (text or "").strip()
-    if not blob or len(blob) > 8000:
-        return None
-    items = _parse_numbered_instructions(blob)
-    if len(items) < 2:
-        return None
-    m_daily = _DAILY_AT.search(blob)
-    if m_daily:
-        try:
-            hh, mm = int(m_daily.group(1)), int(m_daily.group(2))
-        except (TypeError, ValueError):
-            hh = mm = None
-        if hh is not None and mm is not None and 0 <= hh <= 23 and 0 <= mm <= 59:
-            cron = valid_cron(f"{mm} {hh} * * *")
-            if cron:
-                return {
-                    "task_hint": "schedule",
-                    "execution_class": "schedule",
-                    "task_type": "create_schedule",
-                    "response_mode": "confirm",
-                    "process_original_message": False,
-                    "instructions": items,
-                    "cadence": "daily",
-                    "cron_expr": cron,
-                    "skill": "schedule",
-                    "skill_action": "create",
-                }
-    return {
-        "task_hint": "tool",
-        "execution_class": "async",
-        "task_type": "tool",
-        "response_mode": "ack_then_deliver",
-        "process_original_message": True,
-        "instructions": items,
-    }
-
-
 def heuristic_plan(text: str) -> dict[str, Any] | None:
-    """Local fallback when classify LLM returns garbage (Omni free-tier weak models)."""
-    blob = (text or "").strip()
-    if not blob:
-        return None
-    sched = schedule_heuristic_plan(blob)
-    if sched:
-        return sched
-    info = infographic_weather_fuel_plan(blob)
-    if info:
-        return info
-    numbered = numbered_list_heuristic_plan(blob)
-    if numbered:
-        return numbered
-    if len(blob) > 400:
-        return None
-    low = blob.lower()
-    if _SCHEDULE_HINT.search(blob):
-        return None
-    if any(tok in low for tok in ("vẽ", "ve ", "draw", "image", "hình", "poster", "ocr", "pdf")):
-        return None
-    numbered = [ln.strip() for ln in blob.splitlines() if ln.strip()]
-    if len(numbered) >= 2 and all(
-        re.match(r"^\d+[.)]\s+", ln) for ln in numbered[: min(4, len(numbered))]
-    ):
-        return None
-    return {
-        "task_hint": "normal",
-        "instructions": [blob],
-        "process_original_message": True,
-    }
+    """LLM classify owns intent. Offline phrase scan is not a fallback."""
+    del text
+    return None
 
 
 def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dict[str, Any]:
-    src = force_timed_schedule_plan(data if isinstance(data, dict) else {}, text or "")
+    src = data if isinstance(data, dict) else {}
     hint = str(src.get("task_hint") or "").strip().lower()
     if hint in {"secret", "blocked", "sensitive"}:
         hint = "unknown"
@@ -986,46 +705,18 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         cadence = "once"
         cron = None
     else:
-        # Classifier must not invent cron for one-shot; discard LLM cron for once_at.
         llm_cron = valid_cron(str(src.get("cron_expr") or ""))
-        host_clock = extract_clock_cron(fallback)
         if schedule_form == "once_after":
             cron = None
-        elif schedule_form == "once_at" or (
-            not schedule_form
-            and hint == "schedule"
-            and cadence == "once"
-            and host_clock
-            and not any(
-                tok in (fallback or "").lower()
-                for tok in (
-                    "hằng ngày",
-                    "hang ngay",
-                    "mỗi ngày",
-                    "moi ngay",
-                    "daily",
-                    "mỗi tuần",
-                    "hang tuần",
-                    "weekly",
-                    "mỗi tháng",
-                    "monthly",
-                )
-            )
-        ):
-            schedule_form = "once_at"
+        elif schedule_form == "once_at":
             cadence = "once"
-            # Host protocol fill for worker storage — not classifier invention.
-            cron = host_clock
+            cron = None
         elif schedule_form == "recurring" or cadence in {"daily", "weekly", "monthly", "yearly"}:
             if not schedule_form:
                 schedule_form = "recurring"
-            cron = llm_cron or host_clock
+            cron = llm_cron
         else:
             cron = llm_cron
-            if hint == "schedule" and not cron:
-                cron = host_clock
-            if schedule_form == "once_after":
-                cron = None
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
     exec_cls, task_type, response_mode = normalize_execution(src, hint)
     skill, skill_action = normalize_skill(src, hint, task_type)
@@ -1109,6 +800,17 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             or None
         ),
         "schedule_delivery": None if (is_delete or is_list) else schedule_delivery,
+        "output_type": _coerce_output_type(src.get("output_type")) or None,
+        "clock_hm": None if (is_delete or is_list) else _coerce_clock_hm(src.get("clock_hm")),
+        "poster_n": _coerce_poster_n(src.get("poster_n")),
+        "poster_phrase": (str(src.get("poster_phrase") or "").strip()[:80] or None),
+        "poster_bw": src.get("poster_bw") if isinstance(src.get("poster_bw"), bool) else None,
+        "uncertain": bool(src.get("uncertain") is True),
+        "missing": [
+            str(x).strip().lower()
+            for x in (src.get("missing") or [])
+            if str(x).strip().lower() in {"time", "destination", "output_type"}
+        ],
     }
 
 
@@ -1120,6 +822,9 @@ async def classify_with_llm(
     n9_base: str,
     n9_key: str,
     model: str | None = None,
+    thread: str = "unknown",
+    attachments: str = "none",
+    quoted: str = "none",
 ) -> dict[str, Any]:
     cfg = _load_cfg()
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
@@ -1135,9 +840,6 @@ async def classify_with_llm(
         )
         if plan_schema_ok(plan):
             return plan
-    # Do NOT early-return schedule_heuristic_plan here: complex daily/task schedules
-    # need classify.json for target_channel + schedule_delivery=process + skill split.
-    # Heuristic remains the post-LLM fallback via heuristic_plan().
     tmpl = str(cfg.get("user_template") or "Timezone: {timezone}\nMessage:\n{text}")
     headers = {"Content-Type": "application/json"}
     if n9_key:
@@ -1155,7 +857,14 @@ async def classify_with_llm(
                 {"role": "system", "content": str(cfg.get("system") or "")},
                 {
                     "role": "user",
-                    "content": tmpl.replace("{timezone}", tz).replace("{text}", blob),
+                    "content": _fill_user_template(
+                        tmpl,
+                        timezone=tz,
+                        text=blob,
+                        thread=str(thread or "unknown"),
+                        attachments=str(attachments or "none"),
+                        quoted=str(quoted or "none"),
+                    ),
                 },
             ],
         }
@@ -1206,11 +915,6 @@ async def classify_with_llm(
                     print(f"[classify] ok via fallback model={model_id}", flush=True)
                 return plan
             last_err = "classify_invalid"
-    guess = heuristic_plan(blob)
-    if guess:
-        plan = normalize_plan(guess, blob, tz)
-        if plan_schema_ok(plan):
-            return plan
     return failed_plan(tz, last_err)
 
 
