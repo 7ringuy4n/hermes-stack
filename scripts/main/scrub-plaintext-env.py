@@ -23,19 +23,17 @@ DATA_DIR = Path(
     or "/data/assistant"
 )
 
-# Keep OpenBao bootstrap + non-secret ops flags; wipe values for these after seed.
+# Wipe values that OpenBao can re-export. Do NOT scrub compose-interpolated
+# required host keys (MEMORY_DB_PASSWORD, HERMES_DASHBOARD_*, API_SERVER_KEY) —
+# docker compose ${VAR:?} reads ROOT/.env at parse time, not only env_file.
 SCRUB_VALUE_KEYS = (
     "N9ROUTER_API_KEY",
     "N9ROUTER_INITIAL_PASSWORD",
     "OMNIROUTER_API_KEY",
     "OMNIROUTER_INITIAL_PASSWORD",
-    "API_SERVER_KEY",
     "GATEWAY_API_KEYS",
     "TAVILY_API_KEY",
     "FIRECRAWL_API_KEY",
-    "HERMES_DASHBOARD_PASSWORD",
-    "HERMES_DASHBOARD_SECRET",
-    "MEMORY_DB_PASSWORD",
     "ZALO_API_TOKEN",
     "ZALO_PLUGIN_TOKEN",
     "GRAFANA_ADMIN_PASSWORD",

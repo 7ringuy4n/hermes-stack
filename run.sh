@@ -537,6 +537,7 @@ do_update() {
   if [[ ${#services[@]} -gt 0 ]]; then
     echo "==> component update: ${services[*]}"
     echo "==> pull selected images (best-effort)"
+    do_load_openbao_env_for_compose
     compose pull "${services[@]}" || true
     ensure_hermes_media_dirs
     # Scoped recreate — never docker compose down; never touch postgres unless requested.
@@ -557,6 +558,7 @@ do_update() {
   fi
 
   echo "==> pull vendor images (best-effort)"
+  do_load_openbao_env_for_compose
   compose pull || true
 
   echo "==> rebuild + recreate"
@@ -612,6 +614,18 @@ do_scrub_plaintext_env() {
   STACK_ROOT="${ROOT}" ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}" \
     python3 "${SCRIPTS_DIR}/scrub-plaintext-env.py" \
     || echo "WARN: scrub-plaintext-env returned non-zero"
+}
+
+do_load_openbao_env_for_compose() {
+  # Compose ${VAR:?} and hermes env_file need KV export before up|update.
+  [[ "${ENABLE_OPENBAO:-0}" == "1" ]] || return 0
+  [[ -f "${SCRIPTS_DIR}/load-openbao-env.py" ]] || return 0
+  echo "==> load OpenBao env for compose"
+  export STACK_ROOT="${STACK_ROOT:-$ROOT}"
+  export ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-/data/assistant}"
+  export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$ASSISTANT_DATA_DIR}"
+  python3 "${SCRIPTS_DIR}/load-openbao-env.py" \
+    || echo "WARN: load-openbao-env failed — re-run: bash run.sh load-openbao-env"
 }
 
 do_post_ready_learn() {
@@ -997,6 +1011,7 @@ case "$cmd" in
     assistant_profile_summary
     ensure_hermes_media_dirs
     do_remove_stale_worker_containers
+    do_load_openbao_env_for_compose
     compose up -d --remove-orphans
     do_stop_disabled_optionals
     if [[ -f "${SCRIPTS_DIR}/hermes-cron-share.sh" ]]; then
