@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Note: Qwen/Alibaba is wired primarily via OmniRouter first-setup (provider alibaba, combos hermes+classifier). When ENABLE_9ROUTER=1, add Qwen models in 9Router Combos UI with Qwen first and round-robin.
-First-setup after the stack is up with 9Router enabled:
+"""First-setup after the stack is up with 9Router enabled:
 
 1) Login to 9Router with N9ROUTER_INITIAL_PASSWORD
 2) Read Default Key from GET /api/keys
 3) Write N9ROUTER_API_KEY into stack .env
 4) Ensure combo `hermes` with OpenCode Free (`oc/*`) models
    (catalog from /api/providers/suggested-models — OpenCode is noAuth and
-   does not appear on /v1/models until a combo exists)
+    does not appear on /v1/models until a combo exists)
 5) Set combo strategy to round-robin (rotate)
 6) Point Hermes at 9Router (custom) with default model `hermes`
 7) Recreate embedding / dispatcher / hermes
