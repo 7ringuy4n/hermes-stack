@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Knowledge-learn gate — no keyword dictionaries.
 
-When secret-probe policy is classify-owned (empty markers), this returns False
-so the host classify/learn-skip path owns the decision. Missing policy file
-still fail-closed.
+Uses policy block_patterns (default empty). When empty / classify-owned,
+returns False so host classify/learn-skip owns the decision. Missing policy
+file still fail-closed.
 """
 from __future__ import annotations
 
@@ -11,6 +11,25 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+
+
+def _markers_from_policy(data: dict[str, Any]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    keys = ("block_patterns",)
+    if "block_patterns" not in data:
+        keys = ("input_block_patterns", "output_block_patterns")
+    for key in keys:
+        for marker in data.get(key) or []:
+            needle = str(marker or "").strip()
+            if not needle:
+                continue
+            k = needle.casefold()
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(needle)
+    return out
 
 
 def secret_probe_blocked(text: str) -> bool:
@@ -39,6 +58,7 @@ def secret_probe_blocked(text: str) -> bool:
         if isinstance(raw, dict) and (
             raw.get("schema")
             or raw.get("intent_owner") is not None
+            or "block_patterns" in raw
             or "input_block_patterns" in raw
             or "output_block_patterns" in raw
         ):
@@ -46,13 +66,8 @@ def secret_probe_blocked(text: str) -> bool:
             break
     if data is None:
         return True
-    markers = []
-    for marker in data.get("input_block_patterns") or []:
-        needle = str(marker or "").strip()
-        if needle:
-            markers.append(needle)
+    markers = _markers_from_policy(data)
     if not markers:
-        # Classify-owned — host must not stage; ingest does not keyword-scan.
         return False
     hay = blob.casefold()
     for needle in markers:

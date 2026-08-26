@@ -17,7 +17,11 @@ def main() -> int:
     reload_policy()
     policy = (ROOT / "config" / "agent" / "secret-probe.json").read_text(encoding="utf-8")
     assert "intent_owner" in policy
-    assert '"input_block_patterns": []' in policy.replace(" ", "") or '"input_block_patterns":[]' in policy.replace(" ", "")
+    assert "block_patterns" in policy
+    assert "input_block_patterns" not in policy
+    assert "output_block_patterns" not in policy
+    compact = policy.replace(" ", "").replace("\n", "")
+    assert '"block_patterns":[]' in compact
 
     hello = probe("Xin chào Hermes", direction="input")
     assert hello["status"] == "SAFE", hello
