@@ -38,6 +38,7 @@ def run_office_create(
     thread_type: str = "user",
     *,
     classified: bool = False,
+    output_type: str = "",
 ) -> Optional[dict]:
     """POST /v1/office-file. Caller must already have a single file-create plan."""
     if not classified:
@@ -45,17 +46,16 @@ def run_office_create(
     prompt = (text or "").strip()
     if not prompt:
         return None
+    body: dict[str, Any] = {
+        "prompt": prompt,
+        "thread_id": str(thread_id),
+        "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
+        "caption": "",
+    }
+    if (output_type or "").strip():
+        body["output_type"] = output_type.strip().lower()
     try:
-        out = _post(
-            "/v1/office-file",
-            {
-                "prompt": prompt,
-                "thread_id": str(thread_id),
-                "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
-                "caption": "",
-            },
-            timeout=45.0,
-        )
+        out = _post("/v1/office-file", body, timeout=120.0)
     except Exception as e:  # noqa: BLE001
         log.warning("office shortcut failed: %s", type(e).__name__)
         return None
@@ -70,6 +70,9 @@ def run_text_poster(
     thread_type: str = "user",
     *,
     classified: bool = False,
+    poster_n: int | None = None,
+    poster_phrase: str = "",
+    poster_bw: bool | None = None,
 ) -> Optional[dict]:
     """POST /v1/image text-poster. Caller must already have a media_generation plan."""
     del thread_id, thread_type
@@ -78,17 +81,20 @@ def run_text_poster(
     prompt = (text or "").strip()
     if not prompt:
         return None
+    body: dict[str, Any] = {
+        "prompt": prompt,
+        "filename": "poster.png",
+        "refine": False,
+        "mode": "text-poster",
+    }
+    if poster_phrase:
+        body["poster_phrase"] = poster_phrase
+    if poster_n is not None:
+        body["poster_n"] = poster_n
+    if poster_bw is not None:
+        body["poster_bw"] = poster_bw
     try:
-        out = _post(
-            "/v1/image",
-            {
-                "prompt": prompt,
-                "filename": "poster.png",
-                "refine": False,
-                "mode": "text-poster",
-            },
-            timeout=60.0,
-        )
+        out = _post("/v1/image", body, timeout=60.0)
     except Exception as e:  # noqa: BLE001
         log.warning("text-poster shortcut failed: %s", type(e).__name__)
         return None

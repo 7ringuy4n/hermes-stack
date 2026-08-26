@@ -1,15 +1,15 @@
 """Zalo compound + schedule splitting via LLM classify. No regex NLU for intent.
 
 Immediate multi-request bubbles: classify emits N instructions; the host runs them
-sequentially (one turn at a time). Schedule: one fire payload or one job per clock.
+sequentially (one turn at a time). Schedule: one fire payload or one job per
+classify tasks[] entry.
 """
 from __future__ import annotations
 
 import os
-import re
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 _d = Path(__file__).resolve().parent
 _shared = Path(os.getenv("HERMES_SHARED_DATA") or "/opt/data") / "plugins" / "zalo"
@@ -20,58 +20,10 @@ for _p in (_d, _shared):
 
 from classify_client import classify_text, strip_prior_for_classify
 
-# Protocol HH:MM inside classify instructions (not inbound prose NLU).
-_CLOCK_HM = re.compile(r"\b(\d{1,2})\s*[:hH]\s*(\d{2})\b")
-
 
 def looks_like_schedule_job(text: str) -> bool:
     plan = classify_text(text or "")
     return plan.get("task_hint") == "schedule"
-
-
-def _clock_pairs(text: str) -> List[Tuple[int, int]]:
-    out: List[Tuple[int, int]] = []
-    seen: set[Tuple[int, int]] = set()
-    for m in _CLOCK_HM.finditer(text or ""):
-        try:
-            hour = int(m.group(1))
-            minute = int(m.group(2))
-        except (TypeError, ValueError):
-            continue
-        if not (0 <= hour <= 23 and 0 <= minute <= 59):
-            continue
-        key = (hour, minute)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(key)
-    return out
-
-
-def _split_multi_clock_schedule(raw: str, instructions: List[str]) -> List[str] | None:
-    """Fan-out when classify already emitted 2+ instructions with distinct HH:MM.
-
-    Same clock + several skills stays one job. Do not scan inbound prose.
-    """
-    del raw
-    items = [str(x).strip() for x in instructions if str(x).strip()]
-    if len(items) < 2:
-        return None
-
-    per_clock: list[str] = []
-    used: set[Tuple[int, int]] = set()
-    for instr in items:
-        own = _clock_pairs(instr)
-        if len(own) == 1 and own[0] not in used:
-            per_clock.append(instr)
-            used.add(own[0])
-        elif len(own) >= 1:
-            per_clock.append(instr)
-            used.update(own[:1])
-
-    if len(per_clock) >= 2 and len(used) >= 2:
-        return per_clock
-    return None
 
 
 def split_compound_requests(text: str) -> List[str]:
@@ -79,11 +31,19 @@ def split_compound_requests(text: str) -> List[str]:
     if not raw:
         return []
     plan = classify_text(raw)
+    tasks = plan.get("tasks") or []
+    if isinstance(tasks, list) and len(tasks) >= 2:
+        out: List[str] = []
+        for item in tasks:
+            if not isinstance(item, dict):
+                continue
+            ins = [str(x).strip() for x in (item.get("instructions") or []) if str(x).strip()]
+            if ins:
+                out.append("\n".join(ins))
+        if len(out) >= 2:
+            return out
     items = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
     if plan.get("task_hint") == "schedule":
-        multi = _split_multi_clock_schedule(raw, items)
-        if multi:
-            return multi
         return [raw]
     return items or [raw]
 

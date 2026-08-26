@@ -1,7 +1,6 @@
 """CRUD for Hermes jobs.json (shared cron dir). User-facing: lịch / schedule."""
 from __future__ import annotations
 
-import re
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,23 +15,52 @@ from schedule_list import (
 )
 
 JOBS_NAME = "jobs.json"
-_CRON5_RE = re.compile(
-    r"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+))?\s*$"
+_CRON_TOKEN_OK = set("0123456789*,/-")
+_INTERNAL_MARKS = (
+    "daily-optimize",
+    "optimize-rules",
+    "new-session",
+    "rotate-session",
+    "clearsession",
 )
-_HHMM_RE = re.compile(
-    r"^(?P<h>\d{1,2})\s*[:h]\s*(?P<m>\d{2})?\s*(?P<ampm>am|pm|sáng|sang|chiều|chieu|tối|toi)?$",
-    re.I,
-)
-_FLAG_TIME_RE = re.compile(r"--time(?:r)?(?:\s+|=)(\S+)", re.I)
-_FLAG_SCHED_RE = re.compile(r"--schedule(?:\s+|=)(.+)$", re.I)
-_TIMER_PREFIX_RE = re.compile(
-    r"^(?:timer|hẹn\s*giờ|hen\s*gio|lúc|luc|at)\s+",
-    re.I,
-)
-_INTERNAL_RE = re.compile(
-    r"daily[-_]?optimize|optimize[-_]?rules|new.?session|rotate.?session|clearsession",
-    re.I,
-)
+
+
+def _is_internal_text(s: str) -> bool:
+    low = (s or "").lower().replace("_", "-")
+    return any(m in low for m in _INTERNAL_MARKS)
+
+
+def _parse_index_range(item: str) -> tuple[int, int] | None:
+    raw = (item or "").strip().replace("–", "-")
+    if raw.count("-") != 1:
+        return None
+    left, right = raw.split("-", 1)
+    if not left.strip().isdigit() or not right.strip().isdigit():
+        return None
+    return int(left), int(right)
+
+
+def _flag_value(raw: str, flag: str) -> tuple[str, str]:
+    """Pull `--flag value` or `--flag=value` without matching a longer flag."""
+    low = (raw or "").lower()
+    key = flag.lower()
+    start = 0
+    while True:
+        idx = low.find(key, start)
+        if idx < 0:
+            return "", raw
+        end = idx + len(flag)
+        if end < len(raw) and raw[end].isalpha():
+            start = end
+            continue
+        after = raw[end:]
+        if after.startswith("="):
+            rest = after[1:]
+            val, _, tail = rest.partition(" ")
+            return val.strip().strip('"'), (raw[:idx] + tail).strip()
+        rest = after.lstrip()
+        val, _, tail = rest.partition(" ")
+        return val.strip().strip('"'), (raw[:idx] + tail).strip()
 
 
 def _now_iso(tz_name: str) -> str:
@@ -109,7 +137,7 @@ def visible_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         name = str(job.get("name") or job.get("id") or "")
         prompt = str(job.get("prompt") or "")
-        if _INTERNAL_RE.search(name) or _INTERNAL_RE.search(prompt):
+        if _is_internal_text(name) or _is_internal_text(prompt):
             continue
         out.append(job)
     return out
@@ -166,7 +194,6 @@ SCOPE_GLOBAL = "global"
 SCOPE_GROUP = "group"
 _ALL_TOKENS = {"all", "*", "--all"}
 _GROUP_TOKENS = {"group", "nhom", "nhóm", "--group"}
-_INDEX_RANGE_RE = re.compile(r"^(\d+)\s*[-–]\s*(\d+)$")
 REMOVE_BULK_CAP = 100
 
 
@@ -231,7 +258,7 @@ def _is_index_token(token: str) -> bool:
     pieces = [p for p in pieces if p]
     if not pieces:
         return False
-    return all(p.isdigit() or _INDEX_RANGE_RE.match(p) for p in pieces)
+    return all(p.isdigit() or _parse_index_range(p) is not None for p in pieces)
 
 
 def expand_index_selectors(tokens: list[str]) -> list[str]:
@@ -242,9 +269,9 @@ def expand_index_selectors(tokens: list[str]) -> list[str]:
             item = piece.strip()
             if not item:
                 continue
-            hit = _INDEX_RANGE_RE.match(item)
+            hit = _parse_index_range(item)
             if hit:
-                lo, hi = int(hit.group(1)), int(hit.group(2))
+                lo, hi = hit
                 if lo > hi:
                     lo, hi = hi, lo
                 for n in range(lo, min(hi, lo + REMOVE_BULK_CAP) + 1):
@@ -285,25 +312,48 @@ def resolve_jobs(
 
 
 def parse_hhmm_cron(text: str) -> Optional[str]:
-    t = (text or "").strip().lower()
-    m = _HHMM_RE.match(t)
-    if not m:
+    """Digit clock only (6:00, 18h30, 6h). Reject leftover words such as sáng."""
+    raw = (text or "").strip().lower().replace(" ", "")
+    if not raw:
         return None
-    hour = int(m.group("h"))
-    minute = int(m.group("m") or 0)
-    ampm = (m.group("ampm") or "").lower()
-    if ampm in {"pm", "chiều", "chieu", "tối", "toi"} and hour < 12:
-        hour += 12
-    if ampm in {"am", "sáng", "sang"} and hour == 12:
-        hour = 0
+    for ch in raw:
+        if ch not in "0123456789:h":
+            return None
+    clock = raw.replace("h", ":", 1) if "h" in raw and ":" not in raw else raw.replace("h", ":")
+    if clock.count(":") != 1:
+        return None
+    left, right = clock.split(":", 1)
+    if not left.isdigit():
+        return None
+    if right == "":
+        minute = 0
+    elif right.isdigit() and len(right) <= 2:
+        minute = int(right)
+    else:
+        return None
+    hour = int(left)
     if hour > 23 or minute > 59:
         return None
     return f"{minute} {hour} * * *"
 
 
+_CLOCK_CLI_HEAD = {"timer", "time", "schedule"}
+
+
+def _strip_clock_cli_prefix(text: str) -> str:
+    """`!zalo` clock keywords only — not user-language NLU."""
+    t = (text or "").strip()
+    if not t:
+        return t
+    tokens = t.split(None, 1)
+    if tokens[0].lower() in _CLOCK_CLI_HEAD and len(tokens) > 1:
+        return tokens[1].strip()
+    return t
+
+
 def extract_clock_payload(text: str) -> Optional[str]:
-    """If the whole payload is a clock (optionally after timer/lúc), return cron expr."""
-    t = _TIMER_PREFIX_RE.sub("", (text or "").strip()).strip()
+    """Whole payload is a digit clock or five-field cron — not Vietnamese prefixes."""
+    t = _strip_clock_cli_prefix(text)
     if not t:
         return None
     return parse_hhmm_cron(t) or parse_cron_expr(t)
@@ -316,17 +366,17 @@ def parse_cron_expr(text: str) -> Optional[str]:
     hhmm = parse_hhmm_cron(t)
     if hhmm:
         return hhmm
-    m = _CRON5_RE.match(t)
-    if m:
-        parts = [p for p in m.groups() if p is not None]
-        if len(parts) >= 5:
-            return " ".join(parts[:5])
+    parts = t.split()
+    if len(parts) >= 5 and all(
+        p == "*" or (p and all(ch in _CRON_TOKEN_OK for ch in p)) for p in parts[:5]
+    ):
+        return " ".join(parts[:5])
     return None
 
 
 def split_add_args(rest: str) -> tuple[Optional[str], str, str]:
     """Return (cron_expr, name, prompt)."""
-    raw = (rest or "").strip()
+    raw = _strip_clock_cli_prefix(rest or "")
     if not raw:
         return None, "", ""
     name = ""
@@ -336,22 +386,10 @@ def split_add_args(rest: str) -> tuple[Optional[str], str, str]:
     else:
         left, prompt = raw, ""
     tokens = left.split()
-    joined = " ".join(tokens)
-    tm = _TIMER_PREFIX_RE.match(joined)
-    if tm:
-        rest_t = joined[tm.end() :].strip()
-        bits = rest_t.split(None, 1)
-        if bits:
-            expr = parse_hhmm_cron(bits[0])
-            if expr:
-                leftover = bits[1].strip() if len(bits) > 1 else ""
-                if leftover and not prompt:
-                    prompt = leftover
-                elif leftover:
-                    name = leftover
-                return expr, name, prompt
     # 5-field cron at start
-    if len(tokens) >= 5 and all(re.match(r"^[\d*/,-]+$", t) or t == "*" for t in tokens[:5]):
+    if len(tokens) >= 5 and all(
+        t == "*" or (t and all(ch in _CRON_TOKEN_OK for ch in t)) for t in tokens[:5]
+    ):
         expr = " ".join(tokens[:5])
         leftover = " ".join(tokens[5:]).strip()
         if leftover and not prompt:
@@ -453,14 +491,11 @@ def parse_update_args(
             "!zalo schedule update <tên> : <nội dung>"
         )
     new_time = ""
-    tm = _FLAG_TIME_RE.search(raw)
-    if tm:
-        new_time = tm.group(1)
-        raw = (raw[: tm.start()] + raw[tm.end() :]).strip()
-    ts = _FLAG_SCHED_RE.search(raw)
-    if ts and not new_time:
-        new_time = ts.group(1).strip().strip('"')
-        raw = raw[: ts.start()].strip()
+    for flag in ("--timer", "--time", "--schedule"):
+        val, raw = _flag_value(raw, flag)
+        if val:
+            new_time = val
+            break
     new_prompt = ""
     if " -- " in raw:
         sel, new_prompt = raw.split(" -- ", 1)
@@ -564,7 +599,7 @@ def new_job(
 
 def fmt_show(job: dict[str, Any]) -> str:
     label = schedule_row_label(job) or str(job.get("name") or "lịch")
-    prompt = re.sub(r"\s+", " ", str(job.get("prompt") or "")).strip()
+    prompt = " ".join(str(job.get("prompt") or "").split()).strip()
     if prompt_is_clock_only(prompt):
         prompt = ""
     enabled = "bật" if job.get("enabled") else "tắt"

@@ -19,11 +19,29 @@ GMT7 = ZoneInfo(TZ)
 
 
 def test_extract() -> None:
-    assert extract_cadence("đặt lịch chạy lúc 18:09\n1. xin chào") == "once"
-    assert extract_cadence("hằng ngày lúc 06:00 GMT+7") == "daily"
-    assert extract_cadence("weekly at 09:00") == "weekly"
-    assert extract_cadence("hàng tháng lúc 08:00") == "monthly"
-    assert extract_cadence("yearly on 1 Jan at 07:00") == "yearly"
+    from classify_client import set_planner  # noqa: E402
+
+    def schedule_plan(cadence: str):
+        def planner(text, **k):
+            del text, k
+            return {
+                "task_hint": "schedule",
+                "cadence": cadence,
+                "cron_expr": "0 6 * * *",
+                "instructions": ["hello"],
+            }
+
+        return planner
+
+    try:
+        for kind in ("once", "daily", "weekly", "monthly", "yearly"):
+            set_planner(schedule_plan(kind))
+            assert extract_cadence("unused") == kind
+        set_planner(lambda text, **k: {"task_hint": "unknown", "instructions": ["x"]})
+        assert extract_cadence("hằng ngày lúc 06:00 GMT+7") == "once"
+        assert extract_cadence("weekly at 09:00") == "once"
+    finally:
+        set_planner(None)
     print("PASS extract_cadence")
 
 
