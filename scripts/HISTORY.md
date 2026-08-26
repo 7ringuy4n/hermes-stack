@@ -1,3 +1,34 @@
+## 2026-08-26 16:10 +07 — Secret probe hardcoding + quote envelope miss
+
+### Symptom
+Env-storage soft asks could reach Hermes as a greeting. Probe Python carried embedded deny lists and regex. @mention with a quoted message/file could hide probe wording in the quote.
+
+### Root cause
+1. `_DEFAULT_INPUT` / `_DEFAULT_OUTPUT` and `re.compile` lived in probe modules instead of policy-only matching.
+2. Host secret-probe scanned outer text only.
+3. Classify refuse (`process_original_message=false`) was not always delivered by the host.
+
+### Fix (core)
+Policy-only literal markers; fail closed if policy missing. Probe outer + quoted snip/filename. Host direct refuse for classify `process_original_message=false`. Harden classify SECRET/ENV for quote/mention envelopes. Generic SOUL/safety/zalo-channel; ops alert for missing policy.
+
+### Prevent recurrence
+Do not embed deny dictionaries or regex in probe Python. Soft paraphrases belong in classify/LLM. Always scan quote envelopes before Hermes.
+
+## 2026-08-26 15:30 +07 — Env-variable storage ask got a greeting, not a refuse
+
+### Symptom
+User asked how environment variables are stored on the server; the visible reply was a generic greeting with /help instead of a short refuse (looked like no useful response).
+
+### Root cause
+1. Secret-probe patterns covered “file môi trường” but not “biến môi trường” / environment-variable storage phrasing, so the gate did not short-block.
+2. Classify already emitted a refuse with `process_original_message=false`, but the Zalo host never delivered that line and fell through to Hermes, which greeted.
+
+### Fix (core)
+Expand `config/agent/secret-probe.json` (+ gateway copy / defaults). Harden classify SECRET/ENV policy and SOUL/safety/zalo-channel for env-variable storage asks. Host: when classify sets `process_original_message=false` with a refuse body (skill null/security), send that body and do not call Hermes.
+
+### Prevent recurrence
+Secret probe must block env-variable paraphrases before LLM. Host must honor `process_original_message=false` for direct refuse lines.
+
 ## 2026-08-26 11:20 +07 — Multi-delay schedule bubbles got no reply
 
 ### Symptom

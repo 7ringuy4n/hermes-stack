@@ -468,6 +468,33 @@ def plan_is_immediate_deliver(plan: dict[str, Any] | None) -> bool:
     return action in {"deliver", "send", "send_message"}
 
 
+def plan_is_host_direct_reply(plan: dict[str, Any] | None) -> bool:
+    """Classify already wrote the user-facing line; host must send it (no Hermes).
+
+    Used for secret/env refuse and similar: process_original_message false, no
+    schedule/deliver/knowledge skill path, skill null or security.
+    """
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    if src.get("process_original_message") is not False:
+        return False
+    hint = str(src.get("task_hint") or "").strip().lower()
+    if hint == "schedule":
+        return False
+    if plan_is_immediate_deliver(src):
+        return False
+    skill = str(src.get("skill") or "").strip().lower()
+    if skill and skill not in {"security", "none", "null"}:
+        return False
+    body = str(src.get("message") or "").strip()
+    if not body:
+        body = "\n".join(
+            str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()
+        )
+    return bool(body)
+
+
 def plan_is_async(plan: dict[str, Any] | None) -> bool:
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
