@@ -6,8 +6,7 @@ answers "today or tomorrow?" for a fixed local clock time.
 from __future__ import annotations
 
 import os
-import re
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 DEFAULT_TZ = os.environ.get("TZ", "Asia/Ho_Chi_Minh")
@@ -18,21 +17,26 @@ def local_zone(tz_name: str | None = None) -> ZoneInfo:
 
 
 def parse_hhmm(text: str) -> time | None:
-    """Parse 6:00, 06:00, 6:00 AM, 18h30, 6h."""
-    t = (text or "").strip().lower()
-    m = re.search(
-        r"(?P<h>\d{1,2})\s*(?:[:h]\s*(?P<m>\d{2}))?\s*(?P<ampm>am|pm|sáng|chiều|tối)?",
-        t,
-    )
-    if not m:
+    """Parse digit clocks only: 6:00, 06:00, 18h30, 6h. No language am/pm words."""
+    raw = (text or "").strip().lower().replace(" ", "")
+    if not raw:
         return None
-    hour = int(m.group("h"))
-    minute = int(m.group("m") or 0)
-    ampm = (m.group("ampm") or "").lower()
-    if ampm in {"pm", "chiều", "tối"} and hour < 12:
-        hour += 12
-    if ampm in {"am", "sáng"} and hour == 12:
-        hour = 0
+    for ch in raw:
+        if ch not in "0123456789:h":
+            return None
+    clock = raw.replace("h", ":", 1) if "h" in raw and ":" not in raw else raw
+    if clock.count(":") != 1:
+        return None
+    left, right = clock.split(":", 1)
+    if not left.isdigit():
+        return None
+    hour = int(left)
+    if right == "":
+        minute = 0
+    elif right.isdigit() and len(right) <= 2:
+        minute = int(right)
+    else:
+        return None
     if hour > 23 or minute > 59:
         return None
     return time(hour, minute)

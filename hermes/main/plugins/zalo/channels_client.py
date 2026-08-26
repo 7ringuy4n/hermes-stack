@@ -7,22 +7,24 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import urllib.error
 import urllib.request
 from typing import Any, Optional
 
 # Allow-list / admin status phrases — never treat as a group display name.
-_GROUP_REF_NOISE_RE = re.compile(
-    r"(?i)^\s*(?:"
-    r"đã\s*allow(?:\s*\(\s*\d+\s*\))?|"
-    r"da\s*allow(?:\s*\(\s*\d+\s*\))?|"
-    r"already\s*allow(?:ed)?(?:\s*\(\s*\d+\s*\))?|"
-    r"allow(?:ed)?\s*\(\s*\d+\s*\)|"
-    r"nhóm\s+đã\s*allow(?:\s*\(\s*\d+\s*\))?|"
-    r"nhom\s+da\s*allow(?:\s*\(\s*\d+\s*\))?|"
-    r"groups?\s+already\s*allow(?:ed)?"
-    r")\s*$"
+_ALLOW_STATUS = (
+    "đã allow",
+    "da allow",
+    "already allow",
+    "already allowed",
+    "allow",
+    "allowed",
+    "nhóm đã allow",
+    "nhom da allow",
+    "group already allow",
+    "groups already allow",
+    "group already allowed",
+    "groups already allowed",
 )
 
 
@@ -122,9 +124,18 @@ def remember_inbound(
         )
 
 
+def _is_allow_status_name(ref: str) -> bool:
+    n = " ".join((ref or "").lower().split())
+    if not n:
+        return False
+    if n.endswith(")") and "(" in n:
+        n = n[: n.rfind("(")].strip()
+    return n in _ALLOW_STATUS or any(n.startswith(s + " ") for s in _ALLOW_STATUS)
+
+
 def _clean_group_ref(raw: str) -> str:
     ref = (raw or "").strip(" \t\"'“”.:-")
-    if not ref or _GROUP_REF_NOISE_RE.match(ref):
+    if not ref or _is_allow_status_name(ref):
         return ""
     # Strip channel platform prefixes so classify "zalo LC group" → "LC group"
     # (same variants as zalo-api channels_registry.resolve).
@@ -142,7 +153,7 @@ def _clean_group_ref(raw: str) -> str:
             if stripped:
                 ref = stripped
             break
-    if not ref or _GROUP_REF_NOISE_RE.match(ref):
+    if not ref or _is_allow_status_name(ref):
         return ""
     return ref
 

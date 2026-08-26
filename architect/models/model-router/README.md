@@ -33,11 +33,11 @@ Hints: `normal` · `schedule` · `coding` · `tool` · `search` · `file` · `un
 Aliases: `general`/`chat` → `normal`, `code` → `coding`. Values `secret`/`blocked` are ignored (Secret Probe owns security).
 
 Prompt files (SoT under Hermes skills):
-- Classify: `hermes/main/skills/classify/classify.json` → runtime `/opt/data/skills/classify/classify.json`
+- Classify: `hermes/main/skills/classify/` (`classify.json` envelope + `parts/*.txt`). Runtime assembles one system prompt (`/opt/data/skills/classify/`). One `POST /v1/classify` hop.
 - Outbound: `hermes/main/skills/outbound/outbound.json` → `/opt/data/skills/outbound/outbound.json`
 - Web search combo: `hermes/main/skills/web-search/web-search-combo.json` → `/opt/data/skills/web-search/web-search-combo.json`
 
-Bake fallbacks: `config/*.json` via `scripts/main/sync-model-router-skills.sh`. Application code validates protocol only.
+Bake fallbacks: `config/*.json` via `scripts/main/sync-model-router-skills.sh` (classify bake is the assembled `system`). Application code validates protocol only.
 
 ## Providers
 

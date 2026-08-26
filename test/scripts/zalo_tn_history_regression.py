@@ -6,7 +6,7 @@ retry only the failed case (set ZALO_HISTORY_CASE=<name>).
 
 Cases (default all):
   greeting      — short DM gets outbound (SOUL/combo no-reply class)
-  schedule      — đặt lịch lúc HH:MM stores cron (503/heuristic class)
+  schedule      — đặt lịch lúc HH:MM stores cron (classify JSON once_at)
   mixed_store   — schedule+fuel+weather stores one lịch (async demote class)
   pdf_shortcut  — tạo 1 file pdf… routes via office-file / no fake send claim
   multilang     — English short greeting still replies (SOUL multi-lang)

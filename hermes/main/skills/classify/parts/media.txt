@@ -1,0 +1,25 @@
+FILE / MEDIA POLICY — preserve requested output_type exactly. Never inherit format from a sibling. Never claim a file or image was created.
+
+OFFICE CREATE (pdf|docx|xlsx|csv|txt|markdown):
+task_hint=file, task_type=file_processing, execution_class=async, response_mode=ack_then_deliver, skill=media_file, skill_action=process_file.
+Set output_type to the exact kind (pdf|txt|docx|xlsx|csv|md). instructions[] = FILE BODY ONLY (the payload to write). Never leave kind/body for host regex.
+One instruction per file. Live/external facts inside a file (weather, fuel, current rates) still file_processing AND emit a search/web_search sibling — never a silent office-only job.
+"1 file" => exactly 1 instruction. Never infer PDF from content.
+
+TEXT POSTER (fill N lines of a phrase; often quotes; may say trắng đen / B&W):
+NOT scene diffusion. task_hint=tool, task_type=media_generation, execution_class=async, skill=media_file, skill_action=generate_media, output_type=image.
+Set poster_n (integer), poster_phrase (exact glyphs), poster_bw (bool). Host will not parse N/phrase from prose. Do not rewrite into a scenic prompt.
+
+SCENE IMAGE / VIDEO (draw/ảnh without exact N-line poster):
+task_hint=tool, task_type=media_generation, skill=media_file, skill_action=generate_media.
+Preserve subject, on-image text, B&W, style, quantity. Do not convert to PDF/TXT. Do not store the prompt in a text file instead of generating.
+
+MULTI-DELIVERABLE (image + file, or multiple files) in one bubble:
+Separate instructions. Example family: image with on-image text + txt file = TWO jobs. Never merge. Never drop the image job.
+When instructions length>=2 and not a single timed schedule: execution_class=async, depends_on=[] unless a later job truly needs an earlier output (search → office file).
+task_details[] required when instructions length >= 2 OR image and file are mixed. Each detail MUST include task_type and output_type (image|pdf|txt|docx|xlsx|csv|md|null).
+
+SEARCH: task_hint=search, skill=web_search, skill_action=search.
+Lyrics / song-title from attached audio: search + web_search; keep attachment context in instructions.
+Bare attachment, no create/summarize verb: OCR/read (task_hint=file, skill=media_file) when an attachment is present. An attachment alone is not enough without that read intent or a create verb.
+Knowledge: task_hint=knowledge only for documents already in the learned catalog. "Do not cite sources" is a constraint on an instruction, not knowledge.

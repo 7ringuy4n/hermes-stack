@@ -31,10 +31,7 @@ from classify import (  # noqa: E402
     TASK_HINTS,
     classify_with_llm,
     failed_plan,
-    heuristic_plan,
-    normalize_plan,
     outbound_with_llm,
-    plan_schema_ok,
 )
 from chat_norm import (  # noqa: E402
     chat_body_should_failover,
@@ -347,6 +344,9 @@ async def classify_endpoint(request: Request) -> dict[str, Any]:
             body = {}
     text = str(body.get("text") or "")
     timezone = str(body.get("timezone") or os.environ.get("TZ") or "Asia/Ho_Chi_Minh")
+    thread = str(body.get("thread") or "unknown")
+    attachments = str(body.get("attachments") or "none")
+    quoted = str(body.get("quoted") or "none")
     last: dict[str, Any] = {}
     candidates = await _candidates("normal")
     for _name, base, headers, model in candidates:
@@ -357,14 +357,12 @@ async def classify_endpoint(request: Request) -> dict[str, Any]:
             n9_base=base,
             n9_key=_bearer_key(headers),
             model=model,
+            thread=thread,
+            attachments=attachments,
+            quoted=quoted,
         )
         if last.get("ok"):
             return last
-    guess = heuristic_plan(text)
-    if guess:
-        plan = normalize_plan(guess, text, timezone)
-        if plan_schema_ok(plan):
-            return plan
     return last or failed_plan(timezone, "classify_llm_failed")
 
 
