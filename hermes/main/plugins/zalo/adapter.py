@@ -33,7 +33,7 @@ import os
 import socket
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -1445,6 +1445,99 @@ class ZaloAdapter(BasePlatformAdapter):
         if isinstance(seq, dict):
             seq.pop(tid, None)
 
+    async def _as_schedule_lifecycle(
+        self,
+        *,
+        text: str,
+        current: str,
+        thread_id: str,
+        thread_type: str,
+        plan: dict,
+    ) -> bool:
+        action = str(plan.get("skill_action") or "").strip().lower()
+        try:
+            from .schedule_client import (
+                match_schedules_by_selector,
+                resolve_schedule_timing,
+                schedule_enabled,
+                schedules_for_thread,
+                upsert_schedule_from_row,
+            )
+        except ImportError:
+            from schedule_client import (  # type: ignore
+                match_schedules_by_selector,
+                resolve_schedule_timing,
+                schedule_enabled,
+                schedules_for_thread,
+                upsert_schedule_from_row,
+            )
+
+        async def _say(kind: str, fallback: str) -> None:
+            try:
+                msg = self._as_ux_line(
+                    "ZALO_SCHEDULE_FAILED_MSG" if kind == "failed" else "ZALO_SCHEDULE_SAVED_MSG",
+                    ("schedule", kind),
+                    fallback,
+                    user_text=text,
+                )
+                await self._as_gate_announce(thread_id, thread_type, msg)
+            except Exception:
+                pass
+
+        if not schedule_enabled():
+            await _say("failed", "Chưa bật schedule-worker nên chưa đổi được lịch.")
+            return True
+        selector = plan.get("schedule_selector") if isinstance(plan.get("schedule_selector"), dict) else {}
+        rows = schedules_for_thread(thread_id)
+        hits = match_schedules_by_selector(rows, selector)
+        resolution = str(plan.get("schedule_resolution") or "").strip().lower()
+        if resolution == "ambiguous" or len(hits) > 1:
+            await _say(
+                "failed",
+                "Có nhiều lịch khớp. Nêu rõ nội dung hoặc giờ chạy của lịch cần đổi.",
+            )
+            return True
+        if not hits:
+            await _say("failed", "Không tìm thấy lịch khớp. Dùng xem lịch rồi nêu rõ lịch cần đổi.")
+            return True
+        row = hits[0]
+        sid = str(row.get("id") or "").strip()
+        if action == "pause":
+            data = upsert_schedule_from_row(row, enabled=False)
+            await _say("saved", f"Đã tạm dừng lịch{(' id=' + sid) if sid else ''}.")
+            return bool(data) or True
+        if action == "resume":
+            data = upsert_schedule_from_row(row, enabled=True)
+            await _say("saved", f"Đã tiếp tục lịch{(' id=' + sid) if sid else ''}.")
+            return bool(data) or True
+        if action in {"run_now", "run"}:
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            data = upsert_schedule_from_row(row, enabled=True, next_run_at=now)
+            await _say("saved", f"Đã xếp chạy ngay{(' id=' + sid) if sid else ''}.")
+            return bool(data) or True
+        if action == "update":
+            timing = resolve_schedule_timing(
+                plan,
+                current,
+                tz=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
+            )
+            nxt = str(timing.get("next_run_at") or "")
+            cron = str(timing.get("cron_expr") or "")
+            if not nxt and not cron:
+                await _say("failed", "Chưa rõ giờ chạy mới. Gửi lại thời điểm cụ thể.")
+                return True
+            data = upsert_schedule_from_row(
+                row,
+                enabled=True,
+                next_run_at=nxt or None,
+                cron_expr=cron or None,
+                cadence=str(timing.get("cadence") or row.get("cadence") or ""),
+            )
+            await _say("saved", f"Đã cập nhật lịch{(' id=' + sid) if sid else ''}.")
+            return bool(data) or True
+        await _say("failed", "Chưa hỗ trợ thao tác lịch này.")
+        return True
+
     async def _as_try_workflow_submit(
         self,
         *,
@@ -1457,6 +1550,7 @@ class ZaloAdapter(BasePlatformAdapter):
         plan: dict | None = None,
         schedule_fire: bool = False,
         _schedule_fanout_child: bool = False,
+        received_at=None,
     ) -> bool:
         try:
             from .workflow_client import create_schedule, create_workflow, workflow_enabled
@@ -1480,6 +1574,8 @@ class ZaloAdapter(BasePlatformAdapter):
             from classify_client import classify_text, plan_compound_sequential, plan_is_async, plan_is_immediate_deliver  # type: ignore
             from classify_client import strip_prior_for_classify  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
+        if received_at is None:
+            received_at = datetime.now(timezone.utc)
         current = strip_prior_for_classify(text) or str(text or "").strip()
         if not isinstance(plan, dict):
             plan = classify_text(
@@ -1723,26 +1819,61 @@ class ZaloAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
                 return True
+            lifecycle_actions = {"pause", "resume", "update", "run_now", "run"}
+            lifecycle_types = {
+                "pause_schedule",
+                "resume_schedule",
+                "update_schedule",
+                "run_schedule",
+            }
+            if skill_action in lifecycle_actions or task_type in lifecycle_types:
+                return await self._as_schedule_lifecycle(
+                    text=text,
+                    current=current,
+                    thread_id=thread_id,
+                    thread_type=thread_type,
+                    plan=plan,
+                )
             if not _schedule_fanout_child:
                 try:
-                    from .multi_request import split_compound_requests
+                    from .schedule_client import (
+                        independent_schedule_plans,
+                        plan_needs_schedule_ask,
+                    )
                 except ImportError:
-                    from multi_request import split_compound_requests  # type: ignore
-                sched_parts = split_compound_requests(current) or [current]
-                if len(sched_parts) > 1:
+                    from schedule_client import (  # type: ignore
+                        independent_schedule_plans,
+                        plan_needs_schedule_ask,
+                    )
+                if plan_needs_schedule_ask(plan):
+                    try:
+                        missing = plan.get("missing") or []
+                        miss = ", ".join(str(x) for x in missing if str(x).strip()) or "time"
+                        msg = self._as_ux_line(
+                            "ZALO_SCHEDULE_FAILED_MSG",
+                            ("schedule", "failed"),
+                            f"Chưa đủ thông tin để lưu lịch ({miss}). Gửi lại giờ chạy cụ thể.",
+                            user_text=text,
+                        )
+                        await self._as_gate_announce(thread_id, thread_type, msg)
+                    except Exception:
+                        pass
+                    return True
+                sched_jobs = independent_schedule_plans(plan)
+                if len(sched_jobs) > 1:
                     ok_n = 0
-                    for part in sched_parts:
-                        part_plan = classify_text(part)
+                    for job in sched_jobs:
                         if await self._as_try_workflow_submit(
-                            text=part,
+                            text=current,
                             thread_id=thread_id,
                             thread_type=thread_type,
                             sender_id=sender_id,
                             sender_name=sender_name,
                             chat_type=chat_type,
-                            plan=part_plan,
+                            plan=job,
                             schedule_fire=False,
                             _schedule_fanout_child=True,
+                            received_at=received_at,
                         ):
                             ok_n += 1
                     if ok_n:
@@ -1757,6 +1888,18 @@ class ZaloAdapter(BasePlatformAdapter):
                         except Exception:
                             pass
                         return True
+                    logger.warning("[zalo] independent schedule fanout stored 0 jobs")
+                    try:
+                        msg = self._as_ux_line(
+                            "ZALO_SCHEDULE_FAILED_MSG",
+                            ("schedule", "failed"),
+                            "Could not save this lịch. Please send it again.",
+                            user_text=text,
+                        )
+                        await self._as_gate_announce(thread_id, thread_type, msg)
+                    except Exception:
+                        pass
+                    return True
             try:
                 from .channels_client import apply_schedule_delivery_target
             except ImportError:
@@ -1790,6 +1933,16 @@ class ZaloAdapter(BasePlatformAdapter):
             delivery = schedule_delivery_mode(plan, current)
             origin["schedule_delivery"] = delivery
             context["schedule_delivery"] = delivery
+            recv_iso = (
+                received_at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                if hasattr(received_at, "astimezone")
+                else str(received_at or "")
+            )
+            context["original_request"] = current
+            context["execution_payload"] = fire_text
+            context["request_received_at"] = recv_iso
+            context["reference_time_source"] = "schedule_request_received_at"
+            context["plan"] = plan
             # Authoritative timing: once_after uses host clock + delay_seconds.
             # Never prefer LLM-invented next_run_at / cron for relative delays.
             try:
@@ -1800,6 +1953,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan,
                 current,
                 tz=str((plan or {}).get("timezone") or "Asia/Ho_Chi_Minh"),
+                received_at=received_at,
             )
             next_run_at = str(timing.get("next_run_at") or "")
             cron_expr = str(timing.get("cron_expr") or plan.get("cron_expr") or "")

@@ -5,7 +5,8 @@ target_channel: DISPLAY NAME only (e.g. "LC group"). Never null when a group is 
 schedule_delivery (create_schedule fire):
 VERBATIM = fire must POST fixed characters (nhắn tôi / gửi tin + nội dung:/content: with the send-text; or send into a group a fixed quote with no work verb). Words like mô tả INSIDE a dictated nội dung: body are payload.
 PROCESS = assistant must produce or look up content at fire time. Destination + work verb (mô tả/describe/cập nhật/dự báo/vẽ/search) and no nội dung: send-marker = process. Inner work only in message/instructions.
-Decision test: fire emits unchanged characters → verbatim; fire must invent/search/generate first → process.
+TRANSFORM = rewrite/translate/summarize a given payload at fire time without an external lookup. Still not verbatim. source stays in instructions.
+Decision test: fire emits unchanged characters → verbatim; fire must invent/search/generate first → process; fire must rewrite given text → transform.
 
 After nội dung: / content: copy the body VERBATIM into message, then split that body into instructions[] by skill. Never paraphrase. Never copy "N phút nữa gửi vào …" wrappers into fire text.
 

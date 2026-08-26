@@ -60,6 +60,10 @@ TASK_TYPES = (
     "create_schedule",
     "list_schedule",
     "delete_schedule",
+    "pause_schedule",
+    "resume_schedule",
+    "update_schedule",
+    "run_schedule",
     "knowledge",
     "search",
     "tool",
@@ -97,6 +101,17 @@ HINT_EXECUTION = {
 HINT_ALIASES = {"chat": "normal", "qna": "normal", "question": "normal", "general": "normal"}
 MAX_INSTRUCTIONS = 32
 CRON_CHARS = set("0123456789*,/-")
+SCHEDULE_RESOLUTIONS = ("clear", "needs_confirmation", "ambiguous", "invalid")
+TIMEZONE_SOURCES = ("user_default", "explicit")
+REFERENCE_TIME_SOURCES = ("schedule_request_received_at",)
+SCHEDULE_DELIVERIES = ("verbatim", "process", "transform")
+LIFECYCLE_TASK_TYPES = (
+    "pause_schedule",
+    "resume_schedule",
+    "update_schedule",
+    "run_schedule",
+)
+LIFECYCLE_ACTIONS = ("pause", "resume", "update", "run_now", "run")
 
 
 def normalize_execution(
@@ -127,6 +142,14 @@ def normalize_execution(
             return "schedule", "delete_schedule", "confirm"
         if raw_type == "list_schedule" or action in {"list", "inspect", "show", "status"}:
             return "schedule", "list_schedule", "confirm"
+        if raw_type == "pause_schedule" or action == "pause":
+            return "schedule", "pause_schedule", "confirm"
+        if raw_type == "resume_schedule" or action == "resume":
+            return "schedule", "resume_schedule", "confirm"
+        if raw_type == "update_schedule" or action == "update":
+            return "schedule", "update_schedule", "confirm"
+        if raw_type == "run_schedule" or action in {"run_now", "run"}:
+            return "schedule", "run_schedule", "confirm"
         return "schedule", "create_schedule", "confirm"
     return raw_cls, raw_type, raw_mode
 
@@ -212,6 +235,14 @@ def normalize_skill(src: dict[str, Any], hint: str, task_type: str) -> tuple[str
         inferred = ("schedule", "delete")
     elif hint == "schedule" and task_type == "list_schedule":
         inferred = ("schedule", "list")
+    elif hint == "schedule" and task_type == "pause_schedule":
+        inferred = ("schedule", "pause")
+    elif hint == "schedule" and task_type == "resume_schedule":
+        inferred = ("schedule", "resume")
+    elif hint == "schedule" and task_type == "update_schedule":
+        inferred = ("schedule", "update")
+    elif hint == "schedule" and task_type == "run_schedule":
+        inferred = ("schedule", "run_now")
     if skill is None and inferred:
         skill, default_action = inferred
         if not action:
@@ -220,6 +251,14 @@ def normalize_skill(src: dict[str, Any], hint: str, task_type: str) -> tuple[str
         action = "delete"
     if skill == "schedule" and task_type == "list_schedule":
         action = "list"
+    if skill == "schedule" and task_type == "pause_schedule":
+        action = "pause"
+    if skill == "schedule" and task_type == "resume_schedule":
+        action = "resume"
+    if skill == "schedule" and task_type == "update_schedule":
+        action = "update"
+    if skill == "schedule" and task_type == "run_schedule":
+        action = "run_now"
     if skill and not action:
         action = (inferred or (None, "run"))[1] or "run"
     return skill, action
@@ -228,9 +267,9 @@ def normalize_skill(src: dict[str, Any], hint: str, task_type: str) -> tuple[str
 def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
-    rows = raw[: max(count, len(raw))] if count else raw
+    del count  # independent schedule objects must not be truncated by wrapper instruction count
     out: list[dict[str, Any]] = []
-    for item in rows:
+    for item in raw:
         if not isinstance(item, dict):
             continue
         hint = str(item.get("task_hint") or "").strip().lower()
@@ -252,9 +291,9 @@ def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
             cron = None
         cadence = str(item.get("cadence") or "").strip().lower()
         if cadence not in CADENCES:
-            cadence = ""
+            cadence = "once" if delay is not None or form in {"once_after", "once_at"} else ""
         delivery = str(item.get("schedule_delivery") or "").strip().lower()
-        if delivery not in {"verbatim", "process"}:
+        if delivery not in SCHEDULE_DELIVERIES:
             delivery = ""
         channel = str(item.get("target_channel") or "").strip() or None
         instr = sanitize_instructions(item.get("instructions"), "")
@@ -289,6 +328,10 @@ def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
             row["target_channel"] = channel
         if delivery:
             row["schedule_delivery"] = delivery
+        extra = _schedule_contract_fields(item, hint)
+        for key, val in extra.items():
+            if val not in (None, "", [], {}):
+                row[key] = val
         out.append(row)
     return out
 
@@ -331,14 +374,20 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
         return True
     if action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
         return True
+    if action in LIFECYCLE_ACTIONS or task_type in LIFECYCLE_TASK_TYPES:
+        return True
     if plan.get("uncertain") is True:
         return True
-    # once_after / once_at may omit cron_expr — host resolves fire time from JSON delay or HH:MM digits after schedule_form.
-    if _coerce_delay_seconds(plan.get("delay_seconds")) is not None:
+    resolution = str(plan.get("schedule_resolution") or "").strip().lower()
+    if resolution in {"needs_confirmation", "ambiguous", "invalid"}:
         return True
-    form = str(plan.get("schedule_form") or "").strip().lower()
-    if form in {"once_after", "once_at"}:
+    if _task_has_schedule_timing(plan):
         return True
+    tasks = plan.get("tasks")
+    if isinstance(tasks, list):
+        for item in tasks:
+            if isinstance(item, dict) and _task_has_schedule_timing(item):
+                return True
     return bool(plan.get("cron_expr"))
 
 
@@ -430,6 +479,69 @@ def _coerce_clock_hm(raw: Any) -> str | None:
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         return None
     return f"{hour:02d}:{minute:02d}"
+
+
+def _task_has_schedule_timing(item: dict[str, Any]) -> bool:
+    if _coerce_delay_seconds(item.get("delay_seconds")) is not None:
+        return True
+    form = str(item.get("schedule_form") or "").strip().lower()
+    if form in {"once_after", "once_at"}:
+        return True
+    if _coerce_clock_hm(item.get("clock_hm")):
+        return True
+    return bool(valid_cron(str(item.get("cron_expr") or "")))
+
+
+def _coerce_schedule_selector(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    name = str(raw.get("name") or "").strip() or None
+    match_raw = raw.get("match") if isinstance(raw.get("match"), dict) else {}
+    content_hint = str(match_raw.get("content_hint") or "").strip() or None
+    time_hint = str(match_raw.get("time_hint") or "").strip() or None
+    if not name and not content_hint and not time_hint:
+        return None
+    return {
+        "id": None,
+        "name": name,
+        "match": {"content_hint": content_hint, "time_hint": time_hint},
+    }
+
+
+def _schedule_contract_fields(src: dict[str, Any], hint: str) -> dict[str, Any]:
+    if hint != "schedule":
+        return {
+            "timezone_source": None,
+            "reference_time_source": None,
+            "schedule_resolution": None,
+            "confirmation_required": None,
+            "schedule_selector": None,
+        }
+    tz_source = str(src.get("timezone_source") or "").strip().lower()
+    if tz_source not in TIMEZONE_SOURCES:
+        tz_source = "user_default"
+    rts = str(src.get("reference_time_source") or "").strip().lower()
+    form = str(src.get("schedule_form") or "").strip().lower()
+    delay = _coerce_delay_seconds(src.get("delay_seconds"))
+    if rts not in REFERENCE_TIME_SOURCES:
+        rts = (
+            "schedule_request_received_at"
+            if delay is not None or form == "once_after"
+            else None
+        )
+    resolution = str(src.get("schedule_resolution") or "").strip().lower()
+    if resolution not in SCHEDULE_RESOLUTIONS:
+        resolution = None
+    cr = src.get("confirmation_required")
+    if not isinstance(cr, bool):
+        cr = True if resolution in {"needs_confirmation", "ambiguous", "invalid"} else None
+    return {
+        "timezone_source": tz_source,
+        "reference_time_source": rts,
+        "schedule_resolution": resolution,
+        "confirmation_required": cr,
+        "schedule_selector": _coerce_schedule_selector(src.get("schedule_selector")),
+    }
 
 
 def _coerce_poster_n(raw: Any) -> int | None:
@@ -693,13 +805,13 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         hint = "unknown"
     fallback = (text or "").strip()
     instructions = sanitize_instructions(src.get("instructions"), fallback)
-    cadence = str(src.get("cadence") or "").strip().lower()
-    if cadence not in CADENCES:
-        cadence = "daily" if hint == "schedule" else "once"
     delay = _coerce_delay_seconds(src.get("delay_seconds"))
     schedule_form = str(src.get("schedule_form") or "").strip().lower()
     if schedule_form not in {"once_at", "once_after", "recurring"}:
         schedule_form = ""
+    cadence = str(src.get("cadence") or "").strip().lower()
+    if cadence not in CADENCES:
+        cadence = ""
     if delay is not None:
         schedule_form = "once_after"
         cadence = "once"
@@ -708,6 +820,8 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         llm_cron = valid_cron(str(src.get("cron_expr") or ""))
         if schedule_form == "once_after":
             cron = None
+            if not cadence:
+                cadence = "once"
         elif schedule_form == "once_at":
             cadence = "once"
             cron = None
@@ -717,6 +831,8 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             cron = llm_cron
         else:
             cron = llm_cron
+            if not cadence and hint != "schedule":
+                cadence = "once"
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
     exec_cls, task_type, response_mode = normalize_execution(src, hint)
     skill, skill_action = normalize_skill(src, hint, task_type)
@@ -725,6 +841,9 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     )
     is_list = hint == "schedule" and (
         skill_action in {"list", "inspect", "show", "status"} or task_type == "list_schedule"
+    )
+    is_lifecycle = hint == "schedule" and (
+        skill_action in LIFECYCLE_ACTIONS or task_type in LIFECYCLE_TASK_TYPES
     )
     if is_delete:
         task_type = "delete_schedule"
@@ -744,6 +863,12 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         delay = None
         schedule_form = ""
         process_original = False
+    elif is_lifecycle and skill_action != "update":
+        cadence = None
+        cron = None
+        delay = None
+        schedule_form = ""
+        process_original = False
     message = str(src.get("message") or "").strip()
     if not message:
         if len(instructions) == 1:
@@ -752,7 +877,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             message = "\n".join(instructions)
         else:
             message = fallback
-    if is_delete or is_list:
+    if is_delete or is_list or (is_lifecycle and skill_action != "update"):
         process_original = False
     else:
         process_original = src.get("process_original_message")
@@ -762,23 +887,37 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     if not isinstance(attachments_required, bool):
         attachments_required = False
     delivery_raw = str(src.get("schedule_delivery") or "").strip().lower()
-    schedule_delivery = delivery_raw if delivery_raw in {"verbatim", "process"} else None
+    schedule_delivery = delivery_raw if delivery_raw in SCHEDULE_DELIVERIES else None
+    contract = _schedule_contract_fields(src, hint)
+    llm_tz = str(src.get("timezone") or "").strip()
+    if (
+        contract.get("timezone_source") == "explicit"
+        and llm_tz
+        and "/" in llm_tz
+        and " " not in llm_tz
+        and llm_tz.count("/") <= 2
+    ):
+        tz = llm_tz
+    skip_timing = is_delete or is_list or (is_lifecycle and skill_action != "update")
     return {
         "ok": True,
         "task_hint": hint,
         "instructions": instructions,
         "task_details": normalize_task_details(src, instructions, hint),
-        "cadence": None if (is_delete or is_list) else (cadence if hint == "schedule" else None),
-        "cron_expr": None if (is_delete or is_list) else (cron if hint == "schedule" else None),
-        "delay_seconds": None if (is_delete or is_list) else (delay if hint == "schedule" else None),
+        "cadence": None if skip_timing else (cadence if hint == "schedule" else None),
+        "cron_expr": None if skip_timing else (cron if hint == "schedule" else None),
+        "delay_seconds": None if skip_timing else (delay if hint == "schedule" else None),
         "schedule_form": (
-            None
-            if (is_delete or is_list)
-            else ((schedule_form or None) if hint == "schedule" else None)
+            None if skip_timing else ((schedule_form or None) if hint == "schedule" else None)
         ),
         # Classifier must not invent absolute fire time; host resolves once_after.
         "next_run_at": None,
         "timezone": tz,
+        "timezone_source": None if skip_timing else contract.get("timezone_source"),
+        "reference_time_source": None if skip_timing else contract.get("reference_time_source"),
+        "schedule_resolution": contract.get("schedule_resolution") if hint == "schedule" else None,
+        "confirmation_required": contract.get("confirmation_required") if hint == "schedule" else None,
+        "schedule_selector": contract.get("schedule_selector") if hint == "schedule" else None,
         "execution_class": exec_cls,
         "task_type": task_type,
         "response_mode": response_mode,
@@ -799,9 +938,9 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             ).strip()
             or None
         ),
-        "schedule_delivery": None if (is_delete or is_list) else schedule_delivery,
+        "schedule_delivery": None if skip_timing else schedule_delivery,
         "output_type": _coerce_output_type(src.get("output_type")) or None,
-        "clock_hm": None if (is_delete or is_list) else _coerce_clock_hm(src.get("clock_hm")),
+        "clock_hm": None if skip_timing else _coerce_clock_hm(src.get("clock_hm")),
         "poster_n": _coerce_poster_n(src.get("poster_n")),
         "poster_phrase": (str(src.get("poster_phrase") or "").strip()[:80] or None),
         "poster_bw": src.get("poster_bw") if isinstance(src.get("poster_bw"), bool) else None,
