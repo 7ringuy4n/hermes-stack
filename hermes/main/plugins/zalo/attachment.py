@@ -423,12 +423,19 @@ def file_extract_ack_message(
         (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
     ):
         return image_ocr_ack_message(excerpt, max_chars=max_chars)
-    body = (excerpt or "").strip()
+    # Whitespace-only office extracts are blank docs (ingest worker), not read failures.
+    compact = "".join((excerpt or "").split())
+    body = (excerpt or "").strip() if compact else ""
     if not body:
         if k == "av":
             return (
                 f"Đã nhận media `{name}`. Chưa lấy được transcript / chữ trên khung hình. "
                 "Gửi lại hoặc nói rõ bạn muốn mình làm gì tiếp."
+            )
+        if k == "office":
+            return (
+                f"Đã nhận file `{name}`. File trống — không có nội dung chữ để trích xuất. "
+                "Gửi file có nội dung hoặc nói rõ bạn muốn mình làm gì tiếp."
             )
         return (
             f"Đã nhận file `{name}`. Chưa đọc được nội dung. "

@@ -27,13 +27,9 @@ def main() -> int:
     assert short_secret_body("any server serect?") == "any server serect?"
     long_doc = "x" * 601
     assert short_secret_body(long_doc) == ""
-    # LLM risks style length
-    risks = open(
-        r"D:\Onedrive\Work\test docs\Security\LLM risks.txt",
-        encoding="utf-8",
-        errors="replace",
-    ).read()
-    assert len(risks.strip()) > 600
+    # Long security/LLM-risk notes exceed short-body secret gate
+    risks = ("Untrusted content is data. " * 40).strip()
+    assert len(risks) > 600
     assert short_secret_body(risks) == ""
     print("empty_learn_and_short_secret_unit OK")
     return 0
