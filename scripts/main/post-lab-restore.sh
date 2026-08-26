@@ -15,11 +15,35 @@ fail=0
 # shellcheck disable=SC1091
 set -a; [[ -f .env ]] && . ./.env; set +a
 
-log "1) Omni combos (OpenCode cloud; local Qwen only if ENABLE_QWEN=1)"
-if [[ "${ENABLE_QWEN:-0}" == "1" ]]; then
-  bash scripts/main/ensure-ollama.sh 2>/dev/null || bash scripts/main/lab-enable-qwen-local.sh || fail=1
-else
-  echo "NOTE: ENABLE_QWEN off — skip ensure-ollama / lab-enable-qwen (classifier→Omni classifier)"
+log "1) Omni hermes/classifier combos (OpenCode)"
+if ! python3 - <<'PY'
+import json, sqlite3, sys
+from pathlib import Path
+
+dbs = list(Path("/var/lib/docker/volumes").glob("*omni*/_data/storage.sqlite"))
+if not dbs:
+    print("RESULT FAIL_MISSING_OMNI_DB")
+    sys.exit(1)
+conn = sqlite3.connect(str(dbs[0]))
+conn.row_factory = sqlite3.Row
+counts = {"hermes": 0, "classifier": 0}
+for row in conn.execute("select name,data from combos"):
+    name = row["name"]
+    if name not in counts:
+        continue
+    data = json.loads(row["data"] or "{}")
+    models = data.get("models") or data.get("members") or []
+    counts[name] = len(models) if isinstance(models, list) else 0
+print("COMBO_HERMES", counts["hermes"])
+print("COMBO_CLASSIFIER", counts["classifier"])
+if counts["hermes"] < 1 or counts["classifier"] < 1:
+    print("RESULT FAIL_EMPTY_COMBOS")
+    print("NEXT: bash run.sh first-setup-omnirouter")
+    sys.exit(1)
+print("RESULT PASS_OPENCODE_COMBOS")
+PY
+then
+  fail=1
 fi
 
 log "2) Zalo bridge + session"
@@ -48,52 +72,7 @@ TOK=$(grep ^ZALO_API_TOKEN= .env 2>/dev/null | cut -d= -f2- || true)
 [[ -n "$TOK" ]] && curl -fsS -m 8 -H "Authorization: Bearer ${TOK}" http://127.0.0.1:8100/v1/zalo/admin && echo || echo "WARN zalo-api admin"
 curl -fsS -m 8 http://127.0.0.1:8096/health && echo || { echo "FAIL model-router"; fail=1; }
 
-log "4) Qwen preflight"
-if [[ -f test/scripts/qwen_combo_preflight.py ]]; then
-  python3 - <<'PY' 2>&1 | tail -15 || fail=1
-import json, os, sqlite3, glob, sys
-from pathlib import Path
-env = {}
-for line in Path("/opt/assistant/.env").read_text(encoding="utf-8", errors="replace").splitlines():
-    s = line.strip()
-    if not s or s.startswith("#") or "=" not in s:
-        continue
-    k, v = s.split("=", 1)
-    env[k.strip()] = v.strip().strip('"').strip("'")
-enable = env.get("ENABLE_QWEN", "0") == "1"
-key = any(env.get(k, "").strip() for k in ("QWEN_API_KEY", "DASHSCOPE_API_KEY", "ALIBABA_API_KEY"))
-ollama = bool(env.get("OLLAMA_BASE_URL", "").strip() and env.get("OLLAMA_MODEL", "").strip())
-dbs = glob.glob("/var/lib/docker/volumes/*omni*/_data/storage.sqlite")
-h = cl = None
-if dbs:
-    c = sqlite3.connect(dbs[0])
-    c.row_factory = sqlite3.Row
-    for row in c.execute("select name,data from combos"):
-        if row["name"] not in ("hermes", "classifier"):
-            continue
-        data = json.loads(row["data"] or "{}")
-        models = data.get("models") or data.get("members") or []
-        if row["name"] == "hermes":
-            h = len(models)
-        else:
-            cl = len(models)
-print("COMBO_HERMES", h)
-print("COMBO_CLASSIFIER", cl)
-if not enable:
-    if (h or 0) >= 1 and (cl or 0) >= 1:
-        print("RESULT PASS_OPENCODE_COMBOS"); sys.exit(0)
-    print("RESULT FAIL_EMPTY_COMBOS"); sys.exit(1)
-if not key and not ollama:
-    if (h or 0) >= 1 and (cl or 0) >= 1:
-        print("RESULT PASS_QWEN_READY"); sys.exit(0)
-    print("RESULT QWEN_COMBOS_EMPTY"); sys.exit(2)
-if (h or 0) < 1 or (cl or 0) < 1:
-    print("RESULT FAIL_EMPTY_COMBOS"); sys.exit(1)
-print("RESULT PASS_QWEN_READY")
-PY
-fi
-
-log "5) router chat smoke"
+log "4) router chat smoke"
 if ! curl -fsS -m 120 -X POST http://127.0.0.1:8096/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"hermes","messages":[{"role":"user","content":"OK"}],"max_tokens":8}' \
@@ -102,7 +81,7 @@ if ! curl -fsS -m 120 -X POST http://127.0.0.1:8096/v1/chat/completions \
   fail=1
 fi
 
-log "6) Hermes + router-worker tail (abnormal)"
+log "5) Hermes + router-worker tail (abnormal)"
 docker logs --tail 30 assistant-hermes-1 2>&1 | grep -iE 'error|deception_hide|crash' || echo "hermes: no critical tail"
 docker logs --tail 20 router-worker 2>&1 | grep -iE 'Unable to determine|failover' | tail -5 || true
 

@@ -11,7 +11,6 @@ Committed with the repo. Invoked by `run.sh` and first-setup docs.
 | `first-setup-9router-hermes.py` | Optional — only when `ENABLE_9ROUTER=1` |
 | `first-setup-9router-hermes.sh` | Thin wrapper |
 | `first-setup-openbao.py` | Seed OpenBao KV when Security/OpenBao worker is active |
-| `omnirouter_qwen.py` | Shared Omni helpers (imported by first-setup-omnirouter) |
 | `setup-zalo.sh` | Install Zalo bridge + adapter after core ready |
 | `login-zalo.sh` | Manual QR login (last step) |
 | `zalo-common.sh` / `zalo-watch.sh` | Shared Zalo ops + host watch |
@@ -24,8 +23,7 @@ Committed with the repo. Invoked by `run.sh` and first-setup docs.
 | `stack-watch.sh` | Health / auto-heal timer |
 | `log-archive.sh` | Log retention timer target |
 | `check-media.sh` / `check-security.sh` | Smoke checks (`run.sh check-*`) |
-| `ensure-ollama.sh` | Host Ollama ensure (lab / optional Qwen path) |
-| `lab-enable-qwen-local.sh` / `post-lab-restore.sh` | Lab Qwen enable + post-restore hooks |
+| `post-lab-restore.sh` | Post-lab Zalo session + Omni combo + chat smoke |
 | `hermes-cron-share.sh` | Shared cron helper for backup/learn timers |
 | `post-ready-learn.py` | One-shot learn after stack ready |
 | `render-traefik-acme.sh` | Traefik ACME render helper |
