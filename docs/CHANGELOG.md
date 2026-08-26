@@ -1,3 +1,8 @@
+## 2026-08-26 19:20 +07 — Blank office attachments use ingest extract ack, not Hermes docx tools
+
+- Bare or blank `.docx`/office chats could still reach Hermes with a local file path, so the agent used the local docx skill / terminal / zipfile and replied with package forensics.
+- Host: office/text extract via ingest worker; blank/whitespace → short empty-file ack and return; strip media paths so Hermes cannot open packages. Classify/SOUL/docx/worker-routing: chat attachment reads are media_file/ingest/OCR only — never local docx/terminal forensics.
+
 ## 2026-08-26 18:50 +07 — Blank extracts no longer open Knowledge pending; untrusted doc content is data; compose LLM keys survive scrub
 
 - Blank or whitespace-only attachments still staged Knowledge pending-approval. Long LLM-risk / injection whitepapers could be treated like short secret asks. Scrub emptied compose-interpolated Omni/Gateway keys so router-worker classify returned 401 after recreate.

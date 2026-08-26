@@ -3895,7 +3895,12 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception as e:
                 logger.warning("Zalo: attachment read failed: %s", type(e).__name__)
                 excerpt = ""
-            if excerpt:
+            # Office/text SoT is ingest/OCR workers — never pass binaries to Hermes
+            # (local docx/terminal/zipfile forensics). Whitespace-only = blank.
+            attach_kind = attachment_kind(attach_name)
+            excerpt_meaningful = self._as_meaningful_learn_text(excerpt or "")
+            excerpt_for_prompt = excerpt if excerpt_meaningful else ""
+            if excerpt_meaningful:
                 self._as_attachment_remember(str(thread_id), attach_name, excerpt)
             else:
                 # Still remember the filename so follow-ups ("tìm lời bài hát")
@@ -3905,26 +3910,39 @@ class ZaloAdapter(BasePlatformAdapter):
                     attach_name,
                     f"[Attached file: {attach_name}]",
                 )
+            if attach_kind in {"office", "text"}:
+                # Worker extract already ran; strip paths so Hermes cannot open the package.
+                media_urls = []
+                media_types = []
+                message_type = MessageType.TEXT
             if attach_bare:
                 text = self._as_attachment_prompt(
-                    attach_name, excerpt, is_image=attach_is_image, local_path=media_urls[0]
+                    attach_name,
+                    excerpt_for_prompt,
+                    is_image=attach_is_image,
+                    local_path="",
                 )
-            elif excerpt:
+            elif excerpt_for_prompt:
                 text = (
                     f"{text}\n\n[Attachment text — {attach_name}]\n"
-                    f"{excerpt[:ATTACHMENT_PROMPT_CHARS]}"
+                    f"{excerpt_for_prompt[:ATTACHMENT_PROMPT_CHARS]}"
                 )
             logger.info(
-                "Zalo: attachment prompt %s image=%s bare=%s chars=%s",
+                "Zalo: attachment prompt %s image=%s bare=%s chars=%s kind=%s",
                 attach_name,
                 attach_is_image,
                 attach_bare,
-                len(excerpt),
+                len(excerpt_for_prompt),
+                attach_kind,
             )
-            # Bare attachment: deterministic extract ack (image/office/text/av).
+            # Bare attachment OR blank office/text: deterministic worker extract ack.
             # Do not wait on the agent — Omni capacity-busy 503 left users silent
             # after Knowledge-pending while csv/xlsx/mp4 never got a content reply.
-            if attach_bare:
+            # Blank docx must not fall through to Hermes local docx/terminal tools.
+            host_ack = attach_bare or (
+                attach_kind in {"office", "text"} and not excerpt_meaningful
+            )
+            if host_ack:
                 # Short file body that is itself a secret/env ask → refuse (risk txt).
                 # Long docs (security whitepapers / injection examples) stay file OCR.
                 # Blank/empty extracts continue with the normal extract ack (no learn).
@@ -3968,21 +3986,21 @@ class ZaloAdapter(BasePlatformAdapter):
                     except Exception:
                         pass
                     return
-                kind = attachment_kind(attach_name)
+                kind = attach_kind or attachment_kind(attach_name)
                 if attach_is_image:
-                    ack = image_ocr_ack_message(excerpt or "")
+                    ack = image_ocr_ack_message(excerpt_for_prompt or "")
                     flow_stage = (
                         "attach_image_ocr_ack"
-                        if (excerpt or "").strip()
+                        if excerpt_meaningful
                         else "attach_image_empty_ocr_ack"
                     )
                 else:
                     ack = file_extract_ack_message(
-                        attach_name, excerpt or "", kind=kind
+                        attach_name, excerpt_for_prompt or "", kind=kind
                     )
                     flow_stage = (
                         "attach_file_extract_ack"
-                        if (excerpt or "").strip()
+                        if excerpt_meaningful
                         else "attach_file_empty_ack"
                     )
                 self._as_flow(
@@ -3990,7 +4008,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     file=attach_name,
                     thread_id=thread_id,
                     kind=kind,
-                    chars=len(excerpt or ""),
+                    chars=len(excerpt_for_prompt or ""),
                 )
                 try:
                     await self.send(
@@ -5910,6 +5928,36 @@ class ZaloAdapter(BasePlatformAdapter):
                                 file=file_name,
                                 error=type(e).__name__,
                             )
+                elif low.endswith((".docx", ".xlsx", ".xlsm", ".xls", ".pptx")):
+                    # Office → ingest extract (same worker path as bare-attachment read).
+                    try:
+                        async with session.post(
+                            f"{ingest_url}/v1/extract-text",
+                            json={"path": f"/data/media/{ingest_rel}", "max_chars": 500000},
+                        ) as ex_resp:
+                            ex_body = await ex_resp.text()
+                            try:
+                                ex_json = json.loads(ex_body or "")
+                                if isinstance(ex_json, dict):
+                                    ocr_text = str(
+                                        ex_json.get("text") or ex_json.get("markdown") or ""
+                                    ).strip()
+                            except Exception:
+                                ocr_text = ""
+                            self._as_flow(
+                                "office_extract",
+                                thread_id=thread_id,
+                                file=file_name,
+                                status=ex_resp.status,
+                                chars=len(ocr_text or ""),
+                            )
+                    except Exception as e:
+                        self._as_flow(
+                            "office_extract_fail",
+                            thread_id=thread_id,
+                            file=file_name,
+                            error=type(e).__name__,
+                        )
 
                 # Learn-skip from a prior secret turn: skip staging only (no refuse).
                 if self._as_learn_skip_hit(thread_id, sender_id):
