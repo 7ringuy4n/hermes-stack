@@ -38,14 +38,43 @@ def delay_seconds_from_plan(plan: dict[str, Any] | None) -> int | None:
     return n
 
 
-def next_run_at_from_delay(delay_seconds: int, tz: str = "Asia/Ho_Chi_Minh") -> str:
-    """RFC3339 UTC for now+delay using the host clock (never the LLM clock)."""
+def next_run_at_from_delay(
+    delay_seconds: int,
+    tz: str = "Asia/Ho_Chi_Minh",
+    received_at: Any = None,
+) -> str:
+    """RFC3339 UTC for received_at+delay. Host clock only; never the LLM clock."""
     import datetime
 
-    _ = tz  # reserved for future local-display helpers; fire instant is UTC now+delay
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    _ = tz  # reserved for future local-display helpers; fire instant is UTC receipt+delay
+    now_utc = _as_utc(received_at)
     fire_utc = now_utc + datetime.timedelta(seconds=int(delay_seconds))
     return fire_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _as_utc(received_at: Any = None):
+    import datetime
+
+    if received_at is None:
+        return datetime.datetime.now(datetime.timezone.utc)
+    if isinstance(received_at, datetime.datetime):
+        dt = received_at
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.astimezone(datetime.timezone.utc)
+    raw = str(received_at).strip()
+    if not raw:
+        return datetime.datetime.now(datetime.timezone.utc)
+    try:
+        if raw.endswith("Z"):
+            dt = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        else:
+            dt = datetime.datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.astimezone(datetime.timezone.utc)
+    except ValueError:
+        return datetime.datetime.now(datetime.timezone.utc)
 
 
 def cron_from_next_run_at(next_run_at: str, tz: str = "Asia/Ho_Chi_Minh") -> str:
@@ -78,10 +107,11 @@ def resolve_schedule_timing(
     plan: dict[str, Any] | None,
     text: str,
     tz: str = "Asia/Ho_Chi_Minh",
+    received_at: Any = None,
 ) -> dict[str, Any]:
     """Authoritative fire timing for create_schedule.
 
-    once_after / relative prose: host clock + delay_seconds. Never trust LLM
+    once_after / relative prose: request_received_at + delay_seconds. Never trust LLM
     next_run_at or LLM-invented cron for relative delays.
     """
     src = plan if isinstance(plan, dict) else {}
@@ -97,8 +127,9 @@ def resolve_schedule_timing(
                 "cadence": "once",
                 "cron_expr": "",
                 "next_run_at": "",
+                "reference_time_source": "schedule_request_received_at",
             }
-        nxt = next_run_at_from_delay(delay, tz=zone)
+        nxt = next_run_at_from_delay(delay, tz=zone, received_at=received_at)
         cron = cron_from_next_run_at(nxt, tz=zone) or "0 0 * * *"
         return {
             "schedule_form": "once_after",
@@ -106,6 +137,7 @@ def resolve_schedule_timing(
             "cadence": "once",
             "cron_expr": cron,
             "next_run_at": nxt,
+            "reference_time_source": "schedule_request_received_at",
         }
     cron = str(src.get("cron_expr") or "").strip()
     cadence = str(src.get("cadence") or "").strip().lower() or "once"
@@ -194,7 +226,7 @@ def schedule_delivery_mode(plan: dict[str, Any] | None, original: str = "") -> s
         return "process"
     if explicit in {"verbatim", "send", "deliver"}:
         return "verbatim"
-    if explicit in {"process", "hermes", "classify"}:
+    if explicit in {"process", "hermes", "classify", "transform", "rewrite", "translate"}:
         return "process"
     return "process"
 
@@ -240,6 +272,103 @@ def fire_text_from_plan(plan: dict[str, Any] | None, original: str = "") -> str:
     return ""
 
 
+_CREATE_TASK_TYPES = {"create_schedule", ""}
+_SKIP_TASK_ACTIONS = {"list", "inspect", "show", "status", "delete"}
+_SKIP_TASK_TYPES = {
+    "list_schedule",
+    "delete_schedule",
+    "pause_schedule",
+    "resume_schedule",
+    "update_schedule",
+    "run_schedule",
+}
+
+
+def independent_schedule_plans(plan: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """One host job per independent classify tasks[] create. No extra classify hop."""
+    src = plan if isinstance(plan, dict) else {}
+    raw = src.get("tasks") if isinstance(src.get("tasks"), list) else []
+    jobs: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        hint = str(item.get("task_hint") or src.get("task_hint") or "").strip().lower()
+        ttype = str(item.get("task_type") or "").strip().lower()
+        action = str(item.get("skill_action") or "").strip().lower()
+        if ttype in _SKIP_TASK_TYPES or action in _SKIP_TASK_ACTIONS:
+            continue
+        if hint not in {"", "schedule"} and ttype not in _CREATE_TASK_TYPES:
+            continue
+        merged = dict(src)
+        merged.update(item)
+        merged["tasks"] = []
+        merged["task_hint"] = "schedule"
+        if not str(merged.get("task_type") or "").strip():
+            merged["task_type"] = "create_schedule"
+        jobs.append(merged)
+    if jobs:
+        return jobs
+    return [src]
+
+
+def plan_needs_schedule_ask(plan: dict[str, Any] | None) -> bool:
+    """True when classify says the timed intent is not storeable yet."""
+    src = plan if isinstance(plan, dict) else {}
+    resolution = str(src.get("schedule_resolution") or "").strip().lower()
+    if resolution in {"invalid", "ambiguous"}:
+        return True
+    if resolution == "needs_confirmation":
+        jobs = independent_schedule_plans(src)
+        if len(jobs) > 1:
+            return False
+        job = jobs[0] if jobs else src
+        if delay_seconds_from_plan(job) is not None:
+            return False
+        form = str(job.get("schedule_form") or "").strip().lower()
+        if form == "once_at" and str(job.get("clock_hm") or "").strip():
+            return False
+        if str(job.get("cron_expr") or "").strip():
+            return False
+        return True
+    return False
+
+
+def match_schedules_by_selector(
+    rows: list[dict[str, Any]] | None,
+    selector: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Match stored rows by classifier selector hints. Never trust an invented id."""
+    items = [r for r in (rows or []) if isinstance(r, dict)]
+    src = selector if isinstance(selector, dict) else {}
+    name = " ".join(str(src.get("name") or "").strip().lower().split())
+    match = src.get("match") if isinstance(src.get("match"), dict) else {}
+    content = " ".join(str(match.get("content_hint") or "").strip().lower().split())
+    time_hint = " ".join(str(match.get("time_hint") or "").strip().lower().split())
+    if not name and not content and not time_hint:
+        return items
+    hits: list[dict[str, Any]] = []
+    for row in items:
+        origin = row.get("origin") if isinstance(row.get("origin"), dict) else {}
+        blob = " ".join(
+            [
+                str(row.get("name") or ""),
+                str(row.get("fire_text") or ""),
+                str(row.get("text") or ""),
+                str(row.get("cron_expr") or ""),
+                str(row.get("next_run_at") or ""),
+                str(origin.get("target_name") or ""),
+            ]
+        ).lower()
+        if name and name not in blob:
+            continue
+        if content and content not in blob:
+            continue
+        if time_hint and time_hint not in blob:
+            continue
+        hits.append(row)
+    return hits
+
+
 def _req(method: str, path: str, payload: Optional[dict] = None, timeout: float = 8.0) -> dict[str, Any]:
     url = schedule_url() + path
     data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -268,6 +397,7 @@ def create_schedule(
     cadence: str = "",
     timezone: str = "Asia/Ho_Chi_Minh",
     next_run_at: str | None = None,
+    enabled: bool | None = True,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "cron_expr": cron_expr,
@@ -278,7 +408,7 @@ def create_schedule(
         "context": context or {},
         "timezone": timezone,
         "cadence": cadence,
-        "enabled": True,
+        "enabled": True if enabled is None else bool(enabled),
     }
     if schedule_id:
         body["id"] = schedule_id
@@ -287,7 +417,38 @@ def create_schedule(
     return _req("POST", "/v1/schedules", body)
 
 
-def list_schedules() -> list[dict[str, Any]]:
+def upsert_schedule_from_row(
+    row: dict[str, Any],
+    *,
+    enabled: bool | None = None,
+    next_run_at: str | None = None,
+    fire_text: str | None = None,
+    cron_expr: str | None = None,
+    cadence: str | None = None,
+) -> dict[str, Any]:
+    sid = str(row.get("id") or "").strip()
+    if not sid:
+        return {}
+    origin = row.get("origin") if isinstance(row.get("origin"), dict) else {}
+    context = row.get("context") if isinstance(row.get("context"), dict) else {}
+    en = row.get("enabled")
+    if enabled is not None:
+        en = enabled
+    elif not isinstance(en, bool):
+        en = True
+    return create_schedule(
+        schedule_id=sid,
+        cron_expr=str(cron_expr if cron_expr is not None else row.get("cron_expr") or ""),
+        text=str(row.get("text") or ""),
+        fire_text=str(fire_text if fire_text is not None else row.get("fire_text") or ""),
+        name=str(row.get("name") or ""),
+        origin=origin,
+        context=context,
+        cadence=str(cadence if cadence is not None else row.get("cadence") or ""),
+        timezone=str(row.get("timezone") or "Asia/Ho_Chi_Minh"),
+        next_run_at=next_run_at if next_run_at is not None else (str(row.get("next_run_at") or "") or None),
+        enabled=bool(en),
+    )
     data = _req("GET", "/v1/schedules")
     rows = data.get("schedules") if isinstance(data, dict) else None
     return rows if isinstance(rows, list) else []
