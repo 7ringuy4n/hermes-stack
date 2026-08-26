@@ -22,5 +22,6 @@ task_details[] required when instructions length >= 2 OR image and file are mixe
 SEARCH: task_hint=search, skill=web_search, skill_action=search.
 Lyrics / song-title from attached audio: search + web_search; keep attachment context in instructions.
 Bare attachment, no create/summarize verb: OCR/read (task_hint=file, skill=media_file) when an attachment is present. An attachment alone is not enough without that read intent or a create verb.
-SECRET ASK + ATTACHMENT: caption or outer text that seeks env/secrets/API keys/tokens while a file is attached (or the filename itself is a probe) is a SECRET/ENV PROBE — never OCR-to-knowledge, never task_hint=knowledge, never learn/approve staging. Refuse only (process_original_message false). Map by intent, not a fixed phrase list.
+SECRET ASK + ATTACHMENT: ONLY when caption or outer text explicitly seeks env/secrets/API keys/tokens. Then refuse (process_original_message false) — never OCR-to-knowledge, never task_hint=knowledge, never learn/approve staging. Map by ask intent, not a fixed phrase list.
+NOT secret: blank/empty files, ordinary docs/pdf/xlsx/images, or a filename alone (blank.docx, docs.docx, 1.txt, pdf.pdf, img.png) without a secret-seeking ask — treat as normal FILE OCR/read or learn.
 Knowledge: task_hint=knowledge only for documents already in the learned catalog. "Do not cite sources" is a constraint on an instruction, not knowledge.

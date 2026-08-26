@@ -1,3 +1,19 @@
+## 2026-08-26 18:10 +07 — Blank docs got secret refuse
+
+### Symptom
+Blank or ordinary test attachments could show the secret/env refuse line even with no secret-seeking caption. After scrub, compose update could fail missing required `.env` values.
+
+### Root cause
+1. AV gate treated prior learn-skip and filename-only blobs as a full secret refuse.
+2. Classify SECRET ASK + ATTACHMENT was too broad for bare/blank filenames.
+3. Scrub emptied compose-interpolated host keys and update did not reload OpenBao before compose.
+
+### Fix (core)
+Classify: refuse only on explicit secret/env asks; bare/blank/filename-only stay file OCR/read. Host: refuse on ask text (or extracted body that is itself a secret ask); learn-skip only skips knowledge staging. Scrub skips compose-required keys; load OpenBao env before up|update.
+
+### Prevent recurrence
+Do not classify filename-alone as a secret probe. Do not reuse learn-skip as a turn-wide refuse. Keep compose-required host keys or reload them before compose.
+
 ## 2026-08-26 16:55 +07 — Dual secret-probe marker lists collapsed
 
 ### Symptom
