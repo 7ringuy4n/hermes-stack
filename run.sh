@@ -575,6 +575,7 @@ do_update() {
     echo "==> seed API keys into OpenBao"
     do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
   fi
+  do_scrub_plaintext_env
 
   echo "==> disk cleanup"
   docker builder prune -af >/dev/null 2>&1 || true
@@ -601,6 +602,16 @@ do_first_setup_openbao() {
   # Re-export KV → data dir so compose env_file (hermes) picks up secrets after UI edits / re-seed.
   python3 "${SCRIPTS_DIR}/load-openbao-env.py" \
     || echo "WARN: load-openbao-env failed — re-run: bash run.sh load-openbao-env"
+}
+
+do_scrub_plaintext_env() {
+  # After compose is up: drop host-side secret exports so disk scans cannot list keys.
+  # Next recreate: bash run.sh load-openbao-env (or first-setup-openbao) before up|update.
+  [[ -f "${SCRIPTS_DIR}/scrub-plaintext-env.py" ]] || return 0
+  echo "==> scrub plaintext .env / .env.openbao exports"
+  STACK_ROOT="${ROOT}" ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}" \
+    python3 "${SCRIPTS_DIR}/scrub-plaintext-env.py" \
+    || echo "WARN: scrub-plaintext-env returned non-zero"
 }
 
 do_post_ready_learn() {
@@ -643,6 +654,7 @@ do_post_up_hooks() {
   if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then
     do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
   fi
+  do_scrub_plaintext_env
   do_post_ready_learn
   do_zalo_setup_hint
 }

@@ -1602,6 +1602,10 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             return False
         if plan_is_host_direct_reply(plan) and not schedule_fire:
+            # Classify refuse (secret/env soft asks, etc.): never stage knowledge-learn.
+            mark = getattr(self, "_as_learn_skip_mark", None)
+            if callable(mark):
+                mark(thread_id, sender_id)
             body = str(plan.get("message") or "").strip()
             if not body:
                 body = "\n".join(
@@ -3092,25 +3096,34 @@ class ZaloAdapter(BasePlatformAdapter):
         return name
 
     def _as_secret_probe_envelope(self, m, text=None) -> str:
-        """Outer text + quoted message/file title for probe (tag/quote/file)."""
+        """Outer text + inbound/quoted file titles for probe (tag/quote/file)."""
         parts: list[str] = []
         outer = "" if text is None else str(text)
         if isinstance(m, dict) and not str(outer).strip():
             outer = str(m.get("text") or m.get("content") or m.get("message") or m.get("msg") or "")
         if str(outer).strip():
             parts.append(str(outer).strip())
-        raw_q = None
         if isinstance(m, dict):
+            media = m.get("media") if isinstance(m.get("media"), dict) else None
+            if media:
+                for key in ("fileName", "filename", "name", "title"):
+                    fn = str(media.get(key) or "").strip()
+                    if fn:
+                        parts.append(fn)
+                        break
+                cap = str(media.get("caption") or media.get("description") or "").strip()
+                if cap:
+                    parts.append(cap)
             raw_q = m.get("quoted") if isinstance(m.get("quoted"), dict) else m.get("quote")
-        if isinstance(raw_q, dict):
-            snip = quoted_context_snip(raw_q)
-            if snip:
-                parts.append(snip)
-            qmedia = extract_media_from_quote(raw_q)
-            if isinstance(qmedia, dict):
-                fn = str(qmedia.get("fileName") or "").strip()
-                if fn:
-                    parts.append(fn)
+            if isinstance(raw_q, dict):
+                snip = quoted_context_snip(raw_q)
+                if snip:
+                    parts.append(snip)
+                qmedia = extract_media_from_quote(raw_q)
+                if isinstance(qmedia, dict):
+                    fn = str(qmedia.get("fileName") or "").strip()
+                    if fn:
+                        parts.append(fn)
         # de-dupe while preserving order
         seen: set[str] = set()
         out: list[str] = []
@@ -3122,11 +3135,51 @@ class ZaloAdapter(BasePlatformAdapter):
             out.append(p)
         return "\n".join(out)
 
-    async def _as_secret_probe_drop(self, m, sender_id, thread_id, thread_type, text=None) -> bool:  # ASSISTANT_SECRET_PROBE_v5
-        """Hit = short refuse + notify admin. No LLM. No admin/authz bypass.
+    def _as_learn_skip_mark(self, thread_id, sender_id) -> None:
+        """Remember this turn must not stage knowledge-learn (secret probe hit)."""
+        if not hasattr(self, "_as_learn_skip"):
+            self._as_learn_skip = {}
+        tid = str(thread_id or "").strip()
+        sid = str(sender_id or "").strip()
+        if tid:
+            self._as_learn_skip[f"{tid}:{sid}"] = __import__("time").time()
 
-        Scans outer text plus quoted message / quoted file name so @tag + quote
-        cannot hide a secret probe inside the quoted payload.
+    def _as_learn_skip_hit(self, thread_id, sender_id) -> bool:
+        store = getattr(self, "_as_learn_skip", None) or {}
+        key = f"{str(thread_id or '').strip()}:{str(sender_id or '').strip()}"
+        ts = float(store.get(key) or 0)
+        if ts <= 0:
+            return False
+        # Same inbound burst (file pipeline is async after AV).
+        if __import__("time").time() - ts > 180:
+            try:
+                del store[key]
+            except Exception:
+                pass
+            return False
+        return True
+
+    def _as_classify_secret_refuse(self, blob: str) -> bool:
+        """True when classify owns a secret/env refuse (no keyword dictionaries)."""
+        text = str(blob or "").strip()
+        if not text:
+            return False
+        try:
+            try:
+                from .classify_client import classify_text, plan_is_host_direct_reply
+            except ImportError:
+                from classify_client import classify_text, plan_is_host_direct_reply  # type: ignore
+            plan = classify_text(text)
+            return bool(plan_is_host_direct_reply(plan))
+        except Exception:
+            return False
+
+    async def _as_secret_probe_drop(self, m, sender_id, thread_id, thread_type, text=None) -> bool:  # ASSISTANT_SECRET_PROBE_v7
+        """Optional literal marker gate. Soft secret/env intent is classify-owned.
+
+        When policy is classify-owned (empty markers), this is a no-op and the
+        host classify / learn-skip path handles refuse. Still marks learn-skip
+        if a residual literal marker hits.
         """
         import json
         import os
@@ -3137,6 +3190,7 @@ class ZaloAdapter(BasePlatformAdapter):
         orig = self._as_secret_probe_envelope(m, text)
         if not self._as_secret_probe_text(orig):
             return False
+        self._as_learn_skip_mark(thread_id, sender_id)
         sid = str(sender_id or "").strip() or "unknown"
         alias = self._as_secret_probe_alias(m, sid)
         who = f"user_id: {sid} ({alias})" if alias else f"user_id: {sid}"
@@ -3749,7 +3803,11 @@ class ZaloAdapter(BasePlatformAdapter):
             _gate = getattr(self, "_as_av_gate", None)
             if _gate:
                 _blocked = await _gate(
-                    thread_id, sender_id, media_urls[0], media if isinstance(media, dict) else {}
+                    thread_id,
+                    sender_id,
+                    media_urls[0],
+                    media if isinstance(media, dict) else {},
+                    user_text=str(text or ""),
                 )
                 if _blocked:
                     if extract_task is not None:
@@ -5372,7 +5430,7 @@ class ZaloAdapter(BasePlatformAdapter):
             return True, msg
 
     async def _as_av_gate(  # ASSISTANT_FILE_PIPELINE_v6
-        self, thread_id, sender_id, local_path: str, media: dict
+        self, thread_id, sender_id, local_path: str, media: dict, user_text: str = ""
     ) -> bool:
         """Scan before LLM via AV gateway / Security Worker. True = abort turn."""
         import asyncio
@@ -5382,6 +5440,47 @@ class ZaloAdapter(BasePlatformAdapter):
 
         if not local_path:
             return False
+        # Caption/filename secret intent: classify owns refuse (no keyword lists).
+        probe_blob = "\n".join(
+            x
+            for x in (
+                str(user_text or "").strip(),
+                str((media or {}).get("fileName") or "").strip(),
+                str((media or {}).get("caption") or "").strip(),
+            )
+            if x
+        )
+        if probe_blob and (
+            self._as_learn_skip_hit(thread_id, sender_id)
+            or self._as_secret_probe_text(probe_blob)
+            or self._as_classify_secret_refuse(probe_blob)
+        ):
+            self._as_learn_skip_mark(thread_id, sender_id)
+            self._as_flow(
+                "learn_skip",
+                reason="classify_secret_av_gate",
+                thread_id=thread_id,
+                file=(media or {}).get("fileName"),
+            )
+            try:
+                refuse = self._as_ux_line(
+                    "ZALO_SECRET_PROBE_REFUSE",
+                    ("secret_probe", "refuse"),
+                    "Cannot provide secrets or confidential documents.",
+                    user_text=probe_blob,
+                )
+                await self.send(
+                    chat_id=str(thread_id),
+                    content=refuse,
+                    metadata={
+                        "thread_type": "user",
+                        "as_skip_timing": True,
+                        "as_skip_inflight": True,
+                    },
+                )
+            except Exception:
+                pass
+            return True
         fn = str((media or {}).get("fileName") or Path(local_path).name or "file")
         kind = str((media or {}).get("kind") or "file")
         if kind in {"voice", "sticker", "gif"}:
@@ -5440,7 +5539,9 @@ class ZaloAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
                 return True
-            self._as_enqueue_file_pipeline(thread_id, sender_id, local_path, media)
+            self._as_enqueue_file_pipeline(
+                thread_id, sender_id, local_path, media, user_text=user_text
+            )
             return False
 
         av_url = (os.getenv("AV_GATEWAY_URL") or "http://av-gateway:8098").rstrip("/")
@@ -5494,7 +5595,9 @@ class ZaloAdapter(BasePlatformAdapter):
                             except Exception:
                                 pass
                             return True
-                        self._as_enqueue_file_pipeline(thread_id, sender_id, local_path, media)
+                        self._as_enqueue_file_pipeline(
+                            thread_id, sender_id, local_path, media, user_text=user_text
+                        )
                         return False
                 ready = False
                 blocked = False
@@ -5540,14 +5643,18 @@ class ZaloAdapter(BasePlatformAdapter):
                 self._as_flow("av_clean", thread_id=thread_id, file=fn, session_id=session_id, seconds=f"{elapsed:.2f}")
             else:
                 self._as_flow("av_timeout", thread_id=thread_id, file=fn, session_id=session_id, seconds=f"{elapsed:.2f}")
-            self._as_enqueue_file_pipeline(thread_id, sender_id, local_path, media)
+            self._as_enqueue_file_pipeline(
+                thread_id, sender_id, local_path, media, user_text=user_text
+            )
             return False
         except Exception as e:
             self._as_flow("av_error", thread_id=thread_id, file=fn, error=type(e).__name__)
             done = getattr(self, "_as_mark_lookup_done", None)
             if callable(done):
                 done(thread_id)
-            self._as_enqueue_file_pipeline(thread_id, sender_id, local_path, media)
+            self._as_enqueue_file_pipeline(
+                thread_id, sender_id, local_path, media, user_text=user_text
+            )
             return False
 
     def _as_enqueue_file_pipeline(  # ASSISTANT_FILE_PIPELINE_v6
@@ -5556,10 +5663,19 @@ class ZaloAdapter(BasePlatformAdapter):
         sender_id,
         local_path: str,
         media: dict,
+        user_text: str = "",
     ) -> None:
         import asyncio
 
         if not self._as_file_pipeline_enabled():
+            return
+        if self._as_learn_skip_hit(thread_id, sender_id):
+            self._as_flow(
+                "learn_skip",
+                reason="classify_secret",
+                thread_id=thread_id,
+                file=(media or {}).get("fileName"),
+            )
             return
         kind = (media or {}).get("kind") or "file"
         if kind in {"voice", "image", "gif", "sticker"}:
@@ -5571,6 +5687,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     str(sender_id or ""),
                     local_path,
                     media or {},
+                    str(user_text or ""),
                 )
             )
         except Exception as e:
@@ -5582,16 +5699,24 @@ class ZaloAdapter(BasePlatformAdapter):
         sender_id: str,
         local_path: str,
         media: dict,
+        user_text: str = "",
     ) -> None:
         import asyncio
         import json
         import os
-        import re
         import shutil
         import uuid
         from pathlib import Path
 
         if not thread_id or not local_path:
+            return
+        if self._as_learn_skip_hit(thread_id, sender_id):
+            self._as_flow(
+                "learn_skip",
+                reason="secret_probe",
+                thread_id=thread_id,
+                file=(media or {}).get("fileName"),
+            )
             return
         file_name = (media or {}).get("fileName") or Path(local_path).name or "document.bin"
         kind = (media or {}).get("kind") or "file"
@@ -5610,12 +5735,22 @@ class ZaloAdapter(BasePlatformAdapter):
                 return alt
             return None
 
+        def _safe_name(name: str) -> str:
+            out = []
+            for ch in str(name or ""):
+                o = ord(ch)
+                if ch.isalnum() or ch in "._-() " or o > 127:
+                    out.append(ch)
+                else:
+                    out.append("_")
+            return ("".join(out).strip() or "document.bin")[:120]
+
         try:
             src = await asyncio.to_thread(_resolve_src)
             if src is None:
                 self._as_flow("ingest_skip", reason="missing_source", path=local_path, thread_id=thread_id)
                 return
-            safe = re.sub(r"[^\w.\-() ]", "_", file_name)[:120].strip() or "document.bin"
+            safe = _safe_name(file_name)
             dest_dir = inbound_root / thread_id
             dest_name = f"{uuid.uuid4().hex[:8]}_{safe}"
             dest = dest_dir / dest_name
@@ -5628,31 +5763,74 @@ class ZaloAdapter(BasePlatformAdapter):
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 low = file_name.lower()
                 ocr_text = ""
-                if low.endswith((".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff")):
-                    self._as_flow("ocr_start", thread_id=thread_id, file=file_name, path=ingest_rel)
-                    # OCR container mounts ASSISTANT media at /data/media — not /opt/data/media.
-                    ocr_path = f"/data/media/{ingest_rel}"
-                    try:
-                        async with session.post(
-                            f"{ocr_url}/v1/ocr",
-                            json={"path": ocr_path, "prompt": "Extract all text as markdown."},
-                        ) as ocr_resp:
-                            ocr_body = await ocr_resp.text()
-                            try:
-                                ocr_json = json.loads(ocr_body or "")
-                                if isinstance(ocr_json, dict):
-                                    ocr_text = str(ocr_json.get("text") or ocr_json.get("markdown") or "").strip()
-                            except Exception:
-                                ocr_text = ""
+                if low.endswith((".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".txt", ".md", ".csv")):
+                    # Prefer plain-text read for small text files (no OCR hop).
+                    if low.endswith((".txt", ".md", ".csv")):
+                        try:
+                            raw = await asyncio.to_thread(dest.read_text, encoding="utf-8", errors="replace")
+                            ocr_text = (raw or "").strip()
+                        except Exception:
+                            ocr_text = ""
+                    elif low.endswith((".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff")):
+                        self._as_flow("ocr_start", thread_id=thread_id, file=file_name, path=ingest_rel)
+                        ocr_path = f"/data/media/{ingest_rel}"
+                        try:
+                            async with session.post(
+                                f"{ocr_url}/v1/ocr",
+                                json={"path": ocr_path, "prompt": "Extract all text as markdown."},
+                            ) as ocr_resp:
+                                ocr_body = await ocr_resp.text()
+                                try:
+                                    ocr_json = json.loads(ocr_body or "")
+                                    if isinstance(ocr_json, dict):
+                                        ocr_text = str(
+                                            ocr_json.get("text") or ocr_json.get("markdown") or ""
+                                        ).strip()
+                                except Exception:
+                                    ocr_text = ""
+                                self._as_flow(
+                                    "ocr_done",
+                                    thread_id=thread_id,
+                                    file=file_name,
+                                    status=ocr_resp.status,
+                                    chars=len(ocr_text or ocr_body or ""),
+                                )
+                        except Exception as e:
                             self._as_flow(
-                                "ocr_done",
+                                "ocr_fail",
                                 thread_id=thread_id,
                                 file=file_name,
-                                status=ocr_resp.status,
-                                chars=len(ocr_text or ocr_body or ""),
+                                error=type(e).__name__,
                             )
-                    except Exception as e:
-                        self._as_flow("ocr_fail", thread_id=thread_id, file=file_name, error=type(e).__name__)
+
+                probe_blob = "\n".join(
+                    x
+                    for x in (
+                        str(user_text or "").strip(),
+                        str(file_name or "").strip(),
+                        str(ocr_text or "").strip()[:20000],
+                    )
+                    if x
+                )
+                if self._as_learn_skip_hit(thread_id, sender_id) or (
+                    probe_blob
+                    and (
+                        self._as_secret_probe_text(probe_blob)
+                        or self._as_classify_secret_refuse(probe_blob)
+                    )
+                ):
+                    self._as_learn_skip_mark(thread_id, sender_id)
+                    self._as_flow(
+                        "learn_skip",
+                        reason="classify_secret_content",
+                        thread_id=thread_id,
+                        file=file_name,
+                    )
+                    try:
+                        await asyncio.to_thread(dest.unlink)
+                    except Exception:
+                        pass
+                    return
 
                 payload = {
                     "path": ingest_rel,
@@ -5678,6 +5856,8 @@ class ZaloAdapter(BasePlatformAdapter):
                     payload["sender_name"] = sender_name
                 if ocr_text:
                     payload["text"] = ocr_text[:500000]
+                if str(user_text or "").strip():
+                    payload["caption"] = str(user_text).strip()[:4000]
                 self._as_flow("learn_submit", thread_id=thread_id, file=file_name, path=ingest_rel)
                 async with session.post(
                     f"{ingest_url}/v1/learn/submit",
@@ -5686,12 +5866,25 @@ class ZaloAdapter(BasePlatformAdapter):
                 ) as r3:
                     body = await r3.text()
                     if r3.status >= 300:
-                        self._as_flow("learn_fail", thread_id=thread_id, status=r3.status, error=(body or "")[:120])
+                        self._as_flow(
+                            "learn_fail",
+                            thread_id=thread_id,
+                            status=r3.status,
+                            error=(body or "")[:120],
+                        )
                         return
                     try:
                         meta = json.loads(body or "{}")
                     except Exception:
                         meta = {}
+                    if meta.get("blocked") or meta.get("status") == "blocked":
+                        self._as_flow(
+                            "learn_skip",
+                            reason="ingest_secret_probe",
+                            thread_id=thread_id,
+                            file=file_name,
+                        )
+                        return
                     self._as_flow(
                         "learn_pending",
                         thread_id=thread_id,
