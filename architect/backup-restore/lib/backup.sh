@@ -792,6 +792,12 @@ assistant_restore_all() {
     assistant_restore_schedules "$dir"
   fi
   assistant_zalo_post_restore_heal
+  if [[ -f "${ROOT}/scripts/main/scrub-plaintext-env.py" ]]; then
+    log "scrub plaintext .env / .env.openbao exports after restore"
+    ROOT="${ROOT}" ASSISTANT_DATA_DIR="${HERMES_DATA_DIR}" \
+      python3 "${ROOT}/scripts/main/scrub-plaintext-env.py" \
+      || log "WARN: scrub-plaintext-env returned non-zero"
+  fi
   log "restore done ${stamp}"
 }
 

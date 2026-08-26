@@ -208,11 +208,13 @@ services:
       - LEARN_LIST_LIMIT=${LEARN_LIST_LIMIT:-5}
       - LEARN_REQUIRE_APPROVE=${LEARN_REQUIRE_APPROVE:-0}
       - LEARN_NOTIFY_PATH=/app/learn-notify.json
+      - SECRET_PROBE_POLICY=/opt/data/secret-probe.json
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     volumes:
       - ${ASSISTANT_DATA_DIR:-/data/assistant}/media:/data/media
       - ${ASSISTANT_DATA_DIR:-/data/assistant}:/data/assistant
       - ./hermes/main/messages/learn-notify.json:/app/learn-notify.json:ro
+      - ./config/agent/secret-probe.json:/opt/data/secret-probe.json:ro
     depends_on:
       - valkey
       - embedding
