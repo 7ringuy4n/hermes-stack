@@ -1,3 +1,19 @@
+## 2026-08-26 16:50 +07 — Secret file ask still opened knowledge-learn; probe keywords grew
+
+### Symptom
+Refuse could succeed while Knowledge pending-approval still staged the attachment. Soft env/secret asks encouraged expanding secret-probe keyword lists.
+
+### Root cause
+1. Async file → learn/submit did not honor classify refuse.
+2. Intent was partially encoded as literal markers in secret-probe.json.
+3. Plaintext OpenBao/stack env exports remained after deploy/restore.
+
+### Fix (core)
+Policy intent_owner=classify with empty marker lists. Strengthen classify SECRET/ENV + safety. Host learn-skip on classify refuse; AV/file path classifies caption before learn. Scrub plaintext exports after up|update|restore.
+
+### Prevent recurrence
+Do not grow soft-phrase dictionaries in secret-probe.json — strengthen classify/skills. Never stage knowledge after a secret refuse.
+
 ## 2026-08-26 16:10 +07 — Secret probe hardcoding + quote envelope miss
 
 ### Symptom
