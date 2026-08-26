@@ -56,6 +56,10 @@ def test_verbatim_send_body() -> None:
     }
     assert schedule_delivery_mode(plan, POEM) == "verbatim"
     assert fire_text_from_plan(plan, POEM).startswith("xuân chưa tới")
+    assert schedule_delivery_mode(
+        {"task_hint": "schedule", "schedule_delivery": "transform", "instructions": ["dịch hello"]},
+        "30s nữa dịch hello",
+    ) == "process"
     print("PASS verbatim send-body poem")
 
 
@@ -137,9 +141,8 @@ def test_group_describe_trusts_classify_process() -> None:
         "instructions": [original],
     }
     assert fire_text_from_plan(bad, original) == ""
-    # with nội dung: protocol, exact body wins
     assert fire_text_from_plan(
-        {"schedule_delivery": "verbatim", "message": "x", "instructions": ["x"]},
+        {"schedule_delivery": "verbatim", "message": "hello world", "instructions": ["hello world"]},
         "1 phút nữa nhắn tôi nội dung: hello world",
     ) == "hello world"
     print("PASS host trusts classify process; refuse fire_text==full ask")
