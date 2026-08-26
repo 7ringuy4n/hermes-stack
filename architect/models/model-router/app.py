@@ -9,7 +9,7 @@ Providers:
   coding  → 9router (if healthy) else OmniRouter if only that exists → fallback pool
   general / classify / outbound → OmniRouter (default) else 9router → fallback pool
 
-Missing API keys skip that provider. Ollama optional. Nothing left → clear error.
+Missing API keys skip that provider. If nothing works → JSON error `no_model_available` (message in `messages/en.json`).
 Admin-editable messages: messages/en.json
 Classify / outbound / web-search combo SoT: hermes/main/skills/{classify,outbound,web-search}/…
 Runtime: /opt/data/skills/… when mounted; else config/*.json bake fallback (sync-model-router-skills.sh).

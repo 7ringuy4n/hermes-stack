@@ -1,3 +1,17 @@
+## 2026-08-26 09:25 +07 — Operator scripts still offered a removed local LLM path
+
+### Symptom
+Product combos are Omni OpenCode, but docs and scripts still told operators how to turn a host LLM path back on. Leftover env pins and Omni connections could fight `hermes`/`classifier`.
+
+### Root cause
+The product default changed; enable scripts, compose pass-through, and lab preflight stayed.
+
+### Fix (core)
+Remove those operator scripts and flags. first-setup clears leftover pins, deactivates leftover Omni Ollama/Qwen connections, and drops leftover Qwen-named combos. Live OpenCode-family members stay. Case 38 checks combo fill only.
+
+### Prevent recurrence
+Do not document or wire a host LLM enable flag. Keep first-setup clearing old pins on upgrade.
+
 ## 2026-08-26 08:40 +07 — Office shortcut timed out while the PDF send was still in flight
 
 ### Symptom
