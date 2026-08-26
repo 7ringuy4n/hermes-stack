@@ -1,3 +1,17 @@
+## 2026-08-26 19:20 +07 — Blank docx inspected via Hermes docx/terminal
+
+### Symptom
+Blank office attachments produced long agent replies that unzipped packages, read metadata, and narrated missing python-docx — not a short empty-file notice.
+
+### Root cause
+After worker extract, office binaries could still be passed to Hermes (`media_urls`), so the local docx skill / terminal ran instead of the host ingest extract ack.
+
+### Fix (core)
+Host treats ingest/OCR extract as SoT for office/text; blank/whitespace short-circuits with empty-file ack; strip media paths before any Hermes hop. Classify/SOUL/docx/worker-routing: chat attachment reads stay on media_file/ingest/OCR — never local docx/terminal forensics.
+
+### Prevent recurrence
+Never hand chat office packages to Hermes tools when workers already extracted (or found empty).
+
 ## 2026-08-26 18:50 +07 — Blank docs still opened Knowledge pending; classify 401 after scrub
 
 ### Symptom

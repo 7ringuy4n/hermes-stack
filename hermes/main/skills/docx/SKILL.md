@@ -19,6 +19,10 @@ metadata:
 **Do not use this skill.** Call skill `file-gen` and `POST http://dispatcher:8090/v1/office-file`.
 Do not `pip` / `uv` install PDF/Office libraries in the agent. Do not claim a file was sent unless `"ok":true`.
 
+## Chat attachment READ (Zalo / Telegram)
+
+**Do not use this skill.** The host reads office attachments via ingest `POST /v1/extract-text` (media/file worker path). Never `terminal`, zipfile, unzip, or python-docx forensics on inbound chat files. Blank/whitespace extracts get a short empty-file reply from the host — do not inspect package metadata.
+
 Create, read, edit, and template Microsoft Word `.docx` files with
 python-docx via small CLIs. It handles text, styles, lists, tables,
 images, headers/footers, `{{token}}` templating, tracked changes
