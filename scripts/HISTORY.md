@@ -1,3 +1,31 @@
+## 2026-08-26 19:40 +07 — Multi-format archives needed media-only extract + password gate
+
+### Symptom
+Zip was insufficient; 7z/rar/tar and password-protected packs could fall through to Hermes tools or expand non-media members.
+
+### Root cause
+Archive support was zip-only without password handling or rar/7z backends.
+
+### Fix (core)
+Ingest extract-archive for zip/7z/rar/tar with optional password; media-only members; host password ack; classify routes archives to media_file without local unzip.
+
+### Prevent recurrence
+Never brute-force archive passwords. Never expand nested archives or non-media members.
+
+## 2026-08-26 19:35 +07 — Zip attachments needed media-only worker extract
+
+### Symptom
+Compressed attachments were not handled as media-worker reads; Hermes could terminal-unzip packages including non-media members.
+
+### Root cause
+`.zip` was `attachment_kind=none`, so no ingest extract path ran and the binary could reach Hermes tools.
+
+### Fix (core)
+Ingest `extract-archive` (media members only). Host kind=archive → that endpoint; strip paths; empty-archive ack. Classify routes archives to media_file without local unzip forensics.
+
+### Prevent recurrence
+Never expand nested archives or non-media members for chat attachment reads.
+
 ## 2026-08-26 19:20 +07 — Blank docx inspected via Hermes docx/terminal
 
 ### Symptom
