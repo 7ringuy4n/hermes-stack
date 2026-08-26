@@ -1,5 +1,6 @@
 {
-  "timeout_s": 20,
+  "timeout_s": 90,
+  "max_tokens": 1536,
   "temperature": 0,
   "retry": 1,
   "parts": ["core", "schedule", "media", "delivery", "schema"],

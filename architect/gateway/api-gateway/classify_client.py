@@ -24,6 +24,10 @@ TASK_TYPES = (
     "create_schedule",
     "list_schedule",
     "delete_schedule",
+    "pause_schedule",
+    "resume_schedule",
+    "update_schedule",
+    "run_schedule",
     "knowledge",
     "search",
     "tool",
@@ -121,6 +125,14 @@ def normalize_execution(
             return "schedule", "delete_schedule", "confirm"
         if raw_type == "list_schedule" or action in {"list", "inspect", "show", "status"}:
             return "schedule", "list_schedule", "confirm"
+        if raw_type == "pause_schedule" or action == "pause":
+            return "schedule", "pause_schedule", "confirm"
+        if raw_type == "resume_schedule" or action == "resume":
+            return "schedule", "resume_schedule", "confirm"
+        if raw_type == "update_schedule" or action == "update":
+            return "schedule", "update_schedule", "confirm"
+        if raw_type == "run_schedule" or action in {"run_now", "run"}:
+            return "schedule", "run_schedule", "confirm"
         return "schedule", "create_schedule", "confirm"
     return raw_cls, raw_type, raw_mode
 
@@ -222,7 +234,7 @@ def normalize_skill(src: dict[str, Any], hint: str, task_type: str) -> tuple[str
 def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
-    rows = raw[:count] if count else raw
+    rows = list(raw)
     out: list[dict[str, Any]] = []
     for item in rows:
         if not isinstance(item, dict):
@@ -386,13 +398,35 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
         return True
     if action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
         return True
+    if action in {"pause", "resume", "update", "run_now", "run"} or task_type in {
+        "pause_schedule",
+        "resume_schedule",
+        "update_schedule",
+        "run_schedule",
+    }:
+        return True
     if plan.get("uncertain") is True:
+        return True
+    resolution = str(plan.get("schedule_resolution") or "").strip().lower()
+    if resolution in {"needs_confirmation", "ambiguous", "invalid"}:
         return True
     if _coerce_delay_seconds(plan.get("delay_seconds")) is not None:
         return True
     form = str(plan.get("schedule_form") or "").strip().lower()
     if form in {"once_after", "once_at"}:
         return True
+    tasks = plan.get("tasks")
+    if isinstance(tasks, list):
+        for item in tasks:
+            if not isinstance(item, dict):
+                continue
+            if _coerce_delay_seconds(item.get("delay_seconds")) is not None:
+                return True
+            item_form = str(item.get("schedule_form") or "").strip().lower()
+            if item_form in {"once_after", "once_at"}:
+                return True
+            if item.get("cron_expr"):
+                return True
     return bool(plan.get("cron_expr"))
 
 
@@ -410,7 +444,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     instructions = sanitize_instructions(src.get("instructions"), fallback)
     cadence = str(src.get("cadence") or "").strip().lower()
     if cadence not in CADENCES:
-        cadence = "daily" if hint == "schedule" else "once"
+        cadence = ""
     delay = _coerce_delay_seconds(src.get("delay_seconds"))
     schedule_form = str(src.get("schedule_form") or "").strip().lower()
     if schedule_form not in {"once_at", "once_after", "recurring"}:
