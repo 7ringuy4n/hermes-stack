@@ -134,6 +134,14 @@ class ExtractTextReq(BaseModel):
     max_chars: int = 0
 
 
+class ExtractArchiveReq(BaseModel):
+    """Unpack zip/7z/rar/tar and read text from media members only (skip non-media)."""
+
+    path: str
+    max_chars: int = 0
+    password: str = ""
+
+
 class SearchReq(BaseModel):
     query: str
     workspace_id: Optional[str] = None
@@ -1205,6 +1213,139 @@ def extract_text(req: ExtractTextReq) -> dict[str, Any]:
     if not p.is_file():
         raise HTTPException(404, "file not found")
     return {"ok": bool(text), "path": str(p), "chars": len(text), "text": text[:limit]}
+
+
+@app.post("/v1/extract-archive")
+def extract_archive(req: ExtractArchiveReq) -> dict[str, Any]:
+    """Unpack archive → process media members only. Skip non-media + nested archives.
+
+    Password-protected archives: pass `password` or receive reason=password_required.
+    """
+    import shutil
+    import tempfile
+
+    from archive_media import archive_kind, extract_media_members
+
+    p = _resolve_media_path(req.path)
+    if not p.is_file():
+        raise HTTPException(404, "file not found")
+    kind = archive_kind(p)
+    if kind == "none":
+        raise HTTPException(400, "not an archive")
+    limit = max(1000, min(int(req.max_chars or TEXT_EXTRACT_CHARS), TEXT_EXTRACT_CHARS))
+    pwd = str(req.password or "").strip()
+    tmp = Path(tempfile.mkdtemp(prefix="as_archive_", dir=str(p.parent)))
+    media_names: list[str] = []
+    parts: list[str] = []
+    try:
+        got = extract_media_members(p, tmp, password=pwd or None)
+        if not got.get("ok"):
+            reason = str(got.get("reason") or "bad_archive")
+            _flow("extract_archive", path=req.path, kind=kind, reason=reason, media=0)
+            return {
+                "ok": False,
+                "path": str(p),
+                "chars": 0,
+                "text": "",
+                "media_files": [],
+                "media_only": True,
+                "skipped_non_media": True,
+                "archive_kind": kind,
+                "reason": reason,
+            }
+        written = list(got.get("written") or [])
+        has_content = False
+        for item in written:
+            name = str(item.get("name") or "file")
+            media_names.append(name)
+            member_path = Path(str(item.get("path") or ""))
+            if not member_path.is_file():
+                continue
+            low = name.lower()
+            body = ""
+            if any(low.endswith(x) for x in (".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml", ".xml")):
+                try:
+                    body = member_path.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    body = ""
+            elif any(low.endswith(x) for x in (".docx", ".xlsx", ".xlsm", ".xls", ".pptx")):
+                body = _extract_text_from_path(str(member_path))
+            elif any(
+                low.endswith(x)
+                for x in (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
+            ):
+                try:
+                    ocr_path = str(member_path)
+                    for src_pfx, dst_pfx in (
+                        ("/data/assistant/media/", "/data/media/"),
+                        ("/opt/data/media/", "/data/media/"),
+                    ):
+                        if ocr_path.startswith(src_pfx):
+                            ocr_path = dst_pfx + ocr_path[len(src_pfx) :]
+                            break
+                    with httpx.Client(timeout=60.0) as client:
+                        resp = client.post(
+                            f"{OCR_URL}/v1/ocr",
+                            json={
+                                "path": ocr_path,
+                                "prompt": "Extract all text as markdown.",
+                            },
+                        )
+                        if resp.status_code < 300:
+                            data = resp.json() if resp.content else {}
+                            if isinstance(data, dict):
+                                body = str(data.get("text") or data.get("markdown") or "")
+                except Exception:
+                    body = ""
+            elif any(
+                low.endswith(x)
+                for x in (
+                    ".mp4",
+                    ".webm",
+                    ".mov",
+                    ".m4v",
+                    ".mkv",
+                    ".avi",
+                    ".mp3",
+                    ".m4a",
+                    ".aac",
+                    ".wav",
+                    ".ogg",
+                    ".opus",
+                    ".flac",
+                )
+            ):
+                body = f"(media file `{name}` listed; open separately for transcript)"
+            compact = "".join((body or "").split())
+            if compact:
+                has_content = True
+                parts.append(f"## {name}\n{(body or '').strip()}")
+            else:
+                parts.append(f"## {name}\n(empty)")
+        text = "\n\n".join(parts) if has_content else ""
+        _flow(
+            "extract_archive",
+            path=req.path,
+            kind=kind,
+            media=len(media_names),
+            chars=len(text),
+        )
+        return {
+            "ok": True,
+            "path": str(p),
+            "chars": len(text),
+            "text": text[:limit],
+            "media_files": media_names,
+            "media_only": True,
+            "skipped_non_media": True,
+            "archive_kind": kind,
+            "reason": "",
+        }
+    finally:
+        try:
+            shutil.rmtree(tmp, ignore_errors=True)
+        except Exception:
+            pass
 
 
 @app.post("/v1/ingest")
