@@ -3174,6 +3174,57 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception:
             return False
 
+    def _as_user_secret_ask_blob(self, user_text: str = "", media: dict | None = None) -> str:
+        """User-facing secret-ask text only. Drop Zalo wire JSON and filename-only.
+
+        Zalo often puts a fileExt JSON blob in message text for attachments. That is
+        not a user ask — classifying it caused blank/docs to get secret refuse.
+        """
+        media = media if isinstance(media, dict) else {}
+        file_name = str(media.get("fileName") or media.get("filename") or "").strip()
+        office_ext = (
+            ".xlsx",
+            ".xls",
+            ".docx",
+            ".doc",
+            ".pdf",
+            ".txt",
+            ".csv",
+            ".md",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp",
+        )
+        parts: list[str] = []
+        for raw in (
+            str(user_text or "").strip(),
+            str(media.get("caption") or media.get("description") or "").strip(),
+        ):
+            if not raw:
+                continue
+            # Zalo attachment wire payload (not a caption / ask).
+            if raw.startswith("{") and ("fileExt" in raw or "fileSize" in raw or "checksum" in raw):
+                continue
+            if file_name and raw == file_name:
+                continue
+            if file_name and raw.strip("`") == file_name:
+                continue
+            tokens = raw.split()
+            if len(tokens) == 1 and tokens[0].lower().endswith(office_ext):
+                continue
+            parts.append(raw)
+        # de-dupe
+        seen: set[str] = set()
+        out: list[str] = []
+        for p in parts:
+            k = p.casefold()
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(p)
+        return "\n".join(out)
+
     async def _as_secret_probe_drop(self, m, sender_id, thread_id, thread_type, text=None) -> bool:  # ASSISTANT_SECRET_PROBE_v7
         """Optional literal marker gate. Soft secret/env intent is classify-owned.
 
@@ -3852,6 +3903,48 @@ class ZaloAdapter(BasePlatformAdapter):
             # Do not wait on the agent — Omni capacity-busy 503 left users silent
             # after Knowledge-pending while csv/xlsx/mp4 never got a content reply.
             if attach_bare:
+                # File body that is itself a secret/env ask → refuse (risk docs).
+                # Blank/empty ordinary extracts continue with the normal extract ack.
+                body = str(excerpt or "").strip()
+                if body and (
+                    self._as_secret_probe_text(body)
+                    or self._as_classify_secret_refuse(body)
+                ):
+                    self._as_learn_skip_mark(thread_id, sender_id)
+                    self._as_flow(
+                        "learn_skip",
+                        reason="classify_secret_attachment_body",
+                        thread_id=thread_id,
+                        file=attach_name,
+                    )
+                    try:
+                        refuse = self._as_ux_line(
+                            "ZALO_SECRET_PROBE_REFUSE",
+                            ("secret_probe", "refuse"),
+                            "Cannot provide secrets or confidential documents.",
+                            user_text=body[:500],
+                        )
+                        await self.send(
+                            chat_id=str(thread_id),
+                            content=refuse,
+                            metadata={
+                                "thread_type": "group" if thread_type == "group" else "user",
+                                "as_skip_timing": True,
+                                "as_skip_inflight": True,
+                                "skip_outbound_filter": True,
+                            },
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        self._as_inflight_done(str(thread_id), {})
+                    except Exception:
+                        pass
+                    try:
+                        self._as_queue_kick(str(thread_id))
+                    except Exception:
+                        pass
+                    return
                 kind = attachment_kind(attach_name)
                 if attach_is_image:
                     ack = image_ocr_ack_message(excerpt or "")
@@ -5440,16 +5533,9 @@ class ZaloAdapter(BasePlatformAdapter):
 
         if not local_path:
             return False
-        # Secret refuse only on an explicit ask (caption/user text). Filename alone
-        # and a prior learn-skip mark must NOT abort innocent blank/docs attachments.
-        ask_blob = "\n".join(
-            x
-            for x in (
-                str(user_text or "").strip(),
-                str((media or {}).get("caption") or "").strip(),
-            )
-            if x
-        )
+        # Secret refuse only on an explicit user ask. Ignore Zalo fileExt wire JSON
+        # and filename-alone (blank/docs false positives). Prior learn-skip does not abort.
+        ask_blob = self._as_user_secret_ask_blob(user_text, media if isinstance(media, dict) else {})
         if ask_blob and (
             self._as_secret_probe_text(ask_blob)
             or self._as_classify_secret_refuse(ask_blob)
@@ -5816,18 +5902,15 @@ class ZaloAdapter(BasePlatformAdapter):
                         pass
                     return
                 # Content gate: user ask and/or extracted body that is itself a secret ask.
-                # Never classify filename-alone (blank.docx / docs.docx false positives).
-                ask_blob = "\n".join(
-                    x
-                    for x in (
-                        str(user_text or "").strip(),
-                        str(ocr_text or "").strip()[:20000],
-                    )
-                    if x
+                # Never treat Zalo fileExt JSON or filename-alone as the ask.
+                ask_blob = self._as_user_secret_ask_blob(
+                    user_text, media if isinstance(media, dict) else {}
                 )
-                if ask_blob and (
-                    self._as_secret_probe_text(ask_blob)
-                    or self._as_classify_secret_refuse(ask_blob)
+                body_ask = str(ocr_text or "").strip()[:20000]
+                gate_blob = "\n".join(x for x in (ask_blob, body_ask) if x)
+                if gate_blob and (
+                    self._as_secret_probe_text(gate_blob)
+                    or self._as_classify_secret_refuse(gate_blob)
                 ):
                     self._as_learn_skip_mark(thread_id, sender_id)
                     self._as_flow(
