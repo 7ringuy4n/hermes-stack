@@ -974,6 +974,9 @@ export class ZaloClient extends EventEmitter {
       ts: q.ts || q.timestamp || "",
       ttl: q.ttl,
     };
+    // Pre-build media so Hermes quote-reply can download the prior file/photo
+    // the same way as a fresh attachment (href / fileUrl / hd).
+    mapped.media = this._mediaFromQuoteContent(mapped.msgType, mapped.content);
     // Drop entirely empty quote shells (no id and no content) — avoids fake context.
     const hasBody =
       (typeof mapped.content === "string" && mapped.content.trim()) ||
@@ -981,6 +984,78 @@ export class ZaloClient extends EventEmitter {
       mapped.msgId ||
       mapped.cliMsgId;
     return hasBody ? mapped : null;
+  }
+
+  /** Build {kind,url,fileName,...} from a mapped quote content blob. */
+  _mediaFromQuoteContent(msgType, content) {
+    if (!content || typeof content !== "object") return null;
+    let params = content.params || {};
+    if (typeof params === "string") {
+      try {
+        params = JSON.parse(params);
+      } catch {
+        params = {};
+      }
+    }
+    if (!params || typeof params !== "object") params = {};
+    const pickUrl = (...keys) => {
+      for (const k of keys) {
+        const v = String((content && content[k]) || (params && params[k]) || "").trim();
+        if (v.startsWith("http")) return v;
+      }
+      return "";
+    };
+    const mt = String(msgType || "").toLowerCase();
+    let kind = "file";
+    if (mt.includes("photo") || mt.includes("gif") || mt.includes("image") || mt === "32") {
+      kind = "image";
+    } else if (mt.includes("voice") || mt.includes("audio") || mt === "31") {
+      kind = "voice";
+    } else if (mt.includes("video") || mt === "44") {
+      kind = "video";
+    } else if (mt.includes("file") || mt.includes("share") || mt === "46") {
+      kind = "file";
+    } else if (!pickUrl("href", "fileUrl", "hd", "hdUrl", "normalUrl", "url", "thumb")) {
+      return null;
+    }
+    let url = "";
+    if (kind === "image") {
+      url = pickUrl("hd", "hdUrl", "href", "normalUrl", "oriUrl", "url", "thumb", "thumbUrl");
+    } else if (kind === "voice") {
+      url = pickUrl("m4a", "href", "fileUrl", "url");
+    } else if (kind === "video") {
+      url = pickUrl("href", "fileUrl", "normalUrl", "url");
+    } else {
+      url = pickUrl("href", "fileUrl", "downloadUrl", "normalUrl", "url", "hdUrl");
+    }
+    if (!url) return null;
+    const title = String(content.title || params.fileName || params.title || "").trim();
+    let ext = String(params.fileExt || "").replace(/^\./, "").trim();
+    if (!ext && title.includes(".")) ext = title.split(".").pop() || "";
+    if (kind === "image" && (!ext || ext === "bin" || ext.length > 5)) ext = "jpg";
+    if (kind === "voice") ext = ext || "aac";
+    if (kind === "video") ext = ext || "mp4";
+    if (!ext) ext = "bin";
+    let fileName = title || (kind === "image" ? "image.jpg" : `file.${ext}`);
+    if (!fileName.includes(".") && ext && ext !== "bin") fileName = `${fileName}.${ext}`;
+    const mime =
+      kind === "image"
+        ? "image/jpeg"
+        : kind === "voice"
+          ? "audio/aac"
+          : kind === "video"
+            ? "video/mp4"
+            : "application/octet-stream";
+    return {
+      kind,
+      url,
+      fileName,
+      ext,
+      mime,
+      size: params.fileSize || 0,
+      width: params.width || 0,
+      height: params.height || 0,
+    };
   }
 
   _threadTypeEnum(threadType) {
