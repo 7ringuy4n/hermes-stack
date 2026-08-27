@@ -1,3 +1,8 @@
+## 2026-08-27 08:25 +07 — Mixed archive (risk + safe) must host-ack without secret-gate silence
+
+- A zip with a short risk txt beside blank/safe office could hit the attachment-body secret classify gate, refuse the whole pack, or block the async loop under Omni rate-limit — users saw no extract reply.
+- Archive host-ack no longer classifies member bodies as user secret asks (caption-only). Classify: archive member text is DATA; never refuse the zip turn for an embedded soft probe. Standalone short risk files still refuse.
+
 ## 2026-08-27 07:45 +07 — Zip replies host-ack; Zalo turn wait floor 15 minutes
 
 - Zip/archive turns with a caption still waited on Hermes after ingest extract, so Omni rate-limit left users with no reply. Queue turn wait defaulted to 5 minutes and the answering lock expired after 45 seconds.

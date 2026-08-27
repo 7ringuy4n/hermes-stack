@@ -1,3 +1,17 @@
+## 2026-08-27 08:25 +07 — Mixed risk+safe zip silent or refused entirely
+
+### Symptom
+Zip packs with one short risk text member and one blank/safe office produced no useful extract reply (silence or whole-pack refuse).
+
+### Root cause
+Archive host-ack still ran classify on the combined extract body. A short risk member looked like a user secret ask; under Omni queue saturation the sync classify hop blocked the turn.
+
+### Fix (core)
+Skip attachment-body secret classify for archives; host-ack media extract always. Classify treats archive member text as data. Standalone short risk files still refuse.
+
+### Prevent recurrence
+Never map archive member bodies to secret probes. Prefer caption/user ask only for refuse on compressed attachments.
+
 ## 2026-08-27 07:45 +07 — Zip with caption silent; answering lock 45s
 
 ### Symptom
