@@ -315,6 +315,12 @@ from attachment import (  # noqa: E402
 ATTACHMENT_OCR_TIMEOUT_S = 90.0
 ATTACHMENT_OFFICE_TIMEOUT_S = 45.0
 ATTACHMENT_AV_TIMEOUT_S = 240.0
+# Folder zips with OCR members need a long worker budget (within 15m turn wait).
+ATTACHMENT_ARCHIVE_TIMEOUT_S = 600.0
+# Default Zalo queue / answering wait: 15 minutes.
+ZALO_TURN_WAIT_DEFAULT_S = 900.0
+ZALO_TURN_WAIT_MAX_S = 1800.0
+ZALO_DRAIN_DEFAULT_S = 1200.0
 
 # AV readiness polling: fast first tick, exponential backoff, same total budget.
 AV_POLL_MIN_S = 0.1
@@ -1341,6 +1347,11 @@ class ZaloAdapter(BasePlatformAdapter):
         return True
 
 
+    def _as_answering_ttl_s(self) -> int:
+        """How long the per-thread answering lock lasts (match queue turn wait)."""
+        # Keep answering lock alive for the full turn wait (default 15 minutes).
+        return int(self._as_queue_turn_timeout_s())
+
     def _as_already_answering_max(self) -> int:  # ASSISTANT_INFLIGHT_v6
         import os
         raw = (os.getenv("HERMES_MAX_ANSWERING") or os.getenv("HERMES_MAX_INFLIGHT") or "3").strip().lower()
@@ -1360,7 +1371,11 @@ class ZaloAdapter(BasePlatformAdapter):
         if store is None:
             return True
         try:
-            return bool(store.answering_try(str(thread_id or ""), cap, 45))
+            return bool(
+                store.answering_try(
+                    str(thread_id or ""), cap, self._as_answering_ttl_s()
+                )
+            )
         except Exception:
             return True
 
@@ -1386,7 +1401,11 @@ class ZaloAdapter(BasePlatformAdapter):
         logger.info(f"[zalo] already answering wait thread={thread_id}")
         try:
             announce = getattr(self, "_as_gate_announce", None)
-            msg = "Bot đang trả lời tin này. Đợi xong rồi gửi tiếp nhé."
+            msg = self._as_ux_line(
+                "ZALO_ALREADY_ANSWERING_MSG",
+                ("queue", "already_answering"),
+                "Bot đang trả lời tin này. Đợi xong rồi gửi tiếp nhé (tối đa khoảng 15 phút).",
+            )
             if callable(announce):
                 await announce(thread_id, thread_type, msg)
             else:
@@ -2578,12 +2597,30 @@ class ZaloAdapter(BasePlatformAdapter):
         return self._as_gate_store() is not None
 
     def _as_queue_turn_timeout_s(self) -> float:
-        """Max seconds for one queued Hermes turn (handle_message + late files + wait)."""
-        return self._as_env_float("ZALO_QUEUE_TURN_TIMEOUT_S", 300.0, 30.0, 900.0)
+        """Max seconds for one queued Hermes turn (handle_message + late files + wait).
+
+        Product floor is 15 minutes so archive/OCR/LLM work is not cut off early.
+        """
+        val = self._as_env_float(
+            "ZALO_QUEUE_TURN_TIMEOUT_S",
+            ZALO_TURN_WAIT_DEFAULT_S,
+            30.0,
+            ZALO_TURN_WAIT_MAX_S,
+        )
+        return max(ZALO_TURN_WAIT_DEFAULT_S, val)
 
     def _as_queue_drain_max_s(self) -> float:
-        """Max seconds one drain task may hold the per-thread worker lock."""
-        return self._as_env_float("ZALO_QUEUE_DRAIN_MAX_S", 600.0, 60.0, 3600.0)
+        """Max seconds one drain task may hold the per-thread worker lock.
+
+        Must stay above turn timeout so a long zip extract is not cancelled mid-ack.
+        """
+        val = self._as_env_float(
+            "ZALO_QUEUE_DRAIN_MAX_S",
+            ZALO_DRAIN_DEFAULT_S,
+            60.0,
+            max(ZALO_TURN_WAIT_MAX_S * 2, 3600.0),
+        )
+        return max(ZALO_DRAIN_DEFAULT_S, val, self._as_queue_turn_timeout_s())
 
     def _as_queue_kick(self, thread_id: str) -> None:
         tid = str(thread_id or "")
@@ -2947,7 +2984,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 msg = self._as_ux_line(
                     "ZALO_QUEUE_TURN_TIMEOUT_MSG",
                     ("queue", "turn_timeout"),
-                    "Xin lỗi, tin trước xử lý quá lâu nên mình dừng lại. Bạn gửi tin tiếp theo nhé.",
+                    "Xin lỗi, tin trước xử lý quá lâu (hơn 15 phút) nên mình dừng lại. Bạn gửi tin tiếp theo nhé.",
                 )
                 try:
                     await self._as_gate_announce(tid, thread_type, msg)
@@ -4052,13 +4089,17 @@ class ZaloAdapter(BasePlatformAdapter):
                 len(excerpt_for_prompt),
                 attach_kind,
             )
-            # Bare attachment OR blank office/text/archive: deterministic worker extract ack.
-            # Do not wait on the agent — Omni capacity-busy 503 left users silent
-            # after Knowledge-pending while csv/xlsx/mp4 never got a content reply.
+            # Bare attachment OR blank office/text/ocr: deterministic worker extract ack.
+            # Archives ALWAYS host-ack (even with caption + extract text) — never wait on
+            # Hermes/LLM; Omni rate-limit left zip turns silent after ingest already finished.
             # Blank docx / empty zip must not fall through to Hermes local tools.
-            host_ack = attach_bare or (
-                attach_kind in {"office", "text", "archive", "ocr"}
-                and not excerpt_meaningful
+            host_ack = (
+                attach_bare
+                or attach_kind == "archive"
+                or (
+                    attach_kind in {"office", "text", "ocr"}
+                    and not excerpt_meaningful
+                )
             )
             if host_ack:
                 # Short file body that is itself a secret/env ask → refuse (risk txt).
@@ -5478,7 +5519,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 text = await self._as_archive_worker_text(
                     f"{ingest_url}/v1/extract-archive",
                     payload,
-                    timeout_s=max(ATTACHMENT_OFFICE_TIMEOUT_S, 90.0),
+                    timeout_s=max(ATTACHMENT_ARCHIVE_TIMEOUT_S, 90.0),
                 )
             case "av":
                 media_url = (

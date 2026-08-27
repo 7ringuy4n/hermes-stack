@@ -1,3 +1,17 @@
+## 2026-08-27 07:45 +07 — Zip with caption silent; answering lock 45s
+
+### Symptom
+Sending zip files produced no Zalo reply when a caption was present. Long turns were cut off while the user was still waiting.
+
+### Root cause
+Archive extract with meaningful text skipped host ack and waited on Hermes (Omni queue rate-limit). Queue turn timeout defaulted to 5 minutes; answering lock TTL was hardcoded to 45 seconds.
+
+### Fix (core)
+Always host-ack archives from ingest extract. Raise Zalo queue turn wait floor to 15 minutes; align answering TTL and drain max; increase archive worker timeout.
+
+### Prevent recurrence
+Never route zip/7z/rar/tar chat reads through Hermes after the worker extract. Keep turn wait ≥ archive/OCR budget.
+
 ## 2026-08-27 07:10 +07 — Quote file reply, folder-zip empty text, English refuse, auto-learn risk docs
 
 ### Symptom
