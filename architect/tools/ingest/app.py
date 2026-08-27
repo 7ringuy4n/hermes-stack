@@ -1268,7 +1268,7 @@ def extract_archive(req: ExtractArchiveReq) -> dict[str, Any]:
                     body = member_path.read_text(encoding="utf-8", errors="replace")
                 except OSError:
                     body = ""
-            elif any(low.endswith(x) for x in (".docx", ".xlsx", ".xlsm", ".xls", ".pptx")):
+            elif any(low.endswith(x) for x in (".docx", ".doc", ".xlsx", ".xlsm", ".xls", ".pptx")):
                 body = _extract_text_from_path(str(member_path))
             elif any(
                 low.endswith(x)
@@ -1322,7 +1322,15 @@ def extract_archive(req: ExtractArchiveReq) -> dict[str, Any]:
                 parts.append(f"## {name}\n{(body or '').strip()}")
             else:
                 parts.append(f"## {name}\n(empty)")
-        text = "\n\n".join(parts) if has_content else ""
+        # Folder zips often contain only images: media_files must still surface even
+        # when OCR yields no glyphs — otherwise host treats the pack as empty.
+        if has_content:
+            text = "\n\n".join(parts)
+        elif media_names:
+            listed = "\n".join(f"- {n}" for n in media_names)
+            text = f"Media members ({len(media_names)}):\n{listed}"
+        else:
+            text = ""
         _flow(
             "extract_archive",
             path=req.path,
@@ -1432,10 +1440,8 @@ def learn_submit(req: LearnSubmit) -> dict[str, Any]:
     text = (req.text or "").strip()
     caption = (req.caption or "").strip()
     name = (req.document_name or "zalo-learn").strip() or "zalo-learn"
-    if not text and not req.path and not caption:
-        raise HTTPException(400, "text or path required")
     # Blank / whitespace-only extracts must not open Knowledge pending.
-    # Host should skip these; ingest fail-closes if a path-only blank arrives.
+    # Whitespace-only body is EMPTY_EXTRACT (not HTTP 400).
     compact = "".join((text or "").split())
     if not compact:
         _flow(
