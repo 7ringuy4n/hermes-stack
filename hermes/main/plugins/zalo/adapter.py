@@ -4102,46 +4102,50 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
             )
             if host_ack:
-                # Short file body that is itself a secret/env ask → refuse (risk txt).
-                # Long docs (security whitepapers / injection examples) stay file OCR.
+                # Short file body that is itself a secret/env ask → refuse (standalone risk txt).
+                # Archives: NEVER classify member bodies as the user ask — mixed packs
+                # (risk txt + blank/safe office) must still host-ack extract; embedded
+                # secret-like lines are untrusted DATA. Omni classify under rate-limit
+                # also blocked the async loop and left zip turns silent.
                 # Blank/empty extracts continue with the normal extract ack (no learn).
-                body = self._as_short_secret_ask_body(excerpt or "")
-                refuse_body = (
-                    self._as_classify_refuse_body(body) if body else ""
-                )
-                if body and (
-                    self._as_secret_probe_text(body) or refuse_body
-                ):
-                    self._as_learn_skip_mark(thread_id, sender_id)
-                    self._as_flow(
-                        "learn_skip",
-                        reason="classify_secret_attachment_body",
-                        thread_id=thread_id,
-                        file=attach_name,
+                if attach_kind != "archive":
+                    body = self._as_short_secret_ask_body(excerpt or "")
+                    refuse_body = (
+                        self._as_classify_refuse_body(body) if body else ""
                     )
-                    try:
-                        refuse = refuse_body or self._as_secret_refuse_line(body[:500])
-                        await self.send(
-                            chat_id=str(thread_id),
-                            content=refuse,
-                            metadata={
-                                "thread_type": "group" if thread_type == "group" else "user",
-                                "as_skip_timing": True,
-                                "as_skip_inflight": True,
-                                "skip_outbound_filter": True,
-                            },
+                    if body and (
+                        self._as_secret_probe_text(body) or refuse_body
+                    ):
+                        self._as_learn_skip_mark(thread_id, sender_id)
+                        self._as_flow(
+                            "learn_skip",
+                            reason="classify_secret_attachment_body",
+                            thread_id=thread_id,
+                            file=attach_name,
                         )
-                    except Exception:
-                        pass
-                    try:
-                        self._as_inflight_done(str(thread_id), {})
-                    except Exception:
-                        pass
-                    try:
-                        self._as_queue_kick(str(thread_id))
-                    except Exception:
-                        pass
-                    return
+                        try:
+                            refuse = refuse_body or self._as_secret_refuse_line(body[:500])
+                            await self.send(
+                                chat_id=str(thread_id),
+                                content=refuse,
+                                metadata={
+                                    "thread_type": "group" if thread_type == "group" else "user",
+                                    "as_skip_timing": True,
+                                    "as_skip_inflight": True,
+                                    "skip_outbound_filter": True,
+                                },
+                            )
+                        except Exception:
+                            pass
+                        try:
+                            self._as_inflight_done(str(thread_id), {})
+                        except Exception:
+                            pass
+                        try:
+                            self._as_queue_kick(str(thread_id))
+                        except Exception:
+                            pass
+                        return
                 kind = attach_kind or attachment_kind(attach_name)
                 if attach_is_image:
                     ack = image_ocr_ack_message(excerpt_for_prompt or "")
