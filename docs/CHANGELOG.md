@@ -1,3 +1,8 @@
+## 2026-08-27 07:45 +07 — Zip replies host-ack; Zalo turn wait floor 15 minutes
+
+- Zip/archive turns with a caption still waited on Hermes after ingest extract, so Omni rate-limit left users with no reply. Queue turn wait defaulted to 5 minutes and the answering lock expired after 45 seconds.
+- Archives always host-ack from ingest extract (never Hermes for zip/7z/rar/tar). Queue turn wait floor 15 minutes; drain max stays above that; answering lock TTL matches the turn wait. Archive worker budget raised for folder packs.
+
 ## 2026-08-27 07:10 +07 — Quote-reply attachments, folder-zip media list, LLM refuse language, no auto-learn for blank/risk
 
 - Quote-reply to a prior file/photo often missed download URLs; folder zips with image-only members looked empty; secret refuse was a fixed English line; blank/risk docs still opened Knowledge pending while Hermes opened PDF packages with terminal tools.
