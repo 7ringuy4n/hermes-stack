@@ -3162,16 +3162,79 @@ class ZaloAdapter(BasePlatformAdapter):
 
     def _as_classify_secret_refuse(self, blob: str) -> bool:
         """True when classify owns a secret/env refuse (no keyword dictionaries)."""
+        return bool(self._as_classify_refuse_body(blob))
+
+    def _as_classify_refuse_body(self, blob: str) -> str:
+        """LLM refuse line from classify instructions (user language). Empty if not refuse."""
         text = str(blob or "").strip()
         if not text:
-            return False
+            return ""
         try:
             try:
                 from .classify_client import classify_text, plan_is_host_direct_reply
             except ImportError:
                 from classify_client import classify_text, plan_is_host_direct_reply  # type: ignore
             plan = classify_text(text)
-            return bool(plan_is_host_direct_reply(plan))
+            if not plan_is_host_direct_reply(plan):
+                return ""
+            body = str(plan.get("message") or "").strip()
+            if not body:
+                body = "\n".join(
+                    str(x).strip()
+                    for x in (plan.get("instructions") or [])
+                    if str(x).strip()
+                )
+            return body
+        except Exception:
+            return ""
+
+    def _as_secret_refuse_line(self, blob: str) -> str:
+        """Prefer classify LLM refuse; ux.json locale map only as fallback."""
+        llm = self._as_classify_refuse_body(blob)
+        if llm:
+            return llm
+        return self._as_ux_line(
+            "ZALO_SECRET_PROBE_REFUSE",
+            ("secret_probe", "refuse"),
+            "Cannot provide secrets or confidential documents.",
+            user_text=blob,
+        )
+
+    def _as_classify_allows_knowledge_learn(
+        self, user_text: str, file_name: str, excerpt: str
+    ) -> bool:
+        """True only when classify says knowledge-learn for this attachment turn.
+
+        Bare/blank files and LLM-risk whitepapers must not open Knowledge pending.
+        Soft secret/env asks are already refuse; this gate is for learn staging.
+        """
+        ask = self._as_user_secret_ask_blob(
+            user_text, {"fileName": file_name, "caption": user_text}
+        )
+        if not ask:
+            return False
+        blob = ask
+        body = self._as_short_secret_ask_body(excerpt or "")
+        if body:
+            blob = f"{ask}\n[Attachment excerpt — {file_name}]\n{body}"
+        else:
+            blob = f"{ask}\n[Attachment — {file_name}]"
+        try:
+            try:
+                from .classify_client import classify_text, plan_is_host_direct_reply
+            except ImportError:
+                from classify_client import classify_text, plan_is_host_direct_reply  # type: ignore
+            plan = classify_text(blob)
+            if plan_is_host_direct_reply(plan):
+                return False
+            hint = str(plan.get("task_hint") or "").strip().lower()
+            skill = str(plan.get("skill") or "").strip().lower()
+            action = str(plan.get("skill_action") or "").strip().lower()
+            if hint == "knowledge" or skill == "knowledge":
+                return True
+            if action in {"learn", "approve", "ingest", "knowledge_learn", "save_knowledge"}:
+                return True
+            return False
         except Exception:
             return False
 
@@ -3271,12 +3334,7 @@ class ZaloAdapter(BasePlatformAdapter):
         tz = ZoneInfo(os.getenv("TZ") or "Asia/Ho_Chi_Minh")
         stamp = datetime.now(tz).strftime("%H:%M %d/%m/%Y")
         notify = (os.getenv("NOTIFY_URL") or "http://notify:8092").rstrip("/")
-        refuse = self._as_ux_line(
-            "ZALO_SECRET_PROBE_REFUSE",
-            ("secret_probe", "refuse"),
-            "Cannot provide secrets or confidential documents.",
-            user_text=orig,
-        )
+        refuse = self._as_secret_refuse_line(orig)
         try:
             nbody = json.dumps(
                 {
@@ -3960,11 +4018,20 @@ class ZaloAdapter(BasePlatformAdapter):
                     attach_name,
                     f"[Attached file: {attach_name}]",
                 )
-            if attach_kind in {"office", "text", "archive"}:
-                # Worker extract already ran; strip paths so Hermes cannot open the package.
+            if attach_kind in {"office", "text", "archive", "ocr"}:
+                # Worker extract already ran; strip paths so Hermes cannot open the package
+                # (local docx/terminal/pypdf forensics on pdf/images).
                 media_urls = []
                 media_types = []
                 message_type = MessageType.TEXT
+            if not excerpt_meaningful and attach_kind in {
+                "office",
+                "text",
+                "archive",
+                "ocr",
+            }:
+                # Blank / empty extract: never stage Knowledge pending.
+                self._as_learn_skip_mark(thread_id, sender_id)
             if attach_bare:
                 text = self._as_attachment_prompt(
                     attach_name,
@@ -3990,16 +4057,19 @@ class ZaloAdapter(BasePlatformAdapter):
             # after Knowledge-pending while csv/xlsx/mp4 never got a content reply.
             # Blank docx / empty zip must not fall through to Hermes local tools.
             host_ack = attach_bare or (
-                attach_kind in {"office", "text", "archive"} and not excerpt_meaningful
+                attach_kind in {"office", "text", "archive", "ocr"}
+                and not excerpt_meaningful
             )
             if host_ack:
                 # Short file body that is itself a secret/env ask → refuse (risk txt).
                 # Long docs (security whitepapers / injection examples) stay file OCR.
                 # Blank/empty extracts continue with the normal extract ack (no learn).
                 body = self._as_short_secret_ask_body(excerpt or "")
+                refuse_body = (
+                    self._as_classify_refuse_body(body) if body else ""
+                )
                 if body and (
-                    self._as_secret_probe_text(body)
-                    or self._as_classify_secret_refuse(body)
+                    self._as_secret_probe_text(body) or refuse_body
                 ):
                     self._as_learn_skip_mark(thread_id, sender_id)
                     self._as_flow(
@@ -4009,12 +4079,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         file=attach_name,
                     )
                     try:
-                        refuse = self._as_ux_line(
-                            "ZALO_SECRET_PROBE_REFUSE",
-                            ("secret_probe", "refuse"),
-                            "Cannot provide secrets or confidential documents.",
-                            user_text=body[:500],
-                        )
+                        refuse = refuse_body or self._as_secret_refuse_line(body[:500])
                         await self.send(
                             chat_id=str(thread_id),
                             content=refuse,
@@ -5703,9 +5768,9 @@ class ZaloAdapter(BasePlatformAdapter):
         # Secret refuse only on an explicit user ask. Ignore Zalo fileExt wire JSON
         # and filename-alone (blank/docs false positives). Prior learn-skip does not abort.
         ask_blob = self._as_user_secret_ask_blob(user_text, media if isinstance(media, dict) else {})
+        refuse_body = self._as_classify_refuse_body(ask_blob) if ask_blob else ""
         if ask_blob and (
-            self._as_secret_probe_text(ask_blob)
-            or self._as_classify_secret_refuse(ask_blob)
+            self._as_secret_probe_text(ask_blob) or refuse_body
         ):
             self._as_learn_skip_mark(thread_id, sender_id)
             self._as_flow(
@@ -5715,12 +5780,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 file=(media or {}).get("fileName"),
             )
             try:
-                refuse = self._as_ux_line(
-                    "ZALO_SECRET_PROBE_REFUSE",
-                    ("secret_probe", "refuse"),
-                    "Cannot provide secrets or confidential documents.",
-                    user_text=ask_blob,
-                )
+                refuse = refuse_body or self._as_secret_refuse_line(ask_blob)
                 await self.send(
                     chat_id=str(thread_id),
                     content=refuse,
@@ -6136,6 +6196,37 @@ class ZaloAdapter(BasePlatformAdapter):
                         pass
                     return
 
+                # Archives are media-member reads only — never Knowledge pending.
+                if attachment_kind(file_name) == "archive":
+                    self._as_flow(
+                        "learn_skip",
+                        reason="archive_media_only",
+                        thread_id=thread_id,
+                        file=file_name,
+                    )
+                    try:
+                        await asyncio.to_thread(dest.unlink)
+                    except Exception:
+                        pass
+                    return
+
+                # Classify owns learn eligibility: blank/risk whitepapers and bare
+                # attachments without an explicit learn ask must not stage pending.
+                if not self._as_classify_allows_knowledge_learn(
+                    str(user_text or ""), file_name, ocr_text or ""
+                ):
+                    self._as_flow(
+                        "learn_skip",
+                        reason="classify_not_knowledge",
+                        thread_id=thread_id,
+                        file=file_name,
+                    )
+                    try:
+                        await asyncio.to_thread(dest.unlink)
+                    except Exception:
+                        pass
+                    return
+
                 payload = {
                     "path": ingest_rel,
                     "document_name": file_name,
@@ -6229,12 +6320,7 @@ class ZaloAdapter(BasePlatformAdapter):
         except ImportError:
             from .secret_probe import is_blocked as _out_blocked  # type: ignore
         if _out_blocked(content or "", direction="output"):
-            content = self._as_ux_line(
-                "ZALO_SECRET_PROBE_REFUSE",
-                ("secret_probe", "refuse"),
-                "Cannot provide secrets or confidential documents.",
-                user_text=content or "",
-            )
+            content = self._as_secret_refuse_line(content or "")
         _trim = getattr(self, "_as_knowledge_trim", None)
         if callable(_trim):
             content = _trim(content)  # ASSISTANT_KNOWLEDGE_CITE_v7

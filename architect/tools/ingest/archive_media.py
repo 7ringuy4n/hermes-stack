@@ -13,7 +13,7 @@ from typing import Any, Callable
 # Keep in sync with hermes zalo attachment media kinds.
 TEXT_EXTS = (".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml", ".xml")
 OCR_EXTS = (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
-OFFICE_EXTS = (".docx", ".xlsx", ".xlsm", ".xls", ".pptx")
+OFFICE_EXTS = (".docx", ".doc", ".xlsx", ".xlsm", ".xls", ".pptx")
 AV_EXTS = (
     ".mp4",
     ".webm",
