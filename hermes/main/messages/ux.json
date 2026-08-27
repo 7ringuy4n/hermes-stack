@@ -21,7 +21,9 @@
   "queue": {
     "rate_limited": "Bạn gửi hơi nhanh — tin này đã vào hàng chờ, mình sẽ trả lời lần lượt.",
     "queued": "Mình đang trả lời tin trước. Vui lòng chờ.",
-    "full": "Hàng chờ đầy. Gửi lại sau giúp mình."
+    "already_answering": "Bot đang trả lời tin này. Đợi xong rồi gửi tiếp nhé (tối đa khoảng 15 phút).",
+    "full": "Hàng chờ đầy. Gửi lại sau giúp mình.",
+    "turn_timeout": "Xin lỗi, tin trước xử lý quá lâu (hơn 15 phút) nên mình dừng lại. Bạn gửi tin tiếp theo nhé."
   },
   "schedule": {
     "saved": {
