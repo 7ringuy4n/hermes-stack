@@ -35,6 +35,8 @@ def main() -> int:
     assert "ZALO_TURN_WAIT_DEFAULT_S = 900.0" in src
     assert "ATTACHMENT_ARCHIVE_TIMEOUT_S = 600.0" in src
     assert 'or attach_kind == "archive"' in src
+    assert 'if attach_kind != "archive":' in src
+    assert "classify_secret_attachment_body" in src
     print("archive_host_ack_wait_unit OK")
     return 0
 
