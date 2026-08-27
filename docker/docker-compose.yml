@@ -454,9 +454,9 @@ services:
       - ZALO_INBOUND_QUEUE=${ZALO_INBOUND_QUEUE:-1}
       - ZALO_INBOUND_QUEUE_MAX=${ZALO_INBOUND_QUEUE_MAX:-16}
       - ZALO_INBOUND_QUEUE_TTL_S=${ZALO_INBOUND_QUEUE_TTL_S:-3600}
-      # Hung Hermes turn must not block the next Zalo message forever.
-      - ZALO_QUEUE_TURN_TIMEOUT_S=${ZALO_QUEUE_TURN_TIMEOUT_S:-300}
-      - ZALO_QUEUE_DRAIN_MAX_S=${ZALO_QUEUE_DRAIN_MAX_S:-600}
+      # Hung Hermes/archive turn must not block the next Zalo message forever (15m floor).
+      - ZALO_QUEUE_TURN_TIMEOUT_S=${ZALO_QUEUE_TURN_TIMEOUT_S:-900}
+      - ZALO_QUEUE_DRAIN_MAX_S=${ZALO_QUEUE_DRAIN_MAX_S:-1200}
       - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
       - ZALO_ADMIN_USERS_FILE=/opt/data/zalo_admin_users.txt
       - ZALO_HOST_DATA_DIR=${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}
