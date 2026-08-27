@@ -1,3 +1,17 @@
+## 2026-08-27 07:10 +07 — Quote file reply, folder-zip empty text, English refuse, auto-learn risk docs
+
+### Symptom
+Reply-quoting a prior file did not process the attachment. Folder zip packs with images looked empty. Secret refuse stayed English. Blank/risk documents still opened Knowledge pending; PDF paths reached Hermes terminal tools.
+
+### Root cause
+Quote media lacked `fileUrl`/bridge `media`. Archive extract dropped text when OCR was empty despite media members. Host used a fixed English refuse string. File pipeline auto-staged learn for every extract; OCR/PDF binaries were not stripped after worker extract.
+
+### Fix (core)
+Bridge quote media map; wider quote URL keys; archive returns media member list when OCR empty; classify refuse in user language; learn only when classify allows knowledge; strip office/text/archive/ocr paths before Hermes.
+
+### Prevent recurrence
+Never auto-learn blank/risk/archives. Never hand worker-extracted packages to Hermes tools. Prefer classify instructions for refuse copy.
+
 ## 2026-08-26 19:40 +07 — Multi-format archives needed media-only extract + password gate
 
 ### Symptom

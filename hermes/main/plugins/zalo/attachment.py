@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Tuple
 
 TEXT_EXTS = (".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml", ".xml")
 OCR_EXTS = (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
-OFFICE_EXTS = (".docx", ".xlsx", ".xlsm", ".xls", ".pptx")
+OFFICE_EXTS = (".docx", ".doc", ".xlsx", ".xlsm", ".xls", ".pptx")
 AV_EXTS = (
     ".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi",
     ".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".flac",
@@ -236,19 +236,34 @@ def _quote_href_from_blob(qc: Dict[str, Any], params: Dict[str, Any]) -> str:
     """Pick a downloadable URL from quote content/attach/params."""
     for key in (
         "href",
-        "thumb",
+        "fileUrl",
+        "downloadUrl",
+        "normalUrl",
         "hd",
         "hdUrl",
-        "thumbUrl",
-        "normalUrl",
         "oriUrl",
         "rawUrl",
         "url",
+        "thumb",
+        "thumbUrl",
     ):
         val = str(qc.get(key) or "").strip()
         if val.startswith("http"):
             return val
-    for key in ("hd", "hdUrl", "normal", "normalUrl", "oriUrl", "rawUrl", "m4a", "thumb"):
+    for key in (
+        "fileUrl",
+        "downloadUrl",
+        "hd",
+        "hdUrl",
+        "normal",
+        "normalUrl",
+        "oriUrl",
+        "rawUrl",
+        "m4a",
+        "href",
+        "url",
+        "thumb",
+    ):
         val = str(params.get(key) or "").strip()
         if val.startswith("http"):
             return val
@@ -291,15 +306,29 @@ def extract_media_from_quote(quote: Any) -> Dict[str, Any] | None:
         kind = "video"
     else:
         kind = "file"
-    ext = (params.get("fileExt") if isinstance(params, dict) else None) or (
-        str(qc.get("title") or "bin").rsplit(".", 1)[-1]
-    )
+    title = str(
+        qc.get("title")
+        or params.get("fileName")
+        or params.get("title")
+        or quote.get("fileName")
+        or ""
+    ).strip()
+    ext_raw = params.get("fileExt") if isinstance(params, dict) else None
+    ext = str(ext_raw or "").strip().lstrip(".")
+    if not ext and "." in title:
+        ext = title.rsplit(".", 1)[-1].strip()
+    if not ext:
+        ext = "bin"
     if kind == "image" and (not ext or ext == "bin" or len(str(ext)) > 5):
         ext = "jpg"
+    file_name = title if title else f"file.{ext}"
+    # Ensure archive/office extensions survive when Zalo only sends fileExt.
+    if "." not in file_name and ext and ext != "bin":
+        file_name = f"{file_name}.{ext}"
     return {
         "kind": kind,
         "url": href,
-        "fileName": qc.get("title") or params.get("fileName") or f"file.{ext}",
+        "fileName": file_name,
         "ext": ext,
         "mime": "image/jpeg"
         if kind == "image"

@@ -1,3 +1,8 @@
+## 2026-08-27 07:10 +07 — Quote-reply attachments, folder-zip media list, LLM refuse language, no auto-learn for blank/risk
+
+- Quote-reply to a prior file/photo often missed download URLs; folder zips with image-only members looked empty; secret refuse was a fixed English line; blank/risk docs still opened Knowledge pending while Hermes opened PDF packages with terminal tools.
+- Bridge maps quote `media` (fileUrl/href). Host quote extract widens URL keys and preserves extensions. Ingest extract-archive lists media members even when OCR is empty. Classify refuse lines match the user language; host prefers those instructions. Strip worker paths (including OCR/PDF) before Hermes. Knowledge pending only when classify allows knowledge-learn — never for blank, archives, or risk whitepapers without an explicit learn ask.
+
 ## 2026-08-26 19:40 +07 — Archives (zip/7z/rar/tar) extract media only; password asked, never forced
 
 - Compressed chat attachments (zip/7z/rar/tar) needed a worker path that expands only media and handles password-protected packs without Hermes terminal unzip.

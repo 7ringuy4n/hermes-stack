@@ -8,7 +8,11 @@
     "rest": "{n} more."
   },
   "secret_probe": {
-    "refuse": "Cannot provide secrets, credentials, environment files, or protected server paths."
+    "refuse": {
+      "default": "en",
+      "en": "Cannot provide secrets, credentials, or protected server paths.",
+      "vi": "Không thể cung cấp bí mật, thông tin đăng nhập hoặc đường dẫn máy chủ được bảo vệ."
+    }
   },
   "security": {
     "av_blocked": "This file was blocked (malware or test virus). It will not be learned.",
