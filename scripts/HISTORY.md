@@ -1,3 +1,17 @@
+## 2026-08-28 18:30 +07 — Host regex scrub for chat/thread ids and locale folder text
+
+### Symptom
+Outbound sanitization used host regex (including locale-hardcoded folder wording) to hide chat/thread identifiers, conflicting with LLM-owned NLU/privacy rules.
+
+### Root cause
+Adapter post-filter tried to phrase-match identity leaks instead of classifying/outbound LLM policy.
+
+### Fix (core)
+Drop identity/DM/folder regex from adapter redact. Harden classify + outbound prompts; outbound may return cleaned `text` on send. Normalize outbound actions via a map.
+
+### Prevent recurrence
+Never reintroduce host phrase regex for chat privacy. Keep path/secret structural redact only; privacy language belongs in classify/outbound SoT.
+
 ## 2026-08-27 08:25 +07 — Mixed risk+safe zip silent or refused entirely
 
 ### Symptom

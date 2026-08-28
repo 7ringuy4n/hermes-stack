@@ -177,21 +177,35 @@ def strip_cron_delivery(content: str) -> str:
     return t if t else raw
 
 
-def drop_outbound(content: str) -> bool:
+def filter_outbound(content: str) -> tuple[str, str]:
+    """Return (action, text). action is send|drop; text is the body to deliver on send."""
     t = (content or "").strip()
     if not t:
-        return True
+        return "drop", ""
     # Admin command help from zalo-api must never be LLM-filtered away.
     if t.startswith("!zalo ") or "\n!zalo " in t:
-        return False
+        return "send", t
     if is_protocol_drop(t):
-        return True
+        return "drop", ""
     got = classify_outbound(t)
-    action = str(got.get("action") or "send").strip().lower()
+    action_map = {"send": "send", "drop": "drop"}
+    action = action_map.get(str(got.get("action") or "send").strip().lower(), "send")
     if got.get("ok") is False:
         # Fail-open for user-facing replies when /v1/outbound is unavailable;
         # still drop deterministic agent status frames.
-        return is_agent_status_frame(t)
+        if is_agent_status_frame(t):
+            return "drop", ""
+        return "send", t
+    if action == "drop":
+        return "drop", ""
+    cleaned = got.get("text")
+    if isinstance(cleaned, str) and cleaned.strip():
+        return "send", cleaned.strip()
+    return "send", t
+
+
+def drop_outbound(content: str) -> bool:
+    action, _text = filter_outbound(content)
     return action == "drop"
 
 
