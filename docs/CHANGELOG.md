@@ -1,3 +1,8 @@
+## 2026-08-28 18:50 +07 — OmniRouter Grafana quota panels read live usage again
+
+- Omni LLM quota panels showed scrape OK but zeros because the exporter still called removed `/api/usage/stats` paths (404 → empty totals).
+- Exporter now prefers OmniRoute `/api/usage/history` and `/api/usage/analytics`, normalizing summary/list breakdowns into the existing Prometheus series.
+
 ## 2026-08-28 18:30 +07 — Outbound privacy via classify/outbound LLM; no host identity regex
 
 - Host phrase-regex stripped chat/thread ids and locale folder wording from outbound lines, which fought the “no regex NLU” rule and still missed paraphrases.
