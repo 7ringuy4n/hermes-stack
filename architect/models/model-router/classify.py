@@ -50,7 +50,11 @@ OUTBOUND_CFG_PATH = _resolve_skill_cfg(
 )
 
 TASK_HINTS = ("normal", "schedule", "coding", "tool", "search", "file", "knowledge", "unknown")
-OUTBOUND_ACTIONS = ("send", "drop")
+OUTBOUND_ACTION_MAP = {
+    "send": "send",
+    "drop": "drop",
+}
+OUTBOUND_ACTIONS = tuple(OUTBOUND_ACTION_MAP.keys())
 CADENCES = ("once", "daily", "weekly", "monthly", "yearly")
 EXECUTION_CLASSES = ("interactive", "async", "schedule")
 TASK_TYPES = (
@@ -1072,10 +1076,13 @@ def _load_outbound_cfg() -> dict[str, Any]:
 
 def normalize_outbound(data: dict[str, Any] | None) -> dict[str, Any]:
     src = data if isinstance(data, dict) else {}
-    action = str(src.get("action") or "send").strip().lower()
-    if action not in OUTBOUND_ACTIONS:
-        action = "send"
-    return {"ok": True, "action": action}
+    raw_action = str(src.get("action") or "send").strip().lower()
+    action = OUTBOUND_ACTION_MAP.get(raw_action, "send")
+    out: dict[str, Any] = {"ok": True, "action": action}
+    cleaned = src.get("text")
+    if action == "send" and isinstance(cleaned, str) and cleaned.strip():
+        out["text"] = cleaned.strip()
+    return out
 
 
 async def outbound_with_llm(
@@ -1095,7 +1102,7 @@ async def outbound_with_llm(
         "model": _outbound_llm_model(cfg, model),
         "stream": False,
         "temperature": float(cfg.get("temperature") or 0),
-        "max_tokens": int(cfg.get("max_tokens") or 64),
+        "max_tokens": int(cfg.get("max_tokens") or 512),
         "messages": [
             {"role": "system", "content": str(cfg.get("system") or "")},
             {"role": "user", "content": tmpl.replace("{text}", blob[:4000])},

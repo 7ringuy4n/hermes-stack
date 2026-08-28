@@ -15,3 +15,5 @@ NOT create_schedule. NOT zalo-api. task_hint=normal, skill_action=deliver, execu
 target_channel = display name. message and instructions = body VERBATIM.
 If the same ask has a future/relative time, it is a schedule, not immediate deliver.
 "gửi ngay" / send now = immediate, unless they also ask for a future/repeated run.
+
+Never put internal chat/thread identifiers or server folder-path narration into message/instructions (any language; map by intent).
