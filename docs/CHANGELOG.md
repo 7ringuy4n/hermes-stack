@@ -1,3 +1,8 @@
+## 2026-08-28 18:30 +07 — Outbound privacy via classify/outbound LLM; no host identity regex
+
+- Host phrase-regex stripped chat/thread ids and locale folder wording from outbound lines, which fought the “no regex NLU” rule and still missed paraphrases.
+- Remove identity/DM/folder regex scrub from the Zalo adapter. Classify + outbound prompts own privacy (optional cleaned `text` on send). Action labels use a map, not open if/else string compares.
+
 ## 2026-08-27 08:25 +07 — Mixed archive (risk + safe) must host-ack without secret-gate silence
 
 - A zip with a short risk txt beside blank/safe office could hit the attachment-body secret classify gate, refuse the whole pack, or block the async loop under Omni rate-limit — users saw no extract reply.
