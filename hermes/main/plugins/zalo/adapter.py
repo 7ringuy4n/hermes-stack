@@ -4675,15 +4675,16 @@ class ZaloAdapter(BasePlatformAdapter):
 
 
     def _rewrite_gateway_user_notice(self, content: str) -> Optional[str]:  # ASSISTANT_QUIET_SEND_v6
-        """Suppress approval / resume / process chatter on Zalo."""
+        """Suppress approval / resume / process chatter on Zalo; apply outbound privacy clean."""
         t = (content or "").strip()
         if not t:
             return None
         try:
-            from .gateway_noise import drop_outbound
+            from .gateway_noise import filter_outbound
         except ImportError:
-            from gateway_noise import drop_outbound  # type: ignore
-        if drop_outbound(t):
+            from gateway_noise import filter_outbound  # type: ignore
+        action, cleaned = filter_outbound(t)
+        if action == "drop":
             if "vars() argument must have __dict__" in t:
                 return self._as_ux_line(
                     "ZALO_JOB_FAILED_MSG",
@@ -4692,6 +4693,8 @@ class ZaloAdapter(BasePlatformAdapter):
                     user_text=t,
                 )
             return ""
+        if cleaned != t:
+            return cleaned
         return None
 
     def _is_gateway_noise(self, content: str) -> bool:  # ASSISTANT_QUIET_SEND_v6
@@ -5345,13 +5348,12 @@ class ZaloAdapter(BasePlatformAdapter):
             r"\1=…",
             t,
         )
-        # Never leak chat/thread identifiers to the user
-        t = _re.sub(r"(?i)\b(chat|thread)[_\s-]?id\b\s*[=:]\s*\S+", "", t)
-        t = _re.sub(r"(?i)\(\s*(chat|thread)[_\s-]?id\s*=\s*\d+\s*\)", "", t)
-        t = _re.sub(r"(?i)\bthis is a dm with\b[^.!\n]*[.!]?", "", t)
-        t = _re.sub(r"(?i)\s*trong\s+thư\s+mục\s*[`'\"]?\s*[`'\"]?", " ", t)
-        t = _re.sub(r"[ \t]{2,}", " ", t)
-        t = _re.sub(r"\n{3,}", "\n\n", t)
+        # Chat/thread/DM/folder meta scrubbing is owned by classify + outbound LLM
+        # prompts (no host phrase regex / no locale hardcoding).
+        while "  " in t:
+            t = t.replace("  ", " ")
+        while "\n\n\n" in t:
+            t = t.replace("\n\n\n", "\n\n")
         return t.strip() if t.strip() else content
 
 

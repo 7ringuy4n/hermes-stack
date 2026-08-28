@@ -859,7 +859,11 @@ def classify_text(
     return failed_plan(tz, last_error)
 
 
-OUTBOUND_ACTIONS = ("send", "drop")
+OUTBOUND_ACTION_MAP = {
+    "send": "send",
+    "drop": "drop",
+}
+OUTBOUND_ACTIONS = tuple(OUTBOUND_ACTION_MAP.keys())
 _outbound_planner: Planner | None = None
 
 
@@ -870,16 +874,19 @@ def set_outbound_planner(fn: Planner | None) -> None:
 
 def normalize_outbound(data: dict[str, Any] | None) -> dict[str, Any]:
     src = data if isinstance(data, dict) else {}
-    action = str(src.get("action") or "send").strip().lower()
-    if action not in OUTBOUND_ACTIONS:
-        action = "send"
+    raw_action = str(src.get("action") or "send").strip().lower()
+    action = OUTBOUND_ACTION_MAP.get(raw_action, "send")
     if src.get("ok") is False:
         return {
             "ok": False,
             "action": action,
             "error": str(src.get("error") or "outbound_failed"),
         }
-    return {"ok": True, "action": action}
+    out: dict[str, Any] = {"ok": True, "action": action}
+    cleaned = src.get("text")
+    if action == "send" and isinstance(cleaned, str) and cleaned.strip():
+        out["text"] = cleaned.strip()
+    return out
 
 
 def classify_outbound(text: str) -> dict[str, Any]:

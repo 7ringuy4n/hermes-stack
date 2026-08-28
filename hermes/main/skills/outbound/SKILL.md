@@ -10,9 +10,9 @@ Do **not** hand-edit `architect/models/model-router/config/outbound.json` — sy
 
 ## When it runs
 
-On each candidate assistant line before Zalo/Telegram delivery, the host may call model-router `POST /v1/outbound`. The LLM returns `{action: send|drop}` using this prompt.
+On each candidate assistant line before Zalo/Telegram delivery, the host may call model-router `POST /v1/outbound`. The LLM returns `{action: send|drop, text?: string}` using this prompt. Optional `text` is a privacy-cleaned send body (no chat/thread ids or folder/DM meta).
 
-Structural noise stripping (`gateway_noise`, quiet-delivery skill) still applies first. This skill is the LLM second line for ambiguous status vs result.
+Structural path/secret redaction still applies on the host. This skill owns status-vs-result and identifier privacy — no host phrase regex for those.
 
 ## Prompt contract
 
