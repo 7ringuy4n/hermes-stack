@@ -1,3 +1,17 @@
+## 2026-08-28 18:50 +07 — Omni Grafana quota all zeros with scrape OK
+
+### Symptom
+OmniRouter LLM quota / usage panels showed 0 requests/tokens/cost and “No data” rate charts while OmniRouter scrape stayed OK.
+
+### Root cause
+`omni-exporter` (nine-exporter image) scraped legacy `/api/usage/stats` (and siblings). Current OmniRoute returns 404 there; optional 404 became empty usage while providers/login still succeeded, so scrape_success stayed 1.
+
+### Fix (core)
+Scrape `/api/usage/history` then `/api/usage/analytics`, coerce summary + list/dict breakdowns into the flat totals Grafana already queries. Keep older paths for 9Router compatibility.
+
+### Prevent recurrence
+When OmniRoute renames usage APIs, update exporter path list and coercion — do not treat scrape_success alone as proof that usage series are populated.
+
 ## 2026-08-28 18:30 +07 — Host regex scrub for chat/thread ids and locale folder text
 
 ### Symptom
