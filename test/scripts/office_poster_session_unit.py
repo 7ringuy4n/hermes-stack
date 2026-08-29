@@ -2,6 +2,7 @@
 """Office body + text-poster from classify JSON fields (no prose regex)."""
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -122,6 +123,53 @@ def main() -> int:
     assert "Tạo file PDF" not in messy.split("\n")[0], messy
     assert "Dubaothoitiet" not in messy and "AccuWeather" not in messy, messy
     assert "30°C" in messy or "nhiều mây" in messy, messy
+    # JSON / dict dumps and wind bearings must not become card facts / hero
+    jsony = build_office_body_from_search(
+        file_instruction="TITLE: Thời tiết — Hồ Chí Minh\nSUBTITLE: Live\nICON: cloud",
+        user_ask="pdf",
+        search={
+            "answer": None,
+            "results": [
+                {
+                    "title": "API",
+                    "content": (
+                        "{'location': {'name': 'Ho Chi Minh City', 'lat': 10.75}, "
+                        "'current': {'temp_c': 31, 'humidity': 70, 'wind_kph': 20, "
+                        "'condition': {'text': 'Light rain'}}}"
+                    ),
+                },
+                {"title": "x", "content": "246°WSW\n## Ho Chi Minh City Weather Parameters\nDirection"},
+            ],
+        },
+    )
+    assert "{'location'" not in jsony and "Weather Parameters" not in jsony, jsony
+    assert "246°WSW" not in jsony, jsony
+    # Valid JSON should map to labeled facts
+    good_json = build_office_body_from_search(
+        file_instruction="TITLE: Thời tiết — Đà Nẵng\nICON: rain",
+        user_ask="pdf",
+        search={
+            "answer": json.dumps(
+                {
+                    "location": {"name": "Da Nang"},
+                    "current": {
+                        "temp_c": 30,
+                        "humidity": 78,
+                        "wind_kph": 15,
+                        "condition": {"text": "Cloudy"},
+                    },
+                }
+            ),
+            "results": [],
+        },
+    )
+    assert "Nhiệt độ: 30°C" in good_json and "Độ ẩm: 78%" in good_json, good_json
+    assert "{'location'" not in good_json and '"temp_c"' not in good_json, good_json
+    from office_file import _hero_temp  # type: ignore
+
+    assert _hero_temp(["Gió: 246°WSW", "Nhiệt độ: 31°C"]) == "31°C"
+    assert _hero_temp(["246°WSW", "Direction"]) == ""
+
     mixed_img_pdf = {
         "ok": True,
         "task_hint": "tool",

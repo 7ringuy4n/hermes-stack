@@ -107,18 +107,57 @@ def extract_contract_markers(text: str) -> dict[str, str]:
 
 
 def _is_serp_noise(text: str) -> bool:
-    """Drop SEO page titles / wire junk. String checks only (no intent regex)."""
+    """Drop SEO / JSON / markdown / wire junk. String checks only (no intent regex)."""
     s = (text or "").strip()
     if not s or len(s) < 3:
         return True
     low = s.lower()
+    # Raw JSON / Python-dict dumps must never appear on the card
+    if s.startswith(("{", "[", "'{", '"{')):
+        return True
+    if "{'" in s or '{"' in s or "': {" in s or '": {' in s:
+        return True
+    if any(
+        k in low
+        for k in (
+            "'location'",
+            '"location"',
+            "'tz_id'",
+            '"tz_id"',
+            "'lat'",
+            '"lon"',
+            "weather parameters",
+        )
+    ):
+        return True
     if low.startswith("http://") or low.startswith("https://"):
         return True
     if s.startswith("#") or low.startswith("title:"):
         return True
     if " | " in s:
         return True
-    # Generic SERP chrome
+    # Label-only rows with no value
+    if ":" not in s and low in {
+        "direction",
+        "wind speed",
+        "gust speed",
+        "gust spee",
+        "temperature",
+        "precipitation",
+        "humidity",
+        "nhiệt độ",
+        "độ ẩm",
+        "áp suất",
+        "ngày/đêm",
+        "sáng/tối",
+        "pressure",
+        "dawn",
+        "mặt",
+    }:
+        return True
+    # Truncated / chrome leftovers
+    if low.endswith(" image") or low.endswith(" spee") or low.endswith(" temp"):
+        return True
     noise_bits = (
         "dubaothoitiet",
         "accuweather",
@@ -126,27 +165,41 @@ def _is_serp_noise(text: str) -> bool:
         "xem dự báo thời tiết tỉnh",
         "dự báo thời tiết hôm nay, ngày m",
         "cập nhật lần cuối",
-        "pressure",
-        "dawn",
-        "desiged document",
+        "gust speed image",
+        "feels like temperature",
     )
     for bit in noise_bits:
-        if bit in low and (":" not in s or low.startswith(bit)):
-            # Allow "Nhiệt độ: 31" style; block bare site chrome
-            if bit in {"pressure", "dawn"} and len(s) < 24:
-                return True
-            if bit not in {"pressure", "dawn"}:
-                return True
-    # Truncated one-word leftovers
+        if bit in low:
+            # Allow "Nhiệt độ: 31" / "Feels like: 36°C"
+            if ":" in s and not low.startswith(bit):
+                continue
+            return True
     if s in {"Ngày/đêm", "Nhiệt độ", "Sáng/tối", "Áp suất", "Mặt", "pressure", "dawn"}:
         return True
     return False
+
+
+def _looks_like_wind_bearing(token: str) -> bool:
+    """246°WSW / 90°N — compass after degree, not Celsius."""
+    t = (token or "").strip()
+    if "°" not in t and "º" not in t:
+        return False
+    sep = "°" if "°" in t else "º"
+    after = t.split(sep, 1)[1].upper()
+    if not after:
+        return False
+    if after.startswith("C") or after.startswith("F"):
+        return False
+    return after[0].isalpha()
 
 
 def _clean_fact_line(text: str) -> str:
     s = (text or "").strip()
     if s.startswith(("- ", "• ", "* ")):
         s = s[2:].strip()
+    # Strip markdown heading markers
+    while s.startswith("#"):
+        s = s.lstrip("#").strip()
     # Prefer right-hand side when SERP glued "Page Title: actual fact"
     if ": " in s and " | " not in s:
         left, right = s.split(": ", 1)
@@ -155,14 +208,131 @@ def _clean_fact_line(text: str) -> str:
     return s[:140]
 
 
+# Known weather API / Open-Meteo / WeatherAPI field → display label (data map, not NLU).
+_WEATHER_KEY_LABELS: dict[str, str] = {
+    "temp_c": "Nhiệt độ",
+    "temp_f": "Nhiệt độ (°F)",
+    "temperature": "Nhiệt độ",
+    "temperature_2m": "Nhiệt độ",
+    "feelslike_c": "Cảm giác như",
+    "feelslike_f": "Cảm giác như (°F)",
+    "apparent_temperature": "Cảm giác như",
+    "humidity": "Độ ẩm",
+    "relativehumidity_2m": "Độ ẩm",
+    "relative_humidity": "Độ ẩm",
+    "wind_kph": "Gió",
+    "wind_mph": "Gió (mph)",
+    "windspeed_10m": "Gió",
+    "wind_speed": "Gió",
+    "wind_degree": "Hướng gió",
+    "wind_dir": "Hướng gió",
+    "precip_mm": "Mưa",
+    "precipitation": "Mưa",
+    "uv": "Chỉ số UV",
+    "cloud": "Mây",
+    "cloudcover": "Mây",
+    "pressure_mb": "Áp suất",
+    "vis_km": "Tầm nhìn",
+    "condition": "Tình trạng",
+    "text": "Tình trạng",
+    "weathercode": "Mã thời tiết",
+}
+
+
+def _facts_from_weather_obj(obj: Any, *, prefix: str = "") -> list[str]:
+    """Flatten known weather keys from a parsed JSON/dict into label: value lines."""
+    out: list[str] = []
+    if isinstance(obj, list):
+        for item in obj[:5]:
+            out.extend(_facts_from_weather_obj(item, prefix=prefix))
+        return out
+    if not isinstance(obj, dict):
+        return out
+    # Prefer nested current/now blocks first
+    for nest in ("current", "now", "current_weather", "data"):
+        nested = obj.get(nest)
+        if isinstance(nested, dict):
+            out.extend(_facts_from_weather_obj(nested, prefix=prefix))
+    for key, val in obj.items():
+        k = str(key or "").strip().lower()
+        if k in {"location", "forecast", "alerts", "request", "astro"}:
+            if k == "location" and isinstance(val, dict):
+                name = val.get("name") or val.get("city")
+                if name:
+                    out.append(f"Địa điểm: {name}")
+            continue
+        if k == "condition" and isinstance(val, dict):
+            text = val.get("text") or val.get("description")
+            if text:
+                out.append(f"Tình trạng: {text}")
+            continue
+        if isinstance(val, (dict, list)):
+            out.extend(_facts_from_weather_obj(val, prefix=k))
+            continue
+        label = _WEATHER_KEY_LABELS.get(k)
+        if not label:
+            continue
+        if val is None or val == "":
+            continue
+        unit = ""
+        if k.endswith("_c") or k in {"temperature", "temperature_2m", "apparent_temperature"}:
+            unit = "°C"
+        elif k.endswith("_kph") or k in {"windspeed_10m", "wind_speed"}:
+            unit = " km/h"
+        elif k in {"humidity", "relativehumidity_2m", "relative_humidity", "cloud", "cloudcover"}:
+            unit = "%"
+        elif k.endswith("_mm") or k == "precipitation":
+            unit = " mm"
+        elif k == "uv":
+            unit = ""
+        out.append(f"{label}: {val}{unit}")
+    return out
+
+
+def _try_json_facts(raw: str) -> list[str]:
+    """If blob is JSON (or close), return structured weather facts; else []."""
+    s = (raw or "").strip()
+    if not s:
+        return []
+    # Find a JSON object/array start
+    start_obj = s.find("{")
+    start_arr = s.find("[")
+    starts = [i for i in (start_obj, start_arr) if i >= 0]
+    if not starts:
+        return []
+    i = min(starts)
+    blob = s[i:]
+    try:
+        data = json.loads(blob)
+    except Exception:
+        # Python-repr style single quotes — only attempt when it looks like a dict dump
+        if "{'" in blob or "': " in blob:
+            return []  # do not put raw dict on the card
+        return []
+    return _facts_from_weather_obj(data)
+
+
 def _facts_from_search(search: dict[str, Any] | None) -> list[str]:
     facts: list[str] = []
     seen: set[str] = set()
 
     def add(raw: str) -> None:
+        # Prefer structured JSON extraction over dumping the blob
+        structured = _try_json_facts(raw)
+        if structured:
+            for line in structured:
+                add_line(line)
+            return
+        add_line(raw)
+
+    def add_line(raw: str) -> None:
         line = _clean_fact_line(raw)
         if _is_serp_noise(line):
             return
+        if _looks_like_wind_bearing(line.split()[0] if line.split() else ""):
+            # Bare bearing token as whole fact
+            if ":" not in line and _looks_like_wind_bearing(line.replace(" ", "")):
+                return
         key = line.lower()
         if key in seen:
             return
@@ -171,30 +341,46 @@ def _facts_from_search(search: dict[str, Any] | None) -> list[str]:
 
     if not isinstance(search, dict):
         return facts
+
+    # Direct structured answer (dict) from search backends
     ans = search.get("answer")
-    if ans is not None and str(ans).strip():
-        for part in str(ans).replace("\r", "\n").split("\n"):
-            p = part.strip()
-            if p:
-                add(p)
-            if len(facts) >= 8:
-                return facts
+    if isinstance(ans, (dict, list)):
+        for line in _facts_from_weather_obj(ans):
+            add_line(line)
+        if len(facts) >= 6:
+            return facts[:8]
+    elif ans is not None and str(ans).strip():
+        text = str(ans).strip()
+        structured = _try_json_facts(text)
+        if structured:
+            for line in structured:
+                add_line(line)
+        else:
+            for part in text.replace("\r", "\n").split("\n"):
+                p = part.strip()
+                if p:
+                    add(p)
+                if len(facts) >= 8:
+                    return facts
+
     rows = search.get("results") if isinstance(search.get("results"), list) else []
     for row in rows:
         if not isinstance(row, dict):
             continue
+        # Some backends put structured weather on the row itself
+        for line in _facts_from_weather_obj(row):
+            add_line(line)
         snip = str(
             row.get("content") or row.get("snippet") or row.get("body") or ""
         ).strip()
         title = str(row.get("title") or "").strip()
-        # Prefer snippet; title alone is usually SEO chrome
         if snip:
             add(snip)
         elif title and not _is_serp_noise(title):
             add(title)
         if len(facts) >= 8:
             break
-    return facts
+    return facts[:8]
 
 
 def _infer_icon(facts: list[str], fallback: str = "cloud") -> str:
