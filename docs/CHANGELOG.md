@@ -1,3 +1,8 @@
+## 2026-08-29 19:30 +07 — Image backend order: Comfy first, Omni fallback
+
+- Dispatcher now canonicalizes `IMAGE_BACKENDS` to `comfy-cpu,comfy-gpu,omni` even when `.env` lists Omni first; empty value no longer disables image gen.
+- `/health` reports resolved backends; compose and first-setup pin the same order. Omni model id stays in `IMAGE_OMNI_MODEL` (OmniRouter layer).
+
 ## 2026-08-29 19:00 +07 — Default Omni image model uses AI Horde Flux
 
 - Fresh installs defaulted `IMAGE_OMNI_MODEL=dall-e-3` but OmniRouter had no OpenAI credentials — scenic image asks failed even when Comfy checkpoints were empty.
