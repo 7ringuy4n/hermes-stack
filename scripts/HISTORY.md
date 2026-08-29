@@ -1,3 +1,17 @@
+## 2026-08-29 09:30 +07 — Weather PDF still looked cluttered (badge strip)
+
+### Symptom
+After the “rich icons” update, PDFs still looked poor: a row of Nắng/Mây/Mưa/… labels, duplicated temperature, and busy panels instead of a polished weather card.
+
+### Root cause
+ReportLab composition stacked too many decorations (badge strip + banner + fact rows) without a single visual hierarchy. No post-render layout check caught the clutter.
+
+### Fix (core)
+Pillow full-page weather sheet (sky band, one hero temp, one condition icon, 2-column metric tiles). `verify_styled_pdf_layout` rejects badge-strip clutter; fallback is a minimal clean card. Ship `weather_sheet.py` in the Dispatcher image.
+
+### Prevent recurrence
+Prefer one weather-app composition over stacking strips. Always verify layout after write.
+
 ## 2026-08-29 09:20 +07 — Attractive weather PDF still looked sparse (few icons)
 
 ### Symptom
