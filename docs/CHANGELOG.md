@@ -1,3 +1,8 @@
+## 2026-08-29 08:00 +07 — Weather PDF: styled office-file; no image-API recovery menu
+
+- A “design an attractive weather PDF” ask stalled on failed `/v1/image` (502) and answered with session-restore + numbered options (API keys / Comfy). The PDF path only dumped plain text lines (ugly smoke PDF).
+- Dispatcher office-file now renders a card-style PDF (header, vector weather icon, fact rows). Classify: visual weather PDF = search + pdf only (icons inside the PDF). file-gen/image-gen/media-out: never ask for image API keys or recovery menus; finish via office-file.
+
 ## 2026-08-29 07:45 +07 — SOUL prompt_injection block; chat PDF via file-gen not local reportlab
 
 - SOUL.md quoted a classic jailbreak phrase, so Hermes blocked the whole SOUL context (`prompt_injection`). Turns fell back to default /help persona and tried ambiguous local `pdf` skills (reportlab/pip) instead of Dispatcher file-gen — weather-PDF asks got chat text or silence.

@@ -30,7 +30,8 @@ Applies to **every** create/export/send of a file or media asset: images, PDF, D
 
 - dispatcher / Comfy / Pollinations / pip / uv / root / permission / approve / dashboard  
 - chat_id / thread_id / “DM with …” / internal user labels  
-- Step-by-step plans, “Now I have the page…”, “Let me fetch…”, session-restored notices
+- Step-by-step plans, “Now I have the page…”, “Let me fetch…”, session-restored notices  
+- Image API keys, `.env` missing keys, Omni auth, ComfyUI off, numbered “how should I continue?” menus
 
 ## Route by type
 

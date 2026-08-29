@@ -5,7 +5,8 @@ task_hint=file, task_type=file_processing, execution_class=async, response_mode=
 Set output_type to the exact kind (pdf|txt|docx|xlsx|csv|md). instructions[] = FILE BODY ONLY (the payload to write). Never leave kind/body for host regex.
 One instruction per file. Live/external facts inside a file (weather, fuel, current rates) still file_processing AND emit a search/web_search sibling — never a silent office-only job.
 Chat create-and-send PDF/DOCX/XLSX must stay on media_file/file-gen (Dispatcher office-file) — never coding, never local pdf/docx skills, never pip/uv reportlab/pypdf in the agent.
-When the user wants a PDF (or office file) of live weather/fuel that also looks visual (icons, attractive layout, photos): keep output_type=pdf (or the asked office kind) with the search sibling; optionally add a separate media_generation image job when they clearly ask for a standalone picture as well. Do not drop the PDF job. Do not rewrite a PDF ask into chat-only weather text.
+When the user wants a PDF (or office file) of live weather/fuel that also looks visual (icons, attractive layout, “hình ảnh” inside the document): keep output_type=pdf with the search sibling ONLY. Visuals/icons are rendered inside the PDF by Dispatcher office-file — do NOT emit a separate media_generation / image job for PDF decoration, and do NOT rewrite the ask into chat-only weather text. Add media_generation only when the user clearly asks for a standalone picture/photo in addition to (or instead of) a file.
+FILE BODY for such PDFs (instructions for the PDF job after search): structured lines Hermes will pass to office-file — TITLE: … / SUBTITLE: … / ICON: sun|cloud|rain|storm / then fact bullets. Never leave the body as a single bare sentence when facts are available.
 "1 file" => exactly 1 instruction. Never infer PDF from content.
 
 TEXT POSTER (fill N lines of a phrase; often quotes; may say trắng đen / B&W):
