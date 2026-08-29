@@ -1,3 +1,17 @@
+## 2026-08-29 09:00 +07 — Weather PDF UI: create-verb title + SERP junk rows
+
+### Symptom
+PDF files arrived, but the card showed create-instruction text as the title and raw search-result page titles (site chrome, truncated words) instead of clean weather facts.
+
+### Root cause
+Host body assembly treated the whole file instruction as TITLE when markers were mid-line, and appended SERP titles verbatim. `TITLE:` substring matching also stole values from `SUBTITLE:`. Styled PDF clipped long lines with no label/value layout.
+
+### Fix (core)
+Safe contract-marker extraction; SERP noise filter; prefer answer/snippets; infer icon from facts; richer office-file card (wrap, hero temperature, label/value). Classify media part: PDF instruction is TITLE/SUBTITLE/ICON only — no create-verb wrapper.
+
+### Prevent recurrence
+Never dump search page titles into the PDF body. Keep TITLE: parsing from mistaking SUBTITLE:.
+
 ## 2026-08-29 08:40 +07 — Designed weather PDF became chat text only
 
 ### Symptom

@@ -1,3 +1,8 @@
+## 2026-08-29 09:00 +07 — Weather PDF delivered but SERP chrome / broken title
+
+- Host search→office PDFs used the create-verb instruction as the title and dumped raw search-engine page titles as fact rows (ugly truncated SERP chrome). Marker parse also mistook `TITLE:` inside `SUBTITLE:`.
+- Extract classify TITLE/SUBTITLE/ICON contract markers safely; filter SERP noise; prefer answer/snippets; upgrade styled PDF (wrapped title, hero temp, label/value rows). Classify: PDF instruction must be markers only, no create-verb wrapper.
+
 ## 2026-08-29 08:40 +07 — Live-data PDF asks answered chat-only (no file)
 
 - Weather/fuel “design a PDF” asks classified as search + office, so the host skipped the plain office shortcut; Hermes searched then replied with chat weather and never called office-file.
