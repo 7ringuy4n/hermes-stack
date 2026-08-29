@@ -511,12 +511,35 @@ def plan_allows_search_then_office(plan: dict[str, Any] | None) -> bool:
     return True
 
 
-def plan_allows_search_then_image(plan: dict[str, Any] | None) -> bool:
-    """Live labeled info image (search + media_generation) — host search then info-card.
+_SCENE_OVERLAY_RENDER = frozenset(
+    {"scene-overlay", "scene_overlay", "weather-scene", "weather_scene", "scenic-overlay"}
+)
+_INFO_CARD_RENDER = frozenset({"info-card", "info_card", "card", "dashboard"})
 
-    Avoids Hermes falling back to greeting//help when Omni is saturated, and avoids
-    empty info-cards from English scene prompts with no facts.
-    """
+
+def _plan_instruction_blob(plan: dict[str, Any] | None) -> str:
+    src = plan if isinstance(plan, dict) else {}
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    return "\n".join(parts)
+
+
+def plan_image_render_mode(plan: dict[str, Any] | None) -> str:
+    """RENDER: contract from classify (scene | scene-overlay | info-card)."""
+    blob = _plan_instruction_blob(plan)
+    for raw in blob.splitlines():
+        line = raw.strip()
+        if line.upper().startswith("RENDER:"):
+            return line.split(":", 1)[1].strip().lower()
+    up = blob.upper()
+    if "TITLE:" in up or "STYLE:" in up:
+        return "info-card"
+    if "SCENE:" in up:
+        return "scene"
+    return ""
+
+
+def _plan_allows_search_then_image_base(plan: dict[str, Any] | None) -> bool:
+    """Search + one image job — shared gate for weather-scene and info-card host paths."""
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
         return False
@@ -525,7 +548,6 @@ def plan_allows_search_then_image(plan: dict[str, Any] | None) -> bool:
     action = str(src.get("skill_action") or "").strip().lower()
     if action in {"deliver", "send", "send_message"}:
         return False
-    # Exact text posters stay on poster shortcut
     if src.get("poster_n") is not None or src.get("poster_phrase"):
         return False
     if _plan_has_file_processing(src):
@@ -545,6 +567,57 @@ def plan_allows_search_then_image(plan: dict[str, Any] | None) -> bool:
         ot2 = _coerce_output_type(detail.get("output_type"))
         if ot2 and ot2 != "image":
             return False
+    return True
+
+
+def plan_allows_search_then_image(plan: dict[str, Any] | None) -> bool:
+    """Live-data image (search + media_generation) — weather scene or info-card."""
+    return _plan_allows_search_then_image_base(plan)
+
+
+def plan_allows_search_then_weather_scene(plan: dict[str, Any] | None) -> bool:
+    """City/place scene + small weather overlay (not info-card dashboard)."""
+    if not _plan_allows_search_then_image_base(plan):
+        return False
+    return plan_image_render_mode(plan) in _SCENE_OVERLAY_RENDER
+
+
+def plan_allows_search_then_info_card(plan: dict[str, Any] | None) -> bool:
+    """Metrics dashboard info-card (search + media_generation, not scene-overlay)."""
+    if not _plan_allows_search_then_image_base(plan):
+        return False
+    mode = plan_image_render_mode(plan)
+    if mode in _SCENE_OVERLAY_RENDER:
+        return False
+    if mode in _INFO_CARD_RENDER or mode == "info-card":
+        return True
+    return "TITLE:" in _plan_instruction_blob(plan).upper()
+
+
+def plan_allows_scene_image(plan: dict[str, Any] | None) -> bool:
+    """Pure scenic image — diffusion only, no live-data search sibling."""
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    action = str(src.get("skill_action") or "").strip().lower()
+    if action in {"deliver", "send", "send_message"}:
+        return False
+    if src.get("poster_n") is not None or src.get("poster_phrase"):
+        return False
+    if _plan_has_file_processing(src):
+        return False
+    if _plan_has_search(src):
+        return False
+    if not _plan_has_media_generation(src):
+        return False
+    mode = plan_image_render_mode(plan)
+    if mode in _SCENE_OVERLAY_RENDER or mode in _INFO_CARD_RENDER or mode == "info-card":
+        return False
+    ot = _coerce_output_type(src.get("output_type"))
+    if ot and ot != "image":
+        return False
     return True
 
 
@@ -581,9 +654,11 @@ def plan_image_instruction(plan: dict[str, Any] | None, fallback: str = "") -> s
     src = plan if isinstance(plan, dict) else {}
     parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
     details = src.get("task_details") if isinstance(src.get("task_details"), list) else []
-    # Prefer any marker-bearing body (TITLE/OVERVIEW) regardless of index misalignment
+    # Prefer scene/weather contract, then info-card markers
     for p in parts:
         up = p.upper()
+        if "RENDER:" in up or "SCENE:" in up:
+            return p
         if "TITLE:" in up or "OVERVIEW:" in up:
             return p
     for i, detail in enumerate(details):
@@ -612,6 +687,8 @@ def plan_search_query(plan: dict[str, Any] | None, fallback: str = "") -> str:
             return False
         up = s.upper()
         if "TITLE:" in up or "OVERVIEW:" in up or "BACKGROUND:" in up:
+            return False
+        if "SCENE:" in up or "RENDER:" in up:
             return False
         # Label-only stubs ("Nhiệt độ:") are not search queries
         if "\n" not in s and s.endswith(":") and len(s) < 48:

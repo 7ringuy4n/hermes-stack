@@ -13,7 +13,11 @@ The built-in Hermes `image_generation` tool is often **unavailable** (cloud keys
 
 If `/v1/image` returns 502/503 or backends are unavailable: **do not** ask the user for API keys, `.env`, ComfyUI, or Omni auth. **Do not** send session-restore or numbered recovery menus. When the user’s ask was primarily a **PDF/office file** with icons/layout, finish via **`file-gen`** / office-file (styled PDF) instead of retrying image gen forever.
 
-For **labeled info dashboards as a picture** (readable text/labels), prefer `"mode":"info-card"` on `POST /v1/image` with **structured** TITLE/SUBTITLE/ICON/STYLE/OVERVIEW/BACKGROUND/fact lines — Pillow + Noto fonts. Set `"refine":false`. **Do not** ask diffusion to paint dense on-image text (it becomes tofu/boxes). **Do not** send an English scene sentence (“Weather info card for …”) as the prompt body without markers and without live fact lines — that yields a broken empty card.
+For **labeled info dashboards as a picture** (readable text/labels in panels), prefer `"mode":"info-card"` on `POST /v1/image` with **structured** TITLE/SUBTITLE/ICON/STYLE/OVERVIEW/BACKGROUND/fact lines — Pillow + Noto fonts. Set `"refine":false`. **Do not** ask diffusion to paint dense on-image text (it becomes tofu/boxes).
+
+For **current weather as a scenic picture** (city/place visible + small weather text overlay, NOT a metrics dashboard): classify emits `RENDER: scene-overlay` + `SCENE:` + search sibling. Host calls default `/v1/image` diffusion with `overlay` fact lines (bottom bar). **Do not** use `mode=info-card` for this family.
+
+For **pure scenic photos** (aerial city, landscape — no live weather on image): classify emits `SCENE:` only, no search. Host/default diffusion with English scene prompt, no overlay unless user asked for text.
 
 ```text
 TITLE: <place or topic>

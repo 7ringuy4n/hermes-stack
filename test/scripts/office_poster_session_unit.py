@@ -20,10 +20,14 @@ from office_file import (  # noqa: E402
 from classify_client import (  # noqa: E402
     plan_allows_office_shortcut,
     plan_allows_poster_shortcut,
+    plan_allows_scene_image,
+    plan_allows_search_then_info_card,
     plan_allows_search_then_office,
+    plan_allows_search_then_weather_scene,
+    plan_image_render_mode,
     plan_skips_media_shortcut,
 )
-from media_shortcuts import build_office_body_from_search  # noqa: E402
+from media_shortcuts import build_office_body_from_search, scene_prompt_from_instruction  # noqa: E402
 try:
     from text_poster import parse_text_poster  # type: ignore  # noqa: E402
 except Exception:  # noqa: BLE001
@@ -181,6 +185,65 @@ def main() -> int:
         ],
     }
     assert plan_allows_search_then_office(mixed_img_pdf) is False
+
+    aerial = {
+        "ok": True,
+        "task_hint": "tool",
+        "task_type": "media_generation",
+        "output_type": "image",
+        "instructions": [
+            "SCENE: Aerial view of Ho Chi Minh City skyline at golden hour, photorealistic"
+        ],
+    }
+    assert plan_image_render_mode(aerial) == "scene"
+    assert plan_allows_scene_image(aerial) is True
+    assert plan_allows_search_then_weather_scene(aerial) is False
+    assert plan_allows_search_then_info_card(aerial) is False
+    assert (
+        scene_prompt_from_instruction(aerial["instructions"][0])
+        == "Aerial view of Ho Chi Minh City skyline at golden hour, photorealistic"
+    )
+
+    weather_scene = {
+        "ok": True,
+        "task_hint": "tool",
+        "task_type": "media_generation",
+        "output_type": "image",
+        "instructions": [
+            "current weather Ho Chi Minh City temperature humidity",
+            (
+                "RENDER: scene-overlay\n"
+                "SCENE: Aerial view of Ho Chi Minh City with visible sky, photorealistic\n"
+                "- Nhiệt độ:\n- Độ ẩm:\n- Điều kiện:"
+            ),
+        ],
+        "task_details": [
+            {"task_type": "search", "output_type": None},
+            {"task_type": "media_generation", "output_type": "image"},
+        ],
+    }
+    assert plan_image_render_mode(weather_scene) == "scene-overlay"
+    assert plan_allows_search_then_weather_scene(weather_scene) is True
+    assert plan_allows_search_then_info_card(weather_scene) is False
+    assert plan_allows_scene_image(weather_scene) is False
+
+    info_card_img = {
+        "ok": True,
+        "task_hint": "tool",
+        "task_type": "media_generation",
+        "output_type": "image",
+        "instructions": [
+            "weather Ho Chi Minh City now",
+            "RENDER: info-card\nTITLE: Thời tiết HCM\nICON: sun\nSTYLE: midnight\n- Nhiệt độ:",
+        ],
+        "task_details": [
+            {"task_type": "search", "output_type": None},
+            {"task_type": "media_generation", "output_type": "image"},
+        ],
+    }
+    assert plan_allows_search_then_info_card(info_card_img) is True
+    assert plan_allows_search_then_weather_scene(info_card_img) is False
+
     assert parse_office_jobs("1", "pdf") == [(".pdf", "1")]
 
     styled = parse_styled_pdf_body(
