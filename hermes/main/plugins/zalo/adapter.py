@@ -292,6 +292,7 @@ ZALO_HOME_CHANNEL_ENV = "ZALO_HOME_CHANNEL"
 
 # Inbound attachment reading: worker routing + recall memory live in attachment.py.
 from attachment import (  # noqa: E402
+    ATTACHMENT_CONTEXT_TTL_S_DEFAULT,
     PROMPT_CHARS as ATTACHMENT_PROMPT_CHARS,
     TEXT_CHARS as ATTACHMENT_TEXT_CHARS,
     attachment_kind,
@@ -307,8 +308,10 @@ from attachment import (  # noqa: E402
     quoted_context_snip,
     extract_media_from_quote,
     normalize_zalo_msg_type,
+    sheet_ref_from_text,
     song_hint_from_filename,
     stage_shared_media,
+    workbook_sheet_reply,
     worker_media_path,
 )
 
@@ -4200,7 +4203,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
                 return
-        elif not media_urls and str(text or "").strip():
+        user_text_before_attach = str(text or "").strip()
+        if not media_urls and user_text_before_attach:
             text = self._as_attachment_followup(str(thread_id), text)
 
         # Quoted reply (DM + group): inject quoted text/title/media label so the
@@ -4228,11 +4232,77 @@ class ZaloAdapter(BasePlatformAdapter):
         # and schedules must not be swallowed by Dispatcher phrase shortcuts.
         # Never treat prior attachment extracts as a create-file prompt.
         bare_text = str(text or "").strip()
+        # Host-authored recall blocks are not create-file prompts — skip media shortcuts.
+        has_recent_attach = "[Recent attachments" in bare_text
+
+        # Workbook sheet follow-up: answer from remembered extract (no re-upload ask).
+        if bare_text and not media_urls and has_recent_attach:
+            try:
+                fname, extract = self._as_attachment_recall(str(thread_id))
+                if extract and (
+                    "Workbook sheets:" in extract or "## Sheet" in extract
+                ):
+                    try:
+                        from .classify_client import classify_text, plan_sheet_ref
+                    except ImportError:
+                        from classify_client import (  # type: ignore
+                            classify_text,
+                            plan_sheet_ref,
+                        )
+                    # Classify the user line only (not the injected extract) — save tokens.
+                    sheet_plan = classify_text(user_text_before_attach or bare_text)
+                    ref = plan_sheet_ref(sheet_plan)
+                    if not ref:
+                        ins = sheet_plan.get("instructions") or []
+                        blob = "\n".join(str(x) for x in ins) if isinstance(ins, list) else ""
+                        ref = sheet_ref_from_text(blob)
+                    if ref:
+                        reply = workbook_sheet_reply(fname, extract, ref)
+                        if reply:
+                            self._as_flow(
+                                "attach_sheet_followup",
+                                thread_id=thread_id,
+                                file=fname,
+                                sheet_ref=ref,
+                            )
+                            try:
+                                await self.send(
+                                    chat_id=str(thread_id),
+                                    content=reply,
+                                    metadata={
+                                        "thread_type": "group"
+                                        if thread_type == "group"
+                                        else "user",
+                                        "as_skip_timing": True,
+                                        "as_skip_autosend": True,
+                                        "as_skip_dest": True,
+                                        "skip_outbound_filter": True,
+                                    },
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    "Zalo: sheet followup send failed: %s",
+                                    type(e).__name__,
+                                )
+                            else:
+                                try:
+                                    self._as_inflight_done(str(thread_id), {})
+                                except Exception:
+                                    pass
+                                try:
+                                    self._as_queue_kick(str(thread_id))
+                                except Exception:
+                                    pass
+                                return
+            except Exception as e:
+                logger.warning("Zalo: sheet followup error: %s", type(e).__name__)
+
         if (
             bare_text
             and not media_urls
             and "[Attachment text —" not in bare_text
             and "[Attached file:" not in bare_text
+            and not has_recent_attach
         ):
             try:
                 from .classify_client import (
@@ -5619,9 +5689,15 @@ class ZaloAdapter(BasePlatformAdapter):
         import os
 
         try:
-            return max(60, int(os.getenv("ZALO_ATTACHMENT_CONTEXT_TTL_S") or "900"))
+            return max(
+                60,
+                int(
+                    os.getenv("ZALO_ATTACHMENT_CONTEXT_TTL_S")
+                    or str(ATTACHMENT_CONTEXT_TTL_S_DEFAULT)
+                ),
+            )
         except ValueError:
-            return 900
+            return ATTACHMENT_CONTEXT_TTL_S_DEFAULT
 
     def _as_attachment_remember(self, thread_id: str, file_name: str, text: str) -> None:
         """Keep recent attachment text so follow-up turns need no re-upload.
@@ -5629,7 +5705,12 @@ class ZaloAdapter(BasePlatformAdapter):
         A mixed media pack arrives as one event per file, so several files are
         kept — see ``attachment.context_merge``.
         """
-        tid = str(thread_id or "").strip()
+        try:
+            from .turn_wait import real_thread_id
+        except ImportError:
+            from turn_wait import real_thread_id  # type: ignore
+
+        tid = real_thread_id(str(thread_id or "").strip())
         if not tid or not (text or "").strip():
             return
         store = self._as_gate_store()
@@ -5652,7 +5733,12 @@ class ZaloAdapter(BasePlatformAdapter):
 
     def _as_attachment_items(self, thread_id: str) -> list[dict]:
         """Recent attachments for this thread, oldest first."""
-        tid = str(thread_id or "").strip()
+        try:
+            from .turn_wait import real_thread_id
+        except ImportError:
+            from turn_wait import real_thread_id  # type: ignore
+
+        tid = real_thread_id(str(thread_id or "").strip())
         if not tid:
             return []
         store = self._as_gate_store()

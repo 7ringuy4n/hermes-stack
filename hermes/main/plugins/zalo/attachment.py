@@ -19,9 +19,11 @@ ARCHIVE_EXTS = (".zip", ".7z", ".rar", ".tar", ".tgz")
 
 
 TEXT_CHARS = 20000
-CONTEXT_CHARS = 8000
+CONTEXT_CHARS = 12000
 CONTEXT_ITEMS = 5
-PROMPT_CHARS = 6000
+PROMPT_CHARS = 8000
+# Keep workbook follow-ups usable for a full workday (not 15 minutes).
+ATTACHMENT_CONTEXT_TTL_S_DEFAULT = 86400
 
 # Hermes writes /opt/data/media/...; workers mount the same volume at /data/media.
 _MEDIA_PREFIXES = ("/opt/data/media/", "/data/assistant/media/")
@@ -123,7 +125,7 @@ def context_merge(
 ) -> List[Dict[str, Any]]:
     """Append one file to the recall list, newest last, re-uploads replacing older entries."""
     name = str(file_name or "file")
-    body = str(text or "")
+    body = prefer_workbook_head(str(text or ""))
     if not body.strip():
         return list(items or [])
     kept = [i for i in (items or []) if str(i.get("file") or "") != name]
@@ -135,6 +137,171 @@ def context_merge(
         }
     )
     return kept[-CONTEXT_ITEMS:]
+
+
+def prefer_workbook_head(text: str) -> str:
+    """Keep sheet inventory + each ## Sheet header when truncating large workbooks."""
+    raw = text or ""
+    if "## Sheet" not in raw and "Workbook sheets:" not in raw:
+        return raw
+    lines = raw.splitlines()
+    inv: list[str] = []
+    bodies: list[tuple[str, list[str]]] = []
+    cur_h = ""
+    cur_b: list[str] = []
+    in_inv = False
+    for line in lines:
+        if line.startswith("Workbook sheets:"):
+            in_inv = True
+            inv.append(line)
+            continue
+        if in_inv:
+            if line.startswith("## Sheet"):
+                in_inv = False
+                # Fall through to sheet-header handling below.
+            elif not line.strip():
+                in_inv = False
+                inv.append(line)
+                continue
+            else:
+                inv.append(line)
+                continue
+        if line.startswith("## Sheet"):
+            if cur_h:
+                bodies.append((cur_h, cur_b))
+            cur_h = line
+            cur_b = []
+            continue
+        if cur_h:
+            cur_b.append(line)
+    if cur_h:
+        bodies.append((cur_h, cur_b))
+    if not bodies and not inv:
+        return raw
+    # Budget: inventory first; then each sheet header + a fair share of rows.
+    head_parts = list(inv)
+    if head_parts and head_parts[-1].strip():
+        head_parts.append("")
+    used = sum(len(x) + 1 for x in head_parts)
+    left = max(0, CONTEXT_CHARS - used - 64)
+    per = max(200, left // max(1, len(bodies))) if bodies else 0
+    out = list(head_parts)
+    for h, b in bodies:
+        out.append(h)
+        chunk = "\n".join(b)
+        if len(chunk) > per:
+            chunk = chunk[:per].rstrip() + "\n...(truncated)"
+        if chunk:
+            out.append(chunk)
+    return "\n".join(out)[:CONTEXT_CHARS]
+
+
+def split_workbook_sheets(extract: str) -> list[tuple[int, str, str]]:
+    """Parse ingest markers into (1-based index, title, body)."""
+    out: list[tuple[int, str, str]] = []
+    cur_idx = 0
+    cur_title = ""
+    buf: list[str] = []
+    for line in (extract or "").splitlines():
+        if line.startswith("## Sheet"):
+            if cur_idx > 0 or cur_title:
+                out.append((cur_idx or len(out) + 1, cur_title, "\n".join(buf).strip()))
+            rest = line[len("## Sheet") :].strip()
+            # Formats: "2 (Name)" | ": Name" | "Name"
+            idx = 0
+            title = rest
+            if rest.startswith(":"):
+                title = rest[1:].strip()
+            else:
+                # "2 (Name)" or "2 Name"
+                num = ""
+                i = 0
+                while i < len(rest) and rest[i].isdigit():
+                    num += rest[i]
+                    i += 1
+                if num:
+                    idx = int(num)
+                    rem = rest[i:].strip()
+                    if rem.startswith("(") and rem.endswith(")"):
+                        title = rem[1:-1].strip()
+                    elif rem.startswith("(") and ")" in rem:
+                        title = rem[1 : rem.index(")")].strip()
+                    else:
+                        title = rem or num
+                else:
+                    title = rest
+            cur_idx = idx or (len(out) + 1)
+            cur_title = title or f"Sheet {cur_idx}"
+            buf = []
+            continue
+        if cur_idx or cur_title:
+            buf.append(line)
+    if cur_idx or cur_title:
+        out.append((cur_idx or len(out) + 1, cur_title, "\n".join(buf).strip()))
+    return out
+
+
+def sheet_ref_from_text(blob: str) -> str:
+    """Pull SHEET_REF: value from classify-authored contract text (not user NLU)."""
+    for raw in (blob or "").splitlines():
+        line = raw.strip()
+        if line.upper().startswith("SHEET_REF:"):
+            return line.split(":", 1)[1].strip()
+    # Also allow inline mid-line marker
+    up = (blob or "").upper()
+    key = "SHEET_REF:"
+    j = up.find(key)
+    if j >= 0:
+        val = (blob or "")[j + len(key) :].splitlines()[0].strip()
+        return val
+    return ""
+
+
+def pick_sheet_section(extract: str, sheet_ref: str) -> tuple[str, str]:
+    """Return (title, body) for SHEET_REF index or title. Empty if not found."""
+    sheets = split_workbook_sheets(extract)
+    if not sheets:
+        return "", ""
+    ref = (sheet_ref or "").strip()
+    if not ref:
+        return "", ""
+    if ref.isdigit():
+        want = int(ref)
+        for idx, title, body in sheets:
+            if idx == want:
+                return title, body
+        if 1 <= want <= len(sheets):
+            _i, title, body = sheets[want - 1]
+            return title, body
+        return "", ""
+    ref_l = ref.lower()
+    for idx, title, body in sheets:
+        if title.lower() == ref_l or title.lower().startswith(ref_l):
+            return title, body
+    return "", ""
+
+
+def workbook_sheet_reply(
+    file_name: str, extract: str, sheet_ref: str, *, max_chars: int = 1800
+) -> str:
+    """User-facing reply describing one sheet from remembered extract."""
+    name = (file_name or "workbook").strip() or "workbook"
+    title, body = pick_sheet_section(extract, sheet_ref)
+    sheets = split_workbook_sheets(extract)
+    if not sheets:
+        return ""
+    if not title:
+        inv = ", ".join(f"{i}={t}" for i, t, _ in sheets[:12])
+        return (
+            f"File `{name}` có {len(sheets)} sheet: {inv}. "
+            "Nói rõ sheet số mấy (hoặc tên sheet) bạn muốn mình mô tả."
+        )
+    preview = (body or "").strip()
+    if len(preview) > max_chars:
+        preview = preview[:max_chars].rstrip() + "…"
+    if not preview:
+        preview = "(sheet trống — không có nội dung chữ)"
+    return f"Sheet {sheet_ref} trong file {name} — {title}:\n{preview}"
 
 
 def context_encode(items: List[Dict[str, Any]]) -> str:

@@ -1,3 +1,8 @@
+## 2026-08-29 14:00 +07 — Workbook sheet follow-up asked for re-upload / silence
+
+- Follow-ups about a prior Excel sheet (describe sheet N) got no answer or asked the user to send the file again even after an extract ack.
+- Ingest labels sheets with index+title inventory; attachment recall TTL extended; truncations keep inventory; classify SHEET_REF + host answers from memory; never re-ask for the workbook when Recent attachments exist.
+
 ## 2026-08-29 12:15 +07 — Labeled weather image created but user got silence
 
 - Host search→info-card wrote the PNG, but `/v1/image` info-card mode never sent to Zalo (`send_zalo` ignored) and shortcut autosend often missed the file — users saw no reply.

@@ -548,6 +548,34 @@ def plan_allows_search_then_image(plan: dict[str, Any] | None) -> bool:
     return True
 
 
+def plan_sheet_ref(plan: dict[str, Any] | None) -> str:
+    """SHEET_REF from classify instructions (workbook follow-up contract)."""
+    src = plan if isinstance(plan, dict) else {}
+    parts: list[str] = []
+    for x in src.get("instructions") or []:
+        s = str(x or "").strip()
+        if s:
+            parts.append(s)
+    for detail in src.get("task_details") or []:
+        if not isinstance(detail, dict):
+            continue
+        for key in ("instruction", "body", "text"):
+            s = str(detail.get(key) or "").strip()
+            if s:
+                parts.append(s)
+    blob = "\n".join(parts)
+    for raw in blob.splitlines():
+        line = raw.strip()
+        if line.upper().startswith("SHEET_REF:"):
+            return line.split(":", 1)[1].strip()
+    up = blob.upper()
+    key = "SHEET_REF:"
+    j = up.find(key)
+    if j >= 0:
+        return blob[j + len(key) :].splitlines()[0].strip()
+    return ""
+
+
 def plan_image_instruction(plan: dict[str, Any] | None, fallback: str = "") -> str:
     """Pick the info-card body instruction from classify (markers preferred)."""
     src = plan if isinstance(plan, dict) else {}
