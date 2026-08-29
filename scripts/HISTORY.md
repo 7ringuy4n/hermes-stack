@@ -1,3 +1,17 @@
+## 2026-08-29 12:15 +07 — Weather info image on disk but no Zalo reply
+
+### Symptom
+User asked for a labeled live weather image; the PNG was created under media/out but the chat stayed silent.
+
+### Root cause
+`/v1/image` info-card mode wrote the file and returned ok without honoring `send_zalo`. The host shortcut set `send_zalo=false` and relied on late autosend, which often missed shortcut-created files (turn dest not remembered before late watch).
+
+### Fix (core)
+Info-card path sends via bridge when `send_zalo=true` (file still kept for autosend if send fails). Host search→info-card enables send. Adapter calls `_as_autosend_remember_turn` before late autosend on media shortcuts.
+
+### Prevent recurrence
+Treat labeled info images like office-file: write + deliver, with autosend as fallback only.
+
 ## 2026-08-29 11:45 +07 — Weather info image: greeting + empty broken card
 
 ### Symptom
