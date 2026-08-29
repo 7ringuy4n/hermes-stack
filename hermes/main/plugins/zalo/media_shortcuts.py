@@ -17,7 +17,7 @@ from typing import Any, Dict, Optional
 log = logging.getLogger("hermes_plugins.zalo_platform.media_shortcuts")
 
 # Classify/Hermes contract markers (not user NLU).
-_MARKERS = ("TITLE:", "SUBTITLE:", "ICON:", "STYLE:")
+_MARKERS = ("TITLE:", "SUBTITLE:", "ICON:", "STYLE:", "OVERVIEW:", "BACKGROUND:")
 
 
 def dispatcher_url() -> str:
@@ -62,7 +62,7 @@ def run_web_search(query: str, max_results: int = 6) -> Optional[dict]:
 
 
 def extract_contract_markers(text: str) -> dict[str, str]:
-    """Pull TITLE/SUBTITLE/ICON/STYLE from classify-authored contract text.
+    """Pull TITLE/SUBTITLE/ICON/STYLE/OVERVIEW/BACKGROUND from classify contract text.
 
     Markers may sit mid-line after a create-verb wrapper. Values run until the
     next marker or end of string. Not user-prose NLU.
@@ -70,7 +70,7 @@ def extract_contract_markers(text: str) -> dict[str, str]:
     src = (text or "").replace("\r", "\n")
     upper = src.upper()
     # Longer keys first so SUBTITLE: is not mistaken for TITLE:
-    ordered = ("SUBTITLE:", "STYLE:", "TITLE:", "ICON:")
+    ordered = ("BACKGROUND:", "OVERVIEW:", "SUBTITLE:", "STYLE:", "TITLE:", "ICON:")
     hits: list[tuple[int, str]] = []
     claimed: set[int] = set()
     for m in ordered:
@@ -98,6 +98,8 @@ def extract_contract_markers(text: str) -> dict[str, str]:
             val = val.split("\n", 1)[0].strip()
         if key == "TITLE:" and len(val) > 80:
             val = val[:80].rstrip()
+        if key in {"OVERVIEW:", "BACKGROUND:"} and len(val) > 160:
+            val = val[:160].rstrip()
         if key == "ICON:":
             val = val.split()[0].lower() if val else "cloud"
             if "|" in val:
@@ -396,13 +398,59 @@ def _infer_icon(facts: list[str], fallback: str = "cloud") -> str:
     return fallback or "cloud"
 
 
+def _prose_snippets_from_search(search: dict[str, Any] | None, *, limit: int = 2) -> list[str]:
+    """Short clean sentences from search answer/snippets for OVERVIEW/BACKGROUND."""
+    if not isinstance(search, dict):
+        return []
+    chunks: list[str] = []
+    ans = search.get("answer")
+    if isinstance(ans, str) and ans.strip():
+        chunks.append(ans.strip())
+    for key in ("snippets", "results"):
+        block = search.get(key)
+        if isinstance(block, list):
+            for item in block[:6]:
+                if isinstance(item, str):
+                    chunks.append(item)
+                elif isinstance(item, dict):
+                    for k in ("snippet", "content", "description", "text", "answer"):
+                        v = item.get(k)
+                        if isinstance(v, str) and v.strip():
+                            chunks.append(v.strip())
+                            break
+    out: list[str] = []
+    for chunk in chunks:
+        # Split on sentence enders without regex NLU
+        parts: list[str] = []
+        buf = ""
+        for ch in chunk.replace("\n", " "):
+            buf += ch
+            if ch in ".!?。" and len(buf.strip()) >= 24:
+                parts.append(buf.strip())
+                buf = ""
+        if buf.strip():
+            parts.append(buf.strip())
+        for p in parts:
+            line = _clean_fact_line(p)
+            if not line or _is_serp_noise(line):
+                continue
+            if ":" in line and len(line.split(":", 1)[0]) <= 24:
+                # Prefer label:value for facts, not overview
+                continue
+            if line not in out:
+                out.append(line[:160])
+            if len(out) >= limit:
+                return out
+    return out
+
+
 def build_office_body_from_search(
     *,
     file_instruction: str,
     user_ask: str,
     search: dict[str, Any] | None,
 ) -> str:
-    """Assemble clean TITLE/ICON/fact lines for styled office-file."""
+    """Assemble clean TITLE/ICON/OVERVIEW/BACKGROUND/fact lines for styled office-file."""
     fi = (file_instruction or "").strip()
     ask = (user_ask or "").strip()
     markers = extract_contract_markers(fi) if fi else {}
@@ -424,11 +472,13 @@ def build_office_body_from_search(
     ):
         title = ""
     if not title:
-        # Prefer a short place-oriented default from file instruction markers only
-        title = "Thời tiết hiện tại"
+        title = "Cập nhật"
 
     subtitle = (markers.get("subtitle") or "").strip() or "Cập nhật trực tiếp"
     icon = (markers.get("icon") or "").strip().lower() or "cloud"
+    overview = (markers.get("overview") or "").strip()
+    background = (markers.get("background") or "").strip()
+    style = (markers.get("style") or "").strip().lower()
 
     facts = _facts_from_search(search)
     # Keep classify-authored fact bullets (lines starting with -) if present
@@ -440,7 +490,23 @@ def build_office_body_from_search(
                 facts.append(line)
 
     if not facts:
-        facts = ["Chưa lấy được chi tiết thời tiết — thử lại sau."]
+        facts = ["Chưa lấy được chi tiết — thử lại sau."]
+
+    # Place-oriented sheets: fill OVERVIEW/BACKGROUND from search prose when classify
+    # opened those markers (or STYLE hints place context). No city-name dictionary.
+    fi_u = fi.upper()
+    wants_place_context = (
+        bool(overview or background)
+        or "OVERVIEW:" in fi_u
+        or "BACKGROUND:" in fi_u
+        or style in {"place", "city", "overview", "landmark", "region"}
+    )
+    if wants_place_context:
+        prose = _prose_snippets_from_search(search, limit=2)
+        if not overview and prose:
+            overview = prose[0]
+        if not background and len(prose) > 1:
+            background = prose[1]
 
     icon = _infer_icon(facts, icon)
 
@@ -449,6 +515,10 @@ def build_office_body_from_search(
         f"SUBTITLE: {subtitle[:80]}",
         f"ICON: {icon}",
     ]
+    if overview:
+        lines.append(f"OVERVIEW: {overview[:160]}")
+    if background:
+        lines.append(f"BACKGROUND: {background[:160]}")
     for f in facts[:10]:
         lines.append(f"- {f}")
     return "\n".join(lines)

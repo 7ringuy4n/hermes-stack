@@ -19,6 +19,8 @@ def _parse_body(prompt: str) -> dict[str, Any]:
     title = ""
     subtitle = ""
     icon = "sun"
+    overview = ""
+    background = ""
     facts: list[str] = []
     for raw in (prompt or "").splitlines():
         line = raw.strip()
@@ -35,6 +37,12 @@ def _parse_body(prompt: str) -> dict[str, Any]:
             if "|" in icon:
                 icon = icon.split("|", 1)[0].strip() or "sun"
             continue
+        if line.startswith(("OVERVIEW:", "Overview:", "overview:")):
+            overview = line.split(":", 1)[1].strip()
+            continue
+        if line.startswith(("BACKGROUND:", "Background:", "background:")):
+            background = line.split(":", 1)[1].strip()
+            continue
         if line.startswith(("- ", "• ", "* ")):
             facts.append(line[2:].strip())
         else:
@@ -42,9 +50,11 @@ def _parse_body(prompt: str) -> dict[str, Any]:
     if not title and facts:
         title = facts.pop(0)
     return {
-        "title": title or "Thời tiết",
+        "title": title or "Cập nhật",
         "subtitle": subtitle or "Cập nhật trực tiếp",
         "icon": icon,
+        "overview": overview,
+        "background": background,
         "facts": facts,
     }
 
@@ -222,8 +232,45 @@ def _draw_metric_glyph(draw: ImageDraw.ImageDraw, kind: str, cx: int, cy: int, p
     draw.ellipse((cx - 8, cy - 8, cx + 8, cy + 8), fill=pal["accent"])
 
 
+def _wrap_draw(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    xy: tuple[int, int],
+    *,
+    font: Any,
+    fill: tuple[int, int, int],
+    max_width: int,
+    max_lines: int = 3,
+    line_gap: int = 6,
+) -> int:
+    """Draw wrapped text; return y after last line."""
+    words = (text or "").split()
+    if not words:
+        return xy[1]
+    lines: list[str] = []
+    cur = words[0]
+    for w in words[1:]:
+        trial = f"{cur} {w}"
+        bbox = draw.textbbox((0, 0), trial, font=font)
+        if bbox[2] - bbox[0] <= max_width:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = w
+            if len(lines) >= max_lines:
+                break
+    if len(lines) < max_lines:
+        lines.append(cur)
+    x, y = xy
+    for i, line in enumerate(lines[:max_lines]):
+        draw.text((x, y), line, fill=fill, font=font)
+        bbox = draw.textbbox((0, 0), line, font=font)
+        y += (bbox[3] - bbox[1]) + line_gap
+    return y
+
+
 def render_weather_sheet_bytes(prompt: str, *, width: int = 1240, height: int = 1754) -> bytes:
-    """Portrait weather sheet (~A4 @ 150dpi) — one composition, generous space."""
+    """Portrait info sheet (~A4 @ 150dpi) — place overview + metrics when present."""
     meta = _parse_body(prompt)
     pal = _palette(meta["icon"])
     im = Image.new("RGB", (width, height), pal["sky_bot"])
@@ -235,8 +282,10 @@ def render_weather_sheet_bytes(prompt: str, *, width: int = 1240, height: int = 
     sheet = (margin, margin, width - margin, height - margin)
     draw.rounded_rectangle(sheet, radius=36, fill=pal["card"])
 
-    # Inner sky band at top of sheet (~38% of sheet)
-    band_bottom = margin + int((height - 2 * margin) * 0.38)
+    has_place = bool(meta.get("overview") or meta.get("background"))
+    # Inner sky band — taller when place overview/background present
+    band_frac = 0.46 if has_place else 0.38
+    band_bottom = margin + int((height - 2 * margin) * band_frac)
     draw.rounded_rectangle(
         (margin + 20, margin + 20, width - margin - 20, band_bottom),
         radius=28,
@@ -252,6 +301,8 @@ def render_weather_sheet_bytes(prompt: str, *, width: int = 1240, height: int = 
     sub_f = pillow_font(22, bold=False)
     hero_f = pillow_font(112, bold=True)
     cond_f = pillow_font(30, bold=False)
+    body_f = pillow_font(22, bold=False)
+    label_sm = pillow_font(18, bold=True)
 
     title = meta["title"][:42]
     draw.text((margin + 48, margin + 48), title, fill=(255, 255, 255), font=title_f)
@@ -259,9 +310,39 @@ def render_weather_sheet_bytes(prompt: str, *, width: int = 1240, height: int = 
 
     _draw_icon(draw, meta["icon"], width - margin - 160, margin + 230, pal, scale=2.1)
 
+    y_cursor = margin + 140
+    if meta.get("overview"):
+        draw.text((margin + 48, y_cursor), "Tổng quan", fill=(200, 220, 245), font=label_sm)
+        y_cursor = _wrap_draw(
+            draw,
+            meta["overview"][:180],
+            (margin + 48, y_cursor + 26),
+            font=body_f,
+            fill=(245, 250, 255),
+            max_width=width - 2 * margin - 280,
+            max_lines=3,
+        )
+    if meta.get("background"):
+        y_cursor += 8
+        draw.text((margin + 48, y_cursor), "Bối cảnh", fill=(200, 220, 245), font=label_sm)
+        y_cursor = _wrap_draw(
+            draw,
+            meta["background"][:180],
+            (margin + 48, y_cursor + 26),
+            font=body_f,
+            fill=(235, 245, 255),
+            max_width=width - 2 * margin - 280,
+            max_lines=3,
+        )
+
     hero = _hero_temp(meta["facts"])
-    if hero:
-        draw.text((margin + 48, margin + 200), hero, fill=(255, 255, 255), font=hero_f)
+    hero_y = max(y_cursor + 12, margin + 200) if has_place else margin + 200
+    if hero and not has_place:
+        draw.text((margin + 48, hero_y), hero, fill=(255, 255, 255), font=hero_f)
+    elif hero and has_place:
+        # Compact hero when overview takes the band
+        compact = pillow_font(56, bold=True)
+        draw.text((margin + 48, min(hero_y, band_bottom - 90)), hero, fill=(255, 255, 255), font=compact)
 
     condition = ""
     metrics: list[tuple[str, str, str]] = []
@@ -273,9 +354,9 @@ def render_weather_sheet_bytes(prompt: str, *, width: int = 1240, height: int = 
         if kind == "condition" and not condition:
             condition = value or label
         metrics.append((label or "Chi tiết", value or fact, kind))
-    if condition:
+    if condition and not has_place:
         draw.text((margin + 48, margin + 340), condition[:40], fill=(235, 245, 255), font=cond_f)
-    elif meta["icon"]:
+    elif meta["icon"] and not has_place:
         pretty = {"sun": "Trời nắng", "cloud": "Nhiều mây", "rain": "Có mưa", "storm": "Giông bão"}.get(
             meta["icon"], ""
         )
@@ -288,9 +369,9 @@ def render_weather_sheet_bytes(prompt: str, *, width: int = 1240, height: int = 
     cols = 2
     gap = 22
     usable_h = height - margin - 70 - grid_top
-    rows = max(1, (len(metrics) + cols - 1) // cols)
+    rows = max(1, (len(metrics) + cols - 1) // cols) if metrics else 1
     card_w = (width - 2 * margin - 40 - gap) // cols
-    card_h = max(150, min(200, (usable_h - gap * (rows - 1)) // rows))
+    card_h = max(150, min(200, (usable_h - gap * (rows - 1)) // max(rows, 1)))
     label_f = pillow_font(20, bold=False)
     value_f = pillow_font(34, bold=True)
     for i, (label, value, kind) in enumerate(metrics):
@@ -306,7 +387,8 @@ def render_weather_sheet_bytes(prompt: str, *, width: int = 1240, height: int = 
         draw.text((x0 + 106, y0 + card_h // 2 + 4), value[:28], fill=pal["text"], font=value_f)
 
     foot = pillow_font(18, bold=False)
-    draw.text((margin + 36, height - margin - 40), "Bản tin thời tiết", fill=pal["muted"], font=foot)
+    foot_label = "Thông tin địa điểm" if has_place else "Bản tin cập nhật"
+    draw.text((margin + 36, height - margin - 40), foot_label, fill=pal["muted"], font=foot)
 
     buf = BytesIO()
     im.save(buf, format="PNG", optimize=True)

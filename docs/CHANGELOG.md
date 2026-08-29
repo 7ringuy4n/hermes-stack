@@ -1,3 +1,8 @@
+## 2026-08-29 10:45 +07 — Place-named visual PDFs lacked overview/background
+
+- Attractive live-data PDFs whose TITLE was a place/city still looked like metrics-only cards; skills did not require place intro or setting context.
+- Classify + file-gen: when the subject is a place (LLM intent, no city list), emit OVERVIEW/BACKGROUND markers; host preserves/fills from search prose; styled sheet renders those panels. Generic docs.
+
 ## 2026-08-29 10:00 +07 — Classify visual-file rules de-specialized
 
 - Classify / file-gen / image-gen wording locked visual live-data office files to weather/fuel phrases and a single “weather-app sheet” path, so other attractive live-data PDF asks were under-specified.
