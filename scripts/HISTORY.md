@@ -1,3 +1,17 @@
+## 2026-08-29 08:15 +07 — Weather card Vietnamese diacritics became tofu boxes
+
+### Symptom
+Attractive weather/info visuals rendered Vietnamese with missing diacritics (white squares). Plain PDFs also risked incomplete glyph coverage.
+
+### Root cause
+Diffusion image backends bake text into pixels without a Unicode font. Overlay/poster/PDF font lists preferred incomplete paths or fell back to bitmap defaults.
+
+### Fix (core)
+Ship Noto Sans with the Dispatcher image; shared `fonts.py` picks a TTF that covers Vietnamese samples (cached). New Pillow `info-card` image mode for dashboards; office PDF/overlay/text-poster share the resolver. Local concurrent media smoke (no LLM).
+
+### Prevent recurrence
+Never ask diffusion to paint Vietnamese labels for dashboards — use info-card or office-file with bundled Noto.
+
 ## 2026-08-29 08:00 +07 — Attractive weather PDF became a menu + plain text file
 
 ### Symptom

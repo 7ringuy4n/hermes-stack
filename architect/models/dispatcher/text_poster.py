@@ -8,13 +8,8 @@ from typing import Any, Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
-_FONTS = (
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    "C:/Windows/Fonts/arial.ttf",
-    "C:/Windows/Fonts/tahoma.ttf",
-)
+from fonts import pillow_font
+
 
 def parse_text_poster(
     prompt: str = "",
@@ -40,13 +35,7 @@ def parse_text_poster(
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    for p in _FONTS:
-        if Path(p).is_file():
-            try:
-                return ImageFont.truetype(p, size=size)
-            except OSError:
-                continue
-    return ImageFont.load_default()
+    return pillow_font(size, bold=True)
 
 
 def render_text_poster_bytes(spec: dict[str, Any], *, width: int = 1080, height: int = 1350) -> bytes:
