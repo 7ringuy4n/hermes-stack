@@ -1,3 +1,8 @@
+## 2026-08-29 08:40 +07 — Live-data PDF asks answered chat-only (no file)
+
+- Weather/fuel “design a PDF” asks classified as search + office, so the host skipped the plain office shortcut; Hermes searched then replied with chat weather and never called office-file.
+- Host search→office path when classify has search + one file (no standalone image). Classify/answering: never chat-only when a file was asked. Unit covers the gate.
+
 ## 2026-08-29 08:15 +07 — Vietnamese tofu on media cards; Unicode fonts + info-card
 
 - Weather/info images showed white boxes for Vietnamese diacritics (diffusion-baked text / weak fonts). Office PDF risked Helvetica fallback.
