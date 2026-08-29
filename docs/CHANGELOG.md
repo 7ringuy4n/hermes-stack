@@ -1,3 +1,8 @@
+## 2026-08-29 18:00 +07 — Scenic image backend fail fell through to /help intro
+
+- Aerial/scenic image asks matched host shortcuts but when Comfy/Omni diffusion failed, Hermes ran and replied with backend recovery prose plus a first-meeting `/help` intro.
+- Host now consumes failed media shortcuts: one media-out failure line, no Hermes fallthrough; weather-scene silently falls back to Pillow info-card when diffusion is down; classify sets `process_original_message false` for host-owned image paths.
+
 ## 2026-08-29 17:00 +07 — Weather picture vs aerial city vs info-card mis-routed
 
 - Scenic aerial city asks and live-weather picture asks both landed on the same info-card dashboard path; users wanted a city photo (aerial) or a city scene with small current-weather overlay, not a metrics card.

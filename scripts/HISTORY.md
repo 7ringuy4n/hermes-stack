@@ -1,3 +1,17 @@
+## 2026-08-29 18:00 +07 — Scenic image shortcut fail → /help intro
+
+### Symptom
+Aerial HCMC image ask returned backend-unavailable prose plus a first-meeting `/help` greeting instead of a file or a single failure line.
+
+### Root cause
+Host `run_scene_image` returned `None` on diffusion 502; adapter only short-circuited on success, so Hermes handled the turn and produced persona/backend recovery chatter.
+
+### Fix (core)
+`plan_media_shortcut_gate` + `shortcut_consumed` contract: failed host shortcuts send media-out failure line and return (no Hermes). Weather-scene falls back to Pillow info-card when diffusion is down. Classify: `process_original_message false` on host-owned image paths.
+
+### Prevent recurrence
+Any host media gate must consume the turn on failure — never fall through to Hermes for classified image shortcuts.
+
 ## 2026-08-29 17:00 +07 — Aerial city vs weather picture vs info-card
 
 ### Symptom
