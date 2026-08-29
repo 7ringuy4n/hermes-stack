@@ -431,6 +431,124 @@ def plan_allows_office_shortcut(plan: dict[str, Any] | None) -> bool:
     return False
 
 
+def _plan_types(src: dict[str, Any]) -> set[str]:
+    types: set[str] = set()
+    if str(src.get("task_type") or "").strip().lower():
+        types.add(str(src.get("task_type") or "").strip().lower())
+    for detail in src.get("task_details") or []:
+        if not isinstance(detail, dict):
+            continue
+        if str(detail.get("task_type") or "").strip():
+            types.add(str(detail.get("task_type") or "").strip().lower())
+    return types
+
+
+def _plan_has_search(src: dict[str, Any]) -> bool:
+    if str(src.get("skill") or "").strip().lower() == "web_search":
+        return True
+    if str(src.get("task_hint") or "").strip().lower() == "search":
+        return True
+    types = _plan_types(src)
+    if "search" in types:
+        return True
+    for detail in src.get("task_details") or []:
+        if not isinstance(detail, dict):
+            continue
+        if str(detail.get("skill") or "").strip().lower() == "web_search":
+            return True
+    return False
+
+
+def _plan_has_media_generation(src: dict[str, Any]) -> bool:
+    return "media_generation" in _plan_types(src)
+
+
+def _plan_has_file_processing(src: dict[str, Any]) -> bool:
+    if str(src.get("task_hint") or "").strip().lower() == "file":
+        return True
+    return "file_processing" in _plan_types(src)
+
+
+def plan_search_then_office_output(plan: dict[str, Any] | None) -> str:
+    """Office kind for search→office host path (pdf/docx/…). Empty if not applicable."""
+    src = plan if isinstance(plan, dict) else {}
+    ot = _coerce_output_type(src.get("output_type"))
+    if ot in _OUTPUT_TYPES and ot != "image":
+        return ot
+    for detail in src.get("task_details") or []:
+        if not isinstance(detail, dict):
+            continue
+        if str(detail.get("task_type") or "").strip().lower() != "file_processing":
+            continue
+        ot2 = _coerce_output_type(detail.get("output_type"))
+        if ot2 in _OUTPUT_TYPES and ot2 != "image":
+            return ot2
+    if _plan_has_file_processing(src):
+        return "pdf"
+    return ""
+
+
+def plan_allows_search_then_office(plan: dict[str, Any] | None) -> bool:
+    """Live-data office create (search sibling + one file) — host search then office-file.
+
+    Plain office shortcut must stay skipped (search present). Hermes often answers
+    chat-only after search; host owns the PDF delivery for this family.
+    """
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    action = str(src.get("skill_action") or "").strip().lower()
+    if action in {"deliver", "send", "send_message"}:
+        return False
+    if _plan_has_media_generation(src):
+        return False
+    if not _plan_has_search(src):
+        return False
+    if not plan_search_then_office_output(src):
+        return False
+    return True
+
+
+def plan_search_query(plan: dict[str, Any] | None, fallback: str = "") -> str:
+    """Pick the search query from classify instructions (structured indexes, not NLU)."""
+    src = plan if isinstance(plan, dict) else {}
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    details = src.get("task_details") if isinstance(src.get("task_details"), list) else []
+    for i, detail in enumerate(details):
+        if not isinstance(detail, dict):
+            continue
+        tt = str(detail.get("task_type") or "").strip().lower()
+        sk = str(detail.get("skill") or "").strip().lower()
+        if tt == "search" or sk == "web_search":
+            if i < len(parts):
+                return parts[i]
+    if len(parts) >= 2:
+        return parts[0]
+    if parts:
+        return parts[0]
+    return str(fallback or "").strip()
+
+
+def plan_file_instruction(plan: dict[str, Any] | None, fallback: str = "") -> str:
+    """Pick the office-file body instruction from classify."""
+    src = plan if isinstance(plan, dict) else {}
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    details = src.get("task_details") if isinstance(src.get("task_details"), list) else []
+    for i, detail in enumerate(details):
+        if not isinstance(detail, dict):
+            continue
+        if str(detail.get("task_type") or "").strip().lower() == "file_processing":
+            if i < len(parts):
+                return parts[i]
+    if len(parts) >= 2:
+        return parts[-1]
+    if parts:
+        return parts[0]
+    return str(fallback or "").strip()
+
+
 def plan_output_type(plan: dict[str, Any] | None) -> str:
     src = plan if isinstance(plan, dict) else {}
     ot = _coerce_output_type(src.get("output_type"))

@@ -19,8 +19,10 @@ from office_file import (  # noqa: E402
 from classify_client import (  # noqa: E402
     plan_allows_office_shortcut,
     plan_allows_poster_shortcut,
+    plan_allows_search_then_office,
     plan_skips_media_shortcut,
 )
+from media_shortcuts import build_office_body_from_search  # noqa: E402
 try:
     from text_poster import parse_text_poster  # type: ignore  # noqa: E402
 except Exception:  # noqa: BLE001
@@ -70,6 +72,43 @@ def main() -> int:
     }
     assert plan_skips_media_shortcut(weather_pdf) is True
     assert plan_allows_office_shortcut(weather_pdf) is False
+    assert plan_allows_search_then_office(weather_pdf) is True
+    weather_pdf_split = {
+        "ok": True,
+        "task_hint": "file",
+        "task_type": "file_processing",
+        "output_type": "pdf",
+        "instructions": [
+            "current weather Ho Chi Minh City temperature humidity",
+            "TITLE: Thời tiết TP.HCM\nICON: cloud\n- placeholder",
+        ],
+        "task_details": [
+            {"task_type": "search", "output_type": None},
+            {"task_type": "file_processing", "output_type": "pdf"},
+        ],
+    }
+    assert plan_allows_search_then_office(weather_pdf_split) is True
+    assert plan_allows_office_shortcut(weather_pdf_split) is False
+    body = build_office_body_from_search(
+        file_instruction="TITLE: Thời tiết TP.HCM\nICON: rain",
+        user_ask="pdf weather",
+        search={
+            "answer": "31C humid",
+            "results": [{"title": "HCM", "content": "light rain"}],
+        },
+    )
+    assert "TITLE:" in body and "ICON:" in body and "31C" in body, body
+    mixed_img_pdf = {
+        "ok": True,
+        "task_hint": "tool",
+        "task_type": "media_generation",
+        "instructions": ["draw weather", "make pdf"],
+        "task_details": [
+            {"task_type": "media_generation", "output_type": "image"},
+            {"task_type": "file_processing", "output_type": "pdf"},
+        ],
+    }
+    assert plan_allows_search_then_office(mixed_img_pdf) is False
     assert parse_office_jobs("1", "pdf") == [(".pdf", "1")]
 
     styled = parse_styled_pdf_body(
