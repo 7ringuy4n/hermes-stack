@@ -1589,6 +1589,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_async,
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
+                plan_media_shortcut_gate,
             )
             from .classify_client import strip_prior_for_classify
             from .knowledge_cite import plan_is_knowledge
@@ -1606,6 +1607,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_async,
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
+                plan_media_shortcut_gate,
             )
             from classify_client import strip_prior_for_classify  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
@@ -2109,6 +2111,11 @@ class ZaloAdapter(BasePlatformAdapter):
             return True
         if not workflow_enabled():
             return False
+        media_gate = plan_media_shortcut_gate(plan)
+        if media_gate and not schedule_fire:
+            # Host shortcuts own scenic/weather/info-card turns — never duplicate via async workflow → Hermes.
+            logger.info("[zalo] skip workflow for host media gate=%s", media_gate)
+            return True
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
         async_job = plan_is_async(plan) or len(parts) >= 2
         if not async_job or not parts:

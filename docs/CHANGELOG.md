@@ -1,3 +1,8 @@
+## 2026-08-29 18:30 +07 — Zalo plugin sync missing on git pull / run.sh update
+
+- After `git pull`, `/opt/assistant/hermes/main/plugins` updated but runtime `/data/assistant/plugins/zalo` stayed stale — aerial image fix never loaded in Hermes containers.
+- `scripts/main/sync-zalo-plugins.sh` copies adapter SoT on `run.sh update`; setup-zalo reuses it. Workflow skips async Hermes for host-owned media gates.
+
 ## 2026-08-29 18:00 +07 — Scenic image backend fail fell through to /help intro
 
 - Aerial/scenic image asks matched host shortcuts but when Comfy/Omni diffusion failed, Hermes ran and replied with backend recovery prose plus a first-meeting `/help` intro.
