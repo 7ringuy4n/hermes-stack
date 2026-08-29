@@ -16,9 +16,17 @@ TEXT POSTER (fill N lines of a phrase; often quotes; may say trắng đen / B&W)
 NOT scene diffusion. task_hint=tool, task_type=media_generation, execution_class=async, skill=media_file, skill_action=generate_media, output_type=image.
 Set poster_n (integer), poster_phrase (exact glyphs), poster_bw (bool). Host will not parse N/phrase from prose. Do not rewrite into a scenic prompt.
 
-SCENE IMAGE / VIDEO (draw/ảnh without exact N-line poster):
+LABELED INFO IMAGE (picture/ảnh that must SHOW live facts — weather, prices, metrics, place dashboard; “hình ảnh chứa thông tin …” / attractive info card — any language):
+NOT hello/normal. NOT a /help intro. NOT an English scene-diffusion prompt as the only instruction.
+task_hint=tool, task_type=media_generation, execution_class=async, response_mode=ack_then_deliver, skill=media_file, skill_action=generate_media, output_type=image.
+ALWAYS emit a search/web_search sibling for live facts. Put a short search query in its own instructions[] entry (place + topic facts) — do NOT put TITLE:/OVERVIEW: markers in the search instruction. The image job instruction = structured markers only: TITLE: … SUBTITLE: … ICON: … STYLE: midnight|daylight|emerald, plus OVERVIEW:/BACKGROUND: when the subject is a place, plus fact-label bullets (values filled after search).
+Host may deliver search→Dispatcher mode=info-card without waiting on Hermes chat — still emit search + media_generation so the gate matches. Never collapse to chat-only Q&A or a greeting when a labeled image was asked.
+Do NOT put create-verbs or English “Weather info card for …” scene prose in TITLE. Dispatcher info-card owns Unicode layout.
+
+SCENE IMAGE / VIDEO (draw/ảnh without exact N-line poster AND without needing readable live fact labels on the image):
 task_hint=tool, task_type=media_generation, skill=media_file, skill_action=generate_media.
 Preserve subject, on-image text, B&W, style, quantity. Do not convert to PDF/TXT. Do not store the prompt in a text file instead of generating.
+If the ask is primarily a labeled live-data card, use LABELED INFO IMAGE above — not this scenic path.
 
 MULTI-DELIVERABLE (image + file, or multiple files) in one bubble:
 Separate instructions. Example family: image with on-image text + txt file = TWO jobs. Never merge. Never drop the image job.

@@ -19,6 +19,7 @@ Hermes core behavior for everyday questions.
 8. Follow **SOUL.md** and **`communication/zalo-channel`** on Zalo: no `/help` dump, no channel intro, no secret scans, handle all parts of a compound message.
 9. Chat PDF/DOCX/XLSX create-and-send: skill **`file-gen`** → Dispatcher `/v1/office-file` only. Never `skill_view` ambiguous `pdf`/`docx`/`xlsx`, never `pip`/`uv` install reportlab/pypdf, never narrate library installs.
 10. Visual weather/info PDF: finish with styled office-file (TITLE/ICON/facts) via **`file-gen`**. Never ask for image API keys or show session-restore / numbered recovery menus when `/v1/image` fails. After web_search for a PDF ask, the next tool call must be office-file — never stop at a chat weather summary.
+11. Labeled live-data **image** (weather/info card picture): skill **`image-gen`** with `mode=info-card` and TITLE/ICON/STYLE/fact markers (plus OVERVIEW/BACKGROUND when the subject is a place). Never answer with a greeting, `/help`, or AI intro. Never pass an English scene sentence as the only prompt with no facts.
 
 ## Do not
 
@@ -26,7 +27,7 @@ Hermes core behavior for everyday questions.
 - Claim completion without evidence (`core/verification`).
 - Ask clarifying questions when the request is already actionable (`core/clarification`).
 - Answer a create-PDF (or office file) request with chat-only weather/fuel text and no file (including after a successful search).
-
+- Answer a labeled weather/info **image** ask with a greeting or empty card.
 ## Sources
 
 Adapted from Anthropic skills patterns + VoltAgent awesome-agent-skills (catalog). See `vendor/CATALOG.md`.
