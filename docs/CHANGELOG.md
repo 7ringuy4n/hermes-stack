@@ -1,3 +1,8 @@
+## 2026-08-29 09:10 +07 — Weather PDF body still showed JSON / wind bearing
+
+- Live search→office cards pasted Python/JSON weather API dumps and treated wind bearings (`246°WSW`) as the hero temperature; markdown headings and label-only SERP rows remained.
+- Reject JSON/dict/markdown noise; map structured weather JSON to labeled facts; hero temp only accepts Celsius (not compass). Classify: never paste raw JSON into the PDF body.
+
 ## 2026-08-29 09:00 +07 — Weather PDF delivered but SERP chrome / broken title
 
 - Host search→office PDFs used the create-verb instruction as the title and dumped raw search-engine page titles as fact rows (ugly truncated SERP chrome). Marker parse also mistook `TITLE:` inside `SUBTITLE:`.
