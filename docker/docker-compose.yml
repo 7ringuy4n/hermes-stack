@@ -245,7 +245,7 @@ services:
       - OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-1}
       - MEDIA_CACHE_DIR=/data/media
       # Image gen (empty = off). Media worker sets comfy-cpu,comfy-gpu,omni
-      - IMAGE_BACKENDS=${IMAGE_BACKENDS:-}
+      - IMAGE_BACKENDS=${IMAGE_BACKENDS:-comfy-cpu,comfy-gpu,omni}
       - IMAGE_OMNI_MODEL=${IMAGE_OMNI_MODEL:-aihorde/Flux.1-Schnell fp8 (Compact)}
       - IMAGE_OMNI_SIZE=${IMAGE_OMNI_SIZE:-1024x1024}
       - OMNIROUTER_BASE_URL=${OMNIROUTER_BASE_URL:-http://omni-router:20129/v1}

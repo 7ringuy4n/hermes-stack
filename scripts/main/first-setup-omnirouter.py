@@ -751,18 +751,21 @@ def verify(key: str, combo: str) -> None:
 
 
 def pin_image_backends(env: dict[str, str]) -> None:
-    """Media|File worker: empty IMAGE_BACKENDS → Hermes invents PIL. Pin dispatcher+Comfy."""
+    """Media|File worker: pin Comfy → Omni order on dispatcher (not Hermes PIL)."""
     media_on = (env.get("ENABLE_MEDIA_FILE") or os.environ.get("ENABLE_MEDIA_FILE") or "0").strip()
     if media_on not in {"1", "true", "yes", "on"}:
         return
-    cur = (env.get("IMAGE_BACKENDS") or "").strip()
-    if cur:
-        print(f"OK: IMAGE_BACKENDS already {cur}")
-        return
     want = "comfy-cpu,comfy-gpu,omni"
+    cur = (env.get("IMAGE_BACKENDS") or "").strip()
+    if cur == want:
+        print(f"OK: IMAGE_BACKENDS already {want}")
+        return
     set_env_key(ROOT / ".env", "IMAGE_BACKENDS", want)
     env["IMAGE_BACKENDS"] = want
-    print(f"OK: pinned IMAGE_BACKENDS={want} (Comfy → Omni fallback; not Hermes image_generation tool)")
+    if cur:
+        print(f"OK: normalized IMAGE_BACKENDS {cur!r} → {want}")
+    else:
+        print(f"OK: pinned IMAGE_BACKENDS={want} (Comfy → Omni fallback; not Hermes image_generation tool)")
 
 
 def clear_removed_local_llm_pins(env: dict[str, str]) -> None:
