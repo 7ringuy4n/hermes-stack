@@ -23,16 +23,9 @@ _KIND_EXT = {
 }
 
 # Prefer Unicode TTFs so Vietnamese PDF does not fall back to .txt
-_FONT_CANDIDATES = (
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-)
-_FONT_BOLD_CANDIDATES = (
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
-)
+# (resolved via fonts.py — bundled Noto Sans first).
+_FONT_CANDIDATES = ()  # legacy unused; kept for import compatibility
+_FONT_BOLD_CANDIDATES = ()
 
 # Structured markers Hermes puts in the office-file prompt (not user NLU).
 _TITLE_PREFIXES = ("TITLE:", "Title:", "title:")
@@ -88,25 +81,22 @@ def parse_office_jobs(prompt: str, output_type: str = "") -> list[tuple[str, str
 
 
 def _register_font(candidates: tuple[str, ...], name: str) -> str:
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
+    del candidates, name
+    from fonts import reportlab_font_name
 
-    for path in candidates:
-        if Path(path).is_file():
-            try:
-                pdfmetrics.registerFont(TTFont(name, path))
-                return name
-            except Exception as e:  # noqa: BLE001
-                log.warning("pdf font register failed %s: %s", path, e)
-    return "Helvetica"
+    return reportlab_font_name(bold=False)
 
 
 def _pdf_font() -> str:
-    return _register_font(_FONT_CANDIDATES, "OfficeSans")
+    from fonts import reportlab_font_name
+
+    return reportlab_font_name(bold=False)
 
 
 def _pdf_font_bold() -> str:
-    return _register_font(_FONT_BOLD_CANDIDATES, "OfficeSansBold")
+    from fonts import reportlab_font_name
+
+    return reportlab_font_name(bold=True)
 
 
 def _strip_prefix(line: str, prefixes: tuple[str, ...]) -> str | None:

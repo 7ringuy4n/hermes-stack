@@ -45,9 +45,13 @@ ICON: sun
 ```
 
 `ICON` is one of: `sun` | `cloud` | `rain` | `storm`. Dispatcher draws a vector
-icon + colored card layout — **do not** call `image-gen` / `/v1/image` to decorate
-a PDF. **Do not** ask the user for image API keys, ComfyUI, or `.env`. **Do not**
-send session-restore menus or numbered “how should I continue?” choices.
+icon + colored card layout with **Unicode fonts (Noto Sans)** — Vietnamese
+diacritics must render correctly. **Do not** call `image-gen` / `/v1/image`
+diffusion to decorate a PDF (diffusion bakes broken Vietnamese glyphs).
+
+For a **standalone weather/info picture** (not a PDF), use
+`POST /v1/image` with `"mode":"info-card"` and the same TITLE/ICON/fact body
+(styles: `midnight` | `daylight` | `emerald` via `STYLE:` line).
 
 Requires Media|File worker with `OFFICE_FILE_GEN=1`. Success: `"ok":true` and
 Zalo receives the file (empty caption). User-facing text per **media-out**:
