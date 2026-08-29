@@ -21,7 +21,12 @@ from attachment import (  # noqa: E402
     file_extract_ack_message,
     image_ocr_ack_message,
     ocr_excerpt_for_ack,
+    pick_sheet_section,
+    prefer_workbook_head,
+    sheet_ref_from_text,
+    split_workbook_sheets,
     stage_shared_media,
+    workbook_sheet_reply,
     worker_media_path,
 )
 from autosend import ATTACH_CAPTION_FALLBACK  # noqa: E402
@@ -42,7 +47,7 @@ def test_kind() -> None:
         "doc.docx": "office",
         "clip.mp4": "av",
         "voice.m4a": "av",
-        "archive.zip": "none",
+        "archive.zip": "archive",
     }
     for name, want in cases.items():
         got = attachment_kind(name)
@@ -178,6 +183,38 @@ def test_file_extract_ack() -> None:
     print("PASS bare-file extract ack never silent")
 
 
+def test_workbook_sheet_recall() -> None:
+    raw = (
+        "Workbook sheets:\n"
+        "1. Overview\n"
+        "2. Detail\n"
+        "\n"
+        "## Sheet 1 (Overview)\n"
+        "a\tb\n"
+        "1\t2\n"
+        "## Sheet 2 (Detail)\n"
+        "x\ty\n"
+        "hello sheet two\n"
+    )
+    sheets = split_workbook_sheets(raw)
+    assert len(sheets) == 2, sheets
+    assert sheets[1][0] == 2 and sheets[1][1] == "Detail"
+    title, body = pick_sheet_section(raw, "2")
+    assert title == "Detail" and "hello sheet two" in body, (title, body)
+    title2, _ = pick_sheet_section(raw, "Detail")
+    assert title2 == "Detail"
+    assert sheet_ref_from_text("SHEET_REF: 2\nother") == "2"
+    reply = workbook_sheet_reply("book.xlsx", raw, "2")
+    assert "Detail" in reply and "hello sheet two" in reply, reply
+    # Truncation must keep inventory + sheet-2 header/body start.
+    huge = raw + ("pad\n" * 8000)
+    kept = prefer_workbook_head(huge)
+    assert "Workbook sheets:" in kept and "## Sheet 2 (Detail)" in kept, kept[:400]
+    merged = context_merge([], "book.xlsx", huge)
+    assert merged and "Workbook sheets:" in merged[0]["text"]
+    print("PASS workbook sheet inventory + SHEET_REF recall")
+
+
 def main() -> int:
     try:
         test_kind()
@@ -188,6 +225,7 @@ def main() -> int:
         test_context_blocks()
         test_image_ocr_ack()
         test_file_extract_ack()
+        test_workbook_sheet_recall()
     except AssertionError as e:
         print(f"FAIL {e}")
         return 1

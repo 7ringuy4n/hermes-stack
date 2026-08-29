@@ -524,8 +524,16 @@ def _xlsx_text(p: Path) -> str:
 
     wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
     parts: list[str] = []
-    for ws in wb.worksheets:
-        parts.append(f"## Sheet: {ws.title}")
+    # Inventory first so truncation still leaves sheet index → title mapping.
+    inv = []
+    for idx, ws in enumerate(wb.worksheets, start=1):
+        inv.append(f"{idx}. {ws.title}")
+    if inv:
+        parts.append("Workbook sheets:")
+        parts.extend(inv)
+        parts.append("")
+    for idx, ws in enumerate(wb.worksheets, start=1):
+        parts.append(f"## Sheet {idx} ({ws.title})")
         for i, row in enumerate(ws.iter_rows(values_only=True)):
             if i >= SHEET_ROW_CAP:
                 parts.append("...(truncated)")
