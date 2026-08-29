@@ -1,13 +1,13 @@
 ---
 name: infographic-design
-description: "Default layout skill when generating an image that includes informational text (weather, fuel, prices, status). Professional infographic composition — not text dumped on a photo."
+description: "Default layout skill when generating an image that includes informational text (prices, metrics, status, labeled facts). Professional infographic composition — not text dumped on a photo."
 ---
 
 # Image text layout and infographic design
 
 ## When to use
 
-**Default** whenever the user asks for an image that must show **readable informational text** (weather + fuel, city status, metrics, bilingual labels). Apply before calling dispatcher `POST /v1/image`.
+**Default** whenever the user asks for an image that must show **readable informational text** (metrics, prices, city status, bilingual labels). Apply before calling dispatcher `POST /v1/image`.
 
 Exact typography posters (verbatim quoted lines, black-and-white fill) stay on `image-gen` text-poster mode — not this skill.
 
@@ -39,18 +39,18 @@ Reference style:
 
 ```text
 ┌──────────────────────────────────────────────┐
-│ TITLE / LOCATION                            │
+│ TITLE / SUBJECT                             │
 │ Update date                                 │
 │                                              │
 │ ┌──────────── INFORMATION PANEL ──────────┐ │
-│ │ Weather icon    Primary value            │ │
-│ │                 Condition                │ │
+│ │ Motif icon      Primary value            │ │
+│ │                 Condition / status       │ │
 │ │ ─────────────────────────────────────── │ │
-│ │ Humidity / Wind / Visibility             │ │
+│ │ Supporting metrics                       │ │
 │ └─────────────────────────────────────────┘ │
 │                                              │
 │ ┌──────────── SECONDARY PANEL ────────────┐ │
-│ │ Fuel / Prices / Key Metrics              │ │
+│ │ Prices / Key Metrics                     │ │
 │ └─────────────────────────────────────────┘ │
 │                                              │
 │ Source / secondary                          │
@@ -63,8 +63,8 @@ Information area ≈ one side or corner; majority of canvas stays the main visua
 ## Dispatcher usage
 
 1. Gather short fact lines (search if needed).
-2. Build a **scene prompt** that describes the landmark/weather view **and** asks for the infographic layout above.
-3. Pass facts as `overlay: ["…", "…"]` on `POST /v1/image` (Vietnamese when the user asked for Vietnamese).
+2. Build a **scene prompt** that describes the landmark/context view **and** asks for the infographic layout above.
+3. Pass facts as `overlay: ["…", "…"]` on `POST /v1/image` (match the user’s language).
 4. Follow `media-out` — file only, no process chatter.
 
 ## Final checks

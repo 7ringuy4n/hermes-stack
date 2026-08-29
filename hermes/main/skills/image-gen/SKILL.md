@@ -11,15 +11,15 @@ The built-in Hermes `image_generation` tool is often **unavailable** (cloud keys
 
 **This stack path (required):** `POST http://dispatcher:8090/v1/image` with `IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni`. ComfyUI is tried first; on failure dispatcher falls back to OmniRouter (`/images/generations`). Skill `comfyui` is only for an explicit Comfy workflow the user named — default image gen is always dispatcher.
 
-If `/v1/image` returns 502/503 or backends are unavailable: **do not** ask the user for API keys, `.env`, ComfyUI, or Omni auth. **Do not** send session-restore or numbered recovery menus. When the user’s ask was primarily a **PDF/office file** with icons/layout, finish via **`file-gen`** / office-file (styled PDF with embedded banner + vector icons) instead of retrying image gen forever.
+If `/v1/image` returns 502/503 or backends are unavailable: **do not** ask the user for API keys, `.env`, ComfyUI, or Omni auth. **Do not** send session-restore or numbered recovery menus. When the user’s ask was primarily a **PDF/office file** with icons/layout, finish via **`file-gen`** / office-file (styled PDF) instead of retrying image gen forever.
 
-For **weather / fuel / info dashboards as a picture** (readable Vietnamese labels), prefer `"mode":"info-card"` on `POST /v1/image` with TITLE/ICON/STYLE/fact lines — Pillow + Noto fonts. **Do not** ask diffusion to paint Vietnamese text (it becomes tofu/boxes).
+For **labeled info dashboards as a picture** (readable text/labels), prefer `"mode":"info-card"` on `POST /v1/image` with TITLE/ICON/STYLE/fact lines — Pillow + Noto fonts. **Do not** ask diffusion to paint dense on-image text (it becomes tofu/boxes).
 
-For a **scenic weather photo** (skyline/clouds, no on-image Vietnamese text): you may call default `/v1/image` diffusion/LLM backends with an English scene prompt. If it fails, fall back to `mode=info-card` or rely on the styled PDF visuals — never a recovery menu.
+For a **scenic photo** (no on-image text labels): you may call default `/v1/image` diffusion/LLM backends with an English scene prompt. If it fails, fall back to `mode=info-card` or rely on the styled PDF visuals — never a recovery menu.
 
 Generate through this skill and dispatcher instead.
 
-**Never** `web_search`, `web_extract`, or browse GitHub/release/news pages to “find image URLs”. That is not generation. Users must receive a **new file** from dispatcher, not a scrape of someone else’s page. If weather/fuel context is needed, one short search for conditions is enough, then `POST /v1/image` with a **scene prompt** plus `overlay` fact lines (Vietnamese when the user asked for Vietnamese). If dispatcher fails: one failure line from **media-out**, then stop.
+**Never** `web_search`, `web_extract`, or browse GitHub/release/news pages to “find image URLs”. That is not generation. Users must receive a **new file** from dispatcher, not a scrape of someone else’s page. If live facts are needed, one short search is enough, then `POST /v1/image` with a **scene prompt** plus `overlay` fact lines (match the user’s language). If dispatcher fails: one failure line from **media-out**, then stop.
 
 ## Output path
 
@@ -60,9 +60,9 @@ mkdir -p /opt/data/media/out && curl -sS -X POST http://dispatcher:8090/v1/image
 
 ## Infographic (default when the image must show informational text)
 
-When the user wants **weather / fuel / prices / metrics on the picture** (readable facts + scene), follow skill **`image-gen/infographic-design`** first: layout, hierarchy, panels, Unicode. Then `POST /v1/image` with a scene prompt plus `overlay` fact lines. Do not dump text randomly on the photo.
+When the user wants **prices / metrics / labeled facts on the picture** (readable facts + scene), follow skill **`image-gen/infographic-design`** first: layout, hierarchy, panels, Unicode. Then `POST /v1/image` with a scene prompt plus `overlay` fact lines. Do not dump text randomly on the photo.
 
-Use `refine:true` only if the user explicitly wants an English art prompt rewrite. Do not install Pillow/pip/uv in Hermes — dispatcher owns rendering. Put live weather and fuel **on the image** via `overlay` (already-fetched strings), not as a separate chat message unless the user asked for text as well.
+Use `refine:true` only if the user explicitly wants an English art prompt rewrite. Do not install Pillow/pip/uv in Hermes — dispatcher owns rendering. Put live facts **on the image** via `overlay` (already-fetched strings), not as a separate chat message unless the user asked for text as well.
 
 ## Delivery
 
