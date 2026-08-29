@@ -1,3 +1,8 @@
+## 2026-08-29 12:15 +07 — Labeled weather image created but user got silence
+
+- Host search→info-card wrote the PNG, but `/v1/image` info-card mode never sent to Zalo (`send_zalo` ignored) and shortcut autosend often missed the file — users saw no reply.
+- Info-card now delivers when `send_zalo=true` (same idea as office-file); host shortcut enables send; adapter remembers turn dest before late autosend.
+
 ## 2026-08-29 11:45 +07 — Labeled weather image → /help + broken empty card
 
 - Asks for a beautiful live weather **image** (not PDF) got a default AI/`/help` greeting, and the info-card showed an English scene prompt as the title with “(no details)”.
