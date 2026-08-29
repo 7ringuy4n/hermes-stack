@@ -4341,6 +4341,14 @@ class ZaloAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
                 try:
+                    # Bind turn dest before late autosend (office/info-card shortcuts).
+                    self._as_autosend_remember_turn(
+                        str(thread_id),
+                        "group" if str(thread_type).lower() in {"group", "g"} else "user",
+                    )
+                except Exception:
+                    pass
+                try:
                     await self._as_autosend_late_files(
                         str(thread_id),
                         "group" if str(thread_type).lower() in {"group", "g"} else "user",

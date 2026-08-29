@@ -635,7 +635,8 @@ def run_search_then_info_card(
         "thread_id": str(thread_id),
         "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
         "caption": "",
-        "send_zalo": False,
+        # Deliver like office-file; autosend alone often misses shortcut-created PNGs.
+        "send_zalo": True,
     }
     try:
         out = _post("/v1/image", body, timeout=120.0)
@@ -643,6 +644,7 @@ def run_search_then_info_card(
         log.warning("search_then_info_card failed: %s", type(e).__name__)
         return None
     if isinstance(out, dict) and out.get("ok"):
+        # Still ok if file written but zalo_error set (autosend can retry).
         return out
     return None
 

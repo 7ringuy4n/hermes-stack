@@ -931,12 +931,29 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             os.chown(dest, uid, gid)
         except OSError:
             pass
-        return {
+        out: dict[str, Any] = {
             "ok": True,
             "file": name,
             "path": str(dest),
             "backend": "info-card",
         }
+        # Same as office-file: deliver when host asks (autosend alone is unreliable for shortcuts).
+        if req.send_zalo:
+            if not req.thread_id:
+                raise HTTPException(400, "thread_id required when send_zalo=true")
+            if not _claim_generated_file(dest, req.thread_id):
+                out["zalo"] = {"ok": True, "skipped": True, "reason": "already_sent"}
+            else:
+                try:
+                    out["zalo"] = _send_zalo_base64(
+                        req.thread_id, req.thread_type, dest, req.caption or ""
+                    )
+                except HTTPException as e:
+                    # File remains under media/out for autosend fallback.
+                    out["zalo_error"] = str(getattr(e, "detail", None) or e)[:300]
+                    log = __import__("logging").getLogger("dispatcher")
+                    log.warning("info-card wrote %s but zalo send failed", name)
+        return out
 
     if not image_backends() and not (req.provider or "").strip():
         raise HTTPException(503, _msg("image_gen_disabled", "Image generation is unavailable (no media backends configured)."))
