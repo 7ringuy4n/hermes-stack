@@ -21,13 +21,33 @@ Create **and** deliver in one call:
 curl -sS -X POST http://dispatcher:8090/v1/office-file \
   -H 'Content-Type: application/json' \
   -d '{
-    "prompt":"<user request, include format + body e.g. tạo file pdf điền số 1>",
+    "prompt":"<structured body>",
     "thread_id":"<inbound thread id>",
     "thread_type":"user",
     "filename":"<safe-name.pdf>",
+    "output_type":"pdf",
     "caption":""
   }'
 ```
+
+### Visual / weather / info PDF body (required shape)
+
+When the user wants an attractive PDF (icons, layout, weather/fuel facts), put
+**live facts already fetched** into the `prompt` like:
+
+```text
+TITLE: Thời tiết TP. Hồ Chí Minh
+SUBTITLE: Cập nhật hiện tại
+ICON: sun
+- Nhiệt độ: 31°C (cảm giác 36°C)
+- Độ ẩm: 70%
+- Điều kiện: Nắng
+```
+
+`ICON` is one of: `sun` | `cloud` | `rain` | `storm`. Dispatcher draws a vector
+icon + colored card layout — **do not** call `image-gen` / `/v1/image` to decorate
+a PDF. **Do not** ask the user for image API keys, ComfyUI, or `.env`. **Do not**
+send session-restore menus or numbered “how should I continue?” choices.
 
 Requires Media|File worker with `OFFICE_FILE_GEN=1`. Success: `"ok":true` and
 Zalo receives the file (empty caption). User-facing text per **media-out**:
@@ -50,9 +70,10 @@ office-file **and** a second send for the same file.
 ## Do not
 
 - Narrate pip/uv install failures or invent “file created” when tools failed
-- Ask for approval
+- Ask for approval or for API keys / backend config
 - Dump server paths
-- Generate images here → **`image-gen`**
+- Block a PDF deliverable on image-backend failures — finish the PDF via office-file
+- Generate decorative images here → only **`image-gen`** when the user asked for a **standalone** picture
 
 ## Related
 

@@ -18,6 +18,7 @@ Hermes core behavior for everyday questions.
 7. Knowledge lookups: top 5 + count; empty → no inventing; no web on Low unless routed to research.
 8. Follow **SOUL.md** and **`communication/zalo-channel`** on Zalo: no `/help` dump, no channel intro, no secret scans, handle all parts of a compound message.
 9. Chat PDF/DOCX/XLSX create-and-send: skill **`file-gen`** → Dispatcher `/v1/office-file` only. Never `skill_view` ambiguous `pdf`/`docx`/`xlsx`, never `pip`/`uv` install reportlab/pypdf, never narrate library installs.
+10. Visual weather/info PDF: finish with styled office-file (TITLE/ICON/facts). Never ask for image API keys or show session-restore / numbered recovery menus when `/v1/image` fails.
 
 ## Do not
 
