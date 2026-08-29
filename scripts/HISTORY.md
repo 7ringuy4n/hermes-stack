@@ -1,3 +1,17 @@
+## 2026-08-29 18:15 +07 — Aerial image silent after attachment recall
+
+### Symptom
+`vẽ hình … nhìn từ trên cao` after earlier photos/files → complete silence (no image, no error line).
+
+### Root cause
+`_as_attachment_followup` injected `[Recent attachments…]`; media shortcut block skipped when recall present; workflow media-gate returned handled without sending anything.
+
+### Fix (core)
+Classify `user_text_before_attach` for media shortcuts (recall stays for Hermes only). Remove workflow swallow; `_as_gate_announce` for fail-line; sync-zalo-plugins overlays all replica plugin dirs.
+
+### Prevent recurrence
+Never gate scenic/weather shortcuts on attachment-recall blocks — only sheet/office paths need that guard.
+
 ## 2026-08-29 18:30 +07 — Zalo plugins stale after git pull
 
 ### Symptom

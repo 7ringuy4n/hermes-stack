@@ -1589,7 +1589,6 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_async,
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
-                plan_media_shortcut_gate,
             )
             from .classify_client import strip_prior_for_classify
             from .knowledge_cite import plan_is_knowledge
@@ -1607,7 +1606,6 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_async,
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
-                plan_media_shortcut_gate,
             )
             from classify_client import strip_prior_for_classify  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
@@ -2111,11 +2109,6 @@ class ZaloAdapter(BasePlatformAdapter):
             return True
         if not workflow_enabled():
             return False
-        media_gate = plan_media_shortcut_gate(plan)
-        if media_gate and not schedule_fire:
-            # Host shortcuts own scenic/weather/info-card turns — never duplicate via async workflow → Hermes.
-            logger.info("[zalo] skip workflow for host media gate=%s", media_gate)
-            return True
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
         async_job = plan_is_async(plan) or len(parts) >= 2
         if not async_job or not parts:
@@ -4304,12 +4297,13 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception as e:
                 logger.warning("Zalo: sheet followup error: %s", type(e).__name__)
 
+        # Media shortcuts classify the user's line only — attachment recall must not block scenic/weather paths.
+        shortcut_user_text = (user_text_before_attach or bare_text).strip()
         if (
-            bare_text
+            shortcut_user_text
             and not media_urls
             and "[Attachment text —" not in bare_text
             and "[Attached file:" not in bare_text
-            and not has_recent_attach
         ):
             try:
                 from .classify_client import (
@@ -4364,13 +4358,13 @@ class ZaloAdapter(BasePlatformAdapter):
             shortcut = None
             shortcut_gate = ""
             try:
-                early_plan = classify_text(bare_text)
+                early_plan = classify_text(shortcut_user_text)
                 shortcut_gate = plan_media_shortcut_gate(early_plan)
                 inner = ""
                 ins = early_plan.get("instructions") or []
                 if isinstance(ins, list) and ins:
                     inner = str(ins[0] or "").strip()
-                work = inner or bare_text
+                work = inner or shortcut_user_text
                 if plan_allows_office_shortcut(early_plan) and not plan_skips_media_shortcut(early_plan):
                     shortcut = run_office_create(
                         work,
@@ -4384,7 +4378,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 elif plan_allows_search_then_office(early_plan):
                     # Live-data PDF/office: host search then office-file (skip Hermes chat-only).
                     shortcut = run_search_then_office(
-                        bare_text,
+                        shortcut_user_text,
                         early_plan,
                         str(thread_id),
                         str(thread_type),
@@ -4401,7 +4395,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         )
                 elif plan_allows_search_then_weather_scene(early_plan):
                     shortcut = run_search_then_weather_scene(
-                        bare_text,
+                        shortcut_user_text,
                         early_plan,
                         str(thread_id),
                         str(thread_type),
@@ -4416,7 +4410,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 elif plan_allows_search_then_info_card(early_plan):
                     # Metrics dashboard info-card (skip Hermes /help).
                     shortcut = run_search_then_info_card(
-                        bare_text,
+                        shortcut_user_text,
                         early_plan,
                         str(thread_id),
                         str(thread_type),
@@ -4430,7 +4424,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         )
                 elif plan_allows_scene_image(early_plan):
                     shortcut = run_scene_image(
-                        bare_text,
+                        shortcut_user_text,
                         early_plan,
                         str(thread_id),
                         str(thread_type),
@@ -4457,7 +4451,6 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception as e:
                 logger.warning("Zalo: media shortcut error: %s", type(e).__name__)
                 shortcut = None
-                shortcut_gate = ""
             if shortcut_ok(shortcut):
                 try:
                     self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
@@ -4499,16 +4492,10 @@ class ZaloAdapter(BasePlatformAdapter):
             if shortcut_gate or shortcut_was_consumed(shortcut):
                 fail_line = media_fail_line()
                 try:
-                    await self.send(
+                    await self._as_gate_announce(
                         str(thread_id),
+                        str(thread_type),
                         fail_line,
-                        metadata={
-                            "thread_type": (
-                                "group" if str(thread_type).lower() in {"group", "g"} else "user"
-                            ),
-                            "as_skip_timing": True,
-                            "skip_outbound_filter": True,
-                        },
                     )
                 except Exception as e:
                     logger.warning(
