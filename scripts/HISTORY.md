@@ -1,3 +1,17 @@
+## 2026-08-29 09:20 +07 — Attractive weather PDF still looked sparse (few icons)
+
+### Symptom
+Asks for a weather PDF “with full attractive images and icons” delivered a clean but plain card — one header glyph and text rows, no image panel.
+
+### Root cause
+Prior hardening blocked diffusion decoration (502 menus / Vietnamese tofu) and left office-file with a single vector icon. Skills told Hermes not to call image-gen for PDF decoration, so no visual banner was produced either.
+
+### Fix (core)
+Rich styled PDF: badge strip, companion icons, per-fact glyphs, embedded Pillow info-card banner (Unicode-safe). Classify/file-gen/image-gen: keep visual weather as one office-file PDF with internal visuals; optional scenic image-gen only for standalone photos, never block PDF delivery.
+
+### Prevent recurrence
+Do not equate “no diffusion” with “no images” — use info-card + vectors inside the PDF.
+
 ## 2026-08-29 09:10 +07 — Weather PDF still showed JSON dumps and fake hero temp
 
 ### Symptom
