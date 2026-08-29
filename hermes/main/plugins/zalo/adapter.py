@@ -4239,19 +4239,31 @@ class ZaloAdapter(BasePlatformAdapter):
                     classify_text,
                     plan_allows_office_shortcut,
                     plan_allows_poster_shortcut,
+                    plan_allows_search_then_office,
                     plan_output_type,
+                    plan_search_then_office_output,
                     plan_skips_media_shortcut,
                 )
-                from .media_shortcuts import run_office_create, run_text_poster
+                from .media_shortcuts import (
+                    run_office_create,
+                    run_search_then_office,
+                    run_text_poster,
+                )
             except ImportError:
                 from classify_client import (  # type: ignore
                     classify_text,
                     plan_allows_office_shortcut,
                     plan_allows_poster_shortcut,
+                    plan_allows_search_then_office,
                     plan_output_type,
+                    plan_search_then_office_output,
                     plan_skips_media_shortcut,
                 )
-                from media_shortcuts import run_office_create, run_text_poster  # type: ignore
+                from media_shortcuts import (  # type: ignore
+                    run_office_create,
+                    run_search_then_office,
+                    run_text_poster,
+                )
             shortcut = None
             try:
                 early_plan = classify_text(bare_text)
@@ -4270,6 +4282,24 @@ class ZaloAdapter(BasePlatformAdapter):
                     )
                     if shortcut:
                         self._as_flow("office_shortcut", thread_id=thread_id, file=shortcut.get("file"))
+                elif plan_allows_search_then_office(early_plan):
+                    # Live-data PDF/office: host search then office-file (skip Hermes chat-only).
+                    shortcut = run_search_then_office(
+                        bare_text,
+                        early_plan,
+                        str(thread_id),
+                        str(thread_type),
+                        classified=True,
+                        output_type=plan_search_then_office_output(early_plan)
+                        or plan_output_type(early_plan)
+                        or "pdf",
+                    )
+                    if shortcut:
+                        self._as_flow(
+                            "search_office_shortcut",
+                            thread_id=thread_id,
+                            file=shortcut.get("file"),
+                        )
                 elif plan_allows_poster_shortcut(early_plan):
                     shortcut = run_text_poster(
                         work,

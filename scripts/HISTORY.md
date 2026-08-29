@@ -1,3 +1,17 @@
+## 2026-08-29 08:40 +07 — Designed weather PDF became chat text only
+
+### Symptom
+User asked for an attractive PDF of live Ho Chi Minh weather with icons. Bot replied with chat weather (and sometimes a text “card”) and no `share.file` PDF.
+
+### Root cause
+Classify correctly emitted search + file_processing(pdf). Host `plan_skips_media_shortcut` blocked the plain office shortcut for any search sibling. Hermes completed search then answered in chat and never called Dispatcher office-file.
+
+### Fix (core)
+Host `plan_allows_search_then_office` + `run_search_then_office` (model-router `/v1/search` → styled `/v1/office-file`). Classify media part + answering: never rewrite a file ask into chat-only weather. Unit covers gates and body assembly.
+
+### Prevent recurrence
+Never rely on Hermes to finish search→PDF after the host skipped the office shortcut. Keep search+file in classify so the host gate matches.
+
 ## 2026-08-29 08:15 +07 — Weather card Vietnamese diacritics became tofu boxes
 
 ### Symptom

@@ -18,14 +18,14 @@ Hermes core behavior for everyday questions.
 7. Knowledge lookups: top 5 + count; empty → no inventing; no web on Low unless routed to research.
 8. Follow **SOUL.md** and **`communication/zalo-channel`** on Zalo: no `/help` dump, no channel intro, no secret scans, handle all parts of a compound message.
 9. Chat PDF/DOCX/XLSX create-and-send: skill **`file-gen`** → Dispatcher `/v1/office-file` only. Never `skill_view` ambiguous `pdf`/`docx`/`xlsx`, never `pip`/`uv` install reportlab/pypdf, never narrate library installs.
-10. Visual weather/info PDF: finish with styled office-file (TITLE/ICON/facts). Never ask for image API keys or show session-restore / numbered recovery menus when `/v1/image` fails.
+10. Visual weather/info PDF: finish with styled office-file (TITLE/ICON/facts) via **`file-gen`**. Never ask for image API keys or show session-restore / numbered recovery menus when `/v1/image` fails. After web_search for a PDF ask, the next tool call must be office-file — never stop at a chat weather summary.
 
 ## Do not
 
 - Introduce yourself as Hermes or as an AI, or list tools/commands/capabilities.
 - Claim completion without evidence (`core/verification`).
 - Ask clarifying questions when the request is already actionable (`core/clarification`).
-- Answer a create-PDF (or office file) request with chat-only weather/fuel text and no file.
+- Answer a create-PDF (or office file) request with chat-only weather/fuel text and no file (including after a successful search).
 
 ## Sources
 
