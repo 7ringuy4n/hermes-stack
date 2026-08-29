@@ -531,6 +531,9 @@ do_update() {
   elif [[ -f "${SCRIPTS_DIR}/sync-classify-skill.sh" ]]; then
     bash "${SCRIPTS_DIR}/sync-classify-skill.sh" || echo "WARN: sync-classify-skill failed"
   fi
+  if [[ -f "${SCRIPTS_DIR}/sync-zalo-plugins.sh" ]]; then
+    bash "${SCRIPTS_DIR}/sync-zalo-plugins.sh" || echo "WARN: sync-zalo-plugins failed"
+  fi
 
   assistant_profile_summary
 

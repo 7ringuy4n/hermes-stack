@@ -673,7 +673,7 @@ def run_scene_image(
     img_ins = plan_image_instruction(plan, user_ask)
     scene = scene_prompt_from_instruction(img_ins) or scene_prompt_from_instruction(user_ask)
     if not scene:
-        return None
+        return shortcut_consumed()
     body: dict[str, Any] = {
         "prompt": scene,
         "refine": False,
