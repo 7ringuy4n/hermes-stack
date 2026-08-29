@@ -147,44 +147,101 @@ def render_info_card_bytes(
     im = Image.new("RGB", (width, height), pal["bg"])
     draw = ImageDraw.Draw(im)
 
-    margin = 48
+    margin = max(28, width // 36)
+    landscape = width >= height
+    header_h = 200 if landscape else 280
     # Header card
-    _round_rect(draw, (margin, margin, width - margin, 280), 28, pal["card"])
-    _draw_icon(draw, meta["icon"], width - 140, 160, pal, scale=1.4)
-    title_font = pillow_font(42, bold=True)
-    sub_font = pillow_font(22, bold=False)
-    draw.text((margin + 36, 100), meta["title"][:48], fill=pal["text"], font=title_font)
+    _round_rect(draw, (margin, margin, width - margin, margin + header_h), 28, pal["card"])
+    _draw_icon(draw, meta["icon"], width - (110 if landscape else 140), margin + header_h // 2, pal, scale=1.15 if landscape else 1.4)
+    title_font = pillow_font(36 if landscape else 42, bold=True)
+    sub_font = pillow_font(20 if landscape else 22, bold=False)
+    draw.text((margin + 36, margin + 48), meta["title"][:48], fill=pal["text"], font=title_font)
     if meta["subtitle"]:
-        draw.text((margin + 36, 160), meta["subtitle"][:64], fill=pal["muted"], font=sub_font)
+        draw.text((margin + 36, margin + 110), meta["subtitle"][:64], fill=pal["muted"], font=sub_font)
 
-    # Fact grid (2 columns)
+    # Fact grid
     facts = meta["facts"] or ["(no details)"]
-    top = 320
-    gap = 20
-    col_w = (width - 2 * margin - gap) // 2
-    row_h = 150
-    for i, fact in enumerate(facts[:8]):
-        col = i % 2
-        row = i // 2
+    top = margin + header_h + 24
+    gap = 16 if landscape else 20
+    cols = 4 if landscape else 2
+    col_w = (width - 2 * margin - gap * (cols - 1)) // cols
+    row_h = 110 if landscape else 150
+    max_facts = 8 if landscape else 8
+    for i, fact in enumerate(facts[:max_facts]):
+        col = i % cols
+        row = i // cols
         x0 = margin + col * (col_w + gap)
         y0 = top + row * (row_h + gap)
+        if y0 + row_h > height - margin - 40:
+            break
         fill = pal["card"] if (row + col) % 2 == 0 else pal["card_alt"]
-        _round_rect(draw, (x0, y0, x0 + col_w, y0 + row_h), 20, fill)
-        # accent dot
-        draw.ellipse((x0 + 24, y0 + 28, x0 + 40, y0 + 44), fill=pal["accent"])
-        ff = pillow_font(26, bold=False)
-        # wrap roughly by character budget
-        text = fact[:90]
-        draw.text((x0 + 56, y0 + 55), text, fill=pal["text"], font=ff)
+        _round_rect(draw, (x0, y0, x0 + col_w, y0 + row_h), 18, fill)
+        # mini weather glyph by fact text
+        kind = _fact_glyph_kind(fact)
+        _draw_mini_glyph(draw, kind, x0 + 28, y0 + 36, pal)
+        ff = pillow_font(22 if landscape else 26, bold=False)
+        text = fact[:70]
+        draw.text((x0 + 56, y0 + 48), text, fill=pal["text"], font=ff)
 
     # Footer bar
-    _round_rect(draw, (margin, height - 120, width - margin, height - margin), 18, pal["card"])
-    foot = pillow_font(18, bold=False)
-    draw.text((margin + 28, height - 92), "Designed card · Unicode fonts", fill=pal["muted"], font=foot)
+    _round_rect(draw, (margin, height - 72, width - margin, height - margin), 14, pal["card"])
+    foot = pillow_font(16, bold=False)
+    draw.text((margin + 24, height - 56), "Bản tin trực quan · Unicode", fill=pal["muted"], font=foot)
 
     buf = BytesIO()
     im.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
+
+
+def _fact_glyph_kind(fact: str) -> str:
+    low = (fact or "").lower()
+    if any(x in low for x in ("nhiệt", "temp", "feels", "cảm giác")):
+        return "temp"
+    if any(x in low for x in ("ẩm", "humid")):
+        return "humidity"
+    if any(x in low for x in ("gió", "wind")):
+        return "wind"
+    if any(x in low for x in ("uv", "tím ngoại")):
+        return "uv"
+    if any(x in low for x in ("mưa", "rain", "precip")):
+        return "rain"
+    if any(x in low for x in ("mây", "cloud", "tình trạng", "condition")):
+        return "cloud"
+    return "sun"
+
+
+def _draw_mini_glyph(draw: ImageDraw.ImageDraw, kind: str, cx: int, cy: int, pal: dict) -> None:
+    k = (kind or "sun").lower()
+    if k == "humidity":
+        draw.ellipse((cx - 8, cy - 4, cx + 8, cy + 12), fill=pal["accent"])
+        draw.polygon([(cx, cy - 14), (cx - 9, cy), (cx + 9, cy)], fill=pal["accent"])
+        return
+    if k == "wind":
+        draw.arc((cx - 14, cy - 10, cx + 14, cy + 10), 200, 340, fill=pal["accent"], width=3)
+        draw.arc((cx - 10, cy - 2, cx + 16, cy + 12), 200, 340, fill=pal["muted"], width=3)
+        return
+    if k == "temp":
+        draw.rounded_rectangle((cx - 5, cy - 16, cx + 5, cy + 6), radius=4, fill=pal["accent"])
+        draw.ellipse((cx - 9, cy + 2, cx + 9, cy + 18), fill=pal["sun"])
+        return
+    if k == "uv":
+        draw.ellipse((cx - 8, cy - 8, cx + 8, cy + 8), fill=pal["sun"])
+        return
+    if k == "rain":
+        draw.ellipse((cx - 12, cy - 10, cx + 10, cy + 8), fill=pal["cloud"])
+        draw.line((cx - 4, cy + 10, cx - 8, cy + 20), fill=pal["accent"], width=3)
+        draw.line((cx + 4, cy + 10, cx, cy + 20), fill=pal["accent"], width=3)
+        return
+    if k == "cloud":
+        draw.ellipse((cx - 14, cy - 4, cx + 6, cy + 12), fill=pal["cloud"])
+        draw.ellipse((cx - 4, cy - 10, cx + 14, cy + 8), fill=pal["cloud"])
+        return
+    draw.ellipse((cx - 8, cy - 8, cx + 8, cy + 8), fill=pal["sun"])
+
+
+def render_weather_banner_bytes(prompt: str, *, style: str = "daylight") -> bytes:
+    """Wide banner for embedding inside styled weather PDFs."""
+    return render_info_card_bytes(prompt, width=1200, height=520, style=style or "daylight")
 
 
 def render_info_card_variants(prompt: str) -> list[tuple[str, bytes]]:
