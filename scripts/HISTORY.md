@@ -1,3 +1,17 @@
+## 2026-08-29 10:45 +07 — Place visual PDFs needed overview/background
+
+### Symptom
+When the ask named a place/city in the visual PDF title, the sheet still showed metrics only — no place intro or atmosphere/background.
+
+### Root cause
+Classify/file-gen contract stopped at TITLE/ICON/facts. Renderer and host body builder had no OVERVIEW/BACKGROUND path.
+
+### Fix (core)
+Classify PLACE SUBJECT rule (intent-based, no city dictionary). file-gen requires OVERVIEW/BACKGROUND for place titles. Host extracts/fills those markers from search prose. Styled sheet renders overview/background panels.
+
+### Prevent recurrence
+Keep place context as contract markers, not hardcoded place names.
+
 ## 2026-08-29 10:00 +07 — Visual office classify was weather/fuel-locked
 
 ### Symptom
