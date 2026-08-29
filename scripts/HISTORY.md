@@ -1,3 +1,17 @@
+## 2026-08-29 14:00 +07 — Sheet follow-up lost workbook memory
+
+### Symptom
+User asked what sheet 2 describes after an Excel extract; chat stayed silent or the bot claimed no file was attached and asked for a re-upload.
+
+### Root cause
+Attachment recall TTL was short; large workbook extracts truncated away sheet inventory; ingest headers lacked 1-based indices; media shortcuts/Hermes treated the ask as a missing file.
+
+### Fix (core)
+Ingest: `Workbook sheets:` inventory + `## Sheet N (title)`. Longer recall TTL; prefer inventory when truncating. Classify WORKBOOK/SHEET FOLLOW-UP with `SHEET_REF:`. Host answers from remembered extract; skip media shortcuts on Recent attachments. Answering skill: never ask re-send when extract is present.
+
+### Prevent recurrence
+Keep sheet inventory durable in recall; resolve sheet asks via classify SHEET_REF + host memory, not re-upload prompts.
+
 ## 2026-08-29 12:15 +07 — Weather info image on disk but no Zalo reply
 
 ### Symptom
