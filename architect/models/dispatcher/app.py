@@ -907,6 +907,31 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             out["overlay"] = overlay_n
         return out
 
+    # Info/weather cards: Pillow + Unicode fonts (never bake Vietnamese into diffusion).
+    if mode in {"info-card", "card", "infocard", "weather-card"}:
+        from info_card import render_info_card_bytes
+
+        name = req.filename or f"card-{uuid.uuid4().hex[:10]}.png"
+        if not name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+            name += ".png"
+        out_dir = MEDIA_DIR / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dest = out_dir / name
+        dest.write_bytes(render_info_card_bytes(prompt))
+        try:
+            uid = int(os.environ.get("HERMES_UID") or "1000")
+            gid = int(os.environ.get("HERMES_GID") or str(uid))
+            os.chown(out_dir, uid, gid)
+            os.chown(dest, uid, gid)
+        except OSError:
+            pass
+        return {
+            "ok": True,
+            "file": name,
+            "path": str(dest),
+            "backend": "info-card",
+        }
+
     if not image_backends() and not (req.provider or "").strip():
         raise HTTPException(503, _msg("image_gen_disabled", "Image generation is unavailable (no media backends configured)."))
 

@@ -1,3 +1,8 @@
+## 2026-08-29 08:15 +07 — Vietnamese tofu on media cards; Unicode fonts + info-card
+
+- Weather/info images showed white boxes for Vietnamese diacritics (diffusion-baked text / weak fonts). Office PDF risked Helvetica fallback.
+- Bundle Noto Sans, shared font resolver with glyph coverage, Pillow info-card modes (`midnight`/`daylight`/`emerald`), office/overlay/poster use the same fonts. Local media unicode smoke (no LLM). Prefer info-card over diffusion for labeled dashboards.
+
 ## 2026-08-29 08:00 +07 — Weather PDF: styled office-file; no image-API recovery menu
 
 - A “design an attractive weather PDF” ask stalled on failed `/v1/image` (502) and answered with session-restore + numbered options (API keys / Comfy). The PDF path only dumped plain text lines (ugly smoke PDF).

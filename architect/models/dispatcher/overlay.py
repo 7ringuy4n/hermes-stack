@@ -7,26 +7,15 @@ from typing import Sequence
 
 from PIL import Image, ImageDraw, ImageFont
 
-_FONTS = (
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    "C:/Windows/Fonts/arial.ttf",
-    "C:/Windows/Fonts/tahoma.ttf",
-)
+from fonts import pillow_font
+
 MAX_OVERLAY_LINES = 6
 MIN_FONT = 12
 MAX_BAR_RATIO = 0.45
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    for p in _FONTS:
-        if Path(p).is_file():
-            try:
-                return ImageFont.truetype(p, size=size)
-            except OSError:
-                continue
-    return ImageFont.load_default()
+    return pillow_font(size, bold=True)
 
 
 def clean_overlay_lines(lines: Sequence[str] | None, *, limit: int = MAX_OVERLAY_LINES) -> list[str]:
