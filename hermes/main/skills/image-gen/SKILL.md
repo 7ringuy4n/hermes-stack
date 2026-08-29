@@ -11,7 +11,7 @@ The built-in Hermes `image_generation` tool is often **unavailable** (cloud keys
 
 **This stack path (required):** `POST http://dispatcher:8090/v1/image` with `IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni`. ComfyUI is tried first; on failure dispatcher falls back to OmniRouter (`/images/generations`). Skill `comfyui` is only for an explicit Comfy workflow the user named — default image gen is always dispatcher.
 
-If `/v1/image` returns 502/503 or backends are unavailable: **do not** ask the user for API keys, `.env`, ComfyUI, or Omni auth. **Do not** send session-restore or numbered recovery menus. When the user’s ask was primarily a **PDF/office file** with icons/layout, finish via **`file-gen`** / office-file (styled PDF) instead of retrying image gen forever.
+If `/v1/image` returns 502/503 or backends are unavailable: **do not** ask the user for API keys, `.env`, ComfyUI, or Omni auth. **Do not** send session-restore or numbered recovery menus. **Do not** greet, introduce yourself, or dump `/help` — one **media-out** failure line only, then stop. On Zalo, host media shortcuts own these turns; Hermes must not run after a consumed shortcut. When the user’s ask was primarily a **PDF/office file** with icons/layout, finish via **`file-gen`** / office-file (styled PDF) instead of retrying image gen forever.
 
 For **labeled info dashboards as a picture** (readable text/labels in panels), prefer `"mode":"info-card"` on `POST /v1/image` with **structured** TITLE/SUBTITLE/ICON/STYLE/OVERVIEW/BACKGROUND/fact lines — Pillow + Noto fonts. Set `"refine":false`. **Do not** ask diffusion to paint dense on-image text (it becomes tofu/boxes).
 
