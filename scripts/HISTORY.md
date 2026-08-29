@@ -1,3 +1,17 @@
+## 2026-08-29 10:00 +07 — Visual office classify was weather/fuel-locked
+
+### Symptom
+Attractive live-data PDF asks outside the weather/fuel wording risked weak classify guidance because prompts named weather-app sheets, specific VN phrases, and fixed ICON enums.
+
+### Root cause
+Media classify / file-gen / image-gen treated one product family as the rule instead of a generic visual + live-facts office pattern.
+
+### Fix (core)
+Rewrite to generic VISUAL / ATTRACTIVE OFFICE FILE rules: markers TITLE/SUBTITLE/ICON, search sibling when live facts are needed, office-file owns in-document visuals, no decorative media_generation, no chat-only when a file was asked. Reassemble classify bake. Keep schedule/split examples as families only.
+
+### Prevent recurrence
+Do not hardcode topic dictionaries into classify media policy; keep examples illustrative.
+
 ## 2026-08-29 09:30 +07 — Weather PDF still looked cluttered (badge strip)
 
 ### Symptom

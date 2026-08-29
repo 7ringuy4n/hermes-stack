@@ -30,31 +30,26 @@ curl -sS -X POST http://dispatcher:8090/v1/office-file \
   }'
 ```
 
-### Visual / weather / info PDF body (required shape)
+### Visual / attractive PDF body (required shape)
 
-When the user wants an attractive PDF (icons, layout, weather/fuel facts), put
+When the user wants an attractive PDF (icons, layout, designed look — any topic), put
 **live facts already fetched** into the `prompt` like:
 
 ```text
-TITLE: Thời tiết TP. Hồ Chí Minh
-SUBTITLE: Cập nhật hiện tại
-ICON: sun
-- Nhiệt độ: 31°C (cảm giác 36°C)
-- Độ ẩm: 70%
-- Điều kiện: Nắng
+TITLE: <topic or place>
+SUBTITLE: <optional context>
+ICON: <optional short motif token>
+- <label>: <value>
+- <label>: <value>
 ```
 
-`ICON` is one of: `sun` | `cloud` | `rain` | `storm`. Dispatcher draws **many** weather
-icons (header companions, icon badge strip, per-fact glyphs) and embeds a **visual
-banner image** (Pillow info-card — Unicode-safe). Vietnamese diacritics must render
-correctly. **Do not** call diffusion `/v1/image` to paint Vietnamese labels onto a
-PDF (tofu/boxes). Scenic LLM/diffusion images are optional decoration only and must
-never block PDF delivery.
+Dispatcher styles the sheet (Unicode-safe fonts, icons when motif/facts fit). Do not
+call diffusion `/v1/image` to paint labels onto a PDF. Scenic LLM/diffusion images
+are optional decoration only and must never block PDF delivery.
 
-When the user asks for “đầy đủ hình ảnh và icon / attractive images and icons” inside
-a weather/info PDF: still **one** `office-file` PDF — Dispatcher owns the rich visuals.
-Optionally also send a standalone `info-card` PNG via **`image-gen`** if they clearly
-want a separate picture; never fail the PDF on image-backend 502.
+In-document visuals stay on **one** `office-file` PDF. Optionally also send a
+standalone `info-card` PNG via **`image-gen`** if they clearly want a separate
+picture; never fail the PDF on image-backend 502.
 
 Requires Media|File worker with `OFFICE_FILE_GEN=1`. Success: `"ok":true` and
 Zalo receives the file (empty caption). User-facing text per **media-out**:
