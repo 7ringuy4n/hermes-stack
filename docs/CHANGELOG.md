@@ -1,3 +1,8 @@
+## 2026-08-29 07:45 +07 — SOUL prompt_injection block; chat PDF via file-gen not local reportlab
+
+- SOUL.md quoted a classic jailbreak phrase, so Hermes blocked the whole SOUL context (`prompt_injection`). Turns fell back to default /help persona and tried ambiguous local `pdf` skills (reportlab/pip) instead of Dispatcher file-gen — weather-PDF asks got chat text or silence.
+- Reword SOUL (and related safety/classify phrasing) to keep the intent without triggering Hermes threat patterns. Unit covers `prompt_injection` as well as `deception_hide`. Harden classify/file-gen/answering: live-weather PDF stays file_processing + search sibling; never local pdf/reportlab for chat create-and-send.
+
 ## 2026-08-28 19:30 +07 — Excel/office reads host-ack; never rewrite extract into a new txt
 
 - An Excel workbook with a soft secret probe in one sheet could fall through after extract (media paths cleared) into the office-create shortcut / Hermes and come back as a new `.txt` instead of an extract ack.
