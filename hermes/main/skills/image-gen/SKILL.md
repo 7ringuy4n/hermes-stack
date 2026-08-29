@@ -17,6 +17,8 @@ For **labeled info dashboards as a picture** (readable text/labels), prefer `"mo
 
 For a **scenic photo** (no on-image text labels): you may call default `/v1/image` diffusion/LLM backends with an English scene prompt. If it fails, fall back to `mode=info-card` or rely on the styled PDF visuals — never a recovery menu.
 
+When the subject is a **place / city / landmark** and the user asked for a **file** , finish via **`file-gen`** with OVERVIEW/BACKGROUND markers — do not substitute a scenic image for the file. For a standalone place picture, scene prompt should reflect place atmosphere (landmarks, setting), not a blank metric card.
+
 Generate through this skill and dispatcher instead.
 
 **Never** `web_search`, `web_extract`, or browse GitHub/release/news pages to “find image URLs”. That is not generation. Users must receive a **new file** from dispatcher, not a scrape of someone else’s page. If live facts are needed, one short search is enough, then `POST /v1/image` with a **scene prompt** plus `overlay` fact lines (match the user’s language). If dispatcher fails: one failure line from **media-out**, then stop.

@@ -39,13 +39,20 @@ When the user wants an attractive PDF (icons, layout, designed look — any topi
 TITLE: <topic or place>
 SUBTITLE: <optional context>
 ICON: <optional short motif token>
+OVERVIEW: <short place or subject intro when TITLE is a place/city/region>
+BACKGROUND: <atmosphere / setting / landmark context for that place>
 - <label>: <value>
 - <label>: <value>
 ```
 
-Dispatcher styles the sheet (Unicode-safe fonts, icons when motif/facts fit). Do not
-call diffusion `/v1/image` to paint labels onto a PDF. Scenic LLM/diffusion images
-are optional decoration only and must never block PDF delivery.
+**Place / city subjects:** if TITLE names a place (any language — judge by meaning),
+`OVERVIEW` and `BACKGROUND` are required. Fetch a brief place intro + atmosphere from
+search (or prior context), not metrics alone. Do not hardcode a city list.
+
+Dispatcher styles the sheet (Unicode-safe fonts, icons when motif/facts fit; place
+overview/background panels when those markers are present). Do not call diffusion
+`/v1/image` to paint labels onto a PDF. Scenic LLM/diffusion images are optional
+decoration only and must never block PDF delivery.
 
 In-document visuals stay on **one** `office-file` PDF. Optionally also send a
 standalone `info-card` PNG via **`image-gen`** if they clearly want a separate

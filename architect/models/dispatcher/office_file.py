@@ -31,6 +31,8 @@ _FONT_BOLD_CANDIDATES = ()
 _TITLE_PREFIXES = ("TITLE:", "Title:", "title:")
 _ICON_PREFIXES = ("ICON:", "Icon:", "icon:")
 _SUBTITLE_PREFIXES = ("SUBTITLE:", "Subtitle:", "subtitle:")
+_OVERVIEW_PREFIXES = ("OVERVIEW:", "Overview:", "overview:")
+_BACKGROUND_PREFIXES = ("BACKGROUND:", "Background:", "background:")
 
 try:
     from pydantic import BaseModel as _PydanticBase
@@ -107,10 +109,12 @@ def _strip_prefix(line: str, prefixes: tuple[str, ...]) -> str | None:
 
 
 def parse_styled_pdf_body(body: str) -> dict[str, Any]:
-    """Parse Hermes-authored TITLE/ICON/SUBTITLE markers; rest are fact lines."""
+    """Parse Hermes-authored TITLE/ICON/SUBTITLE/OVERVIEW/BACKGROUND markers; rest are fact lines."""
     title = ""
     subtitle = ""
     icon = "sun"
+    overview = ""
+    background = ""
     facts: list[str] = []
 
     def _marker_at(upper: str, marker: str, start: int = 0) -> int:
@@ -131,7 +135,7 @@ def parse_styled_pdf_body(body: str) -> dict[str, Any]:
         upper = line.upper()
         # Mid-line contract markers after a create-verb wrapper
         cut = -1
-        for marker in ("SUBTITLE:", "TITLE:", "ICON:"):
+        for marker in ("BACKGROUND:", "OVERVIEW:", "SUBTITLE:", "TITLE:", "ICON:"):
             mi = _marker_at(upper, marker)
             if mi > 0:
                 cut = mi if cut < 0 else min(cut, mi)
@@ -153,6 +157,14 @@ def parse_styled_pdf_body(body: str) -> dict[str, Any]:
             if "|" in icon:
                 icon = icon.split("|", 1)[0].strip() or "sun"
             continue
+        ov = _strip_prefix(line, _OVERVIEW_PREFIXES)
+        if ov is not None:
+            overview = ov
+            continue
+        bg = _strip_prefix(line, _BACKGROUND_PREFIXES)
+        if bg is not None:
+            background = bg
+            continue
         if line.startswith(("- ", "• ", "* ")):
             facts.append(line[2:].strip())
         else:
@@ -163,6 +175,8 @@ def parse_styled_pdf_body(body: str) -> dict[str, Any]:
         "title": title or "Report",
         "subtitle": subtitle,
         "icon": icon or "sun",
+        "overview": overview,
+        "background": background,
         "facts": facts,
     }
 
