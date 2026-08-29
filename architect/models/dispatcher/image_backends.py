@@ -35,22 +35,40 @@ _BACKEND_ALIASES = {
     "gpu": "comfy-gpu",
 }
 
+# ComfyUI first; OmniRouter fallback. Order is fixed regardless of .env list order.
+_CANONICAL_ORDER = ("comfy-cpu", "comfy-gpu", "omni", "pillow")
+_DEFAULT_BACKENDS = ("comfy-cpu", "comfy-gpu", "omni")
+
 
 def _norm_backend(name: str) -> str:
     n = name.strip().lower()
     return _BACKEND_ALIASES.get(n, n)
 
 
+def _canonicalize(backends: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for b in _CANONICAL_ORDER:
+        if b in backends and b not in seen:
+            out.append(b)
+            seen.add(b)
+    for b in backends:
+        if b not in seen:
+            out.append(b)
+            seen.add(b)
+    return out
+
+
 def _split_backends() -> list[str]:
     raw = os.environ.get("IMAGE_BACKENDS")
-    if raw is None:
-        return ["comfy-cpu", "comfy-gpu", "omni"]
+    if raw is None or not str(raw).strip():
+        return list(_DEFAULT_BACKENDS)
     out: list[str] = []
     for b in raw.split(","):
         b = _norm_backend(b)
         if b and b not in out:
             out.append(b)
-    return out
+    return _canonicalize(out)
 
 
 def image_backends() -> list[str]:
@@ -134,7 +152,7 @@ def gen_omni(prompt: str) -> bytes:
     key = _env("OMNIROUTER_API_KEY")
     if not key:
         raise RuntimeError("OMNIROUTER_API_KEY missing")
-    model = _env("IMAGE_OMNI_MODEL", default="dall-e-3")
+    model = _env("IMAGE_OMNI_MODEL", default="aihorde/Flux.1-Schnell fp8 (Compact)")
     size = _env("IMAGE_OMNI_SIZE", default="1024x1024")
     endpoint = base if base.endswith("/images/generations") else f"{base}/images/generations"
     headers = {"content-type": "application/json", "authorization": f"Bearer {key}"}

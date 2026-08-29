@@ -22,6 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+from image_backends import image_backends
 from video_summary import health_fields, omni_refuse_message, policy_block_response, register_video_summary
 
 app = FastAPI(title="assistant dispatcher", version="1.1.0")
@@ -212,11 +213,7 @@ async def health() -> dict[str, Any]:
             "n9router": bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("N9ROUTER_API_KEY") or ""),
         },
         "media_dir": str(MEDIA_DIR),
-        "image_backends": [
-            b.strip()
-            for b in (os.environ.get("IMAGE_BACKENDS") or "").split(",")
-            if b.strip()
-        ],
+        "image_backends": image_backends(),
         "image_provider": os.environ.get("IMAGE_PROVIDER", ""),
         "comfyui_has_gpu": (os.environ.get("COMFYUI_HAS_GPU") or "0") != "0",
         "zalo_bridge": bool(os.environ.get("ZALO_BRIDGE_URL", "").strip()),

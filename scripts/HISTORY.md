@@ -1,3 +1,17 @@
+## 2026-08-29 19:30 +07 — IMAGE_BACKENDS omni-first in .env broke Comfy-first policy
+
+### Symptom
+`/health` showed `image_backends: ["omni","comfy-cpu","comfy-gpu"]`; scenic images skipped Comfy unless `provider` forced.
+
+### Root cause
+`.env` pinned Omni before Comfy; empty `IMAGE_BACKENDS=` in compose disabled dispatcher backends; health read raw env not resolved list.
+
+### Fix (core)
+`image_backends.py` canonical order + empty→default; compose/first-setup pin `comfy-cpu,comfy-gpu,omni`; health uses `image_backends()`.
+
+### Prevent recurrence
+Never accept arbitrary backend list order — always canonicalize Comfy before Omni on dispatcher.
+
 ## 2026-08-29 19:00 +07 — IMAGE_OMNI_MODEL default dall-e-3 with no OpenAI creds
 
 ### Symptom

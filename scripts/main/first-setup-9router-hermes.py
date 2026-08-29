@@ -401,18 +401,21 @@ def verify(key: str, model: str) -> None:
 
 
 def pin_image_backends(env: dict[str, str]) -> None:
-    """Media|File worker: empty IMAGE_BACKENDS leaves Hermes inventing PIL/matplotlib. Pin dispatcher."""
+    """Media|File worker: pin Comfy → Omni order on dispatcher."""
     media_on = (env.get("ENABLE_MEDIA_FILE") or os.environ.get("ENABLE_MEDIA_FILE") or "0").strip()
     if media_on != "1":
         return
-    cur = (env.get("IMAGE_BACKENDS") or "").strip()
-    if cur:
-        print(f"OK: IMAGE_BACKENDS already {cur}")
-        return
     want = "comfy-cpu,comfy-gpu,omni"
+    cur = (env.get("IMAGE_BACKENDS") or "").strip()
+    if cur == want:
+        print(f"OK: IMAGE_BACKENDS already {want}")
+        return
     set_env_key(ROOT / ".env", "IMAGE_BACKENDS", want)
     env["IMAGE_BACKENDS"] = want
-    print(f"OK: pinned IMAGE_BACKENDS={want}")
+    if cur:
+        print(f"OK: normalized IMAGE_BACKENDS {cur!r} → {want}")
+    else:
+        print(f"OK: pinned IMAGE_BACKENDS={want}")
 
 
 def main() -> int:
