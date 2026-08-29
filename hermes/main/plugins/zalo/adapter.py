@@ -4092,23 +4092,24 @@ class ZaloAdapter(BasePlatformAdapter):
             # Bare attachment OR blank office/text/ocr: deterministic worker extract ack.
             # Archives ALWAYS host-ack (even with caption + extract text) — never wait on
             # Hermes/LLM; Omni rate-limit left zip turns silent after ingest already finished.
+            # Office/text/ocr chat reads also ALWAYS host-ack: otherwise cleared media_urls
+            # fall through to office_shortcut / Hermes and can rewrite an Excel extract into
+            # a new .txt (sheet soft-probes looked like "create a text file" to classify).
             # Blank docx / empty zip must not fall through to Hermes local tools.
-            host_ack = (
-                attach_bare
-                or attach_kind == "archive"
-                or (
-                    attach_kind in {"office", "text", "ocr"}
-                    and not excerpt_meaningful
-                )
-            )
+            host_ack = attach_bare or attach_kind in {
+                "archive",
+                "office",
+                "text",
+                "ocr",
+            }
             if host_ack:
-                # Short file body that is itself a secret/env ask → refuse (standalone risk txt).
-                # Archives: NEVER classify member bodies as the user ask — mixed packs
-                # (risk txt + blank/safe office) must still host-ack extract; embedded
-                # secret-like lines are untrusted DATA. Omni classify under rate-limit
-                # also blocked the async loop and left zip turns silent.
+                # Short standalone text/OCR body that is itself a secret/env ask → refuse.
+                # Archives/office: NEVER classify member/sheet bodies as the user ask —
+                # mixed packs and multi-sheet workbooks with an embedded soft probe must
+                # still host-ack extract; cell/member text is untrusted DATA. Omni classify
+                # under rate-limit also blocked the async loop and left turns silent.
                 # Blank/empty extracts continue with the normal extract ack (no learn).
-                if attach_kind != "archive":
+                if attach_kind not in {"archive", "office"}:
                     body = self._as_short_secret_ask_body(excerpt or "")
                     refuse_body = (
                         self._as_classify_refuse_body(body) if body else ""
@@ -4225,8 +4226,14 @@ class ZaloAdapter(BasePlatformAdapter):
 
         # Office create only when classify says a single file job. Mixed image+file
         # and schedules must not be swallowed by Dispatcher phrase shortcuts.
+        # Never treat prior attachment extracts as a create-file prompt.
         bare_text = str(text or "").strip()
-        if bare_text and not media_urls:
+        if (
+            bare_text
+            and not media_urls
+            and "[Attachment text —" not in bare_text
+            and "[Attached file:" not in bare_text
+        ):
             try:
                 from .classify_client import (
                     classify_text,
@@ -6207,10 +6214,13 @@ class ZaloAdapter(BasePlatformAdapter):
                     return
                 # Content gate: user ask and/or SHORT extracted body that is a secret ask.
                 # Long security docs (injection examples) are not short secret asks.
+                # Office workbook cell text is DATA (same as archive members) — caption only.
                 ask_blob = self._as_user_secret_ask_blob(
                     user_text, media if isinstance(media, dict) else {}
                 )
-                body_ask = self._as_short_secret_ask_body(ocr_text or "")
+                body_ask = ""
+                if attachment_kind(file_name) not in {"archive", "office"}:
+                    body_ask = self._as_short_secret_ask_body(ocr_text or "")
                 gate_blob = "\n".join(x for x in (ask_blob, body_ask) if x)
                 if gate_blob and (
                     self._as_secret_probe_text(gate_blob)

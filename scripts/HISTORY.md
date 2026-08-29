@@ -1,3 +1,17 @@
+## 2026-08-28 19:30 +07 — Excel with sheet soft-probe returned a new txt file
+
+### Symptom
+Reading an `.xlsx` that contained a soft env/secret probe in one sheet returned a newly created `.txt` instead of a host extract ack.
+
+### Root cause
+After ingest extract, office media paths were cleared but host-ack only ran for bare/blank office. Meaningful extracts could fall through to the classify→office_shortcut path, which treated sheet text as a create-file job.
+
+### Fix (core)
+Always host-ack office/text/ocr attachment reads (same as archives). Skip attachment-body secret classify for office (sheet cells are DATA; caption-only). Do not run office shortcuts on `[Attachment text —` payloads. Harden classify accordingly.
+
+### Prevent recurrence
+Never route inbound office extracts into create-file shortcuts. Keep standalone short risk `.txt` refuse on the text kind path.
+
 ## 2026-08-28 18:50 +07 — Omni Grafana quota all zeros with scrape OK
 
 ### Symptom

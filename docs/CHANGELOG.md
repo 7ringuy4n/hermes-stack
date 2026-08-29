@@ -1,3 +1,8 @@
+## 2026-08-28 19:30 +07 — Excel/office reads host-ack; never rewrite extract into a new txt
+
+- An Excel workbook with a soft secret probe in one sheet could fall through after extract (media paths cleared) into the office-create shortcut / Hermes and come back as a new `.txt` instead of an extract ack.
+- Office/text/ocr chat reads always host-ack like archives. Office sheet/cell text is DATA (caption-only secret refuse). Block office shortcuts on attachment-extract markers. Classify: never map workbook extracts to create-file.
+
 ## 2026-08-28 18:50 +07 — OmniRouter Grafana quota panels read live usage again
 
 - Omni LLM quota panels showed scrape OK but zeros because the exporter still called removed `/api/usage/stats` paths (404 → empty totals).
