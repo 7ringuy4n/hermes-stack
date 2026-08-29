@@ -1,3 +1,17 @@
+## 2026-08-29 08:00 +07 — Attractive weather PDF became a menu + plain text file
+
+### Symptom
+User asked for a designed PDF of live Ho Chi Minh weather with icons/images. Bot replied with session-restore text and numbered options (retry image / PDF without images / supply API key). Delivered PDFs were plain one-line dumps.
+
+### Root cause
+Classify/Hermes treated “icons/images” as a hard `/v1/image` dependency. Image backends returned 502; the agent narrated internals and asked for keys. Dispatcher `office-file` PDF writer only drew monospaced text lines — no layout.
+
+### Fix (core)
+Styled PDF renderer in office-file (header band, vector icon, fact card) driven by TITLE/ICON/fact lines from file-gen. Classify: visual weather PDF stays search + pdf — no decorative image job. Harden skills so image failure never becomes an API-key / recovery menu; deliver the styled PDF instead.
+
+### Prevent recurrence
+Never block a PDF deliverable on image-backend health. Keep decorative visuals inside office-file for document asks.
+
 ## 2026-08-29 07:45 +07 — Weather PDF ask: SOUL blocked; reportlab path; no file
 
 ### Symptom
