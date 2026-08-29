@@ -4313,17 +4313,21 @@ class ZaloAdapter(BasePlatformAdapter):
                     plan_allows_search_then_info_card,
                     plan_allows_search_then_office,
                     plan_allows_search_then_weather_scene,
+                    plan_media_shortcut_gate,
                     plan_output_type,
                     plan_search_then_office_output,
                     plan_skips_media_shortcut,
                 )
                 from .media_shortcuts import (
+                    media_fail_line,
                     run_office_create,
                     run_scene_image,
                     run_search_then_info_card,
                     run_search_then_office,
                     run_search_then_weather_scene,
                     run_text_poster,
+                    shortcut_ok,
+                    shortcut_was_consumed,
                 )
             except ImportError:
                 from classify_client import (  # type: ignore
@@ -4334,21 +4338,27 @@ class ZaloAdapter(BasePlatformAdapter):
                     plan_allows_search_then_info_card,
                     plan_allows_search_then_office,
                     plan_allows_search_then_weather_scene,
+                    plan_media_shortcut_gate,
                     plan_output_type,
                     plan_search_then_office_output,
                     plan_skips_media_shortcut,
                 )
                 from media_shortcuts import (  # type: ignore
+                    media_fail_line,
                     run_office_create,
                     run_scene_image,
                     run_search_then_info_card,
                     run_search_then_office,
                     run_search_then_weather_scene,
                     run_text_poster,
+                    shortcut_ok,
+                    shortcut_was_consumed,
                 )
             shortcut = None
+            shortcut_gate = ""
             try:
                 early_plan = classify_text(bare_text)
+                shortcut_gate = plan_media_shortcut_gate(early_plan)
                 inner = ""
                 ins = early_plan.get("instructions") or []
                 if isinstance(ins, list) and ins:
@@ -4362,7 +4372,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         classified=True,
                         output_type=plan_output_type(early_plan),
                     )
-                    if shortcut:
+                    if shortcut_ok(shortcut):
                         self._as_flow("office_shortcut", thread_id=thread_id, file=shortcut.get("file"))
                 elif plan_allows_search_then_office(early_plan):
                     # Live-data PDF/office: host search then office-file (skip Hermes chat-only).
@@ -4376,7 +4386,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         or plan_output_type(early_plan)
                         or "pdf",
                     )
-                    if shortcut:
+                    if shortcut_ok(shortcut):
                         self._as_flow(
                             "search_office_shortcut",
                             thread_id=thread_id,
@@ -4390,7 +4400,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         str(thread_type),
                         classified=True,
                     )
-                    if shortcut:
+                    if shortcut_ok(shortcut):
                         self._as_flow(
                             "search_weather_scene_shortcut",
                             thread_id=thread_id,
@@ -4405,7 +4415,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         str(thread_type),
                         classified=True,
                     )
-                    if shortcut:
+                    if shortcut_ok(shortcut):
                         self._as_flow(
                             "search_info_card_shortcut",
                             thread_id=thread_id,
@@ -4419,7 +4429,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         str(thread_type),
                         classified=True,
                     )
-                    if shortcut:
+                    if shortcut_ok(shortcut):
                         self._as_flow(
                             "scene_image_shortcut",
                             thread_id=thread_id,
@@ -4435,12 +4445,13 @@ class ZaloAdapter(BasePlatformAdapter):
                         poster_phrase=str(early_plan.get("poster_phrase") or work),
                         poster_bw=early_plan.get("poster_bw"),
                     )
-                    if shortcut:
+                    if shortcut_ok(shortcut):
                         self._as_flow("poster_shortcut", thread_id=thread_id, file=shortcut.get("file"))
             except Exception as e:
                 logger.warning("Zalo: media shortcut error: %s", type(e).__name__)
                 shortcut = None
-            if shortcut:
+                shortcut_gate = ""
+            if shortcut_ok(shortcut):
                 try:
                     self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
                     self._as_last_user_text[str(thread_id)] = bare_text
@@ -4467,6 +4478,47 @@ class ZaloAdapter(BasePlatformAdapter):
                     from session_memory import append_turn  # type: ignore
                 try:
                     append_turn(str(thread_id), str(thread_type), bare_text, "")
+                except Exception:
+                    pass
+                try:
+                    self._as_inflight_done(str(thread_id), {})
+                except Exception:
+                    pass
+                try:
+                    self._as_queue_kick(str(thread_id))
+                except Exception:
+                    pass
+                return
+            if shortcut_gate or shortcut_was_consumed(shortcut):
+                fail_line = media_fail_line()
+                try:
+                    await self.send(
+                        str(thread_id),
+                        fail_line,
+                        metadata={
+                            "thread_type": (
+                                "group" if str(thread_type).lower() in {"group", "g"} else "user"
+                            ),
+                            "as_skip_timing": True,
+                            "skip_outbound_filter": True,
+                        },
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Zalo: media shortcut fail-line send failed: %s",
+                        type(e).__name__,
+                    )
+                try:
+                    self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
+                    self._as_last_user_text[str(thread_id)] = bare_text
+                except Exception:
+                    pass
+                try:
+                    from .session_memory import append_turn
+                except ImportError:
+                    from session_memory import append_turn  # type: ignore
+                try:
+                    append_turn(str(thread_id), str(thread_type), bare_text, fail_line)
                 except Exception:
                     pass
                 try:

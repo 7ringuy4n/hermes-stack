@@ -19,6 +19,27 @@ log = logging.getLogger("hermes_plugins.zalo_platform.media_shortcuts")
 # Classify/Hermes contract markers (not user NLU).
 _MARKERS = ("TITLE:", "SUBTITLE:", "ICON:", "STYLE:", "OVERVIEW:", "BACKGROUND:")
 
+_MEDIA_FAIL_LINE_VI = (
+    "Hiện chưa tạo được file này. Bạn thử lại sau hoặc rút gọn yêu cầu giúp mình."
+)
+
+
+def shortcut_consumed() -> dict[str, Any]:
+    """Signal adapter: host owned this media turn but delivery failed — do not call Hermes."""
+    return {"ok": False, "shortcut_consumed": True}
+
+
+def shortcut_ok(out: dict[str, Any] | None) -> bool:
+    return isinstance(out, dict) and out.get("ok") is True
+
+
+def shortcut_was_consumed(out: dict[str, Any] | None) -> bool:
+    return isinstance(out, dict) and out.get("shortcut_consumed") is True
+
+
+def media_fail_line() -> str:
+    return _MEDIA_FAIL_LINE_VI
+
 
 def dispatcher_url() -> str:
     return (os.getenv("DISPATCHER_URL") or "http://dispatcher:8090").rstrip("/")
@@ -550,10 +571,10 @@ def run_office_create(
         out = _post("/v1/office-file", body, timeout=120.0)
     except Exception as e:  # noqa: BLE001
         log.warning("office shortcut failed: %s", type(e).__name__)
-        return None
+        return shortcut_consumed()
     if isinstance(out, dict) and out.get("ok"):
         return out
-    return None
+    return shortcut_consumed()
 
 
 def run_search_then_office(
@@ -596,6 +617,29 @@ def run_search_then_office(
         classified=True,
         output_type=kind,
     )
+
+
+def weather_scene_to_info_card_instruction(img_ins: str) -> str:
+    """Map scene-overlay contract to info-card markers (silent fallback when diffusion is down)."""
+    bullets: list[str] = []
+    for raw in (img_ins or "").splitlines():
+        s = raw.strip()
+        up = s.upper()
+        if up.startswith(("RENDER:", "SCENE:")):
+            continue
+        if s.startswith(("-", "•", "*")):
+            bullets.append(s if s.startswith("-") else f"- {s.lstrip('•* ').strip()}")
+    lines = [
+        "RENDER: info-card",
+        "TITLE: Thời tiết",
+        "ICON: cloud",
+        "STYLE: midnight",
+    ]
+    if bullets:
+        lines.extend(bullets)
+    else:
+        lines.extend(["- Nhiệt độ:", "- Độ ẩm:", "- Điều kiện:"])
+    return "\n".join(lines)
 
 
 def scene_prompt_from_instruction(text: str) -> str:
@@ -643,6 +687,33 @@ def run_scene_image(
         out = _post("/v1/image", body, timeout=180.0)
     except Exception as e:  # noqa: BLE001
         log.warning("scene_image shortcut failed: %s", type(e).__name__)
+        return shortcut_consumed()
+    if isinstance(out, dict) and out.get("ok"):
+        return out
+    return shortcut_consumed()
+
+
+def _post_info_card_image(
+    prompt: str,
+    *,
+    thread_id: str,
+    thread_type: str,
+    filename: str,
+) -> dict[str, Any] | None:
+    body: dict[str, Any] = {
+        "prompt": prompt,
+        "mode": "info-card",
+        "refine": False,
+        "filename": filename,
+        "thread_id": str(thread_id),
+        "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
+        "caption": "",
+        "send_zalo": True,
+    }
+    try:
+        out = _post("/v1/image", body, timeout=120.0)
+    except Exception as e:  # noqa: BLE001
+        log.warning("info-card image post failed: %s", type(e).__name__)
         return None
     if isinstance(out, dict) and out.get("ok"):
         return out
@@ -693,11 +764,29 @@ def run_search_then_weather_scene(
     try:
         out = _post("/v1/image", body, timeout=180.0)
     except Exception as e:  # noqa: BLE001
-        log.warning("search_then_weather_scene failed: %s", type(e).__name__)
-        return None
+        log.warning("search_then_weather_scene diffusion failed: %s", type(e).__name__)
+        out = None
     if isinstance(out, dict) and out.get("ok"):
         return out
-    return None
+    # Silent fallback: Pillow info-card (no Comfy/Omni) when diffusion backends are down.
+    log.info("weather_scene: falling back to info-card")
+    fallback_ins = weather_scene_to_info_card_instruction(img_ins)
+    prompt = build_office_body_from_search(
+        file_instruction=fallback_ins,
+        user_ask=user_ask,
+        search=search,
+    )
+    if "STYLE:" not in prompt.upper():
+        prompt = prompt.rstrip() + "\nSTYLE: midnight"
+    fb = _post_info_card_image(
+        prompt,
+        thread_id=str(thread_id),
+        thread_type=str(thread_type),
+        filename=f"weather-card-{str(thread_id)[-8:] or 'zalo'}.png",
+    )
+    if isinstance(fb, dict) and fb.get("ok"):
+        return fb
+    return shortcut_consumed()
 
 
 def run_search_then_info_card(
@@ -729,26 +818,15 @@ def run_search_then_info_card(
     # Ensure STYLE for info-card palette
     if "STYLE:" not in prompt.upper():
         prompt = prompt.rstrip() + "\nSTYLE: midnight"
-    body: dict[str, Any] = {
-        "prompt": prompt,
-        "mode": "info-card",
-        "refine": False,
-        "filename": f"info-card-{str(thread_id)[-8:] or 'zalo'}.png",
-        "thread_id": str(thread_id),
-        "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
-        "caption": "",
-        # Deliver like office-file; autosend alone often misses shortcut-created PNGs.
-        "send_zalo": True,
-    }
-    try:
-        out = _post("/v1/image", body, timeout=120.0)
-    except Exception as e:  # noqa: BLE001
-        log.warning("search_then_info_card failed: %s", type(e).__name__)
-        return None
+    out = _post_info_card_image(
+        prompt,
+        thread_id=str(thread_id),
+        thread_type=str(thread_type),
+        filename=f"info-card-{str(thread_id)[-8:] or 'zalo'}.png",
+    )
     if isinstance(out, dict) and out.get("ok"):
-        # Still ok if file written but zalo_error set (autosend can retry).
         return out
-    return None
+    return shortcut_consumed()
 
 
 def run_text_poster(
@@ -784,7 +862,7 @@ def run_text_poster(
         out = _post("/v1/image", body, timeout=60.0)
     except Exception as e:  # noqa: BLE001
         log.warning("text-poster shortcut failed: %s", type(e).__name__)
-        return None
+        return shortcut_consumed()
     if isinstance(out, dict) and out.get("ok"):
         return out
-    return None
+    return shortcut_consumed()

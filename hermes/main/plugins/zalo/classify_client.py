@@ -754,6 +754,23 @@ def plan_allows_poster_shortcut(plan: dict[str, Any] | None) -> bool:
     return _coerce_poster_n(src.get("poster_n")) is not None
 
 
+def plan_media_shortcut_gate(plan: dict[str, Any] | None) -> str:
+    """Host media shortcut kind when the adapter must own the turn (no Hermes fallthrough)."""
+    if plan_allows_office_shortcut(plan) and not plan_skips_media_shortcut(plan):
+        return "office"
+    if plan_allows_search_then_office(plan):
+        return "search_office"
+    if plan_allows_search_then_weather_scene(plan):
+        return "weather_scene"
+    if plan_allows_search_then_info_card(plan):
+        return "info_card"
+    if plan_allows_scene_image(plan):
+        return "scene_image"
+    if plan_allows_poster_shortcut(plan):
+        return "poster"
+    return ""
+
+
 def plan_is_immediate_deliver(plan: dict[str, Any] | None) -> bool:
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
