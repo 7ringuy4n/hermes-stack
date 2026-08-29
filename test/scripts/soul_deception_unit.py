@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Strengthen SOUL checks: deception_hide + multi-language section present."""
+"""SOUL must clear Hermes context threat patterns + keep multi-language guidance."""
 from __future__ import annotations
 
 import re
@@ -9,22 +9,39 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SOUL = (ROOT / "hermes" / "main" / "SOUL.md").read_text(encoding="utf-8")
 FILLER = r"(?:[\s*_`\"'\-]){0,5}"
-PAT = re.compile(rf"do\s+not\s+{FILLER}tell\s+{FILLER}the\s+user", re.I)
-# Hermes prompt_builder: do not … tell … (the) user with up to 8 words between.
-WINDOW = re.compile(
-    r"do\s+not(?:\s+\S+){0,8}\s+tell(?:\s+\S+){0,3}\s+(?:the\s+)?user",
-    re.I,
+# Hermes tools/threat_patterns.py (context scope) — keep in sync with image.
+PATTERNS = (
+    ("deception_hide", rf"do\s+not\s+{FILLER}tell\s+{FILLER}the\s+user"),
+    (
+        "deception_hide_window",
+        r"do\s+not(?:\s+\S+){0,8}\s+tell(?:\s+\S+){0,3}\s+(?:the\s+)?user",
+    ),
+    (
+        "prompt_injection",
+        rf"ignore\s+{FILLER}(previous|all|above|prior)\s+{FILLER}instructions",
+    ),
+    ("sys_prompt_override", r"system\s+prompt\s+override"),
+    (
+        "disregard_rules",
+        rf"disregard\s+{FILLER}(your|all|any)\s+{FILLER}(instructions|rules|guidelines)",
+    ),
+    ("role_hijack", rf"you\s+are\s+{FILLER}now\s+(?:a|an|the)\s+"),
 )
 
 
 def main() -> int:
-    if PAT.search(SOUL) or WINDOW.search(SOUL) or re.search(r"do\s+not\s+tell\s+the\s+user", SOUL, re.I):
-        print("FAIL deception_hide still matches SOUL", file=sys.stderr)
-        return 1
+    for name, pat in PATTERNS:
+        m = re.search(pat, SOUL, re.I)
+        if m:
+            line = SOUL[: m.start()].count("\n") + 1
+            print(
+                f"FAIL {name} still matches SOUL line {line}: {m.group(0)!r}",
+                file=sys.stderr,
+            )
+            return 1
     if "Response language" not in SOUL and "same language" not in SOUL.lower():
         print("FAIL SOUL missing multi-language guidance", file=sys.stderr)
         return 1
-    # Must not imply Vietnamese-only
     if re.search(r"(?i)only\s+support\s+vietnamese|vietnamese\s+only", SOUL):
         print("FAIL SOUL still Vietnamese-only", file=sys.stderr)
         return 1
@@ -32,7 +49,7 @@ def main() -> int:
         if needle.lower() not in SOUL.lower():
             print(f"FAIL SOUL missing language example/hint: {needle}", file=sys.stderr)
             return 1
-    print("OK SOUL clears deception_hide + multi-language")
+    print("OK SOUL clears Hermes threat patterns + multi-language")
     return 0
 
 
