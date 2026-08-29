@@ -25,9 +25,17 @@ from classify_client import (  # noqa: E402
     plan_allows_search_then_office,
     plan_allows_search_then_weather_scene,
     plan_image_render_mode,
+    plan_media_shortcut_gate,
     plan_skips_media_shortcut,
 )
-from media_shortcuts import build_office_body_from_search, scene_prompt_from_instruction  # noqa: E402
+from media_shortcuts import (  # noqa: E402
+    build_office_body_from_search,
+    scene_prompt_from_instruction,
+    shortcut_consumed,
+    shortcut_ok,
+    shortcut_was_consumed,
+    weather_scene_to_info_card_instruction,
+)
 try:
     from text_poster import parse_text_poster  # type: ignore  # noqa: E402
 except Exception:  # noqa: BLE001
@@ -243,6 +251,15 @@ def main() -> int:
     }
     assert plan_allows_search_then_info_card(info_card_img) is True
     assert plan_allows_search_then_weather_scene(info_card_img) is False
+    assert plan_media_shortcut_gate(aerial) == "scene_image"
+    assert plan_media_shortcut_gate(weather_scene) == "weather_scene"
+    assert plan_media_shortcut_gate(info_card_img) == "info_card"
+    assert shortcut_ok({"ok": True, "file": "x.png"}) is True
+    assert shortcut_ok(shortcut_consumed()) is False
+    assert shortcut_was_consumed(shortcut_consumed()) is True
+    fb_ins = weather_scene_to_info_card_instruction(weather_scene["instructions"][1])
+    assert "RENDER: info-card" in fb_ins
+    assert "TITLE:" in fb_ins
 
     assert parse_office_jobs("1", "pdf") == [(".pdf", "1")]
 
