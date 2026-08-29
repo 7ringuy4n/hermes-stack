@@ -12,7 +12,8 @@ Follow skill **`media-out`**. When the user asks to **create / export / edit** a
 
 Do **not** install `pypdf` / `reportlab` / `openpyxl` in Hermes. Do **not** call
 `skill_view` / `skill_manage` for ambiguous names `pdf` / `docx` / `xlsx` (name
-collisions refuse to load).
+collisions refuse to load — that path fails and leaves the user with no file).
+Never narrate reportlab/pip/uv. Dispatcher owns PDF rendering server-side.
 
 Create **and** deliver in one call:
 

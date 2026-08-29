@@ -1,3 +1,17 @@
+## 2026-08-29 07:45 +07 — Weather PDF ask: SOUL blocked; reportlab path; no file
+
+### Symptom
+A request to design a PDF with current Ho Chi Minh weather (with attractive icons/images) produced chat weather text and/or Hermes default `/help` intro instead of a PDF. Logs showed SOUL blocked and local `pdf` skill collisions / reportlab attempts.
+
+### Root cause
+SOUL.md contained the literal jailbreak phrase scanned by Hermes `threat_patterns` as `prompt_injection`, so the entire SOUL context was dropped every turn. Without SOUL, the agent used default persona and tried ambiguous local pdf skills instead of Dispatcher `file-gen` / office-file (compound search+PDF also skipped the host office shortcut).
+
+### Fix (core)
+Reword SOUL and related safety/classify text to preserve untrusted-content policy without matching Hermes injection patterns. Expand the SOUL unit for `prompt_injection`. Harden classify + file-gen + answering so chat PDF create-and-send stays on Dispatcher office-file (never pip/reportlab / `skill_view pdf`).
+
+### Prevent recurrence
+Keep SOUL free of classic injection literals; bake/classify must not reintroduce them. Chat office create always routes through file-gen.
+
 ## 2026-08-28 19:30 +07 — Excel with sheet soft-probe returned a new txt file
 
 ### Symptom
