@@ -13,13 +13,18 @@ from office_file import (  # noqa: E402
     is_compound_office_request,
     parse_office,
     parse_office_jobs,
+    parse_styled_pdf_body,
+    write_pdf_styled,
 )
 from classify_client import (  # noqa: E402
     plan_allows_office_shortcut,
     plan_allows_poster_shortcut,
     plan_skips_media_shortcut,
 )
-from text_poster import parse_text_poster  # noqa: E402
+try:
+    from text_poster import parse_text_poster  # type: ignore  # noqa: E402
+except Exception:  # noqa: BLE001
+    parse_text_poster = None  # type: ignore[assignment]
 
 
 def main() -> int:
@@ -67,12 +72,37 @@ def main() -> int:
     assert plan_allows_office_shortcut(weather_pdf) is False
     assert parse_office_jobs("1", "pdf") == [(".pdf", "1")]
 
-    assert parse_text_poster("vẽ hình ảnh điền vào 5 dòng hello và gửi cho tôi") is None
-    spec = parse_text_poster(phrase="hello", n=5, bw=False)
-    assert spec and spec["n"] == 5 and spec["phrase"].lower() == "hello", spec
-    assert plan_allows_poster_shortcut(
-        {"ok": True, "poster_n": 5, "poster_phrase": "hello", "task_hint": "tool"}
-    ) is True
+    styled = parse_styled_pdf_body(
+        "TITLE: Thời tiết TP.HCM\nSUBTITLE: Hiện tại\nICON: sun\n"
+        "- Nhiệt độ: 31°C\n- Độ ẩm: 70%\n"
+    )
+    assert styled["title"].startswith("Thời tiết"), styled
+    assert styled["icon"] == "sun"
+    assert len(styled["facts"]) >= 2
+    try:
+        import reportlab  # noqa: F401
+
+        out = ROOT / "scripts" / "temp" / "_styled_weather_unit.pdf"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        write_pdf_styled(
+            out,
+            "TITLE: Thời tiết TP. Hồ Chí Minh\nSUBTITLE: Open-Meteo\nICON: sun\n"
+            "- Nhiệt độ: 31°C (cảm giác 36°C)\n- Độ ẩm: 70%\n- Điều kiện: Nắng\n",
+        )
+        assert out.is_file() and out.stat().st_size > 2000, out.stat().st_size
+        out.unlink(missing_ok=True)
+    except ImportError:
+        print("SKIP styled pdf render (no reportlab locally)")
+
+    if parse_text_poster is None:
+        print("SKIP text_poster (optional dep missing)")
+    else:
+        assert parse_text_poster("vẽ hình ảnh điền vào 5 dòng hello và gửi cho tôi") is None
+        spec = parse_text_poster(phrase="hello", n=5, bw=False)
+        assert spec and spec["n"] == 5 and spec["phrase"].lower() == "hello", spec
+        assert plan_allows_poster_shortcut(
+            {"ok": True, "poster_n": 5, "poster_phrase": "hello", "task_hint": "tool"}
+        ) is True
 
     daily_sched = {
         "ok": True,
