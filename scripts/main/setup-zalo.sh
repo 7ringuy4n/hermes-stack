@@ -29,16 +29,7 @@ if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" && "$(id -u)" -ne 0 ]]; then
 fi
 
 install_adapter() {
-  $ZALO_SUDO mkdir -p "$(dirname "$PLUGIN_DIR")"
-  if [[ -d "$PLUGIN_SRC" ]]; then
-    zalo_log "copy adapter ${PLUGIN_SRC} → ${PLUGIN_DIR}"
-    $ZALO_SUDO rm -rf "$PLUGIN_DIR"
-    $ZALO_SUDO cp -a "$PLUGIN_SRC" "$PLUGIN_DIR"
-  else
-    echo "WARN: missing ${PLUGIN_SRC}" >&2
-    return 1
-  fi
-  $ZALO_SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "${HERMES_SHARED_DATA}/plugins" 2>/dev/null || true
+  bash "${ROOT}/scripts/main/sync-zalo-plugins.sh"
 }
 
 ensure_shared_config() {
