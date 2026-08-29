@@ -4309,16 +4309,20 @@ class ZaloAdapter(BasePlatformAdapter):
                     classify_text,
                     plan_allows_office_shortcut,
                     plan_allows_poster_shortcut,
-                    plan_allows_search_then_image,
+                    plan_allows_scene_image,
+                    plan_allows_search_then_info_card,
                     plan_allows_search_then_office,
+                    plan_allows_search_then_weather_scene,
                     plan_output_type,
                     plan_search_then_office_output,
                     plan_skips_media_shortcut,
                 )
                 from .media_shortcuts import (
                     run_office_create,
+                    run_scene_image,
                     run_search_then_info_card,
                     run_search_then_office,
+                    run_search_then_weather_scene,
                     run_text_poster,
                 )
             except ImportError:
@@ -4326,16 +4330,20 @@ class ZaloAdapter(BasePlatformAdapter):
                     classify_text,
                     plan_allows_office_shortcut,
                     plan_allows_poster_shortcut,
-                    plan_allows_search_then_image,
+                    plan_allows_scene_image,
+                    plan_allows_search_then_info_card,
                     plan_allows_search_then_office,
+                    plan_allows_search_then_weather_scene,
                     plan_output_type,
                     plan_search_then_office_output,
                     plan_skips_media_shortcut,
                 )
                 from media_shortcuts import (  # type: ignore
                     run_office_create,
+                    run_scene_image,
                     run_search_then_info_card,
                     run_search_then_office,
+                    run_search_then_weather_scene,
                     run_text_poster,
                 )
             shortcut = None
@@ -4374,8 +4382,22 @@ class ZaloAdapter(BasePlatformAdapter):
                             thread_id=thread_id,
                             file=shortcut.get("file"),
                         )
-                elif plan_allows_search_then_image(early_plan):
-                    # Labeled live-data image: host search then info-card (skip Hermes /help).
+                elif plan_allows_search_then_weather_scene(early_plan):
+                    shortcut = run_search_then_weather_scene(
+                        bare_text,
+                        early_plan,
+                        str(thread_id),
+                        str(thread_type),
+                        classified=True,
+                    )
+                    if shortcut:
+                        self._as_flow(
+                            "search_weather_scene_shortcut",
+                            thread_id=thread_id,
+                            file=shortcut.get("file"),
+                        )
+                elif plan_allows_search_then_info_card(early_plan):
+                    # Metrics dashboard info-card (skip Hermes /help).
                     shortcut = run_search_then_info_card(
                         bare_text,
                         early_plan,
@@ -4386,6 +4408,20 @@ class ZaloAdapter(BasePlatformAdapter):
                     if shortcut:
                         self._as_flow(
                             "search_info_card_shortcut",
+                            thread_id=thread_id,
+                            file=shortcut.get("file"),
+                        )
+                elif plan_allows_scene_image(early_plan):
+                    shortcut = run_scene_image(
+                        bare_text,
+                        early_plan,
+                        str(thread_id),
+                        str(thread_type),
+                        classified=True,
+                    )
+                    if shortcut:
+                        self._as_flow(
+                            "scene_image_shortcut",
                             thread_id=thread_id,
                             file=shortcut.get("file"),
                         )

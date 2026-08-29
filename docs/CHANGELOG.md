@@ -1,3 +1,8 @@
+## 2026-08-29 17:00 +07 — Weather picture vs aerial city vs info-card mis-routed
+
+- Scenic aerial city asks and live-weather picture asks both landed on the same info-card dashboard path; users wanted a city photo (aerial) or a city scene with small current-weather overlay, not a metrics card.
+- Classify splits WEATHER SCENE IMAGE (`RENDER: scene-overlay` + `SCENE:` + search) vs SCENE IMAGE (scenic only) vs LABELED INFO IMAGE (`RENDER: info-card` / TITLE markers). Host: diffusion+overlay for weather scene, diffusion-only for aerial, info-card for dashboards.
+
 ## 2026-08-29 14:00 +07 — Workbook sheet follow-up asked for re-upload / silence
 
 - Follow-ups about a prior Excel sheet (describe sheet N) got no answer or asked the user to send the file again even after an extract ack.
