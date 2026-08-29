@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Dispatcher HTTP for classified office-file jobs (and search→office).
 
 Intent lives in classify JSON. This module does not phrase-scan user prose.
@@ -15,6 +15,9 @@ import urllib.request
 from typing import Any, Dict, Optional
 
 log = logging.getLogger("hermes_plugins.zalo_platform.media_shortcuts")
+
+# Classify/Hermes contract markers (not user NLU).
+_MARKERS = ("TITLE:", "SUBTITLE:", "ICON:", "STYLE:")
 
 
 def dispatcher_url() -> str:
@@ -58,83 +61,210 @@ def run_web_search(query: str, max_results: int = 6) -> Optional[dict]:
     return None
 
 
+def extract_contract_markers(text: str) -> dict[str, str]:
+    """Pull TITLE/SUBTITLE/ICON/STYLE from classify-authored contract text.
+
+    Markers may sit mid-line after a create-verb wrapper. Values run until the
+    next marker or end of string. Not user-prose NLU.
+    """
+    src = (text or "").replace("\r", "\n")
+    upper = src.upper()
+    # Longer keys first so SUBTITLE: is not mistaken for TITLE:
+    ordered = ("SUBTITLE:", "STYLE:", "TITLE:", "ICON:")
+    hits: list[tuple[int, str]] = []
+    claimed: set[int] = set()
+    for m in ordered:
+        start = 0
+        while True:
+            i = upper.find(m, start)
+            if i < 0:
+                break
+            start = i + 1
+            # Skip mid-token (e.g. TITLE: inside SUBTITLE:)
+            if i > 0 and upper[i - 1].isalnum():
+                continue
+            if any(i <= c < i + len(m) for c in claimed):
+                continue
+            for j in range(i, i + len(m)):
+                claimed.add(j)
+            hits.append((i, m))
+    hits.sort(key=lambda x: x[0])
+    out: dict[str, str] = {}
+    for idx, (pos, key) in enumerate(hits):
+        val_start = pos + len(key)
+        val_end = hits[idx + 1][0] if idx + 1 < len(hits) else len(src)
+        val = src[val_start:val_end].strip().strip(" .;—-|")
+        if "\n" in val:
+            val = val.split("\n", 1)[0].strip()
+        if key == "TITLE:" and len(val) > 80:
+            val = val[:80].rstrip()
+        if key == "ICON:":
+            val = val.split()[0].lower() if val else "cloud"
+            if "|" in val:
+                val = val.split("|", 1)[0].strip() or "cloud"
+        out[key[:-1].lower()] = val
+    return out
+
+
+def _is_serp_noise(text: str) -> bool:
+    """Drop SEO page titles / wire junk. String checks only (no intent regex)."""
+    s = (text or "").strip()
+    if not s or len(s) < 3:
+        return True
+    low = s.lower()
+    if low.startswith("http://") or low.startswith("https://"):
+        return True
+    if s.startswith("#") or low.startswith("title:"):
+        return True
+    if " | " in s:
+        return True
+    # Generic SERP chrome
+    noise_bits = (
+        "dubaothoitiet",
+        "accuweather",
+        "weather.com",
+        "xem dự báo thời tiết tỉnh",
+        "dự báo thời tiết hôm nay, ngày m",
+        "cập nhật lần cuối",
+        "pressure",
+        "dawn",
+        "desiged document",
+    )
+    for bit in noise_bits:
+        if bit in low and (":" not in s or low.startswith(bit)):
+            # Allow "Nhiệt độ: 31" style; block bare site chrome
+            if bit in {"pressure", "dawn"} and len(s) < 24:
+                return True
+            if bit not in {"pressure", "dawn"}:
+                return True
+    # Truncated one-word leftovers
+    if s in {"Ngày/đêm", "Nhiệt độ", "Sáng/tối", "Áp suất", "Mặt", "pressure", "dawn"}:
+        return True
+    return False
+
+
+def _clean_fact_line(text: str) -> str:
+    s = (text or "").strip()
+    if s.startswith(("- ", "• ", "* ")):
+        s = s[2:].strip()
+    # Prefer right-hand side when SERP glued "Page Title: actual fact"
+    if ": " in s and " | " not in s:
+        left, right = s.split(": ", 1)
+        if len(left) > 48 and len(right) >= 8:
+            s = right.strip()
+    return s[:140]
+
+
+def _facts_from_search(search: dict[str, Any] | None) -> list[str]:
+    facts: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str) -> None:
+        line = _clean_fact_line(raw)
+        if _is_serp_noise(line):
+            return
+        key = line.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        facts.append(line)
+
+    if not isinstance(search, dict):
+        return facts
+    ans = search.get("answer")
+    if ans is not None and str(ans).strip():
+        for part in str(ans).replace("\r", "\n").split("\n"):
+            p = part.strip()
+            if p:
+                add(p)
+            if len(facts) >= 8:
+                return facts
+    rows = search.get("results") if isinstance(search.get("results"), list) else []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        snip = str(
+            row.get("content") or row.get("snippet") or row.get("body") or ""
+        ).strip()
+        title = str(row.get("title") or "").strip()
+        # Prefer snippet; title alone is usually SEO chrome
+        if snip:
+            add(snip)
+        elif title and not _is_serp_noise(title):
+            add(title)
+        if len(facts) >= 8:
+            break
+    return facts
+
+
+def _infer_icon(facts: list[str], fallback: str = "cloud") -> str:
+    blob = " ".join(facts).lower()
+    if any(w in blob for w in ("storm", "giông", "thunder", "sét")):
+        return "storm"
+    if any(w in blob for w in ("rain", "mưa", "mua", "shower", "drizzle")):
+        return "rain"
+    if any(w in blob for w in ("sun", "sunny", "clear", "nắng", "nang", "quang")):
+        return "sun"
+    if any(w in blob for w in ("cloud", "cloudy", "mây", "overcast", "nhiều mây")):
+        return "cloud"
+    return fallback or "cloud"
+
+
 def build_office_body_from_search(
     *,
     file_instruction: str,
     user_ask: str,
     search: dict[str, Any] | None,
 ) -> str:
-    """Assemble TITLE/ICON/fact lines for styled office-file (no user-prose NLU)."""
+    """Assemble clean TITLE/ICON/fact lines for styled office-file."""
     fi = (file_instruction or "").strip()
     ask = (user_ask or "").strip()
-    lines: list[str] = []
-    has_title = False
-    if fi:
-        for raw in fi.splitlines():
-            s = raw.strip()
-            if not s:
-                continue
-            if s.upper().startswith("TITLE:") or s.upper().startswith("SUBTITLE:") or s.upper().startswith("ICON:"):
-                lines.append(s)
-                if s.upper().startswith("TITLE:"):
-                    has_title = True
-            elif s.startswith(("- ", "• ", "* ")):
-                lines.append(s if s.startswith("- ") else f"- {s[2:].strip()}")
-            else:
-                # Seed title from first non-marker line of the file instruction
-                if not has_title:
-                    lines.insert(0, f"TITLE: {s[:72]}")
-                    has_title = True
-                else:
-                    lines.append(f"- {s[:120]}")
-    if not has_title:
-        seed = ask[:72] if ask else "Report"
-        lines.insert(0, f"TITLE: {seed}")
-    markers = "\n".join(lines).upper()
-    if "SUBTITLE:" not in markers:
-        lines.insert(1 if has_title or lines else 0, "SUBTITLE: Live data")
-    if "ICON:" not in markers:
-        # Insert after title/subtitle block
-        insert_at = 0
-        for i, ln in enumerate(lines):
-            u = ln.upper()
-            if u.startswith("TITLE:") or u.startswith("SUBTITLE:"):
-                insert_at = i + 1
-        lines.insert(insert_at, "ICON: cloud")
+    markers = extract_contract_markers(fi) if fi else {}
+    if not markers.get("title"):
+        markers.update(extract_contract_markers(ask))
 
-    facts: list[str] = []
-    if isinstance(search, dict):
-        ans = search.get("answer")
-        if ans is not None and str(ans).strip():
-            for part in str(ans).replace("\r", "\n").split("\n"):
-                p = part.strip()
-                if p:
-                    facts.append(p[:140])
-        rows = search.get("results") if isinstance(search.get("results"), list) else []
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            title = str(row.get("title") or "").strip()
-            snip = str(
-                row.get("content")
-                or row.get("snippet")
-                or row.get("body")
-                or ""
-            ).strip()
-            if title and snip:
-                facts.append(f"{title}: {snip[:100]}")
-            elif title:
-                facts.append(title[:120])
-            elif snip:
-                facts.append(snip[:120])
-            if len(facts) >= 12:
-                break
+    title = (markers.get("title") or "").strip()
+    # Reject create-verb wrappers mistakenly used as title
+    low_t = title.lower()
+    if (
+        not title
+        or low_t.startswith("tạo ")
+        or low_t.startswith("tao ")
+        or low_t.startswith("create ")
+        or low_t.startswith("design ")
+        or low_t.startswith("hãy ")
+        or low_t.startswith("hay ")
+        or "file pdf" in low_t
+    ):
+        title = ""
+    if not title:
+        # Prefer a short place-oriented default from file instruction markers only
+        title = "Thời tiết hiện tại"
+
+    subtitle = (markers.get("subtitle") or "").strip() or "Cập nhật trực tiếp"
+    icon = (markers.get("icon") or "").strip().lower() or "cloud"
+
+    facts = _facts_from_search(search)
+    # Keep classify-authored fact bullets (lines starting with -) if present
+    for raw in fi.splitlines():
+        s = raw.strip()
+        if s.startswith(("- ", "• ", "* ")):
+            line = _clean_fact_line(s)
+            if line and not _is_serp_noise(line) and line not in facts:
+                facts.append(line)
+
     if not facts:
-        facts.append(fi[:140] if fi else (ask[:140] if ask else "No live details"))
-    for f in facts:
-        bullet = f if f.startswith("- ") else f"- {f}"
-        if bullet not in lines:
-            lines.append(bullet)
+        facts = ["Chưa lấy được chi tiết thời tiết — thử lại sau."]
+
+    icon = _infer_icon(facts, icon)
+
+    lines = [
+        f"TITLE: {title[:72]}",
+        f"SUBTITLE: {subtitle[:80]}",
+        f"ICON: {icon}",
+    ]
+    for f in facts[:10]:
+        lines.append(f"- {f}")
     return "\n".join(lines)
 
 
