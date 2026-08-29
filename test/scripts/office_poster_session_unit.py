@@ -93,11 +93,35 @@ def main() -> int:
         file_instruction="TITLE: Thời tiết TP.HCM\nICON: rain",
         user_ask="pdf weather",
         search={
-            "answer": "31C humid",
+            "answer": "Nhiệt độ: 31°C\nĐộ ẩm: 70%",
             "results": [{"title": "HCM", "content": "light rain"}],
         },
     )
-    assert "TITLE:" in body and "ICON:" in body and "31C" in body, body
+    assert "TITLE: Thời tiết TP.HCM" in body and "ICON: rain" in body, body
+    assert "31°C" in body and "Độ ẩm" in body, body
+    # Create-verb wrapper must not become the PDF title; SERP chrome dropped
+    messy = build_office_body_from_search(
+        file_instruction=(
+            "Tạo file PDF thời tiết Hồ Chí Minh thật bắt mắt. "
+            "TITLE: Thời tiết hiện tại — Hồ Chí Minh. SUBTITLE: Cập nhật. "
+            "ICON: cloud|rain."
+        ),
+        user_ask="hãy thiết kế pdf thời tiết",
+        search={
+            "answer": None,
+            "results": [
+                {
+                    "title": "Xem Dự Báo | Dubaothoitiet.info",
+                    "content": "Nhiệt độ Đà Nẵng khoảng 30°C, trời nhiều mây",
+                },
+                {"title": "AccuWeather: # Thành phố", "content": ""},
+            ],
+        },
+    )
+    assert "TITLE: Thời tiết hiện tại — Hồ Chí Minh" in messy, messy
+    assert "Tạo file PDF" not in messy.split("\n")[0], messy
+    assert "Dubaothoitiet" not in messy and "AccuWeather" not in messy, messy
+    assert "30°C" in messy or "nhiều mây" in messy, messy
     mixed_img_pdf = {
         "ok": True,
         "task_hint": "tool",
