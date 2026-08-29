@@ -13,7 +13,20 @@ The built-in Hermes `image_generation` tool is often **unavailable** (cloud keys
 
 If `/v1/image` returns 502/503 or backends are unavailable: **do not** ask the user for API keys, `.env`, ComfyUI, or Omni auth. **Do not** send session-restore or numbered recovery menus. When the user’s ask was primarily a **PDF/office file** with icons/layout, finish via **`file-gen`** / office-file (styled PDF) instead of retrying image gen forever.
 
-For **labeled info dashboards as a picture** (readable text/labels), prefer `"mode":"info-card"` on `POST /v1/image` with TITLE/ICON/STYLE/fact lines — Pillow + Noto fonts. **Do not** ask diffusion to paint dense on-image text (it becomes tofu/boxes).
+For **labeled info dashboards as a picture** (readable text/labels), prefer `"mode":"info-card"` on `POST /v1/image` with **structured** TITLE/SUBTITLE/ICON/STYLE/OVERVIEW/BACKGROUND/fact lines — Pillow + Noto fonts. Set `"refine":false`. **Do not** ask diffusion to paint dense on-image text (it becomes tofu/boxes). **Do not** send an English scene sentence (“Weather info card for …”) as the prompt body without markers and without live fact lines — that yields a broken empty card.
+
+```text
+TITLE: <place or topic>
+SUBTITLE: <optional>
+ICON: sun
+STYLE: midnight
+OVERVIEW: <short place intro when subject is a place>
+BACKGROUND: <atmosphere when subject is a place>
+- Nhiệt độ: 31°C
+- Độ ẩm: 70%
+```
+
+Fetch live facts first (search), then call info-card once.
 
 For a **scenic photo** (no on-image text labels): you may call default `/v1/image` diffusion/LLM backends with an English scene prompt. If it fails, fall back to `mode=info-card` or rely on the styled PDF visuals — never a recovery menu.
 
