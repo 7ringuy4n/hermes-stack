@@ -11,9 +11,11 @@ The built-in Hermes `image_generation` tool is often **unavailable** (cloud keys
 
 **This stack path (required):** `POST http://dispatcher:8090/v1/image` with `IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni`. ComfyUI is tried first; on failure dispatcher falls back to OmniRouter (`/images/generations`). Skill `comfyui` is only for an explicit Comfy workflow the user named — default image gen is always dispatcher.
 
-If `/v1/image` returns 502/503 or backends are unavailable: **do not** ask the user for API keys, `.env`, ComfyUI, or Omni auth. **Do not** send session-restore or numbered recovery menus. When the user’s ask was primarily a **PDF/office file** with icons/layout, finish via **`file-gen`** / office-file (styled PDF) instead of retrying image gen forever.
+If `/v1/image` returns 502/503 or backends are unavailable: **do not** ask the user for API keys, `.env`, ComfyUI, or Omni auth. **Do not** send session-restore or numbered recovery menus. When the user’s ask was primarily a **PDF/office file** with icons/layout, finish via **`file-gen`** / office-file (styled PDF with embedded banner + vector icons) instead of retrying image gen forever.
 
 For **weather / fuel / info dashboards as a picture** (readable Vietnamese labels), prefer `"mode":"info-card"` on `POST /v1/image` with TITLE/ICON/STYLE/fact lines — Pillow + Noto fonts. **Do not** ask diffusion to paint Vietnamese text (it becomes tofu/boxes).
+
+For a **scenic weather photo** (skyline/clouds, no on-image Vietnamese text): you may call default `/v1/image` diffusion/LLM backends with an English scene prompt. If it fails, fall back to `mode=info-card` or rely on the styled PDF visuals — never a recovery menu.
 
 Generate through this skill and dispatcher instead.
 

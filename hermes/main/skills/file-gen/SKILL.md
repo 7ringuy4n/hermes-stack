@@ -44,14 +44,17 @@ ICON: sun
 - Điều kiện: Nắng
 ```
 
-`ICON` is one of: `sun` | `cloud` | `rain` | `storm`. Dispatcher draws a vector
-icon + colored card layout with **Unicode fonts (Noto Sans)** — Vietnamese
-diacritics must render correctly. **Do not** call `image-gen` / `/v1/image`
-diffusion to decorate a PDF (diffusion bakes broken Vietnamese glyphs).
+`ICON` is one of: `sun` | `cloud` | `rain` | `storm`. Dispatcher draws **many** weather
+icons (header companions, icon badge strip, per-fact glyphs) and embeds a **visual
+banner image** (Pillow info-card — Unicode-safe). Vietnamese diacritics must render
+correctly. **Do not** call diffusion `/v1/image` to paint Vietnamese labels onto a
+PDF (tofu/boxes). Scenic LLM/diffusion images are optional decoration only and must
+never block PDF delivery.
 
-For a **standalone weather/info picture** (not a PDF), use
-`POST /v1/image` with `"mode":"info-card"` and the same TITLE/ICON/fact body
-(styles: `midnight` | `daylight` | `emerald` via `STYLE:` line).
+When the user asks for “đầy đủ hình ảnh và icon / attractive images and icons” inside
+a weather/info PDF: still **one** `office-file` PDF — Dispatcher owns the rich visuals.
+Optionally also send a standalone `info-card` PNG via **`image-gen`** if they clearly
+want a separate picture; never fail the PDF on image-backend 502.
 
 Requires Media|File worker with `OFFICE_FILE_GEN=1`. Success: `"ok":true` and
 Zalo receives the file (empty caption). User-facing text per **media-out**:

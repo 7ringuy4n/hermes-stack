@@ -1,3 +1,8 @@
+## 2026-08-29 09:20 +07 — Weather PDF lacked icons/images despite visual ask
+
+- Users asking for attractive weather PDFs with icons/images still got a sparse text card because decoration was limited to one vector glyph (diffusion was avoided after prior 502/tofu failures).
+- Styled PDF now includes an icon badge strip, per-fact glyphs, companion weather icons, and an embedded Pillow info-card banner. Skills/classify: visual PDF stays office-file (rich visuals inside); standalone scenic photos may use image-gen with silent fallback — never block PDF on image 502.
+
 ## 2026-08-29 09:10 +07 — Weather PDF body still showed JSON / wind bearing
 
 - Live search→office cards pasted Python/JSON weather API dumps and treated wind bearings (`246°WSW`) as the hero temperature; markdown headings and label-only SERP rows remained.

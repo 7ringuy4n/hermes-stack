@@ -281,8 +281,120 @@ def _hero_temp(facts: list[str]) -> str:
     return ""
 
 
+def _fact_icon_kind(label: str, value: str = "") -> str:
+    low = f"{label} {value}".lower()
+    if any(x in low for x in ("nhiệt", "temp", "feels", "cảm giác")):
+        return "temp"
+    if any(x in low for x in ("ẩm", "humid")):
+        return "humidity"
+    if any(x in low for x in ("gió", "wind", "hướng gió")):
+        return "wind"
+    if any(x in low for x in ("uv", "tím ngoại")):
+        return "uv"
+    if any(x in low for x in ("mưa", "rain", "precip")):
+        return "rain"
+    if any(x in low for x in ("áp suất", "pressure")):
+        return "pressure"
+    if any(x in low for x in ("địa điểm", "location", "city")):
+        return "location"
+    if any(x in low for x in ("mây", "cloud", "tình trạng", "condition")):
+        return "cloud"
+    return "sun"
+
+
+def _draw_fact_mini_icon(c: Any, kind: str, cx: float, cy: float, accent: Any) -> None:
+    from reportlab.lib.colors import Color
+
+    k = (kind or "sun").lower()
+    if k == "temp":
+        c.setFillColor(accent)
+        c.roundRect(cx - 3, cy - 8, 6, 12, 2, fill=1, stroke=0)
+        c.circle(cx, cy + 8, 5, fill=1, stroke=0)
+        return
+    if k == "humidity":
+        c.setFillColor(Color(0.25, 0.55, 0.90))
+        path = c.beginPath()
+        path.moveTo(cx, cy + 9)
+        path.curveTo(cx + 9, cy + 1, cx + 7, cy - 8, cx, cy - 10)
+        path.curveTo(cx - 7, cy - 8, cx - 9, cy + 1, cx, cy + 9)
+        c.drawPath(path, fill=1, stroke=0)
+        return
+    if k == "wind":
+        c.setStrokeColor(accent)
+        c.setLineWidth(2)
+        c.line(cx - 10, cy + 2, cx + 10, cy + 2)
+        c.line(cx - 6, cy - 5, cx + 12, cy - 5)
+        c.line(cx - 8, cy + 8, cx + 8, cy + 8)
+        return
+    if k == "uv":
+        c.setFillColor(Color(1.0, 0.75, 0.15))
+        c.circle(cx, cy, 6, fill=1, stroke=0)
+        return
+    if k == "rain":
+        c.setFillColor(Color(0.65, 0.72, 0.82))
+        c.circle(cx - 4, cy - 2, 7, fill=1, stroke=0)
+        c.circle(cx + 5, cy - 4, 8, fill=1, stroke=0)
+        c.setStrokeColor(Color(0.25, 0.45, 0.85))
+        c.setLineWidth(1.8)
+        c.line(cx - 4, cy + 6, cx - 7, cy + 14)
+        c.line(cx + 3, cy + 6, cx, cy + 14)
+        return
+    if k == "pressure":
+        c.setStrokeColor(accent)
+        c.setLineWidth(1.8)
+        c.circle(cx, cy, 8, fill=0, stroke=1)
+        c.line(cx, cy, cx + 5, cy - 4)
+        return
+    if k == "location":
+        c.setFillColor(Color(0.85, 0.25, 0.30))
+        c.circle(cx, cy - 2, 5, fill=1, stroke=0)
+        path = c.beginPath()
+        path.moveTo(cx, cy + 10)
+        path.lineTo(cx - 7, cy)
+        path.lineTo(cx + 7, cy)
+        path.close()
+        c.drawPath(path, fill=1, stroke=0)
+        return
+    if k == "cloud":
+        c.setFillColor(Color(0.72, 0.78, 0.86))
+        c.circle(cx - 5, cy, 7, fill=1, stroke=0)
+        c.circle(cx + 5, cy - 2, 8, fill=1, stroke=0)
+        return
+    _draw_weather_icon(c, "sun", cx, cy, scale=0.35)
+
+
+def _embed_weather_banner(c: Any, body: str, x: float, y: float, w: float, h: float) -> bool:
+    import tempfile
+    from pathlib import Path as _P
+
+    try:
+        from info_card import render_weather_banner_bytes
+    except Exception as e:  # noqa: BLE001
+        log.warning("weather banner import failed: %s", type(e).__name__)
+        return False
+    try:
+        png = render_weather_banner_bytes(body, style="daylight")
+    except Exception as e:  # noqa: BLE001
+        log.warning("weather banner render failed: %s", type(e).__name__)
+        return False
+    tmp = _P(tempfile.mkdtemp(prefix="wxbanner_")) / "banner.png"
+    try:
+        tmp.write_bytes(png)
+        c.drawImage(str(tmp), x, y, width=w, height=h, preserveAspectRatio=True, mask="auto")
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("weather banner embed failed: %s", type(e).__name__)
+        return False
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+            tmp.parent.rmdir()
+        except OSError:
+            pass
+
+
 def write_pdf_styled(dest: Path, body: str) -> Path:
-    """Attractive one-page weather/info card PDF (header, vector icon, fact rows)."""
+    """Attractive weather PDF: header icons, badge strip, banner image, fact glyphs."""
     from reportlab.lib.colors import Color, white
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
@@ -293,7 +405,7 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
     width, height = A4
     c = canvas.Canvas(str(dest), pagesize=A4)
 
-    header_h = 168
+    header_h = 150
     accent = Color(0.12, 0.45, 0.78)
     accent_deep = Color(0.08, 0.32, 0.58)
     if meta["icon"] in {"rain", "storm", "mưa", "mua"}:
@@ -306,89 +418,112 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
         accent = Color(0.35, 0.48, 0.62)
         accent_deep = Color(0.22, 0.34, 0.48)
 
-    # Full-bleed soft background + subtle top wash
     c.setFillColor(Color(0.93, 0.95, 0.98))
     c.rect(0, 0, width, height, fill=1, stroke=0)
-    c.setFillColor(Color(0.88, 0.92, 0.97))
-    c.rect(0, height - 220, width, 220, fill=1, stroke=0)
+    c.setFillColor(Color(0.86, 0.91, 0.97))
+    c.rect(0, height - 240, width, 240, fill=1, stroke=0)
 
-    # Header band
     c.setFillColor(accent)
-    c.roundRect(32, height - header_h - 28, width - 64, header_h, 20, fill=1, stroke=0)
+    c.roundRect(28, height - header_h - 24, width - 56, header_h, 18, fill=1, stroke=0)
     c.setFillColor(accent_deep)
-    c.roundRect(32, height - header_h - 28, 10, header_h, 4, fill=1, stroke=0)
+    c.roundRect(28, height - header_h - 24, 9, header_h, 4, fill=1, stroke=0)
 
-    # Icon on the right of header
-    _draw_weather_icon(c, meta["icon"], width - 108, height - 100, scale=1.35)
+    _draw_weather_icon(c, meta["icon"], width - 100, height - 95, scale=1.25)
+    _draw_weather_icon(c, "sun", width - 175, height - 55, scale=0.45)
+    _draw_weather_icon(c, "cloud", width - 175, height - 115, scale=0.4)
+    _draw_weather_icon(c, "rain", width - 210, height - 85, scale=0.4)
 
-    # Title / subtitle on header (wrapped)
-    c.setFillColor(white)
     title_font = bold if bold != "Helvetica" else font
-    title_lines = _wrap_text(meta["title"][:90], title_font, 18, width - 220, c)[:2]
-    ty = height - 64
-    c.setFont(title_font, 18)
+    c.setFillColor(white)
+    title_lines = _wrap_text(meta["title"][:90], title_font, 17, width - 250, c)[:2]
+    ty = height - 58
+    c.setFont(title_font, 17)
     for tl in title_lines:
-        c.drawString(56, ty, tl)
-        ty -= 22
-    sub = (meta["subtitle"] or "Cập nhật trực tiếp")[:90]
-    c.setFont(font, 11)
-    c.drawString(56, ty - 4, sub)
+        c.drawString(50, ty, tl)
+        ty -= 20
+    c.setFont(font, 10)
+    c.drawString(50, ty - 2, (meta["subtitle"] or "Cập nhật trực tiếp")[:90])
 
     hero = _hero_temp(meta["facts"] or [])
     if hero:
-        c.setFont(title_font, 28)
-        c.drawRightString(width - 150, height - 150, hero)
+        c.setFont(title_font, 26)
+        c.drawString(50, height - header_h + 8, hero)
 
-    # Fact card
-    card_top = height - header_h - 52
-    card_bottom = 64
+    strip_y = height - header_h - 58
+    badges = ("sun", "cloud", "rain", "storm", "temp", "humidity", "wind", "uv")
+    badge_labels = ("Nắng", "Mây", "Mưa", "Giông", "Nhiệt", "Ẩm", "Gió", "UV")
+    bx = 40
+    for bk, bl in zip(badges, badge_labels):
+        c.setFillColor(white)
+        c.setStrokeColor(Color(0.78, 0.84, 0.92))
+        c.setLineWidth(1)
+        c.roundRect(bx, strip_y - 8, 58, 44, 10, fill=1, stroke=1)
+        if bk in {"temp", "humidity", "wind", "uv"}:
+            _draw_fact_mini_icon(c, bk, bx + 29, strip_y + 18, accent)
+        else:
+            _draw_weather_icon(c, bk, bx + 29, strip_y + 18, scale=0.42)
+        c.setFillColor(accent_deep)
+        c.setFont(font, 7)
+        c.drawCentredString(bx + 29, strip_y - 2, bl)
+        bx += 66
+
+    banner_h = 132
+    banner_y = strip_y - 28 - banner_h
+    banner_ok = _embed_weather_banner(c, body, 36, banner_y, width - 72, banner_h)
+    if not banner_ok:
+        c.setFillColor(Color(0.20, 0.45, 0.72))
+        c.roundRect(36, banner_y, width - 72, banner_h, 14, fill=1, stroke=0)
+        for i, ik in enumerate(("sun", "cloud", "rain", "storm")):
+            _draw_weather_icon(c, ik, 90 + i * 120, banner_y + banner_h / 2, scale=0.9)
+        c.setFillColor(white)
+        c.setFont(title_font, 12)
+        c.drawString(52, banner_y + 16, "Biểu tượng thời tiết")
+
+    card_top = banner_y - 16
+    card_bottom = 56
     c.setFillColor(white)
     c.setStrokeColor(Color(0.78, 0.84, 0.90))
     c.setLineWidth(1.2)
-    c.roundRect(40, card_bottom, width - 80, card_top - card_bottom, 16, fill=1, stroke=1)
+    c.roundRect(36, card_bottom, width - 72, card_top - card_bottom, 14, fill=1, stroke=1)
 
-    y = card_top - 40
+    y = card_top - 36
     facts = meta["facts"] or ["(no details)"]
-    max_text_w = width - 180
-    for i, fact in enumerate(facts[:12]):
-        if y < card_bottom + 36:
+    max_text_w = width - 200
+    for i, fact in enumerate(facts[:10]):
+        if y < card_bottom + 32:
             break
         label, value = _split_label_value(fact)
-        # Estimate row height from wrapped value
-        show = value if not label else value
-        wrap = _wrap_text(show[:120], font, 11, max_text_w - (90 if label else 0), c)[:3]
-        row_h = max(34, 14 + 14 * len(wrap))
+        show = value if label else fact
+        wrap = _wrap_text(show[:120], font, 11, max_text_w - (88 if label else 0), c)[:2]
+        row_h = max(36, 16 + 13 * len(wrap))
         if i % 2 == 0:
             c.setFillColor(Color(0.95, 0.97, 1.0))
-            c.roundRect(52, y - row_h + 18, width - 104, row_h, 8, fill=1, stroke=0)
-        # accent pill
-        c.setFillColor(accent)
-        c.roundRect(60, y - 2, 6, 14, 3, fill=1, stroke=0)
-        c.setFillColor(Color(0.12, 0.18, 0.28))
-        text_x = 78
+            c.roundRect(48, y - row_h + 16, width - 96, row_h, 8, fill=1, stroke=0)
+        c.setFillColor(Color(0.90, 0.94, 0.99))
+        c.circle(68, y + 2, 12, fill=1, stroke=0)
+        _draw_fact_mini_icon(c, _fact_icon_kind(label, value), 68, y + 2, accent)
+        text_x = 90
         if label:
-            c.setFont(title_font, 10)
+            c.setFont(title_font, 9)
             c.setFillColor(accent_deep)
-            c.drawString(text_x, y, label[:28])
+            c.drawString(text_x, y + 6, label[:26])
             c.setFillColor(Color(0.12, 0.18, 0.28))
             c.setFont(font, 11)
-            vx = text_x + 96
             for wi, wl in enumerate(wrap):
-                c.drawString(vx, y - wi * 13, wl)
+                c.drawString(text_x + 92, y + 6 - wi * 13, wl)
         else:
+            c.setFillColor(Color(0.12, 0.18, 0.28))
             c.setFont(font, 11)
             for wi, wl in enumerate(wrap):
-                c.drawString(text_x, y - wi * 13, wl)
-        y -= row_h + 6
+                c.drawString(text_x, y + 6 - wi * 13, wl)
+        y -= row_h + 4
 
-    # Footer
     c.setStrokeColor(accent)
     c.setLineWidth(2.5)
-    c.line(48, 48, width - 48, 48)
+    c.line(40, 42, width - 40, 42)
     c.setFillColor(Color(0.40, 0.48, 0.58))
     c.setFont(font, 8)
-    c.drawString(48, 34, "Bản tin thời tiết")
-
+    c.drawString(40, 28, "Bản tin thời tiết · biểu tượng + hình minh họa")
     c.save()
     return dest
 
