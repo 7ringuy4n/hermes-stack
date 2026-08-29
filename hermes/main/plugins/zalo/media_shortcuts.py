@@ -598,6 +598,108 @@ def run_search_then_office(
     )
 
 
+def scene_prompt_from_instruction(text: str) -> str:
+    """English diffusion scene from classify SCENE: marker (not user NLU)."""
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if line.upper().startswith("SCENE:"):
+            return line.split(":", 1)[1].strip()
+    src = (text or "").strip()
+    up = src.upper()
+    if src and "TITLE:" not in up and "RENDER:" not in up:
+        return src
+    return ""
+
+
+def run_scene_image(
+    user_ask: str,
+    plan: dict[str, Any],
+    thread_id: str,
+    thread_type: str = "user",
+    *,
+    classified: bool = False,
+) -> Optional[dict]:
+    """Pure scenic image — diffusion only (aerial city, landscape, no live overlay)."""
+    if not classified:
+        return None
+    try:
+        from .classify_client import plan_image_instruction
+    except ImportError:
+        from classify_client import plan_image_instruction  # type: ignore
+    img_ins = plan_image_instruction(plan, user_ask)
+    scene = scene_prompt_from_instruction(img_ins) or scene_prompt_from_instruction(user_ask)
+    if not scene:
+        return None
+    body: dict[str, Any] = {
+        "prompt": scene,
+        "refine": False,
+        "filename": f"scene-{str(thread_id)[-8:] or 'zalo'}.jpg",
+        "thread_id": str(thread_id),
+        "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
+        "caption": "",
+        "send_zalo": True,
+    }
+    try:
+        out = _post("/v1/image", body, timeout=180.0)
+    except Exception as e:  # noqa: BLE001
+        log.warning("scene_image shortcut failed: %s", type(e).__name__)
+        return None
+    if isinstance(out, dict) and out.get("ok"):
+        return out
+    return None
+
+
+def run_search_then_weather_scene(
+    user_ask: str,
+    plan: dict[str, Any],
+    thread_id: str,
+    thread_type: str = "user",
+    *,
+    classified: bool = False,
+) -> Optional[dict]:
+    """Host search → scenic diffusion + small weather overlay (not info-card)."""
+    if not classified:
+        return None
+    try:
+        from .classify_client import plan_image_instruction, plan_search_query
+    except ImportError:
+        from classify_client import (  # type: ignore
+            plan_image_instruction,
+            plan_search_query,
+        )
+    query = plan_search_query(plan, user_ask)
+    img_ins = plan_image_instruction(plan, user_ask)
+    search = run_web_search(query or user_ask)
+    scene = scene_prompt_from_instruction(img_ins)
+    if not scene:
+        scene = (
+            "Photorealistic cityscape with visible sky and urban skyline, "
+            "daytime, wide view"
+        )
+    facts = _facts_from_search(search)
+    overlay = [f for f in facts[:5] if f]
+    if not overlay:
+        overlay = ["Thời tiết hiện tại — chưa lấy được chi tiết."]
+    body: dict[str, Any] = {
+        "prompt": scene,
+        "refine": False,
+        "overlay": overlay,
+        "filename": f"weather-scene-{str(thread_id)[-8:] or 'zalo'}.jpg",
+        "thread_id": str(thread_id),
+        "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
+        "caption": "",
+        "send_zalo": True,
+    }
+    try:
+        out = _post("/v1/image", body, timeout=180.0)
+    except Exception as e:  # noqa: BLE001
+        log.warning("search_then_weather_scene failed: %s", type(e).__name__)
+        return None
+    if isinstance(out, dict) and out.get("ok"):
+        return out
+    return None
+
+
 def run_search_then_info_card(
     user_ask: str,
     plan: dict[str, Any],

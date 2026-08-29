@@ -1,3 +1,17 @@
+## 2026-08-29 17:00 +07 — Aerial city vs weather picture vs info-card
+
+### Symptom
+“Draw aerial HCMC” and “draw current HCMC weather picture” both produced the same metrics info-card dashboard instead of a scenic photo or city+overlay weather image.
+
+### Root cause
+Classify and host treated all live-data image asks as LABELED INFO IMAGE → info-card. No separate scenic-only or weather-scene+overlay contract.
+
+### Fix (core)
+Classify: WEATHER SCENE IMAGE (`RENDER: scene-overlay`, `SCENE:`, search), SCENE IMAGE (scenic `SCENE:` only), LABELED INFO IMAGE (`RENDER: info-card` / TITLE). Host: `run_search_then_weather_scene`, `run_scene_image`, `run_search_then_info_card` gates.
+
+### Prevent recurrence
+Never route scenic or weather-picture asks to info-card unless the user wants a metrics dashboard card.
+
 ## 2026-08-29 14:00 +07 — Sheet follow-up lost workbook memory
 
 ### Symptom

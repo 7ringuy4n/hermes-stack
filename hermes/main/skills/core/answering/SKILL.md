@@ -19,7 +19,7 @@ Hermes core behavior for everyday questions.
 8. Follow **SOUL.md** and **`communication/zalo-channel`** on Zalo: no `/help` dump, no channel intro, no secret scans, handle all parts of a compound message.
 9. Chat PDF/DOCX/XLSX create-and-send: skill **`file-gen`** → Dispatcher `/v1/office-file` only. Never `skill_view` ambiguous `pdf`/`docx`/`xlsx`, never `pip`/`uv` install reportlab/pypdf, never narrate library installs.
 10. Visual weather/info PDF: finish with styled office-file (TITLE/ICON/facts) via **`file-gen`**. Never ask for image API keys or show session-restore / numbered recovery menus when `/v1/image` fails. After web_search for a PDF ask, the next tool call must be office-file — never stop at a chat weather summary.
-11. Labeled live-data **image** (weather/info card picture): skill **`image-gen`** with `mode=info-card` and TITLE/ICON/STYLE/fact markers (plus OVERVIEW/BACKGROUND when the subject is a place). Never answer with a greeting, `/help`, or AI intro. Never pass an English scene sentence as the only prompt with no facts.
+11. Live-data **image** asks split by intent: (a) scenic/aerial place picture with no live metrics → diffusion `SCENE:` only; (b) weather **picture** with city + small current-weather overlay → `RENDER: scene-overlay` + search + diffusion `overlay[]` (not info-card); (c) metrics dashboard/info card → `mode=info-card` with TITLE/ICON/STYLE markers. Never answer with a greeting, `/help`, or AI intro.
 12. Workbook / sheet follow-up: when `[Recent attachments…]` or a quote already includes a workbook extract (`Workbook sheets:` / `## Sheet`), answer from that extract (use `SHEET_REF` when classify provides it). Never ask the user to re-send Excel/Google Sheet; never claim no file was attached.
 
 ## Do not
