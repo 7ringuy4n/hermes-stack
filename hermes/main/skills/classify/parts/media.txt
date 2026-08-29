@@ -4,6 +4,8 @@ OFFICE CREATE (pdf|docx|xlsx|csv|txt|markdown):
 task_hint=file, task_type=file_processing, execution_class=async, response_mode=ack_then_deliver, skill=media_file, skill_action=process_file.
 Set output_type to the exact kind (pdf|txt|docx|xlsx|csv|md). instructions[] = FILE BODY ONLY (the payload to write). Never leave kind/body for host regex.
 One instruction per file. Live/external facts inside a file (weather, fuel, current rates) still file_processing AND emit a search/web_search sibling — never a silent office-only job.
+Chat create-and-send PDF/DOCX/XLSX must stay on media_file/file-gen (Dispatcher office-file) — never coding, never local pdf/docx skills, never pip/uv reportlab/pypdf in the agent.
+When the user wants a PDF (or office file) of live weather/fuel that also looks visual (icons, attractive layout, photos): keep output_type=pdf (or the asked office kind) with the search sibling; optionally add a separate media_generation image job when they clearly ask for a standalone picture as well. Do not drop the PDF job. Do not rewrite a PDF ask into chat-only weather text.
 "1 file" => exactly 1 instruction. Never infer PDF from content.
 
 TEXT POSTER (fill N lines of a phrase; often quotes; may say trắng đen / B&W):
