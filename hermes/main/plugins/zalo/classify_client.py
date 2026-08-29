@@ -511,23 +511,96 @@ def plan_allows_search_then_office(plan: dict[str, Any] | None) -> bool:
     return True
 
 
+def plan_allows_search_then_image(plan: dict[str, Any] | None) -> bool:
+    """Live labeled info image (search + media_generation) — host search then info-card.
+
+    Avoids Hermes falling back to greeting//help when Omni is saturated, and avoids
+    empty info-cards from English scene prompts with no facts.
+    """
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    action = str(src.get("skill_action") or "").strip().lower()
+    if action in {"deliver", "send", "send_message"}:
+        return False
+    # Exact text posters stay on poster shortcut
+    if src.get("poster_n") is not None or src.get("poster_phrase"):
+        return False
+    if _plan_has_file_processing(src):
+        return False
+    if not _plan_has_search(src):
+        return False
+    if not _plan_has_media_generation(src):
+        return False
+    ot = _coerce_output_type(src.get("output_type"))
+    if ot and ot != "image":
+        return False
+    for detail in src.get("task_details") or []:
+        if not isinstance(detail, dict):
+            continue
+        if str(detail.get("task_type") or "").strip().lower() != "media_generation":
+            continue
+        ot2 = _coerce_output_type(detail.get("output_type"))
+        if ot2 and ot2 != "image":
+            return False
+    return True
+
+
+def plan_image_instruction(plan: dict[str, Any] | None, fallback: str = "") -> str:
+    """Pick the info-card body instruction from classify (markers preferred)."""
+    src = plan if isinstance(plan, dict) else {}
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    details = src.get("task_details") if isinstance(src.get("task_details"), list) else []
+    # Prefer any marker-bearing body (TITLE/OVERVIEW) regardless of index misalignment
+    for p in parts:
+        up = p.upper()
+        if "TITLE:" in up or "OVERVIEW:" in up:
+            return p
+    for i, detail in enumerate(details):
+        if not isinstance(detail, dict):
+            continue
+        tt = str(detail.get("task_type") or "").strip().lower()
+        if tt == "media_generation":
+            if i < len(parts):
+                return parts[i]
+    if len(parts) >= 2:
+        return parts[-1]
+    if parts:
+        return parts[0]
+    return str(fallback or "").strip()
+
+
 def plan_search_query(plan: dict[str, Any] | None, fallback: str = "") -> str:
     """Pick the search query from classify instructions (structured indexes, not NLU)."""
     src = plan if isinstance(plan, dict) else {}
     parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
     details = src.get("task_details") if isinstance(src.get("task_details"), list) else []
+
+    def _usable_search_query(text: str) -> bool:
+        s = (text or "").strip()
+        if not s or len(s) < 8:
+            return False
+        up = s.upper()
+        if "TITLE:" in up or "OVERVIEW:" in up or "BACKGROUND:" in up:
+            return False
+        # Label-only stubs ("Nhiệt độ:") are not search queries
+        if "\n" not in s and s.endswith(":") and len(s) < 48:
+            return False
+        return True
+
     for i, detail in enumerate(details):
         if not isinstance(detail, dict):
             continue
         tt = str(detail.get("task_type") or "").strip().lower()
         sk = str(detail.get("skill") or "").strip().lower()
         if tt == "search" or sk == "web_search":
-            if i < len(parts):
+            if i < len(parts) and _usable_search_query(parts[i]):
                 return parts[i]
-    if len(parts) >= 2:
-        return parts[0]
-    if parts:
-        return parts[0]
+    for p in parts:
+        if _usable_search_query(p):
+            return p
     return str(fallback or "").strip()
 
 

@@ -1,3 +1,17 @@
+## 2026-08-29 11:45 +07 — Weather info image: greeting + empty broken card
+
+### Symptom
+User asked for a beautiful image with current city weather. Bot replied with a default AI/`/help` intro; the delivered card showed a truncated English scene prompt as the title and “(no details)”.
+
+### Root cause
+Labeled live-data **image** asks had no host search→info-card path (unlike PDF), so Hermes often fell through under rate-limit/persona defaults. Hermes/`refine` passed an English scene sentence into info-card without TITLE markers or fact lines; overlay was ignored; layout clipped a single long title.
+
+### Fix (core)
+Classify LABELED INFO IMAGE (search + media_generation, markers only). Host `plan_allows_search_then_image` / `run_search_then_info_card`. Info-card: reject scene-prompt dumps, merge overlay, wrap title, OVERVIEW/BACKGROUND, never “(no details)”. Auto-route TITLE: prompts to info-card without refine.
+
+### Prevent recurrence
+Never send English scene prose alone to info-card. Prefer host search→info-card for live labeled images.
+
 ## 2026-08-29 10:45 +07 — Place visual PDFs needed overview/background
 
 ### Symptom

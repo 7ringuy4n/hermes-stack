@@ -1,3 +1,8 @@
+## 2026-08-29 11:45 +07 — Labeled weather image → /help + broken empty card
+
+- Asks for a beautiful live weather **image** (not PDF) got a default AI/`/help` greeting, and the info-card showed an English scene prompt as the title with “(no details)”.
+- Classify: labeled info image = search + media_generation with TITLE/ICON/STYLE markers (not hello). Host search→info-card shortcut (skip Hermes). Info-card rejects scene-prompt dumps, merges overlay facts, wraps title, supports OVERVIEW/BACKGROUND. image-gen/answering: refine false + markers required.
+
 ## 2026-08-29 10:45 +07 — Place-named visual PDFs lacked overview/background
 
 - Attractive live-data PDFs whose TITLE was a place/city still looked like metrics-only cards; skills did not require place intro or setting context.
