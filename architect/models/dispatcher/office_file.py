@@ -112,10 +112,33 @@ def parse_styled_pdf_body(body: str) -> dict[str, Any]:
     subtitle = ""
     icon = "sun"
     facts: list[str] = []
+
+    def _marker_at(upper: str, marker: str, start: int = 0) -> int:
+        """Index of marker not mid-token (avoids TITLE: inside SUBTITLE:)."""
+        i = start
+        while True:
+            j = upper.find(marker, i)
+            if j < 0:
+                return -1
+            if j == 0 or not upper[j - 1].isalnum():
+                return j
+            i = j + 1
+
     for raw in (body or "").splitlines():
         line = raw.strip()
         if not line:
             continue
+        upper = line.upper()
+        # Mid-line contract markers after a create-verb wrapper
+        cut = -1
+        for marker in ("SUBTITLE:", "TITLE:", "ICON:"):
+            mi = _marker_at(upper, marker)
+            if mi > 0:
+                cut = mi if cut < 0 else min(cut, mi)
+        if cut > 0:
+            line = line[cut:]
+            upper = line.upper()
+
         t = _strip_prefix(line, _TITLE_PREFIXES)
         if t is not None:
             title = t
@@ -127,8 +150,9 @@ def parse_styled_pdf_body(body: str) -> dict[str, Any]:
         ic = _strip_prefix(line, _ICON_PREFIXES)
         if ic is not None:
             icon = (ic or "sun").split()[0].lower()
+            if "|" in icon:
+                icon = icon.split("|", 1)[0].strip() or "sun"
             continue
-        # Drop a bare "Icon: foo" already handled; keep bullet/plain facts
         if line.startswith(("- ", "• ", "* ")):
             facts.append(line[2:].strip())
         else:
@@ -159,6 +183,9 @@ def _draw_weather_icon(c: Any, icon: str, cx: float, cy: float, scale: float = 1
         for i in range(4):
             x = cx - 18 * scale + i * 12 * scale
             c.line(x, cy - 22 * scale, x - 4 * scale, cy - 38 * scale)
+        if kind == "storm":
+            c.setFillColor(Color(1.0, 0.85, 0.2))
+            c.line(cx + 4 * scale, cy + 8 * scale, cx - 6 * scale, cy - 18 * scale)
         return
     if kind in {"cloud", "cloudy", "mây", "may", "overcast"}:
         c.setFillColor(Color(0.75, 0.80, 0.88))
@@ -182,8 +209,55 @@ def _draw_weather_icon(c: Any, icon: str, cx: float, cy: float, scale: float = 1
     c.setFillColor(white)
 
 
+def _wrap_text(text: str, font_name: str, size: int, max_width: float, c: Any) -> list[str]:
+    """Word-wrap for reportlab canvas (width in points)."""
+    words = (text or "").split()
+    if not words:
+        return [""]
+    lines: list[str] = []
+    cur = words[0]
+    for w in words[1:]:
+        trial = f"{cur} {w}"
+        if c.stringWidth(trial, font_name, size) <= max_width:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = w
+    lines.append(cur)
+    return lines
+
+
+def _split_label_value(fact: str) -> tuple[str, str]:
+    s = (fact or "").strip()
+    if ": " in s:
+        left, right = s.split(": ", 1)
+        if 1 <= len(left) <= 40 and right.strip():
+            return left.strip(), right.strip()
+    if ":" in s and s.index(":") < 40:
+        left, right = s.split(":", 1)
+        if right.strip():
+            return left.strip(), right.strip()
+    return "", s
+
+
+def _hero_temp(facts: list[str]) -> str:
+    """Pick a short temperature-like token from fact lines (data scan, not NLU)."""
+    for fact in facts:
+        for token in fact.replace(",", " ").split():
+            t = token.strip()
+            if not t:
+                continue
+            # 31°C / 31C / 29.1°C
+            core = t.replace("°C", "").replace("ºC", "").replace("C", "")
+            if t.endswith(("°C", "ºC", "°")) or (t[:-1].replace(".", "", 1).isdigit() and t.endswith("C")):
+                return t if "°" in t or t.endswith("C") else f"{t}°C"
+            if any(ch.isdigit() for ch in t) and ("°" in t or "℃" in t):
+                return t
+    return ""
+
+
 def write_pdf_styled(dest: Path, body: str) -> Path:
-    """Attractive one-page card PDF (header, vector icon, fact rows)."""
+    """Attractive one-page weather/info card PDF (header, vector icon, fact rows)."""
     from reportlab.lib.colors import Color, white
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
@@ -194,67 +268,101 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
     width, height = A4
     c = canvas.Canvas(str(dest), pagesize=A4)
 
-    header_h = 150
-    accent = Color(0.12, 0.45, 0.78)  # sky blue
+    header_h = 168
+    accent = Color(0.12, 0.45, 0.78)
+    accent_deep = Color(0.08, 0.32, 0.58)
     if meta["icon"] in {"rain", "storm", "mưa", "mua"}:
-        accent = Color(0.25, 0.40, 0.65)
+        accent = Color(0.22, 0.38, 0.62)
+        accent_deep = Color(0.14, 0.26, 0.48)
     elif meta["icon"] in {"sun", "clear", "nắng", "nang", "sunny"}:
-        accent = Color(0.15, 0.55, 0.85)
+        accent = Color(0.18, 0.58, 0.88)
+        accent_deep = Color(0.10, 0.42, 0.72)
+    elif meta["icon"] in {"cloud", "cloudy", "mây", "may", "overcast"}:
+        accent = Color(0.35, 0.48, 0.62)
+        accent_deep = Color(0.22, 0.34, 0.48)
 
-    # Full-bleed soft background
-    c.setFillColor(Color(0.94, 0.96, 0.99))
+    # Full-bleed soft background + subtle top wash
+    c.setFillColor(Color(0.93, 0.95, 0.98))
     c.rect(0, 0, width, height, fill=1, stroke=0)
+    c.setFillColor(Color(0.88, 0.92, 0.97))
+    c.rect(0, height - 220, width, 220, fill=1, stroke=0)
 
     # Header band
     c.setFillColor(accent)
-    c.roundRect(36, height - header_h - 24, width - 72, header_h, 18, fill=1, stroke=0)
+    c.roundRect(32, height - header_h - 28, width - 64, header_h, 20, fill=1, stroke=0)
+    c.setFillColor(accent_deep)
+    c.roundRect(32, height - header_h - 28, 10, header_h, 4, fill=1, stroke=0)
 
     # Icon on the right of header
-    _draw_weather_icon(c, meta["icon"], width - 110, height - 90, scale=1.15)
+    _draw_weather_icon(c, meta["icon"], width - 108, height - 100, scale=1.35)
 
-    # Title / subtitle on header
+    # Title / subtitle on header (wrapped)
     c.setFillColor(white)
-    c.setFont(bold if bold != "Helvetica" else font, 20)
-    title = meta["title"][:64]
-    c.drawString(56, height - 70, title)
-    if meta["subtitle"]:
-        c.setFont(font, 11)
-        c.drawString(56, height - 92, meta["subtitle"][:80])
-    else:
-        c.setFont(font, 10)
-        c.drawString(56, height - 92, "Live summary")
+    title_font = bold if bold != "Helvetica" else font
+    title_lines = _wrap_text(meta["title"][:90], title_font, 18, width - 220, c)[:2]
+    ty = height - 64
+    c.setFont(title_font, 18)
+    for tl in title_lines:
+        c.drawString(56, ty, tl)
+        ty -= 22
+    sub = (meta["subtitle"] or "Cập nhật trực tiếp")[:90]
+    c.setFont(font, 11)
+    c.drawString(56, ty - 4, sub)
+
+    hero = _hero_temp(meta["facts"] or [])
+    if hero:
+        c.setFont(title_font, 28)
+        c.drawRightString(width - 150, height - 150, hero)
 
     # Fact card
-    card_top = height - header_h - 48
-    card_bottom = 72
+    card_top = height - header_h - 52
+    card_bottom = 64
     c.setFillColor(white)
-    c.setStrokeColor(Color(0.82, 0.86, 0.92))
-    c.setLineWidth(1)
-    c.roundRect(48, card_bottom, width - 96, card_top - card_bottom, 14, fill=1, stroke=1)
+    c.setStrokeColor(Color(0.78, 0.84, 0.90))
+    c.setLineWidth(1.2)
+    c.roundRect(40, card_bottom, width - 80, card_top - card_bottom, 16, fill=1, stroke=1)
 
-    y = card_top - 36
+    y = card_top - 40
     facts = meta["facts"] or ["(no details)"]
-    row_h = 28
-    for i, fact in enumerate(facts[:18]):
-        if y < card_bottom + 28:
+    max_text_w = width - 180
+    for i, fact in enumerate(facts[:12]):
+        if y < card_bottom + 36:
             break
+        label, value = _split_label_value(fact)
+        # Estimate row height from wrapped value
+        show = value if not label else value
+        wrap = _wrap_text(show[:120], font, 11, max_text_w - (90 if label else 0), c)[:3]
+        row_h = max(34, 14 + 14 * len(wrap))
         if i % 2 == 0:
-            c.setFillColor(Color(0.96, 0.98, 1.0))
-            c.roundRect(60, y - 8, width - 120, row_h, 6, fill=1, stroke=0)
+            c.setFillColor(Color(0.95, 0.97, 1.0))
+            c.roundRect(52, y - row_h + 18, width - 104, row_h, 8, fill=1, stroke=0)
+        # accent pill
         c.setFillColor(accent)
-        c.circle(78, y + 6, 4, fill=1, stroke=0)
-        c.setFillColor(Color(0.15, 0.20, 0.28))
-        c.setFont(font, 12)
-        c.drawString(96, y, fact[:90])
-        y -= row_h + 4
+        c.roundRect(60, y - 2, 6, 14, 3, fill=1, stroke=0)
+        c.setFillColor(Color(0.12, 0.18, 0.28))
+        text_x = 78
+        if label:
+            c.setFont(title_font, 10)
+            c.setFillColor(accent_deep)
+            c.drawString(text_x, y, label[:28])
+            c.setFillColor(Color(0.12, 0.18, 0.28))
+            c.setFont(font, 11)
+            vx = text_x + 96
+            for wi, wl in enumerate(wrap):
+                c.drawString(vx, y - wi * 13, wl)
+        else:
+            c.setFont(font, 11)
+            for wi, wl in enumerate(wrap):
+                c.drawString(text_x, y - wi * 13, wl)
+        y -= row_h + 6
 
-    # Footer accent line
+    # Footer
     c.setStrokeColor(accent)
-    c.setLineWidth(3)
-    c.line(56, 52, width - 56, 52)
-    c.setFillColor(Color(0.45, 0.50, 0.58))
+    c.setLineWidth(2.5)
+    c.line(48, 48, width - 48, 48)
+    c.setFillColor(Color(0.40, 0.48, 0.58))
     c.setFont(font, 8)
-    c.drawString(56, 38, "Designed document")
+    c.drawString(48, 34, "Bản tin thời tiết")
 
     c.save()
     return dest
