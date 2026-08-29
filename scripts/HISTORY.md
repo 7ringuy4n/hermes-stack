@@ -1,3 +1,17 @@
+## 2026-08-29 19:00 +07 — IMAGE_OMNI_MODEL default dall-e-3 with no OpenAI creds
+
+### Symptom
+Scenic image `POST /v1/image` failed: OmniRouter `No credentials for image provider: openai` while Comfy `/models/checkpoints` was `[]`.
+
+### Root cause
+Default `IMAGE_OMNI_MODEL=dall-e-3` in `.env.example` / compose; lab `.env` inherited it after pull.
+
+### Fix (core)
+Default to `aihorde/Flux.1-Schnell fp8 (Compact)` — works via OmniRouter without OpenAI. Quote value in `.env` when it contains spaces/parens.
+
+### Prevent recurrence
+Never ship dall-e-3 as default unless OpenAI image creds are part of first-setup; document quote requirement in `.env.example`.
+
 ## 2026-08-29 18:15 +07 — Aerial image silent after attachment recall
 
 ### Symptom

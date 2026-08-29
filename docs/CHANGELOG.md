@@ -1,3 +1,8 @@
+## 2026-08-29 19:00 +07 — Default Omni image model uses AI Horde Flux
+
+- Fresh installs defaulted `IMAGE_OMNI_MODEL=dall-e-3` but OmniRouter had no OpenAI credentials — scenic image asks failed even when Comfy checkpoints were empty.
+- `.env.example` and compose default now `aihorde/Flux.1-Schnell fp8 (Compact)` (quote in `.env` when parens/spaces).
+
 ## 2026-08-29 18:15 +07 — Aerial image silent when attachment recall present
 
 - Scenic image asks after prior file/photo turns got no reply: `[Recent attachments…]` blocked media shortcuts and async workflow skip swallowed the turn.
