@@ -241,18 +241,43 @@ def _split_label_value(fact: str) -> tuple[str, str]:
 
 
 def _hero_temp(facts: list[str]) -> str:
-    """Pick a short temperature-like token from fact lines (data scan, not NLU)."""
+    """Pick a Celsius temperature for the header (never wind bearings like 246°WSW)."""
+    labeled: list[str] = []
+    unlabeled: list[str] = []
     for fact in facts:
-        for token in fact.replace(",", " ").split():
-            t = token.strip()
+        label = ""
+        value = fact
+        if ": " in fact:
+            label, value = fact.split(": ", 1)
+        elif ":" in fact and fact.index(":") < 40:
+            label, value = fact.split(":", 1)
+        low_l = label.lower().strip()
+        target = labeled if any(
+            x in low_l for x in ("nhiệt", "temp", "feels", "cảm giác")
+        ) else unlabeled
+        for token in value.replace(",", " ").split():
+            t = token.strip().strip(".,;")
             if not t:
                 continue
-            # 31°C / 31C / 29.1°C
-            core = t.replace("°C", "").replace("ºC", "").replace("C", "")
-            if t.endswith(("°C", "ºC", "°")) or (t[:-1].replace(".", "", 1).isdigit() and t.endswith("C")):
-                return t if "°" in t or t.endswith("C") else f"{t}°C"
-            if any(ch.isdigit() for ch in t) and ("°" in t or "℃" in t):
-                return t
+            # Reject compass bearings (246°WSW)
+            if "°" in t or "º" in t:
+                sep = "°" if "°" in t else "º"
+                after = t.split(sep, 1)[1].upper()
+                if after and after[0].isalpha() and not after.startswith(("C", "F")):
+                    continue
+            if t.endswith(("°C", "ºC")) or "℃" in t:
+                target.append(t if "°" in t or "℃" in t else f"{t}°C")
+                continue
+            # bare number on a temperature-labeled row → append °C
+            core = t
+            if core.replace(".", "", 1).isdigit() and any(
+                x in low_l for x in ("nhiệt", "temp", "feels", "cảm giác")
+            ):
+                target.append(f"{core}°C")
+    if labeled:
+        return labeled[0]
+    if unlabeled:
+        return unlabeled[0]
     return ""
 
 

@@ -1,3 +1,17 @@
+## 2026-08-29 09:10 +07 — Weather PDF still showed JSON dumps and fake hero temp
+
+### Symptom
+Delivered weather PDFs included raw `{'location': ...}` API text, markdown section headers, and used wind bearings like `246°WSW` as the large header temperature.
+
+### Root cause
+Search snippets often embed weather-API JSON or Python dict dumps. The host body builder pasted them as fact lines. Hero-temp scanned any token with `°`, so compass bearings won over Celsius.
+
+### Fix (core)
+Filter JSON/dict/markdown/label-only noise; parse valid weather JSON into labeled fact rows; hero temperature only from °C / temperature-labeled values. Classify: never paste raw JSON into the PDF body.
+
+### Prevent recurrence
+Never render search payload serialization on the card. Keep wind bearings out of the hero metric.
+
 ## 2026-08-29 09:00 +07 — Weather PDF UI: create-verb title + SERP junk rows
 
 ### Symptom
