@@ -13,6 +13,8 @@ The built-in Hermes `image_generation` tool is often **unavailable** (cloud keys
 
 If `/v1/image` returns 502/503 or backends are unavailable: **do not** ask the user for API keys, `.env`, ComfyUI, or Omni auth. **Do not** send session-restore or numbered recovery menus. When the user’s ask was primarily a **PDF/office file** with icons/layout, finish via **`file-gen`** / office-file (styled PDF) instead of retrying image gen forever.
 
+For **weather / fuel / info dashboards as a picture** (readable Vietnamese labels), prefer `"mode":"info-card"` on `POST /v1/image` with TITLE/ICON/STYLE/fact lines — Pillow + Noto fonts. **Do not** ask diffusion to paint Vietnamese text (it becomes tofu/boxes).
+
 Generate through this skill and dispatcher instead.
 
 **Never** `web_search`, `web_extract`, or browse GitHub/release/news pages to “find image URLs”. That is not generation. Users must receive a **new file** from dispatcher, not a scrape of someone else’s page. If weather/fuel context is needed, one short search for conditions is enough, then `POST /v1/image` with a **scene prompt** plus `overlay` fact lines (Vietnamese when the user asked for Vietnamese). If dispatcher fails: one failure line from **media-out**, then stop.
