@@ -598,6 +598,55 @@ def run_search_then_office(
     )
 
 
+def run_search_then_info_card(
+    user_ask: str,
+    plan: dict[str, Any],
+    thread_id: str,
+    thread_type: str = "user",
+    *,
+    classified: bool = False,
+) -> Optional[dict]:
+    """Host search → Dispatcher info-card image (labeled live-data picture)."""
+    if not classified:
+        return None
+    try:
+        from .classify_client import plan_image_instruction, plan_search_query
+    except ImportError:
+        from classify_client import (  # type: ignore
+            plan_image_instruction,
+            plan_search_query,
+        )
+    query = plan_search_query(plan, user_ask)
+    img_ins = plan_image_instruction(plan, user_ask)
+    search = run_web_search(query or user_ask)
+    prompt = build_office_body_from_search(
+        file_instruction=img_ins or user_ask,
+        user_ask=user_ask,
+        search=search,
+    )
+    # Ensure STYLE for info-card palette
+    if "STYLE:" not in prompt.upper():
+        prompt = prompt.rstrip() + "\nSTYLE: midnight"
+    body: dict[str, Any] = {
+        "prompt": prompt,
+        "mode": "info-card",
+        "refine": False,
+        "filename": f"info-card-{str(thread_id)[-8:] or 'zalo'}.png",
+        "thread_id": str(thread_id),
+        "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
+        "caption": "",
+        "send_zalo": False,
+    }
+    try:
+        out = _post("/v1/image", body, timeout=120.0)
+    except Exception as e:  # noqa: BLE001
+        log.warning("search_then_info_card failed: %s", type(e).__name__)
+        return None
+    if isinstance(out, dict) and out.get("ok"):
+        return out
+    return None
+
+
 def run_text_poster(
     text: str,
     thread_id: str = "",

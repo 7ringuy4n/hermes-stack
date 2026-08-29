@@ -4239,6 +4239,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     classify_text,
                     plan_allows_office_shortcut,
                     plan_allows_poster_shortcut,
+                    plan_allows_search_then_image,
                     plan_allows_search_then_office,
                     plan_output_type,
                     plan_search_then_office_output,
@@ -4246,6 +4247,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
                 from .media_shortcuts import (
                     run_office_create,
+                    run_search_then_info_card,
                     run_search_then_office,
                     run_text_poster,
                 )
@@ -4254,6 +4256,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     classify_text,
                     plan_allows_office_shortcut,
                     plan_allows_poster_shortcut,
+                    plan_allows_search_then_image,
                     plan_allows_search_then_office,
                     plan_output_type,
                     plan_search_then_office_output,
@@ -4261,6 +4264,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
                 from media_shortcuts import (  # type: ignore
                     run_office_create,
+                    run_search_then_info_card,
                     run_search_then_office,
                     run_text_poster,
                 )
@@ -4297,6 +4301,21 @@ class ZaloAdapter(BasePlatformAdapter):
                     if shortcut:
                         self._as_flow(
                             "search_office_shortcut",
+                            thread_id=thread_id,
+                            file=shortcut.get("file"),
+                        )
+                elif plan_allows_search_then_image(early_plan):
+                    # Labeled live-data image: host search then info-card (skip Hermes /help).
+                    shortcut = run_search_then_info_card(
+                        bare_text,
+                        early_plan,
+                        str(thread_id),
+                        str(thread_type),
+                        classified=True,
+                    )
+                    if shortcut:
+                        self._as_flow(
+                            "search_info_card_shortcut",
                             thread_id=thread_id,
                             file=shortcut.get("file"),
                         )
