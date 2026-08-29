@@ -11,7 +11,7 @@ ARG INSTALL_WHISPER=0
 RUN if [ "$INSTALL_WHISPER" = "1" ]; then \
       pip install --no-cache-dir -r requirements-whisper.txt; \
     fi
-COPY app.py ocr_stub.py video_summary.py office_file.py image_backends.py text_poster.py overlay.py video_clip.py fonts.py info_card.py ./
+COPY app.py ocr_stub.py video_summary.py office_file.py image_backends.py text_poster.py overlay.py video_clip.py fonts.py info_card.py weather_sheet.py ./
 COPY fonts ./fonts
 COPY comfy_workflows ./comfy_workflows
 ENV MEDIA_CACHE_DIR=/data/media

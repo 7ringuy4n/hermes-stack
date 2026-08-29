@@ -1,3 +1,8 @@
+## 2026-08-29 09:30 +07 — Weather PDF layout still cluttered after icon strip
+
+- Delivered “rich” weather PDFs still looked bad: badge-strip labels, duplicate temperature, and overlapping panels instead of a clean weather-app card.
+- Full-page Pillow weather sheet (hero temp + one icon + metric grid), post-render layout verify (reject badge-strip clutter), fallback card without the strip. Dockerfile ships `weather_sheet.py`.
+
 ## 2026-08-29 09:20 +07 — Weather PDF lacked icons/images despite visual ask
 
 - Users asking for attractive weather PDFs with icons/images still got a sparse text card because decoration was limited to one vector glyph (diffusion was avoided after prior 502/tofu failures).
