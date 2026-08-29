@@ -442,7 +442,7 @@ services:
       - SEARXNG_URL=${HERMES_SEARXNG_URL:-http://model-router:8096/v1/searxng-compat}
       # Skill/HTTP path: Router Worker → Omni search gateway
       - WEB_SEARCH_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
-      - ZALO_ATTACHMENT_CONTEXT_TTL_S=${ZALO_ATTACHMENT_CONTEXT_TTL_S:-900}
+      - ZALO_ATTACHMENT_CONTEXT_TTL_S=${ZALO_ATTACHMENT_CONTEXT_TTL_S:-86400}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       # Zalo (used when ENABLE_ZALO=1 + host bridge + zalo-proxy profile)
       # Only replica hermes-1 keeps ZALO_PLUGIN_URL (see hermes-replica-entry.sh).
