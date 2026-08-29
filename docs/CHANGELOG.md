@@ -1,3 +1,8 @@
+## 2026-08-29 10:00 +07 — Classify visual-file rules de-specialized
+
+- Classify / file-gen / image-gen wording locked visual live-data office files to weather/fuel phrases and a single “weather-app sheet” path, so other attractive live-data PDF asks were under-specified.
+- Media classify part and skills now use generic visual/attractive office-file rules (TITLE/SUBTITLE/ICON markers, search sibling for live facts, no decorative media_generation, no chat-only when a file was asked). Family examples stay illustrative, not a phrase dictionary.
+
 ## 2026-08-29 09:30 +07 — Weather PDF layout still cluttered after icon strip
 
 - Delivered “rich” weather PDFs still looked bad: badge-strip labels, duplicate temperature, and overlapping panels instead of a clean weather-app card.
