@@ -22,7 +22,7 @@ RUN if [ "$INSTALL_PADDLE" = "1" ]; then \
 
 COPY app.py refuse.py result.py paddle_engine.py ./
 ENV OCR_PADDLE=1 \
-    OCR_VISION=0 \
+    OCR_VISION=inactive \
     OCR_PADDLE_MOBILE=1 \
     OCR_MEDIA_ROOT=/data/media \
     HOME=/tmp \

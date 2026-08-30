@@ -486,14 +486,17 @@ zalo_wait_core_for_qr() {
     router_ok=0
     omni_ok=0
     curl -fsS -m 3 "http://127.0.0.1:${model_port}/health" >/dev/null 2>&1 && router_ok=1
-    if [[ "${ENABLE_OMNIROUTER:-1}" == "1" ]]; then
-      if curl -fsS -m 3 "http://127.0.0.1:${omni_port}/" >/dev/null 2>&1 \
-        || curl -fsS -m 3 "http://127.0.0.1:${omni_port}/v1/models" >/dev/null 2>&1; then
+    case "${ENABLE_OMNIROUTER:-active}" in
+      1|true|yes|on|active)
+        if curl -fsS -m 3 "http://127.0.0.1:${omni_port}/" >/dev/null 2>&1 \
+          || curl -fsS -m 3 "http://127.0.0.1:${omni_port}/v1/models" >/dev/null 2>&1; then
+          omni_ok=1
+        fi
+        ;;
+      *)
         omni_ok=1
-      fi
-    else
-      omni_ok=1
-    fi
+        ;;
+    esac
     if [[ "$router_ok" == "1" && "$omni_ok" == "1" ]]; then
       zalo_log "core ready for QR (router + omni)"
       return 0

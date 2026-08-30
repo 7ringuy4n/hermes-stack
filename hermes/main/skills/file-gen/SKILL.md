@@ -58,7 +58,7 @@ In-document visuals stay on **one** `office-file` PDF. Optionally also send a
 standalone `info-card` PNG via **`image-gen`** if they clearly want a separate
 picture; never fail the PDF on image-backend 502.
 
-Requires Media|File worker with `OFFICE_FILE_GEN=1`. Success: `"ok":true` and
+Requires Media|File worker with `OFFICE_FILE_GEN=active`. Success: `"ok":true` and
 Zalo receives the file (empty caption). User-facing text per **media-out**:
 **file only** — no “Đã tạo file…” sentence.
 

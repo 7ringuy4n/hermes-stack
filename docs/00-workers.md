@@ -13,7 +13,7 @@ Optional workers use **compose-scoped container names** (no global `container_na
 | **Schedule** | `schedule` | Schedule worker (Postgres via `DATABASE_URL`; SQLite only if DSN unset) |
 | **Media** | `media` | Dispatcher, OCR, Jobs, Comfy CPU, SearXNG (bundled) |
 | **Security** | `security` | security-manager, authz, SIEM, policy-center + OpenBao |
-| **OpenBao only** | `openbao` | Same as `security` + `ENABLE_OPENBAO=1` |
+| **OpenBao only** | `openbao` | Same as `security` + `ENABLE_OPENBAO=active` |
 | **Notification** | `notify` | notify + alert-watch (does **not** start Security core) |
 | **Message / Zalo** | `message` or `zalo` | zalo-proxy + zalo-api (+ Telegram when configured) |
 | **Monitor** | `monitor` | Grafana, Prometheus, Loki, Alloy (bundled) |
@@ -86,7 +86,7 @@ Every install/uninstall **backs up and verifies** first. On failure the change i
 ```bash
 bash run.sh install media schedule
 bash run.sh uninstall zalo
-bash run.sh uninstall traefik          # turn Traefik off (not add-components ENABLE_TRAEFIK=0)
+bash run.sh uninstall traefik          # turn Traefik off (not add-components ENABLE_TRAEFIK=inactive)
 bash run.sh uninstall gateway          # turn API Gateway off
 bash run.sh install traefik            # turn back on
 ```
@@ -94,7 +94,7 @@ bash run.sh install traefik            # turn back on
 Runtime / core flags (Omni, 9Router, inbound queue) — use `add-components` then **`update`** on a running host:
 
 ```bash
-bash run.sh add-components ENABLE_9ROUTER=1 --update
+bash run.sh add-components ENABLE_9ROUTER=active --update
 bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
 ```
 

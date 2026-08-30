@@ -5,7 +5,7 @@ description: "MODE=documents — create/read office & text files via Dispatcher 
 
 # Documents (md · txt · pdf · docx · xlsx · csv)
 
-Follow skill **`media-out`**. Medium+ when `OFFICE_FILE_GEN=1`. Hard refuse music/video.
+Follow skill **`media-out`**. Medium+ when `OFFICE_FILE_GEN=active`. Hard refuse music/video.
 **Images** → **`image-gen`**.
 
 ## Create + send (required)

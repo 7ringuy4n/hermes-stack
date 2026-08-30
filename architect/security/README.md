@@ -44,8 +44,8 @@ Protect the stack from risky files: antivirus (opt-in), YARA/static limits, opti
 File from social-app or upload
     → size / MIME / archive limits
     → YARA + static
-    → optional av-gateway (ENABLE_ANTIVIRUS=1)
-    → optional LLM heuristic (SECURITY_LLM_JUDGE=1) — may add RISK only
+    → optional av-gateway (ENABLE_ANTIVIRUS=active)
+    → optional LLM heuristic (SECURITY_LLM_JUDGE=active) — may add RISK only
     → CLEAN (isolation passed) → OCR / ingest / Hermes read
     → BLOCK → user-safe one-liner (from hermes/main/messages), no stack trace
 ```

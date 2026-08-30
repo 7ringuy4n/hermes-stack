@@ -1,5 +1,5 @@
 # Traefik static config — hermes-stack edge (VPN/LAN default, no ACME)
-# For Let's Encrypt use traefik.acme.yml (TRAEFIK_ACME_ENABLED=1).
+# For Let's Encrypt use traefik.acme.yml (TRAEFIK_ACME_ENABLED=active).
 
 api:
   dashboard: false

@@ -7,7 +7,7 @@
 ## Enable
 
 ```env
-ENABLE_OPENVPN=1
+ENABLE_OPENVPN=active
 ```
 
 Compose profile `openvpn` starts a stub container. **You must initialize PKI/config before it stays healthy** (see below).
@@ -18,7 +18,7 @@ Compose profile `openvpn` starts a stub container. **You must initialize PKI/con
 |------|--------|
 | 1 | Create host volume / data dir for OpenVPN config |
 | 2 | Generate CA + server certs (image docs / `ovpn_genconfig` + `ovpn_initpki`) |
-| 3 | Set `ENABLE_OPENVPN=1` and `bash run.sh up` |
+| 3 | Set `ENABLE_OPENVPN=active` and `bash run.sh up` |
 | 4 | Issue `.ovpn` client profiles; import in any OpenVPN-compatible client |
 | 5 | Connect VPN, then reach OmniRouter / Gateway on the VPN host address |
 

@@ -27,7 +27,7 @@ Media/File worker HTTP service: image generation, office-file create, media down
 | API | Function |
 |---|---|
 | `POST /v1/image` | Omni/9Router combo (`IMAGE_GEN_COMBO`) + Pillow info-card/text-poster |
-| `POST /v1/office-file` | Create txt/csv/md/xlsx/docx/**pdf** when `OFFICE_FILE_GEN=1` (reportlab + DejaVu) |
+| `POST /v1/office-file` | Create txt/csv/md/xlsx/docx/**pdf** when `OFFICE_FILE_GEN=active` (reportlab + DejaVu) |
 | `POST /v1/media` | Media download / convert helpers |
 | `POST /v1/mode` | Soft mode suggestion from text/media flags |
 | Health | `/health` for monitors |

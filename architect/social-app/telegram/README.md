@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Stub for a Telegram Bot API channel pack. Same contract as Zalo: normalize inbound → Hermes → send outbound. Enable later with `ENABLE_TELEGRAM=1`.
+Stub for a Telegram Bot API channel pack. Same contract as Zalo: normalize inbound → Hermes → send outbound. Enable later with `ENABLE_TELEGRAM=active`.
 
 ## Profile
 

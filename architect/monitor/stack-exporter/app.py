@@ -23,7 +23,7 @@ QDRANT_URL = os.environ.get("QDRANT_URL", "http://qdrant:6333").rstrip("/")
 COLL_KNOWLEDGE = os.environ.get("QDRANT_COLLECTION_KNOWLEDGE", "knowledge_chunks")
 COLL_MEMORY = os.environ.get("QDRANT_COLLECTION_MEMORY", "conversational_memory")
 # Must/High health targets — optional clamav/av-gateway/notify are added by compose
-# when ENABLE_ANTIVIRUS=1 / ENABLE_NOTIFY=1 (do not hardcode them here).
+# when ENABLE_ANTIVIRUS=active / ENABLE_NOTIFY=active (do not hardcode them here).
 # OmniRoute has no /health — compose probes omni-router:20129/ (GET /).
 HEALTH_TARGETS = os.environ.get(
     "HEALTH_TARGETS",

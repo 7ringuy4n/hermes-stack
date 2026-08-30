@@ -9,9 +9,9 @@ ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 [[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
 [[ -f /data/assistant/.env ]] && set -a && source <(tr -d '\r' < /data/assistant/.env) && set +a
 
-case "${ENABLE_LOG_ARCHIVE:-1}" in
-  1|true|yes|on) ;;
-  *) echo "log-archive: ENABLE_LOG_ARCHIVE!=1 — skip"; exit 0 ;;
+case "${ENABLE_LOG_ARCHIVE:-active}" in
+  1|true|yes|on|active) ;;
+  *) echo "log-archive: ENABLE_LOG_ARCHIVE!=active — skip"; exit 0 ;;
 esac
 
 RETENTION="${LOG_RETENTION_DAYS:-30}"
