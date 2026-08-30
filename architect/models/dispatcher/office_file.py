@@ -1,4 +1,4 @@
-"""Office file create + Zalo send. Enable: OFFICE_FILE_GEN=1 (Medium+ via profile)."""
+"""Office file create + Zalo send. Enable: OFFICE_FILE_GEN=1 (compose / Media worker)."""
 from __future__ import annotations
 
 import logging
@@ -53,7 +53,7 @@ class OfficeFileReq(_PydanticBase):
 
 
 def _enabled() -> bool:
-    # Default off (Low). Medium+ sets OFFICE_FILE_GEN=1 via profile.sh / compose.
+    # Default off; Media worker / compose sets OFFICE_FILE_GEN=1 when office create is on.
     v = (
         os.environ.get("OFFICE_FILE_GEN") or os.environ.get("ZALO_OFFICE_FILE") or "0"
     ).strip().lower()
