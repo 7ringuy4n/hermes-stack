@@ -1,3 +1,8 @@
+## 2026-08-30 10:30 +07 — Scenic images via Hermes image-gen (no host aerial shortcut)
+
+- Pure scenic/aerial image asks no longer use a host scene_image shortcut. Classify sets process_original_message true; Hermes uses skill image-gen with an English SCENE prompt.
+- Classify/media and image-gen skills require translating the user ask into one photorealistic English diffusion line (example family: aerial city skyline from above).
+
 ## 2026-08-30 10:15 +07 — Active toggles; image-gen diffusion-only; OpenBao/skills cleanup
 
 - Feature toggles that meant on/off now use active/inactive in .env.example, workers.sh, and run.sh (legacy 1/0 still accepted and migrated).

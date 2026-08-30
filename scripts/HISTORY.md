@@ -1,3 +1,17 @@
+## 2026-08-30 10:30 +07 — Scenic aerial still host-shortcut; prompt not LLM-owned
+
+### Symptom
+Scenic/aerial draw asks were owned by a host scene_image shortcut instead of Hermes image-gen, so the diffusion English prompt was not produced by the LLM skill path.
+
+### Root cause
+Classify SCENE IMAGE set process_original_message false and the adapter gated scene_image as a host-owned turn.
+
+### Fix (core)
+Remove scene_image host shortcut/gate; classify scenic-only as Hermes+image-gen with English SCENE: instructions; strengthen image-gen/answering skills accordingly.
+
+### Prevent recurrence
+Never add a separate aerial skill or host shortcut for scenic-only diffusion; keep English SCENE prompts in classify + image-gen.
+
 ## 2026-08-30 10:15 +07 — Scenic image fail; ENABLE toggles still numeric
 
 ### Symptom

@@ -43,10 +43,11 @@ Do NOT put create-verbs or English “Weather info card for …” scene prose i
 If the user asked for a scenic weather **picture** (city photo + small weather text), use WEATHER SCENE IMAGE above — not this dashboard path.
 
 SCENE IMAGE / VIDEO (scenic draw/ảnh — city view, aerial, landscape — WITHOUT live weather/current/metrics on the image):
-task_hint=tool, task_type=media_generation, skill=media_file, skill_action=generate_media, output_type=image, process_original_message false.
-Host owns diffusion delivery — one media-out failure line when backends are down; never hello, /help, or backend key menus.
+task_hint=tool, task_type=media_generation, skill=media_file, skill_action=generate_media, output_type=image, process_original_message true.
+Hermes + skill image-gen own diffusion (POST /v1/image). Host must NOT shortcut scenic-only asks and must NOT invent a separate aerial skill.
 NO search sibling when the ask is purely scenic (no live/current weather, prices, or metrics needed on the image).
-Image instruction = one English SCENE: line (photorealistic scene description — viewpoint, place, lighting). Example pattern: SCENE: Aerial view of … skyline at golden hour, photorealistic.
+Image instruction = one English SCENE: line — translate the user ask into a clear photorealistic English diffusion prompt (viewpoint, place, lighting). Keep place names in common English when the user named a city/place.
+Never leave instructions as the raw non-English ask alone. Never hello, /help, or backend key menus. On backend failure Hermes sends only the media-out failure line.
 Preserve on-image exact-text poster requests, B&W, style, quantity. Do not convert to PDF/TXT.
 If the ask needs current/live weather facts on the picture, use WEATHER SCENE IMAGE. If the ask needs a metrics dashboard card, use LABELED INFO IMAGE — not this scenic-only path.
 
