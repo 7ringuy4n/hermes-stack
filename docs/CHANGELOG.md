@@ -1,3 +1,13 @@
+## 2026-08-30 08:30 +07 — Purge Comfy/legacy aliases; OCR Paddle→vision-ocr; inactive media→hermes
+
+- Removed leftover ComfyUI skill trees and legacy image-backend aliases; first-setup no longer runs Qwen/Ollama cleanup helpers.
+- When Media worker is inactive, image/OCR routes default to combo `hermes`. OCR always tries Paddle then `vision-ocr` for images and scanned PDFs.
+
+## 2026-08-30 08:00 +07 — Media path: Omni/9Router combos; ComfyUI removed
+
+- Image diffusion no longer uses ComfyUI or paid host image API keys; dispatcher calls OmniRouter `/images/generations` (combo `image-gen`), then 9Router when enabled. OCR vision uses combo `vision-ocr`; embeddings use combo `embedding`.
+- Removed Comfy services/env pins and optional image-vendor keys from `.env.example`. Skills: image-gen, vision-ocr, embedding, multi-purpose; video/music/audio/URL transcripts refuse via video-gen.
+
 ## 2026-08-29 19:30 +07 — Image backend order: Comfy first, Omni fallback
 
 - Dispatcher now canonicalizes `IMAGE_BACKENDS` to `comfy-cpu,comfy-gpu,omni` even when `.env` lists Omni first; empty value no longer disables image gen.
@@ -22,11 +32,6 @@
 
 - Aerial/scenic image asks matched host shortcuts but when Comfy/Omni diffusion failed, Hermes ran and replied with backend recovery prose plus a first-meeting `/help` intro.
 - Host now consumes failed media shortcuts: one media-out failure line, no Hermes fallthrough; weather-scene silently falls back to Pillow info-card when diffusion is down; classify sets `process_original_message false` for host-owned image paths.
-
-## 2026-08-30 08:00 +07 — Media path: Omni/9Router combos; ComfyUI removed
-
-- Image diffusion no longer uses ComfyUI or paid host image API keys; dispatcher calls OmniRouter `/images/generations` (combo `image-gen`), then 9Router when enabled. OCR vision uses combo `vision-ocr`; embeddings use combo `embedding`.
-- Removed Comfy services/env pins and optional image-vendor keys from `.env.example`. Skills: image-gen, vision-ocr, embedding, multi-purpose; video/music/audio/URL transcripts refuse via video-gen.
 
 ## 2026-08-29 17:00 +07 — Weather picture vs aerial city vs info-card mis-routed
 

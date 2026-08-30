@@ -401,16 +401,23 @@ def verify(key: str, model: str) -> None:
 
 
 def pin_media_combos(env: dict[str, str]) -> None:
-    """Media|File worker: pin router combo names (no Comfy)."""
+    """Pin router combo names from media worker state (inactive → hermes)."""
     media_on = (env.get("ENABLE_MEDIA_FILE") or os.environ.get("ENABLE_MEDIA_FILE") or "0").strip()
-    if media_on != "1":
-        return
-    pins = {
-        "IMAGE_GEN_COMBO": env.get("N9ROUTER_IMAGE_COMBO") or "image-gen",
-        "OCR_MODEL": env.get("N9ROUTER_VISION_COMBO") or "vision-ocr",
-        "OCR_VISION": "1",
-        "EMBED_MODEL": env.get("N9ROUTER_EMBED_COMBO") or "embedding",
-    }
+    active = media_on == "1"
+    if active:
+        pins = {
+            "IMAGE_GEN_COMBO": env.get("N9ROUTER_IMAGE_COMBO") or "image-gen",
+            "OCR_MODEL": env.get("N9ROUTER_VISION_COMBO") or "vision-ocr",
+            "OCR_VISION": "1",
+            "EMBED_MODEL": env.get("N9ROUTER_EMBED_COMBO") or "embedding",
+        }
+    else:
+        hermes = env.get("N9ROUTER_DEFAULT_COMBO") or env.get("HERMES_DEFAULT_MODEL") or "hermes"
+        pins = {
+            "IMAGE_GEN_COMBO": hermes,
+            "OCR_MODEL": hermes,
+            "OCR_VISION": "1",
+        }
     for key, want in pins.items():
         cur = (env.get(key) or "").strip()
         if cur == want:
@@ -418,11 +425,6 @@ def pin_media_combos(env: dict[str, str]) -> None:
         set_env_key(ROOT / ".env", key, want)
         env[key] = want
         print(f"OK: pinned {key}={want}")
-    for key in ("IMAGE_BACKENDS", "IMAGE_OMNI_MODEL", "COMFYUI_HAS_GPU"):
-        if (env.get(key) or "").strip():
-            set_env_key(ROOT / ".env", key, "")
-            env[key] = ""
-            print(f"OK: cleared legacy {key}")
 
 
 def main() -> int:
