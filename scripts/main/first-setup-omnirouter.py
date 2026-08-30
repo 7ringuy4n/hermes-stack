@@ -4,11 +4,11 @@
 1) Login with OMNIROUTER_INITIAL_PASSWORD (else N9ROUTER_INITIAL_PASSWORD)
 2) Read/create Default Key → OMNIROUTER_API_KEY
 3) Ensure OpenCode provider; fill chat combo ``hermes`` with cloud ``oc/*`` members
-4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members (Omni route)
-5) Clear leftover local-LLM pins in .env (removed product path)
-6) Deactivate leftover Ollama / Alibaba-Qwen Omni connections; drop leftover qwen-fast combos
+4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members
+5) Ensure media combo shells: image-gen, vision-ocr, embedding (operator fills members)
+6) Pin IMAGE_GEN_COMBO / OCR_MODEL from media worker state (inactive → hermes)
 7) Set combo strategy preference (round-robin)
-8) Ensure Search: Tavily (1) → Firecrawl (2) → local SearXNG (3); block ollama-search
+8) Ensure Search: Tavily → Firecrawl → SearXNG
 9) Point Hermes at model-router; recreate router-worker for the key
 
 Stack sends combo *names* as OpenAI ``model``. Chat = ``hermes``; classify = ``classifier``.
@@ -751,20 +751,31 @@ def verify(key: str, combo: str) -> None:
 
 
 def pin_media_combos(env: dict[str, str]) -> None:
-    """Media|File worker: pin router combo names (no Comfy / paid image keys)."""
+    """Pin router combo names from media worker state.
+
+    Media active → image-gen / vision-ocr / embedding.
+    Media inactive → hermes for image+vision routes (no dedicated media combos).
+    """
     media_on = (env.get("ENABLE_MEDIA_FILE") or os.environ.get("ENABLE_MEDIA_FILE") or "0").strip()
-    if media_on not in {"1", "true", "yes", "on"}:
-        return
-    pins = {
-        "IMAGE_GEN_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
-        "IMAGE_GEN_SIZE": env.get("IMAGE_GEN_SIZE") or "1024x1024",
-        "OCR_MODEL": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
-        "OCR_VISION": "1",
-        "EMBED_MODEL": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
-        "OMNIROUTER_IMAGE_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
-        "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
-        "OMNIROUTER_EMBED_COMBO": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
-    }
+    active = media_on in {"1", "true", "yes", "on"}
+    if active:
+        pins = {
+            "IMAGE_GEN_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
+            "IMAGE_GEN_SIZE": env.get("IMAGE_GEN_SIZE") or "1024x1024",
+            "OCR_MODEL": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
+            "OCR_VISION": "1",
+            "EMBED_MODEL": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
+            "OMNIROUTER_IMAGE_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
+            "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
+            "OMNIROUTER_EMBED_COMBO": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
+        }
+    else:
+        hermes = env.get("OMNIROUTER_DEFAULT_COMBO") or env.get("HERMES_DEFAULT_MODEL") or "hermes"
+        pins = {
+            "IMAGE_GEN_COMBO": hermes,
+            "OCR_MODEL": hermes,
+            "OCR_VISION": "1",
+        }
     for key, want in pins.items():
         cur = (env.get(key) or "").strip()
         if cur == want:
@@ -772,25 +783,6 @@ def pin_media_combos(env: dict[str, str]) -> None:
         set_env_key(ROOT / ".env", key, want)
         env[key] = want
         print(f"OK: pinned {key}={want}")
-    # Clear legacy Comfy / paid-image pins so dispatcher cannot revive them.
-    for key in (
-        "IMAGE_BACKENDS",
-        "IMAGE_OMNI_MODEL",
-        "IMAGE_OMNI_SIZE",
-        "COMFYUI_CPU_URL",
-        "COMFYUI_GPU_URL",
-        "COMFYUI_HAS_GPU",
-        "COMFYUI_CPU_WORKFLOW",
-        "COMFYUI_GPU_WORKFLOW",
-        "FAL_KEY",
-        "FLUXAI_API_KEY",
-        "POLLINATIONS_API_KEY",
-        "GEMINI_API_KEY",
-    ):
-        if key in env and (env.get(key) or "").strip():
-            set_env_key(ROOT / ".env", key, "")
-            env[key] = ""
-            print(f"OK: cleared legacy {key}")
 
 
 def ensure_media_combos(opener) -> None:
@@ -819,7 +811,6 @@ def ensure_combo_shell(opener, *, name: str, description: str) -> str:
     }
     status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
     if status not in (200, 201):
-        # Some Omni builds reject empty models — create with a harmless chat member then operator replaces.
         print(f"WARN create combo {name} empty failed ({status}); retry with OpenCode stub")
         oc = list_oc_models(opener)[:1] or list(OPENCODE_FREE_FALLBACK[:1])
         models = [_combo_model_entry(name, 1, oc[0])] if oc else []
@@ -831,75 +822,8 @@ def ensure_combo_shell(opener, *, name: str, description: str) -> str:
     return name
 
 
-def clear_removed_local_llm_pins(env: dict[str, str]) -> None:
-    """Strip leftover local-LLM flags from older installs (product path is Omni OpenCode)."""
-    changed = False
-    for key, want in (
-        ("ENABLE_QWEN", "0"),
-        ("ENABLE_QWEN_THINKING", "0"),
-        ("OLLAMA_BASE_URL", ""),
-        ("OLLAMA_MODEL", ""),
-        ("OLLAMA_DOCKER_URL", ""),
-        ("OLLAMA_HOST_URL", ""),
-        ("OMNIROUTER_QWEN_ONLY_PROVIDERS", "0"),
-        ("OMNIROUTER_QWEN_FAST_COMBO", ""),
-    ):
-        cur = (env.get(key) or "").strip()
-        if cur != want:
-            set_env_key(ROOT / ".env", key, want)
-            env[key] = want
-            changed = True
-            print(f"==> cleared {key}={want!r} (was {cur!r})")
-    os.environ["ENABLE_QWEN"] = "0"
-    os.environ["OLLAMA_BASE_URL"] = ""
-    os.environ["OLLAMA_MODEL"] = ""
-    if not changed:
-        print("OK: leftover local-LLM pins already cleared")
-
-
-def deactivate_removed_local_llm_providers(opener) -> None:
-    """Turn off leftover Ollama / Alibaba-Qwen Omni connections from older installs."""
-    _, data = http_json(opener, "GET", f"{BASE}/api/providers")
-    for row in data.get("connections") or []:
-        cid = row.get("id")
-        if not cid:
-            continue
-        prov = str(row.get("provider") or "").strip().lower()
-        name = str(row.get("name") or "").strip().lower()
-        drop = prov == "ollama" or (
-            prov == "alibaba" and name in {"qwen", "dashscope", "local-qwen"}
-        )
-        if not drop or row.get("isActive") is False:
-            continue
-        try:
-            http_json(
-                opener,
-                "PUT",
-                f"{BASE}/api/providers/{cid}",
-                {"isActive": False},
-            )
-            print(f"==> deactivated leftover provider {prov}/{name} id={cid}")
-        except Exception as e:
-            print(f"WARN deactivate {prov}/{name}: {e}")
-
-
-def drop_removed_qwen_combos(opener) -> None:
-    """Delete leftover Qwen-named combos that conflict with OpenCode hermes/classifier."""
-    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
-    for row in data.get("combos") or []:
-        name = (row.get("name") or "").strip()
-        cid = row.get("id")
-        if name not in {"qwen-fast", "qwen"} or not cid:
-            continue
-        print(f"==> delete leftover combo {name}")
-        try:
-            http_json(opener, "DELETE", f"{BASE}/api/combos/{cid}")
-        except Exception as e:
-            print(f"WARN delete {name}: {e}")
-
-
 def assert_combo_oc_only(opener, name: str) -> None:
-    """Fail setup if hermes/classifier still contain non-OpenCode members (e.g. ollama/*)."""
+    """Fail setup if hermes/classifier contain non-OpenCode members."""
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = data.get("combos") or []
     combo = next((c for c in combos if (c.get("name") or "") == name), None)
@@ -916,7 +840,6 @@ def assert_combo_oc_only(opener, name: str) -> None:
     print(f"OK: combo {name} OpenCode-only n={len(ids)} first={ids[:3]}")
 
 
-
 def main() -> int:
     env = load_env(ROOT / ".env")
     if env.get("ENABLE_OMNIROUTER", "0") not in {"1", "true", "yes", "on"}:
@@ -931,11 +854,8 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_API_KEY", key)
     print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
 
-    clear_removed_local_llm_pins(env)
     unblock_opencode(opener)
     ensure_opencode_provider(opener)
-    deactivate_removed_local_llm_providers(opener)
-    drop_removed_qwen_combos(opener)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
     assert_combo_oc_only(opener, combo)

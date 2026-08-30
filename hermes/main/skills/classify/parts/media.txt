@@ -5,7 +5,7 @@ task_hint=tool, task_type=media_generation, skill=video_gen (or skill=media_file
 Do NOT emit media_generation that invents video/music pipelines. Host/Hermes use dispatcher video-policy-refuse. Still images and office files remain allowed via image-gen / file-gen.
 
 MULTI-PURPOSE VISUAL BRIEF (multi-panel infographic layout, several sections + icons + metrics + captions — any language):
-Prefer skill=multi_purpose / media_file with a clear deliverable: info-card image and/or office file. Plan content via chat combo hermes when needed; deliver via dispatcher image-gen (combo image-gen) or file-gen — never ComfyUI.
+Prefer skill=multi_purpose / media_file with a clear deliverable: info-card image and/or office file. Plan content via chat combo hermes when needed; deliver via dispatcher image-gen (combo image-gen) or file-gen.
 
 OFFICE CREATE (pdf|docx|xlsx|csv|txt|markdown):
 task_hint=file, task_type=file_processing, execution_class=async, response_mode=ack_then_deliver, skill=media_file, skill_action=process_file.

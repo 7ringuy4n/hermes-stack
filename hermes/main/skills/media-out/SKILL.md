@@ -28,10 +28,10 @@ Applies to **every** create/export/send of a file or media asset: images, PDF, D
 
 ## Never say
 
-- dispatcher / Comfy / Pollinations / pip / uv / root / permission / approve / dashboard  
+- dispatcher / pip / uv / root / permission / approve / dashboard  
 - chat_id / thread_id / “DM with …” / internal user labels  
 - Step-by-step plans, “Now I have the page…”, “Let me fetch…”, session-restored notices  
-- Image API keys, `.env` missing keys, Omni auth, ComfyUI off, numbered “how should I continue?” menus
+- Image API keys, `.env` missing keys, Omni auth, numbered “how should I continue?” menus
 
 ## Route by type
 
@@ -41,5 +41,4 @@ Applies to **every** create/export/send of a file or media asset: images, PDF, D
 | Short video | **`video-gen`** — refused; use **`image-gen`** for stills or policy refuse via `/v1/video-policy-refuse` |
 | Office | `file-gen` / `documents` → `POST /v1/office-file` (create+send; not Hermes pdf skill) |
 | Markdown / text file | `markdown` → then `file-gen` |
-| Explicit Comfy workflow | `comfyui` → `--output-dir /opt/data/media/out` |
 | Facts printed as images on a web page | download image → `POST http://ocr:8091/v1/ocr` → then answer / `image-gen` |

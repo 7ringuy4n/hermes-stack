@@ -14,9 +14,9 @@ Follow skill **`media-out`**.
 - **Audio** / voice / TTS generation (except stack ASR used internally when enabled)
 - **YouTube / TikTok / Facebook** download, transcript, or summary
 - Music lyrics transcription from URLs
-- Video frame transcription pipelines (manim, ffmpeg encode loops, Comfy video)
+- Video frame transcription pipelines (manim, ffmpeg encode loops)
 
-Do **not** call ComfyUI video workflows, Whisper as a user-facing product, or invent pipelines.
+Do **not** invent pipelines or call Whisper as a user-facing product.
 
 ## Required
 

@@ -1,3 +1,17 @@
+## 2026-08-30 08:30 +07 — Legacy Comfy aliases and stub skills left behind
+
+### Symptom
+Dispatcher still accepted `comfy-cpu` aliases; `comfyui` skill folders and first-setup Qwen/Ollama cleanup helpers remained after the Omni combo cutover.
+
+### Root cause
+Incomplete removal after media combo migration.
+
+### Fix (core)
+Delete Comfy skill trees/workflows/ensure script; simplify `image_backends`; drop first-setup cleanup helpers; inactive media pins `hermes`; OCR Paddle→vision-ocr for all scanned docs.
+
+### Prevent recurrence
+Do not leave disabled stubs for removed engines — delete the code and skills.
+
 ## 2026-08-30 08:00 +07 — Drop ComfyUI; route image/OCR/embed via router combos
 
 ### Symptom
