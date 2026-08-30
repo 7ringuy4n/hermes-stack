@@ -1,3 +1,8 @@
+## 2026-08-30 18:45 +07 — Scenic prompt examples; OCR analyze-file prompt
+
+- Scenic skill/classify examples no longer hardcode “Aerial view … from above”.
+- OCR/vision default prompts ask to analyze the file and extract readable text as markdown (not extract-only).
+
 ## 2026-08-30 10:50 +07 — Scenic Saigon prompts hit AI Horde NSFW false positive
 
 - Colloquial Saigon / Sài Gòn in diffusion prompts returned AI Horde NSFW censor stubs. Classify/image-gen now prefer Ho Chi Minh City in SCENE prompts; dispatcher maps those aliases and rejects tiny censor placeholders.
