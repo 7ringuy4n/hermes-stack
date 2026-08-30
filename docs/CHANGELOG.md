@@ -1,3 +1,7 @@
+## 2026-08-30 10:50 +07 — Scenic Saigon prompts hit AI Horde NSFW false positive
+
+- Colloquial Saigon / Sài Gòn in diffusion prompts returned AI Horde NSFW censor stubs. Classify/image-gen now prefer Ho Chi Minh City in SCENE prompts; dispatcher maps those aliases and rejects tiny censor placeholders.
+
 ## 2026-08-30 10:30 +07 — Scenic images via Hermes image-gen (no host aerial shortcut)
 
 - Pure scenic/aerial image asks no longer use a host scene_image shortcut. Classify sets process_original_message true; Hermes uses skill image-gen with an English SCENE prompt.
