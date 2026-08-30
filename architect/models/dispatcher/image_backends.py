@@ -69,6 +69,53 @@ def backend_available(name: str) -> bool:
     return False
 
 
+
+def _replace_ci(text: str, old: str, new: str) -> str:
+    """Case-insensitive substring replace without regex."""
+    if not text or not old:
+        return text
+    lower = text.lower()
+    needle = old.lower()
+    out: list[str] = []
+    i = 0
+    while True:
+        j = lower.find(needle, i)
+        if j < 0:
+            out.append(text[i:])
+            break
+        out.append(text[i:j])
+        out.append(new)
+        i = j + len(old)
+    return "".join(out)
+
+
+def _diffusion_safe_prompt(prompt: str) -> str:
+    """Map known safety-filter false-positive place aliases to official English names.
+
+    AI Horde workers censor prompts containing colloquial "Saigon" even for SFW cityscapes.
+    Classify/image-gen should already emit Ho Chi Minh City; this is a durable host guard.
+    """
+    p = (prompt or "").strip()
+    if not p:
+        return p
+    for old, new in (
+        ("sài gòn", "Ho Chi Minh City"),
+        ("sai gòn", "Ho Chi Minh City"),
+        ("sai gon", "Ho Chi Minh City"),
+        ("saigon", "Ho Chi Minh City"),
+    ):
+        p = _replace_ci(p, old, new)
+    return p
+
+
+def _looks_like_nsfw_censor_placeholder(blob: bytes) -> bool:
+    """AI Horde NSFW-block placeholder is a tiny WebP/PNG with burned-in censor text."""
+    if not blob:
+        return True
+    # Real HD scenic WebPs from Flux are typically >100 KiB; censor stubs ~20–35 KiB.
+    return len(blob) < 48_000
+
+
 def _gen_openai_images(
     *,
     base: str,
@@ -163,15 +210,36 @@ def generate_image_bytes(
     if not order:
         raise RuntimeError("no image backends available (configure OmniRouter or 9Router)")
 
+    safe_prompt = _diffusion_safe_prompt(prompt)
+    if safe_prompt != (prompt or "").strip():
+        errors.append("prompt: mapped colloquial place alias for diffusion safety filters")
+
     for b in order:
         if b != "pillow" and not backend_available(b):
             errors.append(f"{b}: skipped (unavailable)")
             continue
         try:
             if b == "omni":
-                return gen_omni(prompt, size=size), "omni", errors
+                blob = gen_omni(safe_prompt, size=size)
+                if _looks_like_nsfw_censor_placeholder(blob) and safe_prompt == (prompt or "").strip():
+                    # Prompt already "safe" but still censored — one retry with explicit cityscape framing.
+                    retry = (
+                        f"{safe_prompt}. Safe-for-work daytime cityscape aerial photograph, "
+                        "architecture and streets only, no people close-up"
+                    )
+                    errors.append(f"{b}: censor placeholder — retry with SFW cityscape framing")
+                    blob2 = gen_omni(retry, size=size)
+                    if not _looks_like_nsfw_censor_placeholder(blob2):
+                        return blob2, "omni", errors
+                    raise RuntimeError("nsfw censor placeholder from image provider")
+                if _looks_like_nsfw_censor_placeholder(blob):
+                    raise RuntimeError("nsfw censor placeholder from image provider")
+                return blob, "omni", errors
             if b == "n9":
-                return gen_n9(prompt, size=size), "n9", errors
+                blob = gen_n9(safe_prompt, size=size)
+                if _looks_like_nsfw_censor_placeholder(blob):
+                    raise RuntimeError("nsfw censor placeholder from image provider")
+                return blob, "n9", errors
             if b == "pillow":
                 raise RuntimeError("pillow handled by caller")
             errors.append(f"{b}: unknown backend")
