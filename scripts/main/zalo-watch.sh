@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Self-heal Zalo channel (bridge + Hermes SSE owner).
-# Intended as systemd timer (every ~1–2 min) when ENABLE_ZALO=1.
+# Intended as systemd timer (every ~1–2 min) when ENABLE_ZALO=active.
 #
 # Signals:
 #   - bridge /health unreachable → restart host Zalo unit and/or zalo-proxy

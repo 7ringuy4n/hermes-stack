@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Resolve short component names → .env KEY=VAL pairs for run.sh install / uninstall.
 # Catalog mirrors .env.example section D (optional workers + attachable flags).
+# Feature toggles use active|inactive (never 1/0).
 #
 # Usage:
 #   bash scripts/main/install-component.sh list
@@ -16,89 +17,89 @@ _install_pairs() {
   case "$1" in
     schedule|sched)
       echo WORKER_SCHEDULE=active
-      echo ENABLE_SCHEDULE=1
+      echo ENABLE_SCHEDULE=active
       ;;
     media|media-file|file)
       echo WORKER_MEDIA_FILE=active
       echo ENABLE_MEDIA_FILE=active
-      echo ENABLE_OCR=1
-      echo ENABLE_JOBS=1
-      echo ENABLE_SEARXNG=1
-      echo OFFICE_FILE_GEN=1
+      echo ENABLE_OCR=active
+      echo ENABLE_JOBS=active
+      echo ENABLE_SEARXNG=active
+      echo OFFICE_FILE_GEN=active
       ;;
     security|sec)
       echo WORKER_SECURITY=active
-      echo ENABLE_SECURITY=1
-      echo ENABLE_AUTHZ=1
-      echo ENABLE_SIEM=1
-      echo ENABLE_POLICY=1
+      echo ENABLE_SECURITY=active
+      echo ENABLE_AUTHZ=active
+      echo ENABLE_SIEM=active
+      echo ENABLE_POLICY=active
       ;;
     openbao|bao)
-      # OpenBao requires Security worker overlay (workers.sh forces ENABLE_OPENBAO=0 otherwise).
+      # OpenBao requires Security worker overlay (workers.sh forces ENABLE_OPENBAO=inactive otherwise).
       echo WORKER_SECURITY=active
-      echo ENABLE_SECURITY=1
-      echo ENABLE_AUTHZ=1
-      echo ENABLE_SIEM=1
-      echo ENABLE_POLICY=1
-      echo ENABLE_OPENBAO=1
+      echo ENABLE_SECURITY=active
+      echo ENABLE_AUTHZ=active
+      echo ENABLE_SIEM=active
+      echo ENABLE_POLICY=active
+      echo ENABLE_OPENBAO=active
       ;;
     notify|notification)
       echo WORKER_NOTIFY=active
-      echo ENABLE_NOTIFY=1
+      echo ENABLE_NOTIFY=active
       ;;
     message|zalo)
       echo WORKER_MESSAGE=active
-      echo ENABLE_MESSAGE=1
-      echo ENABLE_ZALO=1
+      echo ENABLE_MESSAGE=active
+      echo ENABLE_ZALO=active
       ;;
     monitor|mon)
       echo WORKER_MONITOR=active
-      echo ENABLE_MONITOR=1
-      echo ENABLE_GRAFANA=1
-      echo ENABLE_PROMETHEUS=1
-      echo ENABLE_LOKI=1
-      echo ENABLE_ALLOY=1
+      echo ENABLE_MONITOR=active
+      echo ENABLE_GRAFANA=active
+      echo ENABLE_PROMETHEUS=active
+      echo ENABLE_LOKI=active
+      echo ENABLE_ALLOY=active
       ;;
     # Attachable flags (section D ENABLE_*)
     ocr)
       echo WORKER_MEDIA_FILE=active
-      echo ENABLE_OCR=1
+      echo ENABLE_OCR=active
       ;;
     searxng|search)
-      echo ENABLE_SEARXNG=1
+      echo ENABLE_SEARXNG=active
       ;;
     jobs)
       echo WORKER_MEDIA_FILE=active
-      echo ENABLE_JOBS=1
+      echo ENABLE_JOBS=active
       ;;
     grafana)
-      echo ENABLE_GRAFANA=1
-      echo ENABLE_PROMETHEUS=1
+      echo ENABLE_GRAFANA=active
+      echo ENABLE_PROMETHEUS=active
       ;;
     prometheus|prom)
-      echo ENABLE_PROMETHEUS=1
+      echo ENABLE_PROMETHEUS=active
       ;;
     loki)
-      echo ENABLE_LOKI=1
-      echo ENABLE_ALLOY=1
+      echo ENABLE_LOKI=active
+      echo ENABLE_ALLOY=active
       ;;
     alloy)
-      echo ENABLE_ALLOY=1
+      echo ENABLE_ALLOY=active
       ;;
     antivirus|av|clamav)
-      echo ENABLE_ANTIVIRUS=1
+      echo ENABLE_ANTIVIRUS=active
       ;;
     clouddrive|cloud-drive|rclone)
-      echo ENABLE_CLOUDDRIVE=1
+      echo ENABLE_CLOUDDRIVE=active
       ;;
     openvpn|vpn)
-      echo ENABLE_OPENVPN=1
+      echo ENABLE_OPENVPN=active
       ;;
     traefik|edge)
-      echo ENABLE_TRAEFIK=1
+      echo ENABLE_TRAEFIK=active
       ;;
     gateway|api-gateway|api_gateway)
-      echo ENABLE_API_GATEWAY=1
+      echo ENABLE_API_GATEWAY=active
       ;;
     *)
       echo "ERROR: unknown install name: $1 (run: bash run.sh install list)" >&2
@@ -111,74 +112,74 @@ _uninstall_pairs() {
   case "$1" in
     schedule|sched)
       echo WORKER_SCHEDULE=inactive
-      echo ENABLE_SCHEDULE=0
+      echo ENABLE_SCHEDULE=inactive
       ;;
     media|media-file|file)
       echo WORKER_MEDIA_FILE=inactive
       echo ENABLE_MEDIA_FILE=inactive
-      echo ENABLE_OCR=0
-      echo ENABLE_JOBS=0
-      echo ENABLE_SEARXNG=0
-      echo OFFICE_FILE_GEN=0
+      echo ENABLE_OCR=inactive
+      echo ENABLE_JOBS=inactive
+      echo ENABLE_SEARXNG=inactive
+      echo OFFICE_FILE_GEN=inactive
       ;;
     security|sec|openbao|bao)
       echo WORKER_SECURITY=inactive
-      echo ENABLE_SECURITY=0
-      echo ENABLE_OPENBAO=0
-      echo ENABLE_AUTHZ=0
-      echo ENABLE_SIEM=0
-      echo ENABLE_POLICY=0
+      echo ENABLE_SECURITY=inactive
+      echo ENABLE_OPENBAO=inactive
+      echo ENABLE_AUTHZ=inactive
+      echo ENABLE_SIEM=inactive
+      echo ENABLE_POLICY=inactive
       ;;
     notify|notification)
       echo WORKER_NOTIFY=inactive
-      echo ENABLE_NOTIFY=0
+      echo ENABLE_NOTIFY=inactive
       ;;
     message|zalo)
       echo WORKER_MESSAGE=inactive
-      echo ENABLE_MESSAGE=0
-      echo ENABLE_ZALO=0
+      echo ENABLE_MESSAGE=inactive
+      echo ENABLE_ZALO=inactive
       ;;
     monitor|mon|grafana)
       echo WORKER_MONITOR=inactive
-      echo ENABLE_MONITOR=0
-      echo ENABLE_GRAFANA=0
-      echo ENABLE_PROMETHEUS=0
-      echo ENABLE_LOKI=0
-      echo ENABLE_ALLOY=0
+      echo ENABLE_MONITOR=inactive
+      echo ENABLE_GRAFANA=inactive
+      echo ENABLE_PROMETHEUS=inactive
+      echo ENABLE_LOKI=inactive
+      echo ENABLE_ALLOY=inactive
       ;;
     ocr)
-      echo ENABLE_OCR=0
+      echo ENABLE_OCR=inactive
       ;;
     searxng|search)
-      echo ENABLE_SEARXNG=0
+      echo ENABLE_SEARXNG=inactive
       ;;
     jobs)
-      echo ENABLE_JOBS=0
+      echo ENABLE_JOBS=inactive
       ;;
     prometheus|prom)
-      echo ENABLE_PROMETHEUS=0
+      echo ENABLE_PROMETHEUS=inactive
       ;;
     loki)
-      echo ENABLE_LOKI=0
-      echo ENABLE_ALLOY=0
+      echo ENABLE_LOKI=inactive
+      echo ENABLE_ALLOY=inactive
       ;;
     alloy)
-      echo ENABLE_ALLOY=0
+      echo ENABLE_ALLOY=inactive
       ;;
     antivirus|av|clamav)
-      echo ENABLE_ANTIVIRUS=0
+      echo ENABLE_ANTIVIRUS=inactive
       ;;
     clouddrive|cloud-drive|rclone)
-      echo ENABLE_CLOUDDRIVE=0
+      echo ENABLE_CLOUDDRIVE=inactive
       ;;
     openvpn|vpn)
-      echo ENABLE_OPENVPN=0
+      echo ENABLE_OPENVPN=inactive
       ;;
     traefik|edge)
-      echo ENABLE_TRAEFIK=0
+      echo ENABLE_TRAEFIK=inactive
       ;;
     gateway|api-gateway|api_gateway)
-      echo ENABLE_API_GATEWAY=0
+      echo ENABLE_API_GATEWAY=inactive
       ;;
     *)
       echo "ERROR: unknown uninstall name: $1 (run: bash run.sh install list)" >&2
@@ -195,24 +196,24 @@ Workers:
   schedule          WORKER_SCHEDULE=active
   media             WORKER_MEDIA_FILE=active (+ OCR, Jobs, SearXNG)
   security          WORKER_SECURITY=active (OpenBao, authz, SIEM, policy)
-  openbao           WORKER_SECURITY=active + ENABLE_OPENBAO=1
+  openbao           WORKER_SECURITY=active + ENABLE_OPENBAO=active
   notify            WORKER_NOTIFY=active
-  message | zalo    WORKER_MESSAGE=active + ENABLE_ZALO=1
+  message | zalo    WORKER_MESSAGE=active + ENABLE_ZALO=active
   monitor           WORKER_MONITOR=active (+ Grafana, Prometheus, Loki, Alloy)
 
 Attachable (section D ENABLE_*):
-  ocr               media worker + ENABLE_OCR=1
-  jobs              media worker + ENABLE_JOBS=1
-  searxng           ENABLE_SEARXNG=1
-  grafana           ENABLE_GRAFANA=1 + Prometheus
-  prometheus        ENABLE_PROMETHEUS=1
-  loki              ENABLE_LOKI=1 + Alloy
-  alloy             ENABLE_ALLOY=1
-  antivirus         ENABLE_ANTIVIRUS=1
-  clouddrive        ENABLE_CLOUDDRIVE=1
-  openvpn           ENABLE_OPENVPN=1
-  traefik           ENABLE_TRAEFIK=1
-  gateway           ENABLE_API_GATEWAY=1
+  ocr               media worker + ENABLE_OCR=active
+  jobs              media worker + ENABLE_JOBS=active
+  searxng           ENABLE_SEARXNG=active
+  grafana           ENABLE_GRAFANA=active + Prometheus
+  prometheus        ENABLE_PROMETHEUS=active
+  loki              ENABLE_LOKI=active + Alloy
+  alloy             ENABLE_ALLOY=active
+  antivirus         ENABLE_ANTIVIRUS=active
+  clouddrive        ENABLE_CLOUDDRIVE=active
+  openvpn           ENABLE_OPENVPN=active
+  traefik           ENABLE_TRAEFIK=active
+  gateway           ENABLE_API_GATEWAY=active
 
 Examples:
   bash run.sh install openbao

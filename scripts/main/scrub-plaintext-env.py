@@ -4,7 +4,7 @@
 SoT for API keys is OpenBao KV. Compose may briefly use ASSISTANT_DATA_DIR/.env.openbao
 (env_file, required:false). After the stack is up, delete those host exports so a
 host scan cannot list secrets. Re-run: bash run.sh load-openbao-env before the next
-compose recreate when ENABLE_OPENBAO=1.
+compose recreate when ENABLE_OPENBAO=active.
 
 Also strips seeded API-key values from ROOT/.env (keys kept empty) so the stack
 .env is flags/bootstrap only — except compose-interpolated host keys that

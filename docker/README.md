@@ -16,13 +16,13 @@ Compose YAML lives here so the repo root stays clean. **`run.sh` always passes
 
 | Profile | Enable via |
 |---------|------------|
-| `schedule` | `WORKER_SCHEDULE=active` / `ENABLE_SCHEDULE=1` |
+| `schedule` | `WORKER_SCHEDULE=active` / `ENABLE_SCHEDULE=active` |
 | `media` | `WORKER_MEDIA_FILE=active` |
-| `zalo` | `ENABLE_ZALO=1` (Message worker) — **both** `zalo-proxy` and `zalo-api` |
-| `omnirouter` | `ENABLE_OMNIROUTER=1` (**default**) |
-| `9router` | `ENABLE_9ROUTER=1` (**optional**, off by default) |
-| `notify` | `WORKER_NOTIFY=active` / `ENABLE_NOTIFY=1` |
-| `security` | `WORKER_SECURITY=active` / `ENABLE_SECURITY=1` (openbao, security-manager, authz, siem, policy-center) |
+| `zalo` | `ENABLE_ZALO=active` (Message worker) — **both** `zalo-proxy` and `zalo-api` |
+| `omnirouter` | `ENABLE_OMNIROUTER=active` (**default**) |
+| `9router` | `ENABLE_9ROUTER=active` (**optional**, off by default) |
+| `notify` | `WORKER_NOTIFY=active` / `ENABLE_NOTIFY=active` |
+| `security` | `WORKER_SECURITY=active` / `ENABLE_SECURITY=active` (openbao, security-manager, authz, siem, policy-center) |
 | `grafana` / `prometheus` / `loki` / `alloy` | Monitor worker / matching `ENABLE_*` |
 | `traefik` / `gateway` / `openvpn` | `ENABLE_TRAEFIK` / `ENABLE_API_GATEWAY` / `ENABLE_OPENVPN` |
 
@@ -34,9 +34,9 @@ Example — Schedule + Media|File + Notify + Message:
 # WORKER_MEDIA_FILE=active
 # WORKER_NOTIFY=active
 # WORKER_MESSAGE=active
-# ENABLE_ZALO=1
-# ENABLE_OMNIROUTER=1
-# ENABLE_9ROUTER=0
+# ENABLE_ZALO=active
+# ENABLE_OMNIROUTER=active
+# ENABLE_9ROUTER=inactive
 bash run.sh up
 ```
 

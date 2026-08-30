@@ -1,13 +1,13 @@
 # assistant — Security / notify / monitor overlay (WORKER_SECURITY, WORKER_NOTIFY, WORKER_MONITOR, OpenBao).
 # Adds: OpenBao (+ UI), security, SIEM, authz, policy, optional monitor, optional CloudDrive.
 # Security core (openbao, security-manager, authz, siem, policy-center) uses profile "security"
-# only when ENABLE_SECURITY=1 / WORKER_SECURITY=active. Notify alone must not start them.
+# only when ENABLE_SECURITY=active / WORKER_SECURITY=active. Notify alone must not start them.
 # Monitor profiles are paired (not one blob): grafana, prometheus, loki, alloy, omni-exporter.
 # Grafana starts Prometheus + nine/node/stack exporters. Loki starts Alloy.
 # OmniRouter starts omni-exporter only when Prometheus/Grafana is on.
-# Zalo channel admin is zalo-api (compose profile zalo when ENABLE_ZALO=1) — not High-only.
-# Notify OFF by default — compose profile "notify" when ENABLE_NOTIFY=1.
-# ClamAV / av-gateway OFF by default — compose profile "antivirus" when ENABLE_ANTIVIRUS=1.
+# Zalo channel admin is zalo-api (compose profile zalo when ENABLE_ZALO=active) — not High-only.
+# Notify OFF by default — compose profile "notify" when ENABLE_NOTIFY=active.
+# ClamAV / av-gateway OFF by default — compose profile "antivirus" when ENABLE_ANTIVIRUS=active.
 # Docker socket proxy OFF by default — compose profile "sandbox" when SECURITY_SANDBOX=1 (not recommended).
 #
 # Do NOT re-list Must/Medium environment lists here (Compose list-merge replaces).
@@ -45,7 +45,7 @@ services:
       - "127.0.0.1:${OPENBAO_PORT:-8200}:8200"
     networks: [internal]
 
-  # Optional — only when run.sh passes --profile antivirus (ENABLE_ANTIVIRUS=1)
+  # Optional — only when run.sh passes --profile antivirus (ENABLE_ANTIVIRUS=active)
   clamav:
     profiles: ["antivirus"]
     image: ${CLAMAV_IMAGE:-clamav/clamav:1.4}
@@ -87,7 +87,7 @@ services:
     build: ./architect/security/security-manager
     restart: unless-stopped
     environment:
-      # Empty / unreachable when ENABLE_ANTIVIRUS=0 — isolation still runs (YARA/static/limits)
+      # Empty / unreachable when ENABLE_ANTIVIRUS=inactive — isolation still runs (YARA/static/limits)
       - AV_GATEWAY_URL=${AV_GATEWAY_URL:-http://av-gateway:8098}
       - LLM_JUDGE_URL=${LLM_JUDGE_URL:-http://omni-router:20129/v1}
       - LLM_JUDGE_KEY=${LLM_JUDGE_KEY:-${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}}
@@ -245,7 +245,7 @@ services:
       - prometheus
     networks: [internal]
 
-  # Pairs with 9Router only. run.sh adds --profile nine-exporter when ENABLE_9ROUTER=1 + Prometheus/Grafana.
+  # Pairs with 9Router only. run.sh adds --profile nine-exporter when ENABLE_9ROUTER=active + Prometheus/Grafana.
   nine-exporter:
     profiles: ["nine-exporter"]
     build: ./architect/monitor/nine-exporter
@@ -318,7 +318,7 @@ services:
       - HEALTH_TARGETS=${STACK_HEALTH_TARGETS:-redis_via_tcp=valkey:6379,qdrant=qdrant:6333/readyz,security-manager=security-manager:8093/health,ocr=ocr:8091/health,ingest=ingest:8099/health,authz=authz:8097/health,embedding=embedding:8094/health,dispatcher=dispatcher:8090/health,memory=memory:8095/health,openbao=openbao:8200/v1/sys/health,omni-router=omni-router:20129/,model-router=model-router:8096/health}
     networks: [internal]
 
-  # Optional — only when run.sh passes --profile notify (ENABLE_NOTIFY=1)
+  # Optional — only when run.sh passes --profile notify (ENABLE_NOTIFY=active)
   notify:
     profiles: ["notify"]
     build: ./architect/notification/notify
@@ -380,7 +380,7 @@ services:
       - notify
     networks: [internal]
 
-  # Optional — ENABLE_CLOUDDRIVE=1 + rclone config on host
+  # Optional — ENABLE_CLOUDDRIVE=active + rclone config on host
   clouddrive-sync:
     profiles: ["clouddrive"]
     image: ${RCLONE_IMAGE:-rclone/rclone:1.69}

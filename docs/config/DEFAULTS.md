@@ -22,7 +22,7 @@ LEARN_LIST_LIMIT=5
 
 postgres, Valkey (`valkey`), qdrant, memory, session, embedding, ingest, **router-worker (Model Router)**, hermes, backup/restore, Traefik local, API Gateway, inbound Valkey queue.
 
-**OmniRouter** is the default LLM path (`ENABLE_OMNIROUTER=1`). **9Router** is optional (`ENABLE_9ROUTER=0`).
+**OmniRouter** is the default LLM path (`ENABLE_OMNIROUTER=active`). **9Router** is optional (`ENABLE_9ROUTER=inactive`).
 
 Dispatcher (search / image / office HTTP) belongs to the **Media|File Worker** — it is not core.
 
@@ -55,16 +55,16 @@ Worker-bundled flags when active:
 3. `cp .env.example .env` then fill `CHANGE_ME_*` (or `python3 scripts/temp/generate_env_secrets.py --out .env --force`).
 4. `bash run.sh up` — core stack only.
 5. `bash run.sh install …` — each worker you need ([00-workers.md](../00-workers.md)).
-6. OmniRouter wiring runs on `up` when `ENABLE_OMNIROUTER=1`. Re-run: `bash run.sh first-setup-omnirouter`.
+6. OmniRouter wiring runs on `up` when `ENABLE_OMNIROUTER=active`. Re-run: `bash run.sh first-setup-omnirouter`.
 7. Zalo: `bash scripts/main/setup-zalo.sh` (QR first, then stack — deploy user, not sudo). Re-login: `login-zalo.sh`.
 
 ```env
-ENABLE_OMNIROUTER=1
-ENABLE_9ROUTER=0
+ENABLE_OMNIROUTER=active
+ENABLE_9ROUTER=inactive
 OMNIROUTER_DEFAULT_COMBO=hermes
 HERMES_DEFAULT_MODEL=hermes
-ENABLE_TRAEFIK=1
-ENABLE_API_GATEWAY=1
+ENABLE_TRAEFIK=active
+ENABLE_API_GATEWAY=active
 TRAEFIK_MODE=local
 HERMES_REPLICAS=1
 VALKEY_URL=redis://valkey:6379/0
@@ -89,14 +89,14 @@ bash run.sh install traefik
 bash run.sh install gateway
 ```
 
-Do **not** use `add-components ENABLE_TRAEFIK=0` (blocked by `run.sh`).
+Do **not** use `add-components ENABLE_TRAEFIK=inactive` (blocked by `run.sh`).
 
 ## Core flags (`bash run.sh workers` line)
 
 | Shown | Change with | Apply on running host |
 |-------|-------------|------------------------|
-| `OMNI=1` | `ENABLE_OMNIROUTER=1` in section C | `add-components … --update` |
-| `N9=0` | `ENABLE_9ROUTER=1` + `N9ROUTER_INITIAL_PASSWORD` | `add-components … --update` then `first-setup-llm` |
+| `OMNI=1` | `ENABLE_OMNIROUTER=active` in section C | `add-components … --update` |
+| `N9=0` | `ENABLE_9ROUTER=active` + `N9ROUTER_INITIAL_PASSWORD` | `add-components … --update` then `first-setup-llm` |
 | `REPLICAS=1` | `HERMES_REPLICAS=2` | `add-components HERMES_REPLICAS=2 --update` |
 | `QUEUE=1` | `ZALO_INBOUND_QUEUE=0` | `add-components ZALO_INBOUND_QUEUE=0 --update` |
 
