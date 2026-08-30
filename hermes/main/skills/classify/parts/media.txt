@@ -44,7 +44,8 @@ If the user asked for a scenic weather **picture** (city photo + small weather t
 
 SCENE IMAGE / VIDEO (scenic draw/ảnh — city view, landscape — WITHOUT live weather/current/metrics on the image):
 task_hint=tool, task_type=media_generation, skill=media_file, skill_action=generate_media, output_type=image, process_original_message true.
-Hermes + skill image-gen own diffusion (POST /v1/image). Host must NOT shortcut scenic-only asks.
+Hermes + skill image-gen own diffusion always: POST http://omni-router:20129/v1/images/generations with model image-gen (OmniRouter combo) whether Media worker is active or inactive. Host must NOT shortcut scenic-only asks. Never ComfyUI, never dispatcher /v1/image diffusion, never model=hermes for still images.
+Always set process_original_message true for this scenic-only family so Hermes runs skill image-gen (not a silent host drop).
 NO search sibling when the ask is purely scenic (no live/current weather, prices, or metrics needed on the image).
 Image instruction = one English SCENE: line — translate the user ask into a clear photorealistic English diffusion prompt (viewpoint, place, lighting). Prefer stable official English place names for diffusion (safety filters falsely block some colloquial aliases). Example family: user says Sài Gòn / Saigon → SCENE uses Ho Chi Minh City (same city), never the colloquial alias alone in the SCENE line. Example: SCENE: Ho Chi Minh City skyline, photorealistic.
 Never leave instructions as the raw non-English ask alone. Never hello, /help, or backend key menus. On backend failure Hermes sends only the media-out failure line.

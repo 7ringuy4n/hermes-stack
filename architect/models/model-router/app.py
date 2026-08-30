@@ -52,8 +52,20 @@ MESSAGES_PATH = Path(os.environ.get("MODEL_ROUTER_MESSAGES", str(ROOT / "message
 
 N9_BASE = os.environ.get("N9ROUTER_BASE_URL", "http://9router:20128/v1").rstrip("/")
 OMNI_BASE = os.environ.get("OMNIROUTER_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
-ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "1").strip() in {"1", "true", "yes", "on"}
-ENABLE_9ROUTER = os.environ.get("ENABLE_9ROUTER", "0").strip() in {"1", "true", "yes", "on"}
+ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+    "active",
+}
+ENABLE_9ROUTER = os.environ.get("ENABLE_9ROUTER", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+    "active",
+}
 N9_KEY = (os.environ.get("N9ROUTER_API_KEY") or "").strip()
 OMNI_KEY = (os.environ.get("OMNIROUTER_API_KEY") or os.environ.get("N9ROUTER_API_KEY") or "").strip()
 OMNI_DEFAULT_MODEL = (
@@ -342,7 +354,7 @@ async def classify_endpoint(request: Request) -> dict[str, Any]:
             body = json.loads(raw.decode("utf-8"))
         except Exception:
             body = {}
-    text = str(body.get("text") or "")
+    text = str(body.get("text") or body.get("message") or body.get("content") or "")
     timezone = str(body.get("timezone") or os.environ.get("TZ") or "Asia/Ho_Chi_Minh")
     thread = str(body.get("thread") or "unknown")
     attachments = str(body.get("attachments") or "none")

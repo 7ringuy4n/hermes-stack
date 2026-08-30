@@ -7,7 +7,7 @@ description: "Default layout skill when generating an image that includes inform
 
 ## When to use
 
-**Default** whenever the user asks for an image that must show **readable informational text** (metrics, prices, city status, bilingual labels). Apply before calling dispatcher `POST /v1/image`.
+**Default** whenever the user asks for an image that must show **readable informational text** (metrics, prices, city status, bilingual labels). Apply before calling dispatcher `POST /v1/info-card`.
 
 Exact typography posters (verbatim quoted lines, black-and-white fill) stay on `image-gen` text-poster mode — not this skill.
 
@@ -64,7 +64,7 @@ Information area ≈ one side or corner; majority of canvas stays the main visua
 
 1. Gather short fact lines (search if needed).
 2. Build a **scene prompt** that describes the landmark/context view **and** asks for the infographic layout above.
-3. Pass facts as `overlay: ["…", "…"]` on `POST /v1/image` (match the user’s language).
+3. Pass facts as `overlay: ["…", "…"]` on `POST /v1/info-card` (or Omni scenic + `/v1/overlay`) matching the user’s language.
 4. Follow `media-out` — file only, no process chatter.
 
 ## Final checks

@@ -1016,7 +1016,7 @@ def _smoke_image_gen_combo(api_key: str) -> None:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=240) as resp:
             raw = resp.read()
             data = json.loads(raw.decode() or "{}") if raw else {}
     except urllib.error.HTTPError as e:

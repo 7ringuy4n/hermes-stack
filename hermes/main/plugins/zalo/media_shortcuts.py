@@ -655,6 +655,99 @@ def scene_prompt_from_instruction(text: str) -> str:
     return ""
 
 
+def _place_alias_to_official(scene: str) -> str:
+    """Map colloquial place aliases to official English names (no regex)."""
+    text = scene or ""
+    pairs = (
+        ("sài gòn", "Ho Chi Minh City"),
+        ("sai gòn", "Ho Chi Minh City"),
+        ("sai gon", "Ho Chi Minh City"),
+        ("saigon", "Ho Chi Minh City"),
+    )
+    for old, new in pairs:
+        low = text.lower()
+        needle = old.lower()
+        parts: list[str] = []
+        i = 0
+        while True:
+            j = low.find(needle, i)
+            if j < 0:
+                parts.append(text[i:])
+                break
+            parts.append(text[i:j])
+            parts.append(new)
+            i = j + len(old)
+        text = "".join(parts)
+    return text
+
+
+def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None:
+    """Scenic diffusion via OmniRouter combo image-gen (not dispatcher /v1/image)."""
+    import base64
+    from pathlib import Path
+
+    base = (os.getenv("OMNIROUTER_BASE_URL") or "http://omni-router:20129/v1").rstrip("/")
+    key = (os.getenv("OMNIROUTER_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
+    model = (os.getenv("IMAGE_GEN_COMBO") or "image-gen").strip() or "image-gen"
+    if not key:
+        log.warning("omni generate: missing OMNIROUTER_API_KEY")
+        return None
+    scene = _place_alias_to_official(prompt or "")
+    body = json.dumps(
+        {"model": model, "prompt": scene, "n": 1, "size": "1024x1024"}
+    ).encode()
+    req = urllib.request.Request(
+        f"{base}/images/generations",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read().decode() or "{}")
+    except Exception as e:  # noqa: BLE001
+        log.warning("omni generate failed: %s", type(e).__name__)
+        return None
+    items = data if isinstance(data, list) else (data.get("data") or data.get("images") or [])
+    if not items or not isinstance(items[0], dict):
+        return None
+    item = items[0]
+    blob = b""
+    if item.get("b64_json"):
+        blob = base64.b64decode(item["b64_json"])
+    elif item.get("url"):
+        try:
+            with urllib.request.urlopen(item["url"], timeout=60) as r2:
+                blob = r2.read()
+        except Exception:  # noqa: BLE001
+            return None
+    if not blob or len(blob) < 48000:
+        log.warning("omni generate: censor/empty placeholder")
+        return None
+    for cand in (
+        Path(os.getenv("MEDIA_OUT_DIR") or "/data/media/out"),
+        Path("/opt/data/media/out"),
+        Path("/data/assistant/media/out"),
+    ):
+        try:
+            cand.mkdir(parents=True, exist_ok=True)
+            dest = cand / filename
+            dest.write_bytes(blob)
+            return {
+                "ok": True,
+                "file": str(dest),
+                "path": str(dest),
+                "provider": "omni",
+                "model": model,
+            }
+        except OSError:
+            continue
+    return None
+
 
 def _post_info_card_image(
     prompt: str,
@@ -674,7 +767,7 @@ def _post_info_card_image(
         "send_zalo": True,
     }
     try:
-        out = _post("/v1/image", body, timeout=120.0)
+        out = _post("/v1/info-card", body, timeout=120.0)
     except Exception as e:  # noqa: BLE001
         log.warning("info-card image post failed: %s", type(e).__name__)
         return None
@@ -714,24 +807,29 @@ def run_search_then_weather_scene(
     overlay = [f for f in facts[:5] if f]
     if not overlay:
         overlay = ["Thời tiết hiện tại — chưa lấy được chi tiết."]
-    body: dict[str, Any] = {
-        "prompt": scene,
-        "refine": False,
-        "overlay": overlay,
-        "filename": f"weather-scene-{str(thread_id)[-8:] or 'zalo'}.jpg",
-        "thread_id": str(thread_id),
-        "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
-        "caption": "",
-        "send_zalo": True,
-    }
-    try:
-        out = _post("/v1/image", body, timeout=180.0)
-    except Exception as e:  # noqa: BLE001
-        log.warning("search_then_weather_scene diffusion failed: %s", type(e).__name__)
-        out = None
+    fname = f"weather-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
+    out = _omni_generate_still(scene, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
+        try:
+            fin = _post(
+                "/v1/overlay",
+                {
+                    "prompt": "overlay",
+                    "filename": out.get("file") or fname,
+                    "overlay": overlay,
+                    "thread_id": str(thread_id),
+                    "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
+                    "caption": "",
+                    "send_zalo": True,
+                },
+                timeout=60.0,
+            )
+            if isinstance(fin, dict) and fin.get("ok"):
+                return fin
+        except Exception as e:  # noqa: BLE001
+            log.warning("weather overlay failed: %s", type(e).__name__)
         return out
-    # Silent fallback: Pillow info-card (no Comfy/Omni) when diffusion backends are down.
+    # Silent fallback: Pillow info-card when Omni/diffusion backends are down.
     log.info("weather_scene: falling back to info-card")
     fallback_ins = weather_scene_to_info_card_instruction(img_ins)
     prompt = build_office_body_from_search(
@@ -802,7 +900,7 @@ def run_text_poster(
     poster_phrase: str = "",
     poster_bw: bool | None = None,
 ) -> Optional[dict]:
-    """POST /v1/image text-poster. Caller must already have a media_generation plan."""
+    """POST /v1/text-poster. Caller must already have a media_generation plan."""
     del thread_id, thread_type
     if not classified:
         return None
@@ -822,7 +920,7 @@ def run_text_poster(
     if poster_bw is not None:
         body["poster_bw"] = poster_bw
     try:
-        out = _post("/v1/image", body, timeout=60.0)
+        out = _post("/v1/text-poster", body, timeout=60.0)
     except Exception as e:  # noqa: BLE001
         log.warning("text-poster shortcut failed: %s", type(e).__name__)
         return shortcut_consumed()

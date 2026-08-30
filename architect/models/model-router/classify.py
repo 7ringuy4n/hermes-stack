@@ -16,9 +16,12 @@ import httpx
 ROOT = Path(__file__).resolve().parent
 
 
-def _repo_skills_root() -> Path:
-    # …/architect/models/model-router → parents[2] = repo root
-    return ROOT.parents[2] / "hermes" / "main" / "skills"
+def _repo_skills_root() -> Path | None:
+    # …/architect/models/model-router → parents[2] = repo root (dev checkout only).
+    try:
+        return ROOT.parents[2] / "hermes" / "main" / "skills"
+    except IndexError:
+        return None
 
 
 def _resolve_skill_cfg(env_name: str, skill_rel: str, bake_name: str) -> Path:
@@ -28,11 +31,11 @@ def _resolve_skill_cfg(env_name: str, skill_rel: str, bake_name: str) -> Path:
         p = Path(env)
         if p.is_file():
             return p
-    candidates = (
-        Path("/opt/data/skills") / skill_rel,
-        _repo_skills_root() / skill_rel,
-        ROOT / "config" / bake_name,
-    )
+    candidates: list[Path] = [Path("/opt/data/skills") / skill_rel]
+    repo = _repo_skills_root()
+    if repo is not None:
+        candidates.append(repo / skill_rel)
+    candidates.append(ROOT / "config" / bake_name)
     for p in candidates:
         try:
             if p.is_file():
