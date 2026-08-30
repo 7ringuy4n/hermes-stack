@@ -655,43 +655,6 @@ def scene_prompt_from_instruction(text: str) -> str:
     return ""
 
 
-def run_scene_image(
-    user_ask: str,
-    plan: dict[str, Any],
-    thread_id: str,
-    thread_type: str = "user",
-    *,
-    classified: bool = False,
-) -> Optional[dict]:
-    """Pure scenic image — diffusion only (aerial city, landscape, no live overlay)."""
-    if not classified:
-        return None
-    try:
-        from .classify_client import plan_image_instruction
-    except ImportError:
-        from classify_client import plan_image_instruction  # type: ignore
-    img_ins = plan_image_instruction(plan, user_ask)
-    scene = scene_prompt_from_instruction(img_ins) or scene_prompt_from_instruction(user_ask)
-    if not scene:
-        return shortcut_consumed()
-    body: dict[str, Any] = {
-        "prompt": scene,
-        "refine": False,
-        "filename": f"scene-{str(thread_id)[-8:] or 'zalo'}.jpg",
-        "thread_id": str(thread_id),
-        "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
-        "caption": "",
-        "send_zalo": True,
-    }
-    try:
-        out = _post("/v1/image", body, timeout=180.0)
-    except Exception as e:  # noqa: BLE001
-        log.warning("scene_image shortcut failed: %s", type(e).__name__)
-        return shortcut_consumed()
-    if isinstance(out, dict) and out.get("ok"):
-        return out
-    return shortcut_consumed()
-
 
 def _post_info_card_image(
     prompt: str,
