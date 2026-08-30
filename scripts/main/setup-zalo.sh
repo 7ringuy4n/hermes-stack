@@ -238,13 +238,13 @@ install_zalo_stack_after_qr() {
 
   cd "$ROOT"
   set -a && source ./.env && set +a
-  export ENABLE_ZALO=1
+  export ENABLE_ZALO=active
   export WORKER_MESSAGE=active
   export ASSISTANT_UP_LIGHT=1
 
   if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
     printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S bash -lc \
-      "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=1 WORKER_MESSAGE=active ASSISTANT_UP_LIGHT=1 && bash run.sh up" \
+      "cd ${ROOT} && set -a && . ./.env && set +a && export ENABLE_ZALO=active WORKER_MESSAGE=active ASSISTANT_UP_LIGHT=1 && bash run.sh up" \
       || { zalo_log "ERROR: run.sh up failed"; return 1; }
   else
     ASSISTANT_UP_LIGHT=1 bash run.sh up || { zalo_log "ERROR: run.sh up failed"; return 1; }

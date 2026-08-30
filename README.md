@@ -38,7 +38,7 @@ Full doc map: **[docs/README.md](./docs/README.md)** · Architecture: **[docs/03
 | Private AI chat + facts that persist | Core only | Hermes + Valkey session + Postgres memory + Qdrant knowledge |
 | Chat that can search the web, OCR PDFs, queue long jobs | `WORKER_MEDIA_FILE=active` | Dispatcher search, OCR, jobs, optional image path |
 | Timed deliveries | `WORKER_SCHEDULE=active` | Schedule Worker (Go clock) |
-| Zalo / Telegram as the front door | `WORKER_MESSAGE=active` + `ENABLE_ZALO=1` | Message Worker (zalo-proxy + zalo-api) |
+| Zalo / Telegram as the front door | `WORKER_MESSAGE=active` + `ENABLE_ZALO=active` | Message Worker (zalo-proxy + zalo-api) |
 | Alerts to SMS/email/Zalo | `WORKER_NOTIFY=active` | Notification Worker |
 | Lab/enterprise controls (ACL, SIEM, secrets) | `WORKER_SECURITY=active` | OpenBao / authz / SIEM overlay |
 | Dashboards | `WORKER_MONITOR=active` | Grafana / Loki / Prometheus |
@@ -148,7 +148,7 @@ Defaults (non-secret): [docs/config/DEFAULTS.md](./docs/config/DEFAULTS.md) · C
 # Edit .env, then:
 bash run.sh up
 # or, from a running stack (backup+verify first):
-bash run.sh add-components WORKER_MEDIA_FILE=active WORKER_MESSAGE=active ENABLE_ZALO=1
+bash run.sh add-components WORKER_MEDIA_FILE=active WORKER_MESSAGE=active ENABLE_ZALO=active
 ```
 
 Traefik defaults to `TRAEFIK_MODE=local` (VPN/localhost). Compose YAML: [`docker/`](./docker/README.md). Backup/restore: [architect/backup-restore/README.md](./architect/backup-restore/README.md).
@@ -170,7 +170,7 @@ Do **not** call the stack HA until the stores are replicated.
 
 ```bash
 # in .env
-ENABLE_ZALO=1
+ENABLE_ZALO=active
 
 bash run.sh up
 bash scripts/main/setup-zalo.sh    # after stack healthy — install only, no QR

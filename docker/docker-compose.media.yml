@@ -1,7 +1,7 @@
 # assistant — Media|File Worker overlay (dispatcher, OCR, Jobs, SearXNG).
 # Merged when WORKER_MEDIA_FILE=active (or ENABLE_MEDIA_FILE=active / ENABLE_OCR / ENABLE_JOBS / ENABLE_SEARXNG is 1).
 #
-# Worker bundled defaults (when active): ENABLE_OCR=1 ENABLE_JOBS=1 OFFICE_FILE_GEN=1
+# Worker bundled defaults (when active): ENABLE_OCR=active ENABLE_JOBS=active OFFICE_FILE_GEN=active
 # Image diffusion: OmniRouter/9Router combo IMAGE_GEN_COMBO (no self-host diffusion).
 # File-gen lives in dispatcher (office_file.py). Web backends: Omni search providers.
 #

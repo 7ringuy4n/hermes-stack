@@ -1,3 +1,17 @@
+## 2026-08-30 20:10 +07 — Core scripts still wrote ENABLE_*=1|0
+
+### Symptom
+After the active/inactive toggle migration, install/resolve, Zalo setup, and security smoke paths still emitted or compared `ENABLE_*=1|0`, so new writes and checks could disagree with migrated `.env` values.
+
+### Root cause
+Writers and equality checks were not fully converted when canonical values became `active`/`inactive`.
+
+### Fix (core)
+`install-component.sh`, setup/restore/Zalo helpers, `stack-watch`, `check-security`, and related comments/docs now set and test `active`/`inactive`. Legacy `1`/`0` remains accepted via migrate/`_env_active`.
+
+### Prevent recurrence
+Never write `ENABLE_*=1|0` from core install/setup paths; use `active`/`inactive` only.
+
 ## 2026-08-30 19:20 +07 — Scenic Hermes still guided to dispatcher / manim path
 
 ### Symptom

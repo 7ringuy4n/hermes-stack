@@ -65,7 +65,7 @@ bash run.sh verify [stamp]      # manifest + live postgres/Valkey/qdrant probes
 bash run.sh restore [stamp]     # restore stores then compose up (uses HERMES_REPLICAS)
 bash run.sh migrate             # pack LATEST stamp for moving hosts
 bash run.sh workers             # show current worker activation
-bash run.sh add-components WORKER_MESSAGE=active ENABLE_ZALO=1
+bash run.sh add-components WORKER_MESSAGE=active ENABLE_ZALO=active
 ```
 
 Stamps include `config/env.sealed` (full `.env`) and `config/profile-options.env` (non-secret runtime flags). **Routers** component stores OmniRouter / 9Router named volumes (`omni_router_data`, `nine_router_data`), `routers/env.router` flags, and best-effort `*-export.json` combo snapshots. **OpenBao** stores KV JSON + `.env.openbao` and re-imports KV on restore (starts OpenBao if needed). Destroy, `add-components`, and `update` **backup then verify** and abort if verify fails. `switch-profile` is now a removed compatibility command that returns a worker hint.

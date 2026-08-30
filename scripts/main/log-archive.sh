@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Archive host journal + Docker container logs with retention (default 30d).
-# Component: ENABLE_LOG_ARCHIVE=1. Admin: LOG_RETENTION_DAYS, LOG_ARCHIVE_DIR.
+# Component: ENABLE_LOG_ARCHIVE=active. Admin: LOG_RETENTION_DAYS, LOG_ARCHIVE_DIR.
 set -euo pipefail
 export LC_ALL="${LC_ALL:-C.UTF-8}"
 export LANG="${LANG:-C.UTF-8}"

@@ -1,3 +1,8 @@
+## 2026-08-30 20:10 +07 — Core ENABLE_* writers use active|inactive
+
+- Install/resolve, Zalo setup/restore, stack-watch, check-security, and related core scripts write and compare feature toggles as `active`/`inactive` (not `1`/`0`).
+- Compose/docs operator examples aligned; runtime migrate still accepts legacy `1`/`0`.
+
 ## 2026-08-30 19:20 +07 — Still images always Omni image-gen; retire dispatcher diffusion
 
 - Classify → still-image jobs call OmniRouter `/v1/images/generations` with model `image-gen` whether Media worker is active or inactive (never `model=hermes` for stills).

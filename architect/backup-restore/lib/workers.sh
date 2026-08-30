@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Worker activation. Core is always on: Hermes, Memory, Router Worker, Traefik local, watchdog.
-# Optional workers are inactive unless WORKER_*=active (or ENABLE_*=1 for compatibility).
+# Optional workers are inactive unless WORKER_*=active (or ENABLE_*=active; legacy 1 still accepted via migrate).
 # Bundled ENABLE_* for a worker live with that worker — not in default setup.
 set -euo pipefail
 
@@ -42,7 +42,7 @@ _worker_active() {
   esac
   case "$(printf '%s' "$enable_val" | tr '[:upper:]' '[:lower:]')" in
     active) return 0 ;;
-    # Legacy ENABLE_*=1 for non-media workers still using numeric toggles.
+    # Legacy ENABLE_*=1 still accepted until migrate rewrites .env to active.
     1) return 0 ;;
   esac
   return 1

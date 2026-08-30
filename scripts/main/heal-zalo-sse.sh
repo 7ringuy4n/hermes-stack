@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Heal Zalo SSE after restore / owner-lock drift (component: ENABLE_ZALO=1).
+# Heal Zalo SSE after restore / owner-lock drift (component: ENABLE_ZALO=active).
 # Clears stale zalo_owner election files, restarts zalo-proxy + Hermes replicas
 # so exactly one replica can re-attach SSE.
 #

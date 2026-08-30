@@ -270,7 +270,7 @@ services:
       - "127.0.0.1:${DISPATCHER_PORT:-8090}:8090"
     networks: [internal]
 
-  # Low Must: optional LLM gateway (ENABLE_9ROUTER=1). Default path is OmniRouter via router-worker.
+  # Low Must: optional LLM gateway (ENABLE_9ROUTER=active). Default path is OmniRouter via router-worker.
   9router:
     profiles: ["9router"]
     image: ${N9ROUTER_IMAGE:-decolua/9router:latest}
@@ -342,7 +342,7 @@ services:
         aliases:
           - model-router
 
-  # Optional OmniRouter — ENABLE_OMNIROUTER=1 (compose profile omnirouter)
+  # Optional OmniRouter — ENABLE_OMNIROUTER=active (compose profile omnirouter)
   # Dedicated image (not 9router). Override with OMNIROUTER_IMAGE in .env.
   omni-router:
     profiles: ["omnirouter"]
@@ -368,7 +368,7 @@ services:
     networks: [internal]
 
   hermes:
-    # When ENABLE_OPENBAO=1, first-setup-openbao writes ${ASSISTANT_DATA_DIR}/.env.openbao
+    # When ENABLE_OPENBAO=active, first-setup-openbao writes ${ASSISTANT_DATA_DIR}/.env.openbao
     env_file:
       - path: ${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}/.env.openbao
         required: false
@@ -445,7 +445,7 @@ services:
       - WEB_SEARCH_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
       - ZALO_ATTACHMENT_CONTEXT_TTL_S=${ZALO_ATTACHMENT_CONTEXT_TTL_S:-86400}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
-      # Zalo (used when ENABLE_ZALO=1 + host bridge + zalo-proxy profile)
+      # Zalo (used when ENABLE_ZALO=active + host bridge + zalo-proxy profile)
       # Only replica hermes-1 keeps ZALO_PLUGIN_URL (see hermes-replica-entry.sh).
       - ZALO_PLUGIN_URL=${ZALO_PLUGIN_URL:-http://host.docker.internal:8787}
       - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
@@ -489,7 +489,7 @@ services:
       - "host.docker.internal:host-gateway"
     networks: [internal]
 
-  # Optional — ENABLE_ZALO=1 (run.sh --profile zalo). Host bridge :8787 into Docker.
+  # Optional — ENABLE_ZALO=active (run.sh --profile zalo). Host bridge :8787 into Docker.
   # Combo: zalo-proxy AND zalo-api must both run. Bridge-only is not a working Zalo channel.
   zalo-proxy:
     profiles: ["zalo"]
