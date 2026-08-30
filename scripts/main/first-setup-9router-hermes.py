@@ -217,13 +217,15 @@ def recreate_services() -> None:
     media_on = (
         (env.get("ENABLE_MEDIA_FILE") or "").strip().lower() == "active"
         or (env.get("WORKER_MEDIA_FILE") or "").strip().lower() == "active"
-        or env.get("ENABLE_OCR") == "1"
-        or env.get("ENABLE_JOBS") == "1"
-        or env.get("ENABLE_SEARXNG") == "1"
+        or (env.get("ENABLE_OCR") or "").strip().lower() in {"active", "1", "true", "yes", "on"}
+        or (env.get("ENABLE_JOBS") or "").strip().lower() in {"active", "1", "true", "yes", "on"}
+        or (env.get("ENABLE_SEARXNG") or "").strip().lower() in {"active", "1", "true", "yes", "on"}
     )
     if media_on:
         files.append(f"-f {ROOT}/docker/docker-compose.media.yml")
-    if any(env.get(k) == "1" for k in ("ENABLE_SECURITY", "ENABLE_MONITOR", "ENABLE_NOTIFY", "ENABLE_OPENBAO", "ENABLE_SIEM", "ENABLE_AUTHZ", "ENABLE_CLOUDDRIVE")):
+    def _flag_on(v: str | None) -> bool:
+        return (v or "").strip().lower() in {"active", "1", "true", "yes", "on"}
+    if any(_flag_on(env.get(k)) for k in ("ENABLE_SECURITY", "ENABLE_MONITOR", "ENABLE_NOTIFY", "ENABLE_OPENBAO", "ENABLE_SIEM", "ENABLE_AUTHZ", "ENABLE_CLOUDDRIVE")):
         files.append(f"-f {ROOT}/docker/docker-compose.security.yml")
     files_s = " ".join(files)
     # Drop leftover force-recreate aliases (hexprefix_assistant-hermes-N) that collide.
