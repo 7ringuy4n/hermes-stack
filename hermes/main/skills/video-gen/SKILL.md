@@ -1,18 +1,26 @@
 ---
 name: video-gen
-description: "Video generation is blocked on this stack — refuse via dispatcher policy (like video-summary). RESULT-ONLY (see media-out)."
+description: "Refuse video, music, audio generation and YouTube/music/video transcripts. RESULT-ONLY (see media-out)."
 ---
 
-# Video generation (refused)
+# Video / music / audio / transcripts (refused)
 
-Follow skill **`media-out`** (result only — no step chatter).
+Follow skill **`media-out`**.
 
-**Policy:** this stack does **not** generate synthetic video clips (same family as **`video-summary`** blocking YouTube/TikTok/Facebook fetch). Do **not** call `POST /v1/video`, manim, matplotlib, PIL frame loops, ffmpeg encode loops, or Comfy video workflows.
+**Policy:** this stack does **not** generate or fetch:
 
-## Required (must)
+- Synthetic **video** clips
+- **Music** / song generation
+- **Audio** / voice / TTS generation (except stack ASR used internally when enabled)
+- **YouTube / TikTok / Facebook** download, transcript, or summary
+- Music lyrics transcription from URLs
+- Video frame transcription pipelines (manim, ffmpeg encode loops, Comfy video)
 
-1. **Do not** invent Python/video pipelines or install manim / pangocairo.
-2. Ask dispatcher for the refuse message — **OmniRouter writes the user-facing text** (not hardcoded in the skill):
+Do **not** call ComfyUI video workflows, Whisper as a user-facing product, or invent pipelines.
+
+## Required
+
+Ask dispatcher for the refuse message (OmniRouter writes user-facing text):
 
 ```bash
 curl -sS -X POST http://dispatcher:8090/v1/video-policy-refuse \
@@ -20,19 +28,18 @@ curl -sS -X POST http://dispatcher:8090/v1/video-policy-refuse \
   -d '{"topic":"video_generate","context":"<verbatim user request>","language":"vi"}'
 ```
 
-Or call `POST /v1/video-summary` when the user pasted a YouTube/TikTok/Facebook link and wants transcript/summary (`topic` is implicit — use the URL in `context` or `url`).
+Topics: `video_generate` | `video_summary` | `music_generate` | `audio_generate` | `transcript`
 
-3. Reply with the JSON **`message`** field only. No step chatter, no approve, no chat_id / thread metadata.
+Reply with JSON **`message`** only.
 
-## Alternatives (only when the user wanted visual output)
+## Alternatives
 
 | Need | Route |
 |------|--------|
-| Still image / infographic / poster | **`image-gen`** → `POST /v1/image` |
-| Office document | **`file-gen`** / **`documents`** |
+| Still image / infographic | **`image-gen`** or **`multi-purpose`** |
+| Office document | **`file-gen`** |
 
 ## Related
 
-- `media-out` — result-only delivery
-- `image-gen` — supported still images
-- `comfyui` — only when user named an explicit Comfy **image** workflow (not video)
+- `image-gen` — supported stills
+- `multi-purpose` — complex still layouts

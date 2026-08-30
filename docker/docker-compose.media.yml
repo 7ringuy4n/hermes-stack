@@ -1,9 +1,9 @@
-# assistant — Media|File Worker overlay (dispatcher, OCR, Jobs, SearXNG, ComfyUI CPU).
+# assistant — Media|File Worker overlay (dispatcher, OCR, Jobs, SearXNG).
 # Merged when WORKER_MEDIA_FILE=active (or ENABLE_MEDIA_FILE / ENABLE_OCR / ENABLE_JOBS / ENABLE_SEARXNG is 1).
 #
 # Worker bundled defaults (when active): ENABLE_OCR=1 ENABLE_JOBS=1 OFFICE_FILE_GEN=1
-# IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni
-# File-gen lives in dispatcher (office_file.py). Web backends: vendors first, SearXNG last.
+# Image diffusion: OmniRouter/9Router combo IMAGE_GEN_COMBO=image-gen (no ComfyUI).
+# File-gen lives in dispatcher (office_file.py). Web backends: Omni search providers.
 #
 # Do NOT re-list hermes/dispatcher environment here — Compose list-merge would
 # replace the base env and drop core keys.
@@ -35,11 +35,11 @@ services:
     environment:
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://omni-router:20129/v1}
       - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
-      - OCR_MODEL=${OCR_MODEL:-hermes}
+      - OCR_MODEL=${OCR_MODEL:-vision-ocr}
       - OCR_MEDIA_ROOT=/data/media
       - OCR_FALLBACK=${OCR_FALLBACK:-1}
       - OCR_PADDLE=${OCR_PADDLE:-1}
-      - OCR_VISION=${OCR_VISION:-0}
+      - OCR_VISION=${OCR_VISION:-1}
       - OCR_PADDLE_MOBILE=${OCR_PADDLE_MOBILE:-1}
       - OCR_PADDLE_TIMEOUT_S=${OCR_PADDLE_TIMEOUT_S:-90}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
@@ -88,46 +88,9 @@ services:
         condition: service_started
     networks: [internal]
 
-  # Default self-host image gen (no VGA): SDXL / SD 1.5 via ComfyUI CPU
-  comfyui-cpu:
-    image: ${COMFYUI_CPU_IMAGE:-yanwk/comfyui-boot:cpu}
-    restart: unless-stopped
-    environment:
-      # --cpu required: cpu image still ships torch without CUDA; without it main.py asserts
-      - CLI_ARGS=--listen 0.0.0.0 --port 8188 --cpu
-      - TZ=${TZ:-Asia/Ho_Chi_Minh}
-    volumes:
-      - ${ASSISTANT_DATA_DIR:-/data/assistant}/comfyui:/root
-    ports:
-      - "127.0.0.1:${COMFYUI_CPU_PORT:-8188}:8188"
-    networks: [internal]
-
-  # Optional GPU path: FLUX.2 [klein] 4B — enable with COMFYUI_HAS_GPU=1 (compose profile comfy-gpu)
-  comfyui-gpu:
-    profiles: ["comfy-gpu"]
-    image: ${COMFYUI_GPU_IMAGE:-yanwk/comfyui-boot:cu124}
-    restart: unless-stopped
-    environment:
-      - CLI_ARGS=--listen 0.0.0.0 --port 8188
-      - NVIDIA_VISIBLE_DEVICES=all
-      - TZ=${TZ:-Asia/Ho_Chi_Minh}
-    volumes:
-      - ${ASSISTANT_DATA_DIR:-/data/assistant}/comfyui-gpu:/root
-    ports:
-      - "127.0.0.1:${COMFYUI_GPU_PORT:-8189}:8188"
-    networks: [internal]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-
   dispatcher:
     depends_on:
       - searxng
-      - comfyui-cpu
 
   hermes:
     depends_on:

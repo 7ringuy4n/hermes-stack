@@ -85,7 +85,7 @@ compose() {
   if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
     files+=(-f "$ROOT/docker/docker-compose.security.yml")
   fi
-  [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles+=(--profile comfy-gpu)
+  # Media GPU profile removed — image gen is Omni/9Router only.
   [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
   [[ "${ENABLE_NOTIFY:-0}" == "1" ]] && profiles+=(--profile notify)
   [[ "${ENABLE_SECURITY:-0}" == "1" ]] && profiles+=(--profile security)

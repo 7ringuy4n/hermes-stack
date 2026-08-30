@@ -1,3 +1,17 @@
+## 2026-08-30 08:00 +07 — Drop ComfyUI; route image/OCR/embed via router combos
+
+### Symptom
+Stack depended on ComfyUI checkpoints and host API keys (FAL/Flux/Pollinations/dall-e defaults) for image gen; OCR/embed combo names were not first-class.
+
+### Root cause
+Media worker pinned `IMAGE_BACKENDS=comfy-cpu,…` and optional paid keys in `.env.example`; skills pointed Hermes at Comfy.
+
+### Fix (core)
+Dispatcher omni→n9 with `IMAGE_GEN_COMBO=image-gen`; remove Comfy compose services; OCR `vision-ocr`; embed `embedding`; first-setup creates combo shells; refuse music/audio/URL transcripts; skills + classify media policy updated.
+
+### Prevent recurrence
+Never reintroduce ComfyUI or host image vendor keys — operators fill Omni/9Router combo members in the router UI.
+
 ## 2026-08-29 19:30 +07 — IMAGE_BACKENDS omni-first in .env broke Comfy-first policy
 
 ### Symptom
