@@ -243,11 +243,10 @@ services:
       # Keep the downloaded ASR model on the media volume instead of re-fetching per recreate.
       - HF_HOME=${WHISPER_CACHE_DIR:-/data/media/.cache/huggingface}
       - OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-1}
-      - ENABLE_MEDIA_FILE=${ENABLE_MEDIA_FILE:-0}
+      - ENABLE_MEDIA_FILE=${ENABLE_MEDIA_FILE:-inactive}
       - MEDIA_CACHE_DIR=/data/media
       # Image diffusion via router combo IMAGE_GEN_COMBO (default image-gen when media active, hermes when inactive).
       - IMAGE_GEN_COMBO=${IMAGE_GEN_COMBO:-image-gen}
-      - IMAGE_GEN_SIZE=${IMAGE_GEN_SIZE:-1024x1024}
       - OMNIROUTER_BASE_URL=${OMNIROUTER_BASE_URL:-http://omni-router:20129/v1}
       - OMNIROUTER_API_KEY=${OMNIROUTER_API_KEY:-}
       - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-1}

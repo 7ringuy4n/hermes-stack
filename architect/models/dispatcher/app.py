@@ -176,6 +176,7 @@ class ImageReq(BaseModel):
     filename: Optional[str] = None
     provider: Optional[str] = None  # omni|n9|text|info-card
     mode: Optional[str] = None  # text|poster → exact glyph poster, skip diffusion
+    size: Optional[str] = None  # optional; skill declares HD default (e.g. 1024x1024)
     poster_n: Optional[int] = None
     poster_phrase: Optional[str] = None
     poster_bw: Optional[bool] = None
@@ -971,7 +972,11 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
     raw: Optional[bytes] = None
 
     try:
-        raw, used, errors = generate_image_bytes(gen_prompt, provider=req.provider)
+        raw, used, errors = generate_image_bytes(
+            gen_prompt,
+            provider=req.provider,
+            size=(req.size or "").strip() or None,
+        )
         dest.write_bytes(raw)
         # Hermes agent often runs as HERMES_UID (1000); keep out/ writable & readable.
         try:

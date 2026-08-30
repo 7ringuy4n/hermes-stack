@@ -14,7 +14,7 @@ check() {
   fi
 }
 
-echo "WORKER_MEDIA_FILE=${WORKER_MEDIA_FILE:-inactive} ENABLE_MEDIA_FILE=${ENABLE_MEDIA_FILE:-0}"
+echo "WORKER_MEDIA_FILE=${WORKER_MEDIA_FILE:-inactive} ENABLE_MEDIA_FILE=${ENABLE_MEDIA_FILE:-inactive}"
 check dispatcher "http://127.0.0.1:${DISPATCHER_PORT:-8090}/health"
 check ocr        "http://127.0.0.1:${OCR_PORT:-8091}/health"
 check jobs       "http://127.0.0.1:${JOBS_PORT:-8104}/health"
