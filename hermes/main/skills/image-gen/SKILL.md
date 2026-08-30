@@ -26,14 +26,16 @@ If `/v1/image` returns 502/503: one **media-out** failure line only. When the as
 
 | Need | Call |
 |------|------|
-| Scenic / illustration | default `/v1/image` with English scene prompt; optional `overlay[]` |
+| Scenic / illustration | default `/v1/image` with one English photorealistic prompt; optional `overlay[]` |
 | Labeled metrics picture | `"mode":"info-card"` + TITLE/SUBTITLE/ICON markers |
 | Exact text poster | `"mode":"text-poster"` |
+
+**Scenic prompts (any user language):** Prefer the classify `SCENE:` English line when present. Otherwise translate the user ask into one clear English diffusion sentence (viewpoint + place + photorealistic). Example family: `Aerial view of Ho Chi Minh City skyline from above, photorealistic`. Do not POST the raw non-English ask as the only prompt. Do not invent a separate aerial skill.
 
 ```bash
 mkdir -p /opt/data/media/out && curl -sS -X POST http://dispatcher:8090/v1/image \
   -H 'content-type: application/json' \
-  -d '{"prompt":"<scene>","filename":"<safe-slug>.png","refine":false,"size":"1024x1024"}'
+  -d '{"prompt":"<english-scene>","filename":"<safe-slug>.png","refine":false,"size":"1024x1024"}'
 ```
 
 ## Output

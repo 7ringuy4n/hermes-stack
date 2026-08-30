@@ -764,8 +764,7 @@ def plan_media_shortcut_gate(plan: dict[str, Any] | None) -> str:
         return "weather_scene"
     if plan_allows_search_then_info_card(plan):
         return "info_card"
-    if plan_allows_scene_image(plan):
-        return "scene_image"
+    # Scenic-only image is Hermes + image-gen (not a host shortcut).
     if plan_allows_poster_shortcut(plan):
         return "poster"
     return ""
