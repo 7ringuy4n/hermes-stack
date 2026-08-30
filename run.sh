@@ -79,7 +79,7 @@ compose() {
     export TRAEFIK_ACME_ENABLED="$acme"
   fi
 
-  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-0}" == "1" ]]; then
+  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
     files+=(-f "$ROOT/docker/docker-compose.media.yml")
   fi
   if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
@@ -96,7 +96,7 @@ compose() {
   fi
   [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles+=(--profile clouddrive)
   [[ "${ENABLE_SCHEDULE:-0}" == "1" ]] && profiles+=(--profile schedule)
-  [[ "${ENABLE_MEDIA_FILE:-0}" == "1" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]] && profiles+=(--profile media)
+  [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]] && profiles+=(--profile media)
 
   case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
     *1*)
@@ -158,10 +158,10 @@ compose() {
 }
 
 need_media() {
-  if [[ "${ENABLE_MEDIA_FILE:-0}" == "1" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]]; then
+  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]]; then
     return 0
   fi
-  echo "Command '${1:-}' requires the media/file worker (ENABLE_MEDIA_FILE=1 or ENABLE_OCR/JOBS=1)." >&2
+  echo "Command '${1:-}' requires the media/file worker (ENABLE_MEDIA_FILE=active or ENABLE_OCR/JOBS=1)." >&2
   return 1
 }
 
@@ -429,7 +429,7 @@ EOF
     $sudo systemctl disable --now assistant-zalo-watch.timer >/dev/null 2>&1 || true
   fi
 
-  if [[ "${ENABLE_MEDIA_FILE:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]]; then
+  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_JOBS:-0}" == "1" ]]; then
       $sudo tee "${unit_dir}/assistant-compact.service" >/dev/null <<EOF
 [Unit]
 Description=Assistant compact skills/memory

@@ -20,7 +20,7 @@ _install_pairs() {
       ;;
     media|media-file|file)
       echo WORKER_MEDIA_FILE=active
-      echo ENABLE_MEDIA_FILE=1
+      echo ENABLE_MEDIA_FILE=active
       echo ENABLE_OCR=1
       echo ENABLE_JOBS=1
       echo ENABLE_SEARXNG=1
@@ -115,7 +115,7 @@ _uninstall_pairs() {
       ;;
     media|media-file|file)
       echo WORKER_MEDIA_FILE=inactive
-      echo ENABLE_MEDIA_FILE=0
+      echo ENABLE_MEDIA_FILE=inactive
       echo ENABLE_OCR=0
       echo ENABLE_JOBS=0
       echo ENABLE_SEARXNG=0
