@@ -1,3 +1,17 @@
+## 2026-08-30 08:50 +07 — Dispatcher still documented Low profile search; media combos were stubs
+
+### Symptom
+Dispatcher README still described Low/Medium/High and `POST /v1/search` on the media worker; media Omni combos had a single stub instead of OpenCode members like hermes.
+
+### Root cause
+Stale profile-tier docs after search moved to model-router; media ensure used a one-model shell path.
+
+### Fix (core)
+Rewrite dispatcher README; office-file comments follow Media worker flags; `ensure_media_combos` uses OpenCode fill (`refill_if_below=3`).
+
+### Prevent recurrence
+Do not document profile Low/Med/High on dispatcher; media combos share the hermes OpenCode ensure path.
+
 ## 2026-08-30 08:40 +07 — Omni combo shells image-gen / vision-ocr / embedding missing
 
 ### Symptom

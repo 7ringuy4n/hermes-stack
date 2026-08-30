@@ -233,7 +233,7 @@ def mode_switch(req: ModeReq) -> dict[str, Any]:
         m = "upload" if req.has_media else "chat"
     hints = {
         "chat": "Use skill chat + common-rules.",
-        "research": "Use skill research; web→/v1/search.",
+        "research": "Use skill research; web via model-router /v1/search.",
         "upload": "Use skill upload/vision/ocr; media already local or via /v1/media.",
         "code": "Use skill code; short snippets.",
     }
