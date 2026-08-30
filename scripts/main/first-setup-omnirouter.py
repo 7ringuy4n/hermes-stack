@@ -786,41 +786,55 @@ def pin_media_combos(env: dict[str, str]) -> None:
 
 
 def ensure_media_combos(opener) -> None:
-    """Ensure Omni combo shells for image-gen / vision-ocr / embedding (operator fills members)."""
+    """Ensure Omni combo shells for image-gen / vision-ocr / embedding (operator replaces stubs)."""
     for name, desc in (
-        ("image-gen", "Image generation — Omni /images/generations (fill with image-capable models)"),
-        ("vision-ocr", "Vision OCR — Omni /v1/chat/completions multimodal"),
-        ("embedding", "Embeddings — Omni /v1/embeddings (fill with embed-capable models)"),
+        (
+            "image-gen",
+            "Image generation — Omni /images/generations (replace stub with image-capable models)",
+        ),
+        (
+            "vision-ocr",
+            "Vision OCR — Omni /v1/chat/completions multimodal (replace stub with vision models)",
+        ),
+        (
+            "embedding",
+            "Embeddings — Omni /v1/embeddings (replace stub with embed-capable models)",
+        ),
     ):
         ensure_combo_shell(opener, name=name, description=desc)
 
 
 def ensure_combo_shell(opener, *, name: str, description: str) -> str:
-    """Create combo if missing; do not overwrite existing members (operator-owned)."""
+    """Create combo if missing; do not overwrite existing members (operator-owned).
+
+    OmniRoute rejects empty ``models`` (HTTP 400). Always seed one OpenCode stub so the
+    combo appears in the UI; operators replace members for image/vision/embed capability.
+    """
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = data.get("combos") or []
     existing = next((c for c in combos if (c.get("name") or "") == name), None)
     if existing:
         print(f"OK: combo {name} exists id={existing.get('id')}")
         return name
+    stub_ids = list_oc_models(opener)[:1] or list(OPENCODE_FREE_FALLBACK[:1])
+    if not stub_ids:
+        raise SystemExit(f"combo {name} create failed: no OpenCode stub model available")
+    models = [_combo_model_entry(name, 1, stub_ids[0])]
     payload = {
         "name": name,
-        "models": [],
+        "models": models,
         "strategy": COMBO_STRATEGY,
         "description": description,
     }
-    status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
-    if status not in (200, 201):
-        print(f"WARN create combo {name} empty failed ({status}); retry with OpenCode stub")
-        oc = list_oc_models(opener)[:1] or list(OPENCODE_FREE_FALLBACK[:1])
-        models = [_combo_model_entry(name, 1, oc[0])] if oc else []
-        payload["models"] = models
+    try:
         status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
-        if status not in (200, 201):
-            raise SystemExit(f"combo {name} create failed: {body}")
-    print(f"OK: created combo shell {name}")
+    except urllib.error.HTTPError as e:
+        detail = e.read()[:400]
+        raise SystemExit(f"combo {name} create failed HTTP {e.code}: {detail!r}") from e
+    if status not in (200, 201):
+        raise SystemExit(f"combo {name} create failed: {body}")
+    print(f"OK: created combo shell {name} stub={stub_ids[0]!r} (replace in Omni UI)")
     return name
-
 
 def assert_combo_oc_only(opener, name: str) -> None:
     """Fail setup if hermes/classifier contain non-OpenCode members."""
