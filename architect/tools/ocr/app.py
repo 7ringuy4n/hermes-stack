@@ -85,7 +85,9 @@ def _text_usable(text: str) -> bool:
 class OcrReq(BaseModel):
     path: Optional[str] = None
     image_b64: Optional[str] = None
-    prompt: str = Field(default="Extract all text as markdown. Preserve tables if present.")
+    prompt: str = Field(
+        default="Analyze this file. Describe visible content and extract any readable text as markdown. Preserve tables if present."
+    )
 
 
 @app.get("/health")

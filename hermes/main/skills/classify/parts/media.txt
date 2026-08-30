@@ -29,7 +29,7 @@ task_hint=tool, task_type=media_generation, execution_class=async, response_mode
 Host owns delivery (search→diffusion scene+overlay, or silent info-card fallback). Never hello, /help, backend key menus, or first-meeting intros when this path matches.
 ALWAYS emit a search/web_search sibling for live facts. Search instruction = short query only (place + current weather). Image instruction = contract markers only:
 RENDER: scene-overlay
-SCENE: <one English photorealistic scene sentence — city/place skyline or aerial with sky visible; match user view if they named aerial/street level; use official English place names (Sài Gòn/Saigon → Ho Chi Minh City in SCENE)>
+SCENE: <one English photorealistic scene sentence — city/place skyline or landscape with sky visible; match the viewpoint the user named; use official English place names (Sài Gòn/Saigon → Ho Chi Minh City in SCENE)>
 - <fact label bullets only — temperature, humidity, condition, wind; values filled after search>
 Do NOT emit TITLE:/SUBTITLE:/ICON:/STYLE: (those route to info-card dashboard). Host delivers search→diffusion scene + small bottom overlay text (not info-card). Never collapse to chat-only Q&A.
 
@@ -42,11 +42,11 @@ Host may deliver search→Dispatcher mode=info-card without waiting on Hermes ch
 Do NOT put create-verbs or English “Weather info card for …” scene prose in TITLE. Dispatcher info-card owns Unicode layout. Prefer main fact lines only when the user asks for key/primary info (not a long essay).
 If the user asked for a scenic weather **picture** (city photo + small weather text), use WEATHER SCENE IMAGE above — not this dashboard path.
 
-SCENE IMAGE / VIDEO (scenic draw/ảnh — city view, aerial, landscape — WITHOUT live weather/current/metrics on the image):
+SCENE IMAGE / VIDEO (scenic draw/ảnh — city view, landscape — WITHOUT live weather/current/metrics on the image):
 task_hint=tool, task_type=media_generation, skill=media_file, skill_action=generate_media, output_type=image, process_original_message true.
-Hermes + skill image-gen own diffusion (POST /v1/image). Host must NOT shortcut scenic-only asks and must NOT invent a separate aerial skill.
+Hermes + skill image-gen own diffusion (POST /v1/image). Host must NOT shortcut scenic-only asks.
 NO search sibling when the ask is purely scenic (no live/current weather, prices, or metrics needed on the image).
-Image instruction = one English SCENE: line — translate the user ask into a clear photorealistic English diffusion prompt (viewpoint, place, lighting). Prefer stable official English place names for diffusion (safety filters falsely block some colloquial aliases). Example family: user says Sài Gòn / Saigon → SCENE uses Ho Chi Minh City (same city), never the colloquial alias alone in the SCENE line. Example: SCENE: Aerial view of Ho Chi Minh City skyline from above, photorealistic.
+Image instruction = one English SCENE: line — translate the user ask into a clear photorealistic English diffusion prompt (viewpoint, place, lighting). Prefer stable official English place names for diffusion (safety filters falsely block some colloquial aliases). Example family: user says Sài Gòn / Saigon → SCENE uses Ho Chi Minh City (same city), never the colloquial alias alone in the SCENE line. Example: SCENE: Ho Chi Minh City skyline, photorealistic.
 Never leave instructions as the raw non-English ask alone. Never hello, /help, or backend key menus. On backend failure Hermes sends only the media-out failure line.
 Preserve on-image exact-text poster requests, B&W, style, quantity. Do not convert to PDF/TXT.
 If the ask needs current/live weather facts on the picture, use WEATHER SCENE IMAGE. If the ask needs a metrics dashboard card, use LABELED INFO IMAGE — not this scenic-only path.

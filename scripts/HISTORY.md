@@ -1,3 +1,17 @@
+## 2026-08-30 18:45 +07 — Scenic aerial example bias; OCR extract-only prompt
+
+### Symptom
+Scenic examples pushed “Aerial view … from above” wording. Image OCR used an extract-only markdown prompt that skewed vision answers.
+
+### Root cause
+Hardcoded scenic examples and a shared OCR prompt that only asked to extract text as markdown.
+
+### Fix (core)
+Neutral scenic examples in image-gen/answering/classify; OCR callers and defaults use an analyze-file prompt that still preserves readable text as markdown.
+
+### Prevent recurrence
+Do not hardcode aerial-view stock phrases in scenic examples; keep OCR prompts analysis-first for images.
+
 ## 2026-08-30 10:50 +07 — Scenic Saigon image returned NSFW censor stub
 
 ### Symptom
