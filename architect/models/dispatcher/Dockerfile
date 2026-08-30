@@ -13,7 +13,6 @@ RUN if [ "$INSTALL_WHISPER" = "1" ]; then \
     fi
 COPY app.py ocr_stub.py video_summary.py office_file.py image_backends.py text_poster.py overlay.py video_clip.py fonts.py info_card.py weather_sheet.py ./
 COPY fonts ./fonts
-COPY comfy_workflows ./comfy_workflows
 ENV MEDIA_CACHE_DIR=/data/media
 EXPOSE 8090
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8090"]

@@ -1,7 +1,7 @@
-"""OCR — PaddleOCR first (Media Worker boundary); tesseract fallback; vision opt-in.
+"""OCR — PaddleOCR first for all docs; vision-ocr combo fallback; tesseract last.
 
-PaddleOCR answers "what text is in this image?" so Hermes can hand plain text to
-any LLM (including text-only). Vision LLM is never the primary path.
+Pipeline: pymupdf text layer (PDF) → PaddleOCR → vision combo (OCR_MODEL, default
+vision-ocr via Omni/9Router chat multimodal) → tesseract.
 """
 from __future__ import annotations
 
@@ -21,12 +21,13 @@ import paddle_engine
 
 API_KEY = (
     os.environ.get("OPENAI_API_KEY")
+    or os.environ.get("OMNIROUTER_API_KEY")
     or os.environ.get("N9ROUTER_API_KEY")
     or os.environ.get("OCR_API_KEY")
     or ""
 ).strip()
-BASE = os.environ.get("OPENAI_BASE_URL", "http://9router:20128/v1").rstrip("/")
-MODEL = os.environ.get("OCR_MODEL") or os.environ.get("OPENAI_MODEL") or "hermes"
+BASE = os.environ.get("OPENAI_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
+MODEL = os.environ.get("OCR_MODEL") or os.environ.get("OPENAI_MODEL") or "vision-ocr"
 MEDIA_ROOT = Path(os.environ.get("OCR_MEDIA_ROOT", "/data/media"))
 FALLBACK = (os.environ.get("OCR_FALLBACK") or "1").strip().lower() not in {
     "0",
@@ -34,9 +35,8 @@ FALLBACK = (os.environ.get("OCR_FALLBACK") or "1").strip().lower() not in {
     "no",
     "off",
 }
-# Vision LLM is opt-in. Default off: text-only routers waste a round trip and
-# used to return "please upload the image" as fake OCR text.
-VISION = (os.environ.get("OCR_VISION") or "0").strip().lower() in {
+# Vision combo after Paddle. Default on so scanned docs still get text.
+VISION = (os.environ.get("OCR_VISION") or "1").strip().lower() in {
     "1",
     "true",
     "yes",
@@ -47,8 +47,9 @@ VISION_TRIP_AFTER = int(os.environ.get("OCR_VISION_TRIP_AFTER", "3"))
 VISION_COOLDOWN_S = float(os.environ.get("OCR_VISION_COOLDOWN_S", "900"))
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp"}
+DOC_EXTS = IMAGE_EXTS | {".pdf"}
 
-app = FastAPI(title="assistant-ocr", version="1.3.0")
+app = FastAPI(title="assistant-ocr", version="1.4.0")
 
 
 def _flow(stage: str, **fields: Any) -> None:
@@ -315,21 +316,33 @@ def ocr(req: OcrReq) -> dict[str, Any]:
         if paddle_err:
             _flow("ocr", ok=False, path=str(path or ""), error=paddle_err, via="paddle")
 
-    # --- Optional vision (OCR_VISION=1 only) ---
+    # --- Vision combo (OCR_MODEL, default vision-ocr) after Paddle for images + scanned PDF ---
     status, body, text = 0, "", ""
     used = "paddle"
-    if VISION and is_image and _vision_ready():
-        if req.image_b64:
-            b64, mime = req.image_b64, "image/jpeg"
-        else:
-            raw = path.read_bytes()  # type: ignore[union-attr]
-            mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"  # type: ignore[union-attr]
-            b64 = base64.b64encode(raw).decode("ascii")
-        used = "9router"
-        _flow("ocr_start", path=str(path or ""), mime=mime, model=MODEL, via="9router")
-        status, body, text = _vision(b64, mime, req.prompt)
-        _vision_note(_llm_refused(status, body, text) or not text)
-        if text and len(text) >= MIN_TEXT and not _llm_refused(status, body, text):
+    if VISION and (is_image or is_scan_pdf) and _vision_ready():
+        vision_inputs: list[tuple[str, str]] = []
+        if is_scan_pdf and path is not None:
+            for jpeg in _pymupdf_page_jpegs(path):
+                vision_inputs.append((base64.b64encode(jpeg).decode("ascii"), "image/jpeg"))
+        elif req.image_b64:
+            vision_inputs.append((req.image_b64, "image/jpeg"))
+        elif path is not None:
+            raw = path.read_bytes()
+            mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+            vision_inputs.append((base64.b64encode(raw).decode("ascii"), mime))
+        used = "vision-ocr"
+        parts: list[str] = []
+        for b64, mime in vision_inputs:
+            _flow("ocr_start", path=str(path or ""), mime=mime, model=MODEL, via=used)
+            status, body, chunk = _vision(b64, mime, req.prompt)
+            refused = _llm_refused(status, body, chunk) or not chunk
+            _vision_note(refused)
+            if chunk and not _llm_refused(status, body, chunk):
+                parts.append(chunk)
+            if refused and not parts:
+                break
+        text = "\n\n".join(parts).strip()
+        if text and len(text) >= MIN_TEXT:
             _flow("ocr", ok=True, path=str(path or ""), chars=len(text), via=used, model=MODEL)
             return {"ok": True, "text": text, "via": used}
 
@@ -337,7 +350,7 @@ def ocr(req: OcrReq) -> dict[str, Any]:
         _flow("ocr", ok=False, error="ocr_upstream_failed", path=str(path or ""))
         return {"ok": False, "error": "ocr_upstream_failed", "via": used}
 
-    # --- Secondary: tesseract / pymupdf ---
+    # --- Last: tesseract / pymupdf ---
     try:
         fb, via = _tesseract_local(path, req.image_b64)
     except Exception:

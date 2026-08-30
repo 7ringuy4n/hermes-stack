@@ -1,32 +1,33 @@
 ---
 name: vision-ocr
-description: "Read text from images via OCR service (Paddle first, then vision combo vision-ocr on Omni/9Router chat completions). RESULT-ONLY."
+description: "Read text from images and scanned docs via OCR (Paddle first, then vision combo vision-ocr; hermes when Media worker inactive). RESULT-ONLY."
 ---
 
 # Vision OCR
 
 Follow skill **`media-out`** when delivering extracted text as the main result.
 
-**Stack path:** dispatcher / ingest already call `POST http://ocr:8091/v1/ocr`.
+**Stack path:** `POST http://ocr:8091/v1/ocr`
 
-Pipeline:
+Pipeline for **all** image/PDF docs:
 
-1. PaddleOCR (local) when available
-2. Fallback / enrichment: vision LLM combo **`vision-ocr`**
-   - OmniRouter: `POST /v1/chat/completions` with `model=vision-ocr` (multimodal)
-   - 9Router: same OpenAI-compatible chat completions when enabled
+1. PDF text layer (pymupdf) when present
+2. **PaddleOCR** (images + rasterized scanned PDF pages)
+3. Vision LLM combo **`vision-ocr`** (Omni `/v1/chat/completions` multimodal; 9Router when enabled)
+4. Tesseract last resort
 
-Hermes must **not** invent OCR with regex, PIL, or base64 dumps. Prefer letting the host OCR path run; if you must call OCR yourself:
+When Media worker is inactive, OCR_MODEL defaults to **`hermes`**.
+
+Hermes must **not** invent OCR with PIL or base64 dumps. Prefer the host OCR path:
 
 ```bash
 curl -sS -X POST http://ocr:8091/v1/ocr \
   -H 'content-type: application/json' \
-  -d '{"path":"/data/media/<relative-or-absolute-image>"}'
+  -d '{"path":"/data/media/<relative-or-absolute>"}'
 ```
 
-Reply with extracted plain text only (user language). Do not claim vision models unless the OCR JSON says so.
+Reply with extracted plain text only.
 
 ## Related
 
-- `image-gen` — create new images
-- `media-file` — media worker routing
+- `image-gen`, `media-file`
