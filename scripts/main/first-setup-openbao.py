@@ -45,12 +45,33 @@ SEED_KEYS = (
     "TELEGRAM_BOT_TOKEN",
     "GEMINI_API_KEY",
     "DEEPSEEK_API_KEY",
+)
+
+# Retired image-vendor keys — drop from KV on each seed so leftover secrets do not linger.
+OBSOLETE_SECRET_KEYS = (
     "FAL_KEY",
     "FLUXAI_API_KEY",
     "POLLINATIONS_API_KEY",
     "IMAGE_LLM_API_KEY",
     "IMAGE_VENDOR_API_KEY",
+    "IMAGE_OMNI_MODEL",
+    "IMAGE_GEN_SIZE",
+    "IMAGE_ALLOW_PILLOW",
 )
+
+def purge_obsolete(token: str, current: dict) -> dict:
+    """Remove retired image-vendor keys from OpenBao KV (and export map)."""
+    data = dict(current)
+    removed = [k for k in OBSOLETE_SECRET_KEYS if k in data]
+    if not removed:
+        return data
+    for k in removed:
+        data.pop(k, None)
+    path = SECRET_PATH.lstrip("/")
+    http_json("POST", f"{BAO_ADDR}/v1/{path}", token, {"data": data})
+    print(f"OK: purged obsolete OpenBao keys: {', '.join(removed)}")
+    return data
+
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -145,6 +166,21 @@ def main() -> int:
             )
         except urllib.error.HTTPError as e:
             raise SystemExit(f"OpenBao verify GET failed: {e}") from e
+
+    # Always drop retired image-vendor keys left from older installs.
+    try:
+        got = http_json("GET", f"{BAO_ADDR}/v1/{SECRET_PATH.lstrip('/')}", token)
+        data = ((got.get("data") or {}).get("data") or {})
+        if isinstance(data, dict) and data:
+            data = purge_obsolete(token, data)
+            # Keep export aligned with live KV when we only purged.
+            for k in OBSOLETE_SECRET_KEYS:
+                payload.pop(k, None)
+            for k, v in data.items():
+                if k in SEED_KEYS and k not in payload and isinstance(v, str) and v:
+                    payload[k] = v
+    except urllib.error.HTTPError as e:
+        print(f"WARN: OpenBao obsolete-key purge skipped: {e}", flush=True)
 
     # Export for backup / local consumers (SoT remains OpenBao UI)
     DATA_DIR.mkdir(parents=True, exist_ok=True)

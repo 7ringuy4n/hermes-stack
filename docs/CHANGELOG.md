@@ -1,3 +1,9 @@
+## 2026-08-30 10:15 +07 — Active toggles; image-gen diffusion-only; OpenBao/skills cleanup
+
+- Feature toggles that meant on/off now use active/inactive in .env.example, workers.sh, and run.sh (legacy 1/0 still accepted and migrated).
+- Omni image-gen setup excludes multimodal chat (e.g. Gemini) and force-refills when non-diffusion members remain; setup smokes /images/generations.
+- OpenBao seed drops retired image-vendor keys and purges them from KV; removed obsolete bundled search skill trees (firecrawl/tavily/searxng).
+
 ## 2026-08-30 09:30 +07 — Media flag active-only; combo-only image gen; size in skill
 
 - `ENABLE_MEDIA_FILE` / `WORKER_MEDIA_FILE` accept only `active` (legacy `1` migrated). Removed `IMAGE_GEN_SIZE` / `IMAGE_OMNI_MODEL` env pins; diffusion always uses the request-type combo (`image-gen` / `hermes`). HD canvas size is declared in the image-gen skill request body.

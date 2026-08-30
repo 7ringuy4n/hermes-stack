@@ -1,3 +1,17 @@
+## 2026-08-30 10:15 +07 — Scenic image fail; ENABLE toggles still numeric
+
+### Symptom
+Aerial/scenic image asks returned the media-out failure line. Host feature flags still used 1/0. OpenBao retained retired image-vendor secrets; unused search skill trees lingered.
+
+### Root cause
+image-gen combo accepted multimodal chat models (Gemini) as image capable because modality checks treated input-image chat as diffusion. Intersection with those members kept a broken combo. Toggle SoT mixed numeric and active.
+
+### Fix (core)
+Strict diffusion detector + force refill + setup smoke for image-gen; canonical active/inactive migrate in workers/run/env; OpenBao obsolete-key purge; remove unused firecrawl/tavily/searxng skill trees from repo.
+
+### Prevent recurrence
+Never put chat/vision models in image-gen; never leave ENABLE_*=1 as the documented on-value; purge retired secrets on each OpenBao seed.
+
 ## 2026-08-30 09:30 +07 — Media toggles and hardcoded image model/size
 
 ### Symptom

@@ -4,6 +4,36 @@
 # Bundled ENABLE_* for a worker live with that worker — not in default setup.
 set -euo pipefail
 
+_env_active() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    active|1|true|yes|on) return 0 ;;
+  esac
+  return 1
+}
+
+assistant_migrate_enable_active() {
+  # Canonical on/off for feature toggles: active | inactive (never 1/0).
+  local k v
+  for k in \
+    ENABLE_OMNIROUTER ENABLE_9ROUTER ENABLE_OCR ENABLE_JOBS ENABLE_SEARXNG \
+    ENABLE_ZALO ENABLE_TELEGRAM ENABLE_SECURITY ENABLE_NOTIFY ENABLE_MONITOR \
+    ENABLE_SCHEDULE ENABLE_MEDIA_FILE ENABLE_MESSAGE ENABLE_GRAFANA \
+    ENABLE_PROMETHEUS ENABLE_LOKI ENABLE_ALLOY ENABLE_ANTIVIRUS ENABLE_AUTHZ \
+    ENABLE_SIEM ENABLE_POLICY ENABLE_OPENBAO ENABLE_OPENBAO_AGENT ENABLE_TRAEFIK \
+    ENABLE_API_GATEWAY ENABLE_MODEL_ROUTER ENABLE_CLOUDDRIVE ENABLE_OPENVPN \
+    ENABLE_LOG_ARCHIVE OFFICE_FILE_GEN OCR_VISION OMNIROUTER_ENABLE_MEMORY \
+    ENABLE_LLM_JUDGE SECURITY_SANDBOX SECURITY_YARA SECURITY_FAIL_CLOSED \
+    SECURITY_LLM_JUDGE IMAGE_ALLOW_PILLOW WHISPER_ENABLED ZALO_INBOUND_QUEUE \
+    ZALO_HISTORY_POSTGRES TRAEFIK_ACME_ENABLED ENABLE_QWEN ENABLE_QWEN_THINKING
+  do
+    v="$(eval "printf '%s' \"\${${k}:-}\"")"
+    case "$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')" in
+      1|true|yes|on) eval "export ${k}=active" ;;
+      0|false|no|off) eval "export ${k}=inactive" ;;
+    esac
+  done
+}
+
 _worker_active() {
   local worker_val="${1:-inactive}"
   local enable_val="${2:-inactive}"
@@ -19,6 +49,8 @@ _worker_active() {
 }
 
 assistant_workers_apply() {
+  assistant_migrate_enable_active
+
   # Default setup: optional workers inactive
   export WORKER_SCHEDULE="${WORKER_SCHEDULE:-inactive}"
   export WORKER_MEDIA_FILE="${WORKER_MEDIA_FILE:-inactive}"
@@ -34,151 +66,151 @@ assistant_workers_apply() {
 
   if _worker_active "${WORKER_SCHEDULE}" "${ENABLE_SCHEDULE:-0}"; then
     export WORKER_SCHEDULE=active
-    export ENABLE_SCHEDULE=1
+    export ENABLE_SCHEDULE=active
     export SCHEDULE_URL="${SCHEDULE_URL:-http://schedule-worker:8110}"
-    export SCHEDULE_WORKER=1
+    export SCHEDULE_WORKER=active
   else
     export WORKER_SCHEDULE=inactive
-    export ENABLE_SCHEDULE=0
+    export ENABLE_SCHEDULE=inactive
     export SCHEDULE_URL=""
-    export SCHEDULE_WORKER=0
+    export SCHEDULE_WORKER=inactive
   fi
 
   if _worker_active "${WORKER_MEDIA_FILE}" "${ENABLE_MEDIA_FILE:-inactive}"; then
     export WORKER_MEDIA_FILE=active
     export ENABLE_MEDIA_FILE=active
     # Media|File Worker bundled flags (worker defaults, not default-setup)
-    export ENABLE_OCR="${ENABLE_OCR:-1}"
-    export ENABLE_JOBS="${ENABLE_JOBS:-1}"
-    export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-1}"
-    export ENABLE_SEARXNG="${ENABLE_SEARXNG:-1}"
+    export ENABLE_OCR="${ENABLE_OCR:-active}"
+    export ENABLE_JOBS="${ENABLE_JOBS:-active}"
+    export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-active}"
+    export ENABLE_SEARXNG="${ENABLE_SEARXNG:-active}"
     # Web search runs on router-worker; combo order = Omni search providers
     [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=omni
     [[ -n "${IMAGE_GEN_COMBO:-}" ]] || export IMAGE_GEN_COMBO=image-gen
     [[ -n "${OCR_MODEL:-}" ]] || export OCR_MODEL=vision-ocr
     [[ -n "${EMBED_MODEL:-}" ]] || export EMBED_MODEL=embedding
-    export OCR_VISION="${OCR_VISION:-1}"
+    export OCR_VISION="${OCR_VISION:-active}"
   else
     export WORKER_MEDIA_FILE=inactive
     export ENABLE_MEDIA_FILE=inactive
-    export ENABLE_OCR="${ENABLE_OCR:-0}"
-    export ENABLE_JOBS="${ENABLE_JOBS:-0}"
-    export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-0}"
+    export ENABLE_OCR="${ENABLE_OCR:-inactive}"
+    export ENABLE_JOBS="${ENABLE_JOBS:-inactive}"
+    export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-inactive}"
   fi
 
   if _worker_active "${WORKER_SECURITY}" "${ENABLE_SECURITY:-0}"; then
     export WORKER_SECURITY=active
-    export ENABLE_SECURITY=1
+    export ENABLE_SECURITY=active
     # Bundled with Security Worker (compose profile "security")
-    export ENABLE_OPENBAO="${ENABLE_OPENBAO:-1}"
-    export ENABLE_AUTHZ="${ENABLE_AUTHZ:-1}"
-    export ENABLE_SIEM="${ENABLE_SIEM:-1}"
-    export ENABLE_POLICY="${ENABLE_POLICY:-1}"
+    export ENABLE_OPENBAO="${ENABLE_OPENBAO:-active}"
+    export ENABLE_AUTHZ="${ENABLE_AUTHZ:-active}"
+    export ENABLE_SIEM="${ENABLE_SIEM:-active}"
+    export ENABLE_POLICY="${ENABLE_POLICY:-active}"
   else
     export WORKER_SECURITY=inactive
-    export ENABLE_SECURITY=0
+    export ENABLE_SECURITY=inactive
     # Force off so leftover .env ENABLE_*=1 does not keep security intent
-    export ENABLE_OPENBAO=0
-    export ENABLE_OPENBAO_AGENT=0
-    export ENABLE_AUTHZ=0
-    export ENABLE_SIEM=0
-    export ENABLE_POLICY=0
+    export ENABLE_OPENBAO=inactive
+    export ENABLE_OPENBAO_AGENT=inactive
+    export ENABLE_AUTHZ=inactive
+    export ENABLE_SIEM=inactive
+    export ENABLE_POLICY=inactive
   fi
 
   if _worker_active "${WORKER_NOTIFY}" "${ENABLE_NOTIFY:-0}"; then
     export WORKER_NOTIFY=active
-    export ENABLE_NOTIFY=1
+    export ENABLE_NOTIFY=active
   else
     export WORKER_NOTIFY=inactive
-    export ENABLE_NOTIFY=0
+    export ENABLE_NOTIFY=inactive
   fi
 
   if _worker_active "${WORKER_MESSAGE}" "${ENABLE_MESSAGE:-0}"; then
     export WORKER_MESSAGE=active
-    export ENABLE_MESSAGE=1
-    export ENABLE_ZALO=1
+    export ENABLE_MESSAGE=active
+    export ENABLE_ZALO=active
   else
     export WORKER_MESSAGE=inactive
-    export ENABLE_MESSAGE=0
-    export ENABLE_ZALO="${ENABLE_ZALO:-0}"
+    export ENABLE_MESSAGE=inactive
+    export ENABLE_ZALO="${ENABLE_ZALO:-inactive}"
   fi
 
   if _worker_active "${WORKER_MONITOR}" "${ENABLE_MONITOR:-0}"; then
     export WORKER_MONITOR=active
-    export ENABLE_MONITOR=1
-    export ENABLE_GRAFANA=1
-    export ENABLE_PROMETHEUS=1
-    export ENABLE_LOKI=1
-    export ENABLE_ALLOY=1
+    export ENABLE_MONITOR=active
+    export ENABLE_GRAFANA=active
+    export ENABLE_PROMETHEUS=active
+    export ENABLE_LOKI=active
+    export ENABLE_ALLOY=active
   else
     export WORKER_MONITOR=inactive
-    export ENABLE_MONITOR=0
-    export ENABLE_GRAFANA="${ENABLE_GRAFANA:-0}"
-    export ENABLE_PROMETHEUS="${ENABLE_PROMETHEUS:-0}"
-    export ENABLE_LOKI="${ENABLE_LOKI:-0}"
-    export ENABLE_ALLOY="${ENABLE_ALLOY:-0}"
+    export ENABLE_MONITOR=inactive
+    export ENABLE_GRAFANA="${ENABLE_GRAFANA:-inactive}"
+    export ENABLE_PROMETHEUS="${ENABLE_PROMETHEUS:-inactive}"
+    export ENABLE_LOKI="${ENABLE_LOKI:-inactive}"
+    export ENABLE_ALLOY="${ENABLE_ALLOY:-inactive}"
   fi
 
   # Single-replica Zalo: SSE through socat fork breaks; use host bridge directly.
-  if [[ "${HERMES_REPLICAS:-1}" == "1" && "${ENABLE_ZALO:-0}" == "1" ]]; then
+  if [[ "${HERMES_REPLICAS:-1}" == "1" ]] && _env_active "${ENABLE_ZALO:-}"; then
     if [[ -z "${ZALO_PLUGIN_URL:-}" || "${ZALO_PLUGIN_URL:-}" == "http://zalo-proxy:8787" ]]; then
       export ZALO_PLUGIN_URL="http://host.docker.internal:8787"
     fi
   fi
 
-  export ENABLE_SEARXNG="${ENABLE_SEARXNG:-0}"  # overridden active when media worker on
-  export ENABLE_CLOUDDRIVE="${ENABLE_CLOUDDRIVE:-0}"
+  export ENABLE_SEARXNG="${ENABLE_SEARXNG:-inactive}"  # overridden active when media worker on
+  export ENABLE_CLOUDDRIVE="${ENABLE_CLOUDDRIVE:-inactive}"
   # OpenBao / authz / SIEM / policy: set above from WORKER_SECURITY; keep agent flag default off
-  export ENABLE_OPENBAO_AGENT="${ENABLE_OPENBAO_AGENT:-0}"
-  export ENABLE_ANTIVIRUS="${ENABLE_ANTIVIRUS:-0}"
-  export ENABLE_TELEGRAM="${ENABLE_TELEGRAM:-0}"
-  export ENABLE_OPENVPN="${ENABLE_OPENVPN:-0}"
-  export ENABLE_WHATSAPP=0
-  export ENABLE_VAULT=0
-  export SECURITY_SANDBOX="${SECURITY_SANDBOX:-0}"
-  export SECURITY_LLM_JUDGE="${SECURITY_LLM_JUDGE:-0}"
-  export ENABLE_LLM_JUDGE="${ENABLE_LLM_JUDGE:-0}"
-  export SECURITY_YARA="${SECURITY_YARA:-0}"
-  export SECURITY_FAIL_CLOSED="${SECURITY_FAIL_CLOSED:-0}"
+  export ENABLE_OPENBAO_AGENT="${ENABLE_OPENBAO_AGENT:-inactive}"
+  export ENABLE_ANTIVIRUS="${ENABLE_ANTIVIRUS:-inactive}"
+  export ENABLE_TELEGRAM="${ENABLE_TELEGRAM:-inactive}"
+  export ENABLE_OPENVPN="${ENABLE_OPENVPN:-inactive}"
+  export ENABLE_WHATSAPP=inactive
+  export ENABLE_VAULT=inactive
+  export SECURITY_SANDBOX="${SECURITY_SANDBOX:-inactive}"
+  export SECURITY_LLM_JUDGE="${SECURITY_LLM_JUDGE:-inactive}"
+  export ENABLE_LLM_JUDGE="${ENABLE_LLM_JUDGE:-inactive}"
+  export SECURITY_YARA="${SECURITY_YARA:-inactive}"
+  export SECURITY_FAIL_CLOSED="${SECURITY_FAIL_CLOSED:-inactive}"
 
   # Core (always on)
-  export ENABLE_TRAEFIK="${ENABLE_TRAEFIK:-1}"
-  export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-1}"
+  export ENABLE_TRAEFIK="${ENABLE_TRAEFIK:-active}"
+  export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-active}"
   export TRAEFIK_MODE="${TRAEFIK_MODE:-local}"
-  export TRAEFIK_ACME_ENABLED="${TRAEFIK_ACME_ENABLED:-0}"
-  export ENABLE_9ROUTER="${ENABLE_9ROUTER:-0}"
-  export ENABLE_OMNIROUTER="${ENABLE_OMNIROUTER:-1}"
-  export OMNIROUTER_ENABLE_MEMORY="${OMNIROUTER_ENABLE_MEMORY:-1}"
-  export ENABLE_MODEL_ROUTER="${ENABLE_MODEL_ROUTER:-1}"
+  export TRAEFIK_ACME_ENABLED="${TRAEFIK_ACME_ENABLED:-inactive}"
+  export ENABLE_9ROUTER="${ENABLE_9ROUTER:-inactive}"
+  export ENABLE_OMNIROUTER="${ENABLE_OMNIROUTER:-active}"
+  export OMNIROUTER_ENABLE_MEMORY="${OMNIROUTER_ENABLE_MEMORY:-active}"
+  export ENABLE_MODEL_ROUTER="${ENABLE_MODEL_ROUTER:-active}"
   export WEB_SEARCH_MAX_RESULTS="${WEB_SEARCH_MAX_RESULTS:-3}"
-  export ENABLE_LOG_ARCHIVE="${ENABLE_LOG_ARCHIVE:-1}"
+  export ENABLE_LOG_ARCHIVE="${ENABLE_LOG_ARCHIVE:-active}"
   export LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-30}"
   export HERMES_REPLICAS="${HERMES_REPLICAS:-1}"
-  export ZALO_INBOUND_QUEUE="${ZALO_INBOUND_QUEUE:-1}"
+  export ZALO_INBOUND_QUEUE="${ZALO_INBOUND_QUEUE:-active}"
   export GATEWAY_SKIP_RL_PATHS="${GATEWAY_SKIP_RL_PATHS:-/coding,/v1/coding,/skills/coding,/schedule,/v1/schedule,/skills/schedule,/v1/schedules}"
   export VALKEY_URL="${VALKEY_URL:-redis://valkey:6379/0}"
 
-  if [[ "${ENABLE_SEARXNG}" == "1" ]]; then
+  if _env_active "${ENABLE_SEARXNG:-}"; then
     [[ -n "${WEB_BACKENDS:-}" ]] || export WEB_BACKENDS=tavily,searxng
   fi
-  if [[ "${ENABLE_9ROUTER:-0}" != "1" ]]; then
+  if ! _env_active "${ENABLE_9ROUTER:-}"; then
     export N9ROUTER_BASE_URL=""
   fi
 
-  if [[ "${SECURITY_SANDBOX:-0}" == "1" ]]; then
+  if _env_active "${SECURITY_SANDBOX:-}"; then
     export SECURITY_DOCKER_HOST="${SECURITY_DOCKER_HOST:-tcp://docker-socket-proxy:2375}"
   fi
 
-  if [[ "${ENABLE_TRAEFIK}" == "1" && "${ENABLE_API_GATEWAY}" == "1" ]]; then
+  if _env_active "${ENABLE_TRAEFIK:-}" && _env_active "${ENABLE_API_GATEWAY:-}"; then
     export GATEWAY_UPSTREAM_URL="${GATEWAY_UPSTREAM_URL:-http://traefik:80}"
   fi
 
-  export GATEWAY_REQUIRE_AUTH="${GATEWAY_REQUIRE_AUTH:-1}"
-  export GATEWAY_TRUST_FORWARDED="${GATEWAY_TRUST_FORWARDED:-0}"
-  export GATEWAY_RL_FAIL_CLOSED="${GATEWAY_RL_FAIL_CLOSED:-1}"
-  if [[ "${ENABLE_API_GATEWAY}" == "1" && "${GATEWAY_REQUIRE_AUTH}" == "1" ]]; then
+  export GATEWAY_REQUIRE_AUTH="${GATEWAY_REQUIRE_AUTH:-active}"
+  export GATEWAY_TRUST_FORWARDED="${GATEWAY_TRUST_FORWARDED:-inactive}"
+  export GATEWAY_RL_FAIL_CLOSED="${GATEWAY_RL_FAIL_CLOSED:-active}"
+  if _env_active "${ENABLE_API_GATEWAY:-}" && _env_active "${GATEWAY_REQUIRE_AUTH:-}"; then
     if [[ -z "${GATEWAY_API_KEYS:-}" ]]; then
-      echo "WARN: ENABLE_API_GATEWAY=1 but GATEWAY_API_KEYS is empty — gateway will refuse to start until keys are set (or GATEWAY_REQUIRE_AUTH=0 for isolated lab)." >&2
+      echo "WARN: ENABLE_API_GATEWAY=active but GATEWAY_API_KEYS is empty — gateway will refuse to start until keys are set (or GATEWAY_REQUIRE_AUTH=0 for isolated lab)." >&2
     fi
   fi
 }
@@ -187,9 +219,9 @@ assistant_append_monitor_profiles() {
   local -n _amp_profiles="$1"
   local g="${ENABLE_GRAFANA:-0}" p="${ENABLE_PROMETHEUS:-0}" l="${ENABLE_LOKI:-0}" a="${ENABLE_ALLOY:-0}"
   local want_prom=0 want_loki=0
-  [[ "$g" == "1" || "$p" == "1" ]] && want_prom=1
-  [[ "$l" == "1" || "$a" == "1" ]] && want_loki=1
-  if [[ "$g" == "1" ]]; then
+  [[ "$g" == "active" || "$g" == "1" || "$p" == "active" || "$p" == "1" ]] && want_prom=1
+  [[ "$l" == "active" || "$l" == "1" || "$a" == "active" || "$a" == "1" ]] && want_loki=1
+  if [[ "$g" == "active" || "$g" == "1" ]]; then
     _amp_profiles+=(--profile grafana)
   fi
   if [[ "$want_prom" == "1" ]]; then
@@ -198,10 +230,10 @@ assistant_append_monitor_profiles() {
   if [[ "$want_loki" == "1" ]]; then
     _amp_profiles+=(--profile loki --profile alloy)
   fi
-  if [[ "$want_prom" == "1" && "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+  if [[ "$want_prom" == "1" && ("${ENABLE_OMNIROUTER:-}" == "active" || "${ENABLE_OMNIROUTER:-}" == "1") ]]; then
     _amp_profiles+=(--profile omni-exporter)
   fi
-  if [[ "$want_prom" == "1" && "${ENABLE_9ROUTER:-0}" == "1" ]]; then
+  if [[ "$want_prom" == "1" && ("${ENABLE_9ROUTER:-}" == "active" || "${ENABLE_9ROUTER:-}" == "1") ]]; then
     _amp_profiles+=(--profile nine-exporter)
   fi
 }
@@ -209,9 +241,9 @@ assistant_append_monitor_profiles() {
 assistant_disabled_monitor_containers() {
   local g="${ENABLE_GRAFANA:-0}" p="${ENABLE_PROMETHEUS:-0}" l="${ENABLE_LOKI:-0}" a="${ENABLE_ALLOY:-0}"
   local want_prom=0 want_loki=0
-  [[ "$g" == "1" || "$p" == "1" ]] && want_prom=1
-  [[ "$l" == "1" || "$a" == "1" ]] && want_loki=1
-  [[ "$g" == "1" ]] || echo grafana
+  [[ "$g" == "active" || "$g" == "1" || "$p" == "active" || "$p" == "1" ]] && want_prom=1
+  [[ "$l" == "active" || "$l" == "1" || "$a" == "active" || "$a" == "1" ]] && want_loki=1
+  [[ "$g" == "active" || "$g" == "1" ]] || echo grafana
   if [[ "$want_prom" != "1" ]]; then
     echo prometheus
     echo node-exporter
