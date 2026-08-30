@@ -1,3 +1,7 @@
+## 2026-08-30 09:30 +07 — Media flag active-only; combo-only image gen; size in skill
+
+- `ENABLE_MEDIA_FILE` / `WORKER_MEDIA_FILE` accept only `active` (legacy `1` migrated). Removed `IMAGE_GEN_SIZE` / `IMAGE_OMNI_MODEL` env pins; diffusion always uses the request-type combo (`image-gen` / `hermes`). HD canvas size is declared in the image-gen skill request body.
+
 ## 2026-08-30 09:00 +07 — Image-gen/vision-ocr unused: hermes pin + non-image combo members
 
 - Media worker active but `.env` pinned `IMAGE_GEN_COMBO`/`OCR_MODEL` to `hermes` when only `WORKER_MEDIA_FILE=active` was set; Omni rejected chat models on `/images/generations`.

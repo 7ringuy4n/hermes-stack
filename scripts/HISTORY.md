@@ -1,3 +1,17 @@
+## 2026-08-30 09:30 +07 — Media toggles and hardcoded image model/size
+
+### Symptom
+Media flags mixed `1`/`true`/`active`; `.env` pinned `IMAGE_GEN_SIZE` and `IMAGE_OMNI_MODEL` so diffusion did not rely solely on type-based combos.
+
+### Root cause
+Compat truthy sets and first-setup/dispatcher fallbacks treated single-model and size as env SoT.
+
+### Fix (core)
+`ENABLE_MEDIA_FILE` / `WORKER_MEDIA_FILE` → `active` only (with legacy migrate); clear obsolete image env keys; dispatcher sends combo name only and optional request `size`; image-gen skill declares default HD `1024x1024`.
+
+### Prevent recurrence
+Never pin a single Omni image model or canvas size in `.env`; never treat media `1` as the canonical on-value.
+
 ## 2026-08-30 09:00 +07 — Aerial image fail; bare photo OCR skipped vision-ocr
 
 ### Symptom

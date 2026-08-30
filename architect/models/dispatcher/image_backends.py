@@ -6,6 +6,9 @@ Diffusion order (Media worker active):
 
 When Media worker is inactive, IMAGE_GEN_COMBO defaults to hermes (chat combo).
 Pillow modes (info-card, text-poster) stay in app.py.
+
+Model id is always the combo for the request type (image-gen / hermes).
+Canvas size is optional on the request body (skill declares the HD default).
 """
 from __future__ import annotations
 
@@ -24,17 +27,16 @@ def _env(*keys: str, default: str = "") -> str:
 
 
 def _media_active() -> bool:
-    v = (os.environ.get("ENABLE_MEDIA_FILE") or os.environ.get("WORKER_MEDIA_FILE") or "").strip().lower()
-    return v in {"1", "true", "yes", "on", "active"}
+    """Media worker on only when ENABLE_MEDIA_FILE or WORKER_MEDIA_FILE is ``active``."""
+    for key in ("ENABLE_MEDIA_FILE", "WORKER_MEDIA_FILE"):
+        if (os.environ.get(key) or "").strip().lower() == "active":
+            return True
+    return False
 
 
 def image_gen_combo() -> str:
     default = "image-gen" if _media_active() else "hermes"
     return _env("IMAGE_GEN_COMBO", default=default)
-
-
-def image_gen_size() -> str:
-    return _env("IMAGE_GEN_SIZE", default="1024x1024")
 
 
 def image_backends() -> list[str]:
@@ -67,10 +69,19 @@ def backend_available(name: str) -> bool:
     return False
 
 
-def _gen_openai_images(*, base: str, key: str, prompt: str, model: str, size: str) -> bytes:
+def _gen_openai_images(
+    *,
+    base: str,
+    key: str,
+    prompt: str,
+    model: str,
+    size: Optional[str] = None,
+) -> bytes:
     endpoint = base if base.endswith("/images/generations") else f"{base.rstrip('/')}/images/generations"
     headers = {"content-type": "application/json", "authorization": f"Bearer {key}"}
-    payload: dict[str, Any] = {"model": model, "prompt": prompt, "n": 1, "size": size}
+    payload: dict[str, Any] = {"model": model, "prompt": prompt, "n": 1}
+    if size and str(size).strip():
+        payload["size"] = str(size).strip()
     with httpx.Client(timeout=180.0) as client:
         r = client.post(endpoint, headers=headers, json=payload)
         r.raise_for_status()
@@ -100,38 +111,21 @@ def _gen_openai_images(*, base: str, key: str, prompt: str, model: str, size: st
         return img.content
 
 
-def gen_omni(prompt: str) -> bytes:
+def gen_omni(prompt: str, *, size: Optional[str] = None) -> bytes:
     base = _env("OMNIROUTER_BASE_URL", default="http://omni-router:20129/v1")
     key = _env("OMNIROUTER_API_KEY")
     if not key:
         raise RuntimeError("OMNIROUTER_API_KEY missing")
-    combo = image_gen_combo()
-    try:
-        return _gen_openai_images(
-            base=base,
-            key=key,
-            prompt=prompt,
-            model=combo,
-            size=image_gen_size(),
-        )
-    except Exception as first:
-        # Direct image model pin (AI Horde Flux, etc.) when combo has no images-capable members.
-        fallback = _env("IMAGE_OMNI_MODEL", "OMNIROUTER_IMAGE_MODEL")
-        if fallback and fallback != combo:
-            try:
-                return _gen_openai_images(
-                    base=base,
-                    key=key,
-                    prompt=prompt,
-                    model=fallback,
-                    size=image_gen_size(),
-                )
-            except Exception as second:
-                raise RuntimeError(f"{combo}: {first}; fallback {fallback}: {second}") from second
-        raise
+    return _gen_openai_images(
+        base=base,
+        key=key,
+        prompt=prompt,
+        model=image_gen_combo(),
+        size=size,
+    )
 
 
-def gen_n9(prompt: str) -> bytes:
+def gen_n9(prompt: str, *, size: Optional[str] = None) -> bytes:
     base = _env("N9ROUTER_BASE_URL", "OPENAI_BASE_URL", default="http://9router:20128/v1")
     key = _env("N9ROUTER_API_KEY", "OPENAI_API_KEY")
     if not key:
@@ -141,11 +135,16 @@ def gen_n9(prompt: str) -> bytes:
         key=key,
         prompt=prompt,
         model=image_gen_combo(),
-        size=image_gen_size(),
+        size=size,
     )
 
 
-def generate_image_bytes(prompt: str, provider: Optional[str] = None) -> tuple[bytes, str, list[str]]:
+def generate_image_bytes(
+    prompt: str,
+    provider: Optional[str] = None,
+    *,
+    size: Optional[str] = None,
+) -> tuple[bytes, str, list[str]]:
     """Try router backends in order. Returns (bytes, used_backend, errors)."""
     errors: list[str] = []
     order: list[str] = []
@@ -170,9 +169,9 @@ def generate_image_bytes(prompt: str, provider: Optional[str] = None) -> tuple[b
             continue
         try:
             if b == "omni":
-                return gen_omni(prompt), "omni", errors
+                return gen_omni(prompt, size=size), "omni", errors
             if b == "n9":
-                return gen_n9(prompt), "n9", errors
+                return gen_n9(prompt, size=size), "n9", errors
             if b == "pillow":
                 raise RuntimeError("pillow handled by caller")
             errors.append(f"{b}: unknown backend")

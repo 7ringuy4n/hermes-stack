@@ -26,7 +26,7 @@ Hermes → this skill
 
 | skill_action | Active worker | Inactive worker |
 |---|---|---|
-| `generate_media` | `POST http://dispatcher:8090/v1/image` (`IMAGE_GEN_COMBO=image-gen`) | Omni/9Router with `model=hermes` |
+| `generate_media` | `POST http://dispatcher:8090/v1/image` (combo `image-gen`; skill HD `size`) | Omni/9Router with `model=hermes` |
 | `process_file` / `process_image` | OCR/ingest (Paddle → `vision-ocr`) | Omni/9Router multimodal `hermes` |
 | `create_file` | `file-gen` / office via dispatcher | fail unless local office tools exist |
 
