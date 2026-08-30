@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 
-async def ocr_image(path: str, *, prompt: str = "Extract all text as markdown") -> dict[str, Any]:
+async def ocr_image(path: str, *, prompt: str = "Analyze this file. Describe visible content and extract any readable text as markdown.") -> dict[str, Any]:
     api_key = os.environ.get("DEEPSEEK_OCR_API_KEY", "").strip()
     base = os.environ.get("DEEPSEEK_OCR_BASE_URL", "https://api.deepseek.com").rstrip("/")
     if not api_key:

@@ -1296,7 +1296,7 @@ def extract_archive(req: ExtractArchiveReq) -> dict[str, Any]:
                             f"{OCR_URL}/v1/ocr",
                             json={
                                 "path": ocr_path,
-                                "prompt": "Extract all text as markdown.",
+                                "prompt": "Analyze this file. Describe visible content and extract any readable text as markdown.",
                             },
                         )
                         if resp.status_code < 300:

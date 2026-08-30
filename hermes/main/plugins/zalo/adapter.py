@@ -5681,7 +5681,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 ocr_url = (os.getenv("OCR_URL") or "http://ocr:8091").rstrip("/")
                 text = await self._as_worker_text(
                     f"{ocr_url}/v1/ocr",
-                    {"path": worker_path, "prompt": "Extract all text as markdown."},
+                    {"path": worker_path, "prompt": "Analyze this file. Describe visible content and extract any readable text as markdown."},
                     timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
                 )
                 # Path mismatch / race → 404; retry with bytes (not on empty OCR).
@@ -5693,7 +5693,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         f"{ocr_url}/v1/ocr",
                         {
                             "image_b64": b64,
-                            "prompt": "Extract all text as markdown.",
+                            "prompt": "Analyze this file. Describe visible content and extract any readable text as markdown.",
                         },
                         timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
                     )
@@ -6350,7 +6350,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         try:
                             async with session.post(
                                 f"{ocr_url}/v1/ocr",
-                                json={"path": ocr_path, "prompt": "Extract all text as markdown."},
+                                json={"path": ocr_path, "prompt": "Analyze this file. Describe visible content and extract any readable text as markdown."},
                             ) as ocr_resp:
                                 ocr_body = await ocr_resp.text()
                                 try:
