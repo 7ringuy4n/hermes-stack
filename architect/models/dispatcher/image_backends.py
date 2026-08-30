@@ -75,10 +75,19 @@ def _gen_openai_images(*, base: str, key: str, prompt: str, model: str, size: st
         r = client.post(endpoint, headers=headers, json=payload)
         r.raise_for_status()
         data = r.json()
-        items = data.get("data") or []
+        if isinstance(data, list):
+            items = data
+        elif isinstance(data, dict):
+            items = data.get("data") or data.get("images") or []
+            if isinstance(items, dict):
+                items = [items]
+        else:
+            items = []
         if not items:
             raise RuntimeError(f"no image data: {str(data)[:300]}")
         item = items[0]
+        if not isinstance(item, dict):
+            raise RuntimeError(f"bad image item: {str(item)[:200]}")
         if item.get("b64_json"):
             import base64
 
@@ -96,13 +105,30 @@ def gen_omni(prompt: str) -> bytes:
     key = _env("OMNIROUTER_API_KEY")
     if not key:
         raise RuntimeError("OMNIROUTER_API_KEY missing")
-    return _gen_openai_images(
-        base=base,
-        key=key,
-        prompt=prompt,
-        model=image_gen_combo(),
-        size=image_gen_size(),
-    )
+    combo = image_gen_combo()
+    try:
+        return _gen_openai_images(
+            base=base,
+            key=key,
+            prompt=prompt,
+            model=combo,
+            size=image_gen_size(),
+        )
+    except Exception as first:
+        # Direct image model pin (AI Horde Flux, etc.) when combo has no images-capable members.
+        fallback = _env("IMAGE_OMNI_MODEL", "OMNIROUTER_IMAGE_MODEL")
+        if fallback and fallback != combo:
+            try:
+                return _gen_openai_images(
+                    base=base,
+                    key=key,
+                    prompt=prompt,
+                    model=fallback,
+                    size=image_gen_size(),
+                )
+            except Exception as second:
+                raise RuntimeError(f"{combo}: {first}; fallback {fallback}: {second}") from second
+        raise
 
 
 def gen_n9(prompt: str) -> bytes:
