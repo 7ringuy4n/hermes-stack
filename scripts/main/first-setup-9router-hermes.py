@@ -214,7 +214,14 @@ def recreate_services() -> None:
         f"--project-directory {ROOT}",
         f"-f {ROOT}/docker/docker-compose.yml",
     ]
-    if env.get("ENABLE_MEDIA_FILE") == "1" or env.get("ENABLE_OCR") == "1" or env.get("ENABLE_JOBS") == "1" or env.get("ENABLE_SEARXNG") == "1":
+    media_on = (
+        (env.get("ENABLE_MEDIA_FILE") or "").strip().lower() == "active"
+        or (env.get("WORKER_MEDIA_FILE") or "").strip().lower() == "active"
+        or env.get("ENABLE_OCR") == "1"
+        or env.get("ENABLE_JOBS") == "1"
+        or env.get("ENABLE_SEARXNG") == "1"
+    )
+    if media_on:
         files.append(f"-f {ROOT}/docker/docker-compose.media.yml")
     if any(env.get(k) == "1" for k in ("ENABLE_SECURITY", "ENABLE_MONITOR", "ENABLE_NOTIFY", "ENABLE_OPENBAO", "ENABLE_SIEM", "ENABLE_AUTHZ", "ENABLE_CLOUDDRIVE")):
         files.append(f"-f {ROOT}/docker/docker-compose.security.yml")
@@ -408,15 +415,19 @@ def verify(key: str, model: str) -> None:
 
 def pin_media_combos(env: dict[str, str]) -> None:
     """Pin router combo names from media worker state (inactive → hermes)."""
+    legacy = (env.get("ENABLE_MEDIA_FILE") or "").strip().lower()
+    if legacy in {"1", "true", "yes", "on"}:
+        env["ENABLE_MEDIA_FILE"] = "active"
     active = False
     for key in ("ENABLE_MEDIA_FILE", "WORKER_MEDIA_FILE"):
         v = (env.get(key) or os.environ.get(key) or "").strip().lower()
-        if v in {"1", "true", "yes", "on", "active"}:
+        if v == "active":
             active = True
             break
-    if active and (env.get("ENABLE_MEDIA_FILE") or "").strip() not in {"1", "true", "yes", "on"}:
-        set_env_key(ROOT / ".env", "ENABLE_MEDIA_FILE", "1")
-        env["ENABLE_MEDIA_FILE"] = "1"
+    if active and (env.get("ENABLE_MEDIA_FILE") or "").strip().lower() != "active":
+        set_env_key(ROOT / ".env", "ENABLE_MEDIA_FILE", "active")
+        env["ENABLE_MEDIA_FILE"] = "active"
+        print("OK: pinned ENABLE_MEDIA_FILE=active (Media worker active)")
     if active:
         pins = {
             "IMAGE_GEN_COMBO": env.get("N9ROUTER_IMAGE_COMBO") or "image-gen",
@@ -427,6 +438,7 @@ def pin_media_combos(env: dict[str, str]) -> None:
     else:
         hermes = env.get("N9ROUTER_DEFAULT_COMBO") or env.get("HERMES_DEFAULT_MODEL") or "hermes"
         pins = {
+            "ENABLE_MEDIA_FILE": "inactive",
             "IMAGE_GEN_COMBO": hermes,
             "OCR_MODEL": hermes,
             "OCR_VISION": "1",

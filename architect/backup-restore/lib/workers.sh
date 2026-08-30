@@ -6,11 +6,16 @@ set -euo pipefail
 
 _worker_active() {
   local worker_val="${1:-inactive}"
-  local enable_val="${2:-0}"
+  local enable_val="${2:-inactive}"
   case "$(printf '%s' "$worker_val" | tr '[:upper:]' '[:lower:]')" in
-    active|on|1|true|yes) return 0 ;;
+    active) return 0 ;;
   esac
-  [[ "${enable_val}" == "1" ]]
+  case "$(printf '%s' "$enable_val" | tr '[:upper:]' '[:lower:]')" in
+    active) return 0 ;;
+    # Legacy ENABLE_*=1 for non-media workers still using numeric toggles.
+    1) return 0 ;;
+  esac
+  return 1
 }
 
 assistant_workers_apply() {
@@ -21,6 +26,11 @@ assistant_workers_apply() {
   export WORKER_NOTIFY="${WORKER_NOTIFY:-inactive}"
   export WORKER_MESSAGE="${WORKER_MESSAGE:-inactive}"
   export WORKER_MONITOR="${WORKER_MONITOR:-inactive}"
+
+  # Migrate legacy ENABLE_MEDIA_FILE=1|true|yes|on → active (media flag is active-only).
+  case "$(printf '%s' "${ENABLE_MEDIA_FILE:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) export ENABLE_MEDIA_FILE=active ;;
+  esac
 
   if _worker_active "${WORKER_SCHEDULE}" "${ENABLE_SCHEDULE:-0}"; then
     export WORKER_SCHEDULE=active
@@ -34,9 +44,9 @@ assistant_workers_apply() {
     export SCHEDULE_WORKER=0
   fi
 
-  if _worker_active "${WORKER_MEDIA_FILE}" "${ENABLE_MEDIA_FILE:-0}"; then
+  if _worker_active "${WORKER_MEDIA_FILE}" "${ENABLE_MEDIA_FILE:-inactive}"; then
     export WORKER_MEDIA_FILE=active
-    export ENABLE_MEDIA_FILE=1
+    export ENABLE_MEDIA_FILE=active
     # Media|File Worker bundled flags (worker defaults, not default-setup)
     export ENABLE_OCR="${ENABLE_OCR:-1}"
     export ENABLE_JOBS="${ENABLE_JOBS:-1}"
@@ -50,7 +60,7 @@ assistant_workers_apply() {
     export OCR_VISION="${OCR_VISION:-1}"
   else
     export WORKER_MEDIA_FILE=inactive
-    export ENABLE_MEDIA_FILE=0
+    export ENABLE_MEDIA_FILE=inactive
     export ENABLE_OCR="${ENABLE_OCR:-0}"
     export ENABLE_JOBS="${ENABLE_JOBS:-0}"
     export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-0}"
@@ -318,7 +328,7 @@ assistant_remove_stale_worker_containers() {
   assistant_rm_compose_recreate_orphans
 
   [[ "${WORKER_SCHEDULE:-inactive}" == "active" || "${ENABLE_SCHEDULE:-0}" == "1" ]] && workers+=(schedule)
-  if [[ "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_MEDIA_FILE:-0}" == "1" \
+  if [[ "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_MEDIA_FILE:-inactive}" == "active" \
     || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" ]]; then
     workers+=(media)
   fi
@@ -393,7 +403,7 @@ ENABLE_ZALO=${ENABLE_ZALO:-0}
 ENABLE_TELEGRAM=${ENABLE_TELEGRAM:-0}
 ENABLE_OPENVPN=${ENABLE_OPENVPN:-0}
 ENABLE_SCHEDULE=${ENABLE_SCHEDULE:-0}
-ENABLE_MEDIA_FILE=${ENABLE_MEDIA_FILE:-0}
+ENABLE_MEDIA_FILE=${ENABLE_MEDIA_FILE:-inactive}
 ENABLE_MESSAGE=${ENABLE_MESSAGE:-0}
 ENABLE_MONITOR=${ENABLE_MONITOR:-0}
 ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-1}

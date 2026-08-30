@@ -78,6 +78,27 @@ def set_env_key(path: Path, key: str, value: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def clear_env_keys(path: Path, keys: list[str]) -> None:
+    """Drop obsolete .env pins that conflict with combo-based routing."""
+    if not path.exists() or not keys:
+        return
+    keyset = set(keys)
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    kept: list[str] = []
+    changed = False
+    for line in lines:
+        s = line.strip()
+        if s and not s.startswith("#") and "=" in s:
+            k = s.split("=", 1)[0].strip()
+            if k in keyset:
+                changed = True
+                print(f"OK: cleared obsolete {k} from .env")
+                continue
+        kept.append(line)
+    if changed:
+        path.write_text("".join(kept), encoding="utf-8")
+
+
 def _provider_id_for_model(model_id: str) -> str:
     prefix = (model_id or "").split("/", 1)[0].strip().lower()
     return {
@@ -773,12 +794,32 @@ IMAGE_GEN_PREFERRED = [
 
 
 def _media_worker_active(env: dict[str, str]) -> bool:
-    """True when Media worker is on (compose flag or worker state)."""
+    """True when media is ``active`` (legacy ENABLE_MEDIA_FILE=1 still counts until pin)."""
     for key in ("ENABLE_MEDIA_FILE", "WORKER_MEDIA_FILE"):
         v = (env.get(key) or os.environ.get(key) or "").strip().lower()
-        if v in {"1", "true", "yes", "on", "active"}:
+        if v == "active":
+            return True
+        # Legacy on-values: still treat as intent so pin can rewrite to active.
+        if key == "ENABLE_MEDIA_FILE" and v in {"1", "true", "yes", "on"}:
             return True
     return False
+
+
+_OBSOLETE_IMAGE_ENV = [
+    "IMAGE_OMNI_MODEL",
+    "OMNIROUTER_IMAGE_MODEL",
+    "IMAGE_GEN_SIZE",
+    "IMAGE_LLM_MODEL",
+    "IMAGE_LLM_SIZE",
+    "IMAGE_LLM_PROVIDER",
+    "IMAGE_LLM_API_KEY",
+    "IMAGE_LLM_BASE_URL",
+    "IMAGE_VENDOR_PROVIDER",
+    "IMAGE_VENDOR_API_KEY",
+    "IMAGE_VENDOR_URL",
+    "IMAGE_VENDOR_MODEL",
+    "IMAGE_BACKENDS",
+]
 
 
 def pin_media_combos(env: dict[str, str]) -> None:
@@ -786,16 +827,21 @@ def pin_media_combos(env: dict[str, str]) -> None:
 
     Media active → image-gen / vision-ocr / embedding.
     Media inactive → hermes for image+vision routes (no dedicated media combos).
+    Diffusion uses combo names only (no per-model or size env pins).
     """
+    env_path = ROOT / ".env"
+    clear_env_keys(env_path, _OBSOLETE_IMAGE_ENV)
+    for k in _OBSOLETE_IMAGE_ENV:
+        env.pop(k, None)
+
     active = _media_worker_active(env)
-    if active and (env.get("ENABLE_MEDIA_FILE") or "").strip() not in {"1", "true", "yes", "on"}:
-        set_env_key(ROOT / ".env", "ENABLE_MEDIA_FILE", "1")
-        env["ENABLE_MEDIA_FILE"] = "1"
-        print("OK: pinned ENABLE_MEDIA_FILE=1 (Media worker active)")
+    if active and (env.get("ENABLE_MEDIA_FILE") or "").strip().lower() != "active":
+        set_env_key(env_path, "ENABLE_MEDIA_FILE", "active")
+        env["ENABLE_MEDIA_FILE"] = "active"
+        print("OK: pinned ENABLE_MEDIA_FILE=active (Media worker active)")
     if active:
         pins = {
             "IMAGE_GEN_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
-            "IMAGE_GEN_SIZE": env.get("IMAGE_GEN_SIZE") or "1024x1024",
             "OCR_MODEL": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
             "OCR_VISION": "1",
             "EMBED_MODEL": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
@@ -803,11 +849,10 @@ def pin_media_combos(env: dict[str, str]) -> None:
             "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
             "OMNIROUTER_EMBED_COMBO": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
         }
-        if not (env.get("IMAGE_OMNI_MODEL") or "").strip():
-            pins["IMAGE_OMNI_MODEL"] = IMAGE_GEN_PREFERRED[0]
     else:
         hermes = env.get("OMNIROUTER_DEFAULT_COMBO") or env.get("HERMES_DEFAULT_MODEL") or "hermes"
         pins = {
+            "ENABLE_MEDIA_FILE": "inactive",
             "IMAGE_GEN_COMBO": hermes,
             "OCR_MODEL": hermes,
             "OCR_VISION": "1",
@@ -816,7 +861,7 @@ def pin_media_combos(env: dict[str, str]) -> None:
         cur = (env.get(key) or "").strip()
         if cur == want:
             continue
-        set_env_key(ROOT / ".env", key, want)
+        set_env_key(env_path, key, want)
         env[key] = want
         print(f"OK: pinned {key}={want}")
 

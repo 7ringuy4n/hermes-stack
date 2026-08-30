@@ -11,10 +11,12 @@ The built-in Hermes `image_generation` tool is often **unavailable**. Do **not**
 
 **This stack path (required):** `POST http://dispatcher:8090/v1/image`
 
-Diffusion uses router combo:
+Diffusion uses router combo (never a single hardcoded model id):
 
-1. Media worker **active** → `IMAGE_GEN_COMBO=image-gen` (Omni `/images/generations`, then 9Router if enabled)
+1. Media worker **active** → combo **`image-gen`** (Omni `/images/generations`, then 9Router if enabled)
 2. Media worker **inactive** → combo **`hermes`**
+
+**Default canvas (HD):** pass `"size":"1024x1024"` on the request body unless the user asks for another size. Do not rely on env or dispatcher hardcodes for size.
 
 Local Pillow modes (no router): `"mode":"info-card"` and `"mode":"text-poster"`.
 
@@ -31,7 +33,7 @@ If `/v1/image` returns 502/503: one **media-out** failure line only. When the as
 ```bash
 mkdir -p /opt/data/media/out && curl -sS -X POST http://dispatcher:8090/v1/image \
   -H 'content-type: application/json' \
-  -d '{"prompt":"<scene>","filename":"<safe-slug>.png","refine":false}'
+  -d '{"prompt":"<scene>","filename":"<safe-slug>.png","refine":false,"size":"1024x1024"}'
 ```
 
 ## Output
