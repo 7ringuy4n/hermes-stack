@@ -1,3 +1,17 @@
+## 2026-08-30 08:40 +07 — Omni combo shells image-gen / vision-ocr / embedding missing
+
+### Symptom
+After media combo cutover, OmniRoute UI only showed `hermes` and `classifier` — dedicated media combos never appeared.
+
+### Root cause
+`ensure_combo_shell` POSTed `models: []`; Omni rejects empty combos. `http_json` raised HTTP 400 so the stub retry never ran.
+
+### Fix (core)
+Create media combo shells with one OpenCode stub member; do not overwrite existing operator-owned members.
+
+### Prevent recurrence
+Never create Omni combos with an empty models list.
+
 ## 2026-08-30 08:30 +07 — Legacy Comfy aliases and stub skills left behind
 
 ### Symptom
