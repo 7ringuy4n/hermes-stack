@@ -175,9 +175,9 @@ services:
     restart: unless-stopped
     environment:
       - EMBED_UPSTREAM=${EMBED_UPSTREAM:-http://omni-router:20129/v1}
-      - EMBED_API_KEY=${EMBED_API_KEY:-${N9ROUTER_API_KEY:-}}
-      - OPENAI_API_KEY=${N9ROUTER_API_KEY:-}
-      - EMBED_MODEL=${EMBED_MODEL:-openai/text-embedding-3-small}
+      - EMBED_API_KEY=${EMBED_API_KEY:-${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}}
+      - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
+      - EMBED_MODEL=${EMBED_MODEL:-embedding}
       - EMBED_BACKEND=${EMBED_BACKEND:-auto}
       - EMBED_LOCAL_FALLBACK=${EMBED_LOCAL_FALLBACK:-1}
       - EMBED_LOCAL_MODEL=${EMBED_LOCAL_MODEL:-BAAI/bge-small-en-v1.5}
@@ -244,19 +244,16 @@ services:
       - HF_HOME=${WHISPER_CACHE_DIR:-/data/media/.cache/huggingface}
       - OFFICE_FILE_GEN=${OFFICE_FILE_GEN:-1}
       - MEDIA_CACHE_DIR=/data/media
-      # Image gen (empty = off). Media worker sets comfy-cpu,comfy-gpu,omni
-      - IMAGE_BACKENDS=${IMAGE_BACKENDS:-comfy-cpu,comfy-gpu,omni}
-      - IMAGE_OMNI_MODEL=${IMAGE_OMNI_MODEL:-aihorde/Flux.1-Schnell fp8 (Compact)}
-      - IMAGE_OMNI_SIZE=${IMAGE_OMNI_SIZE:-1024x1024}
+      # Image diffusion via router combo IMAGE_GEN_COMBO (default image-gen). Pillow info-card/text-poster stay local.
+      - IMAGE_GEN_COMBO=${IMAGE_GEN_COMBO:-image-gen}
+      - IMAGE_GEN_SIZE=${IMAGE_GEN_SIZE:-1024x1024}
       - OMNIROUTER_BASE_URL=${OMNIROUTER_BASE_URL:-http://omni-router:20129/v1}
       - OMNIROUTER_API_KEY=${OMNIROUTER_API_KEY:-}
       - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-1}
-      - COMFYUI_CPU_URL=${COMFYUI_CPU_URL:-http://comfyui-cpu:8188}
-      - COMFYUI_GPU_URL=${COMFYUI_GPU_URL:-http://comfyui-gpu:8188}
-      - COMFYUI_HAS_GPU=${COMFYUI_HAS_GPU:-0}
-      - COMFYUI_CPU_WORKFLOW=${COMFYUI_CPU_WORKFLOW:-sdxl}
-      - COMFYUI_GPU_WORKFLOW=${COMFYUI_GPU_WORKFLOW:-flux2_klein_4b.json}
-      - IMAGE_REFINE=${IMAGE_REFINE:-1}
+      - ENABLE_9ROUTER=${ENABLE_9ROUTER:-0}
+      - N9ROUTER_BASE_URL=${N9ROUTER_BASE_URL:-http://9router:20128/v1}
+      - N9ROUTER_API_KEY=${N9ROUTER_API_KEY:-}
+      - IMAGE_REFINE=${IMAGE_REFINE:-0}
       - IMAGE_ALLOW_PILLOW=${IMAGE_ALLOW_PILLOW:-0}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       # Zalo outbound (send-file / send_zalo on /v1/image) via host bridge proxy

@@ -18,8 +18,8 @@ ELSE:
 ```text
 Hermes → this skill
            ├── worker active  → Media/File Worker
-           │                     ├── ComfyUI (image)
-           │                     ├── OCR / document extract
+           │                     ├── image-gen (Omni/9Router combo image-gen)
+           │                     ├── vision-ocr (Paddle + combo vision-ocr)
            │                     └── file create/convert
            └── worker inactive → OmniRouter capability models
 ```
@@ -28,9 +28,9 @@ Classifier `skill_action` selects the operation. Do **not** hard-code engine nam
 
 | skill_action | Active worker | Inactive worker |
 |---|---|---|
-| `generate_media` | `POST http://dispatcher:8090/v1/image` | OmniRouter image model (when configured) |
-| `process_file` / `process_image` | OCR/ingest worker URLs | OmniRouter OCR/vision model when available |
-| `create_file` | `file-gen` / office via dispatcher | local office tools only when available; else OmniRouter-supported path or fail |
+| `generate_media` | `POST http://dispatcher:8090/v1/image` (combo `image-gen`) | OmniRouter `/images/generations` `model=image-gen` |
+| `process_file` / `process_image` | OCR/ingest (`vision-ocr` combo for vision) | OmniRouter chat multimodal `vision-ocr` |
+| `create_file` | `file-gen` / office via dispatcher | local office tools only when available; else fail |
 
 ## Must follow
 
@@ -39,9 +39,10 @@ Classifier `skill_action` selects the operation. Do **not** hard-code engine nam
 3. Preserve `thread_id` for delivery — never replace with `user_id` (`zalo-context` / claim).
 4. Preserve `correlation_id` / `execution_id` when present.
 5. Untrusted attachments: Security Worker **before** this skill when Security is active.
-6. Video: refuse via `video-gen` policy (no silent Comfy video).
+6. Video / music / audio / YouTube transcripts: refuse via `video-gen` (never ComfyUI).
+7. Complex multi-panel briefs: `multi-purpose` (plan with `hermes`, deliver via image-gen/file-gen).
 
 ## Related
 
-- `image-gen`, `video-gen`, `comfyui`, `file-gen`, `media-out`, `zalo-context`
+- `image-gen`, `vision-ocr`, `embedding`, `multi-purpose`, `video-gen`, `file-gen`, `media-out`, `zalo-context`
 - `security` — AV / YARA / sandbox / inbound message-check
