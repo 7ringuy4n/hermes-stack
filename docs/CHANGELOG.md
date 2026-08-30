@@ -1,3 +1,8 @@
+## 2026-08-30 09:00 +07 — Image-gen/vision-ocr unused: hermes pin + non-image combo members
+
+- Media worker active but `.env` pinned `IMAGE_GEN_COMBO`/`OCR_MODEL` to `hermes` when only `WORKER_MEDIA_FILE=active` was set; Omni rejected chat models on `/images/generations`.
+- First-setup now treats Media worker active correctly, fills `image-gen` with image-capable models (AI Horde Flux), `vision-ocr` with `supportsVision` models; OCR falls through to vision when Paddle text is noise; dispatcher falls back to `IMAGE_OMNI_MODEL` if the combo cannot generate images.
+
 ## 2026-08-30 08:50 +07 — Drop Low/Med/High from dispatcher docs; OpenCode media combos
 
 - Dispatcher README no longer documents Low/Medium/High or a local `/v1/search` (search is on the Router Worker).

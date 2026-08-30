@@ -5,7 +5,7 @@
 2) Read/create Default Key → OMNIROUTER_API_KEY
 3) Ensure OpenCode provider; fill chat combo ``hermes`` with cloud ``oc/*`` members
 4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members
-5) Ensure media combos image-gen / vision-ocr / embedding with OpenCode cloud members (same as hermes)
+5) Ensure media combos: image-gen (image-capable), vision-ocr (supportsVision), embedding
 6) Pin IMAGE_GEN_COMBO / OCR_MODEL from media worker state (inactive → hermes)
 7) Set combo strategy preference (round-robin)
 8) Ensure Search: Tavily → Firecrawl → SearXNG
@@ -63,7 +63,14 @@ def load_env(path: Path) -> dict[str, str]:
 
 def set_env_key(path: Path, key: str, value: str) -> None:
     text = path.read_text(encoding="utf-8") if path.exists() else ""
-    line = f"{key}={value}"
+    # Quote values with spaces / shell metacharacters so `set -a; . ./.env` stays valid.
+    needs_quote = any(ch in value for ch in " \t\n\"'()#$&|;<>`\\")
+    if needs_quote:
+        esc = value.replace("\\", "\\\\").replace('"', '\\"')
+        rendered = f'"{esc}"'
+    else:
+        rendered = value
+    line = f"{key}={rendered}"
     if re.search(rf"(?m)^{re.escape(key)}=", text):
         text = re.sub(rf"(?m)^{re.escape(key)}=.*$", line, text)
     else:
@@ -758,14 +765,33 @@ def verify(key: str, combo: str) -> None:
         print(f"WARN smoke chat combo={combo} HTTP {e.code}: {e.read()[:200]!r}")
 
 
+IMAGE_GEN_PREFERRED = [
+    "aihorde/Flux.1-Schnell fp8 (Compact)",
+    "aihorde/AbsoluteReality",
+    "aihorde/AlbedoBase XL (SDXL)",
+]
+
+
+def _media_worker_active(env: dict[str, str]) -> bool:
+    """True when Media worker is on (compose flag or worker state)."""
+    for key in ("ENABLE_MEDIA_FILE", "WORKER_MEDIA_FILE"):
+        v = (env.get(key) or os.environ.get(key) or "").strip().lower()
+        if v in {"1", "true", "yes", "on", "active"}:
+            return True
+    return False
+
+
 def pin_media_combos(env: dict[str, str]) -> None:
     """Pin router combo names from media worker state.
 
     Media active → image-gen / vision-ocr / embedding.
     Media inactive → hermes for image+vision routes (no dedicated media combos).
     """
-    media_on = (env.get("ENABLE_MEDIA_FILE") or os.environ.get("ENABLE_MEDIA_FILE") or "0").strip()
-    active = media_on in {"1", "true", "yes", "on"}
+    active = _media_worker_active(env)
+    if active and (env.get("ENABLE_MEDIA_FILE") or "").strip() not in {"1", "true", "yes", "on"}:
+        set_env_key(ROOT / ".env", "ENABLE_MEDIA_FILE", "1")
+        env["ENABLE_MEDIA_FILE"] = "1"
+        print("OK: pinned ENABLE_MEDIA_FILE=1 (Media worker active)")
     if active:
         pins = {
             "IMAGE_GEN_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
@@ -777,6 +803,8 @@ def pin_media_combos(env: dict[str, str]) -> None:
             "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
             "OMNIROUTER_EMBED_COMBO": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
         }
+        if not (env.get("IMAGE_OMNI_MODEL") or "").strip():
+            pins["IMAGE_OMNI_MODEL"] = IMAGE_GEN_PREFERRED[0]
     else:
         hermes = env.get("OMNIROUTER_DEFAULT_COMBO") or env.get("HERMES_DEFAULT_MODEL") or "hermes"
         pins = {
@@ -793,29 +821,182 @@ def pin_media_combos(env: dict[str, str]) -> None:
         print(f"OK: pinned {key}={want}")
 
 
-def ensure_media_combos(opener) -> None:
-    """Fill image-gen / vision-ocr / embedding with OpenCode cloud members (same path as hermes)."""
-    for name, desc in (
-        (
-            "image-gen",
-            "Image generation — Omni /images/generations (OpenCode; swap for image-capable models as needed)",
-        ),
-        (
-            "vision-ocr",
-            "Vision OCR — Omni multimodal chat (OpenCode; prefer vision-capable members)",
-        ),
-        (
-            "embedding",
-            "Embeddings — Omni /v1/embeddings (OpenCode; prefer embed-capable members)",
-        ),
-    ):
-        ensure_opencode_combo(
-            opener,
-            name=name,
-            description=desc,
-            refill_if_below=3,
+def _v1_models(api_key: str) -> list[dict]:
+    req = urllib.request.Request(
+        f"{BASE}/v1/models",
+        headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        data = json.loads(resp.read().decode() or "{}")
+    rows = data.get("data") or []
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def _is_image_output_model(row: dict) -> bool:
+    mid = str(row.get("id") or "")
+    if not mid or "embed" in mid.lower():
+        return False
+    out = row.get("output_modalities") or row.get("output_modality") or []
+    if isinstance(out, str):
+        out = [out]
+    caps = row.get("capabilities")
+    if isinstance(caps, dict):
+        if caps.get("image") is True:
+            return True
+    elif isinstance(caps, list) and any(str(c).lower() == "image" for c in caps):
+        return True
+    if any(str(x).lower() == "image" for x in out):
+        return True
+    low = mid.lower()
+    return (
+        low.startswith("aihorde/")
+        or "flux" in low
+        or "imagen" in low
+        or "dall-e" in low
+        or low.endswith("-image-preview")
+        or "image-generation" in low
+    )
+
+
+def list_image_gen_models(api_key: str) -> list[str]:
+    """Models Omni can use for /images/generations (output modality image)."""
+    rows = _v1_models(api_key)
+    found = [str(r.get("id")) for r in rows if _is_image_output_model(r) and r.get("id")]
+    preferred = [m for m in IMAGE_GEN_PREFERRED if m in found]
+    rest = [m for m in found if m not in preferred]
+    # Prefer Flux/Schnell then other aihorde, then openrouter image ids.
+    rest.sort(
+        key=lambda m: (
+            0 if "flux" in m.lower() else 1,
+            0 if m.startswith("aihorde/") else 1,
+            m,
         )
-        assert_combo_oc_only(opener, name)
+    )
+    out = preferred + rest
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for mid in out:
+        if mid in seen:
+            continue
+        seen.add(mid)
+        uniq.append(mid)
+    return uniq[:8]
+
+
+def list_vision_models(opener) -> list[str]:
+    """Multimodal chat models for OCR vision fallback (supportsVision)."""
+    _, data = http_json(opener, "GET", f"{BASE}/api/models")
+    rows = data.get("models") or []
+    out: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if not row.get("supportsVision"):
+            continue
+        if row.get("available") is False:
+            continue
+        full = row.get("fullModel") or row.get("model")
+        if isinstance(full, str) and full.strip():
+            out.append(full.strip())
+    # Prefer gemini + strong OpenCode vision, then others.
+    def _rank(mid: str) -> tuple:
+        m = mid.lower()
+        if m.startswith("gemini/"):
+            return (0, m)
+        if m.startswith("opencode-go/kimi") or m.startswith("opencode-go/mimo"):
+            return (1, m)
+        if _is_opencode_model_id(m):
+            return (2, m)
+        return (3, m)
+
+    out = sorted(set(out), key=_rank)
+    return out[:10]
+
+
+def _put_or_create_combo(
+    opener,
+    *,
+    name: str,
+    description: str,
+    model_ids: list[str],
+    force: bool,
+) -> str:
+    if not model_ids:
+        raise SystemExit(f"combo {name}: no candidate models")
+    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    combos = data.get("combos") or []
+    existing = next((c for c in combos if (c.get("name") or "") == name), None)
+    current = _combo_model_ids(existing)
+    if existing and current and not force:
+        print(f"==> keep combo {name} n={len(current)} first={current[:3]}")
+        return name
+    models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(model_ids)]
+    payload = {
+        "name": name,
+        "models": models,
+        "strategy": COMBO_STRATEGY,
+        "description": description,
+    }
+    if existing and existing.get("id"):
+        status, body = http_json(
+            opener, "PUT", f"{BASE}/api/combos/{existing['id']}", payload
+        )
+        action = "update"
+    else:
+        status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
+        action = "create"
+    if status not in (200, 201):
+        raise SystemExit(f"combo {name} {action} failed: {body}")
+    print(f"OK: {action} combo {name} n={len(model_ids)} first={model_ids[:3]}")
+    return name
+
+
+def ensure_media_combos(opener, api_key: str) -> None:
+    """Ensure media combos with capability-matched members (not chat-only OpenCode)."""
+    image_ids = list_image_gen_models(api_key)
+    if not image_ids:
+        raise SystemExit(
+            "no images-capable models in Omni catalog — connect AI Horde / image provider"
+        )
+    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    combos = {c.get("name"): c for c in (data.get("combos") or []) if isinstance(c, dict)}
+    cur_img = set(_combo_model_ids(combos.get("image-gen")))
+    need_img = not cur_img or not cur_img.intersection(set(image_ids))
+    _put_or_create_combo(
+        opener,
+        name="image-gen",
+        description="Image generation — Omni /images/generations (AI Horde / image-capable)",
+        model_ids=image_ids,
+        force=need_img,
+    )
+
+    vision_ids = list_vision_models(opener)
+    if not vision_ids:
+        # Fall back to hermes OpenCode members so vision path still has a combo.
+        vision_ids = list_oc_models(opener)[:5] or list(OPENCODE_FREE_FALLBACK[:5])
+        print(f"WARN no supportsVision catalog; seeding vision-ocr with OpenCode {vision_ids[:3]}")
+    cur_vis = set(_combo_model_ids(combos.get("vision-ocr")))
+    need_vis = len(cur_vis.intersection(set(vision_ids))) == 0
+    _put_or_create_combo(
+        opener,
+        name="vision-ocr",
+        description="Vision OCR — multimodal chat (supportsVision models)",
+        model_ids=vision_ids,
+        force=need_vis,
+    )
+
+    # embedding: keep if present; else create OpenCode shell (operator may swap embed models)
+    if not combos.get("embedding"):
+        emb = list_oc_models(opener)[:5] or list(OPENCODE_FREE_FALLBACK[:5])
+        _put_or_create_combo(
+            opener,
+            name="embedding",
+            description="Embeddings — Omni /v1/embeddings (prefer embed-capable members)",
+            model_ids=emb,
+            force=True,
+        )
+    else:
+        print("OK: combo embedding exists (operator-owned members)")
 
 
 def assert_combo_oc_only(opener, name: str) -> None:
@@ -858,7 +1039,7 @@ def main() -> int:
     assert_combo_oc_only(opener, classify_combo)
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
-    ensure_media_combos(opener)
+    ensure_media_combos(opener, key)
     pin_media_combos(env)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
     set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
@@ -878,7 +1059,7 @@ def main() -> int:
     smoke_omni_search(key)
     print(
         f"OK: first-setup omni-router complete "
-        f"(hermes+classifier+image-gen/vision-ocr/embedding OpenCode; "
+        f"(hermes+classifier OpenCode; image-gen image-capable; vision-ocr multimodal; "
         f"classify→{classify_combo!r}; search via Omni)"
     )
     return 0

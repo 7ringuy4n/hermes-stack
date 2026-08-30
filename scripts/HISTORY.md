@@ -1,3 +1,17 @@
+## 2026-08-30 09:00 +07 — Aerial image fail; bare photo OCR skipped vision-ocr
+
+### Symptom
+Scenic image asks returned the media-out failure line; bare photo replies said OCR found no clear text. Combo `image-gen` / `vision-ocr` were not used.
+
+### Root cause
+`.env` pinned `IMAGE_GEN_COMBO=hermes` / `OCR_MODEL=hermes` because pin only checked `ENABLE_MEDIA_FILE` (not `WORKER_MEDIA_FILE=active`). `image-gen` members were chat models (not images-capable). Paddle returned glyph noise and short-circuited vision.
+
+### Fix (core)
+Pin media when worker is active; fill `image-gen` with AI Horde / image-output models and `vision-ocr` with supportsVision models; OCR noise → vision; Omni `IMAGE_OMNI_MODEL` fallback on dispatcher.
+
+### Prevent recurrence
+Never put chat-only models in `image-gen`; never treat Media worker active as inactive for combo pins.
+
 ## 2026-08-30 08:50 +07 — Dispatcher still documented Low profile search; media combos were stubs
 
 ### Symptom
