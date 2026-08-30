@@ -30,7 +30,7 @@ If `/v1/image` returns 502/503: one **media-out** failure line only. When the as
 | Labeled metrics picture | `"mode":"info-card"` + TITLE/SUBTITLE/ICON markers |
 | Exact text poster | `"mode":"text-poster"` |
 
-**Scenic prompts (any user language):** Prefer the classify `SCENE:` English line when present. Otherwise translate the user ask into one clear English diffusion sentence (viewpoint + place + photorealistic). Example family: `Aerial view of Ho Chi Minh City skyline from above, photorealistic`. Do not POST the raw non-English ask as the only prompt. Do not invent a separate aerial skill.
+**Scenic prompts (any user language):** Prefer the classify `SCENE:` English line when present. Otherwise translate the user ask into one clear English diffusion sentence (viewpoint + place + photorealistic). Use official English place names for diffusion — colloquial Saigon / Sài Gòn must become Ho Chi Minh City in the prompt (AI Horde falsely NSFW-blocks “Saigon”). Example family: `Aerial view of Ho Chi Minh City skyline from above, photorealistic`. Do not POST the raw non-English ask as the only prompt. Do not invent a separate aerial skill.
 
 ```bash
 mkdir -p /opt/data/media/out && curl -sS -X POST http://dispatcher:8090/v1/image \
