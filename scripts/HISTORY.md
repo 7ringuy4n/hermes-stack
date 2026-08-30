@@ -1,3 +1,17 @@
+## 2026-08-30 10:50 +07 — Scenic Saigon image returned NSFW censor stub
+
+### Symptom
+Aerial cityscape asks using colloquial Saigon returned an image labeled as censored NSFW blocked content.
+
+### Root cause
+AI Horde safety filters false-positive on the colloquial place name Saigon even for SFW skyline prompts; official English Ho Chi Minh City does not trigger the stub.
+
+### Fix (core)
+Classify/image-gen SCENE guidance maps Saigon/Sài Gòn → Ho Chi Minh City for diffusion. Dispatcher sanitizes the same aliases and treats tiny censor placeholders as backend failure (retry/fail).
+
+### Prevent recurrence
+Never put colloquial Saigon alone in diffusion prompts; prefer official English toponyms when safety filters are known to false-positive.
+
 ## 2026-08-30 10:30 +07 — Scenic aerial still host-shortcut; prompt not LLM-owned
 
 ### Symptom
