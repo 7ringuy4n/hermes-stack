@@ -12,7 +12,7 @@ When the user asks for a **structured multi-part visual** (infographic with seve
    - 9Router: same when enabled
 2. **Deliver** using stack tools — never invent matplotlib/HTML screenshots:
    - Readable metrics / panels on a picture → **`image-gen`** `mode=info-card` (TITLE/SUBTITLE/ICON markers)
-   - Scenic photo + small overlay facts → **`image-gen`** diffusion + `overlay[]`
+   - Scenic photo + small overlay facts → **`image-gen`** Omni `/images/generations` model `image-gen` (+ optional overlay via dispatcher if needed)
    - PDF / office document → **`file-gen`**
 3. Fetch live facts once via search when needed, then one generation call.
 

@@ -1,3 +1,45 @@
+## 2026-08-30 19:20 +07 — Scenic Hermes still guided to dispatcher / manim path
+
+### Symptom
+After classify, still-image jobs still pointed at dispatcher `/v1/image` (or inactive-worker `model=hermes`) with legacy manim/matplotlib/PIL framing instead of Omni combo image-gen.
+
+### Root cause
+Workflow suffix and skills still treated dispatcher diffusion as the scenic API; inactive-worker policy reused chat combo hermes for stills.
+
+### Fix (core)
+Always Omni `/images/generations` model `image-gen` for still diffusion; retire dispatcher diffusion (HTTP 410); Pillow-only `/v1/info-card` and `/v1/text-poster`; host weather Omni + `/v1/overlay`. Container classify/websearch path resolution no longer assumes repo parents. Setup refills `image-gen` when chat-only (e.g. OpenCode) members displace AI Horde / Flux. Model-router enable flags accept `active` so classify candidates are not empty after the active/inactive toggle migration.
+
+### Prevent recurrence
+Never reintroduce dispatcher `/v1/image` for scenic diffusion, Comfy/manim/PIL generation hints, or `model=hermes` for still images. Keep `image-gen` members image-capable only. Keep enable-flag parsers accepting `active`.
+
+## 2026-08-30 19:00 +07 — Scenic ask still guided to dispatcher/Comfy-era path
+
+### Symptom
+Image-generation asks still followed a dispatcher/Comfy-era Hermes hint instead of OmniRouter combo image-gen /images/generations.
+
+### Root cause
+Workflow suffix and image-gen skill centered on dispatcher /v1/image (legacy stack framing).
+
+### Fix (core)
+image-gen skill, classify media, media-file, and Zalo workflow suffix call OmniRouter /v1/images/generations with model image-gen; Hermes env gets Omni URL/key and IMAGE_GEN_COMBO.
+
+### Prevent recurrence
+Never route scenic diffusion through ComfyUI or local drawing scripts; keep Omni combo image-gen as the still-image SoT.
+
+## 2026-08-30 18:55 +07 — Scenic ask still got Comfy-era manim/PIL workflow hint
+
+### Symptom
+Scenic image asks still received a Hermes workflow suffix telling the agent to avoid manim/matplotlib/PIL via dispatcher only — leftover Comfy-era framing instead of Omni combo image-gen.
+
+### Root cause
+Zalo workflow job runner appended a fixed pre-Omni media hint; classify/image-gen still under-emphasized OmniRouter combo image-gen.
+
+### Fix (core)
+Replace the workflow suffix and strengthen image-gen/classify so still images use dispatcher → OmniRouter combo image-gen /images/generations.
+
+### Prevent recurrence
+Never reintroduce ComfyUI or local drawing-script hints for scenic diffusion; keep Omni combo image-gen as the SoT path.
+
 ## 2026-08-30 18:45 +07 — Scenic aerial example bias; OCR extract-only prompt
 
 ### Symptom
