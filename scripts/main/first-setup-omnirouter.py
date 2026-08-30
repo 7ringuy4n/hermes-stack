@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""First-setup OmniRouter (OmniRoute) after ENABLE_OMNIROUTER=1:
+"""First-setup OmniRouter (OmniRoute) after ENABLE_OMNIROUTER=active:
 
 1) Login with OMNIROUTER_INITIAL_PASSWORD (else N9ROUTER_INITIAL_PASSWORD)
 2) Read/create Default Key → OMNIROUTER_API_KEY

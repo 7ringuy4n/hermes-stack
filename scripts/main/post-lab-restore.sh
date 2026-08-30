@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$ROOT"
 export ASSISTANT_SUDO_PASSWORD="${ASSISTANT_SUDO_PASSWORD:-}"
-export ENABLE_ZALO=1
+export ENABLE_ZALO=active
 
 log() { echo "==> $*"; }
 fail=0

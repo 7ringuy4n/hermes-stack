@@ -15,6 +15,7 @@ ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 [[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
 # shellcheck source=architect/backup-restore/lib/profile.sh
 source "${ROOT}/architect/backup-restore/lib/profile.sh"
+assistant_migrate_enable_active
 
 PROJECT="${COMPOSE_PROJECT_NAME:-assistant}"
 PROFILE="${ASSISTANT_PROFILE:-low}"
@@ -128,39 +129,40 @@ compose() {
   PROFILE="${ASSISTANT_PROFILE:-$PROFILE}"
   HERMES_REPLICAS="${HERMES_REPLICAS:-1}"
   local existing=(--project-directory "${ROOT}" -f "${ROOT}/docker/docker-compose.yml")
-  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
+  if _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}" || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
     [[ -f "${ROOT}/docker/docker-compose.media.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.media.yml")
   fi
-  if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_SECURITY:-}" || _env_active "${ENABLE_MONITOR:-}" || _env_active "${ENABLE_NOTIFY:-}" || _env_active "${ENABLE_OPENBAO:-}" || _env_active "${ENABLE_SIEM:-}" || _env_active "${ENABLE_AUTHZ:-}" || _env_active "${ENABLE_CLOUDDRIVE:-}"; then
     [[ -f "${ROOT}/docker/docker-compose.security.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.security.yml")
   fi
-  case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
-    *1*)
-      [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.edge.yml")
-      ;;
-  esac
+  if _env_active "${ENABLE_TRAEFIK:-}" || _env_active "${ENABLE_API_GATEWAY:-}" || _env_active "${ENABLE_OPENVPN:-}"; then
+    [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.edge.yml")
+  fi
   if [[ "${HERMES_REPLICAS}" == "1" ]]; then
     [[ -f "${ROOT}/docker/docker-compose.hermes-hostports.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.hermes-hostports.yml")
   fi
   local profiles=()
-  [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
-  [[ "${ENABLE_NOTIFY:-0}" == "1" ]] && profiles+=(--profile notify)
-  [[ "${ENABLE_SECURITY:-0}" == "1" ]] && profiles+=(--profile security)
-  [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles+=(--profile antivirus)
-  [[ "${SECURITY_SANDBOX:-0}" == "1" ]] && profiles+=(--profile sandbox)
-  [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles+=(--profile clouddrive)
-  [[ "${ENABLE_SCHEDULE:-0}" == "1" ]] && profiles+=(--profile schedule)
-  [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]] && profiles+=(--profile media)
-  assistant_append_monitor_profiles profiles
-  if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
-    case "${TRAEFIK_ACME_ENABLED:-0}" in
-      1) profiles+=(--profile traefik-acme) ;;
-      *) profiles+=(--profile traefik) ;;
-    esac
+  _env_active "${ENABLE_ZALO:-}" && profiles+=(--profile zalo)
+  _env_active "${ENABLE_NOTIFY:-}" && profiles+=(--profile notify)
+  _env_active "${ENABLE_SECURITY:-}" && profiles+=(--profile security)
+  _env_active "${ENABLE_ANTIVIRUS:-}" && profiles+=(--profile antivirus)
+  _env_active "${SECURITY_SANDBOX:-}" && profiles+=(--profile sandbox)
+  _env_active "${ENABLE_CLOUDDRIVE:-}" && profiles+=(--profile clouddrive)
+  _env_active "${ENABLE_SCHEDULE:-}" && profiles+=(--profile schedule)
+  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}"; then
+    profiles+=(--profile media)
   fi
-  [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]] && profiles+=(--profile gateway)
-  [[ "${ENABLE_OPENVPN:-0}" == "1" ]] && profiles+=(--profile openvpn)
-  [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]] && profiles+=(--profile omnirouter)
+  assistant_append_monitor_profiles profiles
+  if _env_active "${ENABLE_TRAEFIK:-}"; then
+    if _env_active "${TRAEFIK_ACME_ENABLED:-}"; then
+      profiles+=(--profile traefik-acme)
+    else
+      profiles+=(--profile traefik)
+    fi
+  fi
+  _env_active "${ENABLE_API_GATEWAY:-}" && profiles+=(--profile gateway)
+  _env_active "${ENABLE_OPENVPN:-}" && profiles+=(--profile openvpn)
+  _env_active "${ENABLE_OMNIROUTER:-}" && profiles+=(--profile omnirouter)
   $SUDO docker compose -p "$PROJECT" "${existing[@]}" "${profiles[@]}" "$@"
 }
 
@@ -236,7 +238,7 @@ heal_by_health() {
   FAILED_NAMES=""
   # Only probe optional components this stack actually runs: a disabled 9Router
   # used to fail every tick, and the heal then bounced dispatcher every 2 min.
-  if [[ "${ENABLE_9ROUTER:-0}" == "1" ]] || component_running 9router; then
+  if _env_active "${ENABLE_9ROUTER:-}" || component_running 9router; then
     probe_9router || { failed=1; mark_failed 9router; }
   fi
   if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || component_running dispatcher; then
@@ -251,18 +253,18 @@ heal_by_health() {
     probe gateway "http://127.0.0.1:${GATEWAY_HOST_PORT:-8088}/health" || failed=1
   fi
 
-  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || component_running ocr; then
+  if _env_active "${ENABLE_OCR:-}" || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || component_running ocr; then
     probe ocr "http://127.0.0.1:${OCR_PORT:-8091}/health" || { failed=1; mark_failed ocr; }
   fi
-  if [[ "${ENABLE_JOBS:-0}" == "1" ]] || component_running jobs; then
+  if _env_active "${ENABLE_JOBS:-}" || component_running jobs; then
     probe jobs "http://127.0.0.1:${JOBS_PORT:-8104}/health" || { failed=1; mark_failed jobs; }
   fi
-  if [[ "${ENABLE_GRAFANA:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_GRAFANA:-}"; then
     probe grafana "http://127.0.0.1:${GRAFANA_HOST_PORT:-23000}/api/health" || failed=1
   fi
-  if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_ZALO:-}"; then
     if ! $SUDO docker ps --format '{{.Names}}' | grep -qx zalo-api; then
-      log "zalo-api missing while ENABLE_ZALO=1 — starting zalo combo"
+      log "zalo-api missing while ENABLE_ZALO=active — starting zalo combo"
       compose up -d --no-deps zalo-api zalo-proxy >/dev/null 2>&1 || true
       failed=1
     fi

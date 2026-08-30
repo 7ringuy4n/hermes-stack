@@ -161,7 +161,7 @@ def main() -> int:
 
     print(f"skills found: {len(skill_dirs)} under {SKILLS_DIR}", flush=True)
 
-    # Prefer Router Worker / OmniRouter; 9Router only when ENABLE_9ROUTER=1
+    # Prefer Router Worker / OmniRouter; 9Router only when ENABLE_9ROUTER=active
     llm_ok = False
     if wait_ready("model-router", f"http://127.0.0.1:{ROUTER_PORT}/health", tries=20):
         llm_ok = True

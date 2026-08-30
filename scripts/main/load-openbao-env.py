@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Load OpenBao KV secret/assistant/api-keys into ASSISTANT_DATA_DIR/.env.openbao.
 
-Compose can mount this via env_file when ENABLE_OPENBAO=1 so runtime secrets
+Compose can mount this via env_file when ENABLE_OPENBAO=active so runtime secrets
 are not .env-only. Also fills empty compose-required keys in ROOT/.env from the
 same KV so the next `run.sh up|update` can interpolate after scrub.
 

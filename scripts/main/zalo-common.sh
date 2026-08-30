@@ -467,7 +467,7 @@ zalo_teardown_failed_qr() {
   zalo_stop_bridge_service
   if [[ -f "${ZALO_COMMON_ROOT}/.env" ]]; then
     if grep -q '^ENABLE_ZALO=' "${ZALO_COMMON_ROOT}/.env"; then
-      sed -i 's/^ENABLE_ZALO=.*/ENABLE_ZALO=0/' "${ZALO_COMMON_ROOT}/.env" 2>/dev/null || true
+      sed -i 's/^ENABLE_ZALO=.*/ENABLE_ZALO=inactive/' "${ZALO_COMMON_ROOT}/.env" 2>/dev/null || true
     fi
     if grep -q '^WORKER_MESSAGE=' "${ZALO_COMMON_ROOT}/.env"; then
       sed -i 's/^WORKER_MESSAGE=.*/WORKER_MESSAGE=inactive/' "${ZALO_COMMON_ROOT}/.env" 2>/dev/null || true

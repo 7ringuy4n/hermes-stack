@@ -277,7 +277,7 @@ do_backup_sync_clouddrive() {
   case "${ENABLE_CLOUDDRIVE:-0}" in
     1) ;;
     *)
-      echo "ENABLE_CLOUDDRIVE=0 — enable CloudDrive on High first." >&2
+      echo "ENABLE_CLOUDDRIVE=inactive — enable CloudDrive on High first." >&2
       return 1
       ;;
   esac
@@ -339,7 +339,7 @@ EOF
   $sudo systemctl daemon-reload
   $sudo systemctl enable --now assistant-auto-learn.timer assistant-backup.timer
 
-  # Host/container log archive (default 30d). Any profile when ENABLE_LOG_ARCHIVE=1.
+  # Host/container log archive (default 30d). Any profile when ENABLE_LOG_ARCHIVE=active.
   case "${ENABLE_LOG_ARCHIVE:-1}" in
     1|true|yes|on)
       $sudo tee "${unit_dir}/assistant-log-archive.service" >/dev/null <<EOF
@@ -350,7 +350,7 @@ After=docker.service
 Type=oneshot
 WorkingDirectory=${STACK_ROOT}
 Environment=STACK_ROOT=${STACK_ROOT}
-Environment=ENABLE_LOG_ARCHIVE=1
+Environment=ENABLE_LOG_ARCHIVE=active
 Environment=LOG_RETENTION_DAYS=${LOG_RETENTION_DAYS:-30}
 EnvironmentFile=-${STACK_ROOT}/.env
 ExecStart=/usr/bin/env bash ${STACK_ROOT}/scripts/main/log-archive.sh
@@ -694,14 +694,14 @@ _reject_edge_flag_off() {
     ENABLE_TRAEFIK)
       if [[ "$v" == "0" ]]; then
         echo "ERROR: disable Traefik with: bash run.sh uninstall traefik" >&2
-        echo "      (not add-components ENABLE_TRAEFIK=0)" >&2
+        echo "      (not add-components ENABLE_TRAEFIK=inactive)" >&2
         return 1
       fi
       ;;
     ENABLE_API_GATEWAY)
       if [[ "$v" == "0" ]]; then
         echo "ERROR: disable API Gateway with: bash run.sh uninstall gateway" >&2
-        echo "      (not add-components ENABLE_API_GATEWAY=0)" >&2
+        echo "      (not add-components ENABLE_API_GATEWAY=inactive)" >&2
         return 1
       fi
       ;;
@@ -993,13 +993,13 @@ Timers:
 First setup:
   install-docker [user]   # if docker missing; default = SSH login user (not a hardcoded name)
   first-setup-omnirouter  # OmniRoute Default Key → hermes/classifier OpenCode cloud
-  first-setup-llm         # 9Router Default Key → combo hermes (only when ENABLE_9ROUTER=1)
+  first-setup-llm         # 9Router Default Key → combo hermes (only when ENABLE_9ROUTER=active)
 
 Security overlay:
   first-setup-openbao     # seed API keys → OpenBao UI (:8200); also on up|update
   load-openbao-env        # pull KV → $ASSISTANT_DATA_DIR/.env.openbao for compose
   check-security          # smoke OpenBao / Grafana / AV / authz / …
-  backup-sync-clouddrive  # when ENABLE_CLOUDDRIVE=1
+  backup-sync-clouddrive  # when ENABLE_CLOUDDRIVE=active
 
 Attachable:
   channel-status
