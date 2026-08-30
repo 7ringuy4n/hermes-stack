@@ -843,7 +843,7 @@ def pin_media_combos(env: dict[str, str]) -> None:
         pins = {
             "IMAGE_GEN_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
             "OCR_MODEL": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
-            "OCR_VISION": "1",
+            "OCR_VISION": "active",
             "EMBED_MODEL": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
             "OMNIROUTER_IMAGE_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
             "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
@@ -855,7 +855,7 @@ def pin_media_combos(env: dict[str, str]) -> None:
             "ENABLE_MEDIA_FILE": "inactive",
             "IMAGE_GEN_COMBO": hermes,
             "OCR_MODEL": hermes,
-            "OCR_VISION": "1",
+            "OCR_VISION": "active",
         }
     for key, want in pins.items():
         cur = (env.get(key) or "").strip()
@@ -878,29 +878,33 @@ def _v1_models(api_key: str) -> list[dict]:
 
 
 def _is_image_output_model(row: dict) -> bool:
-    mid = str(row.get("id") or "")
-    if not mid or "embed" in mid.lower():
+    """True for /images/generations targets only — not multimodal chat/vision OCR."""
+    mid = str(row.get("id") or "").strip()
+    if not mid:
         return False
-    out = row.get("output_modalities") or row.get("output_modality") or []
-    if isinstance(out, str):
-        out = [out]
-    caps = row.get("capabilities")
-    if isinstance(caps, dict):
-        if caps.get("image") is True:
-            return True
-    elif isinstance(caps, list) and any(str(c).lower() == "image" for c in caps):
-        return True
-    if any(str(x).lower() == "image" for x in out):
-        return True
     low = mid.lower()
-    return (
-        low.startswith("aihorde/")
-        or "flux" in low
-        or "imagen" in low
-        or "dall-e" in low
-        or low.endswith("-image-preview")
-        or "image-generation" in low
-    )
+    # Vision/chat models often advertise an "image" modality for *input*; they are not diffusion.
+    if (
+        low.startswith("gemini/")
+        or low.startswith("opencode")
+        or low.startswith("oc/")
+        or "embed" in low
+    ):
+        return False
+    if low.startswith("aihorde/"):
+        return True
+    if "flux" in low or "imagen" in low or "dall-e" in low:
+        return True
+    if low.endswith("-image-preview") or "image-generation" in low:
+        return True
+    caps = row.get("capabilities")
+    if isinstance(caps, dict) and caps.get("image_generation") is True:
+        return True
+    return False
+
+
+def _is_image_gen_model_id(mid: str) -> bool:
+    return _is_image_output_model({"id": mid})
 
 
 def list_image_gen_models(api_key: str) -> list[str]:
@@ -996,6 +1000,42 @@ def _put_or_create_combo(
     return name
 
 
+def _smoke_image_gen_combo(api_key: str) -> None:
+    """Fail setup if Omni still rejects combo image-gen for /images/generations."""
+    body = json.dumps(
+        {"model": "image-gen", "prompt": "setup smoke tiny skyline", "n": 1}
+    ).encode()
+    req = urllib.request.Request(
+        f"{BASE}/v1/images/generations",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            raw = resp.read()
+            data = json.loads(raw.decode() or "{}") if raw else {}
+    except urllib.error.HTTPError as e:
+        detail = e.read()[:400]
+        raise SystemExit(
+            f"image-gen /images/generations smoke HTTP {e.code}: {detail!r} "
+            f"— refill image-gen with AI Horde / Flux members"
+        ) from e
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        items = data.get("data") or data.get("images") or []
+    else:
+        items = []
+    if not items:
+        raise SystemExit(f"image-gen smoke returned no image data: {str(data)[:300]}")
+    print("OK: smoke image-gen /images/generations")
+
+
 def ensure_media_combos(opener, api_key: str) -> None:
     """Ensure media combos with capability-matched members (not chat-only OpenCode)."""
     image_ids = list_image_gen_models(api_key)
@@ -1005,8 +1045,11 @@ def ensure_media_combos(opener, api_key: str) -> None:
         )
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = {c.get("name"): c for c in (data.get("combos") or []) if isinstance(c, dict)}
-    cur_img = set(_combo_model_ids(combos.get("image-gen")))
-    need_img = not cur_img or not cur_img.intersection(set(image_ids))
+    cur_img = _combo_model_ids(combos.get("image-gen"))
+    bad_img = [m for m in cur_img if not _is_image_gen_model_id(m)]
+    need_img = (not cur_img) or bool(bad_img) or not set(cur_img).intersection(set(image_ids))
+    if bad_img:
+        print(f"==> image-gen has non-diffusion members {bad_img[:6]!r} — refilling")
     _put_or_create_combo(
         opener,
         name="image-gen",
@@ -1014,6 +1057,7 @@ def ensure_media_combos(opener, api_key: str) -> None:
         model_ids=image_ids,
         force=need_img,
     )
+    _smoke_image_gen_combo(api_key)
 
     vision_ids = list_vision_models(opener)
     if not vision_ids:
@@ -1064,8 +1108,9 @@ def assert_combo_oc_only(opener, name: str) -> None:
 
 def main() -> int:
     env = load_env(ROOT / ".env")
-    if env.get("ENABLE_OMNIROUTER", "0") not in {"1", "true", "yes", "on"}:
-        print("SKIP: ENABLE_OMNIROUTER is not 1")
+    omni_flag = (env.get("ENABLE_OMNIROUTER") or "inactive").strip().lower()
+    if omni_flag not in {"active", "1", "true", "yes", "on"}:
+        print("SKIP: ENABLE_OMNIROUTER is not active")
         return 0
     password = env.get("OMNIROUTER_INITIAL_PASSWORD") or env.get("N9ROUTER_INITIAL_PASSWORD") or ""
     if not password:

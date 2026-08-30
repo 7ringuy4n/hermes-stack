@@ -18,6 +18,7 @@ load_env_with_defaults
 
 # shellcheck source=architect/backup-restore/lib/workers.sh
 source "${ROOT}/architect/backup-restore/lib/workers.sh"
+assistant_migrate_enable_active
 assistant_workers_apply
 
 cmd="${1:-help}"
@@ -50,15 +51,15 @@ compose() {
   local -a scale_args=()
   local replicas="${HERMES_REPLICAS:-1}"
   local traefik_mode="${TRAEFIK_MODE:-local}"
-  local acme="${TRAEFIK_ACME_ENABLED:-0}"
+  local acme="${TRAEFIK_ACME_ENABLED:-inactive}"
 
-  if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_TRAEFIK:-}"; then
     case "${traefik_mode}" in
       public)
-        if [[ "$acme" == "1" && -n "${TRAEFIK_ACME_EMAIL:-}" && -n "${TRAEFIK_ACME_DOMAIN:-}" ]]; then
+        if [[ "$acme" == "active" || "$acme" == "1" && -n "${TRAEFIK_ACME_EMAIL:-}" && -n "${TRAEFIK_ACME_DOMAIN:-}" ]]; then
           acme=1
         else
-          if [[ "$acme" == "1" ]]; then
+          if [[ "$acme" == "active" || "$acme" == "1" ]]; then
             echo "WARN: TRAEFIK_MODE=public/ACME missing TRAEFIK_ACME_EMAIL or TRAEFIK_ACME_DOMAIN — fail-soft to local" >&2
           fi
           acme=0
@@ -79,37 +80,37 @@ compose() {
     export TRAEFIK_ACME_ENABLED="$acme"
   fi
 
-  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
+  if _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}" || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
     files+=(-f "$ROOT/docker/docker-compose.media.yml")
   fi
-  if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_SECURITY:-}" || _env_active "${ENABLE_MONITOR:-}" || _env_active "${ENABLE_NOTIFY:-}" || _env_active "${ENABLE_OPENBAO:-}" || _env_active "${ENABLE_SIEM:-}" || _env_active "${ENABLE_AUTHZ:-}" || _env_active "${ENABLE_CLOUDDRIVE:-}"; then
     files+=(-f "$ROOT/docker/docker-compose.security.yml")
   fi
   # Media GPU profile removed — image gen is Omni/9Router only.
-  [[ "${ENABLE_ZALO:-0}" == "1" ]] && profiles+=(--profile zalo)
-  [[ "${ENABLE_NOTIFY:-0}" == "1" ]] && profiles+=(--profile notify)
-  [[ "${ENABLE_SECURITY:-0}" == "1" ]] && profiles+=(--profile security)
-  [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && profiles+=(--profile antivirus)
-  if [[ "${SECURITY_SANDBOX:-0}" == "1" ]]; then
-    echo "WARN: SECURITY_SANDBOX=1 starts docker-socket-proxy — not a production isolation boundary" >&2
+  _env_active "${ENABLE_ZALO:-}" && profiles+=(--profile zalo)
+  _env_active "${ENABLE_NOTIFY:-}" && profiles+=(--profile notify)
+  _env_active "${ENABLE_SECURITY:-}" && profiles+=(--profile security)
+  _env_active "${ENABLE_ANTIVIRUS:-}" && profiles+=(--profile antivirus)
+  if _env_active "${SECURITY_SANDBOX:-}"; then
+    echo "WARN: SECURITY_SANDBOX=active starts docker-socket-proxy — not a production isolation boundary" >&2
     profiles+=(--profile sandbox)
   fi
-  [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles+=(--profile clouddrive)
-  [[ "${ENABLE_SCHEDULE:-0}" == "1" ]] && profiles+=(--profile schedule)
-  [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]] && profiles+=(--profile media)
+  _env_active "${ENABLE_CLOUDDRIVE:-}" && profiles+=(--profile clouddrive)
+  _env_active "${ENABLE_SCHEDULE:-}" && profiles+=(--profile schedule)
+  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}"; then
+    profiles+=(--profile media)
+  fi
 
-  case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
-    *1*)
-      files+=(-f "$ROOT/docker/docker-compose.edge.yml")
-      ;;
-  esac
-  if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_TRAEFIK:-}" || _env_active "${ENABLE_API_GATEWAY:-}" || _env_active "${ENABLE_OPENVPN:-}"; then
+    files+=(-f "$ROOT/docker/docker-compose.edge.yml")
+  fi
+  if _env_active "${ENABLE_OMNIROUTER:-}"; then
     profiles+=(--profile omnirouter)
   fi
-  if [[ "${ENABLE_9ROUTER:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_9ROUTER:-}"; then
     profiles+=(--profile 9router)
   fi
-  if [[ "${ENABLE_TRAEFIK:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_TRAEFIK:-}"; then
     case "${TRAEFIK_ACME_ENABLED:-0}" in
       1)
         bash "${SCRIPTS_DIR}/render-traefik-acme.sh"
@@ -120,10 +121,10 @@ compose() {
         ;;
     esac
   fi
-  if [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_API_GATEWAY:-}"; then
     profiles+=(--profile gateway)
   fi
-  if [[ "${ENABLE_OPENVPN:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_OPENVPN:-}"; then
     profiles+=(--profile openvpn)
   fi
   assistant_append_monitor_profiles profiles
@@ -158,7 +159,7 @@ compose() {
 }
 
 need_media() {
-  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]]; then
+  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}"; then
     return 0
   fi
   echo "Command '${1:-}' requires the media/file worker (ENABLE_MEDIA_FILE=active or ENABLE_OCR/JOBS=1)." >&2
@@ -166,7 +167,7 @@ need_media() {
 }
 
 need_security() {
-  if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_SECURITY:-}" || _env_active "${ENABLE_MONITOR:-}" || _env_active "${ENABLE_OPENBAO:-}"; then
     return 0
   fi
   echo "Command '${1:-}' requires security/monitor/openbao components enabled." >&2
@@ -398,7 +399,7 @@ EOF
   $sudo systemctl daemon-reload
   $sudo systemctl enable --now assistant-stack-watch.timer
 
-  if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_ZALO:-}"; then
     $sudo tee "${unit_dir}/assistant-zalo-watch.service" >/dev/null <<EOF
 [Unit]
 Description=Assistant Zalo SSE/bridge self-heal
@@ -408,7 +409,7 @@ Type=oneshot
 WorkingDirectory=${STACK_ROOT}
 Environment=STACK_ROOT=${STACK_ROOT}
 Environment=ASSISTANT_DATA_DIR=${ASSISTANT_DATA_DIR:-/data/assistant}
-Environment=ENABLE_ZALO=1
+Environment=ENABLE_ZALO=active
 EnvironmentFile=-${STACK_ROOT}/.env
 ExecStart=/usr/bin/env bash ${STACK_ROOT}/scripts/main/zalo-watch.sh
 EOF
@@ -429,7 +430,7 @@ EOF
     $sudo systemctl disable --now assistant-zalo-watch.timer >/dev/null 2>&1 || true
   fi
 
-  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_JOBS:-0}" == "1" ]]; then
+  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || _env_active "${ENABLE_JOBS:-}"; then
       $sudo tee "${unit_dir}/assistant-compact.service" >/dev/null <<EOF
 [Unit]
 Description=Assistant compact skills/memory
@@ -457,15 +458,15 @@ EOF
   echo "timers installed"
 }
 
-# Timers (backup/learn/stack-watch; log-archive 30d; compact when media worker active; zalo-watch when ENABLE_ZALO=1)
+# Timers (backup/learn/stack-watch; log-archive 30d; compact when media worker active; zalo-watch when ENABLE_ZALO=active)
 ensure_profile_timers() {
-  echo "==> install timers (ENABLE_ZALO=${ENABLE_ZALO:-0})"
+  echo "==> install timers (ENABLE_ZALO=${ENABLE_ZALO:-inactive})"
   do_install_timers || true
 }
 
 do_channel_status() {
   assistant_workers_summary
-  echo "ENABLE_ZALO=${ENABLE_ZALO:-0}"
+  echo "ENABLE_ZALO=${ENABLE_ZALO:-inactive}"
   echo "ENABLE_TELEGRAM=${ENABLE_TELEGRAM:-0}"
   echo "social-app packs: architect/social-app/{zalo,telegram,http}"
 }
@@ -576,7 +577,7 @@ do_update() {
   fi
   do_stop_disabled_optionals
 
-  if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_OPENBAO:-}"; then
     echo "==> seed API keys into OpenBao"
     do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
   fi
@@ -621,7 +622,7 @@ do_scrub_plaintext_env() {
 
 do_load_openbao_env_for_compose() {
   # Compose ${VAR:?} and hermes env_file need KV export before up|update.
-  [[ "${ENABLE_OPENBAO:-0}" == "1" ]] || return 0
+  _env_active "${ENABLE_OPENBAO:-}" || return 0
   [[ -f "${SCRIPTS_DIR}/load-openbao-env.py" ]] || return 0
   echo "==> load OpenBao env for compose"
   export STACK_ROOT="${STACK_ROOT:-$ROOT}"
@@ -642,7 +643,7 @@ do_post_ready_learn() {
 }
 
 do_zalo_setup_hint() {
-  [[ "${ENABLE_ZALO:-0}" == "1" ]] || return 0
+  _env_active "${ENABLE_ZALO:-}" || return 0
   if [[ "$(id -u)" -eq 0 ]]; then
     echo "NEXT (manual, as deploy user — not root): bash scripts/main/setup-zalo.sh"
   else
@@ -653,22 +654,22 @@ do_zalo_setup_hint() {
 do_post_up_hooks() {
   # Full stack bring-up hooks — skipped when ASSISTANT_UP_LIGHT=1 (e.g. setup-zalo after QR).
   ensure_profile_timers
-  if [[ "${ENABLE_9ROUTER:-0}" == "1" && -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
+  if _env_active "${ENABLE_9ROUTER:-}" && [[ -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
     echo "==> first-setup-llm (9Router key + hermes combo)"
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
     export HERMES_DATA_DIR="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
     python3 "${SCRIPTS_DIR}/first-setup-9router-hermes.py" \
       || echo "WARN: first-setup-llm failed — re-run: bash run.sh first-setup-llm"
-  elif [[ "${ENABLE_9ROUTER:-0}" == "1" ]]; then
+  elif _env_active "${ENABLE_9ROUTER:-}"; then
     echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip 9Router first-setup"
   fi
-  if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_OMNIROUTER:-}"; then
     echo "==> first-setup-omnirouter (hermes/classifier ← Omni OpenCode cloud)"
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
     python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py" \
       || echo "WARN: first-setup-omnirouter failed — re-run: bash run.sh first-setup-omnirouter"
   fi
-  if [[ "${ENABLE_OPENBAO:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_OPENBAO:-}"; then
     do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
   fi
   do_scrub_plaintext_env
@@ -1004,7 +1005,7 @@ Attachable:
   channel-status
   setup-zalo              # QR first, then bridge + zalo-api + adapter (deploy user, not sudo)
   login-zalo              # re-login QR when stack already installed
-  zalo-watch              # self-heal bridge/SSE (also timer when ENABLE_ZALO=1)
+  zalo-watch              # self-heal bridge/SSE (also timer when ENABLE_ZALO=active)
   stack-watch             # self-heal down/unhealthy compose services (timer)
 EOF
 }
@@ -1076,7 +1077,7 @@ case "$cmd" in
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
     export HERMES_DATA_DIR="${HERMES_DATA_DIR:-/data/assistant}"
     python3 "${SCRIPTS_DIR}/first-setup-9router-hermes.py"
-    if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+    if _env_active "${ENABLE_OMNIROUTER:-}"; then
       python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py"
     fi
     do_post_ready_learn
