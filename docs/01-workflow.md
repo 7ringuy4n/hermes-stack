@@ -46,7 +46,7 @@ Console / IDE / optional social-app
 | Zalo / Telegram | `message` or `zalo` |
 | Grafana, Prometheus, Loki, Alloy | `monitor` |
 
-Traefik local + API Gateway are **core defaults** (`ENABLE_TRAEFIK=1`, `ENABLE_API_GATEWAY=1`).
+Traefik local + API Gateway are **core defaults** (`ENABLE_TRAEFIK=active`, `ENABLE_API_GATEWAY=active`).
 
 ### Editable UX strings
 

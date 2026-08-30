@@ -24,7 +24,7 @@ NotificationManager: push short admin alerts (learn events, security probes, ops
 
 ## Profile
 
-High (`ENABLE_NOTIFY=1`). Off on Low/Medium by default.
+High (`ENABLE_NOTIFY=active`). Off on Low/Medium by default.
 
 ## Sub-packages
 

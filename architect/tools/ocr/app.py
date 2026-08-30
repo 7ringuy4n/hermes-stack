@@ -36,11 +36,12 @@ FALLBACK = (os.environ.get("OCR_FALLBACK") or "1").strip().lower() not in {
     "off",
 }
 # Vision combo after Paddle. Default on so scanned docs still get text.
-VISION = (os.environ.get("OCR_VISION") or "1").strip().lower() in {
+VISION = (os.environ.get("OCR_VISION") or "active").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
+    "active",
 }
 MIN_TEXT = int(os.environ.get("OCR_MIN_CHARS", "8"))
 VISION_TRIP_AFTER = int(os.environ.get("OCR_VISION_TRIP_AFTER", "3"))

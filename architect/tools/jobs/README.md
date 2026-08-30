@@ -6,7 +6,7 @@ Async workers (RQ + Valkey) for long OCR/ingest/file tasks so the HTTP path stay
 
 ## Profile
 
-Medium+ (`ENABLE_JOBS=1`). Low can run ingest in-process without this worker.
+Medium+ (`ENABLE_JOBS=active`). Low can run ingest in-process without this worker.
 
 ## Main functions
 

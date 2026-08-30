@@ -1,3 +1,17 @@
+## 2026-08-30 20:25 +07 — Backup/security still compared ENABLE_*=1 after migrate
+
+### Symptom
+With `.env` toggles already migrated to `active`/`inactive`, backup compose profile selection, security-manager gates, and several host helpers still compared against `1`/`0`, so optional profiles and AV/YARA paths could be skipped incorrectly.
+
+### Root cause
+Earlier writer conversion did not cover all readers/checkers in backup, workers, security-manager, OCR/office, and channel helpers.
+
+### Fix (core)
+Use `_env_active` / explicit `active` membership for ENABLE_* and related toggles across backup.sh, workers.sh, security-manager, model-router defaults, OCR, office_file, and Zalo/log/ovpn scripts; keep legacy `1`/`0` accepted.
+
+### Prevent recurrence
+Any new ENABLE_* check must accept `active` (and migrate writers must emit only `active`/`inactive`).
+
 ## 2026-08-30 20:10 +07 — Core scripts still wrote ENABLE_*=1|0
 
 ### Symptom

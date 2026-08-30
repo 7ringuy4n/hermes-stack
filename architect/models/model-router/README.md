@@ -44,15 +44,15 @@ Bake fallbacks: `config/*.json` via `scripts/main/sync-model-router-skills.sh` (
 | Task | Preferred | Then |
 |------|-----------|------|
 | coding | 9router (if healthy) | OmniRouter if only that exists → OpenAI fallback (if keyed) |
-| normal / schedule / tool / search / file / unknown | OmniRouter (if `ENABLE_OMNIROUTER=1` and healthy) | 9router → fallbacks |
-| normal / schedule / tool / search / file / unknown | OmniRouter (if `ENABLE_OMNIROUTER=1` and healthy) | 9router → fallbacks |
+| normal / schedule / tool / search / file / unknown | OmniRouter (if `ENABLE_OMNIROUTER=active` and healthy) | 9router → fallbacks |
+| normal / schedule / tool / search / file / unknown | OmniRouter (if `ENABLE_OMNIROUTER=active` and healthy) | 9router → fallbacks |
 
 Missing API keys skip that provider. If nothing works → JSON error `no_model_available` (message in `messages/en.json`).
 
 ## Enable
 
-- `ENABLE_MODEL_ROUTER=1` (default)
-- `ENABLE_OMNIROUTER=0|1` (optional separate OmniRouter image)
+- `ENABLE_MODEL_ROUTER=active` (default)
+- `ENABLE_OMNIROUTER=inactive|1` (optional separate OmniRouter image)
 - Hermes: `HERMES_OPENAI_BASE_URL=http://model-router:8096/v1`
 
 ## Timeouts

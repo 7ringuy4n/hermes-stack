@@ -20,7 +20,7 @@
 
 ## Purpose
 
-VPN/LAN **HTTP entry** in front of Traefik (or Hermes). Enforces **global rate limits** in **Valkey** so limits do not multiply with Hermes replicas. Default **on** in v0.5.0 with Traefik (`ENABLE_API_GATEWAY=1`).
+VPN/LAN **HTTP entry** in front of Traefik (or Hermes). Enforces **global rate limits** in **Valkey** so limits do not multiply with Hermes replicas. Default **on** in v0.5.0 with Traefik (`ENABLE_API_GATEWAY=active`).
 
 **Auth:** `GATEWAY_REQUIRE_AUTH=1` (default) — set `GATEWAY_API_KEYS` or the gateway process refuses to start. See [docs/SECURITY.md](../../docs/SECURITY.md).
 
@@ -29,7 +29,7 @@ VPN/LAN **HTTP entry** in front of Traefik (or Hermes). Enforces **global rate l
 ## Enable
 
 ```env
-ENABLE_API_GATEWAY=1
+ENABLE_API_GATEWAY=active
 # Prefer Traefik when both are on:
 GATEWAY_UPSTREAM_URL=http://traefik:80
 # Or direct Hermes (no LB):

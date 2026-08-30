@@ -34,7 +34,7 @@ file
 | Issue | Mitigation |
 |-------|------------|
 | `docker.sock` on zalo-api | **Removed** — Hermes restarts via host `stack-watch` / `zalo-watch` |
-| `docker.sock` on security-manager | **None by default.** Socket proxy only if `SECURITY_SANDBOX=1` (compose profile `sandbox`) |
+| `docker.sock` on security-manager | **None by default.** Socket proxy only if `SECURITY_SANDBOX=active` (compose profile `sandbox`) |
 | LLM `CLEAN` treated as a passed gate | Judge is RISK-only; default **off** |
 | `scan-url` SSRF | Block private/metadata IPs; no auto-follow redirects; re-validate each hop |
 | Gateway auth optional | `GATEWAY_REQUIRE_AUTH=1` + startup fail without `GATEWAY_API_KEYS` |
@@ -50,7 +50,7 @@ file
 - Image tags may use `:latest` — pin digests for production.
 - Secrets still fan out via compose env — prefer OpenBao per-service credentials later.
 - Flat `internal` Docker network — segment edge / agent / data later.
-- `SECURITY_SANDBOX=1` still uses `docker-socket-proxy` (create/start containers). Prefer a dedicated sandbox broker / gVisor later — not Docker-from-an-AI-facing service.
+- `SECURITY_SANDBOX=active` still uses `docker-socket-proxy` (create/start containers). Prefer a dedicated sandbox broker / gVisor later — not Docker-from-an-AI-facing service.
 
 ## Secrets and `.env`
 
@@ -63,11 +63,11 @@ file
 
 ## Operator checklist
 
-1. Set `GATEWAY_API_KEYS` in `.env` before `ENABLE_API_GATEWAY=1`.
+1. Set `GATEWAY_API_KEYS` in `.env` before `ENABLE_API_GATEWAY=active`.
 2. Keep host publishes on `127.0.0.1`; use SSH tunnels or VPN.
-3. Leave `TRAEFIK_MODE=local` and `TRAEFIK_ACME_ENABLED=0` for production.
+3. Leave `TRAEFIK_MODE=local` and `TRAEFIK_ACME_ENABLED=inactive` for production.
 4. Leave `GATEWAY_TRUST_FORWARDED=0` unless Traefik is the only client of the gateway.
-5. Opt-in only when needed: `ENABLE_ANTIVIRUS=1`, `SECURITY_LLM_JUDGE=1` (RISK-only), `SECURITY_SANDBOX=1` (not recommended).
+5. Opt-in only when needed: `ENABLE_ANTIVIRUS=active`, `SECURITY_LLM_JUDGE=active` (RISK-only), `SECURITY_SANDBOX=active` (not recommended).
 6. For isolated lab without gateway keys: `GATEWAY_REQUIRE_AUTH=0` (not for shared networks).
 
 ## Related

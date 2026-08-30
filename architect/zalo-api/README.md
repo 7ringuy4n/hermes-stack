@@ -24,7 +24,7 @@ HTTP API for Zalo channel admin: allowlists, learn helpers, and in-Zalo `!zalo �
 
 ## When it runs
 
-Started **only** with Zalo (`ENABLE_ZALO=1` → compose profile `zalo`), alongside `zalo-proxy`. Not tied to Low/Medium/High profile flags.
+Started **only** with Zalo (`ENABLE_ZALO=active` → compose profile `zalo`), alongside `zalo-proxy`. Not tied to Low/Medium/High profile flags.
 
 ## Main functions
 

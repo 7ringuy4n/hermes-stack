@@ -6,7 +6,7 @@ Collect security-relevant events (authz deny, AV block, secret-probe hit) for op
 
 ## Profile
 
-High (`ENABLE_SIEM=1`).
+High (`ENABLE_SIEM=active`).
 
 ## Main functions
 

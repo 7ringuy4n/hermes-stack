@@ -14,7 +14,7 @@ English guide for sizing a self-hosted **assistant** (Hermes) stack. Compose fil
 | RAM | **16 GiB** (no swap) |
 | Disk | **~200 GB** SSD (`/` and data on same volume) |
 | Workers | schedule + media + security + notify + message (Zalo); `HERMES_REPLICAS=2` |
-| Monitor | Off (`ENABLE_GRAFANA=0`, `ENABLE_LOKI=0`, `ENABLE_PROMETHEUS=0`, `ENABLE_ALLOY=0`) |
+| Monitor | Off (`ENABLE_GRAFANA=inactive`, `ENABLE_LOKI=inactive`, `ENABLE_PROMETHEUS=inactive`, `ENABLE_ALLOY=inactive`) |
 | Channels | Zalo bridge logged in; Traefik + API Gateway on |
 | Workloads verified | Stack up; image smoke (vendor); gateway concurrency 20× `/health` → 200; SearXNG weather; **backup → verify → restore** round-trip (see [architect/backup-restore/README.md](../architect/backup-restore/README.md)) |
 
@@ -84,10 +84,10 @@ Do not enable Grafana without Prometheus: `run.sh` starts Prometheus (and Hardwa
 | `ENABLE_LOKI` / `ENABLE_ALLOY` (always together) | ~1.5 GiB | ~20 GB | ~0.5 vCPU |
 | `ENABLE_OMNIROUTER` (+ `omni-exporter` when metrics on) | ~0.4 GiB | ~1 GB | ~0.2 vCPU |
 | `HERMES_REPLICAS=2` | second Hermes process | — | ~0.5–1 vCPU |
-| `ENABLE_ZALO=1` | ~0.3 GiB | ~1 GB | ~0.1 vCPU |
-| `ENABLE_NOTIFY=1` | ~0.2 GiB | — | ~0.1 vCPU |
-| `ENABLE_ANTIVIRUS=1` | ~0.8 GiB | ~2 GB | ~0.3 vCPU |
-| `ENABLE_CLOUDDRIVE=1` | sync bursts | mirror size | I/O bound |
+| `ENABLE_ZALO=active` | ~0.3 GiB | ~1 GB | ~0.1 vCPU |
+| `ENABLE_NOTIFY=active` | ~0.2 GiB | — | ~0.1 vCPU |
+| `ENABLE_ANTIVIRUS=active` | ~0.8 GiB | ~2 GB | ~0.3 vCPU |
+| `ENABLE_CLOUDDRIVE=active` | sync bursts | mirror size | I/O bound |
 | `COMFYUI_HAS_GPU=1` | VRAM + RAM | model weights | GPU |
 | **All optional features** | **~5 GiB** | **~40 GB** | **~2 vCPU** |
 

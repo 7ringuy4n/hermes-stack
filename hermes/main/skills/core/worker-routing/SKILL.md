@@ -48,11 +48,11 @@ Optional workers are off unless the host enables them:
 
 | Component | Flag | Skill |
 |---|---|---|
-| Schedule Worker | `ENABLE_SCHEDULE=1` | `schedule` |
-| Media/File Worker | `ENABLE_MEDIA_FILE=1` | `media_file` |
-| Message Worker (Zalo/Telegram/…) | `ENABLE_MESSAGE=1` | platform plugin |
-| Notification Worker | `ENABLE_NOTIFY=1` | notify service |
-| Security Worker | `ENABLE_SECURITY=1` | `security` |
+| Schedule Worker | `ENABLE_SCHEDULE=active` | `schedule` |
+| Media/File Worker | `ENABLE_MEDIA_FILE=active` | `media_file` |
+| Message Worker (Zalo/Telegram/…) | `ENABLE_MESSAGE=active` | platform plugin |
+| Notification Worker | `ENABLE_NOTIFY=active` | notify service |
+| Security Worker | `ENABLE_SECURITY=active` | `security` |
 
 If a required worker is disabled, say so in one line — do not invent a local substitute.
 

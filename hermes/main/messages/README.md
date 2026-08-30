@@ -20,7 +20,7 @@
 | `queued` | Mình đang trả lời tin trước… | — | Reserved (compound follow-up copy) |
 | `full` | Hàng chờ đầy. Gửi lại sau giúp mình. | `ZALO_QUEUE_FULL_MSG` | Valkey queue at cap — message **not** enqueued |
 
-Capacity: `ZALO_INBOUND_QUEUE_MAX` default **3** waiting items per thread (`inbound_queue.py`). TTL default **3600** s (`ZALO_INBOUND_QUEUE_TTL_S`). This queue is **inbound requests only** (compound parts + rate-limit defer). Outbound replies are sent as each Hermes turn finishes — there is no separate response FIFO. Same defaults on Low / Medium / High when `ENABLE_ZALO=1`.
+Capacity: `ZALO_INBOUND_QUEUE_MAX` default **3** waiting items per thread (`inbound_queue.py`). TTL default **3600** s (`ZALO_INBOUND_QUEUE_TTL_S`). This queue is **inbound requests only** (compound parts + rate-limit defer). Outbound replies are sent as each Hermes turn finishes — there is no separate response FIFO. Same defaults on Low / Medium / High when `ENABLE_ZALO=active`.
 
 ### `ux.json` → `schedule.saved`
 

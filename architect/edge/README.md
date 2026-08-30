@@ -26,12 +26,12 @@
 
 | Flag | Compose profile | Default |
 |------|-----------------|--------|
-| `ENABLE_TRAEFIK=1` | `traefik` | **1** (all profiles) |
-| `ENABLE_API_GATEWAY=1` | `gateway` | **1** (all profiles) |
-| `ENABLE_OPENVPN=1` | `openvpn` | 0 |
+| `ENABLE_TRAEFIK=active` | `traefik` | **1** (all profiles) |
+| `ENABLE_API_GATEWAY=active` | `gateway` | **1** (all profiles) |
+| `ENABLE_OPENVPN=active` | `openvpn` | 0 |
 | `TRAEFIK_MODE` | — | **`local`** (VPN/localhost). `public` + ACME is opt-in |
 
-Merged via `docker-compose.edge.yml` when any flag is on (`run.sh up`). Set `ENABLE_TRAEFIK=0` / `ENABLE_API_GATEWAY=0` to disable.
+Merged via `docker-compose.edge.yml` when any flag is on (`run.sh up`). Set `ENABLE_TRAEFIK=inactive` / `ENABLE_API_GATEWAY=inactive` to disable.
 
 ## Sub-packages
 

@@ -31,10 +31,10 @@ docker_cmd() {
   fi
 }
 
-case "${ENABLE_ZALO:-0}" in
-  1) ;;
+case "${ENABLE_ZALO:-inactive}" in
+  1|true|yes|on|active) ;;
   *)
-    log "ENABLE_ZALO!=1 — skip"
+    log "ENABLE_ZALO!=active — skip"
     exit 0
     ;;
 esac

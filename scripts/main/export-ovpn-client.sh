@@ -8,9 +8,9 @@ export LANG="${LANG:-C.UTF-8}"
 ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 [[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
 
-case "${ENABLE_OPENVPN:-0}" in
-  1|true|yes|on) ;;
-  *) echo "export-ovpn: ENABLE_OPENVPN!=1 — enable OpenVPN first"; exit 1 ;;
+case "${ENABLE_OPENVPN:-inactive}" in
+  1|true|yes|on|active) ;;
+  *) echo "export-ovpn: ENABLE_OPENVPN!=active — enable OpenVPN first"; exit 1 ;;
 esac
 
 CLIENT_NAME="${CLIENT_NAME:-client1}"

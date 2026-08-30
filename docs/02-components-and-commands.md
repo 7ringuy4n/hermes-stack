@@ -32,7 +32,7 @@ Legacy `ASSISTANT_PROFILE=low|medium|high` and `switch-profile` are removed — 
 |------|:----:|:--------:|:-----:|:------------------:|:------:|:-------:|:---------------:|
 | Hermes + Memory + router-worker | Yes | — | — | — | — | — | — |
 | OmniRouter (default LLM) | Yes | — | — | — | — | — | — |
-| 9Router | Opt (`ENABLE_9ROUTER=1`) | — | — | — | — | — | — |
+| 9Router | Opt (`ENABLE_9ROUTER=active`) | — | — | — | — | — | — |
 | Traefik local / API Gateway | Yes | — | — | — | — | — | — |
 | schedule-worker | — | Yes | — | — | — | — | — |
 | Dispatcher / OCR / Jobs / SearXNG / Comfy / office | — | — | Yes | — | — | — | — |
@@ -70,7 +70,7 @@ Full name catalog: `bash run.sh install list`.
 | `backup-sync-clouddrive` | When CloudDrive installed |
 | `channel-status` | Social-app flags |
 | `first-setup-omnirouter` | Omni combo wiring (safe re-run) |
-| `first-setup-llm` | Only when `ENABLE_9ROUTER=1` |
+| `first-setup-llm` | Only when `ENABLE_9ROUTER=active` |
 | `first-setup-openbao` / `load-openbao-env` | OpenBao seed + env load |
 
 Detail: [02-commands.md](./02-commands.md).
@@ -107,7 +107,7 @@ bash run.sh check-media
 ### Runtime flags on a live host
 
 ```bash
-bash run.sh add-components ENABLE_9ROUTER=1 --update
+bash run.sh add-components ENABLE_9ROUTER=active --update
 bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
 ```
 

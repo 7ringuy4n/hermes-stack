@@ -28,10 +28,10 @@ High optional. Flags are independent combos:
 
 | Flag | Starts together |
 |------|-----------------|
-| `ENABLE_GRAFANA=1` | Grafana + **Prometheus** + `nine-exporter` + `node-exporter` (Hardware panels) + `stack-exporter` |
-| `ENABLE_PROMETHEUS=1` | Prometheus + the same exporters (no Grafana UI) |
-| `ENABLE_LOKI=1` or `ENABLE_ALLOY=1` | **Loki + Alloy** |
-| `ENABLE_OMNIROUTER=1` + Prometheus/Grafana | OmniRouter + **`omni-exporter`** |
+| `ENABLE_GRAFANA=active` | Grafana + **Prometheus** + `nine-exporter` + `node-exporter` (Hardware panels) + `stack-exporter` |
+| `ENABLE_PROMETHEUS=active` | Prometheus + the same exporters (no Grafana UI) |
+| `ENABLE_LOKI=active` or `ENABLE_ALLOY=active` | **Loki + Alloy** |
+| `ENABLE_OMNIROUTER=active` + Prometheus/Grafana | OmniRouter + **`omni-exporter`** |
 
 Extra usage: Grafana+Prometheus **~1.5 GiB · ~10 GB · ~0.5 vCPU**, Loki+Alloy **~1.5 GiB · ~20 GB · ~0.5 vCPU**, all optional features **~5 GiB RAM · ~40 GB disk · ~2 vCPU**. See [docs/HARDWARE.md](../../docs/HARDWARE.md).
 
@@ -40,7 +40,7 @@ Extra usage: Grafana+Prometheus **~1.5 GiB · ~10 GB · ~0.5 vCPU**, Loki+Alloy 
 | Package | Function | Pairs with |
 |---|---|---|
 | `grafana/` | Dashboards | Prometheus (metrics/Hardware) and/or Loki (logs) |
-| `alert-watch/` | Health / alert watcher | Notify (`ENABLE_NOTIFY=1`). Scrapes **node-exporter only when Grafana/Prometheus is on**. Optional health targets (AV, Zalo, Omni, OCR, OpenBao) are skipped when their `ENABLE_*` is off. DNS failures for disabled hosts are not alerts. |
+| `alert-watch/` | Health / alert watcher | Notify (`ENABLE_NOTIFY=active`). Scrapes **node-exporter only when Grafana/Prometheus is on**. Optional health targets (AV, Zalo, Omni, OCR, OpenBao) are skipped when their `ENABLE_*` is off. DNS failures for disabled hosts are not alerts. |
 | `nine-exporter/` | 9Router usage metrics | 9Router + Prometheus |
 | `omni-exporter/` (same image as nine-exporter) | OmniRoute usage metrics | OmniRouter + Prometheus |
 | `stack-exporter/` | `assistant_service_up` + Redis/Qdrant | Grafana stack health + Prometheus |
@@ -59,7 +59,7 @@ Do not require monitor to run Low chat.
 
 ## Tests
 
-When Grafana (or Prometheus-only) is on, run case **20** (`test/scripts/grafana_integration_lab.py`, SSH) and local `grafana_pairing_unit.py`. 9Router is always-on: stack-exporter probes it over **TCP** (UI `/health` is 404). OmniRouter scrape is required only if `ENABLE_OMNIROUTER=1`.
+When Grafana (or Prometheus-only) is on, run case **20** (`test/scripts/grafana_integration_lab.py`, SSH) and local `grafana_pairing_unit.py`. 9Router is always-on: stack-exporter probes it over **TCP** (UI `/health` is 404). OmniRouter scrape is required only if `ENABLE_OMNIROUTER=active`.
 
 ## Related
 
