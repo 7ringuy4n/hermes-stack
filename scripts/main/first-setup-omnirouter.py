@@ -5,7 +5,7 @@
 2) Read/create Default Key → OMNIROUTER_API_KEY
 3) Ensure OpenCode provider; fill chat combo ``hermes`` with cloud ``oc/*`` members
 4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members
-5) Ensure media combo shells: image-gen, vision-ocr, embedding (operator fills members)
+5) Ensure media combos image-gen / vision-ocr / embedding with OpenCode cloud members (same as hermes)
 6) Pin IMAGE_GEN_COMBO / OCR_MODEL from media worker state (inactive → hermes)
 7) Set combo strategy preference (round-robin)
 8) Ensure Search: Tavily → Firecrawl → SearXNG
@@ -341,8 +341,13 @@ def ensure_opencode_combo(
     name: str,
     description: str,
     member_limit: int | None = None,
+    refill_if_below: int | None = None,
 ) -> str:
-    """Fill Omni combo with cloud OpenCode members when empty; keep live oc/opencode/opencode-go."""
+    """Fill Omni combo with cloud OpenCode members when empty; keep live oc/opencode/opencode-go.
+
+    When ``refill_if_below`` is set and OpenCode member count is under that threshold
+    (e.g. a single stub), refill from the OpenCode catalog like hermes/classifier.
+    """
     drop_probe_combos(opener)
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = data.get("combos") or []
@@ -352,7 +357,8 @@ def ensure_opencode_combo(
     leftover = [mid for mid in ids if not _is_opencode_model_id(mid)]
     if leftover:
         print(f"==> strip leftover non-OpenCode members from {name}: {leftover[:8]!r}")
-    if good:
+    thin = refill_if_below is not None and len(good) < refill_if_below
+    if good and not thin:
         if leftover:
             models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(good)]
             payload = {
@@ -372,6 +378,8 @@ def ensure_opencode_combo(
         else:
             print(f"==> keep combo {name} OpenCode-family n={len(good)} first={good[:3]}")
         return name
+    if thin:
+        print(f"==> refill combo {name} OpenCode (had {len(good)} < {refill_if_below})")
     oc = [m for m in list_oc_models(opener) if _is_opencode_model_id(str(m))]
     if not oc:
         raise SystemExit(f"no OpenCode cloud models for combo {name!r}")
@@ -786,55 +794,29 @@ def pin_media_combos(env: dict[str, str]) -> None:
 
 
 def ensure_media_combos(opener) -> None:
-    """Ensure Omni combo shells for image-gen / vision-ocr / embedding (operator replaces stubs)."""
+    """Fill image-gen / vision-ocr / embedding with OpenCode cloud members (same path as hermes)."""
     for name, desc in (
         (
             "image-gen",
-            "Image generation — Omni /images/generations (replace stub with image-capable models)",
+            "Image generation — Omni /images/generations (OpenCode; swap for image-capable models as needed)",
         ),
         (
             "vision-ocr",
-            "Vision OCR — Omni /v1/chat/completions multimodal (replace stub with vision models)",
+            "Vision OCR — Omni multimodal chat (OpenCode; prefer vision-capable members)",
         ),
         (
             "embedding",
-            "Embeddings — Omni /v1/embeddings (replace stub with embed-capable models)",
+            "Embeddings — Omni /v1/embeddings (OpenCode; prefer embed-capable members)",
         ),
     ):
-        ensure_combo_shell(opener, name=name, description=desc)
+        ensure_opencode_combo(
+            opener,
+            name=name,
+            description=desc,
+            refill_if_below=3,
+        )
+        assert_combo_oc_only(opener, name)
 
-
-def ensure_combo_shell(opener, *, name: str, description: str) -> str:
-    """Create combo if missing; do not overwrite existing members (operator-owned).
-
-    OmniRoute rejects empty ``models`` (HTTP 400). Always seed one OpenCode stub so the
-    combo appears in the UI; operators replace members for image/vision/embed capability.
-    """
-    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
-    combos = data.get("combos") or []
-    existing = next((c for c in combos if (c.get("name") or "") == name), None)
-    if existing:
-        print(f"OK: combo {name} exists id={existing.get('id')}")
-        return name
-    stub_ids = list_oc_models(opener)[:1] or list(OPENCODE_FREE_FALLBACK[:1])
-    if not stub_ids:
-        raise SystemExit(f"combo {name} create failed: no OpenCode stub model available")
-    models = [_combo_model_entry(name, 1, stub_ids[0])]
-    payload = {
-        "name": name,
-        "models": models,
-        "strategy": COMBO_STRATEGY,
-        "description": description,
-    }
-    try:
-        status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
-    except urllib.error.HTTPError as e:
-        detail = e.read()[:400]
-        raise SystemExit(f"combo {name} create failed HTTP {e.code}: {detail!r}") from e
-    if status not in (200, 201):
-        raise SystemExit(f"combo {name} create failed: {body}")
-    print(f"OK: created combo shell {name} stub={stub_ids[0]!r} (replace in Omni UI)")
-    return name
 
 def assert_combo_oc_only(opener, name: str) -> None:
     """Fail setup if hermes/classifier contain non-OpenCode members."""
@@ -896,7 +878,7 @@ def main() -> int:
     smoke_omni_search(key)
     print(
         f"OK: first-setup omni-router complete "
-        f"(hermes+classifier OpenCode; image-gen/vision-ocr/embedding shells; "
+        f"(hermes+classifier+image-gen/vision-ocr/embedding OpenCode; "
         f"classify→{classify_combo!r}; search via Omni)"
     )
     return 0

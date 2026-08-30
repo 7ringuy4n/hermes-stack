@@ -1,3 +1,8 @@
+## 2026-08-30 08:50 +07 — Drop Low/Med/High from dispatcher docs; OpenCode media combos
+
+- Dispatcher README no longer documents Low/Medium/High or a local `/v1/search` (search is on the Router Worker).
+- First-setup fills `image-gen` / `vision-ocr` / `embedding` with OpenCode cloud members the same way as `hermes` / `classifier` (refills thin stubs).
+
 ## 2026-08-30 08:40 +07 — Omni media combo shells never appeared in UI
 
 - First-setup posted empty `models` for `image-gen` / `vision-ocr` / `embedding`; OmniRoute requires at least one member (HTTP 400), and the error aborted before a stub retry.
