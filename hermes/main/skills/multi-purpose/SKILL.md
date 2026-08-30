@@ -18,7 +18,7 @@ When the user asks for a **structured multi-part visual** (infographic with seve
 
 Follow **`media-out`**: result file or final answer only — no process chatter.
 
-Do **not** use ComfyUI. Do **not** generate video/music/audio (see **`video-gen`** refuse).
+Do **not** generate video/music/audio (see **`video-gen`** refuse).
 
 ## Related
 

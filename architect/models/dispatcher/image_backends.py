@@ -1,11 +1,11 @@
 """Image generation backends for POST /v1/image.
 
-Diffusion order (Media worker):
-  1) omni — OmniRouter OpenAI-compatible /images/generations (combo ``image-gen``)
-  2) n9   — 9Router OpenAI-compatible /images/generations when ENABLE_9ROUTER=1
+Diffusion order (Media worker active):
+  1) omni — OmniRouter /images/generations (combo IMAGE_GEN_COMBO, default image-gen)
+  2) n9   — 9Router /images/generations when ENABLE_9ROUTER=1
 
-Pillow modes (info-card, text-poster) stay in app.py — not diffusion.
-ComfyUI and paid vendor image keys are removed.
+When Media worker is inactive, IMAGE_GEN_COMBO defaults to hermes (chat combo).
+Pillow modes (info-card, text-poster) stay in app.py.
 """
 from __future__ import annotations
 
@@ -23,42 +23,27 @@ def _env(*keys: str, default: str = "") -> str:
     return default
 
 
+def _media_active() -> bool:
+    v = (os.environ.get("ENABLE_MEDIA_FILE") or os.environ.get("WORKER_MEDIA_FILE") or "").strip().lower()
+    return v in {"1", "true", "yes", "on", "active"}
+
+
 def image_gen_combo() -> str:
-    return _env("IMAGE_GEN_COMBO", "IMAGE_OMNI_MODEL", default="image-gen")
+    default = "image-gen" if _media_active() else "hermes"
+    return _env("IMAGE_GEN_COMBO", default=default)
 
 
 def image_gen_size() -> str:
-    return _env("IMAGE_GEN_SIZE", "IMAGE_OMNI_SIZE", default="1024x1024")
+    return _env("IMAGE_GEN_SIZE", default="1024x1024")
 
 
-def _split_backends() -> list[str]:
-    """Resolved provider order. Empty IMAGE_BACKENDS legacy → auto from flags."""
-    raw = os.environ.get("IMAGE_BACKENDS")
-    if raw is not None and str(raw).strip():
-        out: list[str] = []
-        for b in raw.split(","):
-            n = b.strip().lower()
-            # Legacy aliases → router backends
-            if n in {"comfy-cpu", "comfy_cpu", "cpu", "comfy-gpu", "comfy_gpu", "gpu"}:
-                continue
-            if n in {"paid1", "paid2", "llm", "vendor", "omni"}:
-                n = "omni"
-            if n in {"n9", "9router", "n9router"}:
-                n = "n9"
-            if n and n not in out:
-                out.append(n)
-        if out:
-            return out
-    out = []
+def image_backends() -> list[str]:
+    out: list[str] = []
     if backend_available("omni"):
         out.append("omni")
     if backend_available("n9"):
         out.append("n9")
     return out
-
-
-def image_backends() -> list[str]:
-    return _split_backends()
 
 
 def backend_available(name: str) -> bool:
@@ -140,11 +125,10 @@ def generate_image_bytes(prompt: str, provider: Optional[str] = None) -> tuple[b
     order: list[str] = []
     if provider:
         p = provider.strip().lower()
-        if p in {"comfy-cpu", "comfy-gpu", "cpu", "gpu", "comfy"}:
-            p = "omni"
         if p in {"9router", "n9router"}:
             p = "n9"
-        order.append(p)
+        if p in {"omni", "n9"}:
+            order.append(p)
     for b in image_backends():
         if b not in order:
             order.append(b)

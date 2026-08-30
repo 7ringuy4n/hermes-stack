@@ -174,7 +174,7 @@ class ImageReq(BaseModel):
     """Generate an image; optionally refine via LLM then push to Zalo."""
     prompt: str
     filename: Optional[str] = None
-    provider: Optional[str] = None  # comfy-cpu|comfy-gpu|omni|text
+    provider: Optional[str] = None  # omni|n9|text|info-card
     mode: Optional[str] = None  # text|poster → exact glyph poster, skip diffusion
     poster_n: Optional[int] = None
     poster_phrase: Optional[str] = None
@@ -214,9 +214,7 @@ async def health() -> dict[str, Any]:
         },
         "media_dir": str(MEDIA_DIR),
         "image_backends": image_backends(),
-        "image_gen_combo": os.environ.get("IMAGE_GEN_COMBO")
-        or os.environ.get("IMAGE_OMNI_MODEL")
-        or "image-gen",
+        "image_gen_combo": os.environ.get("IMAGE_GEN_COMBO") or "image-gen",
         "image_provider": os.environ.get("IMAGE_PROVIDER", ""),
         "zalo_bridge": bool(os.environ.get("ZALO_BRIDGE_URL", "").strip()),
         "whisper_model": os.environ.get("WHISPER_MODEL", "tiny"),

@@ -16,7 +16,7 @@
 | **Schedule** | `schedule` | Go schedule worker (SQLite). Hermes does not tick cron. |
 | **Classify** | `classify` | Inbound purpose JSON. Envelope `classify.json` + `parts/*.txt` assembled into one hop. |
 | **Outbound** | `outbound` | Outbound send\|drop filter (`outbound.json` SoT). Host call `POST /v1/outbound`. |
-| **Media/file** | `media-file`, `image-gen`, `media-out`, `comfyui`, `file-gen` | Worker owns OCR/ComfyUI |
+| **Media/file** | `media-file`, `image-gen`, `vision-ocr`, `embedding`, `multi-purpose`, `media-out`, `file-gen`, `video-gen` | Dispatcher + OCR; combos image-gen / vision-ocr / embedding |
 | **Security** | `security` | AV/YARA/sandbox/judge worker; not a classify `task_hint` |
 | **Vendor** | `vendor/*` | Upstream packs + `ATTRIBUTION.md` / licenses |
 

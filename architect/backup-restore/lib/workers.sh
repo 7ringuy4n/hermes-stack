@@ -254,7 +254,7 @@ assistant_rm_nonrunning_compose_service_containers() {
 assistant_worker_legacy_container_names() {
   case "${1:-}" in
     schedule) printf '%s\n' schedule-worker ;;
-    media) printf '%s\n' searxng ocr jobs jobs-worker comfyui-cpu comfyui-gpu dispatcher ;;
+    media) printf '%s\n' searxng ocr jobs jobs-worker dispatcher ;;
     security) printf '%s\n' openbao security-manager authz siem policy-center docker-socket-proxy ;;
     notify) printf '%s\n' notify alert-watch ;;
     monitor) printf '%s\n' grafana prometheus loki alloy omni-exporter nine-exporter node-exporter stack-exporter ;;
