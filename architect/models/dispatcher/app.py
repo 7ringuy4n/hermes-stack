@@ -856,12 +856,8 @@ def _chown_media(path: Path) -> None:
 
 @app.post("/v1/image")
 def image_generate(req: ImageReq) -> dict[str, Any]:
-    """Image gen: Pillow modes (info-card / text-poster) or router diffusion.
-
-    Diffusion uses combo ``IMAGE_GEN_COMBO`` (default ``image-gen``) via
-    OmniRouter ``/images/generations``, then 9Router when enabled.
+    """Pillow modes only (info-card / text-poster). Scenic diffusion → Omni image-gen.
     """
-    from image_backends import generate_image_bytes, image_backends
     from text_poster import parse_text_poster, render_text_poster_bytes
 
     prompt = (req.prompt or "").strip()
@@ -953,79 +949,53 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
                     log.warning("info-card wrote %s but zalo send failed", name)
         return out
 
-    if not image_backends() and not (req.provider or "").strip():
-        raise HTTPException(503, _msg("image_gen_disabled", "Image generation is unavailable (no media backends configured)."))
+    # Scenic / illustration diffusion moved to OmniRouter combo image-gen.
+    raise HTTPException(
+        410,
+        {
+            "error": "diffusion_moved_to_omni",
+            "detail": (
+                "POST /v1/image no longer runs diffusion (legacy Comfy/dispatcher path). "
+                "Use OmniRouter POST /v1/images/generations with model image-gen. "
+                "Pillow modes remain: mode=info-card or mode=text-poster "
+                "(aliases /v1/info-card and /v1/text-poster)."
+            ),
+        },
+    )
 
-    refine_meta: dict[str, Any] = {"refined": False}
-    gen_prompt = prompt
-    if req.refine and os.environ.get("IMAGE_REFINE", "1") != "0":
-        gen_prompt, refine_meta = _refine_prompt_llm(prompt)
 
-    name = req.filename or f"gen-{uuid.uuid4().hex[:10]}.jpg"
-    if not name.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
-        name += ".jpg"
-    out_dir = MEDIA_DIR / "out"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    dest = out_dir / name
-    used = ""
-    errors: list[str] = []
-    raw: Optional[bytes] = None
+@app.post("/v1/info-card")
+def info_card_generate(req: ImageReq) -> dict[str, Any]:
+    """Pillow labeled info-card (not Omni diffusion)."""
+    req.mode = "info-card"
+    return image_generate(req)
 
-    try:
-        raw, used, errors = generate_image_bytes(
-            gen_prompt,
-            provider=req.provider,
-            size=(req.size or "").strip() or None,
-        )
-        dest.write_bytes(raw)
-        # Hermes agent often runs as HERMES_UID (1000); keep out/ writable & readable.
-        try:
-            uid = int(os.environ.get("HERMES_UID") or "1000")
-            gid = int(os.environ.get("HERMES_GID") or str(uid))
-            os.chown(out_dir, uid, gid)
-            os.chown(dest, uid, gid)
-        except OSError:
-            pass
-    except Exception as e:  # noqa: BLE001
-        # Optional pillow stub
-        if (os.environ.get("IMAGE_ALLOW_PILLOW") or "0") == "1":
-            try:
-                _pillow_stub(gen_prompt if refine_meta.get("refined") else prompt, dest)
-                used = "pillow"
-                raw = dest.read_bytes()
-                errors.append(str(e))
-            except Exception as e2:  # noqa: BLE001
-                raise HTTPException(502, {"error": "all image backends failed", "detail": [str(e), str(e2)]}) from e2
-        else:
-            raise HTTPException(502, {"error": "all image backends failed", "detail": str(e)}) from e
 
-    if raw is None and not dest.is_file():
-        raise HTTPException(502, {"error": "all image backends failed", "detail": errors})
-    try:
-        from PIL import Image
+@app.post("/v1/text-poster")
+def text_poster_generate(req: ImageReq) -> dict[str, Any]:
+    """Pillow exact-text poster (not Omni diffusion)."""
+    req.mode = "text-poster"
+    return image_generate(req)
 
-        img = Image.open(dest)
-        if dest.suffix.lower() not in {".jpg", ".jpeg"}:
-            jpg = dest.with_suffix(".jpg")
-            img.convert("RGB").save(jpg, quality=90)
-            dest = jpg
-        elif img.mode != "RGB":
-            img.convert("RGB").save(dest, quality=90)
-    except Exception:  # noqa: BLE001
-        pass
+
+@app.post("/v1/overlay")
+def image_overlay(req: ImageReq) -> dict[str, Any]:
+    """Apply overlay text onto an existing media/out file and optionally send to Zalo."""
+    name = (req.filename or "").strip()
+    if not name:
+        raise HTTPException(400, "filename required (media/out basename or absolute path)")
+    dest = Path(name)
+    if not dest.is_file():
+        dest = MEDIA_DIR / "out" / Path(name).name
+    if not dest.is_file():
+        raise HTTPException(404, f"image not found: {name}")
     overlay_n = _apply_image_overlay(dest, req.overlay)
-    hermes_path = f"/opt/data/media/out/{dest.name}"
     result: dict[str, Any] = {
         "ok": True,
-        "provider": used,
-        "backends": image_backends(),
-        "prompt_original": prompt,
-        "prompt_used": gen_prompt,
-        "refine": refine_meta,
         "file": str(dest),
-        "hermes_path": hermes_path,
-        "errors": errors,
+        "hermes_path": f"/opt/data/media/out/{dest.name}",
         "overlay": overlay_n,
+        "backend": "overlay",
     }
     if req.send_zalo:
         if not req.thread_id:
@@ -1034,7 +1004,7 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             result["zalo"] = {"ok": True, "skipped": True, "reason": "already_sent"}
         else:
             result["zalo"] = _send_zalo_base64(
-                req.thread_id, req.thread_type, dest, req.caption or prompt[:80]
+                req.thread_id, req.thread_type, dest, req.caption or ""
             )
     return result
 

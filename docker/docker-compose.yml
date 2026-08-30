@@ -401,6 +401,10 @@ services:
       - PYTHONPATH=/opt/data/lazy-packages
       # OmniRouter is default; 9Router optional. Empty key breaks Hermes→model-router auth on some paths.
       - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
+      # Direct Omni image-gen (/images/generations); chat still goes via model-router.
+      - OMNIROUTER_BASE_URL=${OMNIROUTER_BASE_URL:-http://omni-router:20129/v1}
+      - OMNIROUTER_API_KEY=${OMNIROUTER_API_KEY:-}
+      - IMAGE_GEN_COMBO=${IMAGE_GEN_COMBO:-image-gen}
       # v0.5.0: prefer model-router; set HERMES_OPENAI_BASE_URL to override (e.g. dispatcher)
       - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://model-router:8096/v1}
       - DISPATCHER_URL=http://dispatcher:8090

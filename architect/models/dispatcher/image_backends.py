@@ -1,13 +1,10 @@
-"""Image generation backends for POST /v1/image.
+"""Image generation backends (legacy helper; scenic diffusion is Omni-direct).
 
-Diffusion order (Media worker active):
-  1) omni — OmniRouter /images/generations (combo IMAGE_GEN_COMBO, default image-gen)
-  2) n9   — 9Router /images/generations when ENABLE_9ROUTER=1
+Diffusion via OmniRouter /images/generations always uses combo IMAGE_GEN_COMBO
+(default ``image-gen``) whether Media worker is active or inactive — never the
+chat combo ``hermes`` for still images.
 
-When Media worker is inactive, IMAGE_GEN_COMBO defaults to hermes (chat combo).
 Pillow modes (info-card, text-poster) stay in app.py.
-
-Model id is always the combo for the request type (image-gen / hermes).
 Canvas size is optional on the request body (skill declares the HD default).
 """
 from __future__ import annotations
@@ -26,17 +23,9 @@ def _env(*keys: str, default: str = "") -> str:
     return default
 
 
-def _media_active() -> bool:
-    """Media worker on only when ENABLE_MEDIA_FILE or WORKER_MEDIA_FILE is ``active``."""
-    for key in ("ENABLE_MEDIA_FILE", "WORKER_MEDIA_FILE"):
-        if (os.environ.get(key) or "").strip().lower() == "active":
-            return True
-    return False
-
-
 def image_gen_combo() -> str:
-    default = "image-gen" if _media_active() else "hermes"
-    return _env("IMAGE_GEN_COMBO", default=default)
+    """Still-image combo name — always image-gen unless IMAGE_GEN_COMBO overrides."""
+    return _env("IMAGE_GEN_COMBO", default="image-gen")
 
 
 def image_backends() -> list[str]:

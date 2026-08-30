@@ -1,3 +1,21 @@
+## 2026-08-30 19:20 +07 — Still images always Omni image-gen; retire dispatcher diffusion
+
+- Classify → still-image jobs call OmniRouter `/v1/images/generations` with model `image-gen` whether Media worker is active or inactive (never `model=hermes` for stills).
+- Dispatcher `POST /v1/image` diffusion returns 410; Pillow modes use `/v1/info-card` and `/v1/text-poster`; host weather uses Omni then `/v1/overlay`.
+- Workflow no longer injects Comfy-era manim/matplotlib/PIL dispatcher hints.
+- Model-router classify/websearch config resolution no longer crashes in container layout when repo parents are unavailable.
+- Omni setup force-refills `image-gen` when chat-only members remain; `/images/generations` smoke timeout raised for AI Horde latency.
+
+- Model-router treats `ENABLE_OMNIROUTER=active` (and `ENABLE_9ROUTER=active`) as enabled for classify/chat candidate routing.
+
+## 2026-08-30 19:00 +07 — Still-image gen calls Omni combo image-gen directly
+
+- Hermes image-gen / classify / workflow hints now POST OmniRouter /v1/images/generations with model image-gen (not ComfyUI, not dispatcher diffusion for scenic). Hermes compose exports Omni URL/key and IMAGE_GEN_COMBO.
+
+## 2026-08-30 18:55 +07 — Scenic Hermes path uses Omni image-gen (drop Comfy-era hint)
+
+- Workflow job suffix and image-gen/classify guidance now point still-image diffusion at dispatcher → OmniRouter combo `image-gen` (not ComfyUI / local drawing scripts).
+
 ## 2026-08-30 18:45 +07 — Scenic prompt examples; OCR analyze-file prompt
 
 - Scenic skill/classify examples no longer hardcode “Aerial view … from above”.

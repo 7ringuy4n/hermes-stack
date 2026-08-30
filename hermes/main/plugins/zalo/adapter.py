@@ -2190,12 +2190,14 @@ class ZaloAdapter(BasePlatformAdapter):
             from turn_wait import isolate_session_chat_id  # type: ignore
         jid = str(job.get("id"))
         instruction = str(job.get("instruction") or "").strip()
-        if instruction and "dispatcher:8090/v1/" not in instruction:
+        if instruction and "images/generations" not in instruction and "combo image-gen" not in instruction.lower():
             instruction = (
                 instruction
-                + "\n\nIf this task creates an image or video, use only "
-                "POST http://dispatcher:8090/v1/image or POST http://dispatcher:8090/v1/video. "
-                "Do not use manim, matplotlib, or PIL. User-facing: the file only."
+                + "\n\nIf this task creates a still image: use skill image-gen — "
+                "POST http://omni-router:20129/v1/images/generations with model image-gen "
+                "(OmniRouter combo image-gen), English photorealistic prompt, save under /opt/data/media/out. "
+                "Never ComfyUI or local drawing scripts. "
+                "Video/music asks: skill video-gen (policy refuse). User-facing: the file only."
             )
         ctx = job.get("context") if isinstance(job.get("context"), dict) else {}
         tid = str(ctx.get("thread_id") or "")
@@ -6852,7 +6854,7 @@ class ZaloAdapter(BasePlatformAdapter):
         if payload.pop("_missing", False):
             return SendResult(
                 success=False,
-                error=f"local file missing: {image_path} — write /opt/data/media/out/*.jpg or POST dispatcher /v1/image",
+                error=f"local file missing: {image_path} — write /opt/data/media/out via Omni /images/generations model image-gen",
             )
         res = await self._as_with_dest_send_lock(
             dest_id, lambda p=payload: self._post("/send-attachment", p)

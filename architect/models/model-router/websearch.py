@@ -33,11 +33,12 @@ def _resolve_combo_path() -> Path:
         if p.is_file():
             return p
     skill_rel = Path("web-search") / "web-search-combo.json"
-    candidates = (
-        Path("/opt/data/skills") / skill_rel,
-        ROOT.parents[2] / "hermes" / "main" / "skills" / skill_rel,
-        ROOT / "config" / "web-search-combo.json",
-    )
+    candidates: list[Path] = [Path("/opt/data/skills") / skill_rel]
+    try:
+        candidates.append(ROOT.parents[2] / "hermes" / "main" / "skills" / skill_rel)
+    except IndexError:
+        pass
+    candidates.append(ROOT / "config" / "web-search-combo.json")
     for p in candidates:
         try:
             if p.is_file():

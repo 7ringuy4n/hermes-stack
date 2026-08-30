@@ -50,9 +50,9 @@ BACKGROUND: <atmosphere / setting / landmark context for that place>
 search (or prior context), not metrics alone. Do not hardcode a city list.
 
 Dispatcher styles the sheet (Unicode-safe fonts, icons when motif/facts fit; place
-overview/background panels when those markers are present). Do not call diffusion
-`/v1/image` to paint labels onto a PDF. Scenic LLM/diffusion images are optional
-decoration only and must never block PDF delivery.
+overview/background panels when those markers are present). Do not call Omni
+diffusion or deprecated dispatcher `/v1/image` to paint labels onto a PDF. Scenic
+images are optional decoration only and must never block PDF delivery.
 
 In-document visuals stay on **one** `office-file` PDF. Optionally also send a
 standalone `info-card` PNG via **`image-gen`** if they clearly want a separate
