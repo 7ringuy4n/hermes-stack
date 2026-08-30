@@ -55,7 +55,13 @@ def load_env(path: Path) -> dict[str, str]:
 
 def set_env_key(path: Path, key: str, value: str) -> None:
     text = path.read_text(encoding="utf-8") if path.exists() else ""
-    line = f"{key}={value}"
+    needs_quote = any(ch in value for ch in " \t\n\"'()#$&|;<>`\\")
+    if needs_quote:
+        esc = value.replace("\\", "\\\\").replace('"', '\\"')
+        rendered = f'"{esc}"'
+    else:
+        rendered = value
+    line = f"{key}={rendered}"
     if re.search(rf"(?m)^{re.escape(key)}=", text):
         text = re.sub(rf"(?m)^{re.escape(key)}=.*$", line, text)
     else:
@@ -402,8 +408,15 @@ def verify(key: str, model: str) -> None:
 
 def pin_media_combos(env: dict[str, str]) -> None:
     """Pin router combo names from media worker state (inactive → hermes)."""
-    media_on = (env.get("ENABLE_MEDIA_FILE") or os.environ.get("ENABLE_MEDIA_FILE") or "0").strip()
-    active = media_on == "1"
+    active = False
+    for key in ("ENABLE_MEDIA_FILE", "WORKER_MEDIA_FILE"):
+        v = (env.get(key) or os.environ.get(key) or "").strip().lower()
+        if v in {"1", "true", "yes", "on", "active"}:
+            active = True
+            break
+    if active and (env.get("ENABLE_MEDIA_FILE") or "").strip() not in {"1", "true", "yes", "on"}:
+        set_env_key(ROOT / ".env", "ENABLE_MEDIA_FILE", "1")
+        env["ENABLE_MEDIA_FILE"] = "1"
     if active:
         pins = {
             "IMAGE_GEN_COMBO": env.get("N9ROUTER_IMAGE_COMBO") or "image-gen",

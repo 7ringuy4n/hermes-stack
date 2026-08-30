@@ -64,6 +64,24 @@ def _flow(stage: str, **fields: Any) -> None:
     print(" ".join(parts), flush=True)
 
 
+def _text_usable(text: str) -> bool:
+    """True when OCR text is clear enough to skip vision fallback (no regex)."""
+    body = (text or "").strip()
+    if len(body) < MIN_TEXT:
+        return False
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    if len(lines) >= 3:
+        short = sum(1 for ln in lines if len(ln) <= 1)
+        if short / len(lines) >= 0.6:
+            return False
+    words = [w for w in body.replace("\n", " ").split() if len(w) >= 2]
+    if len(body) >= 12 and len(words) <= 1 and len(lines) >= 4:
+        return False
+    return True
+
+
 class OcrReq(BaseModel):
     path: Optional[str] = None
     image_b64: Optional[str] = None
@@ -294,7 +312,7 @@ def ocr(req: OcrReq) -> dict[str, Any]:
             paddle_text, paddle_err = _paddle_pdf_pages(path)
         else:
             paddle_text, paddle_err = _paddle_image(path, req.image_b64)
-        if paddle_text and len(paddle_text) >= MIN_TEXT:
+        if paddle_text and _text_usable(paddle_text):
             _flow(
                 "ocr",
                 ok=True,
@@ -303,17 +321,16 @@ def ocr(req: OcrReq) -> dict[str, Any]:
                 via="paddle",
             )
             return {"ok": True, "text": paddle_text, "via": "paddle"}
-        if paddle_text:
-            # Short but real text (receipt totals, plate numbers).
+        if paddle_text and not _text_usable(paddle_text):
             _flow(
                 "ocr",
-                ok=True,
+                ok=False,
                 path=str(path or ""),
                 chars=len(paddle_text),
+                error="paddle_noise",
                 via="paddle",
             )
-            return {"ok": True, "text": paddle_text, "via": "paddle"}
-        if paddle_err:
+        elif paddle_err:
             _flow("ocr", ok=False, path=str(path or ""), error=paddle_err, via="paddle")
 
     # --- Vision combo (OCR_MODEL, default vision-ocr) after Paddle for images + scanned PDF ---
