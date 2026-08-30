@@ -1,99 +1,51 @@
 ---
 name: image-gen
-description: "Generate images via dispatcher POST /v1/image (default). Overlay facts with overlay[]. Never invent matplotlib/PIL. RESULT-ONLY (see media-out)."
+description: "Generate still images via dispatcher POST /v1/image using router combo image-gen (Omni /images/generations, then 9Router). RESULT-ONLY (see media-out)."
 ---
 
 # Image generation
 
 Follow skill **`media-out`** (result only — no step chatter, no approve, no chat_id / names / DM metadata).
 
-The built-in Hermes `image_generation` tool is often **unavailable** (cloud keys / BFL). Do **not** stop. Do **not** invent matplotlib, PIL scripts, HTML screenshots, or new skills.
+The built-in Hermes `image_generation` tool is often **unavailable**. Do **not** stop. Do **not** invent matplotlib, PIL scripts, HTML screenshots, ComfyUI workflows, or new skills.
 
-**This stack path (required):** `POST http://dispatcher:8090/v1/image` with `IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni`. ComfyUI is tried first; on failure dispatcher falls back to OmniRouter (`/images/generations`). Skill `comfyui` is only for an explicit Comfy workflow the user named — default image gen is always dispatcher.
+**This stack path (required):** `POST http://dispatcher:8090/v1/image`
 
-If `/v1/image` returns 502/503 or backends are unavailable: **do not** ask the user for API keys, `.env`, ComfyUI, or Omni auth. **Do not** send session-restore or numbered recovery menus. **Do not** greet, introduce yourself, or dump `/help` — one **media-out** failure line only, then stop. On Zalo, host media shortcuts own these turns; Hermes must not run after a consumed shortcut. When the user’s ask was primarily a **PDF/office file** with icons/layout, finish via **`file-gen`** / office-file (styled PDF) instead of retrying image gen forever.
+Diffusion uses router combo **`image-gen`** (`IMAGE_GEN_COMBO`):
 
-For **labeled info dashboards as a picture** (readable text/labels in panels), prefer `"mode":"info-card"` on `POST /v1/image` with **structured** TITLE/SUBTITLE/ICON/STYLE/OVERVIEW/BACKGROUND/fact lines — Pillow + Noto fonts. Set `"refine":false`. **Do not** ask diffusion to paint dense on-image text (it becomes tofu/boxes).
+1. OmniRouter `POST /v1/images/generations` with `model=image-gen`
+2. If `ENABLE_9ROUTER=1`, 9Router OpenAI-compatible `/images/generations` with the same combo name
 
-For **current weather as a scenic picture** (city/place visible + small weather text overlay, NOT a metrics dashboard): classify emits `RENDER: scene-overlay` + `SCENE:` + search sibling. Host calls default `/v1/image` diffusion with `overlay` fact lines (bottom bar). **Do not** use `mode=info-card` for this family.
+Local Pillow modes (no router):
 
-For **pure scenic photos** (aerial city, landscape — no live weather on image): classify emits `SCENE:` only, no search. Host/default diffusion with English scene prompt, no overlay unless user asked for text.
+- `"mode":"info-card"` — labeled dashboards / readable metrics
+- `"mode":"text-poster"` — exact readable text lines
 
-```text
-TITLE: <place or topic>
-SUBTITLE: <optional>
-ICON: sun
-STYLE: midnight
-OVERVIEW: <short place intro when subject is a place>
-BACKGROUND: <atmosphere when subject is a place>
-- Nhiệt độ: 31°C
-- Độ ẩm: 70%
-```
+**Never** call ComfyUI, fal, Flux cloud keys, Pollinations, or Gemini image APIs from Hermes.
 
-Fetch live facts first (search), then call info-card once.
+If `/v1/image` returns 502/503: one **media-out** failure line only — do not ask for API keys or `.env`. When the ask was primarily a **PDF/office file**, finish via **`file-gen`**.
 
-For a **scenic photo** (no on-image text labels): you may call default `/v1/image` diffusion/LLM backends with an English scene prompt. If it fails, fall back to `mode=info-card` or rely on the styled PDF visuals — never a recovery menu.
+## Modes
 
-When the subject is a **place / city / landmark** and the user asked for a **file** , finish via **`file-gen`** with OVERVIEW/BACKGROUND markers — do not substitute a scenic image for the file. For a standalone place picture, scene prompt should reflect place atmosphere (landmarks, setting), not a blank metric card.
-
-Generate through this skill and dispatcher instead.
-
-**Never** `web_search`, `web_extract`, or browse GitHub/release/news pages to “find image URLs”. That is not generation. Users must receive a **new file** from dispatcher, not a scrape of someone else’s page. If live facts are needed, one short search is enough, then `POST /v1/image` with a **scene prompt** plus `overlay` fact lines (match the user’s language). If dispatcher fails: one failure line from **media-out**, then stop.
-
-## Output path
-
-Only `/opt/data/media/out/<safe-slug>.png` (or `.jpg`). Never `/opt/data/<file>.png` or `/tmp`.
-
-## Exact text posters (must — read first)
-
-When the user wants **readable exact text** on an image:
-
-- Quoted phrase plus **N lines / fill in / fill with / poster / text**
-- Unquoted: `5 dòng hello`, `điền vào 5 dòng hello`, `vẽ … 5 dòng hello`
-- **Black and white** typography
-- Example: `create a black and white image, fill in 10 lines "SAMPLE TEXT"`
-
-**Do not** use diffusion, ComfyUI, LLM prompt refine, or artistic/canvas-design skills for these — they rewrite text into illegible calligraphy / unrelated photos.
-
-Post the **verbatim user sentence** (keep quotes). Dispatcher auto-detects and renders with Pillow (`backend: text-poster`): N identical centered lines of the exact phrase. Optional `"mode":"text-poster"`.
+| Need | Call |
+|------|------|
+| Scenic / illustration photo | default `/v1/image` with English scene prompt; optional `overlay[]` |
+| Labeled metrics picture | `"mode":"info-card"` + TITLE/SUBTITLE/ICON/STYLE markers |
+| Exact text poster | `"mode":"text-poster"` or verbatim poster sentence |
 
 ```bash
 mkdir -p /opt/data/media/out && curl -sS -X POST http://dispatcher:8090/v1/image \
   -H 'content-type: application/json' \
-  -d '{"prompt":"<verbatim user request>","filename":"<safe-slug>.png","refine":false}'
+  -d '{"prompt":"<scene>","filename":"<safe-slug>.png","refine":false}'
 ```
 
-Optional explicit mode: `"mode":"text"` or `"provider":"text"`.
+## Output
 
-Success: `"ok":true`, `"backend":"text-poster"`, `"n"`, `"phrase"`. Confirm the phrase matches the user quote before replying.
-
-## Artistic / scene images (diffusion)
-
-Only when the user wants illustration, photo, or art **without** exact readable text blocks:
-
-```bash
-mkdir -p /opt/data/media/out && curl -sS -X POST http://dispatcher:8090/v1/image \
-  -H 'content-type: application/json' \
-  -d '{"prompt":"<scene>","filename":"<safe-slug>.png","refine":false,"overlay":["<short fact 1>","<short fact 2>"]}'
-```
-
-## Infographic (default when the image must show informational text)
-
-When the user wants **prices / metrics / labeled facts on the picture** (readable facts + scene), follow skill **`image-gen/infographic-design`** first: layout, hierarchy, panels, Unicode. Then `POST /v1/image` with a scene prompt plus `overlay` fact lines. Do not dump text randomly on the photo.
-
-Use `refine:true` only if the user explicitly wants an English art prompt rewrite. Do not install Pillow/pip/uv in Hermes — dispatcher owns rendering. Put live facts **on the image** via `overlay` (already-fetched strings), not as a separate chat message unless the user asked for text as well.
-
-## Delivery
-
-**Do not** set `send_zalo:true` and **do not** call `/v1/send-file` for the same image — Zalo autosend delivers **one** file from `/opt/data/media/out/`.
-
-## User-facing reply (only this)
-
-After `ok:true`: send the file only (autosend). No success ack line. If the user also asked for facts, put those facts in the same job’s reply without process chatter.
+Only `/opt/data/media/out/<safe-slug>.png` (or `.jpg`). Do **not** set `send_zalo:true` when autosend will deliver.
 
 ## Related
 
-- `media-out` — result-only rules for all media
-- `video-gen` — video clips refused (policy); still images via `image-gen`
-- `comfyui` — explicit Comfy workflow only; still `--output-dir /opt/data/media/out`
-- `file-gen` — office docs only, not images
+- `multi-purpose` — complex layout briefs via chat combo `hermes`, then image-gen / file-gen
+- `vision-ocr` — read text from images
+- `video-gen` — video/music/audio/transcripts refused
+- `file-gen` — office docs

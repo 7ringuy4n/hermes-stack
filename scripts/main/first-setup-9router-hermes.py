@@ -400,22 +400,29 @@ def verify(key: str, model: str) -> None:
         print(f"WARN smoke chat {model} HTTP {e.code}: {e.read()[:200]!r}")
 
 
-def pin_image_backends(env: dict[str, str]) -> None:
-    """Media|File worker: pin Comfy → Omni order on dispatcher."""
+def pin_media_combos(env: dict[str, str]) -> None:
+    """Media|File worker: pin router combo names (no Comfy)."""
     media_on = (env.get("ENABLE_MEDIA_FILE") or os.environ.get("ENABLE_MEDIA_FILE") or "0").strip()
     if media_on != "1":
         return
-    want = "comfy-cpu,comfy-gpu,omni"
-    cur = (env.get("IMAGE_BACKENDS") or "").strip()
-    if cur == want:
-        print(f"OK: IMAGE_BACKENDS already {want}")
-        return
-    set_env_key(ROOT / ".env", "IMAGE_BACKENDS", want)
-    env["IMAGE_BACKENDS"] = want
-    if cur:
-        print(f"OK: normalized IMAGE_BACKENDS {cur!r} → {want}")
-    else:
-        print(f"OK: pinned IMAGE_BACKENDS={want}")
+    pins = {
+        "IMAGE_GEN_COMBO": env.get("N9ROUTER_IMAGE_COMBO") or "image-gen",
+        "OCR_MODEL": env.get("N9ROUTER_VISION_COMBO") or "vision-ocr",
+        "OCR_VISION": "1",
+        "EMBED_MODEL": env.get("N9ROUTER_EMBED_COMBO") or "embedding",
+    }
+    for key, want in pins.items():
+        cur = (env.get(key) or "").strip()
+        if cur == want:
+            continue
+        set_env_key(ROOT / ".env", key, want)
+        env[key] = want
+        print(f"OK: pinned {key}={want}")
+    for key in ("IMAGE_BACKENDS", "IMAGE_OMNI_MODEL", "COMFYUI_HAS_GPU"):
+        if (env.get(key) or "").strip():
+            set_env_key(ROOT / ".env", key, "")
+            env[key] = ""
+            print(f"OK: cleared legacy {key}")
 
 
 def main() -> int:
@@ -434,7 +441,7 @@ def main() -> int:
     set_env_key(ROOT / ".env", "HERMES_DEFAULT_MODEL", model)
     set_env_key(ROOT / ".env", "N9ROUTER_DEFAULT_COMBO", COMBO_NAME)
     set_env_key(ROOT / ".env", "N9ROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
-    pin_image_backends(env)
+    pin_media_combos(env)
 
     for _ in range(30):
         if (HERMES_DATA / "config.yaml").exists():

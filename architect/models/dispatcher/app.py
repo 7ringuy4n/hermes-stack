@@ -214,8 +214,10 @@ async def health() -> dict[str, Any]:
         },
         "media_dir": str(MEDIA_DIR),
         "image_backends": image_backends(),
+        "image_gen_combo": os.environ.get("IMAGE_GEN_COMBO")
+        or os.environ.get("IMAGE_OMNI_MODEL")
+        or "image-gen",
         "image_provider": os.environ.get("IMAGE_PROVIDER", ""),
-        "comfyui_has_gpu": (os.environ.get("COMFYUI_HAS_GPU") or "0") != "0",
         "zalo_bridge": bool(os.environ.get("ZALO_BRIDGE_URL", "").strip()),
         "whisper_model": os.environ.get("WHISPER_MODEL", "tiny"),
         "whisper_enabled": os.environ.get("WHISPER_ENABLED", "1") != "0",
@@ -855,10 +857,10 @@ def _chown_media(path: Path) -> None:
 
 @app.post("/v1/image")
 def image_generate(req: ImageReq) -> dict[str, Any]:
-    """Image gen fallback (Medium+): ComfyUI CPU → ComfyUI GPU → OmniRouter.
+    """Image gen: Pillow modes (info-card / text-poster) or router diffusion.
 
-    Default IMAGE_BACKENDS=comfy-cpu,comfy-gpu,omni (no separate paid image API keys).
-    Low: IMAGE_BACKENDS empty → 503.
+    Diffusion uses combo ``IMAGE_GEN_COMBO`` (default ``image-gen``) via
+    OmniRouter ``/images/generations``, then 9Router when enabled.
     """
     from image_backends import generate_image_bytes, image_backends
     from text_poster import parse_text_poster, render_text_poster_bytes
