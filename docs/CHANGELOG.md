@@ -1,3 +1,8 @@
+## 2026-08-30 08:40 +07 — Omni media combo shells never appeared in UI
+
+- First-setup posted empty `models` for `image-gen` / `vision-ocr` / `embedding`; OmniRoute requires at least one member (HTTP 400), and the error aborted before a stub retry.
+- Setup now seeds each media combo with one OpenCode stub so the names show in the UI; operators replace members with image/vision/embed-capable models.
+
 ## 2026-08-30 08:30 +07 — Purge Comfy/legacy aliases; OCR Paddle→vision-ocr; inactive media→hermes
 
 - Removed leftover ComfyUI skill trees and legacy image-backend aliases; first-setup no longer runs Qwen/Ollama cleanup helpers.
