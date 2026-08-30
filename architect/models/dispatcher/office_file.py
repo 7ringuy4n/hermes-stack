@@ -1,4 +1,4 @@
-"""Office file create + Zalo send. Enable: OFFICE_FILE_GEN=1 (compose / Media worker)."""
+"""Office file create + Zalo send. Enable: OFFICE_FILE_GEN=active (compose / Media worker)."""
 from __future__ import annotations
 
 import logging
@@ -53,11 +53,11 @@ class OfficeFileReq(_PydanticBase):
 
 
 def _enabled() -> bool:
-    # Default off; Media worker / compose sets OFFICE_FILE_GEN=1 when office create is on.
+    # Default off; Media worker / compose sets OFFICE_FILE_GEN=active when office create is on.
     v = (
-        os.environ.get("OFFICE_FILE_GEN") or os.environ.get("ZALO_OFFICE_FILE") or "0"
+        os.environ.get("OFFICE_FILE_GEN") or os.environ.get("ZALO_OFFICE_FILE") or "inactive"
     ).strip().lower()
-    return v not in {"0", "false", "no", "off"}
+    return v in {"1", "true", "yes", "on", "active"}
 
 
 def is_compound_office_request(text: str) -> bool:

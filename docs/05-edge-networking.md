@@ -1,6 +1,6 @@
 # 05 — Edge networking (Traefik, API Gateway, OpenVPN)
 
-Human-readable guide for the **edge** layer. **Traefik local + API Gateway are core defaults** (`ENABLE_TRAEFIK=1`, `ENABLE_API_GATEWAY=1`). All host ports bind to **127.0.0.1**. Production is **VPN-only** (`TRAEFIK_MODE=local`, `TRAEFIK_ACME_ENABLED=0`). There is **no public inbound** unless you opt into ACME.
+Human-readable guide for the **edge** layer. **Traefik local + API Gateway are core defaults** (`ENABLE_TRAEFIK=active`, `ENABLE_API_GATEWAY=active`). All host ports bind to **127.0.0.1**. Production is **VPN-only** (`TRAEFIK_MODE=local`, `TRAEFIK_ACME_ENABLED=inactive`). There is **no public inbound** unless you opt into ACME.
 
 Related code: `docker-compose.edge.yml`, `architect/edge/`, `architect/gateway/`.
 
@@ -26,10 +26,10 @@ In `.env` (copy from `.env.example` or `docs/config/edge.env.snippet`):
 ```env
 # Core defaults: Traefik + API Gateway ON, TRAEFIK_MODE=local
 # To disable: bash run.sh uninstall traefik   and/or   uninstall gateway
-# ENABLE_TRAEFIK=0
-# ENABLE_API_GATEWAY=0
+# ENABLE_TRAEFIK=inactive
+# ENABLE_API_GATEWAY=inactive
 TRAEFIK_MODE=local
-ENABLE_OPENVPN=0
+ENABLE_OPENVPN=inactive
 ```
 
 Prefer worker/uninstall short names over raw flags. Then:
@@ -37,7 +37,7 @@ Prefer worker/uninstall short names over raw flags. Then:
 ```bash
 bash run.sh up
 # or on a running host after add-components:
-# bash run.sh add-components ENABLE_TRAEFIK=1 --update
+# bash run.sh add-components ENABLE_TRAEFIK=active --update
 ```
 
 `run.sh` merges `docker-compose.edge.yml` and adds compose profiles `traefik` / `gateway` / `openvpn` as needed.
@@ -68,8 +68,8 @@ Config files: `architect/edge/traefik/traefik.yml` + `dynamic/hermes.yml`.
 ### Let's Encrypt (optional)
 
 ```env
-ENABLE_TRAEFIK=1
-TRAEFIK_ACME_ENABLED=1
+ENABLE_TRAEFIK=active
+TRAEFIK_ACME_ENABLED=active
 TRAEFIK_ACME_EMAIL=admin@example.com
 TRAEFIK_ACME_DOMAIN=assistant.example.com
 # Optional staging:
@@ -87,7 +87,7 @@ TRAEFIK_HTTPS_PORT=443
 | Host rule | Rendered from `hermes.tls.yml.template` via `scripts/main/render-traefik-acme.sh` |
 | Challenge | **HTTP-01** on entryPoint `web` (default) |
 
-**Conflict with “no public inbound”:** HTTP-01 needs Let's Encrypt to reach ports **80/443**. Keep `TRAEFIK_ACME_ENABLED=0` for VPN/LAN-only. Enable ACME only when you intentionally expose those ports (or terminate TLS elsewhere).
+**Conflict with “no public inbound”:** HTTP-01 needs Let's Encrypt to reach ports **80/443**. Keep `TRAEFIK_ACME_ENABLED=inactive` for VPN/LAN-only. Enable ACME only when you intentionally expose those ports (or terminate TLS elsewhere).
 
 When ACME is on and Gateway is on, prefer:
 

@@ -27,7 +27,7 @@ Optional **chat front-ends** that sit in front of Hermes. A social app is **not*
 | Pack | When |
 |---|---|
 | None | Low default |
-| `ENABLE_ZALO=1` / Telegram / HTTP | Explicit attach |
+| `ENABLE_ZALO=active` / Telegram / HTTP | Explicit attach |
 
 ## Sub-packages
 

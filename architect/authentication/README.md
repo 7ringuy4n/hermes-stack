@@ -27,7 +27,7 @@ Identity, workspace membership, roles, and policy evaluation **before** the agen
 | Profile | State |
 |---|---|
 | Low / Medium | Off (no authz gate on every chat turn) |
-| High | On — `ENABLE_AUTHZ=1`, optional `ENABLE_POLICY=1` |
+| High | On — `ENABLE_AUTHZ=active`, optional `ENABLE_POLICY=active` |
 
 ## Sub-packages
 

@@ -8,7 +8,7 @@ Emits a user-safe refusal string on block.
 
 ## Profile
 
-High (`ENABLE_SECURITY=1`). Defaults: YARA on; AV, sandbox, and LLM judge **off**.
+High (`ENABLE_SECURITY=active`). Defaults: YARA on; AV, sandbox, and LLM judge **off**.
 
 ## Main functions
 
@@ -16,8 +16,8 @@ High (`ENABLE_SECURITY=1`). Defaults: YARA on; AV, sandbox, and LLM judge **off*
 |---|---|
 | Static checks | Extension, archive bombs, path tricks |
 | Rules | `rules/` YARA or custom |
-| Optional AV | ClamAV via av-gateway when `ENABLE_ANTIVIRUS=1` |
-| Optional LLM | `SECURITY_LLM_JUDGE=1` — RISK-only, not a security boundary |
+| Optional AV | ClamAV via av-gateway when `ENABLE_ANTIVIRUS=active` |
+| Optional LLM | `SECURITY_LLM_JUDGE=active` — RISK-only, not a security boundary |
 | Verdict | isolation must pass; heuristic may only add RISK |
 
 ## Related

@@ -6,7 +6,7 @@ HTTP service that answers “may this principal act in this workspace / on this 
 
 ## Profile
 
-High (`ENABLE_AUTHZ=1`).
+High (`ENABLE_AUTHZ=active`).
 
 ## Main functions
 

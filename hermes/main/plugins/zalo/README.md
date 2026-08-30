@@ -31,7 +31,7 @@ This tree **reuses** that work (via assistant) and **optimizes** it for assistan
 ## Attach order
 
 1. Worker stack healthy (`bash run.sh check-media` / `check-security`)
-2. `ENABLE_ZALO=1 bash scripts/main/setup-zalo.sh` — install only (no QR)
+2. `ENABLE_ZALO=active bash scripts/main/setup-zalo.sh` — install only (no QR)
 3. **You:** `bash scripts/main/login-zalo.sh` — QR / re-login
 
 ## Home channel (cron / cross-platform)
@@ -91,7 +91,7 @@ Default **`0.0.0.0:8787`** so Docker containers reach the host Node bridge via `
 ## Self-heal
 
 - Adapter: on SSE reconnect loop, drop `Last-Event-ID` and recreate session (no manual restart).
-- Host timers: `assistant-stack-watch` (2m) + `assistant-zalo-watch` (1m when `ENABLE_ZALO=1`).
+- Host timers: `assistant-stack-watch` (2m) + `assistant-zalo-watch` (1m when `ENABLE_ZALO=active`).
 - Default: on `sseClients==0`, restart **bridge only** (`ZALO_WATCH_RESTART_HERMES=0`). Stack-watch does **not** restart Hermes on probe fail (`STACK_WATCH_RESTART_HERMES=0`). Set those env vars to `1` only if you explicitly want the old restart behavior.
 
 ## Related

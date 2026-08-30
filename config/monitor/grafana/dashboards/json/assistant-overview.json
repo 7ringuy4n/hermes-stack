@@ -563,7 +563,7 @@
       ],
       "title": "router-exporter scrape",
       "type": "stat",
-      "description": "9Router when ENABLE_9ROUTER=1; else OmniRouter omni-exporter."
+      "description": "9Router when ENABLE_9ROUTER=active; else OmniRouter omni-exporter."
     },
     {
       "datasource": {
@@ -1485,7 +1485,7 @@
       ],
       "title": "9Router scrape",
       "type": "stat",
-      "description": "Expected 0 when ENABLE_9ROUTER=0; use router-exporter / Omni panels."
+      "description": "Expected 0 when ENABLE_9ROUTER=inactive; use router-exporter / Omni panels."
     },
     {
       "datasource": {

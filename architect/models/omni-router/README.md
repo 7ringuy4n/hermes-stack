@@ -20,7 +20,7 @@
 
 ## Purpose
 
-Separate OpenAI-compatible LLM gateway for **general / non-coding** tasks. Used by the Model Router when `ENABLE_OMNIROUTER=1`.
+Separate OpenAI-compatible LLM gateway for **general / non-coding** tasks. Used by the Model Router when `ENABLE_OMNIROUTER=active`.
 
 ## Defaults
 
@@ -37,7 +37,7 @@ Separate OpenAI-compatible LLM gateway for **general / non-coding** tasks. Used 
 ## Enable
 
 ```bash
-ENABLE_OMNIROUTER=1
+ENABLE_OMNIROUTER=active
 OMNIROUTER_IMAGE=diegosouzapw/omniroute:latest
 OMNIROUTER_INITIAL_PASSWORD=...
 ```

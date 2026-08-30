@@ -15,39 +15,48 @@ export LANG="${LANG:-C.UTF-8}"
 
 BACKUP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QDRANT_PY="${BACKUP_LIB_DIR}/backup_qdrant.py"
+if ! declare -F _env_active >/dev/null 2>&1 && [[ -f "${BACKUP_LIB_DIR}/workers.sh" ]]; then
+  # shellcheck source=workers.sh
+  source "${BACKUP_LIB_DIR}/workers.sh"
+fi
 if ! declare -F assistant_options_dump >/dev/null 2>&1 && [[ -f "${BACKUP_LIB_DIR}/profile.sh" ]]; then
   # shellcheck source=profile.sh
   source "${BACKUP_LIB_DIR}/profile.sh"
 fi
 
 assistant_backup_flag() {
+  # Canonical: active|inactive (legacy 1|0 still accepted by assistant_backup_wanted).
   local name="$1"
   case "$name" in
-    config) echo "${BACKUP_ENABLE_CONFIG:-1}" ;;
-    postgres) echo "${BACKUP_ENABLE_POSTGRES:-${ENABLE_MEMORY:-1}}" ;;
-    qdrant) echo "${BACKUP_ENABLE_QDRANT:-${ENABLE_QDRANT:-1}}" ;;
-    valkey) echo "${BACKUP_ENABLE_VALKEY:-${ENABLE_REDIS:-1}}" ;;
-    hermes) echo "${BACKUP_ENABLE_HERMES:-${ENABLE_HERMES:-1}}" ;;
-    openbao) echo "${BACKUP_ENABLE_OPENBAO:-${ENABLE_OPENBAO:-1}}" ;;
-    routers) echo "${BACKUP_ENABLE_ROUTERS:-1}" ;;
-    zalo) echo "${BACKUP_ENABLE_ZALO:-${ENABLE_ZALO:-1}}" ;;
-    schedules) echo "${BACKUP_ENABLE_SCHEDULES:-1}" ;;
-    volumes) echo "${BACKUP_ENABLE_VOLUMES:-1}" ;;
-    clouddrive) echo "${BACKUP_ENABLE_CLOUDDRIVE:-${ENABLE_CLOUDDRIVE:-0}}" ;;
-    openvpn) echo "${BACKUP_ENABLE_OPENVPN:-${ENABLE_OPENVPN:-1}}" ;;
-    *) echo "0" ;;
+    config) echo "${BACKUP_ENABLE_CONFIG:-active}" ;;
+    postgres) echo "${BACKUP_ENABLE_POSTGRES:-${ENABLE_MEMORY:-active}}" ;;
+    qdrant) echo "${BACKUP_ENABLE_QDRANT:-${ENABLE_QDRANT:-active}}" ;;
+    valkey) echo "${BACKUP_ENABLE_VALKEY:-${ENABLE_REDIS:-active}}" ;;
+    hermes) echo "${BACKUP_ENABLE_HERMES:-${ENABLE_HERMES:-active}}" ;;
+    openbao) echo "${BACKUP_ENABLE_OPENBAO:-${ENABLE_OPENBAO:-active}}" ;;
+    routers) echo "${BACKUP_ENABLE_ROUTERS:-active}" ;;
+    zalo) echo "${BACKUP_ENABLE_ZALO:-${ENABLE_ZALO:-active}}" ;;
+    schedules) echo "${BACKUP_ENABLE_SCHEDULES:-active}" ;;
+    volumes) echo "${BACKUP_ENABLE_VOLUMES:-active}" ;;
+    clouddrive) echo "${BACKUP_ENABLE_CLOUDDRIVE:-${ENABLE_CLOUDDRIVE:-inactive}}" ;;
+    openvpn) echo "${BACKUP_ENABLE_OPENVPN:-${ENABLE_OPENVPN:-active}}" ;;
+    *) echo "inactive" ;;
   esac
 }
 
 assistant_backup_wanted() {
-  local name="$1"
+  local name="$1" v
   if [[ -n "${BACKUP_COMPONENTS:-}" ]]; then
     case ",${BACKUP_COMPONENTS}," in
       *",${name},"*) ;;
       *) return 1 ;;
     esac
   fi
-  [[ "$(assistant_backup_flag "$name")" == "1" ]]
+  v="$(assistant_backup_flag "$name")"
+  case "$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on|active) return 0 ;;
+  esac
+  return 1
 }
 
 assistant_backup_fail() {
@@ -111,35 +120,24 @@ assistant_stop_hermes() {
 assistant_compose_profiles() {
   # Mirror run.sh compose profiles so restore does not leave edge/Zalo services exited.
   local -a profiles=()
-  case "${ENABLE_ZALO:-0}" in
-    1) profiles+=(--profile zalo) ;;
-  esac
-  case "${ENABLE_TRAEFIK:-0}" in
-    1)
-      case "${TRAEFIK_ACME_ENABLED:-0}" in
-        1) profiles+=(--profile traefik-acme) ;;
-        *) profiles+=(--profile traefik) ;;
-      esac
-      ;;
-  esac
-  case "${ENABLE_API_GATEWAY:-0}" in
-    1) profiles+=(--profile gateway) ;;
-  esac
-  case "${ENABLE_OPENVPN:-0}" in
-    1) profiles+=(--profile openvpn) ;;
-  esac
-  case "${ENABLE_ANTIVIRUS:-0}" in
-    1) profiles+=(--profile antivirus) ;;
-  esac
-  case "${ENABLE_NOTIFY:-0}" in
-    1) profiles+=(--profile notify) ;;
-  esac
-  case "${ENABLE_CLOUDDRIVE:-0}" in
-    1) profiles+=(--profile clouddrive) ;;
-  esac
-  case "${ENABLE_OMNIROUTER:-0}" in
-    1) profiles+=(--profile omnirouter) ;;
-  esac
+  if ! declare -F _env_active >/dev/null 2>&1; then
+    # shellcheck source=workers.sh
+    source "${BACKUP_LIB_DIR}/workers.sh"
+  fi
+  _env_active "${ENABLE_ZALO:-}" && profiles+=(--profile zalo)
+  if _env_active "${ENABLE_TRAEFIK:-}"; then
+    if _env_active "${TRAEFIK_ACME_ENABLED:-}"; then
+      profiles+=(--profile traefik-acme)
+    else
+      profiles+=(--profile traefik)
+    fi
+  fi
+  _env_active "${ENABLE_API_GATEWAY:-}" && profiles+=(--profile gateway)
+  _env_active "${ENABLE_OPENVPN:-}" && profiles+=(--profile openvpn)
+  _env_active "${ENABLE_ANTIVIRUS:-}" && profiles+=(--profile antivirus)
+  _env_active "${ENABLE_NOTIFY:-}" && profiles+=(--profile notify)
+  _env_active "${ENABLE_CLOUDDRIVE:-}" && profiles+=(--profile clouddrive)
+  _env_active "${ENABLE_OMNIROUTER:-}" && profiles+=(--profile omnirouter)
   assistant_append_monitor_profiles profiles
   printf '%s\n' "${profiles[@]}"
 }
@@ -151,17 +149,22 @@ assistant_compose() {
   local -a profiles=()
   local profile
   # Workers overlays (legacy ASSISTANT_PROFILE medium/high compose files removed).
-  if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
+  if ! declare -F _env_active >/dev/null 2>&1; then
+    # shellcheck source=workers.sh
+    source "${BACKUP_LIB_DIR}/workers.sh"
+  fi
+  if _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}" \
+    || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
     [[ -f "${ROOT}/docker/docker-compose.media.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.media.yml")
   fi
-  if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
+  if _env_active "${ENABLE_SECURITY:-}" || _env_active "${ENABLE_MONITOR:-}" || _env_active "${ENABLE_NOTIFY:-}" \
+    || _env_active "${ENABLE_OPENBAO:-}" || _env_active "${ENABLE_SIEM:-}" || _env_active "${ENABLE_AUTHZ:-}" \
+    || _env_active "${ENABLE_CLOUDDRIVE:-}"; then
     [[ -f "${ROOT}/docker/docker-compose.security.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.security.yml")
   fi
-  case "${ENABLE_TRAEFIK:-0}${ENABLE_API_GATEWAY:-0}${ENABLE_OPENVPN:-0}" in
-    *1*)
-      [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.edge.yml")
-      ;;
-  esac
+  if _env_active "${ENABLE_TRAEFIK:-}" || _env_active "${ENABLE_API_GATEWAY:-}" || _env_active "${ENABLE_OPENVPN:-}"; then
+    [[ -f "${ROOT}/docker/docker-compose.edge.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.edge.yml")
+  fi
   if [[ "${HERMES_REPLICAS:-1}" == "1" && -f "${ROOT}/docker/docker-compose.hermes-hostports.yml" ]]; then
     files+=(-f "${ROOT}/docker/docker-compose.hermes-hostports.yml")
   fi
@@ -449,10 +452,11 @@ assistant_zalo_clear_owner_lock() {
 
 assistant_zalo_post_restore_heal() {
   # After restore, Hermes container ids change — force a fresh Zalo SSE owner election.
-  case "${ENABLE_ZALO:-0}" in
-    1) ;;
-    *) return 0 ;;
-  esac
+  if ! declare -F _env_active >/dev/null 2>&1; then
+    # shellcheck source=workers.sh
+    source "${BACKUP_LIB_DIR}/workers.sh"
+  fi
+  _env_active "${ENABLE_ZALO:-}" || return 0
   log "Zalo post-restore heal (clear owner lock + restart proxy/hermes)"
   assistant_zalo_clear_owner_lock
   if [[ -f "${ROOT}/scripts/main/heal-zalo-sse.sh" ]]; then

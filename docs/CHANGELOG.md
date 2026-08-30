@@ -1,3 +1,8 @@
+## 2026-08-30 20:25 +07 — Remaining ENABLE_* checks accept active|inactive
+
+- Backup compose/profiles, worker stale cleanup, security-manager, model-router defaults, OCR/office toggles, and Zalo/log/ovpn helpers now treat feature flags as `active`/`inactive` (legacy `1`/`0` still accepted).
+- Operator docs and ops-alert copy aligned with the same vocabulary.
+
 ## 2026-08-30 20:10 +07 — Core ENABLE_* writers use active|inactive
 
 - Install/resolve, Zalo setup/restore, stack-watch, check-security, and related core scripts write and compare feature toggles as `active`/`inactive` (not `1`/`0`).

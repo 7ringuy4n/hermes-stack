@@ -27,19 +27,22 @@ from fastapi import FastAPI, File, Form, UploadFile
 from pydantic import BaseModel, Field
 
 AV_URL = os.environ.get("AV_GATEWAY_URL", "http://av-gateway:8098").rstrip("/")
-ENABLE_AV = os.environ.get("ENABLE_ANTIVIRUS", "0") == "1" or os.environ.get(
-    "SECURITY_REQUIRE_AV", "0"
-) == "1"
+
+
+def _env_active(name: str, default: str = "inactive") -> bool:
+    """Feature toggles: active|inactive (legacy 1|0|true|yes|on still accepted)."""
+    v = (os.environ.get(name) or default).strip().lower()
+    return v in {"1", "true", "yes", "on", "active"}
+
+
+ENABLE_AV = _env_active("ENABLE_ANTIVIRUS") or _env_active("SECURITY_REQUIRE_AV")
 NOTIFY_URL = os.environ.get("NOTIFY_URL", "").rstrip("/")
 MAX_BYTES = int(os.environ.get("SECURITY_MAX_BYTES", str(40 * 1024 * 1024)))
-ENABLE_LLM_JUDGE = (
-    os.environ.get("SECURITY_LLM_JUDGE", "0") == "1"
-    or os.environ.get("ENABLE_LLM_JUDGE", "0") == "1"
-)
-ENABLE_YARA = os.environ.get("SECURITY_YARA", "1") == "1"
-ENABLE_SANDBOX = os.environ.get("SECURITY_SANDBOX", "0") == "1"
+ENABLE_LLM_JUDGE = _env_active("SECURITY_LLM_JUDGE") or _env_active("ENABLE_LLM_JUDGE")
+ENABLE_YARA = _env_active("SECURITY_YARA", "active")
+ENABLE_SANDBOX = _env_active("SECURITY_SANDBOX")
 # Isolation outages (AV/YARA/sandbox when enabled) → RISK on High. Never fail-closed on LLM.
-FAIL_CLOSED = os.environ.get("SECURITY_FAIL_CLOSED", "0") == "1"
+FAIL_CLOSED = _env_active("SECURITY_FAIL_CLOSED")
 EMBED_UPSTREAM = (
     os.environ.get("LLM_JUDGE_URL")
     or os.environ.get("OPENAI_BASE_URL")
@@ -315,7 +318,7 @@ def _sandbox_detonate(data: bytes, filename: str) -> dict[str, Any]:
     has_docker = bool(DOCKER_HOST) or os.path.exists("/var/run/docker.sock")
     if not has_docker:
         return _unavailable("no_docker")
-    use_strace = os.environ.get("SECURITY_SANDBOX_STRACE", "1") == "1"
+    use_strace = _env_active("SECURITY_SANDBOX_STRACE", "active")
     env = os.environ.copy()
     if DOCKER_HOST:
         env["DOCKER_HOST"] = DOCKER_HOST

@@ -52,14 +52,14 @@ MESSAGES_PATH = Path(os.environ.get("MODEL_ROUTER_MESSAGES", str(ROOT / "message
 
 N9_BASE = os.environ.get("N9ROUTER_BASE_URL", "http://9router:20128/v1").rstrip("/")
 OMNI_BASE = os.environ.get("OMNIROUTER_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
-ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "1").strip().lower() in {
+ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "active").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
     "active",
 }
-ENABLE_9ROUTER = os.environ.get("ENABLE_9ROUTER", "0").strip().lower() in {
+ENABLE_9ROUTER = os.environ.get("ENABLE_9ROUTER", "inactive").strip().lower() in {
     "1",
     "true",
     "yes",
@@ -87,13 +87,20 @@ OMNI_ROTATE_ATTEMPTS = max(
 OMNI_BUSY_BACKOFF_S = float(os.environ.get("OMNIROUTER_BUSY_BACKOFF_S") or "3")
 OLLAMA_BASE = (os.environ.get("OLLAMA_BASE_URL") or "").rstrip("/")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2")
-ENABLE_QWEN = os.environ.get("ENABLE_QWEN", "0").strip() in {"1", "true", "yes", "on"}
-# When Qwen is active, pass extended-thinking fields (qwen2.5 still force-stripped on Ollama).
-ENABLE_QWEN_THINKING = ENABLE_QWEN or os.environ.get("ENABLE_QWEN_THINKING", "0").strip() in {
+ENABLE_QWEN = os.environ.get("ENABLE_QWEN", "inactive").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
+    "active",
+}
+# When Qwen is active, pass extended-thinking fields (qwen2.5 still force-stripped on Ollama).
+ENABLE_QWEN_THINKING = ENABLE_QWEN or os.environ.get("ENABLE_QWEN_THINKING", "inactive").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+    "active",
 }
 # Local Qwen lab: Omni hermes combo may route to host Ollama.
 LOCAL_OLLAMA = bool(OLLAMA_BASE)

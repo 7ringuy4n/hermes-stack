@@ -12,7 +12,7 @@ Assistant **reuses** that project and **optimizes** attach for the current workf
 
 ## Profile
 
-Off by default. Attach with `ENABLE_ZALO=1`. Not part of Low Must.
+Off by default. Attach with `ENABLE_ZALO=active`. Not part of Low Must.
 
 ## Install order
 

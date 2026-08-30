@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Render Traefik ACME dynamic config from template (UTF-8 domain safe).
-# Called by run.sh when TRAEFIK_ACME_ENABLED=1.
+# Called by run.sh when TRAEFIK_ACME_ENABLED=active.
 set -euo pipefail
 export LC_ALL="${LC_ALL:-C.UTF-8}"
 export LANG="${LANG:-C.UTF-8}"

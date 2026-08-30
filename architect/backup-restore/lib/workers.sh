@@ -210,18 +210,21 @@ assistant_workers_apply() {
   export GATEWAY_RL_FAIL_CLOSED="${GATEWAY_RL_FAIL_CLOSED:-active}"
   if _env_active "${ENABLE_API_GATEWAY:-}" && _env_active "${GATEWAY_REQUIRE_AUTH:-}"; then
     if [[ -z "${GATEWAY_API_KEYS:-}" ]]; then
-      echo "WARN: ENABLE_API_GATEWAY=active but GATEWAY_API_KEYS is empty — gateway will refuse to start until keys are set (or GATEWAY_REQUIRE_AUTH=0 for isolated lab)." >&2
+      echo "WARN: ENABLE_API_GATEWAY=active but GATEWAY_API_KEYS is empty — gateway will refuse to start until keys are set (or GATEWAY_REQUIRE_AUTH=inactive for isolated lab)." >&2
     fi
   fi
 }
 
 assistant_append_monitor_profiles() {
   local -n _amp_profiles="$1"
-  local g="${ENABLE_GRAFANA:-0}" p="${ENABLE_PROMETHEUS:-0}" l="${ENABLE_LOKI:-0}" a="${ENABLE_ALLOY:-0}"
   local want_prom=0 want_loki=0
-  [[ "$g" == "active" || "$g" == "1" || "$p" == "active" || "$p" == "1" ]] && want_prom=1
-  [[ "$l" == "active" || "$l" == "1" || "$a" == "active" || "$a" == "1" ]] && want_loki=1
-  if [[ "$g" == "active" || "$g" == "1" ]]; then
+  if _env_active "${ENABLE_GRAFANA:-}" || _env_active "${ENABLE_PROMETHEUS:-}"; then
+    want_prom=1
+  fi
+  if _env_active "${ENABLE_LOKI:-}" || _env_active "${ENABLE_ALLOY:-}"; then
+    want_loki=1
+  fi
+  if _env_active "${ENABLE_GRAFANA:-}"; then
     _amp_profiles+=(--profile grafana)
   fi
   if [[ "$want_prom" == "1" ]]; then
@@ -230,33 +233,36 @@ assistant_append_monitor_profiles() {
   if [[ "$want_loki" == "1" ]]; then
     _amp_profiles+=(--profile loki --profile alloy)
   fi
-  if [[ "$want_prom" == "1" && ("${ENABLE_OMNIROUTER:-}" == "active" || "${ENABLE_OMNIROUTER:-}" == "1") ]]; then
+  if [[ "$want_prom" == "1" ]] && _env_active "${ENABLE_OMNIROUTER:-}"; then
     _amp_profiles+=(--profile omni-exporter)
   fi
-  if [[ "$want_prom" == "1" && ("${ENABLE_9ROUTER:-}" == "active" || "${ENABLE_9ROUTER:-}" == "1") ]]; then
+  if [[ "$want_prom" == "1" ]] && _env_active "${ENABLE_9ROUTER:-}"; then
     _amp_profiles+=(--profile nine-exporter)
   fi
 }
 
 assistant_disabled_monitor_containers() {
-  local g="${ENABLE_GRAFANA:-0}" p="${ENABLE_PROMETHEUS:-0}" l="${ENABLE_LOKI:-0}" a="${ENABLE_ALLOY:-0}"
   local want_prom=0 want_loki=0
-  [[ "$g" == "active" || "$g" == "1" || "$p" == "active" || "$p" == "1" ]] && want_prom=1
-  [[ "$l" == "active" || "$l" == "1" || "$a" == "active" || "$a" == "1" ]] && want_loki=1
-  [[ "$g" == "active" || "$g" == "1" ]] || echo grafana
+  if _env_active "${ENABLE_GRAFANA:-}" || _env_active "${ENABLE_PROMETHEUS:-}"; then
+    want_prom=1
+  fi
+  if _env_active "${ENABLE_LOKI:-}" || _env_active "${ENABLE_ALLOY:-}"; then
+    want_loki=1
+  fi
+  _env_active "${ENABLE_GRAFANA:-}" || echo grafana
   if [[ "$want_prom" != "1" ]]; then
     echo prometheus
     echo node-exporter
     echo stack-exporter
   fi
-  if [[ "$want_prom" != "1" || "${ENABLE_9ROUTER:-0}" != "1" ]]; then
+  if [[ "$want_prom" != "1" ]] || ! _env_active "${ENABLE_9ROUTER:-}"; then
     echo nine-exporter
   fi
   if [[ "$want_loki" != "1" ]]; then
     echo loki
     echo alloy
   fi
-  if [[ "$want_prom" != "1" || "${ENABLE_OMNIROUTER:-0}" != "1" ]]; then
+  if [[ "$want_prom" != "1" ]] || ! _env_active "${ENABLE_OMNIROUTER:-}"; then
     echo omni-exporter
   fi
 }
@@ -359,18 +365,28 @@ assistant_remove_stale_worker_containers() {
   # Always clear recreate-name collisions first (authz Conflict on update).
   assistant_rm_compose_recreate_orphans
 
-  [[ "${WORKER_SCHEDULE:-inactive}" == "active" || "${ENABLE_SCHEDULE:-0}" == "1" ]] && workers+=(schedule)
-  if [[ "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_MEDIA_FILE:-inactive}" == "active" \
-    || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" ]]; then
+  if [[ "${WORKER_SCHEDULE:-inactive}" == "active" ]] || _env_active "${ENABLE_SCHEDULE:-}"; then
+    workers+=(schedule)
+  fi
+  if [[ "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_MEDIA_FILE:-inactive}" == "active" ]] \
+    || _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}"; then
     workers+=(media)
   fi
-  [[ "${WORKER_SECURITY:-inactive}" == "active" || "${ENABLE_SECURITY:-0}" == "1" ]] && workers+=(security)
-  [[ "${WORKER_NOTIFY:-inactive}" == "active" || "${ENABLE_NOTIFY:-0}" == "1" ]] && workers+=(notify)
-  [[ "${WORKER_MONITOR:-inactive}" == "active" || "${ENABLE_MONITOR:-0}" == "1" ]] && workers+=(monitor)
-  [[ "${ENABLE_ANTIVIRUS:-0}" == "1" ]] && workers+=(antivirus)
-  [[ "${WORKER_MESSAGE:-inactive}" == "active" || "${ENABLE_ZALO:-0}" == "1" ]] && workers+=(message)
-  [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && workers+=(clouddrive)
-  [[ "${SECURITY_SANDBOX:-0}" == "1" ]] && workers+=(sandbox)
+  if [[ "${WORKER_SECURITY:-inactive}" == "active" ]] || _env_active "${ENABLE_SECURITY:-}"; then
+    workers+=(security)
+  fi
+  if [[ "${WORKER_NOTIFY:-inactive}" == "active" ]] || _env_active "${ENABLE_NOTIFY:-}"; then
+    workers+=(notify)
+  fi
+  if [[ "${WORKER_MONITOR:-inactive}" == "active" ]] || _env_active "${ENABLE_MONITOR:-}"; then
+    workers+=(monitor)
+  fi
+  _env_active "${ENABLE_ANTIVIRUS:-}" && workers+=(antivirus)
+  if [[ "${WORKER_MESSAGE:-inactive}" == "active" ]] || _env_active "${ENABLE_ZALO:-}"; then
+    workers+=(message)
+  fi
+  _env_active "${ENABLE_CLOUDDRIVE:-}" && workers+=(clouddrive)
+  _env_active "${SECURITY_SANDBOX:-}" && workers+=(sandbox)
   [[ ${#workers[@]} -eq 0 ]] && return 0
   for w in "${workers[@]}"; do
     while IFS= read -r name; do
