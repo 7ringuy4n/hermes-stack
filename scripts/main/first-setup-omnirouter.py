@@ -750,22 +750,85 @@ def verify(key: str, combo: str) -> None:
         print(f"WARN smoke chat combo={combo} HTTP {e.code}: {e.read()[:200]!r}")
 
 
-def pin_image_backends(env: dict[str, str]) -> None:
-    """Media|File worker: pin Comfy → Omni order on dispatcher (not Hermes PIL)."""
+def pin_media_combos(env: dict[str, str]) -> None:
+    """Media|File worker: pin router combo names (no Comfy / paid image keys)."""
     media_on = (env.get("ENABLE_MEDIA_FILE") or os.environ.get("ENABLE_MEDIA_FILE") or "0").strip()
     if media_on not in {"1", "true", "yes", "on"}:
         return
-    want = "comfy-cpu,comfy-gpu,omni"
-    cur = (env.get("IMAGE_BACKENDS") or "").strip()
-    if cur == want:
-        print(f"OK: IMAGE_BACKENDS already {want}")
-        return
-    set_env_key(ROOT / ".env", "IMAGE_BACKENDS", want)
-    env["IMAGE_BACKENDS"] = want
-    if cur:
-        print(f"OK: normalized IMAGE_BACKENDS {cur!r} → {want}")
-    else:
-        print(f"OK: pinned IMAGE_BACKENDS={want} (Comfy → Omni fallback; not Hermes image_generation tool)")
+    pins = {
+        "IMAGE_GEN_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
+        "IMAGE_GEN_SIZE": env.get("IMAGE_GEN_SIZE") or "1024x1024",
+        "OCR_MODEL": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
+        "OCR_VISION": "1",
+        "EMBED_MODEL": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
+        "OMNIROUTER_IMAGE_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
+        "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
+        "OMNIROUTER_EMBED_COMBO": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
+    }
+    for key, want in pins.items():
+        cur = (env.get(key) or "").strip()
+        if cur == want:
+            continue
+        set_env_key(ROOT / ".env", key, want)
+        env[key] = want
+        print(f"OK: pinned {key}={want}")
+    # Clear legacy Comfy / paid-image pins so dispatcher cannot revive them.
+    for key in (
+        "IMAGE_BACKENDS",
+        "IMAGE_OMNI_MODEL",
+        "IMAGE_OMNI_SIZE",
+        "COMFYUI_CPU_URL",
+        "COMFYUI_GPU_URL",
+        "COMFYUI_HAS_GPU",
+        "COMFYUI_CPU_WORKFLOW",
+        "COMFYUI_GPU_WORKFLOW",
+        "FAL_KEY",
+        "FLUXAI_API_KEY",
+        "POLLINATIONS_API_KEY",
+        "GEMINI_API_KEY",
+    ):
+        if key in env and (env.get(key) or "").strip():
+            set_env_key(ROOT / ".env", key, "")
+            env[key] = ""
+            print(f"OK: cleared legacy {key}")
+
+
+def ensure_media_combos(opener) -> None:
+    """Ensure Omni combo shells for image-gen / vision-ocr / embedding (operator fills members)."""
+    for name, desc in (
+        ("image-gen", "Image generation — Omni /images/generations (fill with image-capable models)"),
+        ("vision-ocr", "Vision OCR — Omni /v1/chat/completions multimodal"),
+        ("embedding", "Embeddings — Omni /v1/embeddings (fill with embed-capable models)"),
+    ):
+        ensure_combo_shell(opener, name=name, description=desc)
+
+
+def ensure_combo_shell(opener, *, name: str, description: str) -> str:
+    """Create combo if missing; do not overwrite existing members (operator-owned)."""
+    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    combos = data.get("combos") or []
+    existing = next((c for c in combos if (c.get("name") or "") == name), None)
+    if existing:
+        print(f"OK: combo {name} exists id={existing.get('id')}")
+        return name
+    payload = {
+        "name": name,
+        "models": [],
+        "strategy": COMBO_STRATEGY,
+        "description": description,
+    }
+    status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
+    if status not in (200, 201):
+        # Some Omni builds reject empty models — create with a harmless chat member then operator replaces.
+        print(f"WARN create combo {name} empty failed ({status}); retry with OpenCode stub")
+        oc = list_oc_models(opener)[:1] or list(OPENCODE_FREE_FALLBACK[:1])
+        models = [_combo_model_entry(name, 1, oc[0])] if oc else []
+        payload["models"] = models
+        status, body = http_json(opener, "POST", f"{BASE}/api/combos", payload)
+        if status not in (200, 201):
+            raise SystemExit(f"combo {name} create failed: {body}")
+    print(f"OK: created combo shell {name}")
+    return name
 
 
 def clear_removed_local_llm_pins(env: dict[str, str]) -> None:
@@ -879,7 +942,8 @@ def main() -> int:
     assert_combo_oc_only(opener, classify_combo)
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
-    pin_image_backends(env)
+    ensure_media_combos(opener)
+    pin_media_combos(env)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
     set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
     set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
@@ -898,8 +962,8 @@ def main() -> int:
     smoke_omni_search(key)
     print(
         f"OK: first-setup omni-router complete "
-        f"(hermes+classifier OpenCode cloud; classify→{classify_combo!r}; "
-        f"search via Omni Tavily→Firecrawl→SearXNG)"
+        f"(hermes+classifier OpenCode; image-gen/vision-ocr/embedding shells; "
+        f"classify→{classify_combo!r}; search via Omni)"
     )
     return 0
 

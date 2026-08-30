@@ -1,5 +1,12 @@
 FILE / MEDIA POLICY — preserve requested output_type exactly. Never inherit format from a sibling. Never claim a file or image was created.
 
+REFUSE MEDIA (video clips, music/song generation, synthetic audio/TTS as a product, YouTube/TikTok/Facebook download or transcript, music lyric-from-URL transcription):
+task_hint=tool, task_type=media_generation, skill=video_gen (or skill=media_file with skill_action that maps to refuse), process_original_message false.
+Do NOT emit media_generation that invents video/music pipelines. Host/Hermes use dispatcher video-policy-refuse. Still images and office files remain allowed via image-gen / file-gen.
+
+MULTI-PURPOSE VISUAL BRIEF (multi-panel infographic layout, several sections + icons + metrics + captions — any language):
+Prefer skill=multi_purpose / media_file with a clear deliverable: info-card image and/or office file. Plan content via chat combo hermes when needed; deliver via dispatcher image-gen (combo image-gen) or file-gen — never ComfyUI.
+
 OFFICE CREATE (pdf|docx|xlsx|csv|txt|markdown):
 task_hint=file, task_type=file_processing, execution_class=async, response_mode=ack_then_deliver, skill=media_file, skill_action=process_file.
 Set output_type to the exact kind (pdf|txt|docx|xlsx|csv|md). instructions[] = FILE BODY ONLY (the payload to write). Never leave kind/body for host regex.

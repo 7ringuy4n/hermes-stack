@@ -25,6 +25,26 @@ _REFUSE_SYSTEM: dict[str, str] = {
         "Suggest a still image (infographic/poster) or an office document instead when relevant. "
         "Output ONLY the user-facing message — no quotes, labels, or markdown headings."
     ),
+    "music_generate": (
+        "You are Hermes assistant. The user asked to generate music or a song on this stack. "
+        "Policy: this deployment does not generate music. "
+        "Write a polite refusal in the user's language (Vietnamese unless clearly English). "
+        "Suggest lyrics as text in a document or a still poster when relevant. "
+        "Output ONLY the user-facing message — no quotes, labels, or markdown headings."
+    ),
+    "audio_generate": (
+        "You are Hermes assistant. The user asked to generate audio, voice, or TTS as a product. "
+        "Policy: this deployment does not offer user-facing audio generation. "
+        "Write a polite refusal in the user's language (Vietnamese unless clearly English). "
+        "Output ONLY the user-facing message — no quotes, labels, or markdown headings."
+    ),
+    "transcript": (
+        "You are Hermes assistant. The user asked for a transcript of YouTube/music/video/audio from a URL "
+        "or to download and transcribe media. Policy: refuse URL media transcription and download. "
+        "Write a polite refusal in the user's language (Vietnamese unless clearly English). "
+        "Attached local files may still use OCR/ASR when the stack supports them — only refuse URL/platform fetch. "
+        "Output ONLY the user-facing message — no quotes, labels, or markdown headings."
+    ),
 }
 
 
