@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: "Search the public web through OmniRoute (UI owns Tavily → Firecrawl → SearXNG). Hermes calls Router Worker which proxies to Omni."
+description: "Search the public web via combo web-search: OmniRoute (Tavily → Firecrawl → SearXNG) then direct adapters. Hermes calls Router Worker which proxies with failover."
 ---
 
 # Web search skill
@@ -10,9 +10,10 @@ Stack:
 ```text
 Hermes native tool web_search (toolset web)
   → Tavily (TAVILY_API_KEY) → SearXNG shim (SEARXNG_URL) …
-OR skill/HTTP:
-Hermes → Router Worker POST /v1/search (backend omni)
-      → OmniRoute POST /v1/search (Omni UI: Tavily → Firecrawl → SearXNG)
+OR skill/HTTP (combo web-search):
+Hermes → Router Worker POST /v1/search
+      → backends: omni → tavily → firecrawl → searxng
+      → OmniRoute POST /v1/search providers: tavily-search → firecrawl-search → searxng-search
 ```
 
 Prefer the **native `web_search` tool**. On this stack Hermes `SEARXNG_URL`
@@ -20,9 +21,9 @@ points at Router Worker `…/v1/searxng-compat` (Omni-backed). Optional:
 `TAVILY_API_KEY` in Hermes env for direct Tavily. Fallback HTTP:
 `POST http://model-router:8096/v1/search`.
 
-**Omni UI owns** Search provider connections for the Router Worker / Omni path.
-Do **not** call Omni chat `/v1/chat/completions` to “search”. Do **not** call
-Media/File worker.
+**Combo `web-search`** owns failover order. Omni UI owns Search provider
+connections for the Omni path. Do **not** call Omni chat `/v1/chat/completions`
+to “search”. Do **not** call Media/File worker.
 
 ## Endpoints
 
@@ -38,11 +39,11 @@ Media/File worker.
 | Env / file | Meaning |
 |------------|---------|
 | Omni Providers → Search | Connect **Tavily** + **Firecrawl** + **SearXNG** (`providerSpecificData.baseUrl=http://searxng:8080`) |
-| `scripts/main/first-setup-omnirouter.sh` | Ensures SearXNG connection, priorities Tavily→Firecrawl→SearXNG, blocks `ollama-search` |
+| `scripts/main/first-setup-omnirouter.py` | Ensures SearXNG connection, priorities Tavily→Firecrawl→SearXNG, blocks `ollama-search`, pins `WEB_BACKENDS` |
 | `OMNIROUTER_SEARCH_PROVIDERS` | Default `tavily-search,firecrawl-search,searxng-search` |
 | `WEB_SEARCH_PROVIDER_TIMEOUT_S` | Per-provider HTTP timeout (default 20s) for fast failover |
-| `WEB_BACKENDS` | Default `omni` (proxy). Use `tavily,firecrawl,searxng` only if Omni is off |
-| `hermes/main/skills/web-search/web-search-combo.json` | SoT combo (`backends: ["omni"]`); bake fallback under model-router `config/` |
+| `WEB_BACKENDS` | Default `omni,tavily,firecrawl,searxng` (Omni first; direct adapters if Omni fails) |
+| `hermes/main/skills/web-search/web-search-combo.json` | SoT combo `web-search`; bake fallback under model-router `config/` |
 | `WEB_EXTRACT_BACKENDS` | Extract order (`tavily,firecrawl`) |
 | `OMNIROUTER_API_KEY` / `OMNIROUTER_BASE_URL` | Required for `omni` backend |
 

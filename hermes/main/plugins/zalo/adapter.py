@@ -5890,41 +5890,125 @@ class ZaloAdapter(BasePlatformAdapter):
         """(file_name, text) of the newest remembered attachment in this thread."""
         return context_newest(self._as_attachment_items(thread_id))
 
+    def _as_env_flag_on(self, *names: str, default: str = "inactive") -> bool:
+        """Feature toggles: active|inactive (legacy 1/0 still accepted)."""
+        import os
+
+        for name in names:
+            raw = os.getenv(name)
+            if raw is None:
+                continue
+            v = str(raw).strip().lower()
+            if not v:
+                continue
+            if v in {"0", "false", "no", "off", "inactive"}:
+                return False
+            if v in {"1", "true", "yes", "on", "active"}:
+                return True
+        d = (default or "inactive").strip().lower()
+        return d in {"1", "true", "yes", "on", "active"}
+
     def _as_av_activated(self) -> bool:  # ASSISTANT_FILE_PIPELINE_v6
-        """True when antivirus is on and reachable (ENABLE_ANTIVIRUS / AV_SCAN)."""
+        """True when antivirus is on and the gateway+clamd are reachable."""
         import os
         import urllib.request
-        flag = (os.getenv("AV_SCAN") or os.getenv("ENABLE_ANTIVIRUS") or "1").strip().lower()
-        if flag in {"0", "false", "no", "off"}:
+
+        if not self._as_env_flag_on("AV_SCAN", "ENABLE_ANTIVIRUS", default="inactive"):
             return False
         url = (os.getenv("AV_GATEWAY_URL") or "http://av-gateway:8098").rstrip("/")
         try:
             with urllib.request.urlopen(url + "/health", timeout=2.0) as resp:
                 import json as _json
+
                 data = _json.loads(resp.read().decode("utf-8") or "{}")
             return bool(data.get("ok")) and bool(data.get("clamd"))
         except Exception:
             return False
 
     def _as_av_required(self) -> bool:
-        """When antivirus is enabled, refuse files if the scanner is down (fail closed)."""
+        """Hard-refuse only when AV_REQUIRED is explicitly on.
+
+        ENABLE_ANTIVIRUS alone must not block OCR/vision when the gateway is
+        temporarily down — fall through to security-manager / pipeline instead.
+        """
         import os
-        flag = (os.getenv("AV_SCAN") or os.getenv("ENABLE_ANTIVIRUS") or "1").strip().lower()
-        av_on = flag not in {"0", "false", "no", "off"}
+
         raw = (os.getenv("AV_REQUIRED") or "").strip().lower()
         if raw == "":
-            return av_on
-        return raw in {"1", "true", "yes", "on"}
+            return False
+        return raw in {"1", "true", "yes", "on", "active"}
 
     def _as_security_worker_active(self) -> bool:
         """True when Security Worker is intentionally enabled for this stack."""
+        return self._as_env_flag_on(
+            "ENABLE_SECURITY", "WORKER_SECURITY", default="inactive"
+        )
+
+    async def _as_security_file_allow(
+        self,
+        *,
+        file_bytes: bytes,
+        filename: str,
+        correlation_id: str = "",
+    ) -> tuple[bool, str]:
+        """Optional isolation via security-manager when AV gateway is down.
+
+        Returns (blocked, user_message). Allow when security worker inactive or
+        unreachable (unless fail-closed).
+        """
         import os
-        flag = (
-            os.getenv("ENABLE_SECURITY")
-            or os.getenv("WORKER_SECURITY")
-            or ""
-        ).strip().lower()
-        return flag in {"1", "true", "yes", "on", "active"}
+        import uuid
+
+        if not file_bytes or not self._as_security_worker_active():
+            return False, ""
+        base = (
+            os.getenv("SECURITY_MANAGER_URL")
+            or os.getenv("SECURITY_URL")
+            or "http://security-manager:8093"
+        ).rstrip("/")
+        fail_open = (os.getenv("SECURITY_FAIL_OPEN") or "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+            "active",
+        }
+        corr = (correlation_id or "").strip() or f"zalo_file_{uuid.uuid4().hex[:12]}"
+        try:
+            import aiohttp
+
+            timeout = aiohttp.ClientTimeout(total=90)
+            form = aiohttp.FormData()
+            form.add_field("session_id", corr)
+            form.add_field(
+                "file",
+                file_bytes,
+                filename=filename or "upload.bin",
+                content_type="application/octet-stream",
+            )
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(f"{base}/v1/scan", data=form) as resp:
+                    if resp.status >= 300:
+                        if fail_open:
+                            return False, ""
+                        return True, self._as_ux_line(
+                            "ZALO_AV_UNAVAILABLE_MSG",
+                            ("security", "av_unavailable"),
+                            "Antivirus is not ready. File was not accepted — try again later.",
+                        )
+                    data = await resp.json(content_type=None)
+            verdict = str((data or {}).get("verdict") or "").strip().upper()
+            if verdict in {"RISK", "BLOCK", "BLOCKED", "INFECTED"}:
+                msg = str((data or {}).get("user_message") or "").strip() or (
+                    "File contains risks so it cannot be extracted to inspect information inside."
+                )
+                return True, msg
+            return False, ""
+        except Exception:
+            if fail_open:
+                return False, ""
+            # Prefer continue to OCR over silent drop when isolation is optional.
+            return False, ""
 
     async def _as_security_message_gate(
         self,
@@ -6095,6 +6179,39 @@ class ZaloAdapter(BasePlatformAdapter):
             done = getattr(self, "_as_mark_lookup_done", None)
             if callable(done):
                 done(thread_id)
+            # AV intended on but gateway/clamd down: try security-manager isolation
+            # before hard-refuse. OCR/vision must not die solely because ClamAV is restarting.
+            if self._as_env_flag_on("AV_SCAN", "ENABLE_ANTIVIRUS", default="inactive"):
+                blocked, msg = await self._as_security_file_allow(
+                    file_bytes=file_bytes,
+                    filename=fn,
+                    correlation_id=f"zalo-{thread_id}",
+                )
+                if blocked:
+                    try:
+                        await self.send(
+                            chat_id=str(thread_id),
+                            content=msg
+                            or "File contains risks so it cannot be extracted to inspect information inside.",
+                            metadata={
+                                "thread_type": "user",
+                                "as_skip_timing": True,
+                                "as_skip_inflight": True,
+                            },
+                        )
+                    except Exception:
+                        pass
+                    return True
+                self._as_flow(
+                    "av_skip",
+                    reason="security_fallback",
+                    file=fn,
+                    thread_id=thread_id,
+                )
+                self._as_enqueue_file_pipeline(
+                    thread_id, sender_id, local_path, media, user_text=user_text
+                )
+                return False
             if required:
                 try:
                     msg = self._as_ux_line(

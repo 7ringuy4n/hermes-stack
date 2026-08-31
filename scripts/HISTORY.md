@@ -1,3 +1,31 @@
+## 2026-08-31 07:10 +07 — image-gen empty; scenic ask refused; search combo naming
+
+### Symptom
+Scenic image asks failed with “image-gen has no image-capable targets”; Omni key could block stack combos when `allowedCombos` was empty; web-search combo naming/backends were inconsistent with Tavily→Firecrawl→SearXNG failover.
+
+### Root cause
+`image-gen` accepted any `aihorde/*` id including aphrodite chat workers; Omni treats empty `allowedCombos` as deny-all for combo names; web-search SoT still used legacy `websearch` / Omni-only backends.
+
+### Fix (core)
+Require image modality (reject aphrodite/non-diffusion) when filling `image-gen`; pin API key `allowedCombos` for stack combos; rename/align combo `web-search` with Omni→direct adapter failover and skill docs; refill `embedding` with embed-capable catalog models and smoke `/v1/embeddings`.
+
+### Prevent recurrence
+Never classify AI Horde LLM workers as diffusion; always pin key combo allowlists after creating stack combos; keep web-search backends Omni-first with direct fallbacks.
+
+## 2026-08-30 20:55 +07 — Image OCR blocked by AV-down; weather ask silent; cartoon stills
+
+### Symptom
+Inbound images for OCR were refused with antivirus-not-ready while ClamAV/av-gateway were down; live weather scene asks could end with no Zalo reply; Omni image-gen stills looked cartoonish.
+
+### Root cause
+Zalo AV gate treated `ENABLE_ANTIVIRUS=active` as hard-required even when the gateway was unreachable; antivirus containers were not healed by stack-watch; diffusion prompts/combo members under-emphasized photoreal photography.
+
+### Fix (core)
+Soft-fail AV when gateway/clamd are down (Security Manager fallback; hard refuse only with `AV_REQUIRED=active`); heal antivirus profile in stack-watch; strengthen weather/scenic classify + image-gen photoreal prompts; exclude cartoon/anime models from image-gen combo fill; raise classify retry.
+
+### Prevent recurrence
+Never equate ENABLE_ANTIVIRUS with AV_REQUIRED; keep photoreal constraints in classify SCENE / image-gen skill; keep antivirus heal when the flag is active.
+
 ## 2026-08-30 20:25 +07 — Backup/security still compared ENABLE_*=1 after migrate
 
 ### Symptom

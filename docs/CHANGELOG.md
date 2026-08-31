@@ -1,3 +1,16 @@
+## 2026-08-31 07:10 +07 — image-gen diffusion-only; key combo ACL; web-search failover
+
+- Omni API keys with empty `allowedCombos` no longer leave stack combos blocked; first-setup pins hermes/classifier/image-gen/vision-ocr/embedding on the key.
+- `image-gen` fill requires real image modalities (rejects AI Horde aphrodite/chat workers that previously emptied the combo of diffusion targets).
+- Combo `web-search` backends default to Omni then Tavily/Firecrawl/SearXNG; skill + Router Worker combo JSON aligned; `WEB_BACKENDS` pin matches.
+- `embedding` combo is force-refilled with one embed-capable catalog model (same vector dimension) and smoked via `/v1/embeddings`.
+
+## 2026-08-30 20:55 +07 — AV soft-fail; weather scene delivery; photoreal image-gen
+
+- Inbound files no longer hard-refuse solely because ClamAV/av-gateway is restarting: Security Manager isolation is used when antivirus is active but the gateway is down; `AV_REQUIRED=active` remains the hard-refuse switch.
+- Stack-watch restarts clamav/av-gateway when `ENABLE_ANTIVIRUS=active`.
+- Weather scene classify/host prompts require photorealistic photograph wording; image-gen combo excludes cartoon/anime-style models; classify retry raised for transient LLM queue drops.
+
 ## 2026-08-30 20:25 +07 — Remaining ENABLE_* checks accept active|inactive
 
 - Backup compose/profiles, worker stale cleanup, security-manager, model-router defaults, OCR/office toggles, and Zalo/log/ovpn helpers now treat feature flags as `active`/`inactive` (legacy `1`/`0` still accepted).

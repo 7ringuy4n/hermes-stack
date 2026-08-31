@@ -12,8 +12,8 @@ Send **only the final answer** (and a generated file if the user asked for one).
 ## Strategy
 
 1. **Query shaping** — keywords + site/time hints; Vietnamese and English variants if needed.
-2. **Search** — always `POST http://model-router:8096/v1/search` (proxies to
-   OmniRoute `/v1/search`; Omni UI owns Tavily → Firecrawl → SearXNG). Never call Omni
+2. **Search** — always `POST http://model-router:8096/v1/search` (combo **web-search**:
+   OmniRoute `/v1/search` with Tavily → Firecrawl → SearXNG, then direct adapters). Never call Omni
    chat completions or the media worker for search.
 3. **Extract** — `POST http://model-router:8096/v1/extract` on the best URL (extract
    backends from config; SearXNG cannot extract). If extract fails, stop with a short failure line.
