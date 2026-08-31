@@ -305,6 +305,7 @@ from attachment import (  # noqa: E402
     file_extract_ack_message,
     archive_password_ack_message,
     image_ocr_ack_message,
+    image_analyze_ack_message,
     quoted_context_snip,
     extract_media_from_quote,
     normalize_zalo_msg_type,
@@ -4068,6 +4069,17 @@ class ZaloAdapter(BasePlatformAdapter):
             # (local docx/terminal/zipfile forensics). Whitespace-only = blank.
             excerpt_meaningful = self._as_meaningful_learn_text(excerpt or "")
             excerpt_for_prompt = excerpt if excerpt_meaningful else ""
+            # Images: when OCR/Paddle text is empty, call combo vision-ocr before any ack.
+            if attach_is_image and not excerpt_meaningful and media_urls:
+                vision_text = await self._as_vision_scene_text(
+                    media_urls[0],
+                    attach_name,
+                    caption=str(text or ""),
+                )
+                if vision_text:
+                    excerpt = vision_text
+                    excerpt_meaningful = self._as_meaningful_learn_text(excerpt)
+                    excerpt_for_prompt = excerpt if excerpt_meaningful else ""
             if excerpt_meaningful:
                 self._as_attachment_remember(str(thread_id), attach_name, excerpt)
             else:
@@ -4078,9 +4090,16 @@ class ZaloAdapter(BasePlatformAdapter):
                     attach_name,
                     f"[Attached file: {attach_name}]",
                 )
-            if attach_kind in {"office", "text", "archive", "ocr"}:
+            if attach_kind in {"office", "text", "archive"}:
                 # Worker extract already ran; strip paths so Hermes cannot open the package
                 # (local docx/terminal/pypdf forensics on pdf/images).
+                media_urls = []
+                media_types = []
+                message_type = MessageType.TEXT
+            elif attach_is_image and not (attach_bare and excerpt_meaningful):
+                # Captioned images or bare images still empty after vision → classify/Hermes.
+                pass
+            elif attach_kind == "ocr" and not attach_is_image:
                 media_urls = []
                 media_types = []
                 message_type = MessageType.TEXT
@@ -4112,19 +4131,17 @@ class ZaloAdapter(BasePlatformAdapter):
                 len(excerpt_for_prompt),
                 attach_kind,
             )
-            # Bare attachment OR blank office/text/ocr: deterministic worker extract ack.
-            # Archives ALWAYS host-ack (even with caption + extract text) — never wait on
-            # Hermes/LLM; Omni rate-limit left zip turns silent after ingest already finished.
-            # Office/text/ocr chat reads also ALWAYS host-ack: otherwise cleared media_urls
-            # fall through to office_shortcut / Hermes and can rewrite an Excel extract into
-            # a new .txt (sheet soft-probes looked like "create a text file" to classify).
-            # Blank docx / empty zip must not fall through to Hermes local tools.
-            host_ack = attach_bare or attach_kind in {
-                "archive",
-                "office",
-                "text",
-                "ocr",
-            }
+            # Bare attachment OR blank office/text: deterministic worker extract ack.
+            # Images: host-ack only when bare AND we have OCR/vision text; else classify path.
+            if attach_is_image:
+                host_ack = attach_bare and excerpt_meaningful
+            else:
+                host_ack = attach_bare or attach_kind in {
+                    "archive",
+                    "office",
+                    "text",
+                    "ocr",
+                }
             if host_ack:
                 # Short standalone text/OCR body that is itself a secret/env ask → refuse.
                 # Archives/office: NEVER classify member/sheet bodies as the user ask —
@@ -4171,13 +4188,18 @@ class ZaloAdapter(BasePlatformAdapter):
                             pass
                         return
                 kind = attach_kind or attachment_kind(attach_name)
+                ack = ""
+                flow_stage = "attach_file_empty_ack"
                 if attach_is_image:
-                    ack = image_ocr_ack_message(excerpt_for_prompt or "")
-                    flow_stage = (
-                        "attach_image_ocr_ack"
-                        if excerpt_meaningful
-                        else "attach_image_empty_ocr_ack"
-                    )
+                    ack = image_analyze_ack_message(excerpt_for_prompt or "")
+                    if ack:
+                        flow_stage = (
+                            "attach_image_vision_ack"
+                            if "vision" in ack
+                            else "attach_image_ocr_ack"
+                        )
+                    else:
+                        host_ack = False
                 else:
                     ack = file_extract_ack_message(
                         attach_name, excerpt_for_prompt or "", kind=kind
@@ -4187,42 +4209,43 @@ class ZaloAdapter(BasePlatformAdapter):
                         if excerpt_meaningful
                         else "attach_file_empty_ack"
                     )
-                self._as_flow(
-                    flow_stage,
-                    file=attach_name,
-                    thread_id=thread_id,
-                    kind=kind,
-                    chars=len(excerpt_for_prompt or ""),
-                )
-                try:
-                    await self.send(
-                        chat_id=str(thread_id),
-                        content=ack,
-                        metadata={
-                            "thread_type": "group" if thread_type == "group" else "user",
-                            "as_skip_timing": True,
-                            "as_skip_autosend": True,
-                            "as_skip_dest": True,
-                            "skip_outbound_filter": True,
-                        },
+                if host_ack and ack:
+                    self._as_flow(
+                        flow_stage,
+                        file=attach_name,
+                        thread_id=thread_id,
+                        kind=kind,
+                        chars=len(excerpt_for_prompt or ""),
                     )
-                except Exception as e:
-                    logger.warning("Zalo: extract ack failed: %s", type(e).__name__)
-                try:
-                    self._as_inflight_done(str(thread_id), {})
-                except Exception:
-                    pass
-                try:
-                    ev = self._as_part_delivered.get(str(thread_id))
-                    if ev is not None:
-                        ev.set()
-                except Exception:
-                    pass
-                try:
-                    self._as_queue_kick(str(thread_id))
-                except Exception:
-                    pass
-                return
+                    try:
+                        await self.send(
+                            chat_id=str(thread_id),
+                            content=ack,
+                            metadata={
+                                "thread_type": "group" if thread_type == "group" else "user",
+                                "as_skip_timing": True,
+                                "as_skip_autosend": True,
+                                "as_skip_dest": True,
+                                "skip_outbound_filter": True,
+                            },
+                        )
+                    except Exception as e:
+                        logger.warning("Zalo: extract ack failed: %s", type(e).__name__)
+                    try:
+                        self._as_inflight_done(str(thread_id), {})
+                    except Exception:
+                        pass
+                    try:
+                        ev = self._as_part_delivered.get(str(thread_id))
+                        if ev is not None:
+                            ev.set()
+                    except Exception:
+                        pass
+                    try:
+                        self._as_queue_kick(str(thread_id))
+                    except Exception:
+                        pass
+                    return
         user_text_before_attach = str(text or "").strip()
         if not media_urls and user_text_before_attach:
             text = self._as_attachment_followup(str(thread_id), text)
@@ -5764,6 +5787,108 @@ class ZaloAdapter(BasePlatformAdapter):
             path=worker_path[:160],
         )
         return text
+
+    async def _as_vision_scene_text(
+        self, local_path: str, file_name: str = "", *, caption: str = ""
+    ) -> str:
+        """Omni combo vision-ocr scene analyze when Paddle/OCR text is empty."""
+        import base64
+        import os
+        from pathlib import Path
+
+        src = Path(str(local_path or ""))
+        if not src.is_file():
+            return ""
+        base = (os.getenv("OMNIROUTER_BASE_URL") or "http://omni-router:20129/v1").rstrip("/")
+        key = (
+            os.getenv("OMNIROUTER_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+            or os.getenv("N9ROUTER_API_KEY")
+            or ""
+        ).strip()
+        model = (os.getenv("OCR_MODEL") or os.getenv("IMAGE_GEN_COMBO") or "vision-ocr").strip()
+        if model == "image-gen":
+            model = "vision-ocr"
+        if not key or not base:
+            self._as_flow("vision_skip", file=file_name, reason="no_omni_key")
+            return ""
+        vision_flag = (os.getenv("OCR_VISION") or "active").strip().lower()
+        if vision_flag != "active":
+            self._as_flow("vision_skip", file=file_name, reason="ocr_vision_inactive")
+            return ""
+        raw = src.read_bytes()
+        low = src.suffix.lower()
+        mime = "image/png" if low == ".png" else "image/jpeg"
+        b64 = base64.b64encode(raw).decode("ascii")
+        cap = (caption or "").strip()
+        prompt = (
+            "Describe this image in Vietnamese: people, animals, objects, setting, and mood. "
+            "Extract any readable text as markdown. Be concise."
+        )
+        if cap:
+            prompt = f"{prompt}\n\nUser caption: {cap[:400]}"
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{mime};base64,{b64}"},
+                        },
+                    ],
+                }
+            ],
+            "max_tokens": 512,
+        }
+        import aiohttp
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=120)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    f"{base}/chat/completions",
+                    json=payload,
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json",
+                    },
+                ) as resp:
+                    body = await resp.text()
+                    if resp.status >= 300:
+                        self._as_flow(
+                            "vision_fail",
+                            file=file_name,
+                            status=resp.status,
+                        )
+                        return ""
+            data = json.loads(body or "{}")
+        except Exception as e:
+            self._as_flow("vision_fail", file=file_name, error=type(e).__name__)
+            return ""
+        choices = data.get("choices") if isinstance(data, dict) else None
+        if not isinstance(choices, list) or not choices:
+            return ""
+        ch = choices[0] if isinstance(choices[0], dict) else {}
+        msg = ch.get("message") if isinstance(ch.get("message"), dict) else {}
+        out = ""
+        for key_name in (
+            "content",
+            "reasoning_content",
+            "reasoning",
+            "thinking",
+            "thinking_content",
+        ):
+            val = msg.get(key_name)
+            if isinstance(val, str) and val.strip():
+                out = val.strip()
+                break
+        if not out and isinstance(ch.get("text"), str):
+            out = ch["text"].strip()
+        self._as_flow("vision_ok", file=file_name, model=model, chars=len(out))
+        return out
 
     async def _as_quick_ocr_excerpt(self, local_path: str, file_name: str = "") -> str:
         """Kept for callers that only want the document excerpt."""
