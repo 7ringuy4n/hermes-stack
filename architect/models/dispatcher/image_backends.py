@@ -4,8 +4,11 @@ Diffusion via OmniRouter /images/generations always uses combo IMAGE_GEN_COMBO
 (default ``image-gen``) whether Media worker is active or inactive — never the
 chat combo ``hermes`` for still images.
 
-Pillow modes (info-card, text-poster) stay in app.py.
-Canvas size is optional on the request body (skill declares the HD default).
+Pillow modes (text-poster only) stay in app.py. Canvas size is optional on the
+request body (skill declares the HD default).
+
+SFW / anti-censor wording lives in classify + image-gen skills — this module does
+not invent retry prompt templates.
 """
 from __future__ import annotations
 
@@ -41,14 +44,14 @@ def backend_available(name: str) -> bool:
     n = (name or "").strip().lower()
     if n == "omni":
         enabled = (os.environ.get("ENABLE_OMNIROUTER") or "1").strip().lower()
-        if enabled in {"0", "false", "no", "off"}:
+        if enabled in {"0", "false", "no", "off", "inactive"}:
             return False
         base = _env("OMNIROUTER_BASE_URL", default="http://omni-router:20129/v1")
         key = _env("OMNIROUTER_API_KEY")
         return bool(base and key)
     if n == "n9":
         enabled = (os.environ.get("ENABLE_9ROUTER") or "0").strip().lower()
-        if enabled not in {"1", "true", "yes", "on"}:
+        if enabled not in {"1", "true", "yes", "on", "active"}:
             return False
         base = _env("N9ROUTER_BASE_URL", "OPENAI_BASE_URL", default="http://9router:20128/v1")
         key = _env("N9ROUTER_API_KEY", "OPENAI_API_KEY")
@@ -56,7 +59,6 @@ def backend_available(name: str) -> bool:
     if n == "pillow":
         return True
     return False
-
 
 
 def _replace_ci(text: str, old: str, new: str) -> str:
@@ -181,7 +183,10 @@ def generate_image_bytes(
     *,
     size: Optional[str] = None,
 ) -> tuple[bytes, str, list[str]]:
-    """Try router backends in order. Returns (bytes, used_backend, errors)."""
+    """Try router backends in order. Returns (bytes, used_backend, errors).
+
+    Does not invent SFW retry templates — classify/image-gen skills own prompt hardening.
+    """
     errors: list[str] = []
     order: list[str] = []
     if provider:
@@ -210,24 +215,19 @@ def generate_image_bytes(
         try:
             if b == "omni":
                 blob = gen_omni(safe_prompt, size=size)
-                if _looks_like_nsfw_censor_placeholder(blob) and safe_prompt == (prompt or "").strip():
-                    # Prompt already "safe" but still censored — one retry with explicit cityscape framing.
-                    retry = (
-                        f"{safe_prompt}. Safe-for-work daytime cityscape aerial photograph, "
-                        "architecture and streets only, no people close-up"
-                    )
-                    errors.append(f"{b}: censor placeholder — retry with SFW cityscape framing")
-                    blob2 = gen_omni(retry, size=size)
-                    if not _looks_like_nsfw_censor_placeholder(blob2):
-                        return blob2, "omni", errors
-                    raise RuntimeError("nsfw censor placeholder from image provider")
                 if _looks_like_nsfw_censor_placeholder(blob):
-                    raise RuntimeError("nsfw censor placeholder from image provider")
+                    raise RuntimeError(
+                        "nsfw censor placeholder from image provider — "
+                        "strengthen SCENE prompt (SFW, official place names) via classify/image-gen"
+                    )
                 return blob, "omni", errors
             if b == "n9":
                 blob = gen_n9(safe_prompt, size=size)
                 if _looks_like_nsfw_censor_placeholder(blob):
-                    raise RuntimeError("nsfw censor placeholder from image provider")
+                    raise RuntimeError(
+                        "nsfw censor placeholder from image provider — "
+                        "strengthen SCENE prompt (SFW, official place names) via classify/image-gen"
+                    )
                 return blob, "n9", errors
             if b == "pillow":
                 raise RuntimeError("pillow handled by caller")

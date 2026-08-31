@@ -1,3 +1,15 @@
+## 2026-08-31 08:15 +07 — Retire Pillow image layout; diffusion-only labeled stills
+
+- Dispatcher `info_card` / `overlay` modules removed; labeled and weather stills route through Omni combo `image-gen` with facts in the English SCENE prompt.
+- Classify uses `RENDER: weather-scene` / `labeled-scene`; SFW and official place-name guidance strengthened in classify/image-gen skills (no hardcoded NSFW retry templates).
+- OCR vision path reads `reasoning_content` when `content` is empty; vision-ocr combo ordering prefers OpenCode members that return visible text.
+
+## 2026-08-31 07:40 +07 — OpenCode-first media defaults; drop invented aerial prompts
+
+- First-setup prefers OpenCode members for vision-ocr and embedding defaults (non-OpenCode embed only as last resort); image-gen stays diffusion-capable (AI Horde).
+- Classify/image-gen guidance no longer invents aerial/top-down viewpoints; image attachment path asks for scene summary plus text extract.
+- Lab fixtures and dispatcher SFW retry wording aligned (no default aerial phrasing).
+
 ## 2026-08-31 07:10 +07 — image-gen diffusion-only; key combo ACL; web-search failover
 
 - Omni API keys with empty `allowedCombos` no longer leave stack combos blocked; first-setup pins hermes/classifier/image-gen/vision-ocr/embedding on the key.

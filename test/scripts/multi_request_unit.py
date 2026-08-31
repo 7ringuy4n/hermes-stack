@@ -20,7 +20,7 @@ if hasattr(sys.stdout, "buffer"):
 
 FIXTURE = (
     "tin nhắn 1: vẽ hình thời tiết hiện tại ở thành phố hồ chí minh, "
-    "góc nhìn từ trên cao xuống phải thấy rõ khung cảnh thành phố. "
+    "phải thấy rõ khung cảnh thành phố. "
     "tin nhắn 2: cập nhật giá xăng E5 RON92 và E5 RON95"
 )
 
@@ -28,7 +28,7 @@ FIXTURE = (
 FIXTURE_NUMBERED = (
     "yêu cầu:\n"
     "1 vẽ hình thời tiết hiện tại ở thành phố hồ chi minh ở thời gian hiện tại, "
-    "góc nhìn từ trên cao xuống phải thấy rõ khung cảnh thành phố và gửi lên cho user\n"
+    "phải thấy rõ khung cảnh thành phố và gửi lên cho user\n"
     "2.Sau đó cập nhật giá xăng E5 RON92 và E5 RON95"
 )
 

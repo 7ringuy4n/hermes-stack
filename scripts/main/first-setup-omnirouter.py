@@ -1069,7 +1069,10 @@ def list_image_gen_models(api_key: str) -> list[str]:
 
 
 def list_vision_models(opener) -> list[str]:
-    """Multimodal chat models for OCR vision fallback (supportsVision)."""
+    """Multimodal chat models for OCR vision fallback (supportsVision).
+
+    First-setup defaults prefer OpenCode family; other providers are fallback.
+    """
     _, data = http_json(opener, "GET", f"{BASE}/api/models")
     rows = data.get("models") or []
     out: list[str] = []
@@ -1083,16 +1086,23 @@ def list_vision_models(opener) -> list[str]:
         full = row.get("fullModel") or row.get("model")
         if isinstance(full, str) and full.strip():
             out.append(full.strip())
-    # Prefer gemini + strong OpenCode vision, then others.
+    # OpenCode-first. Prefer members that return visible content for OCR
+    # (some kimi variants spend the token budget in reasoning_content only).
     def _rank(mid: str) -> tuple:
         m = mid.lower()
-        if m.startswith("gemini/"):
+        if "deepseek" in m and "vision" in m:
             return (0, m)
-        if m.startswith("opencode-go/kimi") or m.startswith("opencode-go/mimo"):
+        if m.startswith("opencode-go/mimo") or m.startswith("oc/mimo") or m.startswith("opencode/mimo"):
             return (1, m)
-        if _is_opencode_model_id(m):
+        if m.startswith("opencode-go/minimax") or "minimax" in m and _is_opencode_model_id(m):
             return (2, m)
-        return (3, m)
+        if _is_opencode_model_id(m) and "kimi" not in m:
+            return (3, m)
+        if _is_opencode_model_id(m):
+            return (4, m)
+        if m.startswith("gemini/"):
+            return (5, m)
+        return (6, m)
 
     out = sorted(set(out), key=_rank)
     return out[:10]
@@ -1102,6 +1112,10 @@ def _is_embedding_model_id(mid: str) -> bool:
     low = (mid or "").strip().lower()
     if not low or low == "embedding":
         return False
+    # OpenCode shell members are allowed as first-setup defaults even without
+    # "embed" in the id (operator may later swap to an embed-capable model).
+    if _is_opencode_model_id(low):
+        return True
     if "embed" in low:
         return True
     return False
@@ -1121,21 +1135,39 @@ def _is_embedding_output_model(row: dict) -> bool:
     return "embed" in low
 
 
-def list_embedding_models(api_key: str) -> list[str]:
-    """Models Omni can use for /v1/embeddings (single dimension per combo)."""
+def list_embedding_models(api_key: str, opener=None) -> list[str]:
+    """Models for /v1/embeddings — OpenCode-first single member (one vector size)."""
     rows = _v1_models(api_key)
     found = [str(r.get("id")) for r in rows if _is_embedding_output_model(r) and r.get("id")]
-    preferred = [
+    oc_embed = [m for m in found if _is_opencode_model_id(m)]
+    if oc_embed:
+        return [oc_embed[0]]
+
+    # No embed-capable OpenCode id in catalog — seed one OpenCode shell (stack default).
+    oc: list[str] = []
+    if opener is not None:
+        try:
+            oc = [m for m in list_oc_models(opener) if _is_opencode_model_id(str(m))]
+        except Exception as e:
+            print(f"WARN list_oc_models for embedding: {e}")
+    if not oc:
+        oc = [m for m in OPENCODE_FREE_FALLBACK if _is_opencode_model_id(m)]
+    if oc:
+        print(
+            f"WARN: no OpenCode embed-capable catalog model — "
+            f"seeding OpenCode shell {oc[0]!r}"
+        )
+        return [oc[0]]
+
+    # Last resort: non-OpenCode embed (only when OpenCode catalog is empty).
+    preferred_fallback = [
         "gemini/gemini-embedding-001",
-        "gemini/gemini-embedding-2",
         "openrouter/openai/text-embedding-3-small",
-        "openrouter/google/gemini-embedding-001",
         "openrouter/qwen/qwen3-embedding-8b",
-        "openrouter/mistralai/mistral-embed-2312",
     ]
-    # Omni rejects combos that mix vector sizes — pin one concrete model.
-    for mid in preferred:
+    for mid in preferred_fallback:
         if mid in found:
+            print(f"WARN: embedding fallback to non-OpenCode {mid!r}")
             return [mid]
     return found[:1]
 
@@ -1157,10 +1189,16 @@ def _smoke_embedding_combo(api_key: str) -> None:
             data = json.loads(resp.read().decode() or "{}")
     except urllib.error.HTTPError as e:
         detail = e.read()[:400]
-        raise SystemExit(f"embedding /v1/embeddings smoke HTTP {e.code}: {detail!r}") from e
+        # OpenCode shell members often cannot serve /v1/embeddings yet — do not abort setup.
+        print(
+            f"WARN embedding /v1/embeddings smoke HTTP {e.code}: {detail!r} "
+            f"— keep OpenCode default; swap to an embed-capable member in Omni UI if needed"
+        )
+        return
     rows = data.get("data") or data.get("embeddings") or []
     if not rows:
-        raise SystemExit(f"embedding smoke returned no vectors: {str(data)[:300]}")
+        print(f"WARN embedding smoke returned no vectors: {str(data)[:300]}")
+        return
     print("OK: smoke embedding /v1/embeddings")
 
 
@@ -1270,17 +1308,31 @@ def ensure_media_combos(opener, api_key: str) -> None:
         # Fall back to hermes OpenCode members so vision path still has a combo.
         vision_ids = list_oc_models(opener)[:5] or list(OPENCODE_FREE_FALLBACK[:5])
         print(f"WARN no supportsVision catalog; seeding vision-ocr with OpenCode {vision_ids[:3]}")
-    cur_vis = set(_combo_model_ids(combos.get("vision-ocr")))
-    need_vis = len(cur_vis.intersection(set(vision_ids))) == 0
+    cur_vis_list = _combo_model_ids(combos.get("vision-ocr"))
+    cur_vis = set(cur_vis_list)
+    head = (cur_vis_list[0] if cur_vis_list else "").lower()
+    want_head = (vision_ids[0] if vision_ids else "").lower()
+    need_vis = (
+        len(cur_vis.intersection(set(vision_ids))) == 0
+        or (
+            bool(vision_ids)
+            and not any(_is_opencode_model_id(m) for m in cur_vis_list)
+        )
+        or (bool(want_head) and head != want_head)
+    )
+    if need_vis and cur_vis_list and not any(_is_opencode_model_id(m) for m in cur_vis_list):
+        print(f"==> vision-ocr non-OpenCode members {cur_vis_list[:3]!r} — OpenCode-first refill")
+    elif need_vis and head and want_head and head != want_head:
+        print(f"==> vision-ocr head {cur_vis_list[0]!r} → {vision_ids[0]!r}")
     _put_or_create_combo(
         opener,
         name="vision-ocr",
-        description="Vision OCR — multimodal chat (supportsVision models)",
+        description="Vision OCR — multimodal chat (OpenCode-first supportsVision)",
         model_ids=vision_ids,
         force=need_vis,
     )
 
-    emb_ids = list_embedding_models(api_key)
+    emb_ids = list_embedding_models(api_key, opener=opener)
     cur_emb = _combo_model_ids(combos.get("embedding"))
     bad_emb = [m for m in cur_emb if not _is_embedding_model_id(m)]
     # Omni forbids mixed vector dimensions — require exact single-model pin.

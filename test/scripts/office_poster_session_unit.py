@@ -194,22 +194,22 @@ def main() -> int:
     }
     assert plan_allows_search_then_office(mixed_img_pdf) is False
 
-    aerial = {
+    scenic_plan = {
         "ok": True,
         "task_hint": "tool",
         "task_type": "media_generation",
         "output_type": "image",
         "instructions": [
-            "SCENE: Aerial view of Ho Chi Minh City skyline at golden hour, photorealistic"
+            "SCENE: Ho Chi Minh City skyline at golden hour, photorealistic photograph, real camera photo"
         ],
     }
-    assert plan_image_render_mode(aerial) == "scene"
-    assert plan_allows_scene_image(aerial) is True
-    assert plan_allows_search_then_weather_scene(aerial) is False
-    assert plan_allows_search_then_info_card(aerial) is False
+    assert plan_image_render_mode(scenic_plan) == "scene"
+    assert plan_allows_scene_image(scenic_plan) is True
+    assert plan_allows_search_then_weather_scene(scenic_plan) is False
+    assert plan_allows_search_then_info_card(scenic_plan) is False
     assert (
-        scene_prompt_from_instruction(aerial["instructions"][0])
-        == "Aerial view of Ho Chi Minh City skyline at golden hour, photorealistic"
+        scene_prompt_from_instruction(scenic_plan["instructions"][0])
+        == "Ho Chi Minh City skyline at golden hour, photorealistic photograph, real camera photo"
     )
 
     weather_scene = {
@@ -220,8 +220,8 @@ def main() -> int:
         "instructions": [
             "current weather Ho Chi Minh City temperature humidity",
             (
-                "RENDER: scene-overlay\n"
-                "SCENE: Aerial view of Ho Chi Minh City with visible sky, photorealistic\n"
+                "RENDER: weather-scene\n"
+                "SCENE: Ho Chi Minh City street scene with visible sky, photorealistic photograph\n"
                 "- Nhiệt độ:\n- Độ ẩm:\n- Điều kiện:"
             ),
         ],
@@ -230,10 +230,18 @@ def main() -> int:
             {"task_type": "media_generation", "output_type": "image"},
         ],
     }
-    assert plan_image_render_mode(weather_scene) == "scene-overlay"
+    assert plan_image_render_mode(weather_scene) == "weather-scene"
     assert plan_allows_search_then_weather_scene(weather_scene) is True
     assert plan_allows_search_then_info_card(weather_scene) is False
     assert plan_allows_scene_image(weather_scene) is False
+
+    legacy_weather = dict(weather_scene)
+    legacy_weather["instructions"] = [
+        weather_scene["instructions"][0],
+        weather_scene["instructions"][1].replace("RENDER: weather-scene", "RENDER: scene-overlay"),
+    ]
+    assert plan_image_render_mode(legacy_weather) == "scene-overlay"
+    assert plan_allows_search_then_weather_scene(legacy_weather) is True
 
     info_card_img = {
         "ok": True,
@@ -242,7 +250,12 @@ def main() -> int:
         "output_type": "image",
         "instructions": [
             "weather Ho Chi Minh City now",
-            "RENDER: info-card\nTITLE: Thời tiết HCM\nICON: sun\nSTYLE: midnight\n- Nhiệt độ:",
+            (
+                "RENDER: labeled-scene\n"
+                "SCENE: Clean outdoor information board in Ho Chi Minh City plaza, photorealistic\n"
+                "OVERVIEW: Current conditions\n"
+                "- Nhiệt độ:"
+            ),
         ],
         "task_details": [
             {"task_type": "search", "output_type": None},
@@ -251,15 +264,25 @@ def main() -> int:
     }
     assert plan_allows_search_then_info_card(info_card_img) is True
     assert plan_allows_search_then_weather_scene(info_card_img) is False
-    assert plan_media_shortcut_gate(aerial) == "scene_image"
+
+    legacy_info = {
+        **info_card_img,
+        "instructions": [
+            info_card_img["instructions"][0],
+            "RENDER: info-card\nTITLE: Thời tiết HCM\nICON: sun\nSTYLE: midnight\n- Nhiệt độ:",
+        ],
+    }
+    assert plan_allows_search_then_info_card(legacy_info) is True
+    assert plan_allows_search_then_weather_scene(legacy_info) is False
+    assert plan_media_shortcut_gate(scenic_plan) == ""
     assert plan_media_shortcut_gate(weather_scene) == "weather_scene"
     assert plan_media_shortcut_gate(info_card_img) == "info_card"
     assert shortcut_ok({"ok": True, "file": "x.png"}) is True
     assert shortcut_ok(shortcut_consumed()) is False
     assert shortcut_was_consumed(shortcut_consumed()) is True
     fb_ins = weather_scene_to_info_card_instruction(weather_scene["instructions"][1])
-    assert "RENDER: info-card" in fb_ins
     assert "TITLE:" in fb_ins
+    assert "OVERVIEW:" in fb_ins
 
     assert parse_office_jobs("1", "pdf") == [(".pdf", "1")]
 

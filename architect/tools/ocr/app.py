@@ -224,10 +224,24 @@ def _vision(b64: str, mime: str, prompt: str) -> tuple[int, str, str]:
         text = ""
         if r.status_code < 400:
             try:
-                text = (
-                    r.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-                    or ""
-                )
+                payload = r.json()
+                choices = payload.get("choices") if isinstance(payload, dict) else None
+                if isinstance(choices, list) and choices:
+                    ch = choices[0] if isinstance(choices[0], dict) else {}
+                    msg = ch.get("message") if isinstance(ch.get("message"), dict) else {}
+                    for key in (
+                        "content",
+                        "reasoning_content",
+                        "reasoning",
+                        "thinking",
+                        "thinking_content",
+                    ):
+                        val = msg.get(key)
+                        if isinstance(val, str) and val.strip():
+                            text = val.strip()
+                            break
+                    if not text and isinstance(ch.get("text"), str):
+                        text = ch["text"].strip()
             except Exception:
                 text = ""
         return r.status_code, body, (text or "").strip()

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Vietnamese font coverage + info-card/office render smoke (no LLM)."""
+"""Vietnamese font coverage + office/text-poster render smoke (no LLM)."""
 from __future__ import annotations
 
 import sys
@@ -27,10 +27,8 @@ if not (DISP / "fonts.py").is_file():
 sys.path.insert(0, str(DISP))
 
 from fonts import pillow_font, resolve_font_path, reportlab_font_name  # noqa: E402
-from info_card import render_info_card_bytes, render_info_card_variants  # noqa: E402
 from office_file import write_office, write_pdf_styled  # noqa: E402
 from text_poster import render_text_poster_bytes  # noqa: E402
-from overlay import apply_overlay  # noqa: E402
 
 OUT = ROOT / "scripts" / "temp" / "media_smoke"
 if not (ROOT / "scripts" / "temp").is_dir():
@@ -66,24 +64,6 @@ def _one_pdf(i: int) -> Path:
     return p
 
 
-def _one_card(style: str, i: int) -> Path:
-    p = OUT / f"card_{style}_{i}.png"
-    body = (
-        "TITLE: Thời tiết TP. Hồ Chí Minh\n"
-        "SUBTITLE: Thứ Bảy, 29/08/2026 · cập nhật 07:45\n"
-        "ICON: cloud\n"
-        f"STYLE: {style}\n"
-        "- Trời nhiều mây, có lúc có dông\n"
-        "- Cảm thấy 32.1°C\n"
-        "- Độ ẩm 85%\n"
-        "- Gió 8.0 km/h\n"
-        "- Xác suất mưa 100%\n"
-    )
-    p.write_bytes(render_info_card_bytes(body, style=style))
-    assert p.stat().st_size > 8000, p.stat().st_size
-    return p
-
-
 def _one_xlsx(i: int) -> Path:
     p = OUT / f"sheet_{i}.xlsx"
     write_office(p, ".xlsx", f"Thành phố\nHồ Chí Minh\nNhiệt độ 27°C\nrow-{i}")
@@ -109,17 +89,6 @@ def _one_poster(i: int) -> Path:
     return p
 
 
-def _one_overlay(i: int) -> Path:
-    p = OUT / f"overlay_{i}.png"
-    # blank canvas then overlay Vietnamese facts
-    from PIL import Image
-
-    Image.new("RGB", (900, 1200), (30, 60, 100)).save(p)
-    apply_overlay(p, [VI, f"Độ ẩm 85% · dòng {i}", "Mặt trời mọc 05:43"])
-    assert p.stat().st_size > 5000
-    return p
-
-
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     for old in OUT.glob("*"):
@@ -134,21 +103,12 @@ def main() -> int:
             jobs.append(pool.submit(_one_xlsx, i))
             jobs.append(pool.submit(_one_docx, i))
             jobs.append(pool.submit(_one_poster, i))
-            jobs.append(pool.submit(_one_overlay, i))
-        for style in ("midnight", "daylight", "emerald"):
-            for i in range(3):
-                jobs.append(pool.submit(_one_card, style, i))
         ok = 0
         for fut in as_completed(jobs):
             fut.result()
             ok += 1
     elapsed = time.perf_counter() - t0
-    # Also exercise style variants helper
-    variants = render_info_card_variants(
-        "TITLE: Hồ Chí Minh\nSUBTITLE: cập nhật\nICON: sun\n- Nhiệt độ 27°C\n"
-    )
-    assert len(variants) == 3
-    print(f"MEDIA_SMOKE_OK jobs={ok} elapsed_s={elapsed:.2f} out={OUT}")
+    print(f"MEDIA_SMOKE_OK jobs={ok} elapsed_s={elapsed:.2f} out={OUT} (info-card/overlay retired)")
     if elapsed > 25:
         print("WARN slow media smoke", elapsed)
     return 0
