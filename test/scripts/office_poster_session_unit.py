@@ -274,7 +274,7 @@ def main() -> int:
     }
     assert plan_allows_search_then_info_card(legacy_info) is True
     assert plan_allows_search_then_weather_scene(legacy_info) is False
-    assert plan_media_shortcut_gate(scenic_plan) == ""
+    assert plan_media_shortcut_gate(scenic_plan) == "scene_image"
     assert plan_media_shortcut_gate(weather_scene) == "weather_scene"
     assert plan_media_shortcut_gate(info_card_img) == "info_card"
     assert shortcut_ok({"ok": True, "file": "x.png"}) is True

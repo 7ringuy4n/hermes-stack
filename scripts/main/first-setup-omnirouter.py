@@ -979,11 +979,29 @@ def _is_image_gen_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
     return False
 
 
+def _rank_image_gen_model(mid: str) -> tuple:
+    """Prefer photoreal diffusion members; demote fast/anime; paid OpenRouter last."""
+    m = (mid or "").strip().lower()
+    if m.startswith("openrouter/") or "flux.2" in m:
+        return (5, m)
+    if "schnell" in m or "anime" in m or "anything" in m:
+        return (4, m)
+    for i, token in enumerate(
+        ("icbinp", "realistic", "juggernaut", "absolutereality", "albedobase", "deliberate")
+    ):
+        if token in m:
+            return (0, i, m)
+    if "aihorde" in m or "stable" in m:
+        return (1, m)
+    return (2, m)
+
+
 def list_image_gen_models(api_key: str) -> list[str]:
     """Models Omni can use for /images/generations (output modality image)."""
     rows = _v1_models(api_key)
     found = sorted(
-        {str(r.get("id")) for r in rows if _is_image_output_model(r) and r.get("id")}
+        {str(r.get("id")) for r in rows if _is_image_output_model(r) and r.get("id")},
+        key=_rank_image_gen_model,
     )
     return found[:8]
 
@@ -1213,6 +1231,16 @@ def ensure_media_combos(opener, api_key: str) -> None:
     cur_img = _combo_model_ids(combos.get("image-gen"))
     bad_img = [m for m in cur_img if not _is_image_gen_model_id(m, catalog)]
     need_img = (not cur_img) or bool(bad_img) or not set(cur_img).intersection(set(image_ids))
+    want_head = image_ids[0] if image_ids else ""
+    cur_head = cur_img[0] if cur_img else ""
+    if (
+        cur_head
+        and want_head
+        and cur_head != want_head
+        and _rank_image_gen_model(cur_head) > _rank_image_gen_model(want_head)
+    ):
+        print(f"==> image-gen head {cur_head!r} → {want_head!r} (photoreal-first reorder)")
+        need_img = True
     if bad_img:
         print(f"==> image-gen has non-diffusion members {bad_img[:6]!r} — refilling")
     _put_or_create_combo(
