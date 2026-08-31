@@ -169,8 +169,6 @@ if (
 ):
     want["ENABLE_MEDIA_FILE"] = "active"
     want["WORKER_MEDIA_FILE"] = "active"
-if cur.get("ENABLE_SEARXNG") == "1" and not cur.get("WEB_BACKENDS"):
-    want["WEB_BACKENDS"] = "tavily,firecrawl,searxng"
 keys = set(want)
 out, seen = [], set()
 changed = False

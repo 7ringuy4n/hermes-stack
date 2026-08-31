@@ -26,8 +26,8 @@ set -euo pipefail
 export LC_ALL=C.UTF-8
 cd /opt/assistant
 set -a; . ./.env; set +a
-echo "WEB_BACKENDS=${WEB_BACKENDS:-empty}"
-echo "SEARXNG_URL=${SEARXNG_URL:-unset}"
+echo "OMNI_SEARCH=$(curl -sS http://127.0.0.1:8096/health | python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"omni_search\"))' 2>/dev/null || echo unknown)"
+echo "WEB_COMBO=$(curl -sS http://127.0.0.1:8096/health | python3 -c 'import json,sys; print(json.load(sys.stdin).get(\"web_combo\"))' 2>/dev/null || echo unknown)"
 curl -sS -m 10 http://127.0.0.1:8096/health || echo HEALTH_FAIL
 echo
 code=$(curl -sS -m 45 -o /tmp/search.json -w "%{http_code}" \

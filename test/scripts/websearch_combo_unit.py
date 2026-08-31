@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Unit: web search combo — Omni combo-only default + env fallback adapters."""
+"""Unit: web search — Omni combo web-search only."""
 from __future__ import annotations
 
 import importlib
@@ -18,11 +18,10 @@ def main() -> int:
         print("SKIP websearch_combo_unit (httpx not installed on host)")
         return 0
 
-    os.environ["SEARXNG_URL"] = "http://searxng:8080"
     os.environ["OMNIROUTER_BASE_URL"] = "http://omni-router:20129/v1"
     os.environ["OMNIROUTER_API_KEY"] = "sk-test-omni-key-for-unit"
-    os.environ.pop("TAVILY_API_KEY", None)
     os.environ["MODEL_ROUTER_WEB_SEARCH_COMBO"] = "web-search"
+    os.environ.pop("WEB_BACKENDS", None)
     os.environ.pop("WEB_SEARCH_COMBO_PATH", None)
 
     if "websearch" in sys.modules:
@@ -33,19 +32,14 @@ def main() -> int:
     if "DEFAULT_CHAIN" in dir(ws):
         print("FAIL DEFAULT_CHAIN must not exist in websearch.py")
         return 1
+    if hasattr(ws, "_tavily_search"):
+        print("FAIL _tavily_search legacy adapter must be removed")
+        return 1
 
     # 1) Default → omni combo only
-    os.environ.pop("WEB_BACKENDS", None)
     importlib.reload(ws)
     if ws.search_order() != ["omni"]:
         print("FAIL default order", ws.search_order())
-        return 1
-
-    # 2) Env override for direct adapters
-    os.environ["WEB_BACKENDS"] = "tavily,searxng"
-    importlib.reload(ws)
-    if ws.search_order() != ["tavily", "searxng"]:
-        print("FAIL env order", ws.search_order())
         return 1
 
     health = ws.health_fields()
@@ -59,23 +53,21 @@ def main() -> int:
         print("FAIL legacy web_combo_path must be removed", health)
         return 1
 
-    # 3) Explicit empty disables
-    os.environ["WEB_BACKENDS"] = ""
-    importlib.reload(ws)
-    if ws.search_order():
-        print("FAIL empty WEB_BACKENDS must disable", ws.search_order())
-        return 1
-
-    # 4) omni skipped without key; no default direct adapters
-    os.environ.pop("WEB_BACKENDS", None)
+    # 2) Without omni key → disabled
     os.environ.pop("OMNIROUTER_API_KEY", None)
     importlib.reload(ws)
     if ws.search_order():
-        print("FAIL without omni key default must be empty", ws.search_order())
+        print("FAIL without omni key search must be empty", ws.search_order())
         return 1
 
-    # 5) Provider timeout env
+    # 3) Unknown backend preference → disabled
     os.environ["OMNIROUTER_API_KEY"] = "sk-test-omni-key-for-unit"
+    importlib.reload(ws)
+    if ws.search_order("tavily"):
+        print("FAIL direct adapter preference must be rejected", ws.search_order("tavily"))
+        return 1
+
+    # 4) Provider timeout env
     os.environ.pop("WEB_SEARCH_PROVIDER_TIMEOUT_S", None)
     importlib.reload(ws)
     if abs(ws._provider_timeout_s() - 20.0) > 0.01:
@@ -93,7 +85,7 @@ def main() -> int:
         print("FAIL _omni_search_providers legacy helper must be removed")
         return 1
 
-    print("PASS websearch_combo_unit combo-only omni + env fallback + timeouts")
+    print("PASS websearch_combo_unit omni combo-only + timeouts")
     return 0
 
 

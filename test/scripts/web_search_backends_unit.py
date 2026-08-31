@@ -30,22 +30,23 @@ def main() -> int:
         print(f"SKIP router-worker not reachable at {BASE}: {e}")
         return 0
     backends = health.get("web_backends") or []
-    print(f"backends={backends}")
+    combo = health.get("web_combo") or "web-search"
+    print(f"combo={combo} backends={backends}")
     if not backends:
-        print("NOTE Low profile or WEB_BACKENDS empty — search disabled by design")
+        print("NOTE Omni search not configured — search disabled by design")
         return 0
     try:
         res = get_json("/v1/search", method="POST", body={"query": "weather Ho Chi Minh", "max_results": 3})
     except urllib.error.HTTPError as e:
-        print(f"search HTTP {e.code} (may be expected if keys missing)")
+        print(f"search HTTP {e.code} (may be expected if Omni keys missing)")
         return 0
-    backend = res.get("backend") or res.get("source")
+    backend = res.get("backend") or res.get("combo")
     print(f"search backend={backend}")
-    if backend not in {"tavily", "firecrawl", "searxng", "exa", "web-search"}:
-        print(f"WARN unexpected backend {backend!r}")
+    if backend != combo:
+        print(f"WARN expected backend={combo!r} got {backend!r}")
         fails += 1
     else:
-        print("PASS search returned known backend")
+        print("PASS search returned Omni combo name")
     return fails
 
 
