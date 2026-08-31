@@ -12,8 +12,8 @@ Hermes native tool web_search (toolset web)
   → Tavily (TAVILY_API_KEY) → SearXNG shim (SEARXNG_URL) …
 OR skill/HTTP (combo web-search):
 Hermes → Router Worker POST /v1/search
-      → backends: omni → tavily → firecrawl → searxng
-      → OmniRoute POST /v1/search via combo web-search (operator PRIORITY members)
+      → backends: omni (combo web-search) — optional WEB_BACKENDS for direct adapters
+      → OmniRoute POST /v1/search `{ combo: web-search }` only
 ```
 
 Prefer the **native `web_search` tool**. On this stack Hermes `SEARXNG_URL`
@@ -43,8 +43,8 @@ combo** members and provider connections. Do **not** call Omni chat
 | `scripts/main/first-setup-omnirouter.py` | Ensures SearXNG connection, blocks `ollama-search`, pins combo env chain |
 | `MODEL_ROUTER_WEB_SEARCH_COMBO` | Router combo name (default `web-search`) |
 | `WEB_SEARCH_PROVIDER_TIMEOUT_S` | Per-provider HTTP timeout (default 20s) for fast failover |
-| `WEB_BACKENDS` | Default `omni,tavily,firecrawl,searxng` (Omni first; direct adapters if Omni fails) |
-| `hermes/main/skills/web-search/web-search-combo.json` | SoT combo `web-search`; bake fallback under model-router `config/` |
+| `WEB_BACKENDS` | Optional lab override (`tavily,searxng`, …). Default: **omni combo only** when `OMNIROUTER_*` set |
+| `hermes/main/skills/web-search/web-search-combo.json` | Documents combo name `web-search` (operator members live in Omni UI) |
 | `WEB_EXTRACT_BACKENDS` | Extract order (`tavily,firecrawl`) |
 | `OMNIROUTER_API_KEY` / `OMNIROUTER_BASE_URL` | Required for `omni` backend |
 

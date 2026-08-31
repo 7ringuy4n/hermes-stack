@@ -6,7 +6,7 @@
 |-----------|------------------|
 | `classify.json` | [`hermes/main/skills/classify/`](../../../../hermes/main/skills/classify/) (envelope + `parts/`; bake is assembled `system`) |
 | `outbound.json` | [`hermes/main/skills/outbound/outbound.json`](../../../../hermes/main/skills/outbound/outbound.json) |
-| `web-search-combo.json` | [`hermes/main/skills/web-search/web-search-combo.json`](../../../../hermes/main/skills/web-search/web-search-combo.json) |
+| `web-search-combo.json` | [`hermes/main/skills/web-search/web-search-combo.json`](../../../../hermes/main/skills/web-search/web-search-combo.json) (combo name only; operator members in Omni UI) |
 
 Sync:
 

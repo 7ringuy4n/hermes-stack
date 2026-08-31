@@ -41,7 +41,7 @@ def main() -> int:
         return 0
     backend = res.get("backend") or res.get("source")
     print(f"search backend={backend}")
-    if backend not in {"tavily", "firecrawl", "searxng", "exa"}:
+    if backend not in {"tavily", "firecrawl", "searxng", "exa", "web-search"}:
         print(f"WARN unexpected backend {backend!r}")
         fails += 1
     else:
