@@ -53,8 +53,8 @@ def load_env(path: Path) -> dict[str, str]:
     if not path.exists():
         raise SystemExit(f"missing {path}")
     raw = path.read_text(encoding="utf-8")
-    # Recover host .env saved as one line with literal \n (template paste corruption).
-    if raw.count("\n") < 2 and "\\n" in raw:
+    # Recover host .env pasted with literal \n sequences (template corruption).
+    if "\\n" in raw:
         raw = raw.replace("\\n", "\n")
     for line in raw.splitlines():
         s = line.strip()
@@ -933,7 +933,7 @@ def _media_worker_active(env: dict[str, str]) -> bool:
     """True only when media worker flag is ``active``."""
     for key in ("ENABLE_MEDIA_FILE", "WORKER_MEDIA_FILE"):
         v = (env.get(key) or os.environ.get(key) or "").strip().lower()
-        if v == "active":
+        if v in {"active", "1", "true", "yes", "on"}:
             return True
     return False
 
@@ -1280,7 +1280,8 @@ def ensure_media_combos(opener, api_key: str) -> None:
     catalog = _v1_models(api_key)
     cur_img = _combo_model_ids(combos.get("image-gen"))
     bad_img = [m for m in cur_img if _is_bad_image_gen_combo_member(m, catalog)]
-    need_img = (not cur_img) or bool(bad_img) or not set(cur_img).intersection(set(image_ids))
+    aibox_chat = [m for m in cur_img if _is_image_gen_namespace_chat_model(m)]
+    need_img = (not cur_img) or bool(bad_img) or bool(aibox_chat) or not set(cur_img).intersection(set(image_ids))
     want_head = image_ids[0] if image_ids else ""
     cur_head = cur_img[0] if cur_img else ""
     if (
@@ -1291,9 +1292,9 @@ def ensure_media_combos(opener, api_key: str) -> None:
     ):
         print(f"==> image-gen head {cur_head!r} → {want_head!r} (photoreal-first reorder)")
         need_img = True
-    if bad_img:
+    if bad_img or aibox_chat:
         print(
-            f"==> image-gen has invalid members {bad_img[:6]!r} "
+            f"==> image-gen has invalid members {(bad_img or aibox_chat)[:6]!r} "
             f"(drop image-gen/* AI Box chat; use aihorde diffusion) — refilling"
         )
     _put_or_create_combo(
