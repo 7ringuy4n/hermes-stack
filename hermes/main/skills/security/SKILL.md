@@ -23,7 +23,7 @@ Use this **before** Media/File / knowledge-learn when the inbound file is untrus
 
 ## Fail closed
 
-- If `ENABLE_ANTIVIRUS=active` (or `AV_SCAN=1`) and the AV gateway is down → **refuse** the file (do not ask to learn it). Override with `AV_REQUIRED=0` only for explicit lab bypass.
+- If `ENABLE_ANTIVIRUS=active` (or `AV_SCAN=active`) and the AV gateway is down → use Security Manager isolation when available; hard-refuse only when `AV_REQUIRED=active`. Override with `AV_REQUIRED=inactive` for lab soft-fail.
 - Do **not** reimplement virus signatures in the Zalo adapter. EICAR / malware detection belongs in Security Worker / ClamAV.
 - Secret / protected-path probes use `config/agent/secret-probe.json` (never disclose `/opt/data`, `.env`, keys).
 

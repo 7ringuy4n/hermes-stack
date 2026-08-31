@@ -2,7 +2,7 @@
   "timeout_s": 90,
   "max_tokens": 1536,
   "temperature": 0,
-  "retry": 1,
+  "retry": 2,
   "parts": ["core", "schedule", "media", "delivery", "schema"],
   "user_template": "Timezone: {timezone}\nThread: {thread}\nAttachments: {attachments}\nQuoted: {quoted}\nMessage:\n{text}"
 }

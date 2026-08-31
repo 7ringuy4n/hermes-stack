@@ -28,7 +28,7 @@ curl -sS -X POST http://omni-router:20129/v1/images/generations \
   | python -c "import sys,json,base64; d=json.load(sys.stdin); x=(d[0] if isinstance(d,list) else (d.get('data') or [d])[0]); open('/opt/data/media/out/<safe-slug>.webp','wb').write(base64.b64decode(x['b64_json']))"
 ```
 
-**Scenic prompts (any user language):** Prefer the classify `SCENE:` English line when present. Otherwise translate the user ask into one clear English diffusion sentence (viewpoint + place + photorealistic). Use official English place names — colloquial Saigon / Sài Gòn → Ho Chi Minh City (AI Horde falsely NSFW-blocks “Saigon”). Example family: `Ho Chi Minh City skyline, photorealistic`. Do not POST the raw non-English ask as the only prompt.
+**Scenic prompts (any user language):** Prefer the classify `SCENE:` English line when present. Otherwise translate the user ask into one clear English diffusion sentence (viewpoint + place + **photorealistic photograph**). Use official English place names — colloquial Saigon / Sài Gòn → Ho Chi Minh City (AI Horde falsely NSFW-blocks “Saigon”). Always include: `photorealistic photograph, real camera photo, natural lighting, highly detailed, not cartoon, not anime, not illustration`. Example family: `Ho Chi Minh City skyline, photorealistic photograph, real camera photo`. Do not POST the raw non-English ask as the only prompt.
 
 On Omni failure: one **media-out** failure line only. When the ask was primarily a **PDF/office file**, finish via **`file-gen`**.
 

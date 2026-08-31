@@ -132,7 +132,7 @@ compose() {
   if _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}" || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
     [[ -f "${ROOT}/docker/docker-compose.media.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.media.yml")
   fi
-  if _env_active "${ENABLE_SECURITY:-}" || _env_active "${ENABLE_MONITOR:-}" || _env_active "${ENABLE_NOTIFY:-}" || _env_active "${ENABLE_OPENBAO:-}" || _env_active "${ENABLE_SIEM:-}" || _env_active "${ENABLE_AUTHZ:-}" || _env_active "${ENABLE_CLOUDDRIVE:-}"; then
+  if _env_active "${ENABLE_SECURITY:-}" || _env_active "${ENABLE_MONITOR:-}" || _env_active "${ENABLE_NOTIFY:-}" || _env_active "${ENABLE_OPENBAO:-}" || _env_active "${ENABLE_SIEM:-}" || _env_active "${ENABLE_AUTHZ:-}" || _env_active "${ENABLE_CLOUDDRIVE:-}" || _env_active "${ENABLE_ANTIVIRUS:-}" || _env_active "${SECURITY_SANDBOX:-}"; then
     [[ -f "${ROOT}/docker/docker-compose.security.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.security.yml")
   fi
   if _env_active "${ENABLE_TRAEFIK:-}" || _env_active "${ENABLE_API_GATEWAY:-}" || _env_active "${ENABLE_OPENVPN:-}"; then
@@ -283,6 +283,16 @@ heal_by_health() {
       fi
       failed=1
     fi
+  fi
+
+  if _env_active "${ENABLE_ANTIVIRUS:-}"; then
+    if ! component_running clamav || ! component_running av-gateway; then
+      log "antivirus missing while ENABLE_ANTIVIRUS=active — starting clamav + av-gateway"
+      compose up -d --no-deps clamav av-gateway >/dev/null 2>&1 || true
+      failed=1
+    fi
+    probe av-gateway "http://127.0.0.1:${AV_GATEWAY_PORT:-8098}/health" \
+      || { failed=1; mark_failed av-gateway; }
   fi
 
   if [[ "$failed" -ne 0 ]]; then
