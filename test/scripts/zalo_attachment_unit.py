@@ -20,6 +20,7 @@ from attachment import (  # noqa: E402
     context_newest,
     file_extract_ack_message,
     image_ocr_ack_message,
+    image_analyze_ack_message,
     ocr_excerpt_for_ack,
     pick_sheet_section,
     prefer_workbook_head,
@@ -157,8 +158,12 @@ def test_context_blocks() -> None:
 def test_image_ocr_ack() -> None:
     empty = image_ocr_ack_message("")
     assert "OCR không đọc được" in empty, empty
+    empty_analyze = image_analyze_ack_message("")
+    assert empty_analyze == "", empty_analyze
     full = image_ocr_ack_message("HOA DON 1250000 VND")
     assert "HOA DON 1250000 VND" in full and "Đã đọc chữ" in full, full
+    vision = image_analyze_ack_message("A tired man sitting on a bench in a park.")
+    assert "tired man" in vision and len(vision) > 20, repr(vision[:80])
     noise = "\n".join(list("naotoeeeeeeie"))
     assert ocr_excerpt_for_ack(noise) == "", noise
     assert "OCR không đọc được" in image_ocr_ack_message(noise)

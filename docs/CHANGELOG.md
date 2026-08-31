@@ -1,3 +1,8 @@
+## 2026-08-31 18:30 +07 — Zalo image path uses vision-ocr before OCR-only ack
+
+- Bare/captioned images call combo vision-ocr when Paddle OCR text is empty; host-ack only when analyze text exists, otherwise classify/Hermes path.
+- Image analyze ack distinguishes OCR text vs vision scene summary.
+
 ## 2026-08-31 18:00 +07 — image-gen default canvas Full HD 16:9
 
 - Skill and host scenic diffusion requests use `1920x1080` (Full HD) instead of square `1024x1024`; operators may override per request.

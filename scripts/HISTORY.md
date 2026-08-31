@@ -1,3 +1,17 @@
+## 2026-08-31 18:30 +07 — Zalo bare image skipped vision-ocr combo
+
+### Symptom
+Random image from Zalo got OCR-only failure line even when the photo had visible subjects; Omni logs showed classifier/hermes but not vision-ocr.
+
+### Root cause
+Host-ack path treated all `ocr` attachments (including images) as deterministic OCR ack and returned before classify; empty Paddle text never triggered adapter vision fallback.
+
+### Fix (core)
+Vision-ocr combo call when OCR text empty; host-ack only for bare images with OCR/vision content; captioned or empty-after-vision images fall through to classify/Hermes with media kept.
+
+### Prevent recurrence
+Do not put image attachments in the same host-ack bucket as office/text PDF extract; vision-ocr must run before OCR-only user messaging.
+
 ## 2026-08-31 18:00 +07 — image-gen HD canvas 1920x1080
 
 ### Symptom
