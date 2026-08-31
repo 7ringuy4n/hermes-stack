@@ -13,7 +13,9 @@ The built-in Hermes `image_generation` tool is often **unavailable**. Do **not**
 
 When classify sets **`process_original_message false`** for a pure scenic ask (SCENE: instruction, no search sibling), the **Zalo host** already calls Omni combo **`image-gen`** via internal HTTP. Do **not** shell out with `curl`, pipes, or inline `python -c` — security policy blocks that pattern.
 
-If you still need diffusion for a **mixed** turn (image + file in one bubble), use the internal Omni path below — never bash one-liners.
+**Never** use `execute_code`, terminal scripts, or file reads to hunt API keys in `.env`, `config.yaml`, replica directories, or `/opt/data`. Keys are injected by the stack — if diffusion still fails, send only the **media-out** failure line.
+
+If you still need diffusion for a **mixed** turn (image + file in one bubble), use the internal Omni path below — never bash one-liners, never secret scans.
 
 ## Diffusion (OmniRouter combo image-gen)
 
@@ -24,7 +26,7 @@ Call **OmniRouter** with combo name **`image-gen`** always (Media worker active 
 - Body: `model` = `image-gen` (or `$IMAGE_GEN_COMBO` when set), English `prompt`, `n=1`, HD `size` `"1920x1080"` (16:9 Full HD) unless the user asks otherwise
 - Decode `data[0].b64_json` (or fetch `url`) and write under `/opt/data/media/out/<safe-slug>.webp` (or `.png` / `.jpg`)
 
-Use **urllib**, **requests**, or a short checked-in helper script — not `curl | python`.
+Use **urllib**, **requests**, or a short checked-in helper script — not `curl | python`. Do **not** run `execute_code` to inspect environment variables or read `.env` / replica config files for keys.
 
 Omni may return a **top-level JSON array** of `{b64_json|url}` (not always `{"data":[...]}`). Always accept both shapes.
 

@@ -709,11 +709,16 @@ def _scene_prompt_with_facts(scene: str, facts: list[str]) -> str:
 
 def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None:
     """Scenic diffusion via OmniRouter combo image-gen (not dispatcher /v1/image)."""
-    import base64
+    import os
     from pathlib import Path
 
-    base = (os.getenv("OMNIROUTER_BASE_URL") or "http://omni-router:20129/v1").rstrip("/")
-    key = (os.getenv("OMNIROUTER_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
+    try:
+        from .omni_env import resolve_omni_api_key, resolve_omni_base_url
+    except ImportError:
+        from omni_env import resolve_omni_api_key, resolve_omni_base_url  # type: ignore
+
+    base = resolve_omni_base_url()
+    key = resolve_omni_api_key()
     model = (os.getenv("IMAGE_GEN_COMBO") or "image-gen").strip() or "image-gen"
     if not key:
         log.warning("omni generate: missing OMNIROUTER_API_KEY")
