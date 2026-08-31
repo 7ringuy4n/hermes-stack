@@ -503,7 +503,7 @@ def enforce_search_priorities(opener) -> None:
         if got != prio:
             print(
                 f"NOTE: {prov} priority GET={got} (wanted {prio}); "
-                "Omni may not persist search priorities — Hermes uses forced provider cascade"
+                "Omni may not persist search priorities — combo web-search owns failover"
             )
 
 
