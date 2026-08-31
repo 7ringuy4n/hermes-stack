@@ -1,3 +1,7 @@
+## 2026-08-31 18:00 +07 — image-gen default canvas Full HD 16:9
+
+- Skill and host scenic diffusion requests use `1920x1080` (Full HD) instead of square `1024x1024`; operators may override per request.
+
 ## 2026-08-31 17:00 +07 — strict active|inactive; Omni web-search combo env chain
 
 - Feature toggles read as `active`/`inactive` only (unknown values treated as inactive); migrate scripts still rewrite legacy `1`/`0` in `.env`.
