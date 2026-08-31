@@ -176,7 +176,7 @@ class ImageReq(BaseModel):
     filename: Optional[str] = None
     provider: Optional[str] = None  # omni|n9|text|info-card
     mode: Optional[str] = None  # text|poster → exact glyph poster, skip diffusion
-    size: Optional[str] = None  # optional; skill declares HD default (e.g. 1024x1024)
+    size: Optional[str] = None  # optional; skill declares HD default (1920x1080, 16:9)
     poster_n: Optional[int] = None
     poster_phrase: Optional[str] = None
     poster_bw: Optional[bool] = None

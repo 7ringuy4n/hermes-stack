@@ -724,7 +724,7 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
         model = "image-gen"
     scene = _photoreal_scene_prompt(_place_alias_to_official(prompt or ""))
     body = json.dumps(
-        {"model": model, "prompt": scene, "n": 1, "size": "1024x1024"}
+        {"model": model, "prompt": scene, "n": 1, "size": "1920x1080"}
     ).encode()
     req = urllib.request.Request(
         f"{base}/images/generations",
