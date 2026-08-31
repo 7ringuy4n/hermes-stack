@@ -1323,6 +1323,11 @@ def assert_combo_oc_only(opener, name: str) -> None:
 def main() -> int:
     env = load_env(ROOT / ".env")
     omni_flag = (env.get("ENABLE_OMNIROUTER") or "inactive").strip().lower()
+    if omni_flag in {"1", "true", "yes", "on"}:
+        set_env_key(ROOT / ".env", "ENABLE_OMNIROUTER", "active")
+        env["ENABLE_OMNIROUTER"] = "active"
+        omni_flag = "active"
+        print("OK: migrated ENABLE_OMNIROUTER to active")
     if omni_flag != "active":
         print("SKIP: ENABLE_OMNIROUTER is not active")
         return 0
