@@ -107,6 +107,45 @@ def _looks_like_nsfw_censor_placeholder(blob: bytes) -> bool:
     return len(blob) < 48_000
 
 
+def _parse_size_wh(size: Optional[str]) -> tuple[int, int]:
+    raw = (size or "").strip().lower()
+    if not raw or "x" not in raw:
+        return 0, 0
+    left, _, right = raw.partition("x")
+    try:
+        return max(0, int(left.strip())), max(0, int(right.strip()))
+    except ValueError:
+        return 0, 0
+
+
+def _image_pixel_size(blob: bytes) -> tuple[int, int]:
+    from io import BytesIO
+
+    from PIL import Image
+
+    with Image.open(BytesIO(blob)) as im:
+        w, h = im.size
+        return int(w), int(h)
+
+
+def _looks_like_low_quality_image(blob: bytes, *, size: Optional[str] = None) -> bool:
+    """Reject tiny/censor/low-res diffusion output (blur, dither, upscale stubs)."""
+    if _looks_like_nsfw_censor_placeholder(blob):
+        return True
+    try:
+        w, h = _image_pixel_size(blob)
+    except Exception:
+        return True
+    if w < 640 or h < 360:
+        return True
+    req_w, req_h = _parse_size_wh(size)
+    if req_w >= 1280 and w < req_w // 2:
+        return True
+    if req_h >= 720 and h < req_h // 2:
+        return True
+    return False
+
+
 def _gen_openai_images(
     *,
     base: str,
@@ -215,20 +254,20 @@ def generate_image_bytes(
         try:
             if b == "omni":
                 blob = gen_omni(safe_prompt, size=size)
-                if _looks_like_nsfw_censor_placeholder(blob):
+                if _looks_like_low_quality_image(blob, size=size):
                     raise RuntimeError(
-                        "nsfw censor placeholder from image provider — "
-                        "strengthen SCENE prompt (SFW, official place names) via classify/image-gen"
+                        "low-quality image from combo image-gen — "
+                        "check Omni combo members or strengthen SCENE prompt via classify/image-gen"
                     )
-                return blob, "omni", errors
+                return blob, image_gen_combo(), errors
             if b == "n9":
                 blob = gen_n9(safe_prompt, size=size)
-                if _looks_like_nsfw_censor_placeholder(blob):
+                if _looks_like_low_quality_image(blob, size=size):
                     raise RuntimeError(
-                        "nsfw censor placeholder from image provider — "
-                        "strengthen SCENE prompt (SFW, official place names) via classify/image-gen"
+                        "low-quality image from combo image-gen — "
+                        "check combo members or strengthen SCENE prompt via classify/image-gen"
                     )
-                return blob, "n9", errors
+                return blob, image_gen_combo(), errors
             if b == "pillow":
                 raise RuntimeError("pillow handled by caller")
             errors.append(f"{b}: unknown backend")
