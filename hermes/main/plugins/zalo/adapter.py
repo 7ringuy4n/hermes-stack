@@ -5817,13 +5817,15 @@ class ZaloAdapter(BasePlatformAdapter):
         src = Path(str(local_path or ""))
         if not src.is_file():
             return ""
-        base = (os.getenv("OMNIROUTER_BASE_URL") or "http://omni-router:20129/v1").rstrip("/")
+        try:
+            from .omni_env import resolve_omni_api_key, resolve_omni_base_url
+        except ImportError:
+            from omni_env import resolve_omni_api_key, resolve_omni_base_url  # type: ignore
+        base = resolve_omni_base_url()
         key = (
-            os.getenv("OMNIROUTER_API_KEY")
-            or os.getenv("OPENAI_API_KEY")
-            or os.getenv("N9ROUTER_API_KEY")
-            or ""
-        ).strip()
+            resolve_omni_api_key()
+            or (os.getenv("N9ROUTER_API_KEY") or "").strip()
+        )
         model = (os.getenv("OCR_MODEL") or os.getenv("IMAGE_GEN_COMBO") or "vision-ocr").strip()
         if model == "image-gen":
             model = "vision-ocr"
