@@ -28,6 +28,7 @@ def main() -> int:
     os.environ["OMNIROUTER_BASE_URL"] = "http://omni-router:20129/v1"
     os.environ["OMNIROUTER_API_KEY"] = "sk-test-omni-key-for-unit"
     os.environ.pop("TAVILY_API_KEY", None)
+    os.environ["MODEL_ROUTER_WEB_SEARCH_COMBO"] = "web-search"
 
     # 1) Env override wins (direct adapters)
     os.environ["WEB_BACKENDS"] = "tavily,searxng"
@@ -48,14 +49,14 @@ def main() -> int:
     os.environ.pop("WEB_BACKENDS", None)
     importlib.reload(ws)
     order2 = ws.search_order()
-    if order2 != ["omni"]:
+    if order2 != ["omni", "tavily", "firecrawl", "searxng"]:
         print("FAIL json order", order2)
         return 1
     health = ws.health_fields()
-    if health.get("web_combo") != "websearch":
+    if health.get("web_combo") != "web-search":
         print("FAIL combo name", health)
         return 1
-    if health.get("web_backends") != ["omni"]:
+    if health.get("web_backends") != ["omni", "tavily", "firecrawl", "searxng"]:
         print("FAIL health backends", health)
         return 1
     if not health.get("omni_search"):
@@ -69,22 +70,21 @@ def main() -> int:
         print("FAIL empty WEB_BACKENDS must disable", ws.search_order())
         return 1
 
-    # 4) omni skipped without key
+    # 4) omni skipped without key; direct adapters remain from combo json
     os.environ.pop("WEB_BACKENDS", None)
     os.environ.pop("OMNIROUTER_API_KEY", None)
     importlib.reload(ws)
-    if ws.search_order():
-        print("FAIL omni without key must skip", ws.search_order())
+    if ws.search_order() != ["tavily", "firecrawl", "searxng"]:
+        print("FAIL omni without key must skip omni only", ws.search_order())
         return 1
 
-    # 5) Omni provider cascade + capped per-provider timeout
+    # 5) Omni provider cascade from combo json + capped per-provider timeout
     os.environ["OMNIROUTER_API_KEY"] = "sk-test-omni-key-for-unit"
-    os.environ.pop("OMNIROUTER_SEARCH_PROVIDERS", None)
     os.environ.pop("WEB_SEARCH_PROVIDER_TIMEOUT_S", None)
     importlib.reload(ws)
     providers = ws._omni_search_providers()
     if providers != ["tavily-search", "firecrawl-search", "searxng-search"]:
-        print("FAIL default omni providers", providers)
+        print("FAIL combo omni_providers", providers)
         return 1
     if abs(ws._provider_timeout_s() - 20.0) > 0.01:
         print("FAIL default provider timeout", ws._provider_timeout_s())
@@ -93,6 +93,9 @@ def main() -> int:
     importlib.reload(ws)
     if abs(ws._provider_timeout_s() - 12.0) > 0.01:
         print("FAIL env provider timeout", ws._provider_timeout_s())
+        return 1
+    if ws._web_search_combo_name() != "web-search":
+        print("FAIL combo env name", ws._web_search_combo_name())
         return 1
 
     print("PASS websearch_combo_unit omni-owned + env fallback + timeouts")

@@ -17,8 +17,8 @@ KIND_PART = "part"
 
 
 def queue_flag_on() -> bool:
-    raw = (os.getenv(QUEUE_ENV) or "1").strip().lower()
-    return raw not in {"0", "off", "false", "no"}
+    raw = (os.getenv(QUEUE_ENV) or "active").strip().lower()
+    return raw not in {"0", "off", "false", "no", "inactive"}
 
 
 def queue_max() -> int:
