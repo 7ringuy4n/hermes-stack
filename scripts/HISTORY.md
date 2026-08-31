@@ -1,3 +1,31 @@
+## 2026-08-31 08:15 +07 — Pillow image layout retired; diffusion labeled stills
+
+### Symptom
+Labeled/weather images used hardcoded Pillow info-card and overlay layout; NSFW censor recovery used fixed retry prompts in dispatcher code; vision-ocr kimi returned empty `content`.
+
+### Root cause
+Dispatcher owned layout modules (`info_card`, `overlay`) instead of diffusion; image_backends retried with hardcoded cityscape templates; OCR vision parser read only `message.content`.
+
+### Fix (core)
+Remove layout modules; host/classify route labeled and weather stills through Omni combo `image-gen` with facts in SCENE; NSFW/SFW guidance in classify/image-gen skills; OCR reads `reasoning_content` fallback; `RENDER: weather-scene` / `labeled-scene` gates.
+
+### Prevent recurrence
+No new Pillow layout for informational stills; strengthen classify SCENE prompts instead of Python retry templates.
+
+## 2026-08-31 07:40 +07 — Media defaults not OpenCode-first; invented aerial SCENE
+
+### Symptom
+Vision/embedding first-setup preferred non-OpenCode providers; scenic classify/examples still steered toward aerial/top-down phrasing even when the user did not ask for that viewpoint.
+
+### Root cause
+Capability-matched media fill ranked Gemini/OpenRouter ahead of OpenCode; scenic examples and fixtures reused aerial wording from older weather cases.
+
+### Fix (core)
+OpenCode-first for vision-ocr and embedding defaults; keep image-gen on diffusion-capable members; classify/image-gen and lab fixtures stop inventing aerial viewpoints; image attachment instructions require scene summary plus text extract.
+
+### Prevent recurrence
+Default combo fills for chat/vision/embed start with OpenCode; only add aerial/top-down SCENE text when the user asks for that viewpoint.
+
 ## 2026-08-31 07:10 +07 — image-gen empty; scenic ask refused; search combo naming
 
 ### Symptom

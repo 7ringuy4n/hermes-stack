@@ -511,10 +511,11 @@ def plan_allows_search_then_office(plan: dict[str, Any] | None) -> bool:
     return True
 
 
+_LABELED_SCENE_RENDER = frozenset({"labeled-scene", "labeled_scene", "info-card", "info_card", "card", "dashboard"})
 _SCENE_OVERLAY_RENDER = frozenset(
     {"scene-overlay", "scene_overlay", "weather-scene", "weather_scene", "scenic-overlay"}
 )
-_INFO_CARD_RENDER = frozenset({"info-card", "info_card", "card", "dashboard"})
+_INFO_CARD_RENDER = _LABELED_SCENE_RENDER  # legacy alias
 
 
 def _plan_instruction_blob(plan: dict[str, Any] | None) -> str:
@@ -589,9 +590,12 @@ def plan_allows_search_then_info_card(plan: dict[str, Any] | None) -> bool:
     mode = plan_image_render_mode(plan)
     if mode in _SCENE_OVERLAY_RENDER:
         return False
-    if mode in _INFO_CARD_RENDER or mode == "info-card":
+    if mode in _LABELED_SCENE_RENDER or mode == "labeled-scene":
         return True
-    return "TITLE:" in _plan_instruction_blob(plan).upper()
+    blob = _plan_instruction_blob(plan).upper()
+    if "OVERVIEW:" in blob and "SCENE:" in blob:
+        return True
+    return "TITLE:" in blob
 
 
 def plan_allows_scene_image(plan: dict[str, Any] | None) -> bool:
@@ -613,7 +617,7 @@ def plan_allows_scene_image(plan: dict[str, Any] | None) -> bool:
     if not _plan_has_media_generation(src):
         return False
     mode = plan_image_render_mode(plan)
-    if mode in _SCENE_OVERLAY_RENDER or mode in _INFO_CARD_RENDER or mode == "info-card":
+    if mode in _SCENE_OVERLAY_RENDER or mode in _LABELED_SCENE_RENDER or mode in {"info-card", "labeled-scene"}:
         return False
     ot = _coerce_output_type(src.get("output_type"))
     if ot and ot != "image":

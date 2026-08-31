@@ -619,29 +619,6 @@ def run_search_then_office(
     )
 
 
-def weather_scene_to_info_card_instruction(img_ins: str) -> str:
-    """Map scene-overlay contract to info-card markers (silent fallback when diffusion is down)."""
-    bullets: list[str] = []
-    for raw in (img_ins or "").splitlines():
-        s = raw.strip()
-        up = s.upper()
-        if up.startswith(("RENDER:", "SCENE:")):
-            continue
-        if s.startswith(("-", "•", "*")):
-            bullets.append(s if s.startswith("-") else f"- {s.lstrip('•* ').strip()}")
-    lines = [
-        "RENDER: info-card",
-        "TITLE: Thời tiết",
-        "ICON: cloud",
-        "STYLE: midnight",
-    ]
-    if bullets:
-        lines.extend(bullets)
-    else:
-        lines.extend(["- Nhiệt độ:", "- Độ ẩm:", "- Điều kiện:"])
-    return "\n".join(lines)
-
-
 def scene_prompt_from_instruction(text: str) -> str:
     """English diffusion scene from classify SCENE: marker (not user NLU)."""
     for raw in (text or "").splitlines():
@@ -653,7 +630,6 @@ def scene_prompt_from_instruction(text: str) -> str:
     if src and "TITLE:" not in up and "RENDER:" not in up:
         return src
     return ""
-
 
 def _place_alias_to_official(scene: str) -> str:
     """Map colloquial place aliases to official English names (no regex)."""
@@ -680,7 +656,6 @@ def _place_alias_to_official(scene: str) -> str:
         text = "".join(parts)
     return text
 
-
 def _photoreal_scene_prompt(prompt: str) -> str:
     """Ensure diffusion prompts ask for real photos, not cartoon/anime styles."""
     p = (prompt or "").strip()
@@ -702,6 +677,35 @@ def _photoreal_scene_prompt(prompt: str) -> str:
         return ", ".join(extras)
     return f"{p}, " + ", ".join(missing)
 
+def weather_scene_to_info_card_instruction(img_ins: str) -> str:
+    """Legacy helper kept for tests — maps scene markers to TITLE body text only."""
+    scene = scene_prompt_from_instruction(img_ins or "")
+    facts: list[str] = []
+    for line in (img_ins or "").splitlines():
+        s = line.strip()
+        if s.startswith("-"):
+            facts.append(s.lstrip("- ").strip())
+    parts = ["TITLE: Live conditions", f"OVERVIEW: {scene or 'City weather scene'}"]
+    for f in facts[:6]:
+        if f:
+            parts.append(f"- {f}")
+    return "\n".join(parts)
+
+
+def _scene_prompt_with_facts(scene: str, facts: list[str]) -> str:
+    """Bake live fact lines into the Omni diffusion SCENE (no Pillow overlay)."""
+    base = _photoreal_scene_prompt(_place_alias_to_official(scene or ""))
+    clean = [str(f).strip() for f in (facts or []) if str(f).strip()]
+    if not clean:
+        return base
+    # Keep SFW + readable board style so diffusion can render labels without host layout.
+    board = "; ".join(clean[:6])
+    return (
+        f"{base}. Include a small, readable, safe-for-work on-image caption board "
+        f"with these facts: {board}. Official place names only, daytime outdoor scene, "
+        "no close-up people, not cartoon, not anime, not illustration"
+    )
+
 
 def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None:
     """Scenic diffusion via OmniRouter combo image-gen (not dispatcher /v1/image)."""
@@ -714,6 +718,10 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     if not key:
         log.warning("omni generate: missing OMNIROUTER_API_KEY")
         return None
+    # Always request the combo name — never a raw member model id.
+    if model != "image-gen" and "/" in model:
+        log.warning("omni generate: refusing member model %r — forcing combo image-gen", model)
+        model = "image-gen"
     scene = _photoreal_scene_prompt(_place_alias_to_official(prompt or ""))
     body = json.dumps(
         {"model": model, "prompt": scene, "n": 1, "size": "1024x1024"}
@@ -747,9 +755,11 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
                 blob = r2.read()
         except Exception:  # noqa: BLE001
             return None
-    if not blob or len(blob) < 48000:
-        log.warning("omni generate: censor/empty placeholder")
+    if not blob:
+        log.warning("omni generate: empty image payload")
         return None
+    if len(blob) < 12000:
+        log.warning("omni generate: small payload (%s bytes) — may be censor stub", len(blob))
     for cand in (
         Path(os.getenv("MEDIA_OUT_DIR") or "/data/media/out"),
         Path("/opt/data/media/out"),
@@ -771,33 +781,6 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     return None
 
 
-def _post_info_card_image(
-    prompt: str,
-    *,
-    thread_id: str,
-    thread_type: str,
-    filename: str,
-) -> dict[str, Any] | None:
-    body: dict[str, Any] = {
-        "prompt": prompt,
-        "mode": "info-card",
-        "refine": False,
-        "filename": filename,
-        "thread_id": str(thread_id),
-        "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
-        "caption": "",
-        "send_zalo": True,
-    }
-    try:
-        out = _post("/v1/info-card", body, timeout=120.0)
-    except Exception as e:  # noqa: BLE001
-        log.warning("info-card image post failed: %s", type(e).__name__)
-        return None
-    if isinstance(out, dict) and out.get("ok"):
-        return out
-    return None
-
-
 def run_search_then_weather_scene(
     user_ask: str,
     plan: dict[str, Any],
@@ -806,7 +789,8 @@ def run_search_then_weather_scene(
     *,
     classified: bool = False,
 ) -> Optional[dict]:
-    """Host search → scenic diffusion + small weather overlay (not info-card)."""
+    """Host search → Omni combo image-gen with facts in SCENE (no Pillow overlay/card)."""
+    del thread_type
     if not classified:
         return None
     try:
@@ -825,51 +809,14 @@ def run_search_then_weather_scene(
             "Photorealistic photograph of a cityscape with visible sky and urban skyline, "
             "real camera photo, natural lighting, daytime, wide view, not cartoon, not anime"
         )
-    scene = _photoreal_scene_prompt(scene)
     facts = _facts_from_search(search)
-    overlay = [f for f in facts[:5] if f]
-    if not overlay:
-        overlay = ["Thời tiết hiện tại — chưa lấy được chi tiết."]
+    if not facts:
+        facts = ["current weather details unavailable"]
+    prompt = _scene_prompt_with_facts(scene, facts)
     fname = f"weather-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
-    out = _omni_generate_still(scene, filename=fname)
+    out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
-        try:
-            fin = _post(
-                "/v1/overlay",
-                {
-                    "prompt": "overlay",
-                    "filename": out.get("file") or fname,
-                    "overlay": overlay,
-                    "thread_id": str(thread_id),
-                    "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
-                    "caption": "",
-                    "send_zalo": True,
-                },
-                timeout=60.0,
-            )
-            if isinstance(fin, dict) and fin.get("ok"):
-                return fin
-        except Exception as e:  # noqa: BLE001
-            log.warning("weather overlay failed: %s", type(e).__name__)
         return out
-    # Silent fallback: Pillow info-card when Omni/diffusion backends are down.
-    log.info("weather_scene: falling back to info-card")
-    fallback_ins = weather_scene_to_info_card_instruction(img_ins)
-    prompt = build_office_body_from_search(
-        file_instruction=fallback_ins,
-        user_ask=user_ask,
-        search=search,
-    )
-    if "STYLE:" not in prompt.upper():
-        prompt = prompt.rstrip() + "\nSTYLE: midnight"
-    fb = _post_info_card_image(
-        prompt,
-        thread_id=str(thread_id),
-        thread_type=str(thread_type),
-        filename=f"weather-card-{str(thread_id)[-8:] or 'zalo'}.png",
-    )
-    if isinstance(fb, dict) and fb.get("ok"):
-        return fb
     return shortcut_consumed()
 
 
@@ -881,7 +828,8 @@ def run_search_then_info_card(
     *,
     classified: bool = False,
 ) -> Optional[dict]:
-    """Host search → Dispatcher info-card image (labeled live-data picture)."""
+    """Host search → Omni combo image-gen (LLM/diffusion layout; no Pillow info-card)."""
+    del thread_type
     if not classified:
         return None
     try:
@@ -894,24 +842,22 @@ def run_search_then_info_card(
     query = plan_search_query(plan, user_ask)
     img_ins = plan_image_instruction(plan, user_ask)
     search = run_web_search(query or user_ask)
-    prompt = build_office_body_from_search(
-        file_instruction=img_ins or user_ask,
-        user_ask=user_ask,
-        search=search,
+    scene = scene_prompt_from_instruction(img_ins) or (
+        "Photorealistic photograph of a clean outdoor information board in a city plaza, "
+        "readable labels, real camera photo, natural light, not cartoon"
     )
-    # Ensure STYLE for info-card palette
-    if "STYLE:" not in prompt.upper():
-        prompt = prompt.rstrip() + "\nSTYLE: midnight"
-    out = _post_info_card_image(
-        prompt,
-        thread_id=str(thread_id),
-        thread_type=str(thread_type),
-        filename=f"info-card-{str(thread_id)[-8:] or 'zalo'}.png",
-    )
+    facts = _facts_from_search(search)
+    # Prefer labeled bullets from classify instruction when present.
+    for line in (img_ins or "").splitlines():
+        s = line.strip()
+        if s.startswith("-") and s.lstrip("- ").strip():
+            facts.append(s.lstrip("- ").strip())
+    prompt = _scene_prompt_with_facts(scene, facts)
+    fname = f"info-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
+    out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
         return out
     return shortcut_consumed()
-
 
 def run_text_poster(
     text: str,

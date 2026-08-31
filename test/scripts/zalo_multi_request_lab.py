@@ -21,10 +21,10 @@ OUT = ROOT / "test" / "reports" / "run-zalo-multi-request"
 WAIT_S = int(os.environ.get("ZALO_MULTI_WAIT_S", "720"))
 
 FIXTURE = (
-    "yÃªu cáº§u:\n"
-    "1 váº½ hÃ¬nh thá»i tiáº¿t hiá»‡n táº¡i á»Ÿ thÃ nh phá»‘ há»“ chi minh á»Ÿ thá»i gian hiá»‡n táº¡i, "
-    "gÃ³c nhÃ¬n tá»« trÃªn cao xuá»‘ng pháº£i tháº¥y rÃµ khung cáº£nh thÃ nh phá»‘ vÃ  gá»­i lÃªn cho user\n"
-    "2.Sau Ä‘Ã³ cáº­p nháº­t giÃ¡ xÄƒng E5 RON92 vÃ  E5 RON95"
+    "yêu cầu:\n"
+    "1 vẽ hình thời tiết hiện tại ở thành phố hồ chi minh ở thời gian hiện tại, "
+    "phải thấy rõ khung cảnh thành phố và gửi lên cho user\n"
+    "2.Sau đó cập nhật giá xăng E5 RON92 và E5 RON95"
 )
 
 

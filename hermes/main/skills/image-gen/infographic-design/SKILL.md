@@ -1,19 +1,19 @@
 ---
 name: infographic-design
-description: "Default layout skill when generating an image that includes informational text (prices, metrics, status, labeled facts). Professional infographic composition — not text dumped on a photo."
+description: "Default layout skill when generating an image that includes informational text (prices, metrics, status, labeled facts). Professional infographic composition via diffusion — not Pillow overlays."
 ---
 
 # Image text layout and infographic design
 
 ## When to use
 
-**Default** whenever the user asks for an image that must show **readable informational text** (metrics, prices, city status, bilingual labels). Apply before calling dispatcher `POST /v1/info-card`.
+**Default** whenever the user asks for an image that must show **readable informational text** (metrics, prices, city status, bilingual labels). Apply before calling Omni combo **image-gen**.
 
-Exact typography posters (verbatim quoted lines, black-and-white fill) stay on `image-gen` text-poster mode — not this skill.
+Exact typography posters (verbatim quoted lines, black-and-white fill) stay on dispatcher `text-poster` mode — not this skill.
 
 ## Purpose
 
-Treat **visual composition and readability** as part of the task. Text must not simply be placed on top of the image.
+Treat **visual composition and readability** as part of the diffusion SCENE prompt. Text must not simply be dumped on a photo by host-side layout code.
 
 Reference style:
 
@@ -35,37 +35,13 @@ Reference style:
 7. **Balance** — align, pad, avoid busy backgrounds without a panel.
 8. **Readability** — sufficient contrast; subtle panel/shadow when needed.
 
-## Recommended structure
-
-```text
-┌──────────────────────────────────────────────┐
-│ TITLE / SUBJECT                             │
-│ Update date                                 │
-│                                              │
-│ ┌──────────── INFORMATION PANEL ──────────┐ │
-│ │ Motif icon      Primary value            │ │
-│ │                 Condition / status       │ │
-│ │ ─────────────────────────────────────── │ │
-│ │ Supporting metrics                       │ │
-│ └─────────────────────────────────────────┘ │
-│                                              │
-│ ┌──────────── SECONDARY PANEL ────────────┐ │
-│ │ Prices / Key Metrics                     │ │
-│ └─────────────────────────────────────────┘ │
-│                                              │
-│ Source / secondary                          │
-│                 MAIN IMAGE / LANDMARK       │
-└──────────────────────────────────────────────┘
-```
-
-Information area ≈ one side or corner; majority of canvas stays the main visual.
-
-## Dispatcher usage
+## Omni image-gen usage
 
 1. Gather short fact lines (search if needed).
-2. Build a **scene prompt** that describes the landmark/context view **and** asks for the infographic layout above.
-3. Pass facts as `overlay: ["…", "…"]` on `POST /v1/info-card` (or Omni scenic + `/v1/overlay`) matching the user’s language.
-4. Follow `media-out` — file only, no process chatter.
+2. Build one English **SCENE** prompt that describes the landmark/context view **and** asks for the infographic layout above.
+3. Append fact bullets in the SCENE (or as `-` lines from classify) matching the user’s language for on-image labels.
+4. `POST http://omni-router:20129/v1/images/generations` with `model=image-gen`.
+5. Follow `media-out` — file only, no process chatter.
 
 ## Final checks
 
@@ -76,4 +52,4 @@ Information area ≈ one side or corner; majority of canvas stays the main visua
 
 ## Core instruction
 
-When embedding text into an image, design the layout around the image content first. Use a clean Unicode-capable font and clear hierarchy. Adjust size, wrap, spacing, and panels so text fits. Keep text grouped in a limited area; preserve the main scene as the dominant visual.
+When embedding text into an image, design the layout around the image content first in the SCENE prompt. Keep text grouped in a limited area; preserve the main scene as the dominant visual. Use safe-for-work daytime outdoor framing and official English place names when a city is the subject.

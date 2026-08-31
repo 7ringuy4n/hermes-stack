@@ -25,21 +25,23 @@ curl -sS -X POST http://omni-router:20129/v1/images/generations \
   -H "authorization: Bearer ${OPENAI_API_KEY}" \
   -H 'content-type: application/json' \
   -d '{"model":"image-gen","prompt":"<english-scene>","n":1,"size":"1024x1024"}' \
-  | python -c "import sys,json,base64; d=json.load(sys.stdin); x=(d[0] if isinstance(d,list) else (d.get('data') or [d])[0]); open('/opt/data/media/out/<safe-slug>.webp','wb').write(base64.b64decode(x['b64_json']))"
+  | python -c "import sys,json,base64; d=json.load(sys.stdin); items=(d if isinstance(d,list) else (d.get('data') or d.get('images') or [d])); x=items[0]; open('/opt/data/media/out/<safe-slug>.webp','wb').write(base64.b64decode(x['b64_json']) if x.get('b64_json') else __import__('urllib.request').urlopen(x['url']).read())"
 ```
 
-**Scenic prompts (any user language):** Prefer the classify `SCENE:` English line when present. Otherwise translate the user ask into one clear English diffusion sentence (viewpoint + place + **photorealistic photograph**). Use official English place names — colloquial Saigon / Sài Gòn → Ho Chi Minh City (AI Horde falsely NSFW-blocks “Saigon”). Always include: `photorealistic photograph, real camera photo, natural lighting, highly detailed, not cartoon, not anime, not illustration`. Example family: `Ho Chi Minh City skyline, photorealistic photograph, real camera photo`. Do not POST the raw non-English ask as the only prompt.
+Omni may return a **top-level JSON array** of `{b64_json|url}` (not always `{"data":[...]}`). Always accept both shapes.
+**Scenic prompts (any user language):** Prefer the classify `SCENE:` English line when present. Otherwise translate the user ask into one clear English diffusion sentence (place + subjects + **photorealistic photograph**). Only include aerial/top-down wording when the user asked for that viewpoint — never invent it. Prefer street-level / eye-level framing by default. Use official English place names — colloquial Saigon / Sài Gòn → Ho Chi Minh City (some providers falsely NSFW-block colloquial aliases). Safe-for-work daytime outdoor scenes; avoid close-up people unless the user asked for portraits. Always include: `photorealistic photograph, real camera photo, natural lighting, highly detailed, not cartoon, not anime, not illustration`. If the provider returns a tiny censor placeholder, strengthen the SCENE (SFW, official names, wider establishing shot) and retry once — do not invent hardcoded cityscape templates in code.
 
 On Omni failure: one **media-out** failure line only. When the ask was primarily a **PDF/office file**, finish via **`file-gen`**.
 
 ## Local Pillow modes (not Omni diffusion)
 
-Labeled cards / exact text posters only (not scenic diffusion):
+Exact text posters only (not scenic diffusion or labeled dashboards):
 
 | Need | Call |
 |------|------|
-| Labeled metrics picture | `POST http://dispatcher:8090/v1/info-card` |
 | Exact text poster | `POST http://dispatcher:8090/v1/text-poster` |
+
+Labeled metrics / weather pictures with facts on-image → **Omni combo image-gen** (`model=image-gen`) with facts baked into the English SCENE prompt (see `infographic-design` skill). Do **not** call retired `POST /v1/info-card` or `/v1/overlay`.
 
 Do **not** call deprecated `POST http://dispatcher:8090/v1/image` for scenic generation.
 
