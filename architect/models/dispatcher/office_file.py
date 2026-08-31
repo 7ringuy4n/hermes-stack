@@ -378,33 +378,9 @@ def _draw_fact_mini_icon(c: Any, kind: str, cx: float, cy: float, accent: Any) -
 
 
 def _embed_weather_banner(c: Any, body: str, x: float, y: float, w: float, h: float) -> bool:
-    import tempfile
-    from pathlib import Path as _P
-
-    try:
-        from info_card import render_weather_banner_bytes
-    except Exception as e:  # noqa: BLE001
-        log.warning("weather banner import failed: %s", type(e).__name__)
-        return False
-    try:
-        png = render_weather_banner_bytes(body, style="daylight")
-    except Exception as e:  # noqa: BLE001
-        log.warning("weather banner render failed: %s", type(e).__name__)
-        return False
-    tmp = _P(tempfile.mkdtemp(prefix="wxbanner_")) / "banner.png"
-    try:
-        tmp.write_bytes(png)
-        c.drawImage(str(tmp), x, y, width=w, height=h, preserveAspectRatio=True, mask="auto")
-        return True
-    except Exception as e:  # noqa: BLE001
-        log.warning("weather banner embed failed: %s", type(e).__name__)
-        return False
-    finally:
-        try:
-            tmp.unlink(missing_ok=True)
-            tmp.parent.rmdir()
-        except OSError:
-            pass
+    """Retired Pillow weather banner — styled PDF uses text/markers only."""
+    del c, body, x, y, w, h
+    return False
 
 
 def verify_styled_pdf_layout(dest: Path, body: str = "") -> list[str]:

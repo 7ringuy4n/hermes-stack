@@ -834,14 +834,9 @@ def _send_zalo_base64(thread_id: str, thread_type: str, dest: Path, caption: str
 
 
 def _apply_image_overlay(dest: Path, lines) -> int:
-    """Paint caller-supplied fact lines onto dest. Returns how many lines were drawn."""
-    from overlay import apply_overlay, clean_overlay_lines
-
-    facts = clean_overlay_lines(lines)
-    if not facts or not dest.is_file():
-        return 0
-    apply_overlay(dest, facts)
-    return len(facts)
+    """Retired Pillow overlay layout — facts belong in the Omni diffusion prompt."""
+    del dest, lines
+    return 0
 
 
 def _chown_media(path: Path) -> None:
@@ -856,7 +851,7 @@ def _chown_media(path: Path) -> None:
 
 @app.post("/v1/image")
 def image_generate(req: ImageReq) -> dict[str, Any]:
-    """Pillow modes only (info-card / text-poster). Scenic diffusion → Omni image-gen.
+    """Pillow text-poster only. Scenic / labeled stills → Omni combo image-gen.
     """
     from text_poster import parse_text_poster, render_text_poster_bytes
 
@@ -888,8 +883,7 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             os.chown(dest, uid, gid)
         except OSError:
             pass
-        overlay_n = _apply_image_overlay(dest, req.overlay)
-        out: dict[str, Any] = {
+        return {
             "ok": True,
             "file": name,
             "path": str(dest),
@@ -897,68 +891,28 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             "n": poster["n"],
             "phrase": poster["phrase"],
         }
-        if overlay_n:
-            out["overlay"] = overlay_n
-        return out
 
-    # Info/weather cards: Pillow + Unicode fonts (never bake Vietnamese into diffusion).
-    # Also auto-route when prompt already carries TITLE: contract markers (avoid refine→empty card).
-    has_title_marker = "TITLE:" in prompt.upper()
-    if mode in {"info-card", "card", "infocard", "weather-card"} or (
-        has_title_marker and mode not in {"text", "poster", "text-poster"}
-    ):
-        from info_card import render_info_card_bytes
-
-        name = req.filename or f"card-{uuid.uuid4().hex[:10]}.png"
-        if not name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-            name += ".png"
-        out_dir = MEDIA_DIR / "out"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        dest = out_dir / name
-        dest.write_bytes(
-            render_info_card_bytes(prompt, overlay=req.overlay if isinstance(req.overlay, list) else None)
+    if mode in {"info-card", "card", "infocard", "weather-card", "overlay"} or "TITLE:" in prompt.upper():
+        raise HTTPException(
+            410,
+            {
+                "error": "pillow_layout_retired",
+                "detail": (
+                    "Pillow info-card/overlay layout is removed. "
+                    "Use OmniRouter POST /v1/images/generations with model image-gen "
+                    "(combo image-gen); put labels/facts in the English SCENE prompt."
+                ),
+            },
         )
-        try:
-            uid = int(os.environ.get("HERMES_UID") or "1000")
-            gid = int(os.environ.get("HERMES_GID") or str(uid))
-            os.chown(out_dir, uid, gid)
-            os.chown(dest, uid, gid)
-        except OSError:
-            pass
-        out: dict[str, Any] = {
-            "ok": True,
-            "file": name,
-            "path": str(dest),
-            "backend": "info-card",
-        }
-        # Same as office-file: deliver when host asks (autosend alone is unreliable for shortcuts).
-        if req.send_zalo:
-            if not req.thread_id:
-                raise HTTPException(400, "thread_id required when send_zalo=true")
-            if not _claim_generated_file(dest, req.thread_id):
-                out["zalo"] = {"ok": True, "skipped": True, "reason": "already_sent"}
-            else:
-                try:
-                    out["zalo"] = _send_zalo_base64(
-                        req.thread_id, req.thread_type, dest, req.caption or ""
-                    )
-                except HTTPException as e:
-                    # File remains under media/out for autosend fallback.
-                    out["zalo_error"] = str(getattr(e, "detail", None) or e)[:300]
-                    log = __import__("logging").getLogger("dispatcher")
-                    log.warning("info-card wrote %s but zalo send failed", name)
-        return out
 
-    # Scenic / illustration diffusion moved to OmniRouter combo image-gen.
     raise HTTPException(
         410,
         {
             "error": "diffusion_moved_to_omni",
             "detail": (
-                "POST /v1/image no longer runs diffusion (legacy Comfy/dispatcher path). "
+                "POST /v1/image no longer runs diffusion. "
                 "Use OmniRouter POST /v1/images/generations with model image-gen. "
-                "Pillow modes remain: mode=info-card or mode=text-poster "
-                "(aliases /v1/info-card and /v1/text-poster)."
+                "Pillow mode remaining: mode=text-poster (alias /v1/text-poster)."
             ),
         },
     )
@@ -966,9 +920,17 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
 
 @app.post("/v1/info-card")
 def info_card_generate(req: ImageReq) -> dict[str, Any]:
-    """Pillow labeled info-card (not Omni diffusion)."""
-    req.mode = "info-card"
-    return image_generate(req)
+    """Retired — use Omni combo image-gen with facts in the SCENE prompt."""
+    raise HTTPException(
+        410,
+        {
+            "error": "info_card_retired",
+            "detail": (
+                "Pillow info-card removed. POST OmniRouter /v1/images/generations "
+                "model=image-gen with an English SCENE prompt that includes labels/facts."
+            ),
+        },
+    )
 
 
 @app.post("/v1/text-poster")
@@ -980,33 +942,17 @@ def text_poster_generate(req: ImageReq) -> dict[str, Any]:
 
 @app.post("/v1/overlay")
 def image_overlay(req: ImageReq) -> dict[str, Any]:
-    """Apply overlay text onto an existing media/out file and optionally send to Zalo."""
-    name = (req.filename or "").strip()
-    if not name:
-        raise HTTPException(400, "filename required (media/out basename or absolute path)")
-    dest = Path(name)
-    if not dest.is_file():
-        dest = MEDIA_DIR / "out" / Path(name).name
-    if not dest.is_file():
-        raise HTTPException(404, f"image not found: {name}")
-    overlay_n = _apply_image_overlay(dest, req.overlay)
-    result: dict[str, Any] = {
-        "ok": True,
-        "file": str(dest),
-        "hermes_path": f"/opt/data/media/out/{dest.name}",
-        "overlay": overlay_n,
-        "backend": "overlay",
-    }
-    if req.send_zalo:
-        if not req.thread_id:
-            raise HTTPException(400, "thread_id required when send_zalo=true")
-        if not _claim_generated_file(dest, req.thread_id):
-            result["zalo"] = {"ok": True, "skipped": True, "reason": "already_sent"}
-        else:
-            result["zalo"] = _send_zalo_base64(
-                req.thread_id, req.thread_type, dest, req.caption or ""
-            )
-    return result
+    """Retired — bake overlay facts into the Omni image-gen SCENE prompt instead."""
+    raise HTTPException(
+        410,
+        {
+            "error": "overlay_retired",
+            "detail": (
+                "Pillow /v1/overlay removed. Include weather/metric lines in the "
+                "Omni combo image-gen SCENE prompt (classify/image-gen skills)."
+            ),
+        },
+    )
 
 
 @app.post("/v1/video")
