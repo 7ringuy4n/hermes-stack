@@ -846,8 +846,13 @@ def _is_comfyui_image_model_id(mid: str) -> bool:
 
 
 def _is_image_gen_namespace_chat_model(mid: str) -> bool:
-    """AI Box chat models live under image-gen/ — not the image-gen combo."""
-    return (mid or "").strip().lower().startswith("image-gen/")
+    """AI Box chat models live under image-gen/ or img-gen/ — not the image-gen combo."""
+    low = (mid or "").strip().lower()
+    return low.startswith("image-gen/") or low.startswith("img-gen/")
+
+
+def _combo_name_collides_with_model_namespace(mid: str) -> bool:
+    return _is_image_gen_namespace_chat_model(mid)
 
 
 def _is_image_output_model(row: dict) -> bool:
@@ -1280,7 +1285,7 @@ def ensure_media_combos(opener, api_key: str) -> None:
     catalog = _v1_models(api_key)
     cur_img = _combo_model_ids(combos.get("image-gen"))
     bad_img = [m for m in cur_img if _is_bad_image_gen_combo_member(m, catalog)]
-    aibox_chat = [m for m in cur_img if _is_image_gen_namespace_chat_model(m)]
+    aibox_chat = [m for m in cur_img if _combo_name_collides_with_model_namespace(m)]
     need_img = (not cur_img) or bool(bad_img) or bool(aibox_chat) or not set(cur_img).intersection(set(image_ids))
     want_head = image_ids[0] if image_ids else ""
     cur_head = cur_img[0] if cur_img else ""

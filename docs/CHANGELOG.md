@@ -1,6 +1,6 @@
 ## 2026-08-31 22:00 +07 — image-gen combo: exclude AI Box chat namespace
 
-- first-setup rejects `image-gen/*` AI Box chat models (qwen-image, deepseek-v4-flash) from the `image-gen` combo — Omni cannot use them for `/images/generations`.
+- first-setup rejects `image-gen/*` and `img-gen/*` AI Box chat models (qwen-image, deepseek-v4-flash) from the `image-gen` combo — Omni cannot use them for `/images/generations`.
 - Refills combo with `aihorde/*` diffusion workers (photoreal-first ranking) plus OpenRouter Flux/image tails; recovers corrupted single-line `.env` templates with literal `\n`.
 
 ## 2026-08-31 21:00 +07 — Host-owned scenic image-gen; photoreal combo order

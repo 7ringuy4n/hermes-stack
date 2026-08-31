@@ -20,6 +20,12 @@ def _row(mid: str, **caps) -> dict:
     return {"id": mid, "capabilities": caps or {}}
 
 
+def test_exclude_img_gen_namespace_chat() -> None:
+    assert mod._is_image_gen_namespace_chat_model("img-gen/qwen-image-2.0") is True
+    assert mod._is_image_gen_namespace_chat_model("img-gen/deepseek-v4-flash") is True
+    assert mod._is_bad_image_gen_combo_member("img-gen/qwen-image-2.0") is True
+
+
 def test_exclude_image_gen_namespace_chat() -> None:
     assert mod._is_image_gen_namespace_chat_model("image-gen/qwen-image-2.0") is True
     assert mod._is_image_gen_namespace_chat_model("image-gen/deepseek-v4-flash") is True
@@ -47,6 +53,7 @@ def test_rank_prefers_icbinp_over_aibox() -> None:
 
 
 def main() -> None:
+    test_exclude_img_gen_namespace_chat()
     test_exclude_image_gen_namespace_chat()
     test_allow_aihorde_diffusion()
     test_allow_openrouter_flux()
