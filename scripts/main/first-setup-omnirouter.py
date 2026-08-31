@@ -1340,17 +1340,12 @@ def main() -> int:
     set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
     set_env_key(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
     set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "active"))
-    # Hermes-facing Router Worker: combo web-search → Omni search first, then direct adapters.
-    web_backends = (env.get("WEB_BACKENDS") or "").strip()
-    if web_backends in {"", "omni"}:
-        set_env_key(
-            ROOT / ".env",
-            "WEB_BACKENDS",
-            "omni,tavily,firecrawl,searxng",
-        )
-        env["WEB_BACKENDS"] = "omni,tavily,firecrawl,searxng"
-        print("OK: pinned WEB_BACKENDS=omni,tavily,firecrawl,searxng")
-    clear_env_keys(ROOT / ".env", ["OMNIROUTER_SEARCH_PROVIDERS", "WEB_SEARCH_COMBO_PATH"])
+    # Hermes-facing Router Worker: combo web-search via Omni only (no direct adapter chain).
+    clear_env_keys(
+        ROOT / ".env",
+        ["OMNIROUTER_SEARCH_PROVIDERS", "WEB_SEARCH_COMBO_PATH", "WEB_BACKENDS"],
+    )
+    env.pop("WEB_BACKENDS", None)
     web_combo = (env.get("MODEL_ROUTER_WEB_SEARCH_COMBO") or env.get("WEB_SEARCH_COMBO") or WEB_SEARCH_COMBO_NAME).strip()
     if not web_combo:
         web_combo = WEB_SEARCH_COMBO_NAME

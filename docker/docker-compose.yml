@@ -319,14 +319,10 @@ services:
       - MODEL_ROUTER_CLASSIFY=${MODEL_ROUTER_CLASSIFY:-/opt/data/skills/classify/classify.json}
       - MODEL_ROUTER_OUTBOUND=${MODEL_ROUTER_OUTBOUND:-/opt/data/skills/outbound/outbound.json}
       - MODEL_ROUTER_PORT=8096
-      - WEB_BACKENDS=${WEB_BACKENDS:-omni}
       - WEB_SEARCH_PROVIDER_TIMEOUT_S=${WEB_SEARCH_PROVIDER_TIMEOUT_S:-30}
       - WEB_EXTRACT_BACKENDS=${WEB_EXTRACT_BACKENDS:-tavily,firecrawl}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
-      - EXA_API_KEY=${EXA_API_KEY:-}
-      - SEARXNG_URL=${SEARXNG_URL:-http://searxng:8080}
-      - SEARXNG_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
       - WEB_SEARCH_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     volumes:

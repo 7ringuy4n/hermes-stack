@@ -1,40 +1,40 @@
-# Case: web search combo chain (Router Worker)
+# Case: web search combo (Router Worker)
 
-Verify which backend answers `/v1/search` on **router-worker** (`model-router:8096`) and the failover order.
+Verify `/v1/search` on **router-worker** (`model-router:8096`) proxies to Omni combo **web-search**.
 
-## Default combo
+## Default path
 
-`WEB_BACKENDS=tavily,searxng` (media worker activation keeps the same order):
+When `OMNIROUTER_BASE_URL` and `OMNIROUTER_API_KEY` are set:
 
-1. Paid vendor first (Tavily; Firecrawl/Exa only when listed in `WEB_BACKENDS`)
-2. On failure, the next combo member runs
-3. **SearXNG is last** — local, no key needed
+1. Router Worker posts `{ combo: web-search, query, max_results }` to Omni `POST /v1/search`
+2. Failover order and provider members are owned in Omni UI (not env `WEB_BACKENDS`)
+3. Response `backend` reports combo name `web-search`
 
-Empty `WEB_BACKENDS` with no `SEARXNG_URL` → 503 controlled error.
+Missing Omni config → 503 controlled error.
 
 ## Steps (unit/local)
 
-1. Run `python test/scripts/web_search_backends_unit.py`
-2. Assert `/health` lists `web_backends`
+1. Run `python test/scripts/websearch_combo_unit.py`
+2. Run `python test/scripts/web_search_backends_unit.py` (when router-worker is up)
 3. POST `/v1/search` with `{"query":"weather Ho Chi Minh","max_results":3}`
-4. Record the `backend` field in the JSON response
+4. Record the `backend` and `combo` fields in the JSON response
 
 ## Steps (lab)
 
 1. Case 04 weather query via Zalo → Hermes
-2. Compare the response `backend` with env `WEB_BACKENDS`
-3. Remove the Tavily key → expect SearXNG to answer (record which)
-4. Confirm the media worker no longer serves search: `POST dispatcher:8090/v1/search` → 404
+2. Confirm Omni logs show combo `web-search` (member provider names may appear inside combo)
+3. Confirm the media worker no longer serves search: `POST dispatcher:8090/v1/search` → 404
 
 ## Pass criteria
 
-- Search returns `backend` ∈ {tavily, firecrawl, searxng, exa} (or `+` joined combo)
-- No backends configured: 503 + short message, no crash
-- Hermes does not fabricate weather/fuel when every member fails
+- Search returns `backend` = combo name (`web-search`)
+- No Omni config: 503 + short message, no crash
+- Hermes does not fabricate weather/fuel when search fails
 - `dispatcher /health` stays 200 while media jobs run (search no longer competes for its threadpool)
 
 ## Fail events
 
-- Empty fake results when a backend is down
+- Empty fake results when Omni is down
 - No `backend` field logged
 - Skill calling `dispatcher:8090/v1/search`
+- Direct Tavily/Firecrawl/SearXNG adapter chain bypassing Omni combo

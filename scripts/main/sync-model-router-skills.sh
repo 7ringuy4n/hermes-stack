@@ -51,7 +51,11 @@ print(f"assembled classify.json ← {len(chunks)} parts → {dst}")
 PY
 
 sync_one "$ROOT/hermes/main/skills/outbound/outbound.json" "outbound.json"
-sync_one "$ROOT/hermes/main/skills/web-search/web-search-combo.json" "web-search-combo.json"
+
+if [[ -f "$DST_DIR/web-search-combo.json" ]]; then
+  rm -f "$DST_DIR/web-search-combo.json"
+  echo "removed unused bake copy web-search-combo.json"
+fi
 
 if [[ -f "$DST_DIR/heuristic.json" ]]; then
   rm -f "$DST_DIR/heuristic.json"

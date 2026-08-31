@@ -1,3 +1,9 @@
+## 2026-08-31 20:00 +07 — Omni-only web-search; remove direct adapter chain
+
+- Router Worker search is Omni combo `web-search` only; removed `WEB_BACKENDS` and direct Tavily/Firecrawl/SearXNG/Exa search adapters.
+- Deleted baked `web-search-combo.json`; combo name comes from env (`MODEL_ROUTER_WEB_SEARCH_COMBO`) and skill docs; operator members live in Omni UI.
+- first-setup clears legacy `WEB_BACKENDS` / `WEB_SEARCH_COMBO_PATH`; page extract still uses Tavily/Firecrawl via `/v1/extract`.
+
 ## 2026-08-31 19:00 +07 — Combo-only web-search; reject low-quality image-gen output
 
 - Router Worker Omni search posts `{ combo: web-search }` only (no provider bypass); response backend reports combo name.

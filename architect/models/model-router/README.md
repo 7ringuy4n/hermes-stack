@@ -35,7 +35,7 @@ Aliases: `general`/`chat` → `normal`, `code` → `coding`. Values `secret`/`bl
 Prompt files (SoT under Hermes skills):
 - Classify: `hermes/main/skills/classify/` (`classify.json` envelope + `parts/*.txt`). Runtime assembles one system prompt (`/opt/data/skills/classify/`). One `POST /v1/classify` hop.
 - Outbound: `hermes/main/skills/outbound/outbound.json` → `/opt/data/skills/outbound/outbound.json`
-- Web search combo: `hermes/main/skills/web-search/web-search-combo.json` → `/opt/data/skills/web-search/web-search-combo.json`
+- Web search: `hermes/main/skills/web-search/SKILL.md` (Omni combo `web-search`; members in Omni UI)
 
 Bake fallbacks: `config/*.json` via `scripts/main/sync-model-router-skills.sh` (classify bake is the assembled `system`). Application code validates protocol only.
 
