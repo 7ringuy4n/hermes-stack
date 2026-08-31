@@ -758,8 +758,25 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     if not blob:
         log.warning("omni generate: empty image payload")
         return None
-    if len(blob) < 12000:
-        log.warning("omni generate: small payload (%s bytes) — may be censor stub", len(blob))
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(BytesIO(blob)) as im:
+            w, h = im.size
+        if w < 640 or h < 360 or len(blob) < 48_000:
+            log.warning(
+                "omni generate: low-quality payload (%sx%s, %s bytes) — combo image-gen",
+                w,
+                h,
+                len(blob),
+            )
+            return None
+    except Exception:
+        if len(blob) < 48_000:
+            log.warning("omni generate: small payload (%s bytes) — combo image-gen", len(blob))
+            return None
     for cand in (
         Path(os.getenv("MEDIA_OUT_DIR") or "/data/media/out"),
         Path("/opt/data/media/out"),
@@ -773,7 +790,7 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
                 "ok": True,
                 "file": str(dest),
                 "path": str(dest),
-                "provider": "omni",
+                "provider": model,
                 "model": model,
             }
         except OSError:

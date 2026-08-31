@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Unit: web search combo — Omni-owned default + direct fallback adapters."""
+"""Unit: web search combo — Omni combo-only default + env fallback adapters."""
 from __future__ import annotations
 
 import importlib
@@ -18,20 +18,13 @@ def main() -> int:
         print("SKIP websearch_combo_unit (httpx not installed on host)")
         return 0
 
-    combo = ROOT / "architect" / "models" / "model-router" / "config" / "web-search-combo.json"
-    if not combo.is_file():
-        print("FAIL missing", combo)
-        return 1
-
-    os.environ["WEB_SEARCH_COMBO_PATH"] = str(combo)
     os.environ["SEARXNG_URL"] = "http://searxng:8080"
     os.environ["OMNIROUTER_BASE_URL"] = "http://omni-router:20129/v1"
     os.environ["OMNIROUTER_API_KEY"] = "sk-test-omni-key-for-unit"
     os.environ.pop("TAVILY_API_KEY", None)
     os.environ["MODEL_ROUTER_WEB_SEARCH_COMBO"] = "web-search"
+    os.environ.pop("WEB_SEARCH_COMBO_PATH", None)
 
-    # 1) Env override wins (direct adapters)
-    os.environ["WEB_BACKENDS"] = "tavily,searxng"
     if "websearch" in sys.modules:
         del sys.modules["websearch"]
     import websearch as ws
@@ -40,27 +33,30 @@ def main() -> int:
     if "DEFAULT_CHAIN" in dir(ws):
         print("FAIL DEFAULT_CHAIN must not exist in websearch.py")
         return 1
-    order = ws.search_order()
-    if order != ["tavily", "searxng"]:
-        print("FAIL env order", order)
-        return 1
 
-    # 2) JSON file when WEB_BACKENDS unset → omni
+    # 1) Default → omni combo only
     os.environ.pop("WEB_BACKENDS", None)
     importlib.reload(ws)
-    order2 = ws.search_order()
-    if order2 != ["omni", "tavily", "firecrawl", "searxng"]:
-        print("FAIL json order", order2)
+    if ws.search_order() != ["omni"]:
+        print("FAIL default order", ws.search_order())
         return 1
+
+    # 2) Env override for direct adapters
+    os.environ["WEB_BACKENDS"] = "tavily,searxng"
+    importlib.reload(ws)
+    if ws.search_order() != ["tavily", "searxng"]:
+        print("FAIL env order", ws.search_order())
+        return 1
+
     health = ws.health_fields()
     if health.get("web_combo") != "web-search":
         print("FAIL combo name", health)
         return 1
-    if health.get("web_backends") != ["omni", "tavily", "firecrawl", "searxng"]:
-        print("FAIL health backends", health)
-        return 1
     if not health.get("omni_search"):
         print("FAIL omni_search health", health)
+        return 1
+    if "web_combo_path" in health:
+        print("FAIL legacy web_combo_path must be removed", health)
         return 1
 
     # 3) Explicit empty disables
@@ -70,22 +66,18 @@ def main() -> int:
         print("FAIL empty WEB_BACKENDS must disable", ws.search_order())
         return 1
 
-    # 4) omni skipped without key; direct adapters remain from combo json
+    # 4) omni skipped without key; no default direct adapters
     os.environ.pop("WEB_BACKENDS", None)
     os.environ.pop("OMNIROUTER_API_KEY", None)
     importlib.reload(ws)
-    if ws.search_order() != ["tavily", "firecrawl", "searxng"]:
-        print("FAIL omni without key must skip omni only", ws.search_order())
+    if ws.search_order():
+        print("FAIL without omni key default must be empty", ws.search_order())
         return 1
 
-    # 5) Omni provider cascade from combo json + capped per-provider timeout
+    # 5) Provider timeout env
     os.environ["OMNIROUTER_API_KEY"] = "sk-test-omni-key-for-unit"
     os.environ.pop("WEB_SEARCH_PROVIDER_TIMEOUT_S", None)
     importlib.reload(ws)
-    providers = ws._omni_search_providers()
-    if providers != ["tavily-search", "firecrawl-search", "searxng-search"]:
-        print("FAIL combo omni_providers", providers)
-        return 1
     if abs(ws._provider_timeout_s() - 20.0) > 0.01:
         print("FAIL default provider timeout", ws._provider_timeout_s())
         return 1
@@ -97,8 +89,11 @@ def main() -> int:
     if ws._web_search_combo_name() != "web-search":
         print("FAIL combo env name", ws._web_search_combo_name())
         return 1
+    if hasattr(ws, "_omni_search_providers"):
+        print("FAIL _omni_search_providers legacy helper must be removed")
+        return 1
 
-    print("PASS websearch_combo_unit omni-owned + env fallback + timeouts")
+    print("PASS websearch_combo_unit combo-only omni + env fallback + timeouts")
     return 0
 
 
