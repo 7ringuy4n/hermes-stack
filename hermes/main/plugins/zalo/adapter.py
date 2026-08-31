@@ -332,13 +332,31 @@ AV_POLL_BUDGET_S = 20.0
 
 
 def _truthy(v) -> bool:
-    return str(v if v is not None else "").strip().lower() in {"1", "true", "yes", "on"}
+    return str(v if v is not None else "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+        "active",
+    }
+
+
+def _falsy(v) -> bool:
+    return str(v if v is not None else "").strip().lower() in {
+        "0",
+        "false",
+        "no",
+        "off",
+        "inactive",
+    }
 
 
 def _env_flag(name: str, default: bool = True) -> bool:
     raw = os.getenv(name)
     if raw is None or str(raw).strip() == "":
         return default
+    if _falsy(raw):
+        return False
     return _truthy(raw)
 
 
@@ -5891,7 +5909,7 @@ class ZaloAdapter(BasePlatformAdapter):
         return context_newest(self._as_attachment_items(thread_id))
 
     def _as_env_flag_on(self, *names: str, default: str = "inactive") -> bool:
-        """Feature toggles: active|inactive (legacy 1/0 still accepted)."""
+        """Feature toggles: active|inactive only."""
         import os
 
         for name in names:
@@ -5899,14 +5917,11 @@ class ZaloAdapter(BasePlatformAdapter):
             if raw is None:
                 continue
             v = str(raw).strip().lower()
-            if not v:
-                continue
-            if v in {"0", "false", "no", "off", "inactive"}:
-                return False
-            if v in {"1", "true", "yes", "on", "active"}:
+            if v == "active":
                 return True
-        d = (default or "inactive").strip().lower()
-        return d in {"1", "true", "yes", "on", "active"}
+            if v == "inactive":
+                return False
+        return (default or "inactive").strip().lower() == "active"
 
     def _as_av_activated(self) -> bool:  # ASSISTANT_FILE_PIPELINE_v6
         """True when antivirus is on and the gateway+clamd are reachable."""
@@ -5934,9 +5949,7 @@ class ZaloAdapter(BasePlatformAdapter):
         import os
 
         raw = (os.getenv("AV_REQUIRED") or "").strip().lower()
-        if raw == "":
-            return False
-        return raw in {"1", "true", "yes", "on", "active"}
+        return raw == "active"
 
     def _as_security_worker_active(self) -> bool:
         """True when Security Worker is intentionally enabled for this stack."""
@@ -5966,13 +5979,7 @@ class ZaloAdapter(BasePlatformAdapter):
             or os.getenv("SECURITY_URL")
             or "http://security-manager:8093"
         ).rstrip("/")
-        fail_open = (os.getenv("SECURITY_FAIL_OPEN") or "0").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-            "active",
-        }
+        fail_open = _env_flag("SECURITY_FAIL_OPEN", default=False)
         corr = (correlation_id or "").strip() or f"zalo_file_{uuid.uuid4().hex[:12]}"
         try:
             import aiohttp
@@ -6037,12 +6044,7 @@ class ZaloAdapter(BasePlatformAdapter):
             or "http://security-manager:8093"
         ).rstrip("/")
         corr = (correlation_id or "").strip() or f"zalo_{uuid.uuid4().hex[:12]}"
-        fail_open = (os.getenv("SECURITY_FAIL_OPEN") or "0").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
+        fail_open = _env_flag("SECURITY_FAIL_OPEN", default=False)
         try:
             import asyncio
             import json as _json

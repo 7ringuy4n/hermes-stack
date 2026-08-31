@@ -466,14 +466,8 @@ def _search_connections(opener):
 def enforce_search_priorities(opener) -> None:
     """Best-effort Omni connection priorities: Tavily=1, Firecrawl=2, SearXNG=3.
 
-    Hermes does **not** rely on Omni unforced default: Router Worker forces
-    ``provider`` per ``OMNIROUTER_SEARCH_PROVIDERS`` (Tavily → Firecrawl → SearXNG).
-
-    OmniRoute quirk (lab): unforced ``POST /v1/search`` still reports
-    ``provider=searxng-search`` even when that connection is blocked/deleted;
-    connection ``priority`` may not persist on GET after PUT. Keep connections
-    active for the forced cascade; judge health via forced Tavily smoke +
-    router ``backend=omni:tavily-search``.
+    Hermes routes search through Omni combo ``web-search`` (operator PRIORITY).
+    Connection priorities are best-effort; combo members define failover order.
     """
     wanted = (
         ("tavily-search", 1),
@@ -509,7 +503,7 @@ def enforce_search_priorities(opener) -> None:
         if got != prio:
             print(
                 f"NOTE: {prov} priority GET={got} (wanted {prio}); "
-                "Omni may not persist search priorities — Hermes uses forced provider cascade"
+                "Omni may not persist search priorities — combo web-search owns failover"
             )
 
 
@@ -637,20 +631,36 @@ def ensure_search_providers(opener) -> None:
         print(f"WARN blockedProviders: {e}")
 
 
+WEB_SEARCH_COMBO_NAME = "web-search"
+
+
+def ensure_web_search_omni_combo(opener) -> None:
+    """Verify operator search combo ``web-search`` — never overwrite PRIORITY members."""
+    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    combos = data.get("combos") or []
+    existing = next((c for c in combos if (c.get("name") or "") == WEB_SEARCH_COMBO_NAME), None)
+    if not existing:
+        print(
+            f"NOTE: create Omni combo {WEB_SEARCH_COMBO_NAME!r} in UI "
+            "(PRIORITY: tavily-search, firecrawl-search, searxng-search)"
+        )
+        return
+    models = _combo_model_ids(existing)
+    strategy = existing.get("strategy") or existing.get("comboStrategy") or "?"
+    print(f"==> keep Omni combo {WEB_SEARCH_COMBO_NAME} n={len(models)} strategy={strategy}")
+
+
 def smoke_omni_search(key: str) -> None:
-    # Unforced Omni /v1/search often labels searxng-search even when Tavily works;
-    # Hermes health is forced-provider (matches Router Worker cascade).
-    for label, body_obj in (
+    """Smoke Omni /v1/search — forced cascade Tavily → Firecrawl → SearXNG."""
+    cases = [
+        ("combo", {"query": "Ho Chi Minh weather", "max_results": 2, "combo": WEB_SEARCH_COMBO_NAME}),
         ("unforced", {"query": "Ho Chi Minh weather", "max_results": 2}),
-        (
-            "forced-tavily",
-            {
-                "query": "Ho Chi Minh weather",
-                "max_results": 2,
-                "provider": "tavily-search",
-            },
-        ),
-    ):
+        ("forced-tavily", {"query": "Ho Chi Minh weather", "max_results": 2, "provider": "tavily-search"}),
+        ("forced-firecrawl", {"query": "Ho Chi Minh weather", "max_results": 2, "provider": "firecrawl-search"}),
+        ("forced-searxng", {"query": "Ho Chi Minh weather", "max_results": 2, "provider": "searxng-search"}),
+    ]
+    ok_any = False
+    for label, body_obj in cases:
         body = json.dumps(body_obj).encode()
         req = urllib.request.Request(
             f"{BASE}/v1/search",
@@ -667,19 +677,48 @@ def smoke_omni_search(key: str) -> None:
             n = len(data.get("results") or [])
             prov = data.get("provider")
             print(f"==> smoke Omni /v1/search ({label}) provider={prov} results={n}")
-            if label == "forced-tavily" and prov == "tavily-search" and n > 0:
-                print("==> smoke OK: forced tavily-search returns results")
-            elif label == "forced-tavily":
-                print("WARN smoke: forced tavily-search failed — check Tavily key in Omni")
+            if label.startswith("forced-") and n > 0:
+                ok_any = True
+                print(f"==> smoke OK: {label} returns results")
+            elif label == "combo" and n > 0:
+                ok_any = True
+                print(f"==> smoke OK: combo {WEB_SEARCH_COMBO_NAME} returns results")
             elif label == "unforced" and prov == "searxng-search":
                 print(
                     "NOTE: Omni unforced default labels searxng-search "
-                    "(product quirk); Hermes uses Router Worker forced cascade"
+                    "(product quirk); Router uses combo web-search first"
                 )
         except urllib.error.HTTPError as e:
-            print(f"WARN smoke Omni /v1/search ({label}) HTTP {e.code}: {e.read()[:200]!r}")
+            detail = e.read()[:200]
+            print(f"WARN smoke Omni /v1/search ({label}) HTTP {e.code}: {detail!r}")
         except Exception as e:
             print(f"WARN smoke Omni /v1/search ({label}): {e}")
+    if not ok_any:
+        print("WARN: no forced Omni search provider returned results — check Search provider keys")
+
+
+def smoke_router_web_search_combo() -> None:
+    """Smoke Hermes combo web-search via Router Worker (Omni cascade inside)."""
+    url = (os.environ.get("MODEL_ROUTER_URL") or "http://127.0.0.1:8096").rstrip("/")
+    body = json.dumps({"query": "current weather Ho Chi Minh City", "max_results": 2}).encode()
+    req = urllib.request.Request(
+        f"{url}/v1/search",
+        data=body,
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode() or "{}")
+        backend = data.get("backend") or data.get("used_backend") or ""
+        n = len(data.get("results") or [])
+        print(f"==> smoke Router combo web-search backend={backend!r} results={n}")
+        if n > 0:
+            print("OK: smoke Router combo web-search")
+        else:
+            print("WARN smoke Router web-search returned no results")
+    except Exception as e:
+        print(f"WARN smoke Router web-search: {e}")
 
 
 def ensure_combo_round_robin(opener) -> None:
@@ -786,50 +825,14 @@ def verify(key: str, combo: str) -> None:
         print(f"WARN smoke chat combo={combo} HTTP {e.code}: {e.read()[:200]!r}")
 
 
-IMAGE_GEN_PREFERRED = [
-    "aihorde/Flux.1-Schnell fp8 (Compact)",
-    "aihorde/AbsoluteReality",
-    "aihorde/AlbedoBase XL (SDXL)",
-    "aihorde/ICBINP - I Can't Believe It's Not Photography",
-    "aihorde/Realistic Vision",
-]
-
-_IMAGE_GEN_EXCLUDE_TOKENS = (
-    "anime",
-    "cartoon",
-    "manga",
-    "comic",
-    "chibi",
-    "pony",
-    "furry",
-    "hentai",
-    "waifu",
-    "illustration only",
-    "pixel art",
-    "pixelart",
-)
-
-# AI Horde also lists chat/LLM workers (aphrodite, …) — never put those in image-gen.
-_AIHORDE_NON_IMAGE_TOKENS = (
-    "aphrodite",
-    "/llm",
-    "text-generation",
-    "instruct",
-    "chat",
-)
-
 STACK_API_KEY_COMBOS = (
     "hermes",
     "classifier",
     "image-gen",
     "vision-ocr",
     "embedding",
+    "web-search",
 )
-
-
-def _is_cartoonish_image_model(mid: str) -> bool:
-    low = (mid or "").strip().lower()
-    return any(tok in low for tok in _IMAGE_GEN_EXCLUDE_TOKENS)
 
 
 def _row_has_image_modality(row: dict) -> bool:
@@ -891,13 +894,10 @@ def ensure_api_key_allows_combos(opener, existing_key: str) -> None:
 
 
 def _media_worker_active(env: dict[str, str]) -> bool:
-    """True when media is ``active`` (legacy ENABLE_MEDIA_FILE=1 still counts until pin)."""
+    """True only when media worker flag is ``active``."""
     for key in ("ENABLE_MEDIA_FILE", "WORKER_MEDIA_FILE"):
         v = (env.get(key) or os.environ.get(key) or "").strip().lower()
         if v == "active":
-            return True
-        # Legacy on-values: still treat as intent so pin can rewrite to active.
-        if key == "ENABLE_MEDIA_FILE" and v in {"1", "true", "yes", "on"}:
             return True
     return False
 
@@ -975,97 +975,34 @@ def _v1_models(api_key: str) -> list[dict]:
 
 
 def _is_image_output_model(row: dict) -> bool:
-    """True for /images/generations targets only — not multimodal chat/vision OCR."""
+    """True for /images/generations targets — catalog modalities/capabilities only."""
     mid = str(row.get("id") or "").strip()
     if not mid:
-        return False
-    low = mid.lower()
-    # Vision/chat models often advertise an "image" modality for *input*; they are not diffusion.
-    if (
-        low.startswith("gemini/")
-        or low.startswith("opencode")
-        or low.startswith("oc/")
-        or "embed" in low
-    ):
-        return False
-    if any(tok in low for tok in _AIHORDE_NON_IMAGE_TOKENS):
-        return False
-    if _is_cartoonish_image_model(mid):
         return False
     has_image_mod = _row_has_image_modality(row)
     caps = row.get("capabilities")
     cap_gen = isinstance(caps, dict) and caps.get("image_generation") is True
-    # AI Horde: require image modality (catalog marks diffusion with modalities=['image']).
-    if low.startswith("aihorde/"):
-        return has_image_mod or cap_gen
-    if has_image_mod or cap_gen:
-        return True
-    if "flux" in low or "imagen" in low or "dall-e" in low:
-        return True
-    if low.endswith("-image-preview") or "image-generation" in low:
-        return True
+    if isinstance(caps, dict) and caps.get("image_generation") is False:
+        return False
+    return has_image_mod or cap_gen
+
+
+def _is_image_gen_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
+    """Validate combo member against /v1/models catalog when available."""
+    rows = catalog or []
+    for row in rows:
+        if str(row.get("id") or "").strip() == (mid or "").strip():
+            return _is_image_output_model(row)
     return False
-
-
-def _is_image_gen_model_id(mid: str) -> bool:
-    """Id-only check used when validating existing combo members."""
-    low = (mid or "").strip().lower()
-    if not low:
-        return False
-    if any(tok in low for tok in _AIHORDE_NON_IMAGE_TOKENS):
-        return False
-    if _is_cartoonish_image_model(mid):
-        return False
-    if low.startswith("aihorde/"):
-        # Without /v1/models row, accept known photoreal / diffusion families only.
-        hints = (
-            "flux",
-            "sdxl",
-            "stable",
-            "realistic",
-            "absolute",
-            "albedo",
-            "icbinp",
-            "juggernaut",
-            "deliberate",
-            "dreamshaper",
-            "diffusion",
-            "inpainting",
-            "qwen-image",
-            "krea",
-            "majicmix",
-            "edge of realism",
-            "analog madness",
-            "natvis",
-        )
-        return any(h in low for h in hints)
-    return _is_image_output_model({"id": mid})
 
 
 def list_image_gen_models(api_key: str) -> list[str]:
     """Models Omni can use for /images/generations (output modality image)."""
     rows = _v1_models(api_key)
-    found = [str(r.get("id")) for r in rows if _is_image_output_model(r) and r.get("id")]
-    preferred = [m for m in IMAGE_GEN_PREFERRED if m in found]
-    rest = [m for m in found if m not in preferred]
-    # Prefer Flux/Schnell then other aihorde, then openrouter image ids.
-    rest.sort(
-        key=lambda m: (
-            0 if "flux" in m.lower() else 1,
-            0 if "real" in m.lower() or "photo" in m.lower() else 1,
-            0 if m.startswith("aihorde/") else 1,
-            m,
-        )
+    found = sorted(
+        {str(r.get("id")) for r in rows if _is_image_output_model(r) and r.get("id")}
     )
-    out = preferred + rest
-    seen: set[str] = set()
-    uniq: list[str] = []
-    for mid in out:
-        if mid in seen:
-            continue
-        seen.add(mid)
-        uniq.append(mid)
-    return uniq[:8]
+    return found[:8]
 
 
 def list_vision_models(opener) -> list[str]:
@@ -1289,8 +1226,9 @@ def ensure_media_combos(opener, api_key: str) -> None:
         )
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = {c.get("name"): c for c in (data.get("combos") or []) if isinstance(c, dict)}
+    catalog = _v1_models(api_key)
     cur_img = _combo_model_ids(combos.get("image-gen"))
-    bad_img = [m for m in cur_img if not _is_image_gen_model_id(m)]
+    bad_img = [m for m in cur_img if not _is_image_gen_model_id(m, catalog)]
     need_img = (not cur_img) or bool(bad_img) or not set(cur_img).intersection(set(image_ids))
     if bad_img:
         print(f"==> image-gen has non-diffusion members {bad_img[:6]!r} — refilling")
@@ -1385,7 +1323,12 @@ def assert_combo_oc_only(opener, name: str) -> None:
 def main() -> int:
     env = load_env(ROOT / ".env")
     omni_flag = (env.get("ENABLE_OMNIROUTER") or "inactive").strip().lower()
-    if omni_flag not in {"active", "1", "true", "yes", "on"}:
+    if omni_flag in {"1", "true", "yes", "on"}:
+        set_env_key(ROOT / ".env", "ENABLE_OMNIROUTER", "active")
+        env["ENABLE_OMNIROUTER"] = "active"
+        omni_flag = "active"
+        print("OK: migrated ENABLE_OMNIROUTER to active")
+    if omni_flag != "active":
         print("SKIP: ENABLE_OMNIROUTER is not active")
         return 0
     password = env.get("OMNIROUTER_INITIAL_PASSWORD") or env.get("N9ROUTER_INITIAL_PASSWORD") or ""
@@ -1405,6 +1348,7 @@ def main() -> int:
     assert_combo_oc_only(opener, classify_combo)
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
+    ensure_web_search_omni_combo(opener)
     ensure_media_combos(opener, key)
     ensure_api_key_allows_combos(opener, key)
     pin_media_combos(env)
@@ -1412,8 +1356,8 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
     set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
     set_env_key(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
-    set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "1"))
-    # Hermes-facing Router Worker: Omni search first, then direct adapters if Omni is down.
+    set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "active"))
+    # Hermes-facing Router Worker: combo web-search → Omni search first, then direct adapters.
     web_backends = (env.get("WEB_BACKENDS") or "").strip()
     if web_backends in {"", "omni"}:
         set_env_key(
@@ -1423,13 +1367,19 @@ def main() -> int:
         )
         env["WEB_BACKENDS"] = "omni,tavily,firecrawl,searxng"
         print("OK: pinned WEB_BACKENDS=omni,tavily,firecrawl,searxng")
-    if not (env.get("OMNIROUTER_SEARCH_PROVIDERS") or "").strip():
-        set_env_key(
-            ROOT / ".env",
-            "OMNIROUTER_SEARCH_PROVIDERS",
-            "tavily-search,firecrawl-search,searxng-search",
-        )
-        print("OK: pinned OMNIROUTER_SEARCH_PROVIDERS=tavily→firecrawl→searxng")
+    clear_env_keys(ROOT / ".env", ["OMNIROUTER_SEARCH_PROVIDERS", "WEB_SEARCH_COMBO_PATH"])
+    web_combo = (env.get("MODEL_ROUTER_WEB_SEARCH_COMBO") or env.get("WEB_SEARCH_COMBO") or WEB_SEARCH_COMBO_NAME).strip()
+    if not web_combo:
+        web_combo = WEB_SEARCH_COMBO_NAME
+    for key_name, val in (
+        ("OMNIROUTER_WEB_SEARCH_COMBO", web_combo),
+        ("WEB_SEARCH_COMBO", web_combo),
+        ("MODEL_ROUTER_WEB_SEARCH_COMBO", web_combo),
+    ):
+        if (env.get(key_name) or "").strip() != val:
+            set_env_key(ROOT / ".env", key_name, val)
+            env[key_name] = val
+            print(f"OK: pinned {key_name}={val}")
     enable_omni_memory(opener)
 
     recreate_model_router()
@@ -1438,10 +1388,11 @@ def main() -> int:
     # Smoke hermes combo via Omni /v1/chat/completions (OpenCode cloud members).
     verify(key, combo)
     smoke_omni_search(key)
+    smoke_router_web_search_combo()
     print(
         f"OK: first-setup omni-router complete "
         f"(hermes+classifier OpenCode; image-gen image-capable; vision-ocr multimodal; "
-        f"classify→{classify_combo!r}; search via Omni)"
+        f"classify→{classify_combo!r}; combo web-search Tavily->Firecrawl->SearXNG)"
     )
     return 0
 

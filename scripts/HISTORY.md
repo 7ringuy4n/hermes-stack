@@ -1,3 +1,19 @@
+## 2026-08-31 17:00 +07 — strict active|inactive; web-search combo routing
+
+### Symptom
+Legacy truthy env values (`1`, `true`, `yes`, `on`) still enabled features; search provider cascade duplicated between env and router JSON; image-gen first-setup hardcoded model/style lists.
+
+### Root cause
+Gradual active|inactive migration left read-time legacy acceptance in Python; `OMNIROUTER_SEARCH_PROVIDERS` bypassed operator Omni combo `web-search`.
+
+### Fix (core)
+`env_active()` accepts only `active`/`inactive`; web-search uses combo env chain + JSON `omni_providers`; image-gen fill from catalog only; first-setup verifies `web-search` combo on API key ACL.
+
+### Prevent recurrence
+New toggles use active|inactive only; search failover order owned by combo JSON + Omni UI, not host env lists.
+
+## 2026-08-31 16:20 +07 — active|inactive env flags; web-search cascade
+
 ## 2026-08-31 08:15 +07 — Pillow image layout retired; diffusion labeled stills
 
 ### Symptom

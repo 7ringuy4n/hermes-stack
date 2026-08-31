@@ -1,3 +1,12 @@
+## 2026-08-31 17:00 +07 — strict active|inactive; Omni web-search combo env chain
+
+- Feature toggles read as `active`/`inactive` only (unknown values treated as inactive); migrate scripts still rewrite legacy `1`/`0` in `.env`.
+- Router Worker invokes Omni search combo `web-search` first; provider fallback list lives in `web-search-combo.json` (not env `OMNIROUTER_SEARCH_PROVIDERS`).
+- Compose pins `MODEL_ROUTER_WEB_SEARCH_COMBO` ← `WEB_SEARCH_COMBO` ← `OMNIROUTER_WEB_SEARCH_COMBO`; first-setup verifies operator combo and includes it on API key ACL.
+- Image-gen combo fill uses catalog modalities/capabilities only (no hardcoded model preference or style-exclusion lists).
+
+## 2026-08-31 16:20 +07 — active|inactive flags; web-search combo cascade smoke
+
 ## 2026-08-31 08:15 +07 — Retire Pillow image layout; diffusion-only labeled stills
 
 - Dispatcher `info_card` / `overlay` modules removed; labeled and weather stills route through Omni combo `image-gen` with facts in the English SCENE prompt.

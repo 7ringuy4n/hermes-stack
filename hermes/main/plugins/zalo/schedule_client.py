@@ -161,8 +161,8 @@ def exact_schedule_body(original: str) -> str:
 
 
 def _worker_flag_on() -> bool:
-    raw = (os.getenv("SCHEDULE_WORKER") or "0").strip().lower()
-    return raw in {"1", "on", "true", "yes"}
+    raw = (os.getenv("SCHEDULE_WORKER") or "inactive").strip().lower()
+    return raw in {"1", "on", "true", "yes", "active"}
 
 
 def schedule_url() -> str:
