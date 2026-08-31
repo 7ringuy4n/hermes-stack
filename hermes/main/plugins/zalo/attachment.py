@@ -612,12 +612,12 @@ def image_analyze_ack_message(excerpt: str, *, max_chars: int = 1800) -> str:
         body = body[:max_chars].rstrip() + "…"
     if ocr_mode:
         return (
-            "Đã đọc chữ trong ảnh (OCR):\n"
+            "Đã phân tích ảnh:\n"
             f"{body}\n\n"
             "Bạn muốn mình tóm tắt / dịch / lưu knowledge không?"
         )
     return (
-        "Đã phân tích ảnh (vision):\n"
+        "Đã phân tích ảnh:\n"
         f"{body}\n\n"
         "Bạn muốn mình tóm tắt / dịch / lưu knowledge không?"
     )
