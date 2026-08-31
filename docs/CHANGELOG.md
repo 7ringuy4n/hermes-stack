@@ -1,3 +1,9 @@
+## 2026-08-31 21:00 +07 — Host-owned scenic image-gen; photoreal combo order
+
+- Pure scenic diffusion (SCENE: only, no search sibling) is a Zalo host shortcut via internal Omni HTTP — no Hermes `curl|python` shell (security policy safe).
+- Classify sets `process_original_message false` for scenic-only; image-gen skill documents urllib/helper path for mixed deliverables only.
+- Image-gen quality guard rejects blobs below half Full HD (960×540) or 80KB; first-setup ranks photoreal Horde members ahead of fast/anime and paid OpenRouter tails.
+
 ## 2026-08-31 20:00 +07 — Omni-only web-search; remove direct adapter chain
 
 - Router Worker search is Omni combo `web-search` only; removed `WEB_BACKENDS` and direct Tavily/Firecrawl/SearXNG/Exa search adapters.

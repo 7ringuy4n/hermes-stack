@@ -768,7 +768,8 @@ def plan_media_shortcut_gate(plan: dict[str, Any] | None) -> str:
         return "weather_scene"
     if plan_allows_search_then_info_card(plan):
         return "info_card"
-    # Scenic-only image is Hermes + image-gen (not a host shortcut).
+    if plan_allows_scene_image(plan):
+        return "scene_image"
     if plan_allows_poster_shortcut(plan):
         return "poster"
     return ""
@@ -1117,6 +1118,8 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     }
     if not plan_schema_ok(plan):
         return failed_plan(tz, "classify_invalid")
+    if plan_allows_scene_image(plan):
+        plan["process_original_message"] = False
     return plan
 
 
