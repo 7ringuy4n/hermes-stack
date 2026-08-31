@@ -52,7 +52,7 @@ Hermes needs a completion
 
 Hermes / skill needs web search (Medium+)
     → model-router /v1/search  (Router Worker combo "websearch")
-    → failover from config/web-search-combo.json or WEB_BACKENDS
+    → Omni combo web-search (operator failover in Omni UI)
       (default tavily → searxng)
     → extract via WEB_EXTRACT_BACKENDS / config (not SearXNG)
 ```

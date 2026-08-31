@@ -1,3 +1,8 @@
+## 2026-08-31 20:00 +07 — Omni-only web-search; drop direct adapter chain
+
+### Change
+Router Worker `/v1/search` proxies only to Omni combo `web-search`. Removed `WEB_BACKENDS`, baked `web-search-combo.json`, and direct Tavily/Firecrawl/SearXNG/Exa search adapters. first-setup clears legacy env keys; page extract keeps Tavily/Firecrawl on `/v1/extract`.
+
 ## 2026-08-31 19:00 +07 — Combo-only web-search; low-quality image-gen guard
 
 ### Symptom
