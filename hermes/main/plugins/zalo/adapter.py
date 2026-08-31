@@ -4353,6 +4353,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     classify_text,
                     plan_allows_office_shortcut,
                     plan_allows_poster_shortcut,
+                    plan_allows_scene_image,
                     plan_allows_search_then_info_card,
                     plan_allows_search_then_office,
                     plan_allows_search_then_weather_scene,
@@ -4364,6 +4365,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 from .media_shortcuts import (
                     media_fail_line,
                     run_office_create,
+                    run_scene_image,
                     run_search_then_info_card,
                     run_search_then_office,
                     run_search_then_weather_scene,
@@ -4376,6 +4378,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     classify_text,
                     plan_allows_office_shortcut,
                     plan_allows_poster_shortcut,
+                    plan_allows_scene_image,
                     plan_allows_search_then_info_card,
                     plan_allows_search_then_office,
                     plan_allows_search_then_weather_scene,
@@ -4387,6 +4390,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 from media_shortcuts import (  # type: ignore
                     media_fail_line,
                     run_office_create,
+                    run_scene_image,
                     run_search_then_info_card,
                     run_search_then_office,
                     run_search_then_weather_scene,
@@ -4458,6 +4462,20 @@ class ZaloAdapter(BasePlatformAdapter):
                     if shortcut_ok(shortcut):
                         self._as_flow(
                             "search_info_card_shortcut",
+                            thread_id=thread_id,
+                            file=shortcut.get("file"),
+                        )
+                elif plan_allows_scene_image(early_plan):
+                    shortcut = run_scene_image(
+                        shortcut_user_text,
+                        early_plan,
+                        str(thread_id),
+                        str(thread_type),
+                        classified=True,
+                    )
+                    if shortcut_ok(shortcut):
+                        self._as_flow(
+                            "scene_image_shortcut",
                             thread_id=thread_id,
                             file=shortcut.get("file"),
                         )

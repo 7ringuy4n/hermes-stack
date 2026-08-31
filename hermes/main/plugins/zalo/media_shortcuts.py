@@ -765,16 +765,20 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
 
         with Image.open(BytesIO(blob)) as im:
             w, h = im.size
-        if w < 640 or h < 360 or len(blob) < 48_000:
+        min_w, min_h, min_bytes = 960, 540, 80_000
+        if w < min_w or h < min_h or len(blob) < min_bytes:
             log.warning(
-                "omni generate: low-quality payload (%sx%s, %s bytes) — combo image-gen",
+                "omni generate: low-quality payload (%sx%s, %s bytes; need >=%sx%s, >=%s) — combo image-gen",
                 w,
                 h,
                 len(blob),
+                min_w,
+                min_h,
+                min_bytes,
             )
             return None
     except Exception:
-        if len(blob) < 48_000:
+        if len(blob) < 80_000:
             log.warning("omni generate: small payload (%s bytes) — combo image-gen", len(blob))
             return None
     for cand in (
@@ -796,6 +800,42 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
         except OSError:
             continue
     return None
+
+
+def run_scene_image(
+    user_ask: str,
+    plan: dict[str, Any],
+    thread_id: str,
+    thread_type: str = "user",
+    *,
+    classified: bool = False,
+) -> Optional[dict]:
+    """Host scenic diffusion — no search sibling, no Hermes shell curl|python."""
+    del thread_type
+    if not classified:
+        return None
+    try:
+        from .classify_client import plan_image_instruction
+    except ImportError:
+        from classify_client import plan_image_instruction  # type: ignore
+    img_ins = plan_image_instruction(plan, user_ask)
+    scene = scene_prompt_from_instruction(img_ins)
+    if not scene:
+        for ins in plan.get("instructions") or []:
+            scene = scene_prompt_from_instruction(str(ins))
+            if scene:
+                break
+    if not scene:
+        scene = (
+            "Photorealistic photograph of a cityscape with visible sky and urban skyline, "
+            "real camera photo, natural lighting, daytime, wide view, not cartoon, not anime"
+        )
+    prompt = _photoreal_scene_prompt(_place_alias_to_official(scene))
+    fname = f"scene-{str(thread_id)[-8:] or 'zalo'}.webp"
+    out = _omni_generate_still(prompt, filename=fname)
+    if isinstance(out, dict) and out.get("ok"):
+        return out
+    return shortcut_consumed()
 
 
 def run_search_then_weather_scene(

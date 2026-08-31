@@ -1,3 +1,17 @@
+## 2026-08-31 21:00 +07 — Host scenic image-gen shortcut; security-safe delivery
+
+### Symptom
+Hermes image-gen skill attempted `curl | python` to plain HTTP OmniRouter; Tirith/security blocked the turn. Scenic-only classify path set `process_original_message true` but adapter had no host shortcut despite `plan_allows_scene_image`.
+
+### Root cause
+Scenic-only diffusion was delegated to Hermes shell one-liners; host already had `_omni_generate_still` via urllib but no `run_scene_image` wiring. Low-quality AI Horde stubs still passed the 48KB guard.
+
+### Fix (core)
+`run_scene_image` host shortcut + classify `process_original_message false` for scenic-only; image-gen skill documents non-shell Omni path; quality guard 960×540 / 80KB; first-setup photoreal-first image-gen combo ordering.
+
+### Prevent recurrence
+Never route scenic-only diffusion through bash curl pipes; keep classify host-owned media families on internal HTTP shortcuts.
+
 ## 2026-08-31 20:00 +07 — Omni-only web-search; drop direct adapter chain
 
 ### Change
