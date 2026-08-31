@@ -1,3 +1,17 @@
+## 2026-08-31 22:00 +07 — image-gen combo polluted with AI Box chat models
+
+### Symptom
+Omni combo `image-gen` round-robin hit AI Box `image-gen/qwen-image-2.0` and `image-gen/deepseek-v4-flash`; `/images/generations` returned no image (`No images-capable targets in combo`).
+
+### Root cause
+AI Box chat endpoints share the `image-gen/` model namespace (colliding with combo name `image-gen`). Catalog lacks image modalities for AI Horde workers, so first-setup never refilled after operator added AI Box members.
+
+### Fix (core)
+first-setup treats `aihorde/*` and OpenRouter Flux/image as diffusion targets, excludes `image-gen/*` chat models, force-refills bad combos; load_env expands literal `\n` in corrupted one-line `.env` templates.
+
+### Prevent recurrence
+Never pin AI Box chat models into combo `image-gen`; run first-setup after Omni provider changes to restore aihorde diffusion members.
+
 ## 2026-08-31 21:00 +07 — Host scenic image-gen shortcut; security-safe delivery
 
 ### Symptom
