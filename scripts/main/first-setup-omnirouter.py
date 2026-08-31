@@ -651,50 +651,33 @@ def ensure_web_search_omni_combo(opener) -> None:
 
 
 def smoke_omni_search(key: str) -> None:
-    """Smoke Omni /v1/search — forced cascade Tavily → Firecrawl → SearXNG."""
-    cases = [
-        ("combo", {"query": "Ho Chi Minh weather", "max_results": 2, "combo": WEB_SEARCH_COMBO_NAME}),
-        ("unforced", {"query": "Ho Chi Minh weather", "max_results": 2}),
-        ("forced-tavily", {"query": "Ho Chi Minh weather", "max_results": 2, "provider": "tavily-search"}),
-        ("forced-firecrawl", {"query": "Ho Chi Minh weather", "max_results": 2, "provider": "firecrawl-search"}),
-        ("forced-searxng", {"query": "Ho Chi Minh weather", "max_results": 2, "provider": "searxng-search"}),
-    ]
-    ok_any = False
-    for label, body_obj in cases:
-        body = json.dumps(body_obj).encode()
-        req = urllib.request.Request(
-            f"{BASE}/v1/search",
-            data=body,
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=45) as resp:
-                data = json.loads(resp.read().decode() or "{}")
-            n = len(data.get("results") or [])
-            prov = data.get("provider")
-            print(f"==> smoke Omni /v1/search ({label}) provider={prov} results={n}")
-            if label.startswith("forced-") and n > 0:
-                ok_any = True
-                print(f"==> smoke OK: {label} returns results")
-            elif label == "combo" and n > 0:
-                ok_any = True
-                print(f"==> smoke OK: combo {WEB_SEARCH_COMBO_NAME} returns results")
-            elif label == "unforced" and prov == "searxng-search":
-                print(
-                    "NOTE: Omni unforced default labels searxng-search "
-                    "(product quirk); Router uses combo web-search first"
-                )
-        except urllib.error.HTTPError as e:
-            detail = e.read()[:200]
-            print(f"WARN smoke Omni /v1/search ({label}) HTTP {e.code}: {detail!r}")
-        except Exception as e:
-            print(f"WARN smoke Omni /v1/search ({label}): {e}")
-    if not ok_any:
-        print("WARN: no forced Omni search provider returned results — check Search provider keys")
+    """Smoke Omni /v1/search — combo web-search only."""
+    combo = WEB_SEARCH_COMBO_NAME
+    body_obj = {"query": "Ho Chi Minh weather", "max_results": 2, "combo": combo}
+    body = json.dumps(body_obj).encode()
+    req = urllib.request.Request(
+        f"{BASE}/v1/search",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            data = json.loads(resp.read().decode() or "{}")
+        n = len(data.get("results") or [])
+        print(f"==> smoke Omni /v1/search combo={combo!r} results={n}")
+        if n > 0 or data.get("answer"):
+            print(f"==> smoke OK: combo {combo}")
+        else:
+            print(f"WARN smoke combo {combo} returned no results")
+    except urllib.error.HTTPError as e:
+        detail = e.read()[:200]
+        print(f"WARN smoke Omni /v1/search combo HTTP {e.code}: {detail!r}")
+    except Exception as e:
+        print(f"WARN smoke Omni /v1/search combo: {e}")
 
 
 def smoke_router_web_search_combo() -> None:

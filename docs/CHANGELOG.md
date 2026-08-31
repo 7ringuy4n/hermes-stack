@@ -1,4 +1,9 @@
-## 2026-08-31 18:30 +07 — Zalo image path uses vision-ocr before OCR-only ack
+## 2026-08-31 19:00 +07 — Combo-only web-search; reject low-quality image-gen output
+
+- Router Worker Omni search posts `{ combo: web-search }` only (no provider bypass); response backend reports combo name.
+- Default search path is Omni combo when configured; direct adapters only via explicit `WEB_BACKENDS`.
+- Removed baked provider/backend lists from web-search combo JSON; operator members live in Omni UI.
+- Image-gen host rejects tiny/low-res diffusion blobs (<640×360 or half requested HD canvas) instead of delivering blur/censor stubs.
 
 - Bare/captioned images call combo vision-ocr when Paddle OCR text is empty; host-ack only when analyze text exists, otherwise classify/Hermes path.
 - Image analyze ack distinguishes OCR text vs vision scene summary.

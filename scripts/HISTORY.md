@@ -1,3 +1,17 @@
+## 2026-08-31 19:00 +07 — Combo-only web-search; low-quality image-gen guard
+
+### Symptom
+Omni logs showed `tavily-search` instead of combo `web-search`; Zalo-delivered scenic images were blurry low-res stubs.
+
+### Root cause
+Router Worker fell through to provider-specific Omni search bodies after combo attempt; diffusion workers returned tiny/censor placeholders that host still saved and sent.
+
+### Fix (core)
+Omni search uses `{ combo: web-search }` only; image-gen rejects sub-HD/tiny blobs before Zalo send.
+
+### Prevent recurrence
+Do not hardcode provider failover lists in repo JSON — operator combo members live in Omni UI; validate pixel size before delivering generated stills.
+
 ## 2026-08-31 18:30 +07 — Zalo bare image skipped vision-ocr combo
 
 ### Symptom
