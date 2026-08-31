@@ -16,7 +16,7 @@ Call **OmniRouter** directly — combo name **`image-gen`** always (Media worker
 `POST http://omni-router:20129/v1/images/generations`
 
 - Auth: `Authorization: Bearer $OPENAI_API_KEY` (same as `OMNIROUTER_API_KEY`)
-- Body: `model` = `image-gen` (or `$IMAGE_GEN_COMBO` when set), English `prompt`, `n=1`, HD `size` `"1024x1024"` unless the user asks otherwise
+- Body: `model` = `image-gen` (or `$IMAGE_GEN_COMBO` when set), English `prompt`, `n=1`, HD `size` `"1920x1080"` (16:9 Full HD) unless the user asks otherwise
 - Decode `data[0].b64_json` (or fetch `url`) and write under `/opt/data/media/out/<safe-slug>.png` (or `.jpg` / `.webp`)
 
 ```bash
@@ -24,7 +24,7 @@ mkdir -p /opt/data/media/out
 curl -sS -X POST http://omni-router:20129/v1/images/generations \
   -H "authorization: Bearer ${OPENAI_API_KEY}" \
   -H 'content-type: application/json' \
-  -d '{"model":"image-gen","prompt":"<english-scene>","n":1,"size":"1024x1024"}' \
+  -d '{"model":"image-gen","prompt":"<english-scene>","n":1,"size":"1920x1080"}' \
   | python -c "import sys,json,base64; d=json.load(sys.stdin); items=(d if isinstance(d,list) else (d.get('data') or d.get('images') or [d])); x=items[0]; open('/opt/data/media/out/<safe-slug>.webp','wb').write(base64.b64decode(x['b64_json']) if x.get('b64_json') else __import__('urllib.request').urlopen(x['url']).read())"
 ```
 

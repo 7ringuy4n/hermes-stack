@@ -1,3 +1,17 @@
+## 2026-08-31 18:00 +07 — image-gen HD canvas 1920x1080
+
+### Symptom
+Scenic diffusion still used square 1024 canvas while operator docs described Full HD landscape output.
+
+### Root cause
+Skill and Zalo host shortcut hardcoded `1024x1024` after the combo-only migration.
+
+### Fix (core)
+image-gen skill and host `_omni_generate_still` default to `1920x1080` (16:9); dispatcher comment aligned.
+
+### Prevent recurrence
+Canvas size lives in image-gen skill only — no `.env` size pins.
+
 ## 2026-08-31 17:00 +07 — strict active|inactive; web-search combo routing
 
 ### Symptom
