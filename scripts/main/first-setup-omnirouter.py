@@ -52,7 +52,11 @@ def load_env(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     if not path.exists():
         raise SystemExit(f"missing {path}")
-    for line in path.read_text(encoding="utf-8").splitlines():
+    raw = path.read_text(encoding="utf-8")
+    # Recover host .env saved as one line with literal \n (template paste corruption).
+    if raw.count("\n") < 2 and "\\n" in raw:
+        raw = raw.replace("\\n", "\n")
+    for line in raw.splitlines():
         s = line.strip()
         if not s or s.startswith("#") or "=" not in s:
             continue
@@ -825,6 +829,55 @@ def _row_has_image_modality(row: dict) -> bool:
     return False
 
 
+def _is_aihorde_diffusion_model_id(mid: str) -> bool:
+    """AI Horde Stable Diffusion workers — valid /images/generations targets."""
+    return (mid or "").strip().lower().startswith("aihorde/")
+
+
+def _is_openrouter_image_model_id(mid: str) -> bool:
+    low = (mid or "").strip().lower()
+    if not low.startswith("openrouter/"):
+        return False
+    return "flux" in low or "image" in low
+
+
+def _is_comfyui_image_model_id(mid: str) -> bool:
+    return (mid or "").strip().lower().startswith("comfyui/")
+
+
+def _is_image_gen_namespace_chat_model(mid: str) -> bool:
+    """AI Box chat models live under image-gen/ — not the image-gen combo."""
+    return (mid or "").strip().lower().startswith("image-gen/")
+
+
+def _is_image_output_model(row: dict) -> bool:
+    """True for /images/generations targets — catalog + known diffusion prefixes."""
+    mid = str(row.get("id") or "").strip()
+    if not mid or mid == "image-gen":
+        return False
+    if _is_image_gen_namespace_chat_model(mid):
+        return False
+    if _is_aihorde_diffusion_model_id(mid):
+        return True
+    if _is_comfyui_image_model_id(mid):
+        return True
+    if _is_openrouter_image_model_id(mid):
+        return True
+    has_image_mod = _row_has_image_modality(row)
+    caps = row.get("capabilities")
+    cap_gen = isinstance(caps, dict) and caps.get("image_generation") is True
+    if isinstance(caps, dict) and caps.get("image_generation") is False:
+        return False
+    return has_image_mod or cap_gen
+
+
+def _is_bad_image_gen_combo_member(mid: str, catalog: list[dict] | None = None) -> bool:
+    """Combo members that Omni rejects for /images/generations."""
+    if _is_image_gen_namespace_chat_model(mid):
+        return True
+    return not _is_image_gen_model_id(mid, catalog)
+
+
 def ensure_api_key_allows_combos(opener, existing_key: str) -> None:
     """Omni treats allowedCombos=[] as deny-all for combo names — pin stack combos.
 
@@ -957,31 +1010,28 @@ def _v1_models(api_key: str) -> list[dict]:
     return [r for r in rows if isinstance(r, dict)]
 
 
-def _is_image_output_model(row: dict) -> bool:
-    """True for /images/generations targets — catalog modalities/capabilities only."""
-    mid = str(row.get("id") or "").strip()
-    if not mid:
-        return False
-    has_image_mod = _row_has_image_modality(row)
-    caps = row.get("capabilities")
-    cap_gen = isinstance(caps, dict) and caps.get("image_generation") is True
-    if isinstance(caps, dict) and caps.get("image_generation") is False:
-        return False
-    return has_image_mod or cap_gen
-
-
 def _is_image_gen_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
     """Validate combo member against /v1/models catalog when available."""
+    if _is_image_gen_namespace_chat_model(mid):
+        return False
     rows = catalog or []
     for row in rows:
         if str(row.get("id") or "").strip() == (mid or "").strip():
             return _is_image_output_model(row)
+    if not rows:
+        return (
+            _is_aihorde_diffusion_model_id(mid)
+            or _is_openrouter_image_model_id(mid)
+            or _is_comfyui_image_model_id(mid)
+        )
     return False
 
 
 def _rank_image_gen_model(mid: str) -> tuple:
     """Prefer photoreal diffusion members; demote fast/anime; paid OpenRouter last."""
     m = (mid or "").strip().lower()
+    if _is_image_gen_namespace_chat_model(m):
+        return (9, m)
     if m.startswith("openrouter/") or "flux.2" in m:
         return (5, m)
     if "schnell" in m or "anime" in m or "anything" in m:
@@ -1229,7 +1279,7 @@ def ensure_media_combos(opener, api_key: str) -> None:
     combos = {c.get("name"): c for c in (data.get("combos") or []) if isinstance(c, dict)}
     catalog = _v1_models(api_key)
     cur_img = _combo_model_ids(combos.get("image-gen"))
-    bad_img = [m for m in cur_img if not _is_image_gen_model_id(m, catalog)]
+    bad_img = [m for m in cur_img if _is_bad_image_gen_combo_member(m, catalog)]
     need_img = (not cur_img) or bool(bad_img) or not set(cur_img).intersection(set(image_ids))
     want_head = image_ids[0] if image_ids else ""
     cur_head = cur_img[0] if cur_img else ""
@@ -1242,7 +1292,10 @@ def ensure_media_combos(opener, api_key: str) -> None:
         print(f"==> image-gen head {cur_head!r} → {want_head!r} (photoreal-first reorder)")
         need_img = True
     if bad_img:
-        print(f"==> image-gen has non-diffusion members {bad_img[:6]!r} — refilling")
+        print(
+            f"==> image-gen has invalid members {bad_img[:6]!r} "
+            f"(drop image-gen/* AI Box chat; use aihorde diffusion) — refilling"
+        )
     _put_or_create_combo(
         opener,
         name="image-gen",
