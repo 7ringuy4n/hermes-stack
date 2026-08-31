@@ -22,7 +22,10 @@ def load_env(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     if not path.is_file():
         return out
-    for line in path.read_text(encoding="utf-8").splitlines():
+    raw = path.read_text(encoding="utf-8")
+    if "\\n" in raw:
+        raw = raw.replace("\\n", "\n")
+    for line in raw.splitlines():
         s = line.strip()
         if not s or s.startswith("#") or "=" not in s:
             continue
@@ -71,16 +74,30 @@ def patch_hermes_config(cfg: Path, key: str, model: str, base_url: str) -> bool:
     return True
 
 
-def patch_shared_env(envp: Path, key: str, base_url: str) -> None:
+def patch_shared_env(
+    envp: Path,
+    key: str,
+    base_url: str,
+    *,
+    omni_base: str = "",
+    image_combo: str = "",
+) -> None:
     lines: dict[str, str] = {}
     if envp.is_file():
-        for line in envp.read_text(encoding="utf-8").splitlines():
+        raw = envp.read_text(encoding="utf-8")
+        if "\\n" in raw:
+            raw = raw.replace("\\n", "\n")
+        for line in raw.splitlines():
             if "=" in line and not line.strip().startswith("#"):
                 k, v = line.split("=", 1)
                 lines[k.strip()] = v
     if key:
         lines["OPENAI_API_KEY"] = key
         lines["OMNIROUTER_API_KEY"] = key
+    if omni_base:
+        lines["OMNIROUTER_BASE_URL"] = omni_base
+    if image_combo:
+        lines["IMAGE_GEN_COMBO"] = image_combo
     lines["OPENAI_BASE_URL"] = base_url
     envp.parent.mkdir(parents=True, exist_ok=True)
     envp.write_text("\n".join(f"{k}={v}" for k, v in lines.items()) + "\n", encoding="utf-8")
@@ -88,6 +105,24 @@ def patch_shared_env(envp: Path, key: str, base_url: str) -> None:
         envp.chmod(0o600)
     except OSError:
         pass
+
+
+def sync_replica_env(shared_env: Path) -> None:
+    replicas = shared_env.parent / "replicas"
+    if not shared_env.is_file() or not replicas.is_dir():
+        return
+    text = shared_env.read_text(encoding="utf-8")
+    for rep in replicas.iterdir():
+        if not rep.is_dir():
+            continue
+        dst = rep / ".env"
+        try:
+            if dst.is_symlink():
+                continue
+            dst.write_text(text, encoding="utf-8")
+            dst.chmod(0o600)
+        except OSError:
+            continue
 
 
 def sync_replica_configs(shared_cfg: Path) -> None:
@@ -111,10 +146,19 @@ def main() -> int:
     ).strip()
     model = stack_env.get("OMNIROUTER_DEFAULT_COMBO", DEFAULT_COMBO).strip() or DEFAULT_COMBO
     base_url = stack_env.get("HERMES_OPENAI_BASE_URL", MODEL_ROUTER_BASE).strip() or MODEL_ROUTER_BASE
+    omni_base = stack_env.get("OMNIROUTER_BASE_URL", "http://omni-router:20129/v1").strip()
+    image_combo = stack_env.get("IMAGE_GEN_COMBO", "image-gen").strip() or "image-gen"
     cfg = HERMES_DATA / "config.yaml"
     if not patch_hermes_config(cfg, key, model, base_url):
         return 1
-    patch_shared_env(HERMES_DATA / ".env", key, base_url)
+    patch_shared_env(
+        HERMES_DATA / ".env",
+        key,
+        base_url,
+        omni_base=omni_base,
+        image_combo=image_combo,
+    )
+    sync_replica_env(HERMES_DATA / ".env")
     sync_replica_configs(cfg)
     return 0
 

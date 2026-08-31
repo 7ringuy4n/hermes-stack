@@ -1,3 +1,9 @@
+## 2026-08-31 23:00 +07 — Omni key resolution; block Hermes secret scans for image-gen
+
+- Host media shortcuts resolve `OMNIROUTER_API_KEY` from process env and shared `/opt/data/.env` (no execute_code / replica file probes).
+- patch-hermes syncs Omni key/base/combo into shared and replica `.env`; image-gen/media-out skills forbid secret-scan scripts.
+- Scenic classify path stays host-owned; missing keys yield media-out failure line instead of Hermes key hunting.
+
 ## 2026-08-31 22:00 +07 — image-gen combo: exclude AI Box chat namespace
 
 - first-setup rejects `image-gen/*` and `img-gen/*` AI Box chat models (qwen-image, deepseek-v4-flash) from the `image-gen` combo — Omni cannot use them for `/images/generations`.

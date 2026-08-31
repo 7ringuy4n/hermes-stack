@@ -1,3 +1,17 @@
+## 2026-08-31 23:00 +07 — Hermes execute_code blocked on image-gen key probe
+
+### Symptom
+Image ask got no attachment; Hermes tried `execute_code` to read replica `.env` / config for API keys — security denied; user saw no image.
+
+### Root cause
+Host `_omni_generate_still` only read process env; replica/shared `.env` often lacked synced `OMNIROUTER_API_KEY`. Classify sometimes kept `process_original_message true`, so Hermes image-gen skill hunted keys via scripts instead of failing cleanly.
+
+### Fix (core)
+`omni_env.resolve_omni_api_key()` reads stack/shared env files; patch-hermes writes Omni keys into `/opt/data/.env` and non-symlink replica copies; skills forbid execute_code secret scans.
+
+### Prevent recurrence
+Never probe `.env`/replica paths from Hermes for diffusion; host owns scenic delivery with synced stack keys.
+
 ## 2026-08-31 22:00 +07 — image-gen combo polluted with AI Box chat models
 
 ### Symptom
