@@ -681,6 +681,28 @@ def _place_alias_to_official(scene: str) -> str:
     return text
 
 
+def _photoreal_scene_prompt(prompt: str) -> str:
+    """Ensure diffusion prompts ask for real photos, not cartoon/anime styles."""
+    p = (prompt or "").strip()
+    low = p.lower()
+    extras = [
+        "photorealistic photograph",
+        "real camera photo",
+        "natural lighting",
+        "highly detailed",
+        "not cartoon",
+        "not anime",
+        "not illustration",
+        "not stylized 3d render",
+    ]
+    missing = [x for x in extras if x not in low]
+    if not missing:
+        return p
+    if not p:
+        return ", ".join(extras)
+    return f"{p}, " + ", ".join(missing)
+
+
 def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None:
     """Scenic diffusion via OmniRouter combo image-gen (not dispatcher /v1/image)."""
     import base64
@@ -692,7 +714,7 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     if not key:
         log.warning("omni generate: missing OMNIROUTER_API_KEY")
         return None
-    scene = _place_alias_to_official(prompt or "")
+    scene = _photoreal_scene_prompt(_place_alias_to_official(prompt or ""))
     body = json.dumps(
         {"model": model, "prompt": scene, "n": 1, "size": "1024x1024"}
     ).encode()
@@ -800,9 +822,10 @@ def run_search_then_weather_scene(
     scene = scene_prompt_from_instruction(img_ins)
     if not scene:
         scene = (
-            "Photorealistic cityscape with visible sky and urban skyline, "
-            "daytime, wide view"
+            "Photorealistic photograph of a cityscape with visible sky and urban skyline, "
+            "real camera photo, natural lighting, daytime, wide view, not cartoon, not anime"
         )
+    scene = _photoreal_scene_prompt(scene)
     facts = _facts_from_search(search)
     overlay = [f for f in facts[:5] if f]
     if not overlay:

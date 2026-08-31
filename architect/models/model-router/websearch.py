@@ -202,7 +202,7 @@ def search_order(preferred: Optional[str] = None) -> list[str]:
 def health_fields() -> dict[str, Any]:
     cfg = _load_combo()
     return {
-        "web_combo": str(cfg.get("combo") or "websearch"),
+        "web_combo": str(cfg.get("combo") or "web-search"),
         "web_backends": search_order(),
         "web_extract_backends": _combo_extract(),
         "web_keys": {name: bool(_key(name)) for name in ("tavily", "firecrawl", "exa")},
@@ -420,7 +420,7 @@ def backends_next() -> dict[str, str]:
     order = search_order()
     cfg = _load_combo()
     return {
-        "combo": str(cfg.get("combo") or "websearch"),
+        "combo": str(cfg.get("combo") or "web-search"),
         "backend": order[0] if order else "",
         "order": ",".join(order),
     }
@@ -457,7 +457,7 @@ async def search(req: SearchReq) -> dict[str, Any]:
             break
     if merged or answer is not None:
         return {
-            "combo": str(_load_combo().get("combo") or "websearch"),
+            "combo": str(_load_combo().get("combo") or "web-search"),
             "backend": "+".join(used) if used else "combo",
             "answer": answer,
             "results": merged[:n],

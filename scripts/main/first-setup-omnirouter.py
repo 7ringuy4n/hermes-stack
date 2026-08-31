@@ -790,7 +790,104 @@ IMAGE_GEN_PREFERRED = [
     "aihorde/Flux.1-Schnell fp8 (Compact)",
     "aihorde/AbsoluteReality",
     "aihorde/AlbedoBase XL (SDXL)",
+    "aihorde/ICBINP - I Can't Believe It's Not Photography",
+    "aihorde/Realistic Vision",
 ]
+
+_IMAGE_GEN_EXCLUDE_TOKENS = (
+    "anime",
+    "cartoon",
+    "manga",
+    "comic",
+    "chibi",
+    "pony",
+    "furry",
+    "hentai",
+    "waifu",
+    "illustration only",
+    "pixel art",
+    "pixelart",
+)
+
+# AI Horde also lists chat/LLM workers (aphrodite, …) — never put those in image-gen.
+_AIHORDE_NON_IMAGE_TOKENS = (
+    "aphrodite",
+    "/llm",
+    "text-generation",
+    "instruct",
+    "chat",
+)
+
+STACK_API_KEY_COMBOS = (
+    "hermes",
+    "classifier",
+    "image-gen",
+    "vision-ocr",
+    "embedding",
+)
+
+
+def _is_cartoonish_image_model(mid: str) -> bool:
+    low = (mid or "").strip().lower()
+    return any(tok in low for tok in _IMAGE_GEN_EXCLUDE_TOKENS)
+
+
+def _row_has_image_modality(row: dict) -> bool:
+    mods = row.get("modalities") or row.get("output_modalities") or []
+    if isinstance(mods, list):
+        return any(str(m).lower() == "image" for m in mods)
+    return False
+
+
+def ensure_api_key_allows_combos(opener, existing_key: str) -> None:
+    """Omni treats allowedCombos=[] as deny-all for combo names — pin stack combos.
+
+    Empty allowlists block hermes/classifier/image-gen even when modelAccessMode=all.
+    """
+    _, data = http_json(opener, "GET", f"{BASE}/api/keys")
+    keys = data.get("keys") or []
+    want = list(STACK_API_KEY_COMBOS)
+    # Also allow any existing stack combos present in Omni.
+    try:
+        _, combos = http_json(opener, "GET", f"{BASE}/api/combos")
+        for c in combos.get("combos") or []:
+            name = (c.get("name") or "").strip()
+            if name and name not in want:
+                # Keep operator combos out of the pin set; only ensure stack names.
+                pass
+    except Exception as e:
+        print(f"WARN list combos for key ACL: {e}")
+
+    prefix = (existing_key or "").strip()[:12]
+    target = None
+    for row in keys:
+        if not isinstance(row, dict):
+            continue
+        masked = str(row.get("key") or row.get("keyPrefix") or "")
+        name = str(row.get("name") or "")
+        if prefix and prefix in masked.replace("*", ""):
+            target = row
+            break
+        if name in {"assistant-stack", "Default Key"} and target is None:
+            target = row
+    if not target or not target.get("id"):
+        print("WARN: no API key row to patch allowedCombos")
+        return
+    cur = [str(x) for x in (target.get("allowedCombos") or []) if str(x).strip()]
+    merged = list(cur)
+    for name in want:
+        if name not in merged:
+            merged.append(name)
+    if set(merged) == set(cur) and cur:
+        print(f"==> keep API key allowedCombos n={len(cur)}")
+        return
+    kid = target["id"]
+    status, body = http_json(
+        opener, "PATCH", f"{BASE}/api/keys/{kid}", {"allowedCombos": merged}
+    )
+    if status not in (200, 201):
+        raise SystemExit(f"API key allowedCombos patch failed: {body}")
+    print(f"OK: API key allowedCombos={merged}")
 
 
 def _media_worker_active(env: dict[str, str]) -> bool:
@@ -891,19 +988,57 @@ def _is_image_output_model(row: dict) -> bool:
         or "embed" in low
     ):
         return False
+    if any(tok in low for tok in _AIHORDE_NON_IMAGE_TOKENS):
+        return False
+    if _is_cartoonish_image_model(mid):
+        return False
+    has_image_mod = _row_has_image_modality(row)
+    caps = row.get("capabilities")
+    cap_gen = isinstance(caps, dict) and caps.get("image_generation") is True
+    # AI Horde: require image modality (catalog marks diffusion with modalities=['image']).
     if low.startswith("aihorde/"):
+        return has_image_mod or cap_gen
+    if has_image_mod or cap_gen:
         return True
     if "flux" in low or "imagen" in low or "dall-e" in low:
         return True
     if low.endswith("-image-preview") or "image-generation" in low:
         return True
-    caps = row.get("capabilities")
-    if isinstance(caps, dict) and caps.get("image_generation") is True:
-        return True
     return False
 
 
 def _is_image_gen_model_id(mid: str) -> bool:
+    """Id-only check used when validating existing combo members."""
+    low = (mid or "").strip().lower()
+    if not low:
+        return False
+    if any(tok in low for tok in _AIHORDE_NON_IMAGE_TOKENS):
+        return False
+    if _is_cartoonish_image_model(mid):
+        return False
+    if low.startswith("aihorde/"):
+        # Without /v1/models row, accept known photoreal / diffusion families only.
+        hints = (
+            "flux",
+            "sdxl",
+            "stable",
+            "realistic",
+            "absolute",
+            "albedo",
+            "icbinp",
+            "juggernaut",
+            "deliberate",
+            "dreamshaper",
+            "diffusion",
+            "inpainting",
+            "qwen-image",
+            "krea",
+            "majicmix",
+            "edge of realism",
+            "analog madness",
+            "natvis",
+        )
+        return any(h in low for h in hints)
     return _is_image_output_model({"id": mid})
 
 
@@ -917,6 +1052,7 @@ def list_image_gen_models(api_key: str) -> list[str]:
     rest.sort(
         key=lambda m: (
             0 if "flux" in m.lower() else 1,
+            0 if "real" in m.lower() or "photo" in m.lower() else 1,
             0 if m.startswith("aihorde/") else 1,
             m,
         )
@@ -960,6 +1096,72 @@ def list_vision_models(opener) -> list[str]:
 
     out = sorted(set(out), key=_rank)
     return out[:10]
+
+
+def _is_embedding_model_id(mid: str) -> bool:
+    low = (mid or "").strip().lower()
+    if not low or low == "embedding":
+        return False
+    if "embed" in low:
+        return True
+    return False
+
+
+def _is_embedding_output_model(row: dict) -> bool:
+    mid = str(row.get("id") or "").strip()
+    if not mid or mid.lower() == "embedding":
+        return False
+    low = mid.lower()
+    caps = row.get("capabilities") if isinstance(row.get("capabilities"), dict) else {}
+    mods = row.get("modalities") or row.get("output_modalities") or []
+    if caps.get("embedding") is True:
+        return True
+    if isinstance(mods, list) and any(str(m).lower() == "embedding" for m in mods):
+        return True
+    return "embed" in low
+
+
+def list_embedding_models(api_key: str) -> list[str]:
+    """Models Omni can use for /v1/embeddings (single dimension per combo)."""
+    rows = _v1_models(api_key)
+    found = [str(r.get("id")) for r in rows if _is_embedding_output_model(r) and r.get("id")]
+    preferred = [
+        "gemini/gemini-embedding-001",
+        "gemini/gemini-embedding-2",
+        "openrouter/openai/text-embedding-3-small",
+        "openrouter/google/gemini-embedding-001",
+        "openrouter/qwen/qwen3-embedding-8b",
+        "openrouter/mistralai/mistral-embed-2312",
+    ]
+    # Omni rejects combos that mix vector sizes — pin one concrete model.
+    for mid in preferred:
+        if mid in found:
+            return [mid]
+    return found[:1]
+
+
+def _smoke_embedding_combo(api_key: str) -> None:
+    body = json.dumps({"model": "embedding", "input": "setup smoke embedding"}).encode()
+    req = urllib.request.Request(
+        f"{BASE}/v1/embeddings",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            data = json.loads(resp.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        detail = e.read()[:400]
+        raise SystemExit(f"embedding /v1/embeddings smoke HTTP {e.code}: {detail!r}") from e
+    rows = data.get("data") or data.get("embeddings") or []
+    if not rows:
+        raise SystemExit(f"embedding smoke returned no vectors: {str(data)[:300]}")
+    print("OK: smoke embedding /v1/embeddings")
 
 
 def _put_or_create_combo(
@@ -1033,6 +1235,10 @@ def _smoke_image_gen_combo(api_key: str) -> None:
         items = []
     if not items:
         raise SystemExit(f"image-gen smoke returned no image data: {str(data)[:300]}")
+    # Omni may return a bare list of {b64_json|url} objects.
+    first = items[0] if isinstance(items[0], dict) else {}
+    if not (first.get("b64_json") or first.get("url")):
+        raise SystemExit(f"image-gen smoke missing b64_json/url: {str(first)[:200]}")
     print("OK: smoke image-gen /images/generations")
 
 
@@ -1074,8 +1280,25 @@ def ensure_media_combos(opener, api_key: str) -> None:
         force=need_vis,
     )
 
-    # embedding: keep if present; else create OpenCode shell (operator may swap embed models)
-    if not combos.get("embedding"):
+    emb_ids = list_embedding_models(api_key)
+    cur_emb = _combo_model_ids(combos.get("embedding"))
+    bad_emb = [m for m in cur_emb if not _is_embedding_model_id(m)]
+    # Omni forbids mixed vector dimensions — require exact single-model pin.
+    need_emb = (not cur_emb) or bool(bad_emb) or (bool(emb_ids) and cur_emb != emb_ids)
+    if bad_emb:
+        print(f"==> embedding has non-embed members {bad_emb[:6]!r} — refilling")
+    elif emb_ids and cur_emb != emb_ids:
+        print(f"==> embedding pin {emb_ids!r} (was {cur_emb[:4]!r}) — single dimension")
+    if emb_ids:
+        _put_or_create_combo(
+            opener,
+            name="embedding",
+            description="Embeddings — Omni /v1/embeddings (embed-capable members only)",
+            model_ids=emb_ids,
+            force=need_emb,
+        )
+        _smoke_embedding_combo(api_key)
+    elif not combos.get("embedding"):
         emb = list_oc_models(opener)[:5] or list(OPENCODE_FREE_FALLBACK[:5])
         _put_or_create_combo(
             opener,
@@ -1084,8 +1307,9 @@ def ensure_media_combos(opener, api_key: str) -> None:
             model_ids=emb,
             force=True,
         )
+        print("WARN: no embed-capable catalog models — seeded shell only")
     else:
-        print("OK: combo embedding exists (operator-owned members)")
+        print("OK: combo embedding exists (operator-owned members; no embed catalog)")
 
 
 def assert_combo_oc_only(opener, name: str) -> None:
@@ -1130,15 +1354,30 @@ def main() -> int:
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
     ensure_media_combos(opener, key)
+    ensure_api_key_allows_combos(opener, key)
     pin_media_combos(env)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
     set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
     set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
     set_env_key(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
     set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "1"))
-    # Hermes-facing Router Worker proxies search to Omni by default.
-    if env.get("WEB_BACKENDS") in (None, ""):
-        set_env_key(ROOT / ".env", "WEB_BACKENDS", "omni")
+    # Hermes-facing Router Worker: Omni search first, then direct adapters if Omni is down.
+    web_backends = (env.get("WEB_BACKENDS") or "").strip()
+    if web_backends in {"", "omni"}:
+        set_env_key(
+            ROOT / ".env",
+            "WEB_BACKENDS",
+            "omni,tavily,firecrawl,searxng",
+        )
+        env["WEB_BACKENDS"] = "omni,tavily,firecrawl,searxng"
+        print("OK: pinned WEB_BACKENDS=omni,tavily,firecrawl,searxng")
+    if not (env.get("OMNIROUTER_SEARCH_PROVIDERS") or "").strip():
+        set_env_key(
+            ROOT / ".env",
+            "OMNIROUTER_SEARCH_PROVIDERS",
+            "tavily-search,firecrawl-search,searxng-search",
+        )
+        print("OK: pinned OMNIROUTER_SEARCH_PROVIDERS=tavily→firecrawl→searxng")
     enable_omni_memory(opener)
 
     recreate_model_router()

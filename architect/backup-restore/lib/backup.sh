@@ -159,7 +159,7 @@ assistant_compose() {
   fi
   if _env_active "${ENABLE_SECURITY:-}" || _env_active "${ENABLE_MONITOR:-}" || _env_active "${ENABLE_NOTIFY:-}" \
     || _env_active "${ENABLE_OPENBAO:-}" || _env_active "${ENABLE_SIEM:-}" || _env_active "${ENABLE_AUTHZ:-}" \
-    || _env_active "${ENABLE_CLOUDDRIVE:-}"; then
+    || _env_active "${ENABLE_CLOUDDRIVE:-}" || _env_active "${ENABLE_ANTIVIRUS:-}" || _env_active "${SECURITY_SANDBOX:-}"; then
     [[ -f "${ROOT}/docker/docker-compose.security.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.security.yml")
   fi
   if _env_active "${ENABLE_TRAEFIK:-}" || _env_active "${ENABLE_API_GATEWAY:-}" || _env_active "${ENABLE_OPENVPN:-}"; then
