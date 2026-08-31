@@ -17,6 +17,8 @@ from typing import Any, Optional
 
 import httpx
 
+from env_flags import env_active, env_inactive
+
 
 def _env(*keys: str, default: str = "") -> str:
     for k in keys:
@@ -43,15 +45,13 @@ def image_backends() -> list[str]:
 def backend_available(name: str) -> bool:
     n = (name or "").strip().lower()
     if n == "omni":
-        enabled = (os.environ.get("ENABLE_OMNIROUTER") or "1").strip().lower()
-        if enabled in {"0", "false", "no", "off", "inactive"}:
+        if env_inactive("ENABLE_OMNIROUTER", default="active"):
             return False
         base = _env("OMNIROUTER_BASE_URL", default="http://omni-router:20129/v1")
         key = _env("OMNIROUTER_API_KEY")
         return bool(base and key)
     if n == "n9":
-        enabled = (os.environ.get("ENABLE_9ROUTER") or "0").strip().lower()
-        if enabled not in {"1", "true", "yes", "on", "active"}:
+        if not env_active("ENABLE_9ROUTER", default="inactive"):
             return False
         base = _env("N9ROUTER_BASE_URL", "OPENAI_BASE_URL", default="http://9router:20128/v1")
         key = _env("N9ROUTER_API_KEY", "OPENAI_API_KEY")
@@ -198,7 +198,7 @@ def generate_image_bytes(
     for b in image_backends():
         if b not in order:
             order.append(b)
-    if "pillow" not in order and (os.environ.get("IMAGE_ALLOW_PILLOW") or "0") == "1":
+    if "pillow" not in order and env_active("IMAGE_ALLOW_PILLOW", default="inactive"):
         order.append("pillow")
 
     if not order:

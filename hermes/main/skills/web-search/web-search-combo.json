@@ -1,14 +1,16 @@
 {
   "combo": "web-search",
-  "description": "Hermes-facing search combo. Primary path: OmniRoute /v1/search with provider fallback Tavily → Firecrawl → SearXNG. Direct adapters are secondary when Omni is unavailable.",
+  "omni_combo": "web-search",
+  "omni_providers": ["tavily-search", "firecrawl-search", "searxng-search"],
+  "description": "Hermes-facing search combo. Primary path: OmniRoute combo web-search (PRIORITY). Direct adapters when Omni is unavailable.",
   "backends": ["omni", "tavily", "firecrawl", "searxng"],
   "extract_backends": ["tavily", "firecrawl"],
   "max_results": 3,
   "notes": [
-    "Combo name web-search (Router Worker health field web_combo).",
-    "Omni path uses OMNIROUTER_SEARCH_PROVIDERS (default tavily-search,firecrawl-search,searxng-search).",
-    "WEB_BACKENDS default omni,tavily,firecrawl,searxng — Omni first, then direct adapters.",
-    "Per-provider timeout WEB_SEARCH_PROVIDER_TIMEOUT_S (default 20s) keeps failover bounded.",
+    "Combo name web-search — operator configures members in Omni UI.",
+    "Router Worker omni backend uses omni_combo + omni_providers fallback.",
+    "WEB_BACKENDS default omni — Omni first, then direct adapters.",
+    "Per-provider timeout WEB_SEARCH_PROVIDER_TIMEOUT_S keeps failover bounded.",
     "Extract stays on Router Worker (SearXNG cannot extract)."
   ]
 }

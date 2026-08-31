@@ -25,6 +25,32 @@ from pydantic import BaseModel
 ROOT = Path(__file__).resolve().parent
 
 
+def _web_search_combo_name() -> str:
+    """Omni/Router combo name (operator-owned in Omni UI)."""
+    for key in (
+        "MODEL_ROUTER_WEB_SEARCH_COMBO",
+        "WEB_SEARCH_COMBO",
+        "OMNIROUTER_WEB_SEARCH_COMBO",
+    ):
+        raw = (os.environ.get(key) or "").strip()
+        if raw:
+            return raw
+    cfg = _load_combo_raw()
+    for field in ("omni_combo", "combo"):
+        val = cfg.get(field)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return "web-search"
+
+
+def _load_combo_raw() -> dict[str, Any]:
+    try:
+        data = json.loads(_resolve_combo_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def _resolve_combo_path() -> Path:
     """Prefer Hermes web-search skill combo; fall back to baked config copy."""
     env = (os.environ.get("WEB_SEARCH_COMBO_PATH") or "").strip()
@@ -57,8 +83,6 @@ MESSAGES_PATH = Path(
 )
 SEARCH_RESULT_CAP = 10
 SNIPPET_CHARS = 500
-# Default Omni Search provider cascade (override with OMNIROUTER_SEARCH_PROVIDERS).
-DEFAULT_OMNI_SEARCH_PROVIDERS = "tavily-search,firecrawl-search,searxng-search"
 
 # Known adapters only — membership registry, not failover order.
 _ADAPTERS = frozenset({"omni", "tavily", "firecrawl", "exa", "searxng"})
@@ -83,16 +107,18 @@ def _provider_timeout_s() -> float:
 
 
 def _omni_search_providers() -> list[str]:
-    raw = os.environ.get("OMNIROUTER_SEARCH_PROVIDERS") or DEFAULT_OMNI_SEARCH_PROVIDERS
-    return [p.strip() for p in raw.split(",") if p.strip()]
+    """Provider cascade from web-search-combo.json (Omni UI combo owns priority)."""
+    cfg = _load_combo()
+    raw = cfg.get("omni_providers")
+    if isinstance(raw, list):
+        out = [str(p).strip() for p in raw if str(p).strip()]
+        if out:
+            return out
+    return []
 
 
 def _load_combo() -> dict[str, Any]:
-    try:
-        data = json.loads(COMBO_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    return _load_combo_raw()
 
 
 def _split_csv(raw: str | None) -> list[str]:
@@ -202,7 +228,8 @@ def search_order(preferred: Optional[str] = None) -> list[str]:
 def health_fields() -> dict[str, Any]:
     cfg = _load_combo()
     return {
-        "web_combo": str(cfg.get("combo") or "web-search"),
+        "web_combo": _web_search_combo_name(),
+        "omni_search_combo": _web_search_combo_name(),
         "web_backends": search_order(),
         "web_extract_backends": _combo_extract(),
         "web_keys": {name: bool(_key(name)) for name in ("tavily", "firecrawl", "exa")},
@@ -223,20 +250,52 @@ class ExtractReq(BaseModel):
     backend: Optional[str] = None
 
 
+def _normalize_omni_search_hit(data: dict[str, Any], label: str) -> dict[str, Any] | None:
+    used = str(data.get("provider") or label)
+    results: list[dict[str, Any]] = []
+    for item in data.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        results.append(
+            {
+                "title": item.get("title") or "",
+                "url": item.get("url") or item.get("link") or "",
+                "content": (
+                    item.get("content")
+                    or item.get("snippet")
+                    or item.get("description")
+                    or ""
+                )[:SNIPPET_CHARS],
+                "provider": used,
+            }
+        )
+    if results or data.get("answer"):
+        return {
+            "backend": f"omni:{used}",
+            "answer": data.get("answer"),
+            "results": results,
+        }
+    return None
+
+
 async def _omni_search(query: str, max_results: int) -> dict[str, Any]:
-    """Proxy to OmniRoute search gateway (Tavily → Firecrawl → SearXNG)."""
+    """Proxy to OmniRoute search gateway via operator combo ``web-search``."""
     url = _omni_search_url()
     key = _omni_api_key()
     if not url or not key:
         raise HTTPException(503, "Omni search unavailable (OMNIROUTER_BASE_URL / OMNIROUTER_API_KEY)")
     n = max(1, min(int(max_results or _combo_max_results()), SEARCH_RESULT_CAP))
-    # Cap each provider so a hung Tavily/Firecrawl call fails over quickly.
-    providers = _omni_search_providers()
+    combo = _web_search_combo_name()
     per_timeout = _provider_timeout_s()
+    attempts: list[tuple[str, dict[str, Any]]] = [
+        ("combo", {"query": query, "max_results": n, "combo": combo}),
+        ("unforced", {"query": query, "max_results": n}),
+    ]
+    for provider in _omni_search_providers():
+        attempts.append((provider, {"query": query, "max_results": n, "provider": provider}))
     errors: list[str] = []
     async with httpx.AsyncClient(timeout=per_timeout) as client:
-        for provider in providers:
-            body: dict[str, Any] = {"query": query, "max_results": n, "provider": provider}
+        for label, body in attempts:
             try:
                 r = await client.post(
                     url,
@@ -248,37 +307,16 @@ async def _omni_search(query: str, max_results: int) -> dict[str, Any]:
                 )
                 r.raise_for_status()
                 data = r.json()
-            except Exception as e:  # noqa: BLE001 — try next Omni provider
-                errors.append(f"{provider}: {e}")
+            except Exception as e:  # noqa: BLE001 — try next Omni route
+                errors.append(f"{label}: {e}")
                 continue
             if not isinstance(data, dict):
-                errors.append(f"{provider}: non-object response")
+                errors.append(f"{label}: non-object response")
                 continue
-            used = str(data.get("provider") or provider)
-            results: list[dict[str, Any]] = []
-            for item in data.get("results") or []:
-                if not isinstance(item, dict):
-                    continue
-                results.append(
-                    {
-                        "title": item.get("title") or "",
-                        "url": item.get("url") or item.get("link") or "",
-                        "content": (
-                            item.get("content")
-                            or item.get("snippet")
-                            or item.get("description")
-                            or ""
-                        )[:SNIPPET_CHARS],
-                        "provider": used,
-                    }
-                )
-            if results or data.get("answer"):
-                return {
-                    "backend": f"omni:{used}",
-                    "answer": data.get("answer"),
-                    "results": results,
-                }
-            errors.append(f"{provider}: no results")
+            hit = _normalize_omni_search_hit(data, label)
+            if hit:
+                return hit
+            errors.append(f"{label}: no results")
     raise RuntimeError("omni search returned no results (" + "; ".join(errors[:4]) + ")")
 
 
@@ -420,7 +458,7 @@ def backends_next() -> dict[str, str]:
     order = search_order()
     cfg = _load_combo()
     return {
-        "combo": str(cfg.get("combo") or "web-search"),
+        "combo": _web_search_combo_name(),
         "backend": order[0] if order else "",
         "order": ",".join(order),
     }
@@ -457,7 +495,7 @@ async def search(req: SearchReq) -> dict[str, Any]:
             break
     if merged or answer is not None:
         return {
-            "combo": str(_load_combo().get("combo") or "web-search"),
+            "combo": _web_search_combo_name(),
             "backend": "+".join(used) if used else "combo",
             "answer": answer,
             "results": merged[:n],
