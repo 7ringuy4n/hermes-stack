@@ -74,6 +74,18 @@ def test_image_quality_mins_full_hd() -> None:
     assert min_w == 960 and min_h == 540
 
 
+def test_media_out_candidates_shared_first() -> None:
+    os.environ["HERMES_SHARED_DATA"] = "/opt/data"
+    os.environ.pop("HERMES_HOME", None)
+    os.environ.pop("MEDIA_OUT_DIR", None)
+    try:
+        roots = [p.as_posix() for p in mod._media_out_candidates()]
+        assert roots[0] == "/opt/data/media/out"
+        assert "/data/assistant/media/out" in roots
+    finally:
+        os.environ.pop("HERMES_SHARED_DATA", None)
+
+
 def main() -> None:
     test_image_gen_timeout_default()
     test_image_gen_timeout_clamped()
@@ -83,6 +95,7 @@ def main() -> None:
     test_image_gen_model_uses_member_id_when_combo_is_member()
     test_image_quality_mins_hd()
     test_image_quality_mins_full_hd()
+    test_media_out_candidates_shared_first()
     print("OK media_shortcuts_omni_unit")
 
 

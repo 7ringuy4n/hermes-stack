@@ -1,3 +1,9 @@
+## 2026-09-01 20:15 +07 — scenic image delivery: shared media/out + direct Zalo send
+
+- Host scenic diffusion writes to shared `HERMES_SHARED_DATA/media/out` first so Zalo autosend and bridge attachment paths align; legacy `/data/media/out` remains a scan fallback.
+- Zalo adapter acks before long diffusion (`Đang vẽ hình…`), runs generation off the event loop, and delivers images directly when diffusion exceeds the autosend grace window.
+- patch-hermes syncs `IMAGE_GEN_HEAD_MEMBER` and strips obsolete image env pins from shared `.env`; first-setup clears legacy web-search pins on stack and shared env files.
+
 ## 2026-09-01 19:45 +07 — image-gen AI Box head pin; drop Horde from combo
 
 - Host scenic diffusion calls the pinned AI Box head member (`IMAGE_GEN_HEAD_MEMBER`) instead of combo `image-gen` when Horde fallbacks would hang.
