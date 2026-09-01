@@ -981,6 +981,7 @@ _OBSOLETE_IMAGE_ENV = [
     "IMAGE_OMNI_MODEL",
     "OMNIROUTER_IMAGE_MODEL",
     "IMAGE_GEN_SIZE",
+    "IMAGE_GEN_HEAD_MODEL",
     "IMAGE_LLM_MODEL",
     "IMAGE_LLM_SIZE",
     "IMAGE_LLM_PROVIDER",
@@ -1299,7 +1300,7 @@ def _smoke_image_gen_combo(api_key: str, head_model: str = "") -> None:
     """
     model = (head_model or "").strip() or "image-gen"
     body = json.dumps(
-        {"model": model, "prompt": "setup smoke tiny skyline", "n": 1, "size": "1024x1024"}
+        {"model": model, "prompt": "setup smoke tiny skyline", "n": 1, "size": "1280x720"}
     ).encode()
     req = urllib.request.Request(
         f"{BASE}/v1/images/generations",

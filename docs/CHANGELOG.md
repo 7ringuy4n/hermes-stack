@@ -1,3 +1,9 @@
+## 2026-09-01 18:30 +07 — scenic image-gen HD canvas; drop head-model env pin
+
+- Host scenic diffusion defaults to HD `1280x720` (16:9) with a 240s Omni timeout (`OMNI_IMAGE_GEN_SIZE`, `OMNI_IMAGE_GEN_TIMEOUT_S`) on combo `image-gen` only; quality guard scales with requested canvas size.
+- Removed legacy `IMAGE_GEN_HEAD_MODEL` env pin and patch-hermes sync; first-setup clears the obsolete key on re-run.
+- Classifier `media` part adds an image-gen failure/status ask family: short Vietnamese host direct reply, `process_original_message=false` — never Hermes architecture essays on troubleshooting asks.
+
 ## 2026-09-01 16:30 +07 — image-gen priority fallback; scenic-vs-OCR classification guard
 
 - The `image-gen` combo now uses the `priority` (fallback) strategy instead of `round-robin`, so AI Box diffusion members drain first and free AI Horde workers act only as fallbacks — removing the timeout/censor path that emitted the media-out failure line on scenic asks.
