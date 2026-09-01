@@ -1,3 +1,8 @@
+## 2026-09-01 20:30 +07 — scenic gate ack bypasses outbound filter
+
+- Zalo `_as_gate_announce` now sets `skip_outbound_filter` so host scenic acks (`Đang vẽ hình…`) and media failure lines are not dropped by the outbound LLM filter.
+- Bare-text media shortcuts run before inflight drop and the attachment pipeline; workflow submit no longer returns early on media gates without running the host shortcut.
+
 ## 2026-09-01 20:15 +07 — scenic image delivery: shared media/out + direct Zalo send
 
 - Host scenic diffusion writes to shared `HERMES_SHARED_DATA/media/out` first so Zalo autosend and bridge attachment paths align; legacy `/data/media/out` remains a scan fallback.
