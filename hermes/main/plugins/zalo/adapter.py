@@ -1696,6 +1696,13 @@ class ZaloAdapter(BasePlatformAdapter):
                     )
                 except Exception:
                     pass
+                try:
+                    self._as_autosend_remember_turn(
+                        str(thread_id),
+                        "group" if str(thread_type).lower() in {"group", "g"} else "user",
+                    )
+                except Exception:
+                    pass
                 shortcut = await asyncio.to_thread(
                     run_search_then_weather_scene,
                     shortcut_user_text,
@@ -1782,6 +1789,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
             except Exception:
                 pass
+            image_delivered = False
             try:
                 img_path = str((shortcut or {}).get("file") or (shortcut or {}).get("path") or "")
                 if img_path:
@@ -1790,24 +1798,28 @@ class ZaloAdapter(BasePlatformAdapter):
                         ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp",
                     }:
                         meta = {"as_skip_autosend": True, "as_claimed": True}
-                        await self.send_image_file(
+                        res = await self.send_image_file(
                             str(thread_id),
                             img_path,
                             caption="",
                             metadata=meta,
+                        )
+                        image_delivered = bool(
+                            res and getattr(res, "success", None) is not False
                         )
             except Exception as e:
                 logger.warning(
                     "Zalo: shortcut direct image send failed: %s",
                     type(e).__name__,
                 )
-            try:
-                await self._as_autosend_late_files(
-                    str(thread_id),
-                    "group" if str(thread_type).lower() in {"group", "g"} else "user",
-                )
-            except Exception:
-                pass
+            if not image_delivered:
+                try:
+                    await self._as_autosend_late_files(
+                        str(thread_id),
+                        "group" if str(thread_type).lower() in {"group", "g"} else "user",
+                    )
+                except Exception:
+                    pass
             try:
                 from .session_memory import append_turn
             except ImportError:
@@ -3293,7 +3305,6 @@ class ZaloAdapter(BasePlatformAdapter):
                         thread_type=thread_type,
                         bare_text=bare_q,
                     ):
-                        await self._as_autosend_late_files(tid, thread_type)
                         return
                 await self.handle_message(event)
                 await self._as_autosend_late_files(tid, thread_type)
