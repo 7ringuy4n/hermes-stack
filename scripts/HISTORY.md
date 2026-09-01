@@ -1,3 +1,19 @@
+## 2026-09-01 20:15 +07 — scenic image delivery: shared media/out + direct Zalo send
+
+### Symptom
+Classify succeeded and container `run_scene_image` returned OK (~26s), but Zalo users received no image — inbound messages logged with no outbound attachment.
+
+### Root cause
+1. Diffusion wrote under `/data/media/out` while Zalo autosend and bridge scan `/opt/data/media/out` first (`HERMES_SHARED_DATA`).
+2. Autosend grace window (8s) expired before ~26s diffusion finished, so late files were never claimed.
+3. Synchronous `run_scene_image` blocked the adapter event loop during generation.
+
+### Fix (core)
+`media_shortcuts._media_out_candidates()` prefers shared SoT; adapter acks, offloads diffusion to a worker thread, and direct-sends images on success; autosend roots include legacy `/data/media/out`. patch-hermes syncs head member and clears obsolete image pins on shared `.env`.
+
+### Prevent recurrence
+Scenic output paths must match Zalo bridge scan order; long diffusion must not rely on autosend grace alone.
+
 ## 2026-09-01 19:45 +07 — image-gen AI Box head pin; drop Horde from combo
 
 ### Symptom

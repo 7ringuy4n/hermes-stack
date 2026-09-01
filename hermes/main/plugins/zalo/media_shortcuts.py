@@ -834,11 +834,44 @@ def _omni_request_image_blob(
     return blob
 
 
-def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None:
-    """Scenic diffusion via OmniRouter combo image-gen (not dispatcher /v1/image)."""
+def _media_out_candidates() -> list:
+    """Writable media/out dirs — shared SoT first (matches Zalo autosend scan)."""
     import os
     from pathlib import Path
 
+    out: list = []
+    seen: set[str] = set()
+
+    def _add(path: str) -> None:
+        p = (path or "").strip()
+        if not p:
+            return
+        key = str(Path(p))
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(Path(p))
+
+    shared = (
+        os.getenv("HERMES_SHARED_DATA")
+        or os.getenv("HERMES_DATA_DIR")
+        or os.getenv("ASSISTANT_DATA_DIR")
+        or "/opt/data"
+    ).strip()
+    _add(str(Path(shared) / "media" / "out"))
+    home = (os.getenv("HERMES_HOME") or "").strip()
+    if home:
+        _add(str(Path(home) / "media" / "out"))
+    extra = (os.getenv("MEDIA_OUT_DIR") or "").strip()
+    if extra:
+        _add(extra)
+    _add("/opt/data/media/out")
+    _add("/data/assistant/media/out")
+    return out
+
+
+def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None:
+    """Scenic diffusion via OmniRouter combo image-gen (not dispatcher /v1/image)."""
     try:
         from .omni_env import resolve_omni_api_key, resolve_omni_base_url
     except ImportError:
@@ -866,11 +899,7 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     )
     if not blob:
         return None
-    for cand in (
-        Path(os.getenv("MEDIA_OUT_DIR") or "/data/media/out"),
-        Path("/opt/data/media/out"),
-        Path("/data/assistant/media/out"),
-    ):
+    for cand in _media_out_candidates():
         try:
             cand.mkdir(parents=True, exist_ok=True)
             dest = cand / filename

@@ -167,7 +167,7 @@ def test_put_or_create_combo_uses_want_strategy() -> None:
             object(),
             name="image-gen",
             description="diffusion only",
-            model_ids=["img-gen/qwen-image-2.0", "aihorde/ICBINP"],
+            model_ids=["img-gen/qwen-image-2.0", "img-gen/wan2.7-image-pro"],
             force=True,
             strategy="priority",
         )
