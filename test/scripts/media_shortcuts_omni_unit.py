@@ -86,6 +86,29 @@ def test_media_out_candidates_shared_first() -> None:
         os.environ.pop("HERMES_SHARED_DATA", None)
 
 
+def test_weather_scene_visual_prompt_no_text_board() -> None:
+    prompt = mod._weather_scene_visual_prompt(
+        "Ho Chi Minh City skyline",
+        ["Temperature: 28C", "Humidity: 80%", "Partly cloudy"],
+    )
+    low = prompt.lower()
+    assert "caption board" not in low
+    assert "readable text" in low or "no readable text" in low
+    assert "no letters" in low
+    assert "ho chi minh city" in low
+
+
+def test_weather_visual_cues_rain() -> None:
+    cues = mod._weather_visual_cues(["Heavy rain showers", "Humid"])
+    blob = " ".join(cues).lower()
+    assert "rain" in blob or "wet" in blob
+
+
+def test_labeled_scene_prompt_keeps_board() -> None:
+    prompt = mod._labeled_scene_prompt("City plaza", ["Temp: 30C"])
+    assert "information board" in prompt.lower() or "readable" in prompt.lower()
+
+
 def main() -> None:
     test_image_gen_timeout_default()
     test_image_gen_timeout_clamped()
@@ -96,6 +119,9 @@ def main() -> None:
     test_image_quality_mins_hd()
     test_image_quality_mins_full_hd()
     test_media_out_candidates_shared_first()
+    test_weather_scene_visual_prompt_no_text_board()
+    test_weather_visual_cues_rain()
+    test_labeled_scene_prompt_keeps_board()
     print("OK media_shortcuts_omni_unit")
 
 

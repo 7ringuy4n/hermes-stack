@@ -1,3 +1,19 @@
+## 2026-09-01 21:00 +07 — weather-scene visual-only diffusion; fix duplicate image send
+
+### Symptom
+Weather-scene asks (city + current conditions) delivered duplicate images; diffusion rendered misspelled Vietnamese text on-image; evening asks produced bright daytime scenes.
+
+### Root cause
+1. `_scene_prompt_with_facts` asked diffusion for a readable caption board with raw fact strings — models garble non-English text.
+2. Prompt hardcoded `daytime outdoor scene` regardless of local clock.
+3. Host direct `send_image_file` plus `_as_autosend_late_files` (and queue worker autosend) sent the same still twice.
+
+### Fix (core)
+`_weather_scene_visual_prompt` uses visual cues + `_local_lighting_hint()`; classify `media` part drops on-image caption for weather-scene; adapter skips autosend when direct image delivery succeeds.
+
+### Prevent recurrence
+Weather-scene must not request readable text in diffusion; one delivery path per shortcut image.
+
 ## 2026-09-01 20:30 +07 — scenic gate ack bypasses outbound filter
 
 ### Symptom

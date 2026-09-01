@@ -1,3 +1,9 @@
+## 2026-09-01 21:00 +07 — weather-scene visual-only diffusion; fix duplicate image send
+
+- Weather-scene diffusion expresses conditions through sky/lighting/atmosphere only — no readable on-image text (fixes misspelled Vietnamese captions from diffusion).
+- Host applies local time-of-day lighting from stack TZ (evening/night/dawn/day) instead of hardcoded daytime.
+- Image shortcuts direct-send once; autosend late-files skipped when direct delivery succeeds (fixes duplicate Zalo images).
+
 ## 2026-09-01 20:30 +07 — scenic gate ack bypasses outbound filter
 
 - Zalo `_as_gate_announce` now sets `skip_outbound_filter` so host scenic acks (`Đang vẽ hình…`) and media failure lines are not dropped by the outbound LLM filter.
