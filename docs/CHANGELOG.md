@@ -1,13 +1,18 @@
+## 2026-09-01 11:25 +07 — OCR vision on vision-ocr; image-gen diffusion-only
+
+- Corrected OCR vision routing: `OCR_MODEL` pins to the `vision-ocr` combo (multimodal chat), not `image-gen`; the `image-gen` combo holds diffusion-only AI Box / AI Horde models that reject `/chat/completions`.
+- OCR worker default `MODEL` and docstring reverted to `vision-ocr`; `image-gen` combo description is now diffusion-only.
+
 ## 2026-09-01 11:10 +07 — AI Box custom image-model registration; slim host image-ack
 
 - first-setup now registers/repairs whitelisted AI Box image generators as OmniRouter custom models (`apiFormat=images-generations`, `supportedEndpoints=[images]`) so `/v1/images/generations` actually routes them; previously `qwen-image-2.0` was tagged `supportedEndpoints=[chat]` and the other three were absent, so the combo returned no image.
 - Zalo image-analyze ack drops the fixed "analyze / summarize / translate / save knowledge?" footer; OCR mode keeps only a short "Đã đọc chữ:" header, and file-extract ack drops the same footer — LLM summary stands alone.
-- Host Zalo adapter no longer owns image/vision prompt or timing: removed host-side scene-text + timing helpers; OCR worker owns multimodal summarization with a neutral prompt routed through `image-gen`.
+- Host Zalo adapter no longer owns image/vision prompt or timing: removed host-side scene-text + timing helpers; OCR worker owns multimodal summarization with a neutral prompt routed through `vision-ocr`.
 
-## 2026-09-01 07:15 +07 — AI Box image-gen combo; quote-reply media; image analyze via image-gen
+## 2026-09-01 07:15 +07 — AI Box image-gen combo; quote-reply media; image analyze via vision-ocr
 
 - first-setup whitelists AI Box image generators (`qwen-image-2.0`, `qwen-image-3.0`, `qwen-image-3.0-pro`, `wan2.7-image-pro`) in combo `image-gen` ahead of Horde fallback; chat junk under `img-gen/` stays excluded.
-- Inbound image analyze (post-Paddle) uses combo `image-gen` multimodal chat — not `vision-ocr`; neutral Vietnamese summary prompt (no OCR/vision tool hints).
+- Inbound image analyze (post-Paddle) uses combo `vision-ocr` multimodal chat — diffusion stays in `image-gen`; neutral Vietnamese summary prompt (no OCR/vision tool hints).
 - Zalo quote-reply inherits quoted photo/file media before mention gate; bridge adds `quoted` alias and forwards `quote` on `/send-attachment` for reply-with-image delivery.
 
 ## 2026-08-31 23:00 +07 — Omni key resolution; block Hermes secret scans for image-gen

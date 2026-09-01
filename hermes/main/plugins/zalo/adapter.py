@@ -4054,7 +4054,7 @@ class ZaloAdapter(BasePlatformAdapter):
             # (local docx/terminal/zipfile forensics). Whitespace-only = blank.
             excerpt_meaningful = self._as_meaningful_learn_text(excerpt or "")
             excerpt_for_prompt = excerpt if excerpt_meaningful else ""
-            # image-gen vision is handled by the OCR worker (OCR_MODEL=image-gen),
+            # vision is handled by the OCR worker (OCR_MODEL=vision-ocr),
             # so a second host-side image hop is redundant. Empty extract falls
             # through to the neutral attachment prompt for Hermes classify.
             if excerpt_meaningful:

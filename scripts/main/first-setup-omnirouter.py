@@ -6,7 +6,7 @@
 3) Ensure OpenCode provider; fill chat combo ``hermes`` with cloud ``oc/*`` members
 4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members
 5) Ensure media combos: image-gen (image-capable), vision-ocr (supportsVision), embedding
-6) Pin IMAGE_GEN_COMBO / OCR_MODEL from media worker state (inactive → hermes)
+6) Pin IMAGE_GEN_COMBO (image-gen) / OCR_MODEL (vision-ocr) from media worker state
 7) Set combo strategy preference (round-robin)
 8) Ensure Search: Tavily → Firecrawl → SearXNG
 9) Point Hermes at model-router; recreate router-worker for the key
@@ -1012,7 +1012,7 @@ def pin_media_combos(env: dict[str, str]) -> None:
         img_combo = env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen"
         pins = {
             "IMAGE_GEN_COMBO": img_combo,
-            "OCR_MODEL": img_combo,
+            "OCR_MODEL": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
             "OCR_VISION": "active",
             "EMBED_MODEL": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
             "OMNIROUTER_IMAGE_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
@@ -1460,7 +1460,7 @@ def ensure_media_combos(opener, api_key: str) -> None:
     _put_or_create_combo(
         opener,
         name="image-gen",
-        description="Image generation + inbound image analyze — AI Box / AI Horde / image-capable",
+        description="Image generation — AI Box / AI Horde / image-capable (diffusion only)",
         model_ids=image_ids,
         force=need_img,
     )

@@ -1,3 +1,17 @@
+## 2026-09-01 11:25 +07 — OCR vision on vision-ocr; image-gen diffusion-only
+
+### Symptom
+Inbound image analyze routed `OCR_MODEL=image-gen`, but the `image-gen` combo holds diffusion-only models (AI Box qwen-image, AI Horde) that reject `/chat/completions` with HTTP 400/502 — so every image analyze failed.
+
+### Root cause
+The OCR worker's vision path posts `/v1/chat/completions` with `model=OCR_MODEL`; pointing it at a diffusion combo cannot produce a text description. The earlier "route image analyze through image-gen" decision conflated diffusion (`/images/generations`) with multimodal chat.
+
+### Fix (core)
+`pin_media_combos` sets `OCR_MODEL` from `OMNIROUTER_VISION_COMBO` (`vision-ocr`); OCR worker default `MODEL` and its docstring reverted to `vision-ocr`. Combo `image-gen` remains diffusion-only.
+
+### Prevent recurrence
+Keep image generation (`/images/generations`) and image analyze (`/chat/completions` multimodal) on separate combos: `image-gen` vs `vision-ocr`.
+
 ## 2026-09-01 11:10 +07 — AI Box custom image-model repair; neutral image analyze; slim acks
 
 ### Symptom
