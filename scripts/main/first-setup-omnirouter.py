@@ -1346,7 +1346,14 @@ def _custom_models_by_provider(opener, provider: str) -> dict[str, dict]:
     except Exception as e:
         print(f"WARN provider-models GET failed for {provider[:8]}…: {e}")
         return {}
-    bucket = (data.get("models") or {}).get(provider) or []
+    models = data.get("models")
+    if isinstance(models, dict):
+        bucket = models.get(provider) or []
+    elif isinstance(models, list):
+        # GET ?provider=X returns a flat list of rows (not keyed by provider).
+        bucket = models
+    else:
+        bucket = []
     return {
         str(row.get("id")): row
         for row in bucket

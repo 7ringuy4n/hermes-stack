@@ -108,6 +108,39 @@ def test_aibox_image_provider_nodes_filter() -> None:
     assert "/api/provider-nodes" in captured.get("url", "")
 
 
+def test_custom_models_by_provider_shapes() -> None:
+    provider = "openai-compatible-abc"
+    row = {"id": "qwen-image-2.0", "apiFormat": "images-generations", "supportedEndpoints": ["chat"]}
+    original_http = getattr(mod, "http_json", None)
+
+    # Flat-list shape (GET ?provider=X)
+    def fake_http_list(opener, method, url, body=None, timeout=25):
+        assert "provider=" + provider in url
+        return 200, {"models": [row]}
+
+    mod.http_json = fake_http_list
+    try:
+        assert mod._custom_models_by_provider(object(), provider) == {"qwen-image-2.0": row}
+    finally:
+        if original_http is not None:
+            mod.http_json = original_http
+        else:
+            del mod.http_json
+
+    # Dict-keyed shape (GET without provider)
+    def fake_http_dict(opener, method, url, body=None, timeout=25):
+        return 200, {"models": {provider: [row]}}
+
+    mod.http_json = fake_http_dict
+    try:
+        assert mod._custom_models_by_provider(object(), provider) == {"qwen-image-2.0": row}
+    finally:
+        if original_http is not None:
+            mod.http_json = original_http
+        else:
+            del mod.http_json
+
+
 def main() -> None:
     test_aibox_image_models_whitelisted()
     test_exclude_img_gen_namespace_junk()
@@ -116,6 +149,7 @@ def main() -> None:
     test_rank_prefers_aibox_over_horde()
     test_custom_image_model_action()
     test_aibox_image_provider_nodes_filter()
+    test_custom_models_by_provider_shapes()
     print("OK first_setup_image_gen_unit")
 
 
