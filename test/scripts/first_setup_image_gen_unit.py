@@ -20,17 +20,22 @@ def _row(mid: str, **caps) -> dict:
     return {"id": mid, "capabilities": caps or {}}
 
 
-def test_exclude_img_gen_namespace_chat() -> None:
-    assert mod._is_image_gen_namespace_chat_model("img-gen/qwen-image-2.0") is True
+def test_aibox_image_models_whitelisted() -> None:
+    for mid in (
+        "img-gen/qwen-image-2.0",
+        "image-gen/qwen-image-3.0-pro",
+        "img-gen/wan2.7-image-pro",
+    ):
+        assert mod._is_aibox_image_generation_model(mid) is True
+        assert mod._is_image_output_model(_row(mid)) is True
+        assert mod._is_bad_image_gen_combo_member(mid) is False
+
+
+def test_exclude_img_gen_namespace_junk() -> None:
     assert mod._is_image_gen_namespace_chat_model("img-gen/deepseek-v4-flash") is True
-    assert mod._is_bad_image_gen_combo_member("img-gen/qwen-image-2.0") is True
-
-
-def test_exclude_image_gen_namespace_chat() -> None:
-    assert mod._is_image_gen_namespace_chat_model("image-gen/qwen-image-2.0") is True
-    assert mod._is_image_gen_namespace_chat_model("image-gen/deepseek-v4-flash") is True
-    assert mod._is_image_output_model(_row("image-gen/qwen-image-2.0", reasoning=True)) is False
-    assert mod._is_bad_image_gen_combo_member("image-gen/deepseek-v4-flash") is True
+    assert mod._is_image_gen_namespace_junk("img-gen/deepseek-v4-flash") is True
+    assert mod._is_bad_image_gen_combo_member("img-gen/deepseek-v4-flash") is True
+    assert mod._is_image_gen_namespace_junk("img-gen/qwen-image-2.0") is False
 
 
 def test_allow_aihorde_diffusion() -> None:
@@ -46,18 +51,105 @@ def test_allow_openrouter_flux() -> None:
     assert mod._is_image_output_model(_row(mid, tool_calling=True)) is True
 
 
-def test_rank_prefers_icbinp_over_aibox() -> None:
+def test_rank_prefers_aibox_over_horde() -> None:
     horde = "aihorde/ICBINP"
-    chat = "image-gen/qwen-image-2.0"
-    assert mod._rank_image_gen_model(horde) < mod._rank_image_gen_model(chat)
+    aibox = "img-gen/qwen-image-3.0-pro"
+    assert mod._rank_image_gen_model(aibox) < mod._rank_image_gen_model(horde)
+
+
+def test_custom_image_model_action() -> None:
+    assert mod._custom_image_model_action(None) == "add"
+    assert (
+        mod._custom_image_model_action(
+            {"id": "qwen-image-2.0", "apiFormat": "images-generations", "supportedEndpoints": ["chat"]}
+        )
+        == "fix"
+    )
+    assert (
+        mod._custom_image_model_action(
+            {"id": "qwen-image-2.0", "apiFormat": "images-generations", "supportedEndpoints": ["images"]}
+        )
+        == ""
+    )
+    assert (
+        mod._custom_image_model_action(
+            {"id": "qwen-image-2.0", "apiFormat": "chat-completions", "supportedEndpoints": ["images"]}
+        )
+        == "fix"
+    )
+
+
+def test_aibox_image_provider_nodes_filter() -> None:
+    fake_nodes = [
+        {"id": "n1", "name": "AI Box", "prefix": "img-gen", "apiType": "images-generations"},
+        {"id": "n2", "name": "chat", "prefix": "oc", "apiType": "chat-completions"},
+        {"id": "n3", "name": "comfy", "prefix": "comfyui", "apiType": "comfyui"},
+    ]
+
+    captured = {}
+    original_http = getattr(mod, "http_json", None)
+
+    def fake_http(opener, method, url, body=None, timeout=25):
+        captured["url"] = url
+        return 200, {"nodes": fake_nodes}
+
+    mod.http_json = fake_http
+    try:
+        nodes = mod._aibox_image_provider_nodes(object())
+    finally:
+        if original_http is not None:
+            mod.http_json = original_http
+        else:
+            del mod.http_json
+    ids = {n["id"] for n in nodes}
+    assert "n1" in ids
+    assert "n2" not in ids
+    assert "n3" not in ids
+    assert "/api/provider-nodes" in captured.get("url", "")
+
+
+def test_custom_models_by_provider_shapes() -> None:
+    provider = "openai-compatible-abc"
+    row = {"id": "qwen-image-2.0", "apiFormat": "images-generations", "supportedEndpoints": ["chat"]}
+    original_http = getattr(mod, "http_json", None)
+
+    # Flat-list shape (GET ?provider=X)
+    def fake_http_list(opener, method, url, body=None, timeout=25):
+        assert "provider=" + provider in url
+        return 200, {"models": [row]}
+
+    mod.http_json = fake_http_list
+    try:
+        assert mod._custom_models_by_provider(object(), provider) == {"qwen-image-2.0": row}
+    finally:
+        if original_http is not None:
+            mod.http_json = original_http
+        else:
+            del mod.http_json
+
+    # Dict-keyed shape (GET without provider)
+    def fake_http_dict(opener, method, url, body=None, timeout=25):
+        return 200, {"models": {provider: [row]}}
+
+    mod.http_json = fake_http_dict
+    try:
+        assert mod._custom_models_by_provider(object(), provider) == {"qwen-image-2.0": row}
+    finally:
+        if original_http is not None:
+            mod.http_json = original_http
+        else:
+            del mod.http_json
 
 
 def main() -> None:
-    test_exclude_img_gen_namespace_chat()
-    test_exclude_image_gen_namespace_chat()
+    test_aibox_image_models_whitelisted()
+    test_exclude_img_gen_namespace_junk()
     test_allow_aihorde_diffusion()
     test_allow_openrouter_flux()
-    test_rank_prefers_icbinp_over_aibox()
+    test_rank_prefers_aibox_over_horde()
+    test_custom_image_model_action()
+    test_aibox_image_provider_nodes_filter()
+    test_custom_models_by_provider_shapes()
     print("OK first_setup_image_gen_unit")
 
 

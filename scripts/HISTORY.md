@@ -1,3 +1,45 @@
+## 2026-09-01 11:25 +07 — OCR vision on vision-ocr; image-gen diffusion-only
+
+### Symptom
+Inbound image analyze routed `OCR_MODEL=image-gen`, but the `image-gen` combo holds diffusion-only models (AI Box qwen-image, AI Horde) that reject `/chat/completions` with HTTP 400/502 — so every image analyze failed.
+
+### Root cause
+The OCR worker's vision path posts `/v1/chat/completions` with `model=OCR_MODEL`; pointing it at a diffusion combo cannot produce a text description. The earlier "route image analyze through image-gen" decision conflated diffusion (`/images/generations`) with multimodal chat.
+
+### Fix (core)
+`pin_media_combos` sets `OCR_MODEL` from `OMNIROUTER_VISION_COMBO` (`vision-ocr`); OCR worker default `MODEL` and its docstring reverted to `vision-ocr`. Combo `image-gen` remains diffusion-only.
+
+### Prevent recurrence
+Keep image generation (`/images/generations`) and image analyze (`/chat/completions` multimodal) on separate combos: `image-gen` vs `vision-ocr`.
+
+## 2026-09-01 11:10 +07 — AI Box custom image-model repair; neutral image analyze; slim acks
+
+### Symptom
+AI Box image generators never returned an image from combo `image-gen`: `/v1/images/generations` silently skipped them. Image acks still appended a fixed "summarize / translate / save knowledge" footer, and the host adapter still hardcoded image/vision prompts plus timing helpers.
+
+### Root cause
+The AI Box custom model `qwen-image-2.0` was registered with `supportedEndpoints: ["chat"]`, not `["images"]`; the other three whitelisted models were absent as active custom models. OmniRoute only routes a custom model through `/v1/images/generations` when `supportedEndpoints` includes `images`. The host adapter owned natural-language prompt/timing concerns that belong to the LLM/OCR worker.
+
+### Fix (core)
+first-setup registers/repairs the four AI Box image models on their `images-generations` provider node via `/api/provider-models` (POST add / PUT fix) with `apiFormat=images-generations` + `supportedEndpoints=["images"]`. Zalo image/file acks drop the fixed footer; OCR keeps only a "Đã đọc chữ:" header. Host-side scene-text and timing helpers removed; OCR worker owns multimodal summarization through `image-gen`.
+
+### Prevent recurrence
+After adding an AI Box provider, run first-setup so its image models get the correct image endpoint tags; keep image analysis prompting in the OCR worker, not the host adapter.
+
+## 2026-09-01 07:15 +07 — Quote-reply image; AI Box in image-gen combo; analyze path
+
+### Symptom
+Quote-reply to a photo in Zalo did not download/analyze the quoted image. Inbound image analyze still routed to `vision-ocr`. AI Box image generators were excluded from combo `image-gen` after the prior chat-junk fix.
+
+### Root cause
+Quote media merge ran after the group mention gate, so quoted images were invisible to buffered-media logic. `_as_vision_scene_text` forced `image-gen` → `vision-ocr`. first-setup excluded all `img-gen/*` models, including whitelisted AI Box image generators.
+
+### Fix (core)
+`merge_inbound_quote_media` before mention gate; bridge `quoted` alias + attachment quote forward; first-setup whitelists four AI Box image models with Horde fallback; OCR_MODEL pins to image-gen combo; neutral multimodal summary prompt.
+
+### Prevent recurrence
+Run first-setup after AI Box provider changes; keep quote media extraction ahead of gates; do not blanket-exclude `img-gen/` — only chat junk.
+
 ## 2026-08-31 23:00 +07 — Hermes execute_code blocked on image-gen key probe
 
 ### Symptom

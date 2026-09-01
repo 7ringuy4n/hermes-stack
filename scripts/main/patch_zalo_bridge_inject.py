@@ -35,6 +35,7 @@ HOST_BIND = (os.environ.get("ZALO_PLUGIN_HOST") or "0.0.0.0").strip() or "0.0.0.
 
 INJECT_MARKER = 'app.post("/inject-event"'
 MEDIA_MARKER = "ASSISTANT_MEDIA_PROXY_v1"
+ATTACH_QUOTE_MARKER = "ASSISTANT_SEND_ATTACHMENT_QUOTE_v1"
 
 INJECT_SNIPPET = r"""
 // assistant-stack: synthetic inbound onto the existing SSE fan-out (tests).
@@ -232,6 +233,26 @@ def _strip_broken_media(text: str) -> str:
     return pattern.sub("\n", text)
 
 
+def _patch_send_attachment_quote(text: str) -> tuple[str, str]:
+    """Forward optional quote on /send-attachment (reply-with-image)."""
+    if ATTACH_QUOTE_MARKER in text:
+        return text, "ALREADY"
+    old_destructure = (
+        'const { threadId, threadType = "user", caption } = req.body || {};'
+    )
+    new_destructure = (
+        f'const {{ threadId, threadType = "user", caption, quote }} = req.body || {{}}; '
+        f'// {ATTACH_QUOTE_MARKER}'
+    )
+    old_call = "const r = await client.sendAttachment(threadId, threadType, paths, caption);"
+    new_call = "const r = await client.sendAttachment(threadId, threadType, paths, caption, quote);"
+    if old_destructure not in text or old_call not in text:
+        return text, "ROUTE_MISSING"
+    text = text.replace(old_destructure, new_destructure, 1)
+    text = text.replace(old_call, new_call, 1)
+    return text, "PATCHED"
+
+
 def patch_server() -> dict[str, str]:
     out: dict[str, str] = {}
     if not PLUGIN.is_file():
@@ -274,6 +295,9 @@ def patch_server() -> dict[str, str]:
             out["media"] = "PATCHED"
     else:
         out["media"] = "ALREADY"
+
+    text, attach_q = _patch_send_attachment_quote(text)
+    out["send_attachment_quote"] = attach_q
 
     if text != original:
         PLUGIN.write_text(text, encoding="utf-8")
@@ -463,7 +487,7 @@ def restart_plugin() -> str:
 def main() -> int:
     result = patch_server()
     print(f"bridge_patch={result}")
-    need_restart = result.get("status") == "WRITTEN" or result.get("media") == "PATCHED"
+    need_restart = result.get("status") == "WRITTEN" or result.get("media") == "PATCHED" or result.get("send_attachment_quote") == "PATCHED"
     # Always heal EADDRINUSE crash-loops when explicitly requested.
     force = (os.environ.get("ZALO_BRIDGE_FORCE_RESTART") or "").strip() in {
         "1",

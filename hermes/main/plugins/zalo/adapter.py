@@ -308,6 +308,7 @@ from attachment import (  # noqa: E402
     image_analyze_ack_message,
     quoted_context_snip,
     extract_media_from_quote,
+    merge_inbound_quote_media,
     normalize_zalo_msg_type,
     sheet_ref_from_text,
     song_hint_from_filename,
@@ -1248,7 +1249,6 @@ class ZaloAdapter(BasePlatformAdapter):
             content=body,
             metadata={
                 "thread_type": tt,
-                "as_skip_timing": True,
                 "as_skip_dest": True,
                 "as_skip_autosend": True,
                 "as_skip_inflight": True,
@@ -1275,7 +1275,6 @@ class ZaloAdapter(BasePlatformAdapter):
             content=content,
             metadata={
                 "thread_type": tt,
-                "as_skip_timing": True,
                 "as_skip_dest": True,
                 "as_skip_autosend": True,
                 "as_skip_inflight": True,
@@ -1403,7 +1402,7 @@ class ZaloAdapter(BasePlatformAdapter):
 
     def _as_inflight_done(self, thread_id, metadata=None) -> None:  # ASSISTANT_INFLIGHT_v6
         meta = metadata if isinstance(metadata, dict) else {}
-        if meta.get("as_skip_timing") or meta.get("as_skip_inflight"):
+        if meta.get("as_skip_inflight"):
             return
         if self._as_already_answering_max() <= 0:
             return
@@ -1436,7 +1435,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     content=msg,
                     metadata={
                         "thread_type": "group" if thread_type == "group" else "user",
-                        "as_skip_timing": True,
                         "as_skip_inflight": True,
                         "as_skip_dest": True,
                         "as_skip_autosend": True,
@@ -1661,7 +1659,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     content=body,
                     metadata={
                         "thread_type": "group" if thread_type == "group" else "user",
-                        "as_skip_timing": True,
                         "skip_outbound_filter": True,
                     },
                 )
@@ -1719,7 +1716,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     content=body,
                     metadata={
                         "thread_type": "group" if dest_type == "group" else "user",
-                        "as_skip_timing": True,
                         "skip_outbound_filter": True,
                     },
                 )
@@ -2209,13 +2205,11 @@ class ZaloAdapter(BasePlatformAdapter):
             from turn_wait import isolate_session_chat_id  # type: ignore
         jid = str(job.get("id"))
         instruction = str(job.get("instruction") or "").strip()
-        if instruction and "images/generations" not in instruction and "combo image-gen" not in instruction.lower():
+        if instruction and "images/generations" not in instruction and "skill image-gen" not in instruction.lower():
             instruction = (
                 instruction
-                + "\n\nIf this task creates a still image: use skill image-gen — "
-                "POST http://omni-router:20129/v1/images/generations with model image-gen "
-                "(OmniRouter combo image-gen), English photorealistic prompt, save under /opt/data/media/out. "
-                "Never ComfyUI or local drawing scripts. "
+                + "\n\nIf this task creates a still image: use skill image-gen "
+                "(diffusion via the image-gen combo; English photorealistic prompt, save under /opt/data/media/out). "
                 "Video/music asks: skill video-gen (policy refuse). User-facing: the file only."
             )
         ctx = job.get("context") if isinstance(job.get("context"), dict) else {}
@@ -2231,7 +2225,6 @@ class ZaloAdapter(BasePlatformAdapter):
             self._thread_types[tid] = zalo_tt
         except Exception:
             pass
-        self._as_mark_recv(iso)
         self._as_autosend_remember_turn(iso, zalo_tt)
         source = self.build_source(
             chat_id=iso,
@@ -3421,7 +3414,6 @@ class ZaloAdapter(BasePlatformAdapter):
                 content=refuse,
                 metadata={
                     "thread_type": "group" if thread_type == "group" else "user",
-                    "as_skip_timing": True,
                 },
             )
         except Exception:
@@ -3494,7 +3486,6 @@ class ZaloAdapter(BasePlatformAdapter):
             content=msg,
             metadata={
                 "thread_type": "group" if thread_type == "group" else "user",
-                "as_skip_timing": True,
                 "as_skip_inflight": True,
                 "as_skip_dest": True,
                 "as_skip_autosend": True,
@@ -3612,7 +3603,6 @@ class ZaloAdapter(BasePlatformAdapter):
 
         # Remember type for outbound routing.
         self._thread_types[thread_id] = "group" if thread_type == "group" else "user"
-        self._as_mark_recv(thread_id)  # ASSISTANT_TIMING_FOOTER_v6
         # New user text must not flush a leftover image from a previous (stuck) turn.
         if not (m.get("scheduleFire") or m.get("schedule_fire")):
             try:
@@ -3789,6 +3779,9 @@ class ZaloAdapter(BasePlatformAdapter):
         # Schedule fires inject into groups without @mention — must not be dropped here.
         schedule_fire = bool(m.get("scheduleFire") or m.get("schedule_fire"))
         media = m.get("media") if isinstance(m.get("media"), dict) else None
+        # Quote-reply to photo/file: resolve media before mention gate so group
+        # buffered-media and attachment paths see the quoted image URL.
+        media, m = merge_inbound_quote_media(m, media)
         pending_key = f"{thread_id}:{sender_id}"
         if chat_type == "group" and not schedule_fire:
             if self.group_mode == "off":
@@ -3861,23 +3854,17 @@ class ZaloAdapter(BasePlatformAdapter):
         if (not schedule_fire) and (not queue_on) and await self._as_inflight_drop(sender_id, thread_id, thread_type):
             return
 
-        self._as_turn_handoff(thread_id)  # ASSISTANT_TIMING_FOOTER_v6
-
         if not (isinstance(media, dict) and media.get("url")):
-            raw_q = m.get("quoted")
-            if not isinstance(raw_q, dict):
-                raw_q = m.get("quote")
-            if isinstance(raw_q, dict):
-                qmedia = extract_media_from_quote(raw_q)
-                if qmedia:
-                    media = qmedia
-                    m = dict(m)
-                    m["media"] = media
-                    logger.info(
-                        "Zalo: media from quoted %s (%s)",
-                        normalize_zalo_msg_type(raw_q.get("msgType") or raw_q.get("cliMsgType")),
-                        media.get("fileName"),
-                    )
+            media, m = merge_inbound_quote_media(m, media)
+            if isinstance(media, dict) and media.get("url"):
+                logger.info(
+                    "Zalo: media from quoted %s (%s)",
+                    normalize_zalo_msg_type(
+                        (m.get("quote") or m.get("quoted") or {}).get("msgType")
+                        or (m.get("quote") or m.get("quoted") or {}).get("cliMsgType")
+                    ),
+                    media.get("fileName"),
+                )
 
         # Cache inbound as SendMessageQuote so outbound replies quote the @mention.  (ASSISTANT_REPLY_QUOTE)
         if not hasattr(self, "_pending_reply_quote"):
@@ -3999,7 +3986,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     content="Không lấy được file — gửi lại giúp mình.",
                     metadata={
                         "thread_type": "group" if thread_type == "group" else "user",
-                        "as_skip_timing": True,
                         "as_skip_inflight": True,
                     },
                 )
@@ -4048,7 +4034,6 @@ class ZaloAdapter(BasePlatformAdapter):
                         content=ack,
                         metadata={
                             "thread_type": "group" if thread_type == "group" else "user",
-                            "as_skip_timing": True,
                             "as_skip_autosend": True,
                             "as_skip_dest": True,
                             "skip_outbound_filter": True,
@@ -4069,17 +4054,9 @@ class ZaloAdapter(BasePlatformAdapter):
             # (local docx/terminal/zipfile forensics). Whitespace-only = blank.
             excerpt_meaningful = self._as_meaningful_learn_text(excerpt or "")
             excerpt_for_prompt = excerpt if excerpt_meaningful else ""
-            # Images: when OCR/Paddle text is empty, call combo vision-ocr before any ack.
-            if attach_is_image and not excerpt_meaningful and media_urls:
-                vision_text = await self._as_vision_scene_text(
-                    media_urls[0],
-                    attach_name,
-                    caption=str(text or ""),
-                )
-                if vision_text:
-                    excerpt = vision_text
-                    excerpt_meaningful = self._as_meaningful_learn_text(excerpt)
-                    excerpt_for_prompt = excerpt if excerpt_meaningful else ""
+            # vision is handled by the OCR worker (OCR_MODEL=vision-ocr),
+            # so a second host-side image hop is redundant. Empty extract falls
+            # through to the neutral attachment prompt for Hermes classify.
             if excerpt_meaningful:
                 self._as_attachment_remember(str(thread_id), attach_name, excerpt)
             else:
@@ -4171,7 +4148,6 @@ class ZaloAdapter(BasePlatformAdapter):
                                 content=refuse,
                                 metadata={
                                     "thread_type": "group" if thread_type == "group" else "user",
-                                    "as_skip_timing": True,
                                     "as_skip_inflight": True,
                                     "skip_outbound_filter": True,
                                 },
@@ -4193,11 +4169,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 if attach_is_image:
                     ack = image_analyze_ack_message(excerpt_for_prompt or "")
                     if ack:
-                        flow_stage = (
-                            "attach_image_vision_ack"
-                            if "vision" in ack
-                            else "attach_image_ocr_ack"
-                        )
+                        flow_stage = "attach_image_analyze_ack"
                     else:
                         host_ack = False
                 else:
@@ -4223,7 +4195,6 @@ class ZaloAdapter(BasePlatformAdapter):
                             content=ack,
                             metadata={
                                 "thread_type": "group" if thread_type == "group" else "user",
-                                "as_skip_timing": True,
                                 "as_skip_autosend": True,
                                 "as_skip_dest": True,
                                 "skip_outbound_filter": True,
@@ -4316,7 +4287,6 @@ class ZaloAdapter(BasePlatformAdapter):
                                         "thread_type": "group"
                                         if thread_type == "group"
                                         else "user",
-                                        "as_skip_timing": True,
                                         "as_skip_autosend": True,
                                         "as_skip_dest": True,
                                         "skip_outbound_filter": True,
@@ -4967,12 +4937,7 @@ class ZaloAdapter(BasePlatformAdapter):
             from gateway_noise import drop_outbound  # type: ignore
         return drop_outbound(t)
 
-    def _as_timing_enabled(self) -> bool:  # ASSISTANT_TIMING_FOOTER_v6
-        import os
-        v = (os.getenv("ZALO_TIMING_FOOTER") or "0").strip().lower()
-        return v in {"1", "true", "yes", "on"}
-
-    def _as_timing_http(self, method: str, path: str, payload=None):  # ASSISTANT_TIMING_FOOTER_v6
+    def _as_session_http(self, method: str, path: str, payload=None):  # ASSISTANT_AUTOSEND_v3
         import json as _json
         import os
         import urllib.request
@@ -4988,155 +4953,8 @@ class ZaloAdapter(BasePlatformAdapter):
             with urllib.request.urlopen(req, timeout=2.0) as resp:
                 return _json.loads(resp.read().decode("utf-8") or "{}")
         except Exception as e:
-            logger.debug("Zalo timing %s %s failed: %s", method, path, type(e).__name__)
+            logger.debug("Zalo session %s %s failed: %s", method, path, type(e).__name__)
             return {}
-
-    def _as_clock(self, thread_id) -> dict:  # ASSISTANT_TIMING_FOOTER_v6
-        tid = str(thread_id or "")
-        if not hasattr(self, "_as_tclock"):
-            self._as_tclock = {}
-        st = self._as_tclock.get(tid)
-        if not isinstance(st, dict):
-            st = {}
-            if tid:
-                self._as_tclock[tid] = st
-        return st
-
-    def _as_mark_recv(self, thread_id) -> None:  # ASSISTANT_TIMING_FOOTER_v6
-        import time
-        tid = str(thread_id or "")
-        if not tid:
-            return
-        t0 = time.time()
-        st = self._as_clock(tid)
-        st["t0"] = t0
-        st["t_lookup"] = t0
-        st["t_handoff"] = t0
-        st["lookup_s"] = 0.0
-        if not self._as_timing_enabled():
-            return
-        self._as_timing_http(
-            "POST",
-            "/v1/timing/start",
-            {"thread_id": tid, "t0": t0, "t_handoff": t0, "recv_s": 0.0},
-        )
-
-    def _as_mark_lookup_start(self, thread_id) -> None:  # ASSISTANT_TIMING_FOOTER_v6
-        import time
-        st = self._as_clock(thread_id)
-        if st and "t0" in st:
-            st["t_lookup"] = time.time()
-
-    def _as_mark_lookup_done(self, thread_id, seconds=None) -> None:  # ASSISTANT_TIMING_FOOTER_v6
-        import time
-        st = self._as_clock(thread_id)
-        if not st:
-            return
-        now = time.time()
-        if seconds is None:
-            t_l = float(st.get("t_lookup") or st.get("t0") or now)
-            seconds = max(0.0, now - t_l)
-        st["lookup_s"] = max(0.0, float(seconds or 0.0))
-        if self._as_timing_enabled() and st["lookup_s"] >= 0.001:
-            self._as_timing_http(
-                "POST",
-                "/v1/timing/add",
-                {"field": "workflow_s", "seconds": st["lookup_s"], "thread_id": str(thread_id or "")},
-            )
-
-    def _as_turn_handoff(self, thread_id) -> None:  # ASSISTANT_TIMING_FOOTER_v6
-        import time
-        tid = str(thread_id or "")
-        if not tid:
-            return
-        now = time.time()
-        st = self._as_clock(tid)
-        t0 = float(st.get("t0") or now)
-        st["t_handoff"] = now
-        recv_s = max(0.0, float(st.get("t_lookup") or now) - t0)
-        if not self._as_timing_enabled():
-            return
-        self._as_timing_http(
-            "POST",
-            "/v1/timing/start",
-            {"thread_id": tid, "t0": t0, "t_handoff": now, "recv_s": recv_s},
-        )
-
-    def _as_fmt_s(self, x) -> str:
-        try:
-            v = max(0.0, float(x))
-        except (TypeError, ValueError):
-            v = 0.0
-        return f"{v:.1f}"
-
-    def _as_strip_fake_footers(self, content: str) -> str:
-        import re as _re
-        t = content or ""
-        lines = t.rstrip().splitlines()
-        dt = _re.compile(
-            r"^_+\s*\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}(?:\s*[A-Za-z/_+\-0-9]+)?\s*_+$"
-        )
-        ict = _re.compile(r"^_+\s*.{0,40}\bICT\b.{0,20}\s*_+$", _re.I)
-        clock = _re.compile(r"^⏱\b")
-        while lines:
-            last = lines[-1].strip()
-            if not last:
-                lines.pop()
-                continue
-            if dt.match(last) or ict.match(last) or clock.match(last):
-                lines.pop()
-                continue
-            break
-        return "\n".join(lines).rstrip()
-
-    def _apply_timing_footer(self, content: str, chat_id, metadata=None) -> str:  # ASSISTANT_TIMING_FOOTER_v6
-        """Strip invented footers. Append measured phases only if ZALO_TIMING_FOOTER is on.
-
-          tiếp nhận     = Zalo → Hermes ready (local t_lookup - t0)
-          tra cứu       = AV/OCR/tools before LLM (lookup_s + session workflow_s)
-          LLM           = model time (session llm_s, else wall after handoff)
-          tổng hợp+gửi  = sum of the three (never leftover dump)
-        """
-        import time
-        t = self._as_strip_fake_footers(content)
-        if not t.strip():
-            return t
-        meta = metadata if isinstance(metadata, dict) else {}
-        if meta.get("as_skip_timing") or not self._as_timing_enabled():
-            return t
-        tid = str(chat_id or "")
-        now = time.time()
-        st = self._as_clock(tid) if tid else {}
-        t0 = float(st.get("t0") or 0.0)
-        t_lookup = float(st.get("t_lookup") or t0 or now)
-        t_handoff = float(st.get("t_handoff") or t_lookup or now)
-        recv = max(0.0, t_lookup - t0) if t0 else 0.0
-        lookup_s = max(0.0, float(st.get("lookup_s") or 0.0))
-        data = {}
-        if tid:
-            fin = self._as_timing_http("POST", f"/v1/timing/{tid}/finish", {})
-            data = (fin or {}).get("timing") or {}
-        if recv < 0.001:
-            recv = max(0.0, float(data.get("recv_s") or 0.0))
-        wf = max(lookup_s, float(data.get("workflow_s") or 0.0))
-        llm = max(0.0, float(data.get("llm_s") or 0.0))
-        after = max(0.0, now - t_handoff) if t_handoff > 0 else 0.0
-        if llm < 0.05 and after > 0.2:
-            llm = max(0.0, after - wf) if after > wf else after
-        total = recv + wf + llm
-        if total <= 0.0 and after > 0.0:
-            llm = after
-            total = recv + wf + llm
-        if total <= 0.0:
-            return t
-        line = (
-            f"⏱ {self._as_fmt_s(total)}s — tiếp nhận {self._as_fmt_s(recv)}s"
-            f" · tra cứu {self._as_fmt_s(wf)}s · LLM {self._as_fmt_s(llm)}s"
-            f" · tổng hợp+gửi {self._as_fmt_s(total)}s"
-        )
-        if tid and hasattr(self, "_as_tclock"):
-            self._as_tclock.pop(tid, None)
-        return t + "\n" + line
 
 
     def _as_autosend_roots(self):  # ASSISTANT_AUTOSEND_v4
@@ -5186,7 +5004,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 self._thread_types[real] = tt
         except Exception:
             pass
-        http = getattr(self, "_as_timing_http", None)
+        http = getattr(self, "_as_session_http", None)
         if callable(http):
             http("POST", "/v1/turn/dest", {"thread_id": real or tid, "thread_type": tt})
             return
@@ -5227,7 +5045,7 @@ class ZaloAdapter(BasePlatformAdapter):
             if same_dest_thread(cid, str(local.get("thread_id") or "")):
                 return local
         data = {}
-        http = getattr(self, "_as_timing_http", None)
+        http = getattr(self, "_as_session_http", None)
         if callable(http):
             data = http("GET", "/v1/turn/dest") or {}
         else:
@@ -5300,7 +5118,7 @@ class ZaloAdapter(BasePlatformAdapter):
         if key in seen:
             return False
         data = {}
-        http = getattr(self, "_as_timing_http", None)
+        http = getattr(self, "_as_session_http", None)
         if callable(http):
             data = http("POST", "/v1/files/claim", {"key": key, "thread_id": str(thread_id or "")}) or {}
         else:
@@ -5506,7 +5324,6 @@ class ZaloAdapter(BasePlatformAdapter):
                 meta_send = {
                     **meta,
                     "as_skip_autosend": True,
-                    "as_skip_timing": True,
                     "as_claimed": True,
                 }
                 kind = dest_send.suffix.lower()
@@ -5742,7 +5559,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 ocr_url = (os.getenv("OCR_URL") or "http://ocr:8091").rstrip("/")
                 text = await self._as_worker_text(
                     f"{ocr_url}/v1/ocr",
-                    {"path": worker_path, "prompt": "Analyze this file. Describe visible content and extract any readable text as markdown."},
+                    {"path": worker_path},
                     timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
                 )
                 # Path mismatch / race → 404; retry with bytes (not on empty OCR).
@@ -5754,7 +5571,6 @@ class ZaloAdapter(BasePlatformAdapter):
                         f"{ocr_url}/v1/ocr",
                         {
                             "image_b64": b64,
-                            "prompt": "Analyze this file. Describe visible content and extract any readable text as markdown.",
                         },
                         timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
                     )
@@ -5805,114 +5621,6 @@ class ZaloAdapter(BasePlatformAdapter):
             path=worker_path[:160],
         )
         return text
-
-    async def _as_vision_scene_text(
-        self, local_path: str, file_name: str = "", *, caption: str = ""
-    ) -> str:
-        """Omni combo vision-ocr scene analyze when Paddle/OCR text is empty."""
-        import base64
-        import os
-        from pathlib import Path
-
-        src = Path(str(local_path or ""))
-        if not src.is_file():
-            return ""
-        try:
-            from .omni_env import resolve_omni_api_key, resolve_omni_base_url
-        except ImportError:
-            from omni_env import resolve_omni_api_key, resolve_omni_base_url  # type: ignore
-        base = resolve_omni_base_url()
-        key = (
-            resolve_omni_api_key()
-            or (os.getenv("N9ROUTER_API_KEY") or "").strip()
-        )
-        model = (os.getenv("OCR_MODEL") or os.getenv("IMAGE_GEN_COMBO") or "vision-ocr").strip()
-        if model == "image-gen":
-            model = "vision-ocr"
-        if not key or not base:
-            self._as_flow("vision_skip", file=file_name, reason="no_omni_key")
-            return ""
-        vision_flag = (os.getenv("OCR_VISION") or "active").strip().lower()
-        if vision_flag != "active":
-            self._as_flow("vision_skip", file=file_name, reason="ocr_vision_inactive")
-            return ""
-        raw = src.read_bytes()
-        low = src.suffix.lower()
-        mime = "image/png" if low == ".png" else "image/jpeg"
-        b64 = base64.b64encode(raw).decode("ascii")
-        cap = (caption or "").strip()
-        prompt = (
-            "Describe this image in Vietnamese: people, animals, objects, setting, and mood. "
-            "Extract any readable text as markdown. Be concise."
-        )
-        if cap:
-            prompt = f"{prompt}\n\nUser caption: {cap[:400]}"
-        payload = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime};base64,{b64}"},
-                        },
-                    ],
-                }
-            ],
-            "max_tokens": 512,
-        }
-        import aiohttp
-
-        try:
-            timeout = aiohttp.ClientTimeout(total=120)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    f"{base}/chat/completions",
-                    json=payload,
-                    headers={
-                        "Authorization": f"Bearer {key}",
-                        "Content-Type": "application/json",
-                    },
-                ) as resp:
-                    body = await resp.text()
-                    if resp.status >= 300:
-                        self._as_flow(
-                            "vision_fail",
-                            file=file_name,
-                            status=resp.status,
-                        )
-                        return ""
-            data = json.loads(body or "{}")
-        except Exception as e:
-            self._as_flow("vision_fail", file=file_name, error=type(e).__name__)
-            return ""
-        choices = data.get("choices") if isinstance(data, dict) else None
-        if not isinstance(choices, list) or not choices:
-            return ""
-        ch = choices[0] if isinstance(choices[0], dict) else {}
-        msg = ch.get("message") if isinstance(ch.get("message"), dict) else {}
-        out = ""
-        for key_name in (
-            "content",
-            "reasoning_content",
-            "reasoning",
-            "thinking",
-            "thinking_content",
-        ):
-            val = msg.get(key_name)
-            if isinstance(val, str) and val.strip():
-                out = val.strip()
-                break
-        if not out and isinstance(ch.get("text"), str):
-            out = ch["text"].strip()
-        self._as_flow("vision_ok", file=file_name, model=model, chars=len(out))
-        return out
-
-    async def _as_quick_ocr_excerpt(self, local_path: str, file_name: str = "") -> str:
-        """Kept for callers that only want the document excerpt."""
-        return await self._as_attachment_text(local_path, file_name)
 
     def _as_attachment_ttl_s(self) -> int:
         import os
@@ -5999,19 +5707,19 @@ class ZaloAdapter(BasePlatformAdapter):
             if is_image:
                 head = (
                     f"[Attached image: {file_name}]\n"
-                    "Ảnh có chữ — đã OCR sẵn. Tóm tắt nội dung chữ trong ảnh (bullet ngắn) "
-                    "và nói rõ ảnh nói về cái gì. Không hỏi user mô tả ảnh."
+                    "Tóm tắt nội dung ảnh (bullet ngắn) từ phần dưới. "
+                    "Không hỏi user mô tả ảnh."
                 )
             return f"{head}\n\n[Extracted text — summarize from this]\n{body[:ATTACHMENT_PROMPT_CHARS]}"
         if is_image:
             return (
                 f"[Attached image: {file_name}]\n"
-                "OCR không đọc được chữ trong ảnh (file đã nhận). "
+                "Chưa có nội dung đọc được từ ảnh (file đã nhận). "
                 "Trả lời ngắn: mô tả những gì nhìn thấy được từ tên file / ngữ cảnh "
-                "hoặc nói rõ ảnh không có chữ đọc được, rồi hỏi user muốn làm gì tiếp "
+                "hoặc nói rõ ảnh chưa đủ thông tin, rồi hỏi user muốn làm gì tiếp "
                 "(tóm tắt, dịch, lưu knowledge). "
                 "Cấm hỏi user mô tả lại ảnh, cấm bảo user mở/gửi lại file trừ khi "
-                "download thất bại, cấm gọi tool vision/browser không có sẵn."
+                "download thất bại, cấm gọi tool không có sẵn."
             )
         if kind == "av":
             return (
@@ -6280,7 +5988,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     content=refuse,
                     metadata={
                         "thread_type": "user",
-                        "as_skip_timing": True,
                         "as_skip_inflight": True,
                     },
                 )
@@ -6299,9 +6006,6 @@ class ZaloAdapter(BasePlatformAdapter):
             kind=kind,
             path=str(local_path)[:160],
         )
-        mark = getattr(self, "_as_mark_lookup_start", None)
-        if callable(mark):
-            mark(thread_id)
 
         src = Path(local_path)
         if not src.is_file():
@@ -6316,16 +6020,10 @@ class ZaloAdapter(BasePlatformAdapter):
 
         if not self._as_file_pipeline_enabled():
             self._as_flow("av_skip", reason="pipeline_off", file=fn, thread_id=thread_id)
-            done = getattr(self, "_as_mark_lookup_done", None)
-            if callable(done):
-                done(thread_id)
             return False
         if not self._as_av_activated():
             self._as_flow("av_skip", reason="unavailable", file=fn, thread_id=thread_id)
             required = self._as_av_required()
-            done = getattr(self, "_as_mark_lookup_done", None)
-            if callable(done):
-                done(thread_id)
             # AV intended on but gateway/clamd down: try security-manager isolation
             # before hard-refuse. OCR/vision must not die solely because ClamAV is restarting.
             if self._as_env_flag_on("AV_SCAN", "ENABLE_ANTIVIRUS", default="inactive"):
@@ -6342,7 +6040,6 @@ class ZaloAdapter(BasePlatformAdapter):
                             or "File contains risks so it cannot be extracted to inspect information inside.",
                             metadata={
                                 "thread_type": "user",
-                                "as_skip_timing": True,
                                 "as_skip_inflight": True,
                             },
                         )
@@ -6371,7 +6068,6 @@ class ZaloAdapter(BasePlatformAdapter):
                         content=msg,
                         metadata={
                             "thread_type": "user",
-                            "as_skip_timing": True,
                             "as_skip_inflight": True,
                         },
                     )
@@ -6392,9 +6088,6 @@ class ZaloAdapter(BasePlatformAdapter):
                 data = await asyncio.to_thread(src.read_bytes)
             if not data:
                 self._as_flow("av_skip", reason="empty_bytes", file=fn, thread_id=thread_id)
-                done = getattr(self, "_as_mark_lookup_done", None)
-                if callable(done):
-                    done(thread_id)
                 return False
             import aiohttp
             timeout = aiohttp.ClientTimeout(total=60)
@@ -6412,9 +6105,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     if resp.status >= 300:
                         body = await resp.text()
                         self._as_flow("av_fail", thread_id=thread_id, status=resp.status, error=(body or "")[:120])
-                        done = getattr(self, "_as_mark_lookup_done", None)
-                        if callable(done):
-                            done(thread_id, time.monotonic() - t0)
                         if self._as_av_required():
                             try:
                                 msg = self._as_ux_line(
@@ -6427,7 +6117,6 @@ class ZaloAdapter(BasePlatformAdapter):
                                     content=msg,
                                     metadata={
                                         "thread_type": "user",
-                                        "as_skip_timing": True,
                                         "as_skip_inflight": True,
                                     },
                                 )
@@ -6460,9 +6149,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     waited += delay
                     delay = min(AV_POLL_MAX_S, delay * 2)
             elapsed = time.monotonic() - t0
-            done = getattr(self, "_as_mark_lookup_done", None)
-            if callable(done):
-                done(thread_id, elapsed)
             if blocked:
                 self._as_flow("av_blocked", thread_id=thread_id, file=fn, session_id=session_id, seconds=f"{elapsed:.2f}")
                 try:
@@ -6471,7 +6157,6 @@ class ZaloAdapter(BasePlatformAdapter):
                         content="File contains risks so it cannot be extracted to inspect information inside.",
                         metadata={
                             "thread_type": "user",
-                            "as_skip_timing": True,
                             "as_skip_inflight": True,
                         },
                     )
@@ -6488,9 +6173,6 @@ class ZaloAdapter(BasePlatformAdapter):
             return False
         except Exception as e:
             self._as_flow("av_error", thread_id=thread_id, file=fn, error=type(e).__name__)
-            done = getattr(self, "_as_mark_lookup_done", None)
-            if callable(done):
-                done(thread_id)
             self._as_enqueue_file_pipeline(
                 thread_id, sender_id, local_path, media, user_text=user_text
             )
@@ -6616,7 +6298,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         try:
                             async with session.post(
                                 f"{ocr_url}/v1/ocr",
-                                json={"path": ocr_path, "prompt": "Analyze this file. Describe visible content and extract any readable text as markdown."},
+                                json={"path": ocr_path},
                             ) as ocr_resp:
                                 ocr_body = await ocr_resp.text()
                                 try:
@@ -6875,7 +6557,6 @@ class ZaloAdapter(BasePlatformAdapter):
             if not low.startswith("hiện chưa tạo") and "couldn't create" not in low and "couldn’t create" not in low:
                 logger.info("Zalo: drop text after media result")
                 return SendResult(success=True, message_id=None)
-        content = self._apply_timing_footer(content, chat_id, metadata)  # ASSISTANT_TIMING_FOOTER_v6
         # Re-check after autosend caption swap
         if not skip_noise and self._is_gateway_noise(content):
             return SendResult(success=True, message_id=None)
@@ -7115,6 +6796,16 @@ class ZaloAdapter(BasePlatformAdapter):
         payload = self._bridge_attachment_payload(
             dest_id, thread_type, image_path, self._as_attach_caption(caption)
         )
+        quote = None
+        if isinstance(metadata, dict) and isinstance(metadata.get("quote"), dict):
+            quote = metadata.get("quote")
+        elif hasattr(self, "_pending_reply_quote"):
+            pq = getattr(self, "_pending_reply_quote", None)
+            if isinstance(pq, dict):
+                quote = pq.pop(str(chat_id), None)
+        quote = self._sanitize_send_quote(quote) if quote else None
+        if quote:
+            payload["quote"] = quote
         if payload.pop("_missing", False):
             return SendResult(
                 success=False,

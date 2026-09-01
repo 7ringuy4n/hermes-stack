@@ -442,6 +442,24 @@ def quote_is_media_type(msg_type: Any) -> bool:
     return any(tok in mt for tok in ("photo", "gif", "image", "voice", "video", "file", "share."))
 
 
+def merge_inbound_quote_media(
+    m: Dict[str, Any], media: Dict[str, Any] | None
+) -> tuple[Dict[str, Any] | None, Dict[str, Any]]:
+    """When inbound has no direct media URL, inherit from quoted/quote payload."""
+    if isinstance(media, dict) and str(media.get("url") or "").startswith("http"):
+        return media, m
+    raw_q = m.get("quoted") if isinstance(m.get("quoted"), dict) else None
+    if not isinstance(raw_q, dict):
+        raw_q = m.get("quote") if isinstance(m.get("quote"), dict) else None
+    if isinstance(raw_q, dict):
+        qmedia = extract_media_from_quote(raw_q)
+        if isinstance(qmedia, dict) and str(qmedia.get("url") or "").startswith("http"):
+            nm = dict(m)
+            nm["media"] = qmedia
+            return qmedia, nm
+    return media, m
+
+
 def extract_media_from_quote(quote: Any) -> Dict[str, Any] | None:
     """Build inbound media dict from a quoted Zalo message (quote-reply to photo/file)."""
     if not isinstance(quote, dict):
@@ -461,6 +479,15 @@ def extract_media_from_quote(quote: Any) -> Dict[str, Any] | None:
     if not isinstance(params, dict):
         params = {}
     href = _quote_href_from_blob(qc, params)
+    if not href:
+        pe = quote.get("propertyExt") or quote.get("propExt")
+        if isinstance(pe, str) and pe.strip():
+            try:
+                pe = json.loads(pe)
+            except Exception:
+                pe = None
+        if isinstance(pe, dict):
+            href = _quote_href_from_blob(pe, params)
     media_hint = bool(href) or quote_is_media_type(qtype)
     if not media_hint or not href:
         return None
@@ -595,39 +622,26 @@ def song_hint_from_filename(file_name: str) -> str:
 
 
 def image_analyze_ack_message(excerpt: str, *, max_chars: int = 1800) -> str:
-    """Zalo reply after OCR and/or vision-ocr analyze. Empty excerpt → caller falls through."""
+    """Zalo reply body after image analyze. Empty excerpt → caller falls through."""
     raw = (excerpt or "").strip()
     if not raw:
         return ""
-    ocr_body = ocr_excerpt_for_ack(excerpt)
-    if ocr_body:
-        body = ocr_body
-        ocr_mode = True
-    elif len(raw) >= 12 and len([w for w in raw.split() if len(w) >= 2]) >= 3:
-        body = raw
-        ocr_mode = False
-    else:
-        return ""
+    body = ocr_excerpt_for_ack(excerpt)
+    if not body:
+        if len(raw) >= 12 and len([w for w in raw.split() if len(w) >= 2]) >= 3:
+            body = raw
+        else:
+            return ""
     if len(body) > max_chars:
         body = body[:max_chars].rstrip() + "…"
-    if ocr_mode:
-        return (
-            "Đã phân tích ảnh:\n"
-            f"{body}\n\n"
-            "Bạn muốn mình tóm tắt / dịch / lưu knowledge không?"
-        )
-    return (
-        "Đã phân tích ảnh:\n"
-        f"{body}\n\n"
-        "Bạn muốn mình tóm tắt / dịch / lưu knowledge không?"
-    )
+    return body
 
 
 def image_ocr_ack_message(excerpt: str, *, max_chars: int = 1800) -> str:
-    """Legacy name — prefer image_analyze_ack_message (falls through when empty)."""
-    ack = image_analyze_ack_message(excerpt, max_chars=max_chars)
-    if ack:
-        return ack
+    """Zalo reply after OCR text extract; falls back to a clear empty-ack line."""
+    body = image_analyze_ack_message(excerpt, max_chars=max_chars)
+    if body:
+        return f"Đã đọc chữ:\n{body}"
     return (
         "Đã nhận ảnh. OCR không đọc được chữ rõ trong ảnh. "
         "Gửi ảnh có chữ nét hơn, hoặc nói rõ bạn muốn mình làm gì với ảnh này."
@@ -694,10 +708,7 @@ def file_extract_ack_message(
         head = f"Đã giải nén `{name}` (chỉ media):"
     else:
         head = f"Đã đọc file `{name}`:"
-    return (
-        f"{head}\n{body}\n\n"
-        "Bạn muốn mình tóm tắt / dịch / lưu knowledge không?"
-    )
+    return f"{head}\n{body}"
 
 
 def ocr_excerpt_for_ack(excerpt: str) -> str:
