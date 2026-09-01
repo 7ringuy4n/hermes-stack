@@ -1,3 +1,12 @@
+## 2026-09-01 19:45 +07 — image-gen AI Box head pin; drop Horde from combo
+
+- Host scenic diffusion calls the pinned AI Box head member (`IMAGE_GEN_HEAD_MEMBER`) instead of combo `image-gen` when Horde fallbacks would hang.
+- first-setup rebuilds `image-gen` as AI Box-only when photoreal heads exist; clears obsolete env pins on stack and shared `.env`.
+
+## 2026-09-01 19:30 +07 — sync-zalo-plugins without sudo when deploy user owns overlay
+
+- `sync-zalo-plugins.sh` copies into `/data/assistant/plugins/zalo` without `sudo` when the deploy user already owns the parent path — fixes silent sync failure that left stale adapter code on the host while git SoT was updated.
+
 ## 2026-09-01 19:15 +07 — host media shortcut owns scenic turns; classify retry
 
 - Zalo adapter runs host media shortcuts before async workflow creation and before queued Hermes turns — scenic `media_generation` no longer falls through to Hermes `execute_code` (missing API key in sandbox).

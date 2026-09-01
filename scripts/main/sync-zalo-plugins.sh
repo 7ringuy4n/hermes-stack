@@ -16,18 +16,29 @@ if [[ ! -d "$PLUGIN_SRC" ]]; then
 fi
 
 zalo_log "sync zalo plugins ${PLUGIN_SRC} → ${PLUGIN_DIR}"
-$ZALO_SUDO mkdir -p "$(dirname "$PLUGIN_DIR")"
-$ZALO_SUDO rm -rf "$PLUGIN_DIR"
-$ZALO_SUDO cp -a "$PLUGIN_SRC" "$PLUGIN_DIR"
-$ZALO_SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "${HERMES_SHARED_DATA}/plugins" 2>/dev/null || true
+parent_dir="$(dirname "$PLUGIN_DIR")"
+mkdir -p "$parent_dir" 2>/dev/null || $ZALO_SUDO mkdir -p "$parent_dir"
+if [[ -w "$parent_dir" ]] && { [[ ! -e "$PLUGIN_DIR" ]] || [[ -w "$PLUGIN_DIR" ]]; }; then
+  rm -rf "$PLUGIN_DIR"
+  cp -a "$PLUGIN_SRC" "$PLUGIN_DIR"
+else
+  $ZALO_SUDO rm -rf "$PLUGIN_DIR"
+  $ZALO_SUDO cp -a "$PLUGIN_SRC" "$PLUGIN_DIR"
+  $ZALO_SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" "${HERMES_SHARED_DATA}/plugins" 2>/dev/null || true
+fi
 
 # Hermes replicas keep a per-container plugins/ copy (hermes-replica-entry.sh).
 # Overlay SoT into every replica dir so a restart is not required for hot fixes.
 if [[ -d "${HERMES_SHARED_DATA}/replicas" ]]; then
   for rep_plugins in "${HERMES_SHARED_DATA}"/replicas/*/plugins; do
     [[ -d "$rep_plugins" ]] || continue
-    $ZALO_SUDO mkdir -p "$rep_plugins"
-    $ZALO_SUDO cp -a "${PLUGIN_DIR}/." "$rep_plugins/" 2>/dev/null || true
+    if [[ -w "$(dirname "$rep_plugins")" ]]; then
+      mkdir -p "$rep_plugins"
+      cp -a "${PLUGIN_DIR}/." "$rep_plugins/" 2>/dev/null || true
+    else
+      $ZALO_SUDO mkdir -p "$rep_plugins"
+      $ZALO_SUDO cp -a "${PLUGIN_DIR}/." "$rep_plugins/" 2>/dev/null || true
+    fi
   done
   zalo_log "overlay zalo plugins into Hermes replica dirs"
 fi

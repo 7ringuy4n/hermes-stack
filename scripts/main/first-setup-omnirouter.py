@@ -995,6 +995,36 @@ _OBSOLETE_IMAGE_ENV = [
 ]
 
 
+def _stack_env_paths() -> list[Path]:
+    """Stack + shared data .env files (Hermes replicas read shared copy)."""
+    shared = (
+        os.environ.get("HERMES_SHARED_DATA_DIR")
+        or os.environ.get("HERMES_DATA_DIR")
+        or os.environ.get("ASSISTANT_DATA_DIR")
+        or "/data/assistant"
+    ).strip()
+    paths = [ROOT / ".env", Path(shared) / ".env"]
+    seen: set[str] = set()
+    out: list[Path] = []
+    for p in paths:
+        key = str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
+
+
+def _clear_stack_env_keys(keys: list[str]) -> None:
+    for path in _stack_env_paths():
+        clear_env_keys(path, keys)
+
+
+def _set_stack_env_key(key: str, value: str) -> None:
+    for path in _stack_env_paths():
+        set_env_key(path, key, value)
+
+
 def pin_media_combos(env: dict[str, str]) -> None:
     """Pin router combo names from media worker state.
 
@@ -1003,7 +1033,7 @@ def pin_media_combos(env: dict[str, str]) -> None:
     Diffusion uses combo names only (no per-model or size env pins).
     """
     env_path = ROOT / ".env"
-    clear_env_keys(env_path, _OBSOLETE_IMAGE_ENV)
+    _clear_stack_env_keys(_OBSOLETE_IMAGE_ENV)
     for k in _OBSOLETE_IMAGE_ENV:
         env.pop(k, None)
 
@@ -1443,10 +1473,15 @@ def ensure_media_combos(opener, api_key: str) -> None:
     bad_img = [m for m in cur_img if _is_bad_image_gen_combo_member(m, catalog)]
     aibox_want = [m for m in image_ids if _is_aibox_image_generation_model(m)]
     aibox_have = [m for m in cur_img if _is_aibox_image_generation_model(m)]
+    if aibox_want:
+        # AI Box photoreal heads only — free AI Horde fallbacks hang and break scenic delivery.
+        image_ids = aibox_want[:4]
+    horde_in_combo = [m for m in cur_img if _is_aihorde_diffusion_model_id(m)]
     need_img = (
         (not cur_img)
         or bool(bad_img)
         or (bool(aibox_want) and not aibox_have)
+        or (bool(aibox_want) and bool(horde_in_combo))
         or not set(cur_img).intersection(set(image_ids))
     )
     want_head = image_ids[0] if image_ids else ""
@@ -1466,6 +1501,8 @@ def ensure_media_combos(opener, api_key: str) -> None:
         )
     elif aibox_want and not aibox_have:
         print(f"==> image-gen missing AI Box members {aibox_want[:4]!r} — refilling")
+    elif aibox_want and horde_in_combo:
+        print(f"==> image-gen drops AI Horde fallbacks {horde_in_combo[:4]!r} — AI Box only")
     _put_or_create_combo(
         opener,
         name="image-gen",
@@ -1474,6 +1511,10 @@ def ensure_media_combos(opener, api_key: str) -> None:
         force=need_img,
         strategy=IMAGE_GEN_COMBO_STRATEGY,
     )
+    want_head = image_ids[0] if image_ids else ""
+    if want_head:
+        _set_stack_env_key("IMAGE_GEN_HEAD_MEMBER", want_head)
+        print(f"OK: pinned IMAGE_GEN_HEAD_MEMBER={want_head}")
     _smoke_image_gen_combo(api_key, head_model=want_head)
 
     vision_ids = list_vision_models(opener)
