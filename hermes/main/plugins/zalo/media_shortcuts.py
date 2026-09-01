@@ -7,6 +7,7 @@ or run_search_then_office when plan_allows_search_then_office is true.
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -707,6 +708,129 @@ def _scene_prompt_with_facts(scene: str, facts: list[str]) -> str:
     )
 
 
+def _omni_image_gen_timeout_s() -> int:
+    import os
+
+    raw = (os.getenv("OMNI_IMAGE_GEN_TIMEOUT_S") or "240").strip()
+    try:
+        return max(60, min(int(raw), 600))
+    except ValueError:
+        return 240
+
+
+def _omni_image_gen_size() -> str:
+    import os
+
+    return (os.getenv("OMNI_IMAGE_GEN_SIZE") or "1280x720").strip() or "1280x720"
+
+
+def _omni_image_gen_model() -> str:
+    try:
+        from .omni_env import resolve_env_var
+    except ImportError:
+        from omni_env import resolve_env_var  # type: ignore
+
+    combo = resolve_env_var("IMAGE_GEN_COMBO", "image-gen") or "image-gen"
+    if "/" in combo:
+        return "image-gen"
+    return combo
+
+
+def _omni_decode_image_blob(item: dict[str, Any]) -> bytes:
+    blob = b""
+    if item.get("b64_json"):
+        blob = base64.b64decode(item["b64_json"])
+    elif item.get("url"):
+        try:
+            with urllib.request.urlopen(item["url"], timeout=60) as r2:
+                blob = r2.read()
+        except Exception:  # noqa: BLE001
+            return b""
+    return blob
+
+
+def _omni_image_quality_mins(size: str) -> tuple[int, int, int]:
+    """Scale minimum acceptable dimensions from the requested canvas."""
+    parts = (size or "1280x720").lower().split("x")
+    try:
+        w_req = int(parts[0])
+        h_req = int(parts[1]) if len(parts) > 1 else w_req
+    except (ValueError, IndexError):
+        w_req, h_req = 1024, 1024
+    min_w = max(512, w_req // 2)
+    min_h = max(360, h_req // 2)
+    return min_w, min_h, 80_000
+
+
+def _omni_image_quality_ok(blob: bytes, *, size: str) -> bool:
+    if not blob:
+        return False
+    min_w, min_h, min_bytes = _omni_image_quality_mins(size)
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(BytesIO(blob)) as im:
+            w, h = im.size
+        if w < min_w or h < min_h or len(blob) < min_bytes:
+            log.warning(
+                "omni generate: low-quality payload (%sx%s, %s bytes; need >=%sx%s, >=%s)",
+                w,
+                h,
+                len(blob),
+                min_w,
+                min_h,
+                min_bytes,
+            )
+            return False
+        return True
+    except Exception:
+        if len(blob) < min_bytes:
+            log.warning("omni generate: small payload (%s bytes)", len(blob))
+            return False
+        return True
+
+
+def _omni_request_image_blob(
+    *,
+    base: str,
+    key: str,
+    model: str,
+    scene: str,
+    size: str,
+    timeout: int,
+) -> bytes | None:
+    body = json.dumps({"model": model, "prompt": scene, "n": 1, "size": size}).encode()
+    req = urllib.request.Request(
+        f"{base}/images/generations",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode() or "{}")
+    except Exception as e:  # noqa: BLE001
+        log.warning("omni generate failed model=%r: %s", model, type(e).__name__)
+        return None
+    items = data if isinstance(data, list) else (data.get("data") or data.get("images") or [])
+    if not items or not isinstance(items[0], dict):
+        log.warning("omni generate: empty response model=%r", model)
+        return None
+    blob = _omni_decode_image_blob(items[0])
+    if not blob:
+        log.warning("omni generate: empty image payload model=%r", model)
+        return None
+    if not _omni_image_quality_ok(blob, size=size):
+        return None
+    return blob
+
+
 def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None:
     """Scenic diffusion via OmniRouter combo image-gen (not dispatcher /v1/image)."""
     import os
@@ -719,73 +843,26 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
 
     base = resolve_omni_base_url()
     key = resolve_omni_api_key()
-    model = (os.getenv("IMAGE_GEN_COMBO") or "image-gen").strip() or "image-gen"
     if not key:
         log.warning("omni generate: missing OMNIROUTER_API_KEY")
         return None
-    # Always request the combo name — never a raw member model id.
-    if model != "image-gen" and "/" in model:
-        log.warning("omni generate: refusing member model %r — forcing combo image-gen", model)
-        model = "image-gen"
     scene = _photoreal_scene_prompt(_place_alias_to_official(prompt or ""))
-    body = json.dumps(
-        {"model": model, "prompt": scene, "n": 1, "size": "1920x1080"}
-    ).encode()
-    req = urllib.request.Request(
-        f"{base}/images/generations",
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
+    size = _omni_image_gen_size()
+    timeout = _omni_image_gen_timeout_s()
+    model = _omni_image_gen_model()
+    if not model:
+        log.warning("omni generate: no IMAGE_GEN_COMBO")
+        return None
+    blob = _omni_request_image_blob(
+        base=base,
+        key=key,
+        model=model,
+        scene=scene,
+        size=size,
+        timeout=timeout,
     )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            data = json.loads(resp.read().decode() or "{}")
-    except Exception as e:  # noqa: BLE001
-        log.warning("omni generate failed: %s", type(e).__name__)
-        return None
-    items = data if isinstance(data, list) else (data.get("data") or data.get("images") or [])
-    if not items or not isinstance(items[0], dict):
-        return None
-    item = items[0]
-    blob = b""
-    if item.get("b64_json"):
-        blob = base64.b64decode(item["b64_json"])
-    elif item.get("url"):
-        try:
-            with urllib.request.urlopen(item["url"], timeout=60) as r2:
-                blob = r2.read()
-        except Exception:  # noqa: BLE001
-            return None
     if not blob:
-        log.warning("omni generate: empty image payload")
         return None
-    try:
-        from io import BytesIO
-
-        from PIL import Image
-
-        with Image.open(BytesIO(blob)) as im:
-            w, h = im.size
-        min_w, min_h, min_bytes = 960, 540, 80_000
-        if w < min_w or h < min_h or len(blob) < min_bytes:
-            log.warning(
-                "omni generate: low-quality payload (%sx%s, %s bytes; need >=%sx%s, >=%s) — combo image-gen",
-                w,
-                h,
-                len(blob),
-                min_w,
-                min_h,
-                min_bytes,
-            )
-            return None
-    except Exception:
-        if len(blob) < 80_000:
-            log.warning("omni generate: small payload (%s bytes) — combo image-gen", len(blob))
-            return None
     for cand in (
         Path(os.getenv("MEDIA_OUT_DIR") or "/data/media/out"),
         Path("/opt/data/media/out"),

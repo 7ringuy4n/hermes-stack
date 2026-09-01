@@ -55,6 +55,12 @@ Never leave instructions as the raw non-English ask alone. On backend failure ho
 Preserve on-image exact-text poster requests, B&W, style, quantity. Do not convert to PDF/TXT.
 If the ask needs current/live weather facts on the picture, use WEATHER SCENE IMAGE. If the ask needs a metrics dashboard card, use LABELED INFO IMAGE — not this scenic-only path.
 
+IMAGE GEN FAILURE / STATUS ASK (user asks why images cannot be created, why image generation failed, or to debug image-gen — any language; NO attachment):
+NOT hello/normal with process_original_message true. NEVER route to Hermes chat to explain skills, tools, architecture, credentials, API keys, OmniRouter, or .env.
+task_hint=normal, process_original_message false, response_mode=ack_then_deliver, skill=null, skill_action=null, output_type=null.
+instructions[] = one short Vietnamese line: hiện không tạo được ảnh (hệ thống tạo ảnh tạm thời bận hoặc lỗi); thử lại sau hoặc rút gọn yêu cầu vẽ.
+Host sends the line directly — never Hermes.
+
 MULTI-DELIVERABLE (image + file, or multiple files) in one bubble:
 Separate instructions. Example family: image with on-image text + txt file = TWO jobs. Never merge. Never drop the image job.
 When instructions length>=2 and not a single timed schedule: execution_class=async, depends_on=[] unless a later job truly needs an earlier output (search → office file).

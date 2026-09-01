@@ -23,7 +23,7 @@ Call **OmniRouter** with combo name **`image-gen`** always (Media worker active 
 
 - Endpoint: `POST {OMNIROUTER_BASE_URL}/images/generations` (default `http://omni-router:20129/v1/images/generations`)
 - Auth: `Authorization: Bearer $OPENAI_API_KEY` (same as `OMNIROUTER_API_KEY`)
-- Body: `model` = `image-gen` (or `$IMAGE_GEN_COMBO` when set), English `prompt`, `n=1`, HD `size` `"1920x1080"` (16:9 Full HD) unless the user asks otherwise
+- Body: `model` = `image-gen` (or `$IMAGE_GEN_COMBO` when set), English `prompt`, `n=1`, HD `size` `"1280x720"` (16:9) unless the user asks otherwise
 - Decode `data[0].b64_json` (or fetch `url`) and write under `/opt/data/media/out/<safe-slug>.webp` (or `.png` / `.jpg`)
 
 Use **urllib**, **requests**, or a short checked-in helper script — not `curl | python`. Do **not** run `execute_code` to inspect environment variables or read `.env` / replica config files for keys.
