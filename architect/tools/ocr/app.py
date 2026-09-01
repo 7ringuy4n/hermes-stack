@@ -1,7 +1,7 @@
 """OCR — PaddleOCR first for all docs; image-gen combo fallback; tesseract last.
 
 Pipeline: pymupdf text layer (PDF) → PaddleOCR → vision combo (OCR_MODEL, default
-image-gen via Omni/9Router chat multimodal) → tesseract.
+image-gen via OmniRouter chat multimodal) → tesseract.
 """
 from __future__ import annotations
 
