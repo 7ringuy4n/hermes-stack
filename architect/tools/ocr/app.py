@@ -1,7 +1,7 @@
 """OCR — PaddleOCR first for all docs; vision-ocr combo fallback; tesseract last.
 
 Pipeline: pymupdf text layer (PDF) → PaddleOCR → vision combo (OCR_MODEL, default
-vision-ocr via Omni/9Router chat multimodal) → tesseract.
+vision-ocr via OmniRouter chat multimodal) → tesseract.
 """
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ class OcrReq(BaseModel):
     path: Optional[str] = None
     image_b64: Optional[str] = None
     prompt: str = Field(
-        default="Analyze this file. Describe visible content and extract any readable text as markdown. Preserve tables if present."
+        default="Describe this image naturally and include any text visible in it."
     )
 
 
