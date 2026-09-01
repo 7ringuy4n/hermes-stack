@@ -1578,6 +1578,245 @@ class ZaloAdapter(BasePlatformAdapter):
         await _say("failed", "Chưa hỗ trợ thao tác lịch này.")
         return True
 
+    async def _as_run_host_media_shortcut(
+        self,
+        *,
+        user_text: str,
+        thread_id: str,
+        thread_type: str,
+        bare_text: str | None = None,
+        plan: dict | None = None,
+        media_urls: list | None = None,
+    ) -> bool:
+        """Run host-owned media shortcuts. True when the turn was consumed."""
+        shortcut_user_text = (user_text or "").strip()
+        bare = (bare_text if bare_text is not None else shortcut_user_text).strip()
+        urls = list(media_urls or [])
+        if (
+            not shortcut_user_text
+            or urls
+            or "[Attachment text —" in bare
+            or "[Attached file:" in bare
+        ):
+            return False
+        try:
+            from .classify_client import (
+                classify_text,
+                plan_allows_office_shortcut,
+                plan_allows_poster_shortcut,
+                plan_allows_scene_image,
+                plan_allows_search_then_info_card,
+                plan_allows_search_then_office,
+                plan_allows_search_then_weather_scene,
+                plan_media_shortcut_gate,
+                plan_output_type,
+                plan_search_then_office_output,
+                plan_skips_media_shortcut,
+            )
+            from .media_shortcuts import (
+                media_fail_line,
+                run_office_create,
+                run_scene_image,
+                run_search_then_info_card,
+                run_search_then_office,
+                run_search_then_weather_scene,
+                run_text_poster,
+                shortcut_ok,
+                shortcut_was_consumed,
+            )
+        except ImportError:
+            from classify_client import (  # type: ignore
+                classify_text,
+                plan_allows_office_shortcut,
+                plan_allows_poster_shortcut,
+                plan_allows_scene_image,
+                plan_allows_search_then_info_card,
+                plan_allows_search_then_office,
+                plan_allows_search_then_weather_scene,
+                plan_media_shortcut_gate,
+                plan_output_type,
+                plan_search_then_office_output,
+                plan_skips_media_shortcut,
+            )
+            from media_shortcuts import (  # type: ignore
+                media_fail_line,
+                run_office_create,
+                run_scene_image,
+                run_search_then_info_card,
+                run_search_then_office,
+                run_search_then_weather_scene,
+                run_text_poster,
+                shortcut_ok,
+                shortcut_was_consumed,
+            )
+        shortcut = None
+        shortcut_gate = ""
+        try:
+            early_plan = plan if isinstance(plan, dict) else classify_text(shortcut_user_text)
+            shortcut_gate = plan_media_shortcut_gate(early_plan)
+            inner = ""
+            ins = early_plan.get("instructions") or []
+            if isinstance(ins, list) and ins:
+                inner = str(ins[0] or "").strip()
+            work = inner or shortcut_user_text
+            if plan_allows_office_shortcut(early_plan) and not plan_skips_media_shortcut(early_plan):
+                shortcut = run_office_create(
+                    work,
+                    str(thread_id),
+                    str(thread_type),
+                    classified=True,
+                    output_type=plan_output_type(early_plan),
+                )
+                if shortcut_ok(shortcut):
+                    self._as_flow("office_shortcut", thread_id=thread_id, file=shortcut.get("file"))
+            elif plan_allows_search_then_office(early_plan):
+                shortcut = run_search_then_office(
+                    shortcut_user_text,
+                    early_plan,
+                    str(thread_id),
+                    str(thread_type),
+                    classified=True,
+                    output_type=plan_search_then_office_output(early_plan)
+                    or plan_output_type(early_plan)
+                    or "pdf",
+                )
+                if shortcut_ok(shortcut):
+                    self._as_flow(
+                        "search_office_shortcut",
+                        thread_id=thread_id,
+                        file=shortcut.get("file"),
+                    )
+            elif plan_allows_search_then_weather_scene(early_plan):
+                shortcut = run_search_then_weather_scene(
+                    shortcut_user_text,
+                    early_plan,
+                    str(thread_id),
+                    str(thread_type),
+                    classified=True,
+                )
+                if shortcut_ok(shortcut):
+                    self._as_flow(
+                        "search_weather_scene_shortcut",
+                        thread_id=thread_id,
+                        file=shortcut.get("file"),
+                    )
+            elif plan_allows_search_then_info_card(early_plan):
+                shortcut = run_search_then_info_card(
+                    shortcut_user_text,
+                    early_plan,
+                    str(thread_id),
+                    str(thread_type),
+                    classified=True,
+                )
+                if shortcut_ok(shortcut):
+                    self._as_flow(
+                        "search_info_card_shortcut",
+                        thread_id=thread_id,
+                        file=shortcut.get("file"),
+                    )
+            elif plan_allows_scene_image(early_plan):
+                shortcut = run_scene_image(
+                    shortcut_user_text,
+                    early_plan,
+                    str(thread_id),
+                    str(thread_type),
+                    classified=True,
+                )
+                if shortcut_ok(shortcut):
+                    self._as_flow(
+                        "scene_image_shortcut",
+                        thread_id=thread_id,
+                        file=shortcut.get("file"),
+                    )
+            elif plan_allows_poster_shortcut(early_plan):
+                shortcut = run_text_poster(
+                    work,
+                    str(thread_id),
+                    str(thread_type),
+                    classified=True,
+                    poster_n=early_plan.get("poster_n"),
+                    poster_phrase=str(early_plan.get("poster_phrase") or work),
+                    poster_bw=early_plan.get("poster_bw"),
+                )
+                if shortcut_ok(shortcut):
+                    self._as_flow("poster_shortcut", thread_id=thread_id, file=shortcut.get("file"))
+        except Exception as e:
+            logger.warning("Zalo: media shortcut error: %s", type(e).__name__)
+            shortcut = None
+        if shortcut_ok(shortcut):
+            try:
+                self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
+                self._as_last_user_text[str(thread_id)] = bare
+            except Exception:
+                pass
+            try:
+                self._as_autosend_remember_turn(
+                    str(thread_id),
+                    "group" if str(thread_type).lower() in {"group", "g"} else "user",
+                )
+            except Exception:
+                pass
+            try:
+                await self._as_autosend_late_files(
+                    str(thread_id),
+                    "group" if str(thread_type).lower() in {"group", "g"} else "user",
+                )
+            except Exception:
+                pass
+            try:
+                from .session_memory import append_turn
+            except ImportError:
+                from session_memory import append_turn  # type: ignore
+            try:
+                append_turn(str(thread_id), str(thread_type), bare, "")
+            except Exception:
+                pass
+            try:
+                self._as_inflight_done(str(thread_id), {})
+            except Exception:
+                pass
+            try:
+                self._as_queue_kick(str(thread_id))
+            except Exception:
+                pass
+            return True
+        if shortcut_gate or shortcut_was_consumed(shortcut):
+            fail_line = media_fail_line()
+            try:
+                await self._as_gate_announce(
+                    str(thread_id),
+                    str(thread_type),
+                    fail_line,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Zalo: media shortcut fail-line send failed: %s",
+                    type(e).__name__,
+                )
+            try:
+                self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
+                self._as_last_user_text[str(thread_id)] = bare
+            except Exception:
+                pass
+            try:
+                from .session_memory import append_turn
+            except ImportError:
+                from session_memory import append_turn  # type: ignore
+            try:
+                append_turn(str(thread_id), str(thread_type), bare, fail_line)
+            except Exception:
+                pass
+            try:
+                self._as_inflight_done(str(thread_id), {})
+            except Exception:
+                pass
+            try:
+                self._as_queue_kick(str(thread_id))
+            except Exception:
+                pass
+            return True
+        return False
+
     async def _as_try_workflow_submit(
         self,
         *,
@@ -1606,6 +1845,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_async,
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
+                plan_media_shortcut_gate,
             )
             from .classify_client import strip_prior_for_classify
             from .knowledge_cite import plan_is_knowledge
@@ -1623,6 +1863,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_async,
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
+                plan_media_shortcut_gate,
             )
             from classify_client import strip_prior_for_classify  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
@@ -1741,6 +1982,15 @@ class ZaloAdapter(BasePlatformAdapter):
                 sender_id,
                 thread_id,
                 thread_type,
+                plan=plan,
+            )
+            return True
+        if plan_media_shortcut_gate(plan) and not schedule_fire:
+            await self._as_run_host_media_shortcut(
+                user_text=current,
+                thread_id=thread_id,
+                thread_type=thread_type,
+                bare_text=current,
                 plan=plan,
             )
             return True
@@ -2124,6 +2374,8 @@ class ZaloAdapter(BasePlatformAdapter):
             return True
         if not workflow_enabled():
             return False
+        if plan_media_shortcut_gate(plan) and not schedule_fire:
+            return True
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
         async_job = plan_is_async(plan) or len(parts) >= 2
         if not async_job or not parts:
@@ -2981,6 +3233,16 @@ class ZaloAdapter(BasePlatformAdapter):
                     if block_msg:
                         await self._as_gate_announce(tid, thread_type, block_msg)
                     return
+                bare_q = str(event.text or "").strip()
+                if bare_q and not list(event.media_urls or []):
+                    if await self._as_run_host_media_shortcut(
+                        user_text=bare_q,
+                        thread_id=tid,
+                        thread_type=thread_type,
+                        bare_text=bare_q,
+                    ):
+                        await self._as_autosend_late_files(tid, thread_type)
+                        return
                 await self.handle_message(event)
                 await self._as_autosend_late_files(tid, thread_type)
                 await self._as_compound_wait_part(tid)
@@ -4318,224 +4580,12 @@ class ZaloAdapter(BasePlatformAdapter):
             and "[Attachment text —" not in bare_text
             and "[Attached file:" not in bare_text
         ):
-            try:
-                from .classify_client import (
-                    classify_text,
-                    plan_allows_office_shortcut,
-                    plan_allows_poster_shortcut,
-                    plan_allows_scene_image,
-                    plan_allows_search_then_info_card,
-                    plan_allows_search_then_office,
-                    plan_allows_search_then_weather_scene,
-                    plan_media_shortcut_gate,
-                    plan_output_type,
-                    plan_search_then_office_output,
-                    plan_skips_media_shortcut,
-                )
-                from .media_shortcuts import (
-                    media_fail_line,
-                    run_office_create,
-                    run_scene_image,
-                    run_search_then_info_card,
-                    run_search_then_office,
-                    run_search_then_weather_scene,
-                    run_text_poster,
-                    shortcut_ok,
-                    shortcut_was_consumed,
-                )
-            except ImportError:
-                from classify_client import (  # type: ignore
-                    classify_text,
-                    plan_allows_office_shortcut,
-                    plan_allows_poster_shortcut,
-                    plan_allows_scene_image,
-                    plan_allows_search_then_info_card,
-                    plan_allows_search_then_office,
-                    plan_allows_search_then_weather_scene,
-                    plan_media_shortcut_gate,
-                    plan_output_type,
-                    plan_search_then_office_output,
-                    plan_skips_media_shortcut,
-                )
-                from media_shortcuts import (  # type: ignore
-                    media_fail_line,
-                    run_office_create,
-                    run_scene_image,
-                    run_search_then_info_card,
-                    run_search_then_office,
-                    run_search_then_weather_scene,
-                    run_text_poster,
-                    shortcut_ok,
-                    shortcut_was_consumed,
-                )
-            shortcut = None
-            shortcut_gate = ""
-            try:
-                early_plan = classify_text(shortcut_user_text)
-                shortcut_gate = plan_media_shortcut_gate(early_plan)
-                inner = ""
-                ins = early_plan.get("instructions") or []
-                if isinstance(ins, list) and ins:
-                    inner = str(ins[0] or "").strip()
-                work = inner or shortcut_user_text
-                if plan_allows_office_shortcut(early_plan) and not plan_skips_media_shortcut(early_plan):
-                    shortcut = run_office_create(
-                        work,
-                        str(thread_id),
-                        str(thread_type),
-                        classified=True,
-                        output_type=plan_output_type(early_plan),
-                    )
-                    if shortcut_ok(shortcut):
-                        self._as_flow("office_shortcut", thread_id=thread_id, file=shortcut.get("file"))
-                elif plan_allows_search_then_office(early_plan):
-                    # Live-data PDF/office: host search then office-file (skip Hermes chat-only).
-                    shortcut = run_search_then_office(
-                        shortcut_user_text,
-                        early_plan,
-                        str(thread_id),
-                        str(thread_type),
-                        classified=True,
-                        output_type=plan_search_then_office_output(early_plan)
-                        or plan_output_type(early_plan)
-                        or "pdf",
-                    )
-                    if shortcut_ok(shortcut):
-                        self._as_flow(
-                            "search_office_shortcut",
-                            thread_id=thread_id,
-                            file=shortcut.get("file"),
-                        )
-                elif plan_allows_search_then_weather_scene(early_plan):
-                    shortcut = run_search_then_weather_scene(
-                        shortcut_user_text,
-                        early_plan,
-                        str(thread_id),
-                        str(thread_type),
-                        classified=True,
-                    )
-                    if shortcut_ok(shortcut):
-                        self._as_flow(
-                            "search_weather_scene_shortcut",
-                            thread_id=thread_id,
-                            file=shortcut.get("file"),
-                        )
-                elif plan_allows_search_then_info_card(early_plan):
-                    # Metrics dashboard info-card (skip Hermes /help).
-                    shortcut = run_search_then_info_card(
-                        shortcut_user_text,
-                        early_plan,
-                        str(thread_id),
-                        str(thread_type),
-                        classified=True,
-                    )
-                    if shortcut_ok(shortcut):
-                        self._as_flow(
-                            "search_info_card_shortcut",
-                            thread_id=thread_id,
-                            file=shortcut.get("file"),
-                        )
-                elif plan_allows_scene_image(early_plan):
-                    shortcut = run_scene_image(
-                        shortcut_user_text,
-                        early_plan,
-                        str(thread_id),
-                        str(thread_type),
-                        classified=True,
-                    )
-                    if shortcut_ok(shortcut):
-                        self._as_flow(
-                            "scene_image_shortcut",
-                            thread_id=thread_id,
-                            file=shortcut.get("file"),
-                        )
-                elif plan_allows_poster_shortcut(early_plan):
-                    shortcut = run_text_poster(
-                        work,
-                        str(thread_id),
-                        str(thread_type),
-                        classified=True,
-                        poster_n=early_plan.get("poster_n"),
-                        poster_phrase=str(early_plan.get("poster_phrase") or work),
-                        poster_bw=early_plan.get("poster_bw"),
-                    )
-                    if shortcut_ok(shortcut):
-                        self._as_flow("poster_shortcut", thread_id=thread_id, file=shortcut.get("file"))
-            except Exception as e:
-                logger.warning("Zalo: media shortcut error: %s", type(e).__name__)
-                shortcut = None
-            if shortcut_ok(shortcut):
-                try:
-                    self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
-                    self._as_last_user_text[str(thread_id)] = bare_text
-                except Exception:
-                    pass
-                try:
-                    # Bind turn dest before late autosend (office/info-card shortcuts).
-                    self._as_autosend_remember_turn(
-                        str(thread_id),
-                        "group" if str(thread_type).lower() in {"group", "g"} else "user",
-                    )
-                except Exception:
-                    pass
-                try:
-                    await self._as_autosend_late_files(
-                        str(thread_id),
-                        "group" if str(thread_type).lower() in {"group", "g"} else "user",
-                    )
-                except Exception:
-                    pass
-                try:
-                    from .session_memory import append_turn
-                except ImportError:
-                    from session_memory import append_turn  # type: ignore
-                try:
-                    append_turn(str(thread_id), str(thread_type), bare_text, "")
-                except Exception:
-                    pass
-                try:
-                    self._as_inflight_done(str(thread_id), {})
-                except Exception:
-                    pass
-                try:
-                    self._as_queue_kick(str(thread_id))
-                except Exception:
-                    pass
-                return
-            if shortcut_gate or shortcut_was_consumed(shortcut):
-                fail_line = media_fail_line()
-                try:
-                    await self._as_gate_announce(
-                        str(thread_id),
-                        str(thread_type),
-                        fail_line,
-                    )
-                except Exception as e:
-                    logger.warning(
-                        "Zalo: media shortcut fail-line send failed: %s",
-                        type(e).__name__,
-                    )
-                try:
-                    self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
-                    self._as_last_user_text[str(thread_id)] = bare_text
-                except Exception:
-                    pass
-                try:
-                    from .session_memory import append_turn
-                except ImportError:
-                    from session_memory import append_turn  # type: ignore
-                try:
-                    append_turn(str(thread_id), str(thread_type), bare_text, fail_line)
-                except Exception:
-                    pass
-                try:
-                    self._as_inflight_done(str(thread_id), {})
-                except Exception:
-                    pass
-                try:
-                    self._as_queue_kick(str(thread_id))
-                except Exception:
-                    pass
+            if await self._as_run_host_media_shortcut(
+                user_text=shortcut_user_text,
+                thread_id=str(thread_id),
+                thread_type=str(thread_type),
+                bare_text=bare_text,
+            ):
                 return
 
         # Valkey short-term memory (SESSION_URL) — survive Hermes recreate.

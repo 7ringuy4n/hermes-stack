@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Callable
@@ -68,7 +69,8 @@ LIFECYCLE_TASK_TYPES = (
 )
 LIFECYCLE_ACTIONS = ("pause", "resume", "update", "run_now", "run")
 DEFAULT_TIMEOUT_S = 70.0
-HTTP_ATTEMPTS = 1
+HTTP_ATTEMPTS = 3
+HTTP_RETRY_SLEEP_S = 8.0
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
 _OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
@@ -1118,7 +1120,13 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     }
     if not plan_schema_ok(plan):
         return failed_plan(tz, "classify_invalid")
-    if plan_allows_scene_image(plan):
+    if plan_media_shortcut_gate(plan) or (
+        _plan_has_media_generation(plan)
+        and not _plan_has_search(plan)
+        and not _plan_has_file_processing(plan)
+        and not plan_compound_sequential(plan)
+        and str(plan.get("task_hint") or "").strip().lower() != "schedule"
+    ):
         plan["process_original_message"] = False
     return plan
 
@@ -1153,7 +1161,7 @@ def classify_text(
     ).encode("utf-8")
     timeout = float(os.environ.get("MODEL_ROUTER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
     last_error = "classify_unavailable"
-    for _attempt in range(HTTP_ATTEMPTS):
+    for attempt in range(HTTP_ATTEMPTS):
         req = urllib.request.Request(
             base + "/v1/classify",
             data=payload,
@@ -1168,13 +1176,14 @@ def classify_text(
                 if plan_schema_ok(plan):
                     return plan
                 last_error = "classify_invalid"
-                continue
-            if isinstance(data, dict) and data.get("ok") is False:
+            elif isinstance(data, dict) and data.get("ok") is False:
                 last_error = str(data.get("error") or "classify_unavailable")
-                continue
+            else:
+                last_error = "classify_invalid"
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
             last_error = "classify_http_error"
-            continue
+        if attempt + 1 < HTTP_ATTEMPTS:
+            time.sleep(HTTP_RETRY_SLEEP_S)
     return failed_plan(tz, last_error)
 
 
