@@ -1687,7 +1687,16 @@ class ZaloAdapter(BasePlatformAdapter):
                         file=shortcut.get("file"),
                     )
             elif plan_allows_search_then_weather_scene(early_plan):
-                shortcut = run_search_then_weather_scene(
+                try:
+                    await self._as_gate_announce(
+                        str(thread_id),
+                        str(thread_type),
+                        "Đang vẽ hình…",
+                    )
+                except Exception:
+                    pass
+                shortcut = await asyncio.to_thread(
+                    run_search_then_weather_scene,
                     shortcut_user_text,
                     early_plan,
                     str(thread_id),
@@ -1715,7 +1724,23 @@ class ZaloAdapter(BasePlatformAdapter):
                         file=shortcut.get("file"),
                     )
             elif plan_allows_scene_image(early_plan):
-                shortcut = run_scene_image(
+                try:
+                    await self._as_gate_announce(
+                        str(thread_id),
+                        str(thread_type),
+                        "Đang vẽ hình…",
+                    )
+                except Exception:
+                    pass
+                try:
+                    self._as_autosend_remember_turn(
+                        str(thread_id),
+                        "group" if str(thread_type).lower() in {"group", "g"} else "user",
+                    )
+                except Exception:
+                    pass
+                shortcut = await asyncio.to_thread(
+                    run_scene_image,
                     shortcut_user_text,
                     early_plan,
                     str(thread_id),
@@ -1756,6 +1781,25 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
             except Exception:
                 pass
+            try:
+                img_path = str((shortcut or {}).get("file") or (shortcut or {}).get("path") or "")
+                if img_path:
+                    p = Path(img_path)
+                    if p.is_file() and p.suffix.lower() in {
+                        ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp",
+                    }:
+                        meta = {"as_skip_autosend": True, "as_claimed": True}
+                        await self.send_image_file(
+                            str(thread_id),
+                            img_path,
+                            caption="",
+                            metadata=meta,
+                        )
+            except Exception as e:
+                logger.warning(
+                    "Zalo: shortcut direct image send failed: %s",
+                    type(e).__name__,
+                )
             try:
                 await self._as_autosend_late_files(
                     str(thread_id),
@@ -5016,6 +5060,7 @@ class ZaloAdapter(BasePlatformAdapter):
         return (
             shared / "media" / "out",
             home / "media" / "out",
+            Path("/data/media/out"),
             home / "workspace",
         )
 
