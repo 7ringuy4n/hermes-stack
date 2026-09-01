@@ -308,6 +308,7 @@ from attachment import (  # noqa: E402
     image_analyze_ack_message,
     quoted_context_snip,
     extract_media_from_quote,
+    merge_inbound_quote_media,
     normalize_zalo_msg_type,
     sheet_ref_from_text,
     song_hint_from_filename,
@@ -3789,6 +3790,9 @@ class ZaloAdapter(BasePlatformAdapter):
         # Schedule fires inject into groups without @mention — must not be dropped here.
         schedule_fire = bool(m.get("scheduleFire") or m.get("schedule_fire"))
         media = m.get("media") if isinstance(m.get("media"), dict) else None
+        # Quote-reply to photo/file: resolve media before mention gate so group
+        # buffered-media and attachment paths see the quoted image URL.
+        media, m = merge_inbound_quote_media(m, media)
         pending_key = f"{thread_id}:{sender_id}"
         if chat_type == "group" and not schedule_fire:
             if self.group_mode == "off":
@@ -3864,20 +3868,16 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_turn_handoff(thread_id)  # ASSISTANT_TIMING_FOOTER_v6
 
         if not (isinstance(media, dict) and media.get("url")):
-            raw_q = m.get("quoted")
-            if not isinstance(raw_q, dict):
-                raw_q = m.get("quote")
-            if isinstance(raw_q, dict):
-                qmedia = extract_media_from_quote(raw_q)
-                if qmedia:
-                    media = qmedia
-                    m = dict(m)
-                    m["media"] = media
-                    logger.info(
-                        "Zalo: media from quoted %s (%s)",
-                        normalize_zalo_msg_type(raw_q.get("msgType") or raw_q.get("cliMsgType")),
-                        media.get("fileName"),
-                    )
+            media, m = merge_inbound_quote_media(m, media)
+            if isinstance(media, dict) and media.get("url"):
+                logger.info(
+                    "Zalo: media from quoted %s (%s)",
+                    normalize_zalo_msg_type(
+                        (m.get("quote") or m.get("quoted") or {}).get("msgType")
+                        or (m.get("quote") or m.get("quoted") or {}).get("cliMsgType")
+                    ),
+                    media.get("fileName"),
+                )
 
         # Cache inbound as SendMessageQuote so outbound replies quote the @mention.  (ASSISTANT_REPLY_QUOTE)
         if not hasattr(self, "_pending_reply_quote"):
@@ -4069,7 +4069,7 @@ class ZaloAdapter(BasePlatformAdapter):
             # (local docx/terminal/zipfile forensics). Whitespace-only = blank.
             excerpt_meaningful = self._as_meaningful_learn_text(excerpt or "")
             excerpt_for_prompt = excerpt if excerpt_meaningful else ""
-            # Images: when OCR/Paddle text is empty, call combo vision-ocr before any ack.
+            # Images: when Paddle text is empty, call combo image-gen before any ack.
             if attach_is_image and not excerpt_meaningful and media_urls:
                 vision_text = await self._as_vision_scene_text(
                     media_urls[0],
@@ -5809,7 +5809,7 @@ class ZaloAdapter(BasePlatformAdapter):
     async def _as_vision_scene_text(
         self, local_path: str, file_name: str = "", *, caption: str = ""
     ) -> str:
-        """Omni combo vision-ocr scene analyze when Paddle/OCR text is empty."""
+        """Omni combo image-gen multimodal summary when Paddle text is empty."""
         import base64
         import os
         from pathlib import Path
@@ -5826,9 +5826,11 @@ class ZaloAdapter(BasePlatformAdapter):
             resolve_omni_api_key()
             or (os.getenv("N9ROUTER_API_KEY") or "").strip()
         )
-        model = (os.getenv("OCR_MODEL") or os.getenv("IMAGE_GEN_COMBO") or "vision-ocr").strip()
-        if model == "image-gen":
-            model = "vision-ocr"
+        model = (
+            os.getenv("OCR_MODEL")
+            or os.getenv("IMAGE_GEN_COMBO")
+            or "image-gen"
+        ).strip()
         if not key or not base:
             self._as_flow("vision_skip", file=file_name, reason="no_omni_key")
             return ""
@@ -5842,11 +5844,11 @@ class ZaloAdapter(BasePlatformAdapter):
         b64 = base64.b64encode(raw).decode("ascii")
         cap = (caption or "").strip()
         prompt = (
-            "Describe this image in Vietnamese: people, animals, objects, setting, and mood. "
-            "Extract any readable text as markdown. Be concise."
+            "Tóm tắt ngắn bằng tiếng Việt: người, vật, bối cảnh, thông điệp chính. "
+            "Ghi lại mọi chữ đọc được trong ảnh một cách tự nhiên."
         )
         if cap:
-            prompt = f"{prompt}\n\nUser caption: {cap[:400]}"
+            prompt = f"{prompt}\n\nTin nhắn người dùng: {cap[:400]}"
         payload = {
             "model": model,
             "messages": [
@@ -5999,19 +6001,19 @@ class ZaloAdapter(BasePlatformAdapter):
             if is_image:
                 head = (
                     f"[Attached image: {file_name}]\n"
-                    "Ảnh có chữ — đã OCR sẵn. Tóm tắt nội dung chữ trong ảnh (bullet ngắn) "
-                    "và nói rõ ảnh nói về cái gì. Không hỏi user mô tả ảnh."
+                    "Tóm tắt nội dung ảnh (bullet ngắn) từ phần dưới. "
+                    "Không hỏi user mô tả ảnh."
                 )
             return f"{head}\n\n[Extracted text — summarize from this]\n{body[:ATTACHMENT_PROMPT_CHARS]}"
         if is_image:
             return (
                 f"[Attached image: {file_name}]\n"
-                "OCR không đọc được chữ trong ảnh (file đã nhận). "
+                "Chưa có nội dung đọc được từ ảnh (file đã nhận). "
                 "Trả lời ngắn: mô tả những gì nhìn thấy được từ tên file / ngữ cảnh "
-                "hoặc nói rõ ảnh không có chữ đọc được, rồi hỏi user muốn làm gì tiếp "
+                "hoặc nói rõ ảnh chưa đủ thông tin, rồi hỏi user muốn làm gì tiếp "
                 "(tóm tắt, dịch, lưu knowledge). "
                 "Cấm hỏi user mô tả lại ảnh, cấm bảo user mở/gửi lại file trừ khi "
-                "download thất bại, cấm gọi tool vision/browser không có sẵn."
+                "download thất bại, cấm gọi tool không có sẵn."
             )
         if kind == "av":
             return (
@@ -7115,6 +7117,16 @@ class ZaloAdapter(BasePlatformAdapter):
         payload = self._bridge_attachment_payload(
             dest_id, thread_type, image_path, self._as_attach_caption(caption)
         )
+        quote = None
+        if isinstance(metadata, dict) and isinstance(metadata.get("quote"), dict):
+            quote = metadata.get("quote")
+        elif hasattr(self, "_pending_reply_quote"):
+            pq = getattr(self, "_pending_reply_quote", None)
+            if isinstance(pq, dict):
+                quote = pq.pop(str(chat_id), None)
+        quote = self._sanitize_send_quote(quote) if quote else None
+        if quote:
+            payload["quote"] = quote
         if payload.pop("_missing", False):
             return SendResult(
                 success=False,

@@ -20,17 +20,22 @@ def _row(mid: str, **caps) -> dict:
     return {"id": mid, "capabilities": caps or {}}
 
 
-def test_exclude_img_gen_namespace_chat() -> None:
-    assert mod._is_image_gen_namespace_chat_model("img-gen/qwen-image-2.0") is True
+def test_aibox_image_models_whitelisted() -> None:
+    for mid in (
+        "img-gen/qwen-image-2.0",
+        "image-gen/qwen-image-3.0-pro",
+        "img-gen/wan2.7-image-pro",
+    ):
+        assert mod._is_aibox_image_generation_model(mid) is True
+        assert mod._is_image_output_model(_row(mid)) is True
+        assert mod._is_bad_image_gen_combo_member(mid) is False
+
+
+def test_exclude_img_gen_namespace_junk() -> None:
     assert mod._is_image_gen_namespace_chat_model("img-gen/deepseek-v4-flash") is True
-    assert mod._is_bad_image_gen_combo_member("img-gen/qwen-image-2.0") is True
-
-
-def test_exclude_image_gen_namespace_chat() -> None:
-    assert mod._is_image_gen_namespace_chat_model("image-gen/qwen-image-2.0") is True
-    assert mod._is_image_gen_namespace_chat_model("image-gen/deepseek-v4-flash") is True
-    assert mod._is_image_output_model(_row("image-gen/qwen-image-2.0", reasoning=True)) is False
-    assert mod._is_bad_image_gen_combo_member("image-gen/deepseek-v4-flash") is True
+    assert mod._is_image_gen_namespace_junk("img-gen/deepseek-v4-flash") is True
+    assert mod._is_bad_image_gen_combo_member("img-gen/deepseek-v4-flash") is True
+    assert mod._is_image_gen_namespace_junk("img-gen/qwen-image-2.0") is False
 
 
 def test_allow_aihorde_diffusion() -> None:
@@ -46,18 +51,18 @@ def test_allow_openrouter_flux() -> None:
     assert mod._is_image_output_model(_row(mid, tool_calling=True)) is True
 
 
-def test_rank_prefers_icbinp_over_aibox() -> None:
+def test_rank_prefers_aibox_over_horde() -> None:
     horde = "aihorde/ICBINP"
-    chat = "image-gen/qwen-image-2.0"
-    assert mod._rank_image_gen_model(horde) < mod._rank_image_gen_model(chat)
+    aibox = "img-gen/qwen-image-3.0-pro"
+    assert mod._rank_image_gen_model(aibox) < mod._rank_image_gen_model(horde)
 
 
 def main() -> None:
-    test_exclude_img_gen_namespace_chat()
-    test_exclude_image_gen_namespace_chat()
+    test_aibox_image_models_whitelisted()
+    test_exclude_img_gen_namespace_junk()
     test_allow_aihorde_diffusion()
     test_allow_openrouter_flux()
-    test_rank_prefers_icbinp_over_aibox()
+    test_rank_prefers_aibox_over_horde()
     print("OK first_setup_image_gen_unit")
 
 

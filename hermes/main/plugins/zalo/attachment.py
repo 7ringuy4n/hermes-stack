@@ -442,6 +442,24 @@ def quote_is_media_type(msg_type: Any) -> bool:
     return any(tok in mt for tok in ("photo", "gif", "image", "voice", "video", "file", "share."))
 
 
+def merge_inbound_quote_media(
+    m: Dict[str, Any], media: Dict[str, Any] | None
+) -> tuple[Dict[str, Any] | None, Dict[str, Any]]:
+    """When inbound has no direct media URL, inherit from quoted/quote payload."""
+    if isinstance(media, dict) and str(media.get("url") or "").startswith("http"):
+        return media, m
+    raw_q = m.get("quoted") if isinstance(m.get("quoted"), dict) else None
+    if not isinstance(raw_q, dict):
+        raw_q = m.get("quote") if isinstance(m.get("quote"), dict) else None
+    if isinstance(raw_q, dict):
+        qmedia = extract_media_from_quote(raw_q)
+        if isinstance(qmedia, dict) and str(qmedia.get("url") or "").startswith("http"):
+            nm = dict(m)
+            nm["media"] = qmedia
+            return qmedia, nm
+    return media, m
+
+
 def extract_media_from_quote(quote: Any) -> Dict[str, Any] | None:
     """Build inbound media dict from a quoted Zalo message (quote-reply to photo/file)."""
     if not isinstance(quote, dict):
@@ -461,6 +479,15 @@ def extract_media_from_quote(quote: Any) -> Dict[str, Any] | None:
     if not isinstance(params, dict):
         params = {}
     href = _quote_href_from_blob(qc, params)
+    if not href:
+        pe = quote.get("propertyExt") or quote.get("propExt")
+        if isinstance(pe, str) and pe.strip():
+            try:
+                pe = json.loads(pe)
+            except Exception:
+                pe = None
+        if isinstance(pe, dict):
+            href = _quote_href_from_blob(pe, params)
     media_hint = bool(href) or quote_is_media_type(qtype)
     if not media_hint or not href:
         return None

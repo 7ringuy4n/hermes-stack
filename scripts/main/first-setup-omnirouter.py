@@ -845,14 +845,43 @@ def _is_comfyui_image_model_id(mid: str) -> bool:
     return (mid or "").strip().lower().startswith("comfyui/")
 
 
+_AIBOX_IMAGE_MODEL_NAMES = (
+    "qwen-image-2.0",
+    "qwen-image-3.0",
+    "qwen-image-3.0-pro",
+    "wan2.7-image-pro",
+)
+
+
+def _aibox_image_model_tail(mid: str) -> str:
+    low = (mid or "").strip().lower()
+    for prefix in ("img-gen/", "image-gen/"):
+        if low.startswith(prefix):
+            return low[len(prefix) :]
+    return ""
+
+
+def _is_aibox_image_generation_model(mid: str) -> bool:
+    """Whitelisted AI Box image generators (home.ai-box.vn pricing family)."""
+    tail = _aibox_image_model_tail(mid)
+    return tail in _AIBOX_IMAGE_MODEL_NAMES
+
+
 def _is_image_gen_namespace_chat_model(mid: str) -> bool:
-    """AI Box chat models live under image-gen/ or img-gen/ — not the image-gen combo."""
+    """Models under image-gen/ or img-gen/ namespace (combo name collision risk)."""
     low = (mid or "").strip().lower()
     return low.startswith("image-gen/") or low.startswith("img-gen/")
 
 
+def _is_image_gen_namespace_junk(mid: str) -> bool:
+    """img-gen/image-gen entries that are chat models, not whitelisted image generators."""
+    if not _is_image_gen_namespace_chat_model(mid):
+        return False
+    return not _is_aibox_image_generation_model(mid)
+
+
 def _combo_name_collides_with_model_namespace(mid: str) -> bool:
-    return _is_image_gen_namespace_chat_model(mid)
+    return _is_image_gen_namespace_junk(mid)
 
 
 def _is_image_output_model(row: dict) -> bool:
@@ -860,7 +889,9 @@ def _is_image_output_model(row: dict) -> bool:
     mid = str(row.get("id") or "").strip()
     if not mid or mid == "image-gen":
         return False
-    if _is_image_gen_namespace_chat_model(mid):
+    if _is_aibox_image_generation_model(mid):
+        return True
+    if _is_image_gen_namespace_junk(mid):
         return False
     if _is_aihorde_diffusion_model_id(mid):
         return True
@@ -878,7 +909,7 @@ def _is_image_output_model(row: dict) -> bool:
 
 def _is_bad_image_gen_combo_member(mid: str, catalog: list[dict] | None = None) -> bool:
     """Combo members that Omni rejects for /images/generations."""
-    if _is_image_gen_namespace_chat_model(mid):
+    if _is_image_gen_namespace_junk(mid):
         return True
     return not _is_image_gen_model_id(mid, catalog)
 
@@ -978,9 +1009,10 @@ def pin_media_combos(env: dict[str, str]) -> None:
         env["ENABLE_MEDIA_FILE"] = "active"
         print("OK: pinned ENABLE_MEDIA_FILE=active (Media worker active)")
     if active:
+        img_combo = env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen"
         pins = {
-            "IMAGE_GEN_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
-            "OCR_MODEL": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
+            "IMAGE_GEN_COMBO": img_combo,
+            "OCR_MODEL": img_combo,
             "OCR_VISION": "active",
             "EMBED_MODEL": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
             "OMNIROUTER_IMAGE_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
@@ -1017,7 +1049,9 @@ def _v1_models(api_key: str) -> list[dict]:
 
 def _is_image_gen_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
     """Validate combo member against /v1/models catalog when available."""
-    if _is_image_gen_namespace_chat_model(mid):
+    if _is_aibox_image_generation_model(mid):
+        return True
+    if _is_image_gen_namespace_junk(mid):
         return False
     rows = catalog or []
     for row in rows:
@@ -1033,9 +1067,18 @@ def _is_image_gen_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
 
 
 def _rank_image_gen_model(mid: str) -> tuple:
-    """Prefer photoreal diffusion members; demote fast/anime; paid OpenRouter last."""
+    """Prefer AI Box image generators, then photoreal Horde; demote fast/anime."""
     m = (mid or "").strip().lower()
-    if _is_image_gen_namespace_chat_model(m):
+    if _is_aibox_image_generation_model(m):
+        order = {
+            "wan2.7-image-pro": 0,
+            "qwen-image-3.0-pro": 1,
+            "qwen-image-3.0": 2,
+            "qwen-image-2.0": 3,
+        }
+        tail = _aibox_image_model_tail(m)
+        return (-1, order.get(tail, 9), m)
+    if _is_image_gen_namespace_junk(m):
         return (9, m)
     if m.startswith("openrouter/") or "flux.2" in m:
         return (5, m)
@@ -1054,10 +1097,14 @@ def _rank_image_gen_model(mid: str) -> tuple:
 def list_image_gen_models(api_key: str) -> list[str]:
     """Models Omni can use for /images/generations (output modality image)."""
     rows = _v1_models(api_key)
-    found = sorted(
-        {str(r.get("id")) for r in rows if _is_image_output_model(r) and r.get("id")},
-        key=_rank_image_gen_model,
-    )
+    found_set: set[str] = set()
+    for row in rows:
+        mid = str(row.get("id") or "").strip()
+        if not mid:
+            continue
+        if _is_aibox_image_generation_model(mid) or _is_image_output_model(row):
+            found_set.add(mid)
+    found = sorted(found_set, key=_rank_image_gen_model)
     return found[:8]
 
 
@@ -1285,8 +1332,14 @@ def ensure_media_combos(opener, api_key: str) -> None:
     catalog = _v1_models(api_key)
     cur_img = _combo_model_ids(combos.get("image-gen"))
     bad_img = [m for m in cur_img if _is_bad_image_gen_combo_member(m, catalog)]
-    aibox_chat = [m for m in cur_img if _combo_name_collides_with_model_namespace(m)]
-    need_img = (not cur_img) or bool(bad_img) or bool(aibox_chat) or not set(cur_img).intersection(set(image_ids))
+    aibox_want = [m for m in image_ids if _is_aibox_image_generation_model(m)]
+    aibox_have = [m for m in cur_img if _is_aibox_image_generation_model(m)]
+    need_img = (
+        (not cur_img)
+        or bool(bad_img)
+        or (bool(aibox_want) and not aibox_have)
+        or not set(cur_img).intersection(set(image_ids))
+    )
     want_head = image_ids[0] if image_ids else ""
     cur_head = cur_img[0] if cur_img else ""
     if (
@@ -1297,15 +1350,17 @@ def ensure_media_combos(opener, api_key: str) -> None:
     ):
         print(f"==> image-gen head {cur_head!r} → {want_head!r} (photoreal-first reorder)")
         need_img = True
-    if bad_img or aibox_chat:
+    if bad_img:
         print(
-            f"==> image-gen has invalid members {(bad_img or aibox_chat)[:6]!r} "
-            f"(drop image-gen/* AI Box chat; use aihorde diffusion) — refilling"
+            f"==> image-gen has invalid members {bad_img[:6]!r} "
+            f"(drop img-gen chat junk; keep AI Box image generators) — refilling"
         )
+    elif aibox_want and not aibox_have:
+        print(f"==> image-gen missing AI Box members {aibox_want[:4]!r} — refilling")
     _put_or_create_combo(
         opener,
         name="image-gen",
-        description="Image generation — Omni /images/generations (AI Horde / image-capable)",
+        description="Image generation + inbound image analyze — AI Box / AI Horde / image-capable",
         model_ids=image_ids,
         force=need_img,
     )

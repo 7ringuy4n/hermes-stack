@@ -1,3 +1,9 @@
+## 2026-09-01 07:15 +07 — AI Box image-gen combo; quote-reply media; image analyze via image-gen
+
+- first-setup whitelists AI Box image generators (`qwen-image-2.0`, `qwen-image-3.0`, `qwen-image-3.0-pro`, `wan2.7-image-pro`) in combo `image-gen` ahead of Horde fallback; chat junk under `img-gen/` stays excluded.
+- Inbound image analyze (post-Paddle) uses combo `image-gen` multimodal chat — not `vision-ocr`; neutral Vietnamese summary prompt (no OCR/vision tool hints).
+- Zalo quote-reply inherits quoted photo/file media before mention gate; bridge adds `quoted` alias and forwards `quote` on `/send-attachment` for reply-with-image delivery.
+
 ## 2026-08-31 23:00 +07 — Omni key resolution; block Hermes secret scans for image-gen
 
 - Host media shortcuts resolve `OMNIROUTER_API_KEY` from process env and shared `/opt/data/.env` (no execute_code / replica file probes).

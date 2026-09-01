@@ -1,3 +1,17 @@
+## 2026-09-01 07:15 +07 — Quote-reply image; AI Box in image-gen combo; analyze path
+
+### Symptom
+Quote-reply to a photo in Zalo did not download/analyze the quoted image. Inbound image analyze still routed to `vision-ocr`. AI Box image generators were excluded from combo `image-gen` after the prior chat-junk fix.
+
+### Root cause
+Quote media merge ran after the group mention gate, so quoted images were invisible to buffered-media logic. `_as_vision_scene_text` forced `image-gen` → `vision-ocr`. first-setup excluded all `img-gen/*` models, including whitelisted AI Box image generators.
+
+### Fix (core)
+`merge_inbound_quote_media` before mention gate; bridge `quoted` alias + attachment quote forward; first-setup whitelists four AI Box image models with Horde fallback; OCR_MODEL pins to image-gen combo; neutral multimodal summary prompt.
+
+### Prevent recurrence
+Run first-setup after AI Box provider changes; keep quote media extraction ahead of gates; do not blanket-exclude `img-gen/` — only chat junk.
+
 ## 2026-08-31 23:00 +07 — Hermes execute_code blocked on image-gen key probe
 
 ### Symptom

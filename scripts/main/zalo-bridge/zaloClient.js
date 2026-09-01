@@ -889,6 +889,7 @@ export class ZaloClient extends EventEmitter {
       // assistant-stack: map quoted message fields (not the current inbound).
       // Also accept refMsg/reference aliases — older replies sometimes omit data.quote.
       quote: this._mapInboundQuote(data),
+      quoted: this._mapInboundQuote(data),
     };
   }
 
@@ -1183,9 +1184,10 @@ export class ZaloClient extends EventEmitter {
    * Send one or more local file paths as attachments (images, files, video).
    * zca-js routes by extension automatically.
    */
-  async sendAttachment(threadId, threadType, filePaths, caption) {
+  async sendAttachment(threadId, threadType, filePaths, caption, quote) {
     const attachments = Array.isArray(filePaths) ? filePaths : [filePaths];
     const content = { msg: caption ? String(caption) : "", attachments };
+    if (quote && typeof quote === "object") content.quote = quote;
     return await this.api.sendMessage(content, String(threadId), this._threadTypeEnum(threadType));
   }
 
