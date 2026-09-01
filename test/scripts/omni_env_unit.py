@@ -50,10 +50,26 @@ def test_literal_newline_env_file() -> None:
         assert data.get("ENABLE_MEDIA_FILE") == "active"
 
 
+def test_resolve_env_var_from_file() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        envp = Path(td) / ".env"
+        envp.write_text("IMAGE_GEN_COMBO=image-gen\n", encoding="utf-8")
+        old = os.environ.pop("IMAGE_GEN_COMBO", None)
+        old_fn = mod._env_file_candidates
+        try:
+            mod._env_file_candidates = lambda: [envp]  # type: ignore[method-assign]
+            assert mod.resolve_env_var("IMAGE_GEN_COMBO") == "image-gen"
+        finally:
+            mod._env_file_candidates = old_fn  # type: ignore[method-assign]
+            if old:
+                os.environ["IMAGE_GEN_COMBO"] = old
+
+
 def main() -> None:
     test_resolve_from_process_env()
     test_resolve_from_env_file()
     test_literal_newline_env_file()
+    test_resolve_env_var_from_file()
     print("OK omni_env_unit")
 
 

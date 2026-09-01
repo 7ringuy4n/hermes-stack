@@ -1,3 +1,19 @@
+## 2026-09-01 18:30 +07 — scenic image-gen HD canvas; drop head-model env pin
+
+### Symptom
+Scenic asks still failed after priority combo rollout; troubleshooting asks routed to Hermes architecture essays. Legacy `IMAGE_GEN_HEAD_MODEL` env pin lingered in patch scripts.
+
+### Root cause
+1. Host scenic path used Full HD `1920x1080` / square `1024x1024` inconsistently; combo drains timed out on large canvases.
+2. Classifier had no family for image-gen failure/status asks.
+3. Obsolete per-member `IMAGE_GEN_HEAD_MODEL` pin conflicted with combo-only routing.
+
+### Fix (core)
+Host scenic path: HD `1280x720` default, configurable timeout, combo `image-gen` only, scaled quality guard. Drop `IMAGE_GEN_HEAD_MODEL` from patch-hermes; first-setup clears obsolete key. Classifier media part: image-gen diagnostic → host direct reply.
+
+### Prevent recurrence
+Scenic diffusion stays on combo `image-gen` with `priority` strategy; no per-member env pins; diagnostic asks never open Hermes chat.
+
 ## 2026-09-01 16:30 +07 — image-gen priority fallback; scenic-vs-OCR classification guard
 
 ### Symptom

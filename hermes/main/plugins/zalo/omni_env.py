@@ -83,3 +83,18 @@ def resolve_omni_base_url() -> str:
         if val:
             return val.rstrip("/")
     return "http://omni-router:20129/v1"
+
+
+def resolve_env_var(name: str, default: str = "") -> str:
+    """Process env first, then shared/replica/stack .env files."""
+    val = (os.getenv(name) or "").strip()
+    if val:
+        return val
+    for path in _env_file_candidates():
+        if not path.is_file():
+            continue
+        data = _read_env_file(path)
+        val = (data.get(name) or "").strip()
+        if val:
+            return val
+    return default
