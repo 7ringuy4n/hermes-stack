@@ -658,18 +658,33 @@ def _load_cfg() -> dict[str, Any]:
     data["system"] = system
     if not str(data.get("user_template") or "").strip():
         data["user_template"] = (
-            "Timezone: {timezone}\nThread: {thread}\nAttachments: {attachments}\n"
-            "Quoted: {quoted}\nMessage:\n{text}"
+            "Timezone: {timezone}\nLocal now: {local_now}\nThread: {thread}\n"
+            "Attachments: {attachments}\nQuoted: {quoted}\nMessage:\n{text}"
         )
     data.setdefault("timeout_s", 20)
     data.setdefault("temperature", 0)
     return data
 
 
+def _local_now_label(timezone: str) -> str:
+    """Wall-clock label for classify context (host TZ, default Vietnam)."""
+    from datetime import datetime
+
+    tz_name = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
+    try:
+        from zoneinfo import ZoneInfo
+
+        now = datetime.now(ZoneInfo(tz_name))
+    except Exception:
+        now = datetime.now()
+    return now.strftime("%Y-%m-%d %H:%M")
+
+
 def _fill_user_template(
     tmpl: str,
     *,
     timezone: str,
+    local_now: str,
     text: str,
     thread: str = "unknown",
     attachments: str = "none",
@@ -678,6 +693,7 @@ def _fill_user_template(
     """Replace known placeholders only — user text may contain braces."""
     return (
         tmpl.replace("{timezone}", timezone)
+        .replace("{local_now}", local_now)
         .replace("{thread}", thread or "unknown")
         .replace("{attachments}", attachments or "none")
         .replace("{quoted}", quoted or "none")
@@ -986,7 +1002,11 @@ async def classify_with_llm(
         )
         if plan_schema_ok(plan):
             return plan
-    tmpl = str(cfg.get("user_template") or "Timezone: {timezone}\nMessage:\n{text}")
+    tmpl = str(
+        cfg.get("user_template")
+        or "Timezone: {timezone}\nLocal now: {local_now}\nMessage:\n{text}"
+    )
+    local_now = _local_now_label(tz)
     headers = {"Content-Type": "application/json"}
     if n9_key:
         headers["Authorization"] = f"Bearer {n9_key}"
@@ -1006,6 +1026,7 @@ async def classify_with_llm(
                     "content": _fill_user_template(
                         tmpl,
                         timezone=tz,
+                        local_now=local_now,
                         text=blob,
                         thread=str(thread or "unknown"),
                         attachments=str(attachments or "none"),

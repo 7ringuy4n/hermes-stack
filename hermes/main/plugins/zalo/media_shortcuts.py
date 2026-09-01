@@ -693,60 +693,20 @@ def weather_scene_to_info_card_instruction(img_ins: str) -> str:
     return "\n".join(parts)
 
 
-def _local_lighting_hint() -> str:
-    """Local time-of-day lighting for diffusion (stack TZ, default Vietnam)."""
-    import os
-    from datetime import datetime
-
-    tz_name = (os.getenv("TZ") or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
-    try:
-        from zoneinfo import ZoneInfo
-
-        now = datetime.now(ZoneInfo(tz_name))
-    except Exception:
-        now = datetime.now()
-    hour = now.hour
-    if 5 <= hour < 7:
-        return "dawn, soft sunrise light, early morning sky"
-    if 7 <= hour < 17:
-        return "daytime, natural daylight, clear visibility"
-    if 17 <= hour < 19:
-        return "golden hour dusk, warm sunset light, evening sky, street lights turning on"
-    if 19 <= hour < 22:
-        return "evening, blue hour fading to night, city lights illuminated, not bright midday sun"
-    return "nighttime, dark sky, city lights and street lamps, no daylight, not daytime"
-
-
-def _weather_visual_cues(facts: list[str]) -> list[str]:
-    """Turn search facts into non-text visual weather cues for diffusion."""
-    cues: list[str] = []
-    icon = _infer_icon(facts)
-    if icon == "rain":
-        cues.append("overcast sky with rain, wet reflective streets, visible rainfall")
-    elif icon == "storm":
-        cues.append("dark storm clouds, dramatic weather, heavy atmosphere")
-    elif icon == "sun":
-        cues.append("clear sky with bright sunlight")
-    else:
-        cues.append("partly cloudy sky with natural cloud cover")
-    blob = " ".join(facts).lower()
-    if any(w in blob for w in ("humid", "ẩm", "am ", "muggy", "moist")):
-        cues.append("humid tropical air")
-    if any(ch.isdigit() for ch in blob) and ("°" in blob or "c" in blob or "nhiệt" in blob or "temp" in blob):
-        cues.append("warm tropical urban atmosphere")
-    return cues
-
-
 def _weather_scene_visual_prompt(scene: str, facts: list[str]) -> str:
-    """Weather scenic diffusion — visual atmosphere only, no readable on-image text."""
+    """Weather scenic diffusion — SCENE from classify (LLM time-aware); no on-image text."""
     base = _photoreal_scene_prompt(_place_alias_to_official(scene or ""))
-    lighting = _local_lighting_hint()
-    cues = _weather_visual_cues(facts)
-    parts = [lighting] + cues
-    visual = ", ".join(parts)
+    clean = [str(f).strip() for f in (facts or []) if str(f).strip()]
+    extra = ""
+    if clean:
+        extra = (
+            " Reflect live weather through atmosphere: "
+            + "; ".join(clean[:4])
+            + "."
+        )
     return (
-        f"{base}. {visual}. "
-        "Express current weather only through sky, clouds, lighting, wet surfaces, and atmosphere. "
+        f"{base}{extra} "
+        "Express weather only through sky, clouds, lighting, wet surfaces, and atmosphere. "
         "No readable text, no letters, no signs, no captions, no watermarks, no labels in the image. "
         "No close-up people, not cartoon, not anime, not illustration"
     )
@@ -755,13 +715,12 @@ def _weather_scene_visual_prompt(scene: str, facts: list[str]) -> str:
 def _labeled_scene_prompt(scene: str, facts: list[str]) -> str:
     """Info-card / labeled dashboard diffusion — may include readable labels (not weather scenic)."""
     base = _photoreal_scene_prompt(_place_alias_to_official(scene or ""))
-    lighting = _local_lighting_hint()
     clean = [str(f).strip() for f in (facts or []) if str(f).strip()]
     if not clean:
-        return f"{base}. {lighting}"
+        return base
     board = "; ".join(clean[:6])
     return (
-        f"{base}. {lighting}. Include a small, readable, safe-for-work on-image information board "
+        f"{base}. Include a small, readable, safe-for-work on-image information board "
         f"with these fact labels in English: {board}. Official place names only, "
         "no close-up people, not cartoon, not anime, not illustration"
     )
@@ -1009,7 +968,7 @@ def run_scene_image(
     if not scene:
         scene = (
             "Photorealistic photograph of a cityscape with visible sky and urban skyline, "
-            "real camera photo, natural lighting, daytime, wide view, not cartoon, not anime"
+            "real camera photo, natural lighting, wide view, not cartoon, not anime"
         )
     prompt = _photoreal_scene_prompt(_place_alias_to_official(scene))
     fname = f"scene-{str(thread_id)[-8:] or 'zalo'}.webp"
