@@ -1280,10 +1280,18 @@ def _put_or_create_combo(
     return name
 
 
-def _smoke_image_gen_combo(api_key: str) -> None:
-    """Fail setup if Omni still rejects combo image-gen for /images/generations."""
+def _smoke_image_gen_combo(api_key: str, head_model: str = "") -> None:
+    """Verify the preferred (head) image-gen member returns a real image.
+
+    Smoke the head model directly instead of the whole combo: the combo is
+    round-robin over many members (free AI Horde + AI Box), and free Horde
+    workers commonly hang past any sane timeout. The head is the intended
+    photoreal producer (AI Box qwen-image family), so it is the deterministic
+    check that diffusion wiring is correct.
+    """
+    model = (head_model or "").strip() or "image-gen"
     body = json.dumps(
-        {"model": "image-gen", "prompt": "setup smoke tiny skyline", "n": 1}
+        {"model": model, "prompt": "setup smoke tiny skyline", "n": 1, "size": "1024x1024"}
     ).encode()
     req = urllib.request.Request(
         f"{BASE}/v1/images/generations",
@@ -1296,13 +1304,13 @@ def _smoke_image_gen_combo(api_key: str) -> None:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=240) as resp:
+        with urllib.request.urlopen(req, timeout=180) as resp:
             raw = resp.read()
             data = json.loads(raw.decode() or "{}") if raw else {}
     except urllib.error.HTTPError as e:
         detail = e.read()[:400]
         raise SystemExit(
-            f"image-gen /images/generations smoke HTTP {e.code}: {detail!r} "
+            f"image-gen /images/generations smoke HTTP {e.code} for {model!r}: {detail!r} "
             f"— refill image-gen with AI Horde / Flux members"
         ) from e
     if isinstance(data, list):
@@ -1312,12 +1320,12 @@ def _smoke_image_gen_combo(api_key: str) -> None:
     else:
         items = []
     if not items:
-        raise SystemExit(f"image-gen smoke returned no image data: {str(data)[:300]}")
+        raise SystemExit(f"image-gen smoke returned no image data for {model!r}: {str(data)[:300]}")
     # Omni may return a bare list of {b64_json|url} objects.
     first = items[0] if isinstance(items[0], dict) else {}
     if not (first.get("b64_json") or first.get("url")):
-        raise SystemExit(f"image-gen smoke missing b64_json/url: {str(first)[:200]}")
-    print("OK: smoke image-gen /images/generations")
+        raise SystemExit(f"image-gen smoke missing b64_json/url for {model!r}: {str(first)[:200]}")
+    print(f"OK: smoke image-gen /images/generations ({model})")
 
 
 def _aibox_image_provider_nodes(opener) -> list[dict]:
@@ -1456,7 +1464,7 @@ def ensure_media_combos(opener, api_key: str) -> None:
         model_ids=image_ids,
         force=need_img,
     )
-    _smoke_image_gen_combo(api_key)
+    _smoke_image_gen_combo(api_key, head_model=want_head)
 
     vision_ids = list_vision_models(opener)
     if not vision_ids:
