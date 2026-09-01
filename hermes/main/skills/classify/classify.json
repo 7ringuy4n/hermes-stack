@@ -4,5 +4,5 @@
   "temperature": 0,
   "retry": 2,
   "parts": ["core", "schedule", "media", "delivery", "schema"],
-  "user_template": "Timezone: {timezone}\nThread: {thread}\nAttachments: {attachments}\nQuoted: {quoted}\nMessage:\n{text}"
+  "user_template": "Timezone: {timezone}\nLocal now: {local_now}\nThread: {thread}\nAttachments: {attachments}\nQuoted: {quoted}\nMessage:\n{text}"
 }

@@ -31,7 +31,25 @@ def main() -> int:
     assert "schedule_resolution" in system
     assert "schedule_request_received_at" in system
     assert env.get("parts") == ["core", "schedule", "media", "delivery", "schema"]
+    tmpl = str(env.get("user_template") or "")
+    assert "{local_now}" in tmpl, tmpl
     assert str(CFG_PATH).replace("\\", "/").endswith("skills/classify/classify.json"), CFG_PATH
+
+    from classify import _fill_user_template, _local_now_label  # noqa: E402
+
+    now = _local_now_label("Asia/Ho_Chi_Minh")
+    assert len(now) >= 10
+    filled = _fill_user_template(
+        tmpl,
+        timezone="Asia/Ho_Chi_Minh",
+        local_now=now,
+        text="vẽ hình",
+        thread="user",
+        attachments="none",
+        quoted="none",
+    )
+    assert f"Local now: {now}" in filled
+    assert "Timezone: Asia/Ho_Chi_Minh" in filled
 
     multi = normalize_plan(
         {
