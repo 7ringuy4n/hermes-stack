@@ -1,3 +1,33 @@
+## 2026-09-01 19:45 +07 — image-gen AI Box head pin; drop Horde from combo
+
+### Symptom
+Classify and Hermes chat combos responded in seconds; scenic image asks timed out with media-out failure. Omni logs showed `image-gen` falling through to AI Horde (30s timeouts) while direct `wan2.7-image-pro` smoke passed.
+
+### Root cause
+1. Host `run_scene_image` posted `model=image-gen` (combo) — Omni priority drained into broken free Horde workers.
+2. Obsolete `IMAGE_GEN_HEAD_MODEL` lingered in shared `/data/assistant/.env`.
+3. Plugin overlay sync failed without sudo (fixed separately).
+
+### Fix (core)
+Pin `IMAGE_GEN_HEAD_MEMBER` to ranked AI Box head; media_shortcuts calls head directly. first-setup: AI Box-only combo when heads exist; clear obsolete pins on stack + shared `.env`.
+
+### Prevent recurrence
+Scenic diffusion must not use combo names that include Horde when AI Box heads are registered; first-setup smoke uses the same head member as runtime.
+
+## 2026-09-01 19:30 +07 — sync-zalo-plugins without sudo when deploy user owns overlay
+
+### Symptom
+After `git pull`, scenic asks still failed; host overlay `/data/assistant/plugins/zalo` stayed one revision behind SoT because `sync-zalo-plugins.sh` required `sudo` and exited without copying.
+
+### Root cause
+Deploy user `tn` owns `/data/assistant/plugins` but the sync script always invoked `sudo rm/cp`; non-interactive runs failed password prompt, leaving stale adapter on the host path.
+
+### Fix (core)
+When the deploy user can write the plugin parent directory, sync uses plain `rm`/`cp`; sudo remains only for root-owned paths.
+
+### Prevent recurrence
+Always run `bash scripts/main/sync-zalo-plugins.sh` after plugin pulls; script must not require sudo on standard deploy-user layouts.
+
 ## 2026-09-01 19:15 +07 — host media shortcut owns scenic turns; classify retry
 
 ### Symptom
