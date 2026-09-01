@@ -164,6 +164,7 @@ def test_image_ocr_ack() -> None:
     assert "HOA DON 1250000 VND" in full and "Đã đọc chữ" in full, full
     vision = image_analyze_ack_message("A tired man sitting on a bench in a park.")
     assert "tired man" in vision and len(vision) > 20, repr(vision[:80])
+    assert "Bạn muốn mình" not in image_analyze_ack_message("HOA DON 1250000 VND")
     noise = "\n".join(list("naotoeeeeeeie"))
     assert ocr_excerpt_for_ack(noise) == "", noise
     assert "OCR không đọc được" in image_ocr_ack_message(noise)

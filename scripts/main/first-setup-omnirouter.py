@@ -1320,6 +1320,91 @@ def _smoke_image_gen_combo(api_key: str) -> None:
     print("OK: smoke image-gen /images/generations")
 
 
+def _aibox_image_provider_nodes(opener) -> list[dict]:
+    """AI Box image-generation provider nodes (apiType images-generations / img-gen prefix)."""
+    try:
+        _, data = http_json(opener, "GET", f"{BASE}/api/provider-nodes")
+    except Exception as e:
+        print(f"WARN provider-nodes list failed: {e}")
+        return []
+    out: list[dict] = []
+    for node in data.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        api_type = str(node.get("apiType") or "").strip().lower()
+        prefix = str(node.get("prefix") or "").strip().lower()
+        if api_type == "images-generations" or prefix in {"img-gen", "image-gen"}:
+            out.append(node)
+    return out
+
+
+def _custom_models_by_provider(opener, provider: str) -> dict[str, dict]:
+    """Map bare modelId -> custom model row for a provider node (GET /api/provider-models)."""
+    query = urllib.parse.urlencode({"provider": provider})
+    try:
+        _, data = http_json(opener, "GET", f"{BASE}/api/provider-models?{query}")
+    except Exception as e:
+        print(f"WARN provider-models GET failed for {provider[:8]}…: {e}")
+        return {}
+    bucket = (data.get("models") or {}).get(provider) or []
+    return {
+        str(row.get("id")): row
+        for row in bucket
+        if isinstance(row, dict) and row.get("id")
+    }
+
+
+def _custom_image_model_action(existing: dict | None) -> str:
+    """Return "add" / "fix" / "" for a whitelisted AI Box image model row.
+
+    Omni routes a custom model through /v1/images/generations only when its
+    supportedEndpoints includes "images"; AI Box models often arrive tagged
+    ["chat"] (or missing), so pin images-generations + ["images"].
+    """
+    if not existing:
+        return "add"
+    endpoints = [str(e) for e in (existing.get("supportedEndpoints") or [])]
+    api_format = str(existing.get("apiFormat") or "").strip()
+    if "images" in endpoints and api_format == "images-generations":
+        return ""
+    return "fix"
+
+
+def ensure_aibox_image_models(opener) -> None:
+    """Register/repair whitelisted AI Box image generators as custom models.
+
+    Each of the four AI Box image models must exist on its provider node with
+    apiFormat=images-generations and supportedEndpoints=["images"]; otherwise
+    /v1/images/generations skips the combo member and returns no image.
+    """
+    nodes = _aibox_image_provider_nodes(opener)
+    if not nodes:
+        print("NOTE: no AI Box images-generations provider node — skip custom-model registration")
+        return
+    for node in nodes:
+        provider = node.get("id")
+        if not provider:
+            continue
+        state = _custom_models_by_provider(opener, provider)
+        for model_id in _AIBOX_IMAGE_MODEL_NAMES:
+            action = _custom_image_model_action(state.get(model_id))
+            if not action:
+                continue
+            body = {
+                "provider": provider,
+                "modelId": model_id,
+                "modelName": model_id,
+                "apiFormat": "images-generations",
+                "supportedEndpoints": ["images"],
+            }
+            method = "POST" if action == "add" else "PUT"
+            status, resp = http_json(opener, method, f"{BASE}/api/provider-models", body)
+            if status in (200, 201):
+                print(f"OK: {action} custom image model {provider[:8]}…/{model_id} (images-generations)")
+            else:
+                print(f"WARN {action} {model_id} on {provider[:8]}…: {str(resp)[:200]}")
+
+
 def ensure_media_combos(opener, api_key: str) -> None:
     """Ensure media combos with capability-matched members (not chat-only OpenCode)."""
     image_ids = list_image_gen_models(api_key)
@@ -1474,6 +1559,7 @@ def main() -> int:
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
     ensure_web_search_omni_combo(opener)
+    ensure_aibox_image_models(opener)
     ensure_media_combos(opener, key)
     ensure_api_key_allows_combos(opener, key)
     pin_media_combos(env)

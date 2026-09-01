@@ -1,3 +1,17 @@
+## 2026-09-01 11:10 +07 — AI Box custom image-model repair; neutral image analyze; slim acks
+
+### Symptom
+AI Box image generators never returned an image from combo `image-gen`: `/v1/images/generations` silently skipped them. Image acks still appended a fixed "summarize / translate / save knowledge" footer, and the host adapter still hardcoded image/vision prompts plus timing helpers.
+
+### Root cause
+The AI Box custom model `qwen-image-2.0` was registered with `supportedEndpoints: ["chat"]`, not `["images"]`; the other three whitelisted models were absent as active custom models. OmniRoute only routes a custom model through `/v1/images/generations` when `supportedEndpoints` includes `images`. The host adapter owned natural-language prompt/timing concerns that belong to the LLM/OCR worker.
+
+### Fix (core)
+first-setup registers/repairs the four AI Box image models on their `images-generations` provider node via `/api/provider-models` (POST add / PUT fix) with `apiFormat=images-generations` + `supportedEndpoints=["images"]`. Zalo image/file acks drop the fixed footer; OCR keeps only a "Đã đọc chữ:" header. Host-side scene-text and timing helpers removed; OCR worker owns multimodal summarization through `image-gen`.
+
+### Prevent recurrence
+After adding an AI Box provider, run first-setup so its image models get the correct image endpoint tags; keep image analysis prompting in the OCR worker, not the host adapter.
+
 ## 2026-09-01 07:15 +07 — Quote-reply image; AI Box in image-gen combo; analyze path
 
 ### Symptom

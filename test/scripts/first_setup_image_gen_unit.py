@@ -57,12 +57,65 @@ def test_rank_prefers_aibox_over_horde() -> None:
     assert mod._rank_image_gen_model(aibox) < mod._rank_image_gen_model(horde)
 
 
+def test_custom_image_model_action() -> None:
+    assert mod._custom_image_model_action(None) == "add"
+    assert (
+        mod._custom_image_model_action(
+            {"id": "qwen-image-2.0", "apiFormat": "images-generations", "supportedEndpoints": ["chat"]}
+        )
+        == "fix"
+    )
+    assert (
+        mod._custom_image_model_action(
+            {"id": "qwen-image-2.0", "apiFormat": "images-generations", "supportedEndpoints": ["images"]}
+        )
+        == ""
+    )
+    assert (
+        mod._custom_image_model_action(
+            {"id": "qwen-image-2.0", "apiFormat": "chat-completions", "supportedEndpoints": ["images"]}
+        )
+        == "fix"
+    )
+
+
+def test_aibox_image_provider_nodes_filter() -> None:
+    fake_nodes = [
+        {"id": "n1", "name": "AI Box", "prefix": "img-gen", "apiType": "images-generations"},
+        {"id": "n2", "name": "chat", "prefix": "oc", "apiType": "chat-completions"},
+        {"id": "n3", "name": "comfy", "prefix": "comfyui", "apiType": "comfyui"},
+    ]
+
+    captured = {}
+    original_http = getattr(mod, "http_json", None)
+
+    def fake_http(opener, method, url, body=None, timeout=25):
+        captured["url"] = url
+        return 200, {"nodes": fake_nodes}
+
+    mod.http_json = fake_http
+    try:
+        nodes = mod._aibox_image_provider_nodes(object())
+    finally:
+        if original_http is not None:
+            mod.http_json = original_http
+        else:
+            del mod.http_json
+    ids = {n["id"] for n in nodes}
+    assert "n1" in ids
+    assert "n2" not in ids
+    assert "n3" not in ids
+    assert "/api/provider-nodes" in captured.get("url", "")
+
+
 def main() -> None:
     test_aibox_image_models_whitelisted()
     test_exclude_img_gen_namespace_junk()
     test_allow_aihorde_diffusion()
     test_allow_openrouter_flux()
     test_rank_prefers_aibox_over_horde()
+    test_custom_image_model_action()
+    test_aibox_image_provider_nodes_filter()
     print("OK first_setup_image_gen_unit")
 
 

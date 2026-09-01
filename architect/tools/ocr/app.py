@@ -1,7 +1,7 @@
-"""OCR — PaddleOCR first for all docs; vision-ocr combo fallback; tesseract last.
+"""OCR — PaddleOCR first for all docs; image-gen combo fallback; tesseract last.
 
 Pipeline: pymupdf text layer (PDF) → PaddleOCR → vision combo (OCR_MODEL, default
-vision-ocr via Omni/9Router chat multimodal) → tesseract.
+image-gen via Omni/9Router chat multimodal) → tesseract.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ API_KEY = (
     or ""
 ).strip()
 BASE = os.environ.get("OPENAI_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
-MODEL = os.environ.get("OCR_MODEL") or os.environ.get("OPENAI_MODEL") or "vision-ocr"
+MODEL = os.environ.get("OCR_MODEL") or os.environ.get("OPENAI_MODEL") or "image-gen"
 MEDIA_ROOT = Path(os.environ.get("OCR_MEDIA_ROOT", "/data/media"))
 FALLBACK = (os.environ.get("OCR_FALLBACK") or "1").strip().lower() not in {
     "0",
@@ -81,7 +81,7 @@ class OcrReq(BaseModel):
     path: Optional[str] = None
     image_b64: Optional[str] = None
     prompt: str = Field(
-        default="Analyze this file. Describe visible content and extract any readable text as markdown. Preserve tables if present."
+        default="Describe this image naturally and include any text visible in it."
     )
 
 
@@ -344,7 +344,7 @@ def ocr(req: OcrReq) -> dict[str, Any]:
         elif paddle_err:
             _flow("ocr", ok=False, path=str(path or ""), error=paddle_err, via="paddle")
 
-    # --- Vision combo (OCR_MODEL, default vision-ocr) after Paddle for images + scanned PDF ---
+    # --- Vision combo (OCR_MODEL, default image-gen) after Paddle for images + scanned PDF ---
     status, body, text = 0, "", ""
     used = "paddle"
     if VISION and (is_image or is_scan_pdf) and _vision_ready():
@@ -358,7 +358,7 @@ def ocr(req: OcrReq) -> dict[str, Any]:
             raw = path.read_bytes()
             mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
             vision_inputs.append((base64.b64encode(raw).decode("ascii"), mime))
-        used = "vision-ocr"
+        used = "image-gen"
         parts: list[str] = []
         for b64, mime in vision_inputs:
             _flow("ocr_start", path=str(path or ""), mime=mime, model=MODEL, via=used)

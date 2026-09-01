@@ -1,3 +1,9 @@
+## 2026-09-01 11:10 +07 — AI Box custom image-model registration; slim host image-ack
+
+- first-setup now registers/repairs whitelisted AI Box image generators as OmniRouter custom models (`apiFormat=images-generations`, `supportedEndpoints=[images]`) so `/v1/images/generations` actually routes them; previously `qwen-image-2.0` was tagged `supportedEndpoints=[chat]` and the other three were absent, so the combo returned no image.
+- Zalo image-analyze ack drops the fixed "analyze / summarize / translate / save knowledge?" footer; OCR mode keeps only a short "Đã đọc chữ:" header, and file-extract ack drops the same footer — LLM summary stands alone.
+- Host Zalo adapter no longer owns image/vision prompt or timing: removed host-side scene-text + timing helpers; OCR worker owns multimodal summarization with a neutral prompt routed through `image-gen`.
+
 ## 2026-09-01 07:15 +07 — AI Box image-gen combo; quote-reply media; image analyze via image-gen
 
 - first-setup whitelists AI Box image generators (`qwen-image-2.0`, `qwen-image-3.0`, `qwen-image-3.0-pro`, `wan2.7-image-pro`) in combo `image-gen` ahead of Horde fallback; chat junk under `img-gen/` stays excluded.
