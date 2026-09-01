@@ -731,8 +731,11 @@ def _omni_image_gen_model() -> str:
         from omni_env import resolve_env_var  # type: ignore
 
     combo = resolve_env_var("IMAGE_GEN_COMBO", "image-gen") or "image-gen"
+    head = resolve_env_var("IMAGE_GEN_HEAD_MEMBER", "").strip()
+    if combo == "image-gen" and head:
+        return head
     if "/" in combo:
-        return "image-gen"
+        return combo
     return combo
 
 
