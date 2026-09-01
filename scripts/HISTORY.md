@@ -1,3 +1,18 @@
+## 2026-09-01 16:30 +07 — image-gen priority fallback; scenic-vs-OCR classification guard
+
+### Symptom
+Scenic "vẽ hình …" asks intermittently returned either "Hiện chưa tạo được file này" (media-out failure) or "mình không thấy hình ảnh nào được gửi kèm" (image-analyze misroute).
+
+### Root cause
+1. The `image-gen` combo used `round-robin` across 8 members (AI Box + free AI Horde). Round-robin cycles evenly, so free Horde workers — which hang or return censored placeholders — served many scenic requests, failing host delivery.
+2. The classifier `media` part still referenced `combo image-gen` for the OCR handoff, and did not explicitly reject draw/paint asks with no attachment; weaker classifier members in rotation drifted to image-analyze.
+
+### Fix (core)
+`IMAGE_GEN_COMBO_STRATEGY` defaults the `image-gen` combo to `priority` (OmniRoute's fallback: head model drains before the next). Classifier media part now routes image analyze through `combo vision-ocr` and hard-disambiguates a no-attachment draw/paint ask into `media_generation` + SCENE. Baked `config/classify.json` re-assembled from parts.
+
+### Prevent recurrence
+Keep `image-gen` (diffusion) distinct from `vision-ocr` (multimodal); scenic diffusion combos must favor fast paid heads over free fallbacks via `priority`.
+
 ## 2026-09-01 11:25 +07 — OCR vision on vision-ocr; image-gen diffusion-only
 
 ### Symptom

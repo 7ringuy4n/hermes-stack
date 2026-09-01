@@ -1,3 +1,9 @@
+## 2026-09-01 16:30 +07 — image-gen priority fallback; scenic-vs-OCR classification guard
+
+- The `image-gen` combo now uses the `priority` (fallback) strategy instead of `round-robin`, so AI Box diffusion members drain first and free AI Horde workers act only as fallbacks — removing the timeout/censor path that emitted the media-out failure line on scenic asks.
+- Classifier `media` part drops a stale `combo image-gen` OCR reference (now `combo vision-ocr`) and adds an explicit rule that a draw/paint ask with no attached image is `media_generation` (SCENE), never image-analyze — closing the "no image attached" misclassification.
+- Baked `config/classify.json` re-synchronized from the classifier parts; unit coverage added for per-combo strategy and the priority fallback default.
+
 ## 2026-09-01 11:25 +07 — OCR vision on vision-ocr; image-gen diffusion-only
 
 - Corrected OCR vision routing: `OCR_MODEL` pins to the `vision-ocr` combo (multimodal chat), not `image-gen`; the `image-gen` combo holds diffusion-only AI Box / AI Horde models that reject `/chat/completions`.
