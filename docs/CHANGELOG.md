@@ -1,3 +1,8 @@
+## 2026-09-01 19:15 +07 — host media shortcut owns scenic turns; classify retry
+
+- Zalo adapter runs host media shortcuts before async workflow creation and before queued Hermes turns — scenic `media_generation` no longer falls through to Hermes `execute_code` (missing API key in sandbox).
+- Classify HTTP client retries up to three times with backoff on transient router queue saturation; pure host-owned media plans force `process_original_message=false`.
+
 ## 2026-09-01 18:30 +07 — scenic image-gen HD canvas; drop head-model env pin
 
 - Host scenic diffusion defaults to HD `1280x720` (16:9) with a 240s Omni timeout (`OMNI_IMAGE_GEN_SIZE`, `OMNI_IMAGE_GEN_TIMEOUT_S`) on combo `image-gen` only; quality guard scales with requested canvas size.

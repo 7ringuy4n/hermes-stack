@@ -1,3 +1,19 @@
+## 2026-09-01 19:15 +07 — host media shortcut owns scenic turns; classify retry
+
+### Symptom
+Scenic asks returned the media-out failure line while Hermes logs showed `execute_code` calling Omni `/v1/images/generations` with `NO_API_KEY` — bypassing the host `run_scene_image` path that resolves keys via `omni_env`.
+
+### Root cause
+1. When classify succeeded on enqueue but failed on first inbound pass, `_as_try_workflow_submit` created an async workflow for `media_generation` and the workflow worker sent the SCENE instruction to Hermes.
+2. Queued drain called `handle_message` without re-running media shortcuts.
+3. Single-shot classify HTTP had no retry on transient OmniRouter queue saturation.
+
+### Fix (core)
+Extract `_as_run_host_media_shortcut` and invoke it from inbound, workflow submit (before schedule/workflow), and queue drain. Block workflow creation when `plan_media_shortcut_gate` is set. Classify client: three attempts with backoff; normalize forces `process_original_message=false` for pure host media.
+
+### Prevent recurrence
+Host-owned media (`plan_media_shortcut_gate`) must never open Hermes diffusion or async workflow; queue drain must re-check shortcuts before gateway.
+
 ## 2026-09-01 18:30 +07 — scenic image-gen HD canvas; drop head-model env pin
 
 ### Symptom
