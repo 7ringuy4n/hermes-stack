@@ -141,6 +141,46 @@ def test_custom_models_by_provider_shapes() -> None:
             del mod.http_json
 
 
+def test_image_gen_combo_strategy_is_priority() -> None:
+    """image-gen must default to priority (fallback), not the global round-robin."""
+    assert mod.IMAGE_GEN_COMBO_STRATEGY == "priority"
+    assert mod.COMBO_STRATEGY == "round-robin"
+    assert mod.IMAGE_GEN_COMBO_STRATEGY != mod.COMBO_STRATEGY
+
+
+def test_put_or_create_combo_uses_want_strategy() -> None:
+    """A combo payload carries the requested strategy (fallback override wins)."""
+    original_http = getattr(mod, "http_json", None)
+    captured = {}
+
+    def fake_http(opener, method, url, body=None, timeout=25):
+        if url.endswith("/api/combos") and method == "GET":
+            return 200, {"combos": []}
+        captured["method"] = method
+        captured["url"] = url
+        captured["body"] = body
+        return 201, {"id": "c1"}
+
+    mod.http_json = fake_http
+    try:
+        mod._put_or_create_combo(
+            object(),
+            name="image-gen",
+            description="diffusion only",
+            model_ids=["img-gen/qwen-image-2.0", "aihorde/ICBINP"],
+            force=True,
+            strategy="priority",
+        )
+    finally:
+        if original_http is not None:
+            mod.http_json = original_http
+        else:
+            del mod.http_json
+    assert captured.get("method") == "POST"
+    assert captured.get("body", {}).get("strategy") == "priority"
+    assert captured["body"]["models"][0]["model"] == "img-gen/qwen-image-2.0"
+
+
 def main() -> None:
     test_aibox_image_models_whitelisted()
     test_exclude_img_gen_namespace_junk()
