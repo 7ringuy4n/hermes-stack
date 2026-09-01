@@ -1279,6 +1279,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 "as_skip_autosend": True,
                 "as_skip_inflight": True,
                 "as_skip_quote": True,
+                "skip_outbound_filter": True,
             },
         )
 
@@ -2419,6 +2420,13 @@ class ZaloAdapter(BasePlatformAdapter):
         if not workflow_enabled():
             return False
         if plan_media_shortcut_gate(plan) and not schedule_fire:
+            await self._as_run_host_media_shortcut(
+                user_text=current,
+                thread_id=thread_id,
+                thread_type=thread_type,
+                bare_text=current,
+                plan=plan,
+            )
             return True
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
         async_job = plan_is_async(plan) or len(parts) >= 2
@@ -4130,6 +4138,23 @@ class ZaloAdapter(BasePlatformAdapter):
             m, text=text, thread_id=str(thread_id), thread_type=str(thread_type)
         ):
             return
+
+        # Host scenic/media shortcuts on bare text — before inflight drop and attachment pipeline.
+        bare_early = (text or "").strip()
+        if (
+            bare_early
+            and not schedule_fire
+            and not (isinstance(media, dict) and media.get("url"))
+            and "[Attachment text —" not in bare_early
+            and "[Attached file:" not in bare_early
+        ):
+            if await self._as_run_host_media_shortcut(
+                user_text=bare_early,
+                thread_id=str(thread_id),
+                thread_type=str(thread_type),
+                bare_text=bare_early,
+            ):
+                return
 
         # ASSISTANT_RATE_LIMIT_v4 — Valkey 1 / 10s; queue overflow instead of drop when enabled
         rate_over, rate_notify = self._zalo_rate_check(sender_id, thread_id)
