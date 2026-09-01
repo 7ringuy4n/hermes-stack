@@ -819,7 +819,10 @@ def _omni_request_image_blob(
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode() or "{}")
     except Exception as e:  # noqa: BLE001
-        log.warning("omni generate failed model=%r: %s", model, type(e).__name__)
+        detail = type(e).__name__
+        if isinstance(e, urllib.error.HTTPError):
+            detail = f"HTTPError {getattr(e, 'code', '?')}"
+        log.warning("omni generate failed model=%r: %s", model, detail)
         return None
     items = data if isinstance(data, list) else (data.get("data") or data.get("images") or [])
     if not items or not isinstance(items[0], dict):

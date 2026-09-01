@@ -1,3 +1,18 @@
+## 2026-09-01 20:30 +07 — scenic gate ack bypasses outbound filter
+
+### Symptom
+Classify and diffusion succeeded intermittently, but Zalo users saw no ack, no failure line, and sometimes no image — silent turn after classify.
+
+### Root cause
+1. `_as_gate_announce` sent scenic ack/fail lines through `send()` without `skip_outbound_filter`, so `gateway_noise.filter_outbound` / `/v1/outbound` could drop host-owned copy.
+2. Media shortcut ran late in the inbound handler (after inflight drop) and workflow submit could return `True` on media gates without invoking the host shortcut on a secondary path.
+
+### Fix (core)
+Gate announces bypass outbound filter; early bare-text media shortcut before inflight; workflow media-gate path calls `_as_run_host_media_shortcut`. Omni image HTTP errors log status code.
+
+### Prevent recurrence
+Host-owned gate lines (ack, fail, queue) must always set `skip_outbound_filter`.
+
 ## 2026-09-01 20:15 +07 — scenic image delivery: shared media/out + direct Zalo send
 
 ### Symptom
