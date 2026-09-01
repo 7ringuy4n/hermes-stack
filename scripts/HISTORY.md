@@ -1,3 +1,17 @@
+## 2026-09-01 21:30 +07 — classify Local now for scene lighting; drop host lighting heuristics
+
+### Symptom
+Evening weather-scene asks still produced bright daytime diffusion when host-side hour buckets overrode or duplicated classify intent.
+
+### Root cause
+`_local_lighting_hint()` and `_weather_visual_cues()` in `media_shortcuts.py` hardcoded time-of-day and weather atmosphere in Python instead of letting the classifier read current local time.
+
+### Fix (core)
+Model-router classify injects `Local now: {local_now}` into the user template from timezone; `media` classify part instructs SCENE lighting from that line. Host weather-scene prompt uses classify SCENE plus search facts only (no readable on-image text).
+
+### Prevent recurrence
+Scene lighting for diffusion must be decided at classify time from Local now — never re-derived in host Python heuristics.
+
 ## 2026-09-01 21:00 +07 — weather-scene visual-only diffusion; fix duplicate image send
 
 ### Symptom

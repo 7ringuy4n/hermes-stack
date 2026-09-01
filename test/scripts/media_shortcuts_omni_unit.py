@@ -88,20 +88,15 @@ def test_media_out_candidates_shared_first() -> None:
 
 def test_weather_scene_visual_prompt_no_text_board() -> None:
     prompt = mod._weather_scene_visual_prompt(
-        "Ho Chi Minh City skyline",
+        "Ho Chi Minh City skyline at evening, city lights illuminated",
         ["Temperature: 28C", "Humidity: 80%", "Partly cloudy"],
     )
     low = prompt.lower()
     assert "caption board" not in low
-    assert "readable text" in low or "no readable text" in low
+    assert "no readable text" in low
     assert "no letters" in low
     assert "ho chi minh city" in low
-
-
-def test_weather_visual_cues_rain() -> None:
-    cues = mod._weather_visual_cues(["Heavy rain showers", "Humid"])
-    blob = " ".join(cues).lower()
-    assert "rain" in blob or "wet" in blob
+    assert "evening" in low or "city lights" in low
 
 
 def test_labeled_scene_prompt_keeps_board() -> None:
@@ -120,7 +115,6 @@ def main() -> None:
     test_image_quality_mins_full_hd()
     test_media_out_candidates_shared_first()
     test_weather_scene_visual_prompt_no_text_board()
-    test_weather_visual_cues_rain()
     test_labeled_scene_prompt_keeps_board()
     print("OK media_shortcuts_omni_unit")
 

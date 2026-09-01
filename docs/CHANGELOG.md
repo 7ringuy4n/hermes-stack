@@ -1,3 +1,8 @@
+## 2026-09-01 21:30 +07 — classify Local now for scene lighting; drop host lighting heuristics
+
+- Classify user template now includes `Local now` (wall clock from timezone) so the classifier LLM sets SCENE time-of-day lighting for weather/scenic images.
+- Removed host Python lighting and weather-cue heuristics from media shortcuts; diffusion trusts classify SCENE plus search facts as atmospheric reference only.
+
 ## 2026-09-01 21:00 +07 — weather-scene visual-only diffusion; fix duplicate image send
 
 - Weather-scene diffusion expresses conditions through sky/lighting/atmosphere only — no readable on-image text (fixes misspelled Vietnamese captions from diffusion).
