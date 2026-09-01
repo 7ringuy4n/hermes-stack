@@ -7,7 +7,7 @@
 4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members
 5) Ensure media combos: image-gen (image-capable), vision-ocr (supportsVision), embedding
 6) Pin IMAGE_GEN_COMBO (image-gen) / OCR_MODEL (vision-ocr) from media worker state
-7) Set combo strategy preference (round-robin)
+7) Set combo strategy preference (round-robin; image-gen uses fallback/priority)
 8) Ensure Search: Tavily → Firecrawl → SearXNG
 9) Point Hermes at model-router; recreate router-worker for the key
 
@@ -34,6 +34,9 @@ COMBO_NAME = os.environ.get("OMNIROUTER_DEFAULT_COMBO", "hermes")
 CLASSIFY_COMBO_NAME = os.environ.get("OMNIROUTER_CLASSIFY_COMBO", "classifier")
 COMBO_STRATEGY = os.environ.get("OMNIROUTER_COMBO_STRATEGY", "round-robin")
 COMBO_STICKY_LIMIT = int(os.environ.get("OMNIROUTER_COMBO_STICKY_LIMIT", "1"))
+# image-gen must drain head AI Box members before free AI Horde fallbacks; a global
+# round-robin would cycle slow/free Horde workers into every scenic request.
+IMAGE_GEN_COMBO_STRATEGY = os.environ.get("OMNIROUTER_IMAGE_GEN_COMBO_STRATEGY", "priority")
 
 OPENCODE_MODELS_URL = "https://opencode.ai/zen/v1/models"
 OPENCODE_FREE_FALLBACK = [
@@ -1249,6 +1252,7 @@ def _put_or_create_combo(
     description: str,
     model_ids: list[str],
     force: bool,
+    strategy: str = "",
 ) -> str:
     if not model_ids:
         raise SystemExit(f"combo {name}: no candidate models")
@@ -1256,14 +1260,18 @@ def _put_or_create_combo(
     combos = data.get("combos") or []
     existing = next((c for c in combos if (c.get("name") or "") == name), None)
     current = _combo_model_ids(existing)
-    if existing and current and not force:
-        print(f"==> keep combo {name} n={len(current)} first={current[:3]}")
+    want_strategy = (strategy or COMBO_STRATEGY).strip() or "round-robin"
+    cur_strategy = (existing.get("strategy") or existing.get("comboStrategy") or "").strip() if existing else ""
+    if existing and current and not force and (not want_strategy or cur_strategy == want_strategy):
+        print(f"==> keep combo {name} n={len(current)} first={current[:3]} strategy={cur_strategy}")
         return name
+    if existing and current and cur_strategy != want_strategy:
+        print(f"==> combo {name} strategy {cur_strategy!r} → {want_strategy!r}")
     models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(model_ids)]
     payload = {
         "name": name,
         "models": models,
-        "strategy": COMBO_STRATEGY,
+        "strategy": want_strategy,
         "description": description,
     }
     if existing and existing.get("id"):
@@ -1276,18 +1284,18 @@ def _put_or_create_combo(
         action = "create"
     if status not in (200, 201):
         raise SystemExit(f"combo {name} {action} failed: {body}")
-    print(f"OK: {action} combo {name} n={len(model_ids)} first={model_ids[:3]}")
+    print(f"OK: {action} combo {name} n={len(model_ids)} first={model_ids[:3]} strategy={want_strategy}")
     return name
 
 
 def _smoke_image_gen_combo(api_key: str, head_model: str = "") -> None:
     """Verify the preferred (head) image-gen member returns a real image.
 
-    Smoke the head model directly instead of the whole combo: the combo is
-    round-robin over many members (free AI Horde + AI Box), and free Horde
-    workers commonly hang past any sane timeout. The head is the intended
-    photoreal producer (AI Box qwen-image family), so it is the deterministic
-    check that diffusion wiring is correct.
+    Smoke the head model directly instead of the whole combo: the combo mixes
+    AI Box (fast, photoreal) with free AI Horde members that commonly hang past
+    any sane timeout. The head is the intended photoreal producer (AI Box
+    qwen-image family), so it is the deterministic check that diffusion wiring
+    is correct; at runtime the combo favours it via priority (fallback).
     """
     model = (head_model or "").strip() or "image-gen"
     body = json.dumps(
@@ -1463,6 +1471,7 @@ def ensure_media_combos(opener, api_key: str) -> None:
         description="Image generation — AI Box / AI Horde / image-capable (diffusion only)",
         model_ids=image_ids,
         force=need_img,
+        strategy=IMAGE_GEN_COMBO_STRATEGY,
     )
     _smoke_image_gen_combo(api_key, head_model=want_head)
 
