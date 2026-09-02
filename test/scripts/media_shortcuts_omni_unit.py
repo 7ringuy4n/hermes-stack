@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
 from pathlib import Path
@@ -93,6 +94,73 @@ def test_labeled_scene_prompt_keeps_board() -> None:
     assert "information board" in prompt.lower() or "readable" in prompt.lower()
 
 
+def test_combo_failover_tries_combo_then_members() -> None:
+    calls: list[str] = []
+    original = mod._omni_request_image_blob_once
+
+    def fake_once(**kwargs):
+        candidate = kwargs.get("model", "")
+        calls.append(candidate)
+        if candidate == "ai-box/wan2.7-image-pro":
+            return b"\x89PNG-fake-blob"
+        return None
+
+    mod._omni_request_image_blob_once = fake_once
+    try:
+        blob = mod._omni_request_image_blob(
+            base="http://omni/v1",
+            key="k",
+            model="image-gen",
+            scene="hcm",
+            size="1280x720",
+            timeout=30,
+            combo_members=["pollinations/flux", "ai-box/wan2.7-image-pro"],
+        )
+    finally:
+        mod._omni_request_image_blob_once = original
+
+    assert blob == b"\x89PNG-fake-blob"
+    assert calls == ["image-gen", "pollinations/flux", "ai-box/wan2.7-image-pro"]
+
+
+def test_combo_member_models_parses_v1_combos() -> None:
+    payload = {
+        "data": [
+            {"name": "other", "models": [{"model": "x/a"}]},
+            {"name": "image-gen", "models": [{"model": "ai-box/wan"}, {"model": "ai-box/wan"}]},
+        ]
+    }
+
+    captured = {"url": None}
+
+    class _Resp:
+        def __init__(self, data):
+            self._data = data
+
+        def read(self):
+            return json.dumps(self._data).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_open(req, timeout=0):
+        captured["url"] = req.full_url
+        return _Resp(payload)
+
+    original = mod.urllib.request.urlopen
+    mod.urllib.request.urlopen = fake_open
+    try:
+        members = mod._omni_v1_combo_member_models("http://omni/v1", "k", "image-gen")
+    finally:
+        mod.urllib.request.urlopen = original
+
+    assert captured["url"] == "http://omni/v1/combos"
+    assert members == ["ai-box/wan"]
+
+
 def main() -> None:
     test_image_gen_timeout_default()
     test_image_gen_timeout_clamped()
@@ -104,6 +172,8 @@ def main() -> None:
     test_media_out_candidates_shared_first()
     test_weather_scene_visual_prompt_no_text_board()
     test_labeled_scene_prompt_keeps_board()
+    test_combo_failover_tries_combo_then_members()
+    test_combo_member_models_parses_v1_combos()
     print("OK media_shortcuts_omni_unit")
 
 

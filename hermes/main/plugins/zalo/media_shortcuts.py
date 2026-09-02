@@ -881,6 +881,14 @@ def _omni_request_image_blob(
 
 
 def _omni_request_image_blob_once(
+    *,
+    base: str,
+    key: str,
+    model: str,
+    scene: str,
+    size: str,
+    timeout: int,
+) -> bytes | None:
     body = json.dumps({"model": model, "prompt": scene, "n": 1, "size": size}).encode()
     req = urllib.request.Request(
         f"{base}/images/generations",
