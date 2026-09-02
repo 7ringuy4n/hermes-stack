@@ -942,16 +942,30 @@ def _is_image_output_model(row: dict) -> bool:
         return True
     if _row_api_format(row) == "images-generations":
         return True
-    if str(row.get("type") or "").strip().lower() == "image":
-        return True
     caps = row.get("capabilities") if isinstance(row.get("capabilities"), dict) else {}
     if caps.get("image_generation") is True:
         return True
     if caps.get("image_generation") is False:
         return False
-    if _row_has_image_modality(row):
-        return False
+    # output_modalities alone or bare type=image without /images endpoint are not routable.
     return False
+
+
+def _catalog_row_needs_provider_model_registration(row: dict) -> bool:
+    """Catalog row that should be registered on a custom images-generations provider."""
+    mid = str(row.get("id") or "").strip()
+    if not mid or mid.lower() in _STACK_COMBO_NAMES:
+        return False
+    if row.get("available") is False:
+        return False
+    if _is_chat_only_catalog_row(row):
+        return False
+    if _row_supports_images_endpoint(row) or _row_api_format(row) == "images-generations":
+        return True
+    if str(row.get("type") or "").strip().lower() == "image":
+        return True
+    caps = row.get("capabilities") if isinstance(row.get("capabilities"), dict) else {}
+    return caps.get("image_generation") is True
 
 
 def _catalog_row_by_id(catalog: list[dict], mid: str) -> dict | None:
@@ -990,18 +1004,45 @@ def _rank_image_gen_row(row: dict) -> tuple:
     return (tier, provider_bonus, mid)
 
 
-def _resolve_image_gen_head(
-    image_ids: list[str],
-    env: dict[str, str] | None = None,
-    catalog: list[dict] | None = None,
-) -> str:
-    env = env or {}
-    override = (env.get("IMAGE_GEN_HEAD_MEMBER") or os.environ.get("IMAGE_GEN_HEAD_MEMBER") or "").strip().strip('"')
-    if override and str(override).lower().startswith("pollinations/") and not _pollinations_api_key(env):
-        override = ""
-    if override and override in image_ids and _is_image_gen_model_id(override, catalog):
-        return override
-    return image_ids[0] if image_ids else ""
+def _images_generations_provider_ids(opener) -> set[str]:
+    return {
+        str(n.get("id") or "").strip()
+        for n in _images_generations_provider_nodes(opener)
+        if str(n.get("id") or "").strip()
+    }
+
+
+def _wired_custom_provider_image_ids(opener) -> list[str]:
+    """Catalog ids for custom provider nodes wired to /images/generations."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for provider in sorted(_images_generations_provider_ids(opener)):
+        state = _custom_models_by_provider(opener, provider)
+        for model_id, row in state.items():
+            if _custom_image_model_action(row) != "":
+                continue
+            full = f"{provider}/{model_id}"
+            if full in seen:
+                continue
+            seen.add(full)
+            out.append(full)
+    return out
+
+
+def _catalog_image_ids_outside_custom_providers(
+    catalog: list[dict], custom_providers: set[str]
+) -> list[str]:
+    out: list[str] = []
+    for row in catalog:
+        mid = str(row.get("id") or "").strip()
+        if not mid or not _is_image_output_model(row):
+            continue
+        prov = _row_provider(row)
+        root = mid.split("/")[0] if "/" in mid else ""
+        if prov in custom_providers or root in custom_providers:
+            continue
+        out.append(mid)
+    return out
 
 
 def ensure_api_key_allows_combos(opener, existing_key: str) -> None:
@@ -1149,21 +1190,36 @@ def _rank_image_gen_model(mid: str, catalog: list[dict] | None = None) -> tuple:
     return (9, mid.lower())
 
 
-def list_image_gen_models(api_key: str, env: dict[str, str] | None = None) -> list[str]:
-    """Models Omni catalog marks for /images/generations (no id-prefix guessing)."""
-    rows = _v1_models(api_key)
-    found = [r for r in rows if _is_image_output_model(r)]
-    found.sort(key=_rank_image_gen_row)
-    ids = [str(r.get("id") or "").strip() for r in found if str(r.get("id") or "").strip()][:8]
+def list_image_gen_models(
+    api_key: str,
+    opener=None,
+    env: dict[str, str] | None = None,
+) -> list[str]:
+    """Routable /images/generations ids — custom providers via provider-models, else catalog."""
+    catalog = _v1_models(api_key)
+    custom = _images_generations_provider_ids(opener) if opener is not None else set()
+    found: list[str] = []
+    seen: set[str] = set()
+    if opener is not None:
+        for mid in _wired_custom_provider_image_ids(opener):
+            if mid not in seen:
+                seen.add(mid)
+                found.append(mid)
+        for mid in _catalog_image_ids_outside_custom_providers(catalog, custom):
+            if mid not in seen:
+                seen.add(mid)
+                found.append(mid)
+    else:
+        for row in catalog:
+            mid = str(row.get("id") or "").strip()
+            if mid and _is_image_output_model(row) and mid not in seen:
+                seen.add(mid)
+                found.append(mid)
+    found.sort(key=lambda mid: _rank_image_gen_row(_catalog_row_by_id(catalog, mid) or {"id": mid}))
+    ids = found[:8]
     if not _pollinations_api_key(env):
         ids = [mid for mid in ids if not str(mid).lower().startswith("pollinations/")]
     return ids
-
-
-def _order_image_gen_combo_members(image_ids: list[str], head: str) -> list[str]:
-    if not head or head not in image_ids:
-        return image_ids
-    return [head] + [m for m in image_ids if m != head]
 
 
 def _omni_model_row_id(row: dict) -> str:
@@ -1420,7 +1476,7 @@ def ensure_provider_image_models(opener, api_key: str) -> None:
             else:
                 print(f"WARN fix {model_id} on {provider[:8]}…: {str(resp)[:200]}")
         for row in _catalog_rows_for_provider(catalog, provider):
-            if not _is_image_output_model(row):
+            if not _catalog_row_needs_provider_model_registration(row):
                 continue
             full_id = str(row.get("id") or "").strip()
             local_id = _provider_model_local_id(provider, full_id)
@@ -1477,27 +1533,22 @@ def _custom_image_model_action(existing: dict | None) -> str:
 def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
     """Seed image-gen / vision-ocr / embedding combos; refill when chat-only members leak in."""
     catalog = _v1_models(api_key)
-    image_ids = list_image_gen_models(api_key, env)
+    image_ids = list_image_gen_models(api_key, opener, env)
     if not image_ids:
         raise SystemExit(
-            "no images-capable models in Omni catalog — connect an images-generations provider"
+            "no images-capable models in Omni catalog — connect an images-generations provider "
+            "and run ensure_provider_image_models (provider-models apiFormat=images-generations)"
         )
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = {c.get("name"): c for c in (data.get("combos") or []) if isinstance(c, dict)}
     cur_img = _combo_model_ids(combos.get("image-gen"))
-    bad_img = [m for m in cur_img if _is_bad_image_gen_combo_member(m, catalog)]
-    head = _resolve_image_gen_head(image_ids, env, catalog)
-    want_ids = _order_image_gen_combo_members(image_ids, head)
-    need_img = (
-        (not cur_img)
-        or bool(bad_img)
-        or not set(cur_img).intersection(set(image_ids))
-        or cur_img != want_ids
-    )
+    want_ids = list(image_ids)
+    bad_img = [m for m in cur_img if m not in want_ids]
+    need_img = (not cur_img) or bool(bad_img) or cur_img != want_ids
     if bad_img:
         print(
-            f"==> image-gen has invalid members {bad_img[:6]!r} "
-            f"(chat-only / unsupported for /images/generations) — refilling"
+            f"==> image-gen has unroutable members {bad_img[:6]!r} "
+            f"(not wired for /images/generations) — refilling"
         )
     elif not cur_img:
         print(f"==> seed combo image-gen from catalog first={want_ids[:3]!r}")
@@ -1509,9 +1560,7 @@ def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
         force=need_img,
         strategy=IMAGE_GEN_COMBO_STRATEGY,
     )
-    if head:
-        _set_stack_env_key("IMAGE_GEN_HEAD_MEMBER", head)
-        print(f"OK: pinned IMAGE_GEN_HEAD_MEMBER={head}")
+    _clear_stack_env_keys(["IMAGE_GEN_HEAD_MEMBER"])
 
     vision_catalog = _omni_admin_catalog_rows(opener)
     vision_ids = list_vision_models(opener)
@@ -1626,7 +1675,12 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "active"))
     # Hermes-facing Router Worker: combo web-search via Omni only (no direct adapter chain).
     _clear_stack_env_keys(
-        ["OMNIROUTER_SEARCH_PROVIDERS", "WEB_SEARCH_COMBO_PATH", "WEB_BACKENDS"],
+        [
+            "OMNIROUTER_SEARCH_PROVIDERS",
+            "WEB_SEARCH_COMBO_PATH",
+            "WEB_BACKENDS",
+            "IMAGE_GEN_HEAD_MEMBER",
+        ],
     )
     env.pop("WEB_BACKENDS", None)
     web_combo = (env.get("MODEL_ROUTER_WEB_SEARCH_COMBO") or env.get("WEB_SEARCH_COMBO") or WEB_SEARCH_COMBO_NAME).strip()

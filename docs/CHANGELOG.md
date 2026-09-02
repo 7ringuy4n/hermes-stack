@@ -1,3 +1,9 @@
+## 2026-09-02 16:30 +07 — image-gen: provider-models wiring; drop head fallback
+
+- `first-setup-omnirouter`: image-gen combo members come from provider-models wired to `images-generations` nodes (custom providers) plus catalog rows outside those providers; refills when unroutable members leak in; clears `IMAGE_GEN_HEAD_MEMBER`.
+- Zalo host diffusion uses combo `image-gen` only (no pinned head / aihorde fallback); on failure returns media-out line only.
+- Zalo adapter: removed "Đang vẽ hình…" gate announce for scenic/image shortcuts.
+
 ## 2026-09-02 11:45 +07 — Zalo: search+image one host turn; image-gen combo failover
 
 - Search + image dual instructions no longer split into separate workflow/Hermes jobs; host media shortcut owns the full turn.

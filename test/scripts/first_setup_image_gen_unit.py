@@ -74,23 +74,44 @@ def test_rank_prefers_images_generations_metadata() -> None:
     assert mod._rank_image_gen_model(horde, catalog) < mod._rank_image_gen_model(flux, catalog)
 
 
-def test_resolve_image_gen_head_honors_override() -> None:
-    catalog = [
-        _row("provider-a/horde-model", supportedEndpoints=["images"], apiFormat="images-generations"),
+def test_wired_custom_provider_image_ids() -> None:
+    class _Opener:
+        pass
+
+    opener = _Opener()
+    catalog_rows = [
+        _row("ai-box/qwen-image-2.0", type="image"),
         _row("provider-b/flux", type="image", supportedEndpoints=["images"]),
-        _row(
-            "provider-c/qwen-image",
-            supportedEndpoints=["images"],
-            apiFormat="images-generations",
-        ),
     ]
-    ids = ["provider-a/horde-model", "provider-b/flux", "provider-c/qwen-image"]
-    assert mod._resolve_image_gen_head(ids, {}, catalog) == "provider-a/horde-model"
-    assert (
-        mod._resolve_image_gen_head(ids, {"IMAGE_GEN_HEAD_MEMBER": "provider-b/flux"}, catalog)
-        == "provider-b/flux"
-    )
-    assert mod._order_image_gen_combo_members(ids, "provider-b/flux")[0] == "provider-b/flux"
+
+    def fake_nodes(op):
+        return [{"id": "ai-box", "apiType": "images-generations"}]
+
+    def fake_custom(op, provider):
+        if provider == "ai-box":
+            return {
+                "qwen-image-2.0": {
+                    "id": "qwen-image-2.0",
+                    "supportedEndpoints": ["images"],
+                    "apiFormat": "images-generations",
+                }
+            }
+        return {}
+
+    orig_nodes = mod._images_generations_provider_nodes
+    orig_custom = mod._custom_models_by_provider
+    mod._images_generations_provider_nodes = fake_nodes
+    mod._custom_models_by_provider = fake_custom
+    try:
+        wired = mod._wired_custom_provider_image_ids(opener)
+        assert wired == ["ai-box/qwen-image-2.0"]
+        outside = mod._catalog_image_ids_outside_custom_providers(
+            catalog_rows, {"ai-box"}
+        )
+        assert outside == ["provider-b/flux"]
+    finally:
+        mod._images_generations_provider_nodes = orig_nodes
+        mod._custom_models_by_provider = orig_custom
 
 
 def test_vision_rejects_blind_supports_vision_flag() -> None:
@@ -229,7 +250,7 @@ def test_web_search_member_order() -> None:
 def main() -> None:
     test_image_output_from_catalog_metadata()
     test_rank_prefers_images_generations_metadata()
-    test_resolve_image_gen_head_honors_override()
+    test_wired_custom_provider_image_ids()
     test_vision_rejects_blind_supports_vision_flag()
     test_image_gen_combo_strategy_is_priority()
     test_put_or_create_combo_strategy_only_keeps_members()

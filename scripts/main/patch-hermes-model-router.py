@@ -22,6 +22,7 @@ _OBSOLETE_IMAGE_ENV = [
     "IMAGE_OMNI_MODEL",
     "OMNIROUTER_IMAGE_MODEL",
     "IMAGE_GEN_SIZE",
+    "IMAGE_GEN_HEAD_MEMBER",
     "IMAGE_GEN_HEAD_MODEL",
     "IMAGE_LLM_MODEL",
     "IMAGE_LLM_SIZE",
@@ -99,7 +100,6 @@ def patch_shared_env(
     *,
     omni_base: str = "",
     image_combo: str = "",
-    image_head_member: str = "",
 ) -> None:
     lines: dict[str, str] = {}
     if envp.is_file():
@@ -119,10 +119,6 @@ def patch_shared_env(
         lines["OMNIROUTER_BASE_URL"] = omni_base
     if image_combo:
         lines["IMAGE_GEN_COMBO"] = image_combo
-    if image_head_member:
-        lines["IMAGE_GEN_HEAD_MEMBER"] = image_head_member
-    else:
-        lines.pop("IMAGE_GEN_HEAD_MEMBER", None)
     lines["OPENAI_BASE_URL"] = base_url
     envp.parent.mkdir(parents=True, exist_ok=True)
     envp.write_text("\n".join(f"{k}={v}" for k, v in lines.items()) + "\n", encoding="utf-8")
@@ -173,7 +169,6 @@ def main() -> int:
     base_url = stack_env.get("HERMES_OPENAI_BASE_URL", MODEL_ROUTER_BASE).strip() or MODEL_ROUTER_BASE
     omni_base = stack_env.get("OMNIROUTER_BASE_URL", "http://omni-router:20129/v1").strip()
     image_combo = stack_env.get("IMAGE_GEN_COMBO", "image-gen").strip() or "image-gen"
-    image_head_member = (stack_env.get("IMAGE_GEN_HEAD_MEMBER") or "").strip()
     cfg = HERMES_DATA / "config.yaml"
     if not patch_hermes_config(cfg, key, model, base_url):
         return 1
@@ -183,7 +178,6 @@ def main() -> int:
         base_url,
         omni_base=omni_base,
         image_combo=image_combo,
-        image_head_member=image_head_member,
     )
     sync_replica_env(HERMES_DATA / ".env")
     sync_replica_configs(cfg)
