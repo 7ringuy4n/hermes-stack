@@ -1,3 +1,17 @@
+## 2026-09-02 10:00 +07 — setup-zalo: print Zalo QR in terminal
+
+### Symptom
+`setup-zalo` waited silently after npm install; users expected a scannable QR in the SSH console, not only `http://127.0.0.1:8787/qr.png`.
+
+### Root cause
+`hermes-zalo-plugin login` ran in the background with stderr discarded; upstream only renders ASCII QR when stdout is a TTY. The systemd bridge also logs QR to a file path, not the terminal.
+
+### Fix (core)
+Stop the bridge, run login CLI in the foreground (TTY), then restart bridge and verify `/health`.
+
+### Prevent recurrence
+Do not background Zalo login helpers during setup; interactive QR requires a foreground process attached to the user's terminal.
+
 ## 2026-09-02 09:45 +07 — setup-zalo: headless Node.js install (no apt hang)
 
 ### Symptom

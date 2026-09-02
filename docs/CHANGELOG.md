@@ -1,3 +1,7 @@
+## 2026-09-02 10:00 +07 — setup-zalo: print Zalo QR in terminal
+
+- `zalo_qr_login_phase` stops the background bridge and runs `hermes-zalo-plugin login` in the foreground so ASCII QR renders in the SSH console (not browser-only).
+
 ## 2026-09-02 09:45 +07 — setup-zalo: headless Node.js install (no apt hang)
 
 - `zalo-common` installs Node 20 via direct NodeSource apt repo with noninteractive apt; waits for apt locks; verifies node/npm on PATH; QR instructions clarify browser + SSH port forward.
