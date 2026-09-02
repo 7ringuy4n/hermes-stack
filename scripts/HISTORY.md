@@ -1,3 +1,6 @@
+### Fix (core)
+`plan_is_image_analyze_chat` blocks async workflow; `_as_try_workflow_submit` no longer calls `office_shortcut` without `media_urls` when `has_image_attachment`. Pin `OCR_URL=http://127.0.0.1:8091` for host Zalo plugin (compose DNS `ocr:` unreachable from systemd).
+
 ## 2026-09-02 20:15 +07 — zalo: image analyze Hermes chat (not txt file / OCR garbage)
 
 ### Symptom

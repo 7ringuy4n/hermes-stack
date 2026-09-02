@@ -1329,6 +1329,9 @@ def pin_media_combos(env: dict[str, str]) -> None:
         "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
         "OMNIROUTER_EMBED_COMBO": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
         "OMNI_IMAGE_GEN_TIMEOUT_S": "300",
+        # Host Zalo plugin (systemd) is outside compose DNS — use published localhost ports.
+        "OCR_URL": "http://127.0.0.1:8091",
+        "INGEST_URL": "http://127.0.0.1:8099",
     }
     for key, want in pins.items():
         cur = (env.get(key) or "").strip()
