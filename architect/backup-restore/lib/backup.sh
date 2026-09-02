@@ -153,7 +153,7 @@ assistant_compose() {
     # shellcheck source=workers.sh
     source "${BACKUP_LIB_DIR}/workers.sh"
   fi
-  if _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}" \
+  if _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}" \
     || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
     [[ -f "${ROOT}/docker/docker-compose.media.yml" ]] && files+=(-f "${ROOT}/docker/docker-compose.media.yml")
   fi

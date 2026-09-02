@@ -22,7 +22,6 @@ _install_pairs() {
     media|media-file|file)
       echo WORKER_MEDIA_FILE=active
       echo ENABLE_MEDIA_FILE=active
-      echo ENABLE_OCR=active
       echo ENABLE_JOBS=active
       echo ENABLE_SEARXNG=active
       echo OFFICE_FILE_GEN=active
@@ -61,10 +60,6 @@ _install_pairs() {
       echo ENABLE_ALLOY=active
       ;;
     # Attachable flags (section D ENABLE_*)
-    ocr)
-      echo WORKER_MEDIA_FILE=active
-      echo ENABLE_OCR=active
-      ;;
     searxng|search)
       echo ENABLE_SEARXNG=active
       ;;
@@ -117,7 +112,6 @@ _uninstall_pairs() {
     media|media-file|file)
       echo WORKER_MEDIA_FILE=inactive
       echo ENABLE_MEDIA_FILE=inactive
-      echo ENABLE_OCR=inactive
       echo ENABLE_JOBS=inactive
       echo ENABLE_SEARXNG=inactive
       echo OFFICE_FILE_GEN=inactive
@@ -146,9 +140,6 @@ _uninstall_pairs() {
       echo ENABLE_PROMETHEUS=inactive
       echo ENABLE_LOKI=inactive
       echo ENABLE_ALLOY=inactive
-      ;;
-    ocr)
-      echo ENABLE_OCR=inactive
       ;;
     searxng|search)
       echo ENABLE_SEARXNG=inactive
@@ -194,7 +185,7 @@ Optional workers + attachable flags (default inactive in .env.example section D)
 
 Workers:
   schedule          WORKER_SCHEDULE=active
-  media             WORKER_MEDIA_FILE=active (+ OCR, Jobs, SearXNG)
+  media             WORKER_MEDIA_FILE=active (+ Jobs, SearXNG)
   security          WORKER_SECURITY=active (OpenBao, authz, SIEM, policy)
   openbao           WORKER_SECURITY=active + ENABLE_OPENBAO=active
   notify            WORKER_NOTIFY=active
@@ -202,7 +193,6 @@ Workers:
   monitor           WORKER_MONITOR=active (+ Grafana, Prometheus, Loki, Alloy)
 
 Attachable (section D ENABLE_*):
-  ocr               media worker + ENABLE_OCR=active
   jobs              media worker + ENABLE_JOBS=active
   searxng           ENABLE_SEARXNG=active
   grafana           ENABLE_GRAFANA=active + Prometheus

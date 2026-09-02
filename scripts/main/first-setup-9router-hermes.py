@@ -217,7 +217,6 @@ def recreate_services() -> None:
     media_on = (
         (env.get("ENABLE_MEDIA_FILE") or "").strip().lower() == "active"
         or (env.get("WORKER_MEDIA_FILE") or "").strip().lower() == "active"
-        or (env.get("ENABLE_OCR") or "").strip().lower() in {"active", "1", "true", "yes", "on"}
         or (env.get("ENABLE_JOBS") or "").strip().lower() in {"active", "1", "true", "yes", "on"}
         or (env.get("ENABLE_SEARXNG") or "").strip().lower() in {"active", "1", "true", "yes", "on"}
     )
@@ -434,7 +433,6 @@ def pin_media_combos(env: dict[str, str]) -> None:
         pins = {
             "IMAGE_GEN_COMBO": env.get("N9ROUTER_IMAGE_COMBO") or "image-gen",
             "OCR_MODEL": env.get("N9ROUTER_VISION_COMBO") or "vision-ocr",
-            "OCR_VISION": "1",
             "EMBED_MODEL": env.get("N9ROUTER_EMBED_COMBO") or "embedding",
         }
     else:
@@ -443,7 +441,6 @@ def pin_media_combos(env: dict[str, str]) -> None:
             "ENABLE_MEDIA_FILE": "inactive",
             "IMAGE_GEN_COMBO": hermes,
             "OCR_MODEL": hermes,
-            "OCR_VISION": "1",
         }
     for key, want in pins.items():
         cur = (env.get(key) or "").strip()

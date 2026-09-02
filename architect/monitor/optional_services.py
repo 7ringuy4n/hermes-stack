@@ -33,7 +33,6 @@ HOST_FLAGS: dict[str, tuple[str, ...]] = {
     "alloy": ("ENABLE_LOKI", "ENABLE_ALLOY"),
     "omni-exporter": ("ENABLE_OMNIROUTER",),
     "omni-router": ("ENABLE_OMNIROUTER",),
-    "ocr": ("ENABLE_OCR",),
     "openbao": ("ENABLE_OPENBAO",),
     "av-gateway": ("ENABLE_ANTIVIRUS",),
     "clamav": ("ENABLE_ANTIVIRUS",),

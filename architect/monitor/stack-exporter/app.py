@@ -30,7 +30,6 @@ HEALTH_TARGETS = os.environ.get(
     "redis_via_tcp=valkey:6379,"
     "qdrant=qdrant:6333/readyz,"
     "security-manager=security-manager:8093/health,"
-    "ocr=ocr:8091/health,"
     "ingest=ingest:8099/health,"
     "authz=authz:8097/health,"
     "embedding=embedding:8094/health,"

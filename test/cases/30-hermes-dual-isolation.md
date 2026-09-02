@@ -16,12 +16,12 @@ Scale Hermes to **2** replicas. Fire concurrent admin-originated requests throug
 | Hello | `xin chào` / `hello` |
 | Web search | `tìm trên web thời tiết Hồ Chí Minh hôm nay` |
 | Text create | `tạo file txt ghi nội dung: isolation probe <tag>` |
-| OCR / docs | Attach or stage sample image/pdf/xlsx/docx/pptx under inbound and ask to OCR/summarize |
+| Vision / docs | Attach or stage sample image/pdf/xlsx/docx/pptx under inbound and ask to read/summarize |
 
 ## Preconditions
 
 - `ENABLE_ZALO=1`, bridge `loggedIn=true`
-- Media/OCR workers on if OCR kinds are included (`ENABLE_OCR` / `ENABLE_MEDIA_FILE`)
+- Media worker on if vision/file kinds are included (`ENABLE_MEDIA_FILE` / `WORKER_MEDIA_FILE`)
 - Sole admin uid present in `zalo_admin_users.txt`
 
 ## Lab script

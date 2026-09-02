@@ -80,7 +80,7 @@ compose() {
     export TRAEFIK_ACME_ENABLED="$acme"
   fi
 
-  if _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}" || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
+  if _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}" || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
     files+=(-f "$ROOT/docker/docker-compose.media.yml")
   fi
   if _env_active "${ENABLE_SECURITY:-}" || _env_active "${ENABLE_MONITOR:-}" || _env_active "${ENABLE_NOTIFY:-}" || _env_active "${ENABLE_OPENBAO:-}" || _env_active "${ENABLE_SIEM:-}" || _env_active "${ENABLE_AUTHZ:-}" || _env_active "${ENABLE_CLOUDDRIVE:-}" || _env_active "${ENABLE_ANTIVIRUS:-}" || _env_active "${SECURITY_SANDBOX:-}"; then
@@ -97,7 +97,7 @@ compose() {
   fi
   _env_active "${ENABLE_CLOUDDRIVE:-}" && profiles+=(--profile clouddrive)
   _env_active "${ENABLE_SCHEDULE:-}" && profiles+=(--profile schedule)
-  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}"; then
+  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || _env_active "${ENABLE_JOBS:-}"; then
     profiles+=(--profile media)
   fi
 
@@ -159,10 +159,10 @@ compose() {
 }
 
 need_media() {
-  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}"; then
+  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || _env_active "${ENABLE_JOBS:-}"; then
     return 0
   fi
-  echo "Command '${1:-}' requires the media/file worker (ENABLE_MEDIA_FILE=active or ENABLE_OCR/JOBS=1)." >&2
+  echo "Command '${1:-}' requires the media/file worker (ENABLE_MEDIA_FILE=active or ENABLE_JOBS=1)." >&2
   return 1
 }
 

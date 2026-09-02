@@ -40,6 +40,7 @@ from chat_norm import (  # noqa: E402
     chat_busy_capacity,
     chat_omni_skip_remaining,
     completion_to_sse,
+    content_has_vision_parts,
     normalize_chat_completion,
     sanitize_chat_payload,
     sanitize_for_ollama,
@@ -270,6 +271,16 @@ def _normalize_hint(raw: str) -> str | None:
     return None
 
 
+def _payload_has_vision(body: dict[str, Any]) -> bool:
+    msgs = body.get("messages")
+    if not isinstance(msgs, list):
+        return False
+    for m in msgs:
+        if isinstance(m, dict) and content_has_vision_parts(m.get("content")):
+            return True
+    return False
+
+
 def _classify(request: Request, body: dict) -> str:
     hdr = (request.headers.get("x-task-type") or request.headers.get("X-Task-Type") or "").strip()
     mapped = _normalize_hint(hdr)
@@ -449,6 +460,7 @@ async def proxy(path: str, request: Request) -> Response:
         )
 
     want_stream = bool(body.get("stream")) if isinstance(body, dict) else False
+    has_vision = _payload_has_vision(body) if isinstance(body, dict) else False
     if is_chat:
         candidates = _expand_chat_candidates(
             candidates,
@@ -468,7 +480,7 @@ async def proxy(path: str, request: Request) -> Response:
         # (paid Omni models often 403 inside a 200 SSE stream Hermes cannot recover from).
         if is_chat:
             payload["stream"] = False
-            if task == "normal":
+            if task == "normal" and not has_vision:
                 payload["model"] = OMNI_DEFAULT_MODEL
         if model_override and "model" in payload:
             payload["model"] = model_override

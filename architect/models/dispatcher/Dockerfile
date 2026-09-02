@@ -1,18 +1,17 @@
 FROM python:3.12-slim
 WORKDIR /app
-# ffmpeg: default video path is still→H.264 (Zalo send-attachment).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates fonts-dejavu-core fonts-noto-core ffmpeg \
     && rm -rf /var/lib/apt/lists/*
-COPY requirements.txt requirements-whisper.txt ./
+COPY models/dispatcher/requirements.txt models/dispatcher/requirements-whisper.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-# ASR is optional: the base image stays slim unless the stack asks for it.
 ARG INSTALL_WHISPER=0
 RUN if [ "$INSTALL_WHISPER" = "1" ]; then \
       pip install --no-cache-dir -r requirements-whisper.txt; \
     fi
-COPY app.py ocr_stub.py video_summary.py office_file.py image_backends.py text_poster.py video_clip.py fonts.py weather_sheet.py env_flags.py ./
-COPY fonts ./fonts
+COPY lib/vision_ocr.py lib/vision_refuse.py ./
+COPY models/dispatcher/app.py models/dispatcher/video_summary.py models/dispatcher/office_file.py models/dispatcher/image_backends.py models/dispatcher/text_poster.py models/dispatcher/video_clip.py models/dispatcher/fonts.py models/dispatcher/weather_sheet.py models/dispatcher/env_flags.py ./
+COPY models/dispatcher/fonts ./fonts
 ENV MEDIA_CACHE_DIR=/data/media
 EXPOSE 8090
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8090"]
