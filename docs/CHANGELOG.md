@@ -1,3 +1,9 @@
+## 2026-09-02 11:30 +07 — Zalo: quote local image path + weather-on-image host gate
+
+- Quote-reply to a bot line with `/opt/data/media/...` resolves as inbound image for OCR/vision (đọc hình).
+- Host media shortcut returns consumed status correctly; workflow jobs send a processing ack.
+- Classify: weather + readable labels on image routes to labeled-scene (not weather-scene).
+
 ## 2026-09-02 11:00 +07 — first-setup: vision-ocr rejects blind supportsVision models
 
 - `first-setup-omnirouter` requires catalog image-input modality for vision-ocr members; refills combo when blind models (e.g. text-only OpenCode ids) leak in.

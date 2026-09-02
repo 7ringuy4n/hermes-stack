@@ -1,3 +1,17 @@
+## 2026-09-02 11:30 +07 — Zalo: quote local image path + weather-on-image silent turns
+
+### Symptom
+(1) Quote-reply with embedded image path + đọc hình → no Zalo response. (2) Weather update + draw HCMC with weather text on image → no response.
+
+### Root cause
+Quote media extraction only accepted HTTP URLs; local `/opt/data/media/...` paths in quoted bot text were ignored. Workflow submit returned True after a no-op media shortcut, swallowing the turn. Weather+labeled-image asks without `RENDER:` marker missed the info-card host gate.
+
+### Fix (core)
+Resolve local media paths from quote payloads; `_download_media` uses existing staged files. Return shortcut consumed status; announce workflow start. Classify parts + host gate for labeled weather-on-image.
+
+### Prevent recurrence
+Quote media must accept shared-volume paths; never return True from workflow submit unless the turn was consumed or dispatched.
+
 ## 2026-09-02 11:00 +07 — first-setup: vision-ocr rejects blind supportsVision models
 
 ### Symptom

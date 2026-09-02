@@ -635,7 +635,10 @@ def plan_allows_search_then_weather_scene(plan: dict[str, Any] | None) -> bool:
     """City/place scene + small weather overlay (not info-card dashboard)."""
     if not _plan_allows_search_then_image_base(plan):
         return False
-    return plan_image_render_mode(plan) in _SCENE_OVERLAY_RENDER
+    mode = plan_image_render_mode(plan)
+    if mode in _LABELED_SCENE_RENDER or mode == "labeled-scene":
+        return False
+    return mode in _SCENE_OVERLAY_RENDER
 
 
 def plan_allows_search_then_info_card(plan: dict[str, Any] | None) -> bool:
