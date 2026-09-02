@@ -1131,13 +1131,24 @@ def _images_generations_provider_ids(opener) -> set[str]:
     }
 
 
+def _image_provider_node_id(opener, prefix: str) -> str:
+    """Provider-models target for prefix/model ids (Omni resolves prefix → chat node)."""
+    chat_id = _chat_node_id_for_prefix(opener, prefix)
+    if chat_id:
+        return chat_id
+    for node in _images_generations_provider_nodes(opener):
+        if _node_catalog_prefix(node).lower() == (prefix or "").strip().lower():
+            return str(node.get("id") or "").strip()
+    return ""
+
+
 def _wired_custom_provider_image_ids(opener) -> list[str]:
     """Catalog ids for custom provider nodes wired to /images/generations."""
     out: list[str] = []
     seen: set[str] = set()
     for node in _images_generations_provider_nodes(opener):
-        node_id = str(node.get("id") or "").strip()
         prefix = _node_catalog_prefix(node)
+        node_id = _image_provider_node_id(opener, prefix)
         if not node_id or not prefix:
             continue
         state = _custom_models_by_provider(opener, node_id)
@@ -1665,8 +1676,8 @@ def ensure_provider_image_models(opener, api_key: str) -> None:
         return
     catalog = _v1_models(api_key)
     for img_node in img_nodes:
-        node_id = str(img_node.get("id") or "").strip()
         prefix = _node_catalog_prefix(img_node)
+        node_id = _image_provider_node_id(opener, prefix)
         if not node_id or not prefix:
             continue
         chat_node_id = _chat_node_id_for_prefix(opener, prefix)
