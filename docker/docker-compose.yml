@@ -113,7 +113,7 @@ services:
       - HERMES_API_URL=${HERMES_API_URL:-http://hermes:8642/v1/chat/completions}
       - HERMES_API_KEY=${API_SERVER_KEY:-}
       - HERMES_WORKFLOW_TIMEOUT_S=${HERMES_WORKFLOW_TIMEOUT_S:-90}
-      - MODEL_ROUTER_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
+      - MODEL_ROUTER_URL=${ROUTER_WORKER_URL:-${MODEL_ROUTER_URL:-http://router-worker:8096}}
       - SCHEDULE_URL=${SCHEDULE_URL:-http://schedule-worker:8110}
       - SCHEDULE_WORKER=${SCHEDULE_WORKER:-1}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
@@ -334,8 +334,7 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       internal:
-        aliases:
-          - model-router
+        aliases: []
 
   # Optional OmniRouter — ENABLE_OMNIROUTER=active (compose profile omnirouter)
   # Dedicated image (not 9router). Override with OMNIROUTER_IMAGE in .env.
@@ -401,9 +400,9 @@ services:
       - OMNIROUTER_API_KEY=${OMNIROUTER_API_KEY:-}
       - IMAGE_GEN_COMBO=${IMAGE_GEN_COMBO:-image-gen}
       # v0.5.0: prefer model-router; set HERMES_OPENAI_BASE_URL to override (e.g. dispatcher)
-      - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://model-router:8096/v1}
+      - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://router-worker:8096/v1}
       - DISPATCHER_URL=http://dispatcher:8090
-      - MODEL_ROUTER_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
+      - MODEL_ROUTER_URL=${ROUTER_WORKER_URL:-${MODEL_ROUTER_URL:-http://router-worker:8096}}
       - MEMORY_URL=http://memory:8095
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - INGEST_URL=${INGEST_URL:-http://ingest:8099}
@@ -435,7 +434,7 @@ services:
       # SearXNG container (datacenter CAPTCHA / empty results).
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
-      - SEARXNG_URL=${HERMES_SEARXNG_URL:-http://model-router:8096/v1/searxng-compat}
+      - SEARXNG_URL=${HERMES_SEARXNG_URL:-http://router-worker:8096/v1/searxng-compat}
       # Skill/HTTP path: Router Worker → Omni search gateway
       - WEB_SEARCH_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
       - ZALO_ATTACHMENT_CONTEXT_TTL_S=${ZALO_ATTACHMENT_CONTEXT_TTL_S:-86400}

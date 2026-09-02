@@ -47,7 +47,7 @@ def dispatcher_url() -> str:
 
 
 def model_router_url() -> str:
-    return (os.getenv("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+    return (os.getenv("ROUTER_WORKER_URL") or os.getenv("MODEL_ROUTER_URL") or "http://router-worker:8096").rstrip("/")
 
 
 def _post(path: str, body: dict, timeout: float = 60.0, *, base: str = "") -> Dict[str, Any]:

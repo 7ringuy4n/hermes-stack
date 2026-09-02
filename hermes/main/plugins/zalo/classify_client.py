@@ -74,6 +74,47 @@ HTTP_RETRY_SLEEP_S = 8.0
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
 _OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
+REASONING_EFFORTS = ("low", "medium", "high", "max")
+
+
+def router_worker_url() -> str:
+    """Router-worker HTTP base (legacy MODEL_ROUTER_URL still honored)."""
+    return (
+        os.environ.get("ROUTER_WORKER_URL")
+        or os.environ.get("MODEL_ROUTER_URL")
+        or "http://router-worker:8096"
+    ).rstrip("/")
+
+
+def _coerce_reasoning_effort(raw: Any) -> str | None:
+    s = str(raw or "").strip().lower()
+    return s if s in REASONING_EFFORTS else None
+
+
+def infer_reasoning_effort(hint: str, task_type: str, execution_class: str) -> str:
+    """Default effort when classifier omits reasoning_effort."""
+    h = (hint or "").strip().lower()
+    tt = (task_type or "").strip().lower()
+    ec = (execution_class or "").strip().lower()
+    if h == "coding" or tt == "coding":
+        return "high"
+    if h == "schedule" or ec == "schedule" or tt in {
+        "create_schedule",
+        "list_schedule",
+        "delete_schedule",
+        "pause_schedule",
+        "resume_schedule",
+        "update_schedule",
+        "run_schedule",
+    }:
+        return "low"
+    if tt in {"search", "knowledge", "file_processing"} or h in {"search", "file", "knowledge"}:
+        return "low"
+    if h in {"tool", "unknown"} and tt == "media_generation":
+        return "low"
+    if h == "normal" and tt == "chat":
+        return "low"
+    return "medium"
 
 
 def strip_prior_for_classify(text: str) -> str:
@@ -445,8 +486,15 @@ def _plan_types(src: dict[str, Any]) -> set[str]:
     return types
 
 
+def _instruction_blob_has_image_contract(parts: list[str]) -> bool:
+    blob = "\n".join(parts).upper()
+    return "SCENE:" in blob or "RENDER:" in blob
+
+
 def _plan_has_search(src: dict[str, Any]) -> bool:
     if str(src.get("skill") or "").strip().lower() == "web_search":
+        return True
+    if str(src.get("skill_action") or "").strip().lower() == "search":
         return True
     if str(src.get("task_hint") or "").strip().lower() == "search":
         return True
@@ -458,6 +506,11 @@ def _plan_has_search(src: dict[str, Any]) -> bool:
             continue
         if str(detail.get("skill") or "").strip().lower() == "web_search":
             return True
+        if str(detail.get("task_type") or "").strip().lower() == "search":
+            return True
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    if len(parts) >= 2 and _instruction_blob_has_image_contract(parts):
+        return True
     return False
 
 
@@ -1111,6 +1164,10 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "poster_n": _coerce_poster_n(src.get("poster_n")),
         "poster_phrase": (str(src.get("poster_phrase") or "").strip()[:80] or None),
         "poster_bw": src.get("poster_bw") if isinstance(src.get("poster_bw"), bool) else None,
+        "reasoning_effort": (
+            _coerce_reasoning_effort(src.get("reasoning_effort"))
+            or infer_reasoning_effort(hint, task_type, exec_cls)
+        ),
         "uncertain": bool(src.get("uncertain") is True),
         "missing": [
             str(x).strip().lower()
@@ -1148,10 +1205,10 @@ def classify_text(
             return normalize_plan(_planner(blob), blob, tz)
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
-    base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+    base = router_worker_url()
     payload = json.dumps(
         {
-            "text": blob,
+            "text": text or blob,
             "timezone": tz,
             "thread": thread or "unknown",
             "attachments": attachments or "none",
@@ -1226,7 +1283,7 @@ def classify_outbound(text: str) -> dict[str, Any]:
             return normalize_outbound(_outbound_planner(blob))
         except TypeError:
             return normalize_outbound(_outbound_planner(blob, timezone="Asia/Ho_Chi_Minh"))
-    base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+    base = router_worker_url()
     payload = json.dumps({"text": blob}, ensure_ascii=False).encode("utf-8")
     timeout = float(os.environ.get("MODEL_ROUTER_OUTBOUND_TIMEOUT_S") or 30.0)
     try:

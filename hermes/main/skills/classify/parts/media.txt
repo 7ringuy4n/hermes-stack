@@ -46,6 +46,7 @@ BACKGROUND: <short atmosphere/setting when relevant>
 - <fact-label bullets only — values filled after search>
 Host may deliver search→Omni combo image-gen without waiting on Hermes chat — still emit search + media_generation so the gate matches. Never collapse to chat-only Q&A or a greeting when a labeled image was asked. Diffusion owns layout — no Pillow info-card. Prefer main fact lines only when the user asks for key/primary info (not a long essay).
 If the user asked for a scenic weather **picture** (city photo + small weather text), use WEATHER SCENE IMAGE above — not this dashboard path.
+WEATHER ON IMAGE / READABLE LABELS (any language — ghi thông tin lên hình, weather text on the picture, labeled facts on image, info on photo): LABELED INFO IMAGE — NOT weather-scene (weather-scene forbids readable on-image text). When the ask combines live weather lookup AND draw/paint with facts written on the image, emit search + labeled-scene in one plan: task_details[] MUST list search then media_generation; instructions[0]=short search query, instructions[1]=RENDER: labeled-scene + SCENE: + fact bullets. Host owns delivery — never collapse to chat-only Q&A or silent turn.
 
 SCENE IMAGE / VIDEO (scenic draw/ảnh — city view, landscape — WITHOUT live weather/current/metrics on the image):
 task_hint=tool, task_type=media_generation, execution_class=async, response_mode=ack_then_deliver, skill=media_file, skill_action=generate_media, output_type=image, process_original_message false.

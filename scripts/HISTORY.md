@@ -1,3 +1,20 @@
+## 2026-09-02 07:30 +07 — router-worker URL; reasoning_effort; labeled weather-on-image
+
+### Symptom
+Compound asks (weather update + draw city with facts on image) went silent; short follow-ups ("ê") ignored prior turns; `model-router` hostname lingered after rename to `router-worker`.
+
+### Root cause
+1. Search+image plans with two instructions but no `task_details` search marker failed `_plan_has_search` gate.
+2. Ultra-short classify bypass treated contextual nudges as fresh hello.
+3. Image shortcuts stored empty assistant turns — session hydrate had no assistant history.
+4. Info-card path blocked the event loop without ack.
+
+### Fix (core)
+`router-worker` URL defaults; classify `reasoning_effort`; prompt hardening for labeled weather-on-image and prior-turn recap; `_plan_has_search` contract detection; info-card asyncio + ack; session `append_turn` records image delivery.
+
+### Prevent recurrence
+Search+labeled-scene combos must pass host gate without `task_details` alone; never store blank assistant turns after delivered images.
+
 ## 2026-09-01 21:30 +07 — classify Local now for scene lighting; drop host lighting heuristics
 
 ### Symptom

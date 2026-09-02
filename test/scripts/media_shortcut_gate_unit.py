@@ -56,9 +56,33 @@ def test_pure_media_process_false() -> None:
     assert plan.get("process_original_message") is False
 
 
+def test_labeled_weather_on_image_gate() -> None:
+    raw = {
+        "ok": True,
+        "task_hint": "tool",
+        "task_type": "media_generation",
+        "execution_class": "async",
+        "response_mode": "ack_then_deliver",
+        "skill": "media_file",
+        "skill_action": "generate_media",
+        "output_type": "image",
+        "instructions": [
+            "current weather Ho Chi Minh City",
+            "RENDER: labeled-scene\nSCENE: Ho Chi Minh City plaza with readable weather board\n- Temperature:\n- Humidity:",
+        ],
+    }
+    plan = normalize_plan(
+        raw,
+        "cập nhật dự báo thời tiết hồ chí minh, vẽ hình và ghi thông tin lên hình",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_media_shortcut_gate(plan) == "info_card", plan
+
+
 def main() -> int:
     test_scenic_plan_gate()
     test_pure_media_process_false()
+    test_labeled_weather_on_image_gate()
     print("media_shortcut_gate_unit OK")
     return 0
 
