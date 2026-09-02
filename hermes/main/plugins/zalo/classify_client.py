@@ -419,10 +419,34 @@ def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
     return out
 
 
+def plan_is_search_then_image_turn(plan: dict[str, Any] | None) -> bool:
+    """True when classify pairs live search with one image job (single host turn)."""
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    if _plan_has_file_processing(src):
+        return False
+    if not _plan_has_search(src) or not _plan_has_media_generation(src):
+        return False
+    ot = _coerce_output_type(src.get("output_type"))
+    if ot and ot != "image":
+        return False
+    for detail in src.get("task_details") or []:
+        if not isinstance(detail, dict):
+            continue
+        if str(detail.get("task_type") or "").strip().lower() == "media_generation":
+            ot2 = _coerce_output_type(detail.get("output_type"))
+            if ot2 and ot2 != "image":
+                return False
+    return True
+
+
 def plan_compound_sequential(plan: dict[str, Any] | None) -> bool:
     """True when classify split this bubble into multiple immediate parts (Zalo FIFO order)."""
     src = plan if isinstance(plan, dict) else {}
     if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    if plan_media_shortcut_gate(src) or plan_is_search_then_image_turn(src):
         return False
     parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
     return len(parts) >= 2
@@ -1180,12 +1204,16 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     }
     if not plan_schema_ok(plan):
         return failed_plan(tz, "classify_invalid")
-    if plan_media_shortcut_gate(plan) or (
-        _plan_has_media_generation(plan)
-        and not _plan_has_search(plan)
-        and not _plan_has_file_processing(plan)
-        and not plan_compound_sequential(plan)
-        and str(plan.get("task_hint") or "").strip().lower() != "schedule"
+    if (
+        plan_media_shortcut_gate(plan)
+        or plan_is_search_then_image_turn(plan)
+        or (
+            _plan_has_media_generation(plan)
+            and not _plan_has_search(plan)
+            and not _plan_has_file_processing(plan)
+            and not plan_compound_sequential(plan)
+            and str(plan.get("task_hint") or "").strip().lower() != "schedule"
+        )
     ):
         plan["process_original_message"] = False
     return plan

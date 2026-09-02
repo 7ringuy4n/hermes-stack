@@ -997,6 +997,8 @@ def _resolve_image_gen_head(
 ) -> str:
     env = env or {}
     override = (env.get("IMAGE_GEN_HEAD_MEMBER") or os.environ.get("IMAGE_GEN_HEAD_MEMBER") or "").strip().strip('"')
+    if override and str(override).lower().startswith("pollinations/") and not _pollinations_api_key(env):
+        override = ""
     if override and override in image_ids and _is_image_gen_model_id(override, catalog):
         return override
     return image_ids[0] if image_ids else ""
@@ -1041,7 +1043,8 @@ def ensure_api_key_allows_combos(opener, existing_key: str) -> None:
     for name in want:
         if name not in merged:
             merged.append(name)
-    if set(merged) == set(cur) and cur:
+    missing = [n for n in want if n not in cur]
+    if not missing and cur:
         print(f"==> keep API key allowedCombos n={len(cur)}")
         return
     kid = target["id"]
@@ -1146,12 +1149,15 @@ def _rank_image_gen_model(mid: str, catalog: list[dict] | None = None) -> tuple:
     return (9, mid.lower())
 
 
-def list_image_gen_models(api_key: str) -> list[str]:
+def list_image_gen_models(api_key: str, env: dict[str, str] | None = None) -> list[str]:
     """Models Omni catalog marks for /images/generations (no id-prefix guessing)."""
     rows = _v1_models(api_key)
     found = [r for r in rows if _is_image_output_model(r)]
     found.sort(key=_rank_image_gen_row)
-    return [str(r.get("id") or "").strip() for r in found if str(r.get("id") or "").strip()][:8]
+    ids = [str(r.get("id") or "").strip() for r in found if str(r.get("id") or "").strip()][:8]
+    if not _pollinations_api_key(env):
+        ids = [mid for mid in ids if not str(mid).lower().startswith("pollinations/")]
+    return ids
 
 
 def _order_image_gen_combo_members(image_ids: list[str], head: str) -> list[str]:
@@ -1471,7 +1477,7 @@ def _custom_image_model_action(existing: dict | None) -> str:
 def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
     """Seed image-gen / vision-ocr / embedding combos; refill when chat-only members leak in."""
     catalog = _v1_models(api_key)
-    image_ids = list_image_gen_models(api_key)
+    image_ids = list_image_gen_models(api_key, env)
     if not image_ids:
         raise SystemExit(
             "no images-capable models in Omni catalog — connect an images-generations provider"
