@@ -1,3 +1,17 @@
+## 2026-09-02 19:15 +07 — zalo: image-gen 5m timeout; Hermes image path; schedule ack
+
+### Symptom
+Combo image-gen member attempts timed out around 60s; captioned image analyze hit OCR-worker vision-ocr (Omni queue saturation) instead of Hermes multimodal; relative remind schedule stored/fired but user saw no saved ack or fire text when a prior turn had delivered media.
+
+### Root cause
+Default host diffusion timeout was below operator budget; captioned images always ran OCR worker (vision combo) before Hermes; `_as_job_file_sent` muted later text sends including schedule ack/fire in the same thread.
+
+### Fix (core)
+Pin/default `OMNI_IMAGE_GEN_TIMEOUT_S=300` in first-setup and host diffusion. Skip OCR worker for captioned images; empty bare-image OCR prompt routes Hermes multimodal. Clear job-file-sent mute on new inbound; exempt schedule/gate sends from post-media text drop. Harden classify schedule/media parts.
+
+### Prevent recurrence
+Unit tests for 300s timeout default, once_after remind body timing, and existing combo failover import safety.
+
 ## 2026-09-02 17:45 +07 — zalo: image-gen failover helper had broken signature
 
 ### Symptom

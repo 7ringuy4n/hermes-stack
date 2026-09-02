@@ -30,6 +30,28 @@ from classify_client import (  # noqa: E402
 def main() -> int:
     rel = "1 phút nữa gửi vào Zalo LC Group: em muốn hầu hạ Boss Hải"
     assert heuristic_plan(rel) is None
+    remind = "2 phút nữa nhắc tôi: tới giờ uống nước"
+    remind_plan = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "schedule_form": "once_after",
+            "delay_seconds": 120,
+            "cron_expr": None,
+            "cadence": "once",
+            "instructions": ["tới giờ uống nước"],
+            "process_original_message": False,
+        },
+        remind,
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_schema_ok(remind_plan), remind_plan
+    assert remind_plan.get("delay_seconds") == 120, remind_plan
+    remind_timing = resolve_schedule_timing(remind_plan, remind, "Asia/Ho_Chi_Minh")
+    assert remind_timing["schedule_form"] == "once_after"
+    assert remind_timing["delay_seconds"] == 120
+    assert remind_timing.get("next_run_at"), remind_timing
     plan = normalize_plan(
         {
             "task_hint": "schedule",

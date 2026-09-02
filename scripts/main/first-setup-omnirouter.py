@@ -1328,6 +1328,7 @@ def pin_media_combos(env: dict[str, str]) -> None:
         "OMNIROUTER_IMAGE_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
         "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
         "OMNIROUTER_EMBED_COMBO": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
+        "OMNI_IMAGE_GEN_TIMEOUT_S": "300",
     }
     for key, want in pins.items():
         cur = (env.get(key) or "").strip()

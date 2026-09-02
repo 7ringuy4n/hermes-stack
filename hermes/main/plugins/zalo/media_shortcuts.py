@@ -734,11 +734,12 @@ def _scene_prompt_with_facts(scene: str, facts: list[str]) -> str:
 def _omni_image_gen_timeout_s() -> int:
     import os
 
-    raw = (os.getenv("OMNI_IMAGE_GEN_TIMEOUT_S") or "240").strip()
+    # Default 300s (5 minutes) per combo image-gen member; clamp 60..600.
+    raw = (os.getenv("OMNI_IMAGE_GEN_TIMEOUT_S") or "300").strip()
     try:
         return max(60, min(int(raw), 600))
     except ValueError:
-        return 240
+        return 300
 
 
 def _omni_image_gen_size() -> str:
