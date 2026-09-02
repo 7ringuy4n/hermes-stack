@@ -1,3 +1,16 @@
+## 2026-09-02 09:30 +07 — combo priority failover: classifier, embedding, web-search
+
+- `first-setup-omnirouter` sets `priority` strategy on classifier, embedding, and web-search combos (with image-gen and vision-ocr); seeds missing `web-search` combo from active search providers (Tavily, Firecrawl, SearXNG).
+
+## 2026-09-02 09:15 +07 — vision-ocr combo: priority (fallback) strategy
+
+- `first-setup-omnirouter` sets `vision-ocr` combo strategy to `priority` (head-first fallback), matching `image-gen`; strategy-only updates preserve existing members.
+
+## 2026-09-02 09:00 +07 — first-setup: catalog-only media combos; drop vendor hardcoding
+
+- `first-setup-omnirouter` seeds image-gen / vision-ocr / embedding from Omni catalog only when combos are empty; no AI Box whitelist, Horde filters, or custom-model registration.
+- Media inactive no longer remaps `IMAGE_GEN_COMBO` / `OCR_MODEL` to `hermes`; each combo keeps its own members.
+
 ## 2026-09-02 08:45 +07 — first-setup: Pollinations Flux image head; drop setup smokes
 
 - `first-setup-omnirouter` ensures Pollinations provider connection, pins `IMAGE_GEN_HEAD_MEMBER` to `pollinations/flux` when catalogged, and drops setup smoke probes (image-gen, embedding, web-search).

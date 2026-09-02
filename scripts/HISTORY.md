@@ -1,3 +1,45 @@
+## 2026-09-02 09:30 +07 — combo priority failover: classifier, embedding, web-search
+
+### Symptom
+Classifier, embedding, and web-search combos inherited global round-robin; `web-search` combo was missing on fresh installs so Router search had no Omni failover chain.
+
+### Root cause
+Only image-gen had an explicit per-combo strategy; web-search creation was deferred to manual Omni UI.
+
+### Fix (core)
+`FALLBACK_COMBO_STRATEGY=priority` for classifier, embedding, vision-ocr, image-gen, and web-search; `ensure_web_search_omni_combo` seeds Tavily -> Firecrawl -> SearXNG when empty.
+
+### Prevent recurrence
+Any stack combo that must exhaust a ranked head before failover needs an explicit priority strategy in first-setup, not the global round-robin default.
+
+## 2026-09-02 09:15 +07 — vision-ocr combo: priority (fallback) strategy
+
+### Symptom
+Vision OCR combo used global round-robin, rotating across multimodal members instead of exhausting the ranked head before failover.
+
+### Root cause
+`ensure_media_combos` did not pass a per-combo strategy for `vision-ocr`; only chat combos inherited `OMNIROUTER_COMBO_STRATEGY=round-robin`.
+
+### Fix (core)
+`VISION_OCR_COMBO_STRATEGY=priority` (env `OMNIROUTER_VISION_OCR_COMBO_STRATEGY`); `_put_or_create_combo` preserves member order when fixing strategy on an existing combo.
+
+### Prevent recurrence
+Media combos that need head-first failover must declare their own strategy constant, not rely on the global round-robin default.
+
+## 2026-09-02 09:00 +07 — first-setup: catalog-only media combos; drop vendor hardcoding
+
+### Symptom
+First-setup carried AI Box whitelists, Horde/namespace filters, obsolete env scrubbing, and remapped image/vision routes to `hermes` when media worker was inactive.
+
+### Root cause
+Setup script duplicated operator concerns (vendor model lists, combo member surgery) that belong in Omni UI or runtime, not first-run wiring.
+
+### Fix (core)
+Media combos seed from `/v1/models` image/vision/embed signals only when empty; `pin_media_combos` pins combo names when media is active without hermes fallback; removed `ensure_aibox_image_models` and related hardcoded filters.
+
+### Prevent recurrence
+First-setup wires providers and empty combos — never maintain vendor-specific model allowlists in setup code.
+
 ## 2026-09-02 08:45 +07 — first-setup: Pollinations Flux image head; drop setup smokes
 
 ### Symptom
