@@ -53,6 +53,7 @@ HINT_EXECUTION = {
     "tool": ("interactive", "tool", "ack_then_deliver"),
 }
 HINT_ALIASES = {"chat": "normal", "qna": "normal", "question": "normal", "general": "normal"}
+REASONING_EFFORTS = ("low", "medium", "high", "max")
 MAX_INSTRUCTIONS = 32
 CRON_CHARS = set("0123456789*,/-")
 DEFAULT_TIMEOUT_S = 70.0
@@ -328,6 +329,26 @@ def plan_schema_ok(plan: dict[str, Any]) -> bool:
     return bool(plan.get("cron_expr"))
 
 
+def _coerce_reasoning_effort(raw: Any) -> str | None:
+    s = str(raw or "").strip().lower()
+    return s if s in REASONING_EFFORTS else None
+
+
+def infer_reasoning_effort(hint: str, task_type: str, execution_class: str) -> str:
+    h = (hint or "").strip().lower()
+    tt = (task_type or "").strip().lower()
+    ec = (execution_class or "").strip().lower()
+    if h == "coding" or tt == "coding":
+        return "high"
+    if h == "schedule" or ec == "schedule":
+        return "low"
+    if tt in {"search", "knowledge", "file_processing"} or h in {"search", "file", "knowledge"}:
+        return "low"
+    if h == "normal" and tt == "chat":
+        return "low"
+    return "medium"
+
+
 def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dict[str, Any]:
     src = data if isinstance(data, dict) else {}
     if src.get("ok") is False:
@@ -402,6 +423,10 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             ).strip()
             or None
         ),
+        "reasoning_effort": (
+            _coerce_reasoning_effort(src.get("reasoning_effort"))
+            or infer_reasoning_effort(hint, task_type, exec_cls)
+        ),
     }
     if not plan_schema_ok(plan):
         return failed_plan(tz, "classify_invalid")
@@ -418,7 +443,7 @@ def classify_text(text: str, *, timezone: str = "Asia/Ho_Chi_Minh") -> dict[str,
             return normalize_plan(_planner(blob), blob, tz)
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
-    base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+    base = (os.environ.get("MODEL_ROUTER_URL") or "http://router-worker:8096").rstrip("/")
     payload = json.dumps({"text": blob, "timezone": tz}, ensure_ascii=False).encode("utf-8")
     timeout = float(os.environ.get("MODEL_ROUTER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
     last_error = "classify_unavailable"
@@ -479,7 +504,7 @@ def classify_outbound(text: str) -> dict[str, Any]:
             return normalize_outbound(_outbound_planner(blob))
         except TypeError:
             return normalize_outbound(_outbound_planner(blob, timezone="Asia/Ho_Chi_Minh"))
-    base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+    base = (os.environ.get("MODEL_ROUTER_URL") or "http://router-worker:8096").rstrip("/")
     payload = json.dumps({"text": blob}, ensure_ascii=False).encode("utf-8")
     timeout = float(os.environ.get("MODEL_ROUTER_OUTBOUND_TIMEOUT_S") or 30.0)
     try:

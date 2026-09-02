@@ -1718,7 +1718,23 @@ class ZaloAdapter(BasePlatformAdapter):
                         file=shortcut.get("file"),
                     )
             elif plan_allows_search_then_info_card(early_plan):
-                shortcut = run_search_then_info_card(
+                try:
+                    await self._as_gate_announce(
+                        str(thread_id),
+                        str(thread_type),
+                        "Đang vẽ hình…",
+                    )
+                except Exception:
+                    pass
+                try:
+                    self._as_autosend_remember_turn(
+                        str(thread_id),
+                        "group" if str(thread_type).lower() in {"group", "g"} else "user",
+                    )
+                except Exception:
+                    pass
+                shortcut = await asyncio.to_thread(
+                    run_search_then_info_card,
                     shortcut_user_text,
                     early_plan,
                     str(thread_id),
@@ -1825,7 +1841,7 @@ class ZaloAdapter(BasePlatformAdapter):
             except ImportError:
                 from session_memory import append_turn  # type: ignore
             try:
-                append_turn(str(thread_id), str(thread_type), bare, "")
+                append_turn(str(thread_id), str(thread_type), bare, "Đã gửi hình.")
             except Exception:
                 pass
             try:
@@ -1929,7 +1945,7 @@ class ZaloAdapter(BasePlatformAdapter):
         current = strip_prior_for_classify(text) or str(text or "").strip()
         if not isinstance(plan, dict):
             plan = classify_text(
-                current,
+                text or current,
                 thread=("group" if str(thread_type or "").lower() == "group" else "dm"),
             )
         if plan.get("ok") is False:
