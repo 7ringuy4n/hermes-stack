@@ -47,12 +47,18 @@ def test_resolve_image_gen_head_pollinations() -> None:
     assert mod._order_image_gen_combo_members(ids, "pollinations/flux")[0] == "pollinations/flux"
 
 
-def test_image_gen_combo_strategy_is_priority() -> None:
+def test_fallback_combo_strategy_constants() -> None:
+    assert mod.FALLBACK_COMBO_STRATEGY == "priority"
+    assert mod.CLASSIFIER_COMBO_STRATEGY == "priority"
+    assert mod.EMBEDDING_COMBO_STRATEGY == "priority"
+    assert mod.WEB_SEARCH_COMBO_STRATEGY == "priority"
     assert mod.IMAGE_GEN_COMBO_STRATEGY == "priority"
     assert mod.VISION_OCR_COMBO_STRATEGY == "priority"
     assert mod.COMBO_STRATEGY == "round-robin"
-    assert mod.IMAGE_GEN_COMBO_STRATEGY != mod.COMBO_STRATEGY
-    assert mod.VISION_OCR_COMBO_STRATEGY != mod.COMBO_STRATEGY
+
+
+def test_image_gen_combo_strategy_is_priority() -> None:
+    test_fallback_combo_strategy_constants()
 
 
 def test_put_or_create_combo_strategy_only_keeps_members() -> None:
@@ -130,6 +136,30 @@ def test_put_or_create_combo_uses_want_strategy() -> None:
     assert captured["body"]["models"][0]["model"] == "pollinations/flux"
 
 
+def test_web_search_member_order() -> None:
+    original_http = getattr(mod, "http_json", None)
+
+    def fake_http(opener, method, url, body=None, timeout=25):
+        if url.endswith("/api/providers") and method == "GET":
+            return 200, {
+                "connections": [
+                    {"provider": "searxng-search", "id": "s1", "isActive": True},
+                    {"provider": "tavily-search", "id": "t1", "isActive": True},
+                ]
+            }
+        raise AssertionError(f"unexpected {method} {url}")
+
+    mod.http_json = fake_http
+    try:
+        members = mod.list_web_search_combo_members(object())
+    finally:
+        if original_http is not None:
+            mod.http_json = original_http
+        else:
+            del mod.http_json
+    assert members == ["tavily-search", "searxng-search"]
+
+
 def main() -> None:
     test_image_output_from_catalog_type()
     test_pollinations_flux_head()
@@ -137,6 +167,7 @@ def main() -> None:
     test_resolve_image_gen_head_pollinations()
     test_image_gen_combo_strategy_is_priority()
     test_put_or_create_combo_strategy_only_keeps_members()
+    test_web_search_member_order()
     test_put_or_create_combo_uses_want_strategy()
     print("OK first_setup_image_gen_unit")
 

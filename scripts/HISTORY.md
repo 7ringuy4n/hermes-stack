@@ -1,3 +1,17 @@
+## 2026-09-02 09:30 +07 — combo priority failover: classifier, embedding, web-search
+
+### Symptom
+Classifier, embedding, and web-search combos inherited global round-robin; `web-search` combo was missing on fresh installs so Router search had no Omni failover chain.
+
+### Root cause
+Only image-gen had an explicit per-combo strategy; web-search creation was deferred to manual Omni UI.
+
+### Fix (core)
+`FALLBACK_COMBO_STRATEGY=priority` for classifier, embedding, vision-ocr, image-gen, and web-search; `ensure_web_search_omni_combo` seeds Tavily -> Firecrawl -> SearXNG when empty.
+
+### Prevent recurrence
+Any stack combo that must exhaust a ranked head before failover needs an explicit priority strategy in first-setup, not the global round-robin default.
+
 ## 2026-09-02 09:15 +07 — vision-ocr combo: priority (fallback) strategy
 
 ### Symptom

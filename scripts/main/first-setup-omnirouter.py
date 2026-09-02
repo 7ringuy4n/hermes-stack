@@ -7,7 +7,7 @@
 4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members
 5) Ensure media combos: image-gen (image-capable), vision-ocr (supportsVision), embedding
 6) Pin IMAGE_GEN_COMBO (image-gen) / OCR_MODEL (vision-ocr) from media worker state
-7) Set combo strategy preference (round-robin default; image-gen + vision-ocr use priority/fallback)
+7) Set combo strategy preference (round-robin for hermes; priority/fallback for classifier, media, embedding, web-search)
 8) Ensure Search: Tavily → Firecrawl → SearXNG
 9) Point Hermes at model-router; recreate router-worker for the key
 
@@ -34,9 +34,13 @@ COMBO_NAME = os.environ.get("OMNIROUTER_DEFAULT_COMBO", "hermes")
 CLASSIFY_COMBO_NAME = os.environ.get("OMNIROUTER_CLASSIFY_COMBO", "classifier")
 COMBO_STRATEGY = os.environ.get("OMNIROUTER_COMBO_STRATEGY", "round-robin")
 COMBO_STICKY_LIMIT = int(os.environ.get("OMNIROUTER_COMBO_STICKY_LIMIT", "1"))
-# image-gen / vision-ocr combos use priority (Omni fallback: head member first).
-IMAGE_GEN_COMBO_STRATEGY = os.environ.get("OMNIROUTER_IMAGE_GEN_COMBO_STRATEGY", "priority")
-VISION_OCR_COMBO_STRATEGY = os.environ.get("OMNIROUTER_VISION_OCR_COMBO_STRATEGY", "priority")
+# Head-first failover (Omni ``priority``) for media, classify, embed, and search combos.
+FALLBACK_COMBO_STRATEGY = os.environ.get("OMNIROUTER_FALLBACK_COMBO_STRATEGY", "priority")
+IMAGE_GEN_COMBO_STRATEGY = os.environ.get("OMNIROUTER_IMAGE_GEN_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
+VISION_OCR_COMBO_STRATEGY = os.environ.get("OMNIROUTER_VISION_OCR_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
+CLASSIFIER_COMBO_STRATEGY = os.environ.get("OMNIROUTER_CLASSIFIER_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
+EMBEDDING_COMBO_STRATEGY = os.environ.get("OMNIROUTER_EMBEDDING_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
+WEB_SEARCH_COMBO_STRATEGY = os.environ.get("OMNIROUTER_WEB_SEARCH_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
 
 OPENCODE_MODELS_URL = "https://opencode.ai/zen/v1/models"
 OPENCODE_FREE_FALLBACK = [
@@ -419,41 +423,49 @@ def ensure_opencode_combo(
     description: str,
     member_limit: int | None = None,
     refill_if_below: int | None = None,
+    strategy: str = "",
 ) -> str:
     """Fill Omni combo with cloud OpenCode members when empty; keep live oc/opencode/opencode-go.
 
     When ``refill_if_below`` is set and OpenCode member count is under that threshold
     (e.g. a single stub), refill from the OpenCode catalog like hermes/classifier.
     """
+    want_strategy = (strategy or COMBO_STRATEGY).strip() or "round-robin"
     drop_probe_combos(opener)
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = data.get("combos") or []
     existing = next((c for c in combos if (c.get("name") or "") == name), None)
     ids = _combo_model_ids(existing)
+    cur_strategy = (existing.get("strategy") or existing.get("comboStrategy") or "").strip() if existing else ""
     good = [mid for mid in ids if _is_opencode_model_id(mid)]
     leftover = [mid for mid in ids if not _is_opencode_model_id(mid)]
     if leftover:
         print(f"==> strip leftover non-OpenCode members from {name}: {leftover[:8]!r}")
     thin = refill_if_below is not None and len(good) < refill_if_below
     if good and not thin:
-        if leftover:
+        if leftover or (want_strategy and cur_strategy != want_strategy):
             models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(good)]
             payload = {
                 "name": name,
                 "models": models,
-                "strategy": COMBO_STRATEGY,
+                "strategy": want_strategy,
                 "description": description,
             }
             if not existing or not existing.get("id"):
-                raise SystemExit(f"combo {name} missing id while stripping leftovers")
+                raise SystemExit(f"combo {name} missing id while updating")
+            if want_strategy and cur_strategy != want_strategy:
+                print(f"==> combo {name} strategy {cur_strategy!r} -> {want_strategy!r}")
             status, body = http_json(
                 opener, "PUT", f"{BASE}/api/combos/{existing['id']}", payload
             )
             if status not in (200, 201):
-                raise SystemExit(f"combo {name} strip leftover failed: {body}")
-            print(f"==> kept combo {name} OpenCode-family n={len(good)} first={good[:3]}")
-        else:
-            print(f"==> keep combo {name} OpenCode-family n={len(good)} first={good[:3]}")
+                raise SystemExit(f"combo {name} update failed: {body}")
+            if leftover:
+                print(f"==> kept combo {name} OpenCode-family n={len(good)} first={good[:3]} strategy={want_strategy}")
+            else:
+                print(f"==> updated combo {name} strategy={want_strategy} n={len(good)}")
+            return name
+        print(f"==> keep combo {name} OpenCode-family n={len(good)} first={good[:3]} strategy={cur_strategy}")
         return name
     if thin:
         print(f"==> refill combo {name} OpenCode (had {len(good)} < {refill_if_below})")
@@ -466,7 +478,7 @@ def ensure_opencode_combo(
     payload = {
         "name": name,
         "models": models,
-        "strategy": COMBO_STRATEGY,
+        "strategy": want_strategy,
         "description": description,
     }
     action = "update" if existing and existing.get("id") else "create"
@@ -487,8 +499,9 @@ def ensure_classifier_combo(opener) -> str:
     return ensure_opencode_combo(
         opener,
         name=CLASSIFY_COMBO_NAME,
-        description="Classify/intent combo — Omni OpenCode cloud (round-robin)",
+        description="Classify/intent combo — Omni OpenCode cloud (priority failover)",
         member_limit=5,
+        strategy=CLASSIFIER_COMBO_STRATEGY,
     )
 
 
@@ -681,22 +694,43 @@ def ensure_search_providers(opener) -> None:
 
 
 WEB_SEARCH_COMBO_NAME = "web-search"
+_WEB_SEARCH_MEMBER_ORDER = ("tavily-search", "firecrawl-search", "searxng-search")
+
+
+def list_web_search_combo_members(opener) -> list[str]:
+    """Ordered search provider ids for combo web-search (Tavily -> Firecrawl -> SearXNG)."""
+    by_prov = _search_connections(opener)
+    out: list[str] = []
+    for prov in _WEB_SEARCH_MEMBER_ORDER:
+        row = by_prov.get(prov)
+        if not row or not row.get("id"):
+            continue
+        if row.get("isActive") is False:
+            continue
+        out.append(prov)
+    return out
 
 
 def ensure_web_search_omni_combo(opener) -> None:
-    """Verify operator search combo ``web-search`` — never overwrite PRIORITY members."""
+    """Seed combo ``web-search`` when empty; fix strategy to priority without reordering members."""
+    members = list_web_search_combo_members(opener)
+    if not members:
+        print("WARN: no active search providers — skip web-search combo")
+        return
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = data.get("combos") or []
     existing = next((c for c in combos if (c.get("name") or "") == WEB_SEARCH_COMBO_NAME), None)
-    if not existing:
-        print(
-            f"NOTE: create Omni combo {WEB_SEARCH_COMBO_NAME!r} in UI "
-            "(PRIORITY: tavily-search, firecrawl-search, searxng-search)"
-        )
-        return
-    models = _combo_model_ids(existing)
-    strategy = existing.get("strategy") or existing.get("comboStrategy") or "?"
-    print(f"==> keep Omni combo {WEB_SEARCH_COMBO_NAME} n={len(models)} strategy={strategy}")
+    cur = _combo_model_ids(existing)
+    if not cur:
+        print(f"==> seed combo {WEB_SEARCH_COMBO_NAME} members={members!r}")
+    _put_or_create_combo(
+        opener,
+        name=WEB_SEARCH_COMBO_NAME,
+        description="Web search — Tavily, Firecrawl, local SearXNG (priority failover)",
+        model_ids=members,
+        force=not cur,
+        strategy=WEB_SEARCH_COMBO_STRATEGY,
+    )
 
 
 def ensure_combo_round_robin(opener) -> None:
@@ -1149,7 +1183,7 @@ def _put_or_create_combo(
     cur_strategy = (existing.get("strategy") or existing.get("comboStrategy") or "").strip() if existing else ""
     if existing and current and not force:
         if want_strategy and cur_strategy != want_strategy:
-            print(f"==> combo {name} strategy {cur_strategy!r} → {want_strategy!r}")
+            print(f"==> combo {name} strategy {cur_strategy!r} -> {want_strategy!r}")
             model_ids = list(current)
         elif not want_strategy or cur_strategy == want_strategy:
             print(f"==> keep combo {name} n={len(current)} first={current[:3]} strategy={cur_strategy}")
@@ -1228,6 +1262,7 @@ def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
             description="Embeddings — Omni /v1/embeddings",
             model_ids=emb_ids,
             force=not cur_emb,
+            strategy=EMBEDDING_COMBO_STRATEGY,
         )
     elif not combos.get("embedding"):
         emb = list_oc_models(opener)[:1] or list(OPENCODE_FREE_FALLBACK[:1])
@@ -1237,6 +1272,7 @@ def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
             description="Embeddings — Omni /v1/embeddings (shell)",
             model_ids=emb,
             force=True,
+            strategy=EMBEDDING_COMBO_STRATEGY,
         )
         print("WARN: no embed-capable catalog models — seeded shell only")
     else:
@@ -1298,7 +1334,11 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
     set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
     set_env_key(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
+    set_env_key(ROOT / ".env", "OMNIROUTER_FALLBACK_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
     set_env_key(ROOT / ".env", "OMNIROUTER_VISION_OCR_COMBO_STRATEGY", VISION_OCR_COMBO_STRATEGY)
+    set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFIER_COMBO_STRATEGY", CLASSIFIER_COMBO_STRATEGY)
+    set_env_key(ROOT / ".env", "OMNIROUTER_EMBEDDING_COMBO_STRATEGY", EMBEDDING_COMBO_STRATEGY)
+    set_env_key(ROOT / ".env", "OMNIROUTER_WEB_SEARCH_COMBO_STRATEGY", WEB_SEARCH_COMBO_STRATEGY)
     set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "active"))
     # Hermes-facing Router Worker: combo web-search via Omni only (no direct adapter chain).
     _clear_stack_env_keys(
