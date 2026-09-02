@@ -1,3 +1,8 @@
+## 2026-09-02 09:45 +07 — setup-zalo: headless Node.js install (no apt hang)
+
+- `zalo-common` installs Node 20 via direct NodeSource apt repo with noninteractive apt; waits for apt locks; verifies node/npm on PATH; QR instructions clarify browser + SSH port forward.
+- `setup-zalo` runs Node preflight before core QR wait.
+
 ## 2026-09-02 09:30 +07 — combo priority failover: classifier, embedding, web-search
 
 - `first-setup-omnirouter` sets `priority` strategy on classifier, embedding, and web-search combos (with image-gen and vision-ocr); seeds missing `web-search` combo from active search providers (Tavily, Firecrawl, SearXNG).

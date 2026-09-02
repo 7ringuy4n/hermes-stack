@@ -183,33 +183,96 @@ zalo_wait_bridge_port() {
   return 1
 }
 
+# Non-interactive apt/sudo for headless VPS (avoids debconf/readline hangs on setup-zalo).
+zalo_sudo_run() {
+  local env_prefix="DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a"
+  if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
+    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S -E env $env_prefix "$@"
+  else
+    $ZALO_SUDO env $env_prefix "$@"
+  fi
+}
+
+zalo_wait_apt_lock() {
+  local i
+  for i in $(seq 1 90); do
+    if ! $ZALO_SUDO fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \
+      && ! $ZALO_SUDO fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
+      return 0
+    fi
+    if [[ "$i" -eq 1 || $((i % 15)) -eq 0 ]]; then
+      zalo_log "waiting for apt lock (${i}/90)…"
+    fi
+    sleep 2
+  done
+  echo "ERROR: apt lock still held — stop other apt/dpkg jobs and retry" >&2
+  return 1
+}
+
+zalo_node_major() {
+  node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1
+}
+
 zalo_need_node() {
   if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-    return 0
+    local major
+    major="$(zalo_node_major)"
+    if [[ -n "$major" && "$major" -ge 18 ]]; then
+      zalo_log "Node.js $(node -v) npm $(npm -v)"
+      return 0
+    fi
+    zalo_log "WARN: Node.js $(node -v) is too old — installing Node 20"
   fi
-  zalo_log "install Node.js 20 (nodesource)"
-  local setup_tmp
-  setup_tmp="$(mktemp)"
-  curl -fsSL https://deb.nodesource.com/setup_20.x -o "$setup_tmp"
-  if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
-    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S bash "$setup_tmp"
-    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S apt-get install -y nodejs
-  else
-    $ZALO_SUDO bash "$setup_tmp"
-    $ZALO_SUDO apt-get install -y nodejs
+
+  if ! command -v curl >/dev/null 2>&1; then
+    zalo_log "install curl (required for Node.js repo)"
+    zalo_wait_apt_lock || return 1
+    zalo_sudo_run apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+      install -y curl ca-certificates gnupg || return 1
   fi
-  rm -f "$setup_tmp"
+
+  zalo_log "install Node.js 20 (nodesource apt repo) — may take a few minutes on first setup"
+  zalo_wait_apt_lock || return 1
+
+  # Add repo directly (do not run nodesource setup_20.x — it spawns nested apt jobs that can
+  # hang on headless VPS when debconf/readline waits on a background TTY).
+  zalo_sudo_run bash -c '
+set -euo pipefail
+apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+  install -y ca-certificates curl gnupg
+install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+  | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+chmod 0644 /etc/apt/keyrings/nodesource.gpg
+cat > /etc/apt/sources.list.d/nodesource.list <<EOF
+deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main
+EOF
+apt-get update -qq
+apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -y nodejs
+' || {
+    echo "ERROR: Node.js install failed" >&2
+    echo "  Manual fix:" >&2
+    echo "    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -" >&2
+    echo "    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs" >&2
+    return 1
+  }
+
+  hash -r 2>/dev/null || true
+  if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+    echo "ERROR: node/npm not on PATH after install" >&2
+    return 1
+  fi
+  zalo_log "Node.js $(node -v) npm $(npm -v)"
 }
 
 zalo_install_plugin_package() {
-  zalo_need_node
   if command -v hermes-zalo-plugin >/dev/null 2>&1; then
     zalo_install_bridge_overlays || true
     return 0
   fi
   zalo_log "npm install -g hermes-zalo-plugin (upstream: cuongdev)"
   if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
-    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S npm install -g hermes-zalo-plugin || {
+    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S env DEBIAN_FRONTEND=noninteractive npm install -g hermes-zalo-plugin || {
       local tmp
       tmp="$(mktemp -d)"
       git clone --depth 1 "$ZALO_REPO_URL" "${tmp}/p"
@@ -217,7 +280,7 @@ zalo_install_plugin_package() {
       rm -rf "$tmp"
     }
   else
-    $ZALO_SUDO npm install -g hermes-zalo-plugin || {
+    $ZALO_SUDO env DEBIAN_FRONTEND=noninteractive npm install -g hermes-zalo-plugin || {
       local tmp
       tmp="$(mktemp -d)"
       git clone --depth 1 "$ZALO_REPO_URL" "${tmp}/p"
@@ -411,10 +474,12 @@ zalo_print_qr_instructions() {
 ────────────────────────────────────────────────────────────
 STEP 1 — Scan Zalo QR (required before any Zalo install)
 
-Remote VPS: on your PC run:
+QR is served by the host bridge (not printed in this terminal).
+
+Remote VPS — on your PC, keep SSH open with port forward:
   ssh -L ${ZALO_PORT}:127.0.0.1:${ZALO_PORT} $(whoami)@$(hostname -f 2>/dev/null || hostname)
 
-Open in browser:
+Then open in your browser:
   ${ZALO_QR_URL}
 
 Scan with the Zalo app. Waiting up to ${ZALO_LOGIN_WAIT_S}s…
@@ -424,6 +489,7 @@ EOF
 
 zalo_qr_login_phase() {
   zalo_log "Zalo QR login (must succeed before bridge stack + zalo-api install)"
+  zalo_need_node || return 1
   zalo_install_plugin_package
   zalo_configure_bridge_systemd
   zalo_start_bridge_service || true
