@@ -1,3 +1,17 @@
+## 2026-09-02 19:45 +07 — zalo: classify strips attachment recall for schedule
+
+### Symptom
+Relative remind schedule (`N phút nữa nhắc tôi: …`) stored 0 rows when thread memory had recent attachments; logs showed `attach_followup` without `schedule stored`.
+
+### Root cause
+Host injected `[Recent attachments…]` into inbound text before classify; router received the full blob (not user line only), so timed intent was drowned by prior file context.
+
+### Fix (core)
+`strip_prior_for_classify` drops attachment-recall blocks; classify HTTP payload sends stripped user line. Schedule classify part: recall must not downgrade remind-with-body creates.
+
+### Prevent recurrence
+Unit test locks strip of attachment recall before schedule classify.
+
 ## 2026-09-02 19:15 +07 — zalo: image-gen 5m timeout; Hermes image path; schedule ack
 
 ### Symptom

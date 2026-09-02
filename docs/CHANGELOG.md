@@ -1,3 +1,8 @@
+## 2026-09-02 19:45 +07 — zalo: classify strips attachment recall; schedule with remembered files
+
+- Classify input strips host `[Recent attachments…]` recall blocks so timed remind-with-body is not misread when prior files exist in thread memory. Router classify payload sends stripped user line only.
+- Schedule classify part hardened: attachment recall must not downgrade relative remind creates.
+
 ## 2026-09-02 19:15 +07 — zalo: image-gen 5m timeout; Hermes image OCR; schedule fire ack
 
 - Host scenic diffusion default/pin `OMNI_IMAGE_GEN_TIMEOUT_S=300` (5 minutes per combo member attempt).
