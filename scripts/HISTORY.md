@@ -1,3 +1,17 @@
+## 2026-09-02 09:00 +07 — first-setup: catalog-only media combos; drop vendor hardcoding
+
+### Symptom
+First-setup carried AI Box whitelists, Horde/namespace filters, obsolete env scrubbing, and remapped image/vision routes to `hermes` when media worker was inactive.
+
+### Root cause
+Setup script duplicated operator concerns (vendor model lists, combo member surgery) that belong in Omni UI or runtime, not first-run wiring.
+
+### Fix (core)
+Media combos seed from `/v1/models` image/vision/embed signals only when empty; `pin_media_combos` pins combo names when media is active without hermes fallback; removed `ensure_aibox_image_models` and related hardcoded filters.
+
+### Prevent recurrence
+First-setup wires providers and empty combos — never maintain vendor-specific model allowlists in setup code.
+
 ## 2026-09-02 08:45 +07 — first-setup: Pollinations Flux image head; drop setup smokes
 
 ### Symptom

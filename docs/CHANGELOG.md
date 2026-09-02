@@ -1,3 +1,8 @@
+## 2026-09-02 09:00 +07 — first-setup: catalog-only media combos; drop vendor hardcoding
+
+- `first-setup-omnirouter` seeds image-gen / vision-ocr / embedding from Omni catalog only when combos are empty; no AI Box whitelist, Horde filters, or custom-model registration.
+- Media inactive no longer remaps `IMAGE_GEN_COMBO` / `OCR_MODEL` to `hermes`; each combo keeps its own members.
+
 ## 2026-09-02 08:45 +07 — first-setup: Pollinations Flux image head; drop setup smokes
 
 - `first-setup-omnirouter` ensures Pollinations provider connection, pins `IMAGE_GEN_HEAD_MEMBER` to `pollinations/flux` when catalogged, and drops setup smoke probes (image-gen, embedding, web-search).

@@ -34,8 +34,7 @@ COMBO_NAME = os.environ.get("OMNIROUTER_DEFAULT_COMBO", "hermes")
 CLASSIFY_COMBO_NAME = os.environ.get("OMNIROUTER_CLASSIFY_COMBO", "classifier")
 COMBO_STRATEGY = os.environ.get("OMNIROUTER_COMBO_STRATEGY", "round-robin")
 COMBO_STICKY_LIMIT = int(os.environ.get("OMNIROUTER_COMBO_STICKY_LIMIT", "1"))
-# image-gen drains Pollinations Flux / AI Box heads before Horde fallbacks; a global
-# round-robin would cycle slow/free Horde workers into every scenic request.
+# image-gen combo uses priority strategy so the head member drains before fallbacks.
 IMAGE_GEN_COMBO_STRATEGY = os.environ.get("OMNIROUTER_IMAGE_GEN_COMBO_STRATEGY", "priority")
 
 OPENCODE_MODELS_URL = "https://opencode.ai/zen/v1/models"
@@ -820,153 +819,31 @@ def _row_has_image_modality(row: dict) -> bool:
     return False
 
 
-def _is_aihorde_diffusion_model_id(mid: str) -> bool:
-    """AI Horde Stable Diffusion workers — valid /images/generations targets."""
-    return (mid or "").strip().lower().startswith("aihorde/")
-
-
-def _pollinations_model_slug(mid: str) -> str:
-    low = (mid or "").strip().lower()
-    if not low.startswith("pollinations/"):
-        return ""
-    return low[len("pollinations/") :]
-
-
-_POLLINATIONS_IMAGE_SLUGS = frozenset(
-    {
-        "flux",
-        "flux-2-flex",
-        "flux-2-pro",
-        "klein",
-        "zimage",
-        "qwen-image",
-        "qwen-image-3",
-        "wan-image",
-        "wan-image-pro",
-        "gpt-image-2",
-        "gptimage",
-        "gptimage-large",
-        "dreamshaper",
-        "kontext",
-        "krea",
-        "nanobanana",
-        "nanobanana-2",
-        "nanobanana-pro",
-        "seedream",
-        "seedream-pro",
-        "seedream5",
-        "seedream5-pro",
-        "grok-imagine",
-        "grok-imagine-pro",
-        "p-image",
-        "p-image-edit",
-        "nova-canvas",
-        "ideogram-v4-balanced",
-        "ideogram-v4-quality",
-        "ideogram-v4-turbo",
-    }
-)
-
-
-def _is_pollinations_image_model_id(mid: str) -> bool:
-    slug = _pollinations_model_slug(mid)
-    if not slug or "/" in slug:
+def _is_image_output_model(row: dict) -> bool:
+    """True when Omni catalog marks a model as image-generation output."""
+    mid = str(row.get("id") or "").strip()
+    if not mid or mid in ("image-gen", "hermes", "classifier"):
         return False
-    if slug in _POLLINATIONS_IMAGE_SLUGS:
+    if str(row.get("type") or "").strip().lower() == "image":
         return True
-    return any(tok in slug for tok in ("flux", "zimage", "seedream", "nanobanana", "grok-imagine"))
+    if _row_has_image_modality(row):
+        return True
+    caps = row.get("capabilities") if isinstance(row.get("capabilities"), dict) else {}
+    if caps.get("image_generation") is True:
+        return True
+    if caps.get("image_generation") is False:
+        return False
+    return False
 
 
 def _is_pollinations_flux_model_id(mid: str) -> bool:
     low = (mid or "").strip().lower()
     if low == "pollinations/flux":
         return True
-    slug = _pollinations_model_slug(mid)
-    if not slug or "/" in slug:
+    if not low.startswith("pollinations/"):
         return False
-    return slug == "flux" or slug.startswith("flux-")
-
-
-def _is_openrouter_image_model_id(mid: str) -> bool:
-    low = (mid or "").strip().lower()
-    if not low.startswith("openrouter/"):
-        return False
-    return "flux" in low or "image" in low
-
-
-def _is_comfyui_image_model_id(mid: str) -> bool:
-    return (mid or "").strip().lower().startswith("comfyui/")
-
-
-_AIBOX_IMAGE_MODEL_NAMES = (
-    "qwen-image-2.0",
-    "qwen-image-3.0",
-    "qwen-image-3.0-pro",
-    "wan2.7-image-pro",
-)
-
-
-def _aibox_image_model_tail(mid: str) -> str:
-    low = (mid or "").strip().lower()
-    for prefix in ("img-gen/", "image-gen/"):
-        if low.startswith(prefix):
-            return low[len(prefix) :]
-    return ""
-
-
-def _is_aibox_image_generation_model(mid: str) -> bool:
-    """Whitelisted AI Box image generators (home.ai-box.vn pricing family)."""
-    tail = _aibox_image_model_tail(mid)
-    return tail in _AIBOX_IMAGE_MODEL_NAMES
-
-
-def _is_image_gen_namespace_chat_model(mid: str) -> bool:
-    """Models under image-gen/ or img-gen/ namespace (combo name collision risk)."""
-    low = (mid or "").strip().lower()
-    return low.startswith("image-gen/") or low.startswith("img-gen/")
-
-
-def _is_image_gen_namespace_junk(mid: str) -> bool:
-    """img-gen/image-gen entries that are chat models, not whitelisted image generators."""
-    if not _is_image_gen_namespace_chat_model(mid):
-        return False
-    return not _is_aibox_image_generation_model(mid)
-
-
-def _combo_name_collides_with_model_namespace(mid: str) -> bool:
-    return _is_image_gen_namespace_junk(mid)
-
-
-def _is_image_output_model(row: dict) -> bool:
-    """True for /images/generations targets — catalog + known diffusion prefixes."""
-    mid = str(row.get("id") or "").strip()
-    if not mid or mid == "image-gen":
-        return False
-    if _is_aibox_image_generation_model(mid):
-        return True
-    if _is_image_gen_namespace_junk(mid):
-        return False
-    if _is_pollinations_image_model_id(mid):
-        return True
-    if _is_aihorde_diffusion_model_id(mid):
-        return True
-    if _is_comfyui_image_model_id(mid):
-        return True
-    if _is_openrouter_image_model_id(mid):
-        return True
-    has_image_mod = _row_has_image_modality(row)
-    caps = row.get("capabilities")
-    cap_gen = isinstance(caps, dict) and caps.get("image_generation") is True
-    if isinstance(caps, dict) and caps.get("image_generation") is False:
-        return False
-    return has_image_mod or cap_gen
-
-
-def _is_bad_image_gen_combo_member(mid: str, catalog: list[dict] | None = None) -> bool:
-    """Combo members that Omni rejects for /images/generations."""
-    if _is_image_gen_namespace_junk(mid):
-        return True
-    return not _is_image_gen_model_id(mid, catalog)
+    slug = low[len("pollinations/") :]
+    return bool(slug) and "/" not in slug and slug.startswith("flux")
 
 
 def ensure_api_key_allows_combos(opener, existing_key: str) -> None:
@@ -1029,22 +906,40 @@ def _media_worker_active(env: dict[str, str]) -> bool:
     return False
 
 
-_OBSOLETE_IMAGE_ENV = [
-    "IMAGE_OMNI_MODEL",
-    "OMNIROUTER_IMAGE_MODEL",
-    "IMAGE_GEN_SIZE",
-    "IMAGE_GEN_HEAD_MODEL",
-    "IMAGE_LLM_MODEL",
-    "IMAGE_LLM_SIZE",
-    "IMAGE_LLM_PROVIDER",
-    "IMAGE_LLM_API_KEY",
-    "IMAGE_LLM_BASE_URL",
-    "IMAGE_VENDOR_PROVIDER",
-    "IMAGE_VENDOR_API_KEY",
-    "IMAGE_VENDOR_URL",
-    "IMAGE_VENDOR_MODEL",
-    "IMAGE_BACKENDS",
-]
+def pin_media_combos(env: dict[str, str]) -> None:
+    """Pin media combo *names* when the media worker is active.
+
+    image-gen and vision-ocr keep their own Omni members — never remap to hermes.
+    """
+    env_path = ROOT / ".env"
+    active = _media_worker_active(env)
+    if not active:
+        cur = (env.get("ENABLE_MEDIA_FILE") or "").strip().lower()
+        if cur == "active":
+            set_env_key(env_path, "ENABLE_MEDIA_FILE", "inactive")
+            env["ENABLE_MEDIA_FILE"] = "inactive"
+            print("OK: pinned ENABLE_MEDIA_FILE=inactive")
+        return
+    if (env.get("ENABLE_MEDIA_FILE") or "").strip().lower() != "active":
+        set_env_key(env_path, "ENABLE_MEDIA_FILE", "active")
+        env["ENABLE_MEDIA_FILE"] = "active"
+        print("OK: pinned ENABLE_MEDIA_FILE=active")
+    pins = {
+        "IMAGE_GEN_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
+        "OCR_MODEL": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
+        "OCR_VISION": "active",
+        "EMBED_MODEL": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
+        "OMNIROUTER_IMAGE_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
+        "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
+        "OMNIROUTER_EMBED_COMBO": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
+    }
+    for key, want in pins.items():
+        cur = (env.get(key) or "").strip()
+        if cur == want:
+            continue
+        set_env_key(env_path, key, want)
+        env[key] = want
+        print(f"OK: pinned {key}={want}")
 
 
 def _stack_env_paths() -> list[Path]:
@@ -1077,51 +972,6 @@ def _set_stack_env_key(key: str, value: str) -> None:
         set_env_key(path, key, value)
 
 
-def pin_media_combos(env: dict[str, str]) -> None:
-    """Pin router combo names from media worker state.
-
-    Media active → image-gen / vision-ocr / embedding.
-    Media inactive → hermes for image+vision routes (no dedicated media combos).
-    Diffusion uses combo names only (no per-model or size env pins).
-    """
-    env_path = ROOT / ".env"
-    _clear_stack_env_keys(_OBSOLETE_IMAGE_ENV)
-    for k in _OBSOLETE_IMAGE_ENV:
-        env.pop(k, None)
-
-    active = _media_worker_active(env)
-    if active and (env.get("ENABLE_MEDIA_FILE") or "").strip().lower() != "active":
-        set_env_key(env_path, "ENABLE_MEDIA_FILE", "active")
-        env["ENABLE_MEDIA_FILE"] = "active"
-        print("OK: pinned ENABLE_MEDIA_FILE=active (Media worker active)")
-    if active:
-        img_combo = env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen"
-        pins = {
-            "IMAGE_GEN_COMBO": img_combo,
-            "OCR_MODEL": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
-            "OCR_VISION": "active",
-            "EMBED_MODEL": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
-            "OMNIROUTER_IMAGE_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
-            "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
-            "OMNIROUTER_EMBED_COMBO": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
-        }
-    else:
-        hermes = env.get("OMNIROUTER_DEFAULT_COMBO") or env.get("HERMES_DEFAULT_MODEL") or "hermes"
-        pins = {
-            "ENABLE_MEDIA_FILE": "inactive",
-            "IMAGE_GEN_COMBO": hermes,
-            "OCR_MODEL": hermes,
-            "OCR_VISION": "active",
-        }
-    for key, want in pins.items():
-        cur = (env.get(key) or "").strip()
-        if cur == want:
-            continue
-        set_env_key(env_path, key, want)
-        env[key] = want
-        print(f"OK: pinned {key}={want}")
-
-
 def _v1_models(api_key: str) -> list[dict]:
     req = urllib.request.Request(
         f"{BASE}/v1/models",
@@ -1133,68 +983,25 @@ def _v1_models(api_key: str) -> list[dict]:
     return [r for r in rows if isinstance(r, dict)]
 
 
-def _is_image_gen_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
-    """Validate combo member against /v1/models catalog when available."""
-    if _is_aibox_image_generation_model(mid):
-        return True
-    if _is_image_gen_namespace_junk(mid):
-        return False
-    rows = catalog or []
-    for row in rows:
-        if str(row.get("id") or "").strip() == (mid or "").strip():
-            return _is_image_output_model(row)
-    if not rows:
-        return (
-            _is_pollinations_image_model_id(mid)
-            or _is_aihorde_diffusion_model_id(mid)
-            or _is_openrouter_image_model_id(mid)
-            or _is_comfyui_image_model_id(mid)
-        )
-    return False
-
-
 def _rank_image_gen_model(mid: str) -> tuple:
-    """Prefer Pollinations Flux (free), then AI Box; demote Horde/anime."""
+    """Prefer pollinations/flux head when present; otherwise stable catalog order."""
     m = (mid or "").strip().lower()
+    if m == "pollinations/flux":
+        return (0, m)
     if _is_pollinations_flux_model_id(m):
-        return (-2, 0 if "schnell" not in m else 1, m)
-    if _is_aibox_image_generation_model(m):
-        order = {
-            "wan2.7-image-pro": 0,
-            "qwen-image-3.0-pro": 1,
-            "qwen-image-3.0": 2,
-            "qwen-image-2.0": 3,
-        }
-        tail = _aibox_image_model_tail(m)
-        return (-1, order.get(tail, 9), m)
-    if _is_image_gen_namespace_junk(m):
-        return (9, m)
-    if m.startswith("openrouter/") or "flux.2" in m:
-        return (5, m)
-    if "schnell" in m or "anime" in m or "anything" in m:
-        return (4, m)
-    for i, token in enumerate(
-        ("icbinp", "realistic", "juggernaut", "absolutereality", "albedobase", "deliberate")
-    ):
-        if token in m:
-            return (0, i, m)
-    if "aihorde" in m or "stable" in m:
         return (1, m)
     return (2, m)
 
 
 def list_image_gen_models(api_key: str) -> list[str]:
-    """Models Omni can use for /images/generations (output modality image)."""
+    """Models Omni catalog marks as image-generation output."""
     rows = _v1_models(api_key)
     found_set: set[str] = set()
     for row in rows:
         mid = str(row.get("id") or "").strip()
-        if not mid:
-            continue
-        if _is_aibox_image_generation_model(mid) or _is_image_output_model(row):
+        if mid and _is_image_output_model(row):
             found_set.add(mid)
-    found = sorted(found_set, key=_rank_image_gen_model)
-    return found[:8]
+    return sorted(found_set, key=_rank_image_gen_model)[:8]
 
 
 def _resolve_image_gen_head(image_ids: list[str], env: dict[str, str] | None = None) -> str:
@@ -1365,224 +1172,71 @@ def _put_or_create_combo(
     return name
 
 
-def _aibox_image_provider_nodes(opener) -> list[dict]:
-    """AI Box image-generation provider nodes (apiType images-generations / img-gen prefix)."""
-    try:
-        _, data = http_json(opener, "GET", f"{BASE}/api/provider-nodes")
-    except Exception as e:
-        print(f"WARN provider-nodes list failed: {e}")
-        return []
-    out: list[dict] = []
-    for node in data.get("nodes") or []:
-        if not isinstance(node, dict):
-            continue
-        api_type = str(node.get("apiType") or "").strip().lower()
-        prefix = str(node.get("prefix") or "").strip().lower()
-        if api_type == "images-generations" or prefix in {"img-gen", "image-gen"}:
-            out.append(node)
-    return out
-
-
-def _custom_models_by_provider(opener, provider: str) -> dict[str, dict]:
-    """Map bare modelId -> custom model row for a provider node (GET /api/provider-models)."""
-    query = urllib.parse.urlencode({"provider": provider})
-    try:
-        _, data = http_json(opener, "GET", f"{BASE}/api/provider-models?{query}")
-    except Exception as e:
-        print(f"WARN provider-models GET failed for {provider[:8]}…: {e}")
-        return {}
-    models = data.get("models")
-    if isinstance(models, dict):
-        bucket = models.get(provider) or []
-    elif isinstance(models, list):
-        # GET ?provider=X returns a flat list of rows (not keyed by provider).
-        bucket = models
-    else:
-        bucket = []
-    return {
-        str(row.get("id")): row
-        for row in bucket
-        if isinstance(row, dict) and row.get("id")
-    }
-
-
-def _custom_image_model_action(existing: dict | None) -> str:
-    """Return "add" / "fix" / "" for a whitelisted AI Box image model row.
-
-    Omni routes a custom model through /v1/images/generations only when its
-    supportedEndpoints includes "images"; AI Box models often arrive tagged
-    ["chat"] (or missing), so pin images-generations + ["images"].
-    """
-    if not existing:
-        return "add"
-    endpoints = [str(e) for e in (existing.get("supportedEndpoints") or [])]
-    api_format = str(existing.get("apiFormat") or "").strip()
-    if "images" in endpoints and api_format == "images-generations":
-        return ""
-    return "fix"
-
-
-def ensure_aibox_image_models(opener) -> None:
-    """Register/repair whitelisted AI Box image generators as custom models.
-
-    Each of the four AI Box image models must exist on its provider node with
-    apiFormat=images-generations and supportedEndpoints=["images"]; otherwise
-    /v1/images/generations skips the combo member and returns no image.
-    """
-    nodes = _aibox_image_provider_nodes(opener)
-    if not nodes:
-        print("NOTE: no AI Box images-generations provider node — skip custom-model registration")
-        return
-    for node in nodes:
-        provider = node.get("id")
-        if not provider:
-            continue
-        state = _custom_models_by_provider(opener, provider)
-        for model_id in _AIBOX_IMAGE_MODEL_NAMES:
-            action = _custom_image_model_action(state.get(model_id))
-            if not action:
-                continue
-            body = {
-                "provider": provider,
-                "modelId": model_id,
-                "modelName": model_id,
-                "apiFormat": "images-generations",
-                "supportedEndpoints": ["images"],
-            }
-            method = "POST" if action == "add" else "PUT"
-            status, resp = http_json(opener, method, f"{BASE}/api/provider-models", body)
-            if status in (200, 201):
-                print(f"OK: {action} custom image model {provider[:8]}…/{model_id} (images-generations)")
-            else:
-                print(f"WARN {action} {model_id} on {provider[:8]}…: {str(resp)[:200]}")
-
-
 def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
-    """Ensure media combos with capability-matched members (not chat-only OpenCode)."""
-    all_image_ids = list_image_gen_models(api_key)
-    if not all_image_ids:
+    """Seed image-gen / vision-ocr / embedding combos when empty; keep operator-owned members."""
+    image_ids = list_image_gen_models(api_key)
+    if not image_ids:
         raise SystemExit(
-            "no images-capable models in Omni catalog — connect Pollinations / AI Horde / image provider"
+            "no images-capable models in Omni catalog — add an image provider in Omni UI"
         )
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = {c.get("name"): c for c in (data.get("combos") or []) if isinstance(c, dict)}
-    catalog = _v1_models(api_key)
     cur_img = _combo_model_ids(combos.get("image-gen"))
-    bad_img = [m for m in cur_img if _is_bad_image_gen_combo_member(m, catalog)]
-    aibox_want = [m for m in all_image_ids if _is_aibox_image_generation_model(m)]
-    aibox_have = [m for m in cur_img if _is_aibox_image_generation_model(m)]
-    pol_head = _resolve_image_gen_head(all_image_ids, env)
-    if aibox_want:
-        image_ids: list[str] = []
-        if pol_head:
-            image_ids.append(pol_head)
-        for mid in aibox_want[:4]:
-            if mid not in image_ids:
-                image_ids.append(mid)
-    else:
-        image_ids = all_image_ids[:8]
-    image_ids = _order_image_gen_combo_members(image_ids, pol_head or (image_ids[0] if image_ids else ""))
-    horde_in_combo = [m for m in cur_img if _is_aihorde_diffusion_model_id(m)]
-    need_img = (
-        (not cur_img)
-        or bool(bad_img)
-        or (bool(aibox_want) and not aibox_have)
-        or (bool(aibox_want) and bool(horde_in_combo))
-        or not set(cur_img).intersection(set(image_ids))
-        or (pol_head and (not cur_img or cur_img[0] != pol_head))
-    )
-    want_head = pol_head or (image_ids[0] if image_ids else "")
-    cur_head = cur_img[0] if cur_img else ""
-    if (
-        cur_head
-        and want_head
-        and cur_head != want_head
-        and _rank_image_gen_model(cur_head) > _rank_image_gen_model(want_head)
-    ):
-        print(f"==> image-gen head {cur_head!r} → {want_head!r} (Pollinations Flux / photoreal-first)")
-        need_img = True
-    if bad_img:
-        print(
-            f"==> image-gen has invalid members {bad_img[:6]!r} "
-            f"(drop img-gen chat junk; keep image generators) — refilling"
-        )
-    elif aibox_want and not aibox_have:
-        print(f"==> image-gen missing AI Box members {aibox_want[:4]!r} — refilling")
-    elif aibox_want and horde_in_combo:
-        print(f"==> image-gen drops AI Horde fallbacks {horde_in_combo[:4]!r} — Pollinations / AI Box")
-    elif pol_head and pol_head not in cur_img:
-        print(f"==> image-gen adds Pollinations Flux head {pol_head!r}")
+    head = _resolve_image_gen_head(image_ids, env)
+    want_ids = _order_image_gen_combo_members(image_ids, head)
+    if not cur_img:
+        print(f"==> seed combo image-gen from catalog first={want_ids[:3]!r}")
     _put_or_create_combo(
         opener,
         name="image-gen",
-        description="Image generation — Pollinations Flux / AI Box / image-capable (diffusion only)",
-        model_ids=image_ids,
-        force=need_img,
+        description="Image generation — Omni /images/generations catalog",
+        model_ids=want_ids,
+        force=not cur_img,
         strategy=IMAGE_GEN_COMBO_STRATEGY,
     )
-    want_head = pol_head or (image_ids[0] if image_ids else "")
-    if want_head:
-        _set_stack_env_key("IMAGE_GEN_HEAD_MEMBER", want_head)
-        print(f"OK: pinned IMAGE_GEN_HEAD_MEMBER={want_head}")
+    if head:
+        _set_stack_env_key("IMAGE_GEN_HEAD_MEMBER", head)
+        print(f"OK: pinned IMAGE_GEN_HEAD_MEMBER={head}")
 
     vision_ids = list_vision_models(opener)
     if not vision_ids:
-        # Fall back to hermes OpenCode members so vision path still has a combo.
         vision_ids = list_oc_models(opener)[:5] or list(OPENCODE_FREE_FALLBACK[:5])
         print(f"WARN no supportsVision catalog; seeding vision-ocr with OpenCode {vision_ids[:3]}")
-    cur_vis_list = _combo_model_ids(combos.get("vision-ocr"))
-    cur_vis = set(cur_vis_list)
-    head = (cur_vis_list[0] if cur_vis_list else "").lower()
-    want_head = (vision_ids[0] if vision_ids else "").lower()
-    need_vis = (
-        len(cur_vis.intersection(set(vision_ids))) == 0
-        or (
-            bool(vision_ids)
-            and not any(_is_opencode_model_id(m) for m in cur_vis_list)
-        )
-        or (bool(want_head) and head != want_head)
-    )
-    if need_vis and cur_vis_list and not any(_is_opencode_model_id(m) for m in cur_vis_list):
-        print(f"==> vision-ocr non-OpenCode members {cur_vis_list[:3]!r} — OpenCode-first refill")
-    elif need_vis and head and want_head and head != want_head:
-        print(f"==> vision-ocr head {cur_vis_list[0]!r} → {vision_ids[0]!r}")
+    cur_vis = _combo_model_ids(combos.get("vision-ocr"))
+    if not cur_vis:
+        print(f"==> seed combo vision-ocr from catalog first={vision_ids[:3]!r}")
     _put_or_create_combo(
         opener,
         name="vision-ocr",
-        description="Vision OCR — multimodal chat (OpenCode-first supportsVision)",
+        description="Vision OCR — multimodal chat (supportsVision catalog)",
         model_ids=vision_ids,
-        force=need_vis,
+        force=not cur_vis,
     )
 
     emb_ids = list_embedding_models(api_key, opener=opener)
     cur_emb = _combo_model_ids(combos.get("embedding"))
-    bad_emb = [m for m in cur_emb if not _is_embedding_model_id(m)]
-    # Omni forbids mixed vector dimensions — require exact single-model pin.
-    need_emb = (not cur_emb) or bool(bad_emb) or (bool(emb_ids) and cur_emb != emb_ids)
-    if bad_emb:
-        print(f"==> embedding has non-embed members {bad_emb[:6]!r} — refilling")
-    elif emb_ids and cur_emb != emb_ids:
-        print(f"==> embedding pin {emb_ids!r} (was {cur_emb[:4]!r}) — single dimension")
     if emb_ids:
+        if not cur_emb:
+            print(f"==> seed combo embedding {emb_ids!r}")
         _put_or_create_combo(
             opener,
             name="embedding",
-            description="Embeddings — Omni /v1/embeddings (embed-capable members only)",
+            description="Embeddings — Omni /v1/embeddings",
             model_ids=emb_ids,
-            force=need_emb,
+            force=not cur_emb,
         )
     elif not combos.get("embedding"):
-        emb = list_oc_models(opener)[:5] or list(OPENCODE_FREE_FALLBACK[:5])
+        emb = list_oc_models(opener)[:1] or list(OPENCODE_FREE_FALLBACK[:1])
         _put_or_create_combo(
             opener,
             name="embedding",
-            description="Embeddings — Omni /v1/embeddings (prefer embed-capable members)",
+            description="Embeddings — Omni /v1/embeddings (shell)",
             model_ids=emb,
             force=True,
         )
         print("WARN: no embed-capable catalog models — seeded shell only")
     else:
-        print("OK: combo embedding exists (operator-owned members; no embed catalog)")
+        print("OK: combo embedding exists (operator-owned members)")
 
 
 def assert_combo_oc_only(opener, name: str) -> None:
@@ -1633,7 +1287,6 @@ def main() -> int:
     ensure_combo_round_robin(opener)
     ensure_search_providers(opener)
     ensure_web_search_omni_combo(opener)
-    ensure_aibox_image_models(opener)
     ensure_media_combos(opener, key, env)
     ensure_api_key_allows_combos(opener, key)
     pin_media_combos(env)
