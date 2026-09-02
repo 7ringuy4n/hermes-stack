@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit: labeled weather-on-image host gate (classify_client)."""
+"""Unit: search+image host gates use classify RENDER contract only."""
 from __future__ import annotations
 
 import sys
@@ -11,12 +11,12 @@ sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 from classify_client import (  # noqa: E402
     plan_allows_search_then_info_card,
     plan_allows_search_then_weather_scene,
-    plan_requests_labeled_weather_on_image,
+    plan_image_render_mode,
 )
 
 
-def test_labeled_weather_on_image_cues() -> None:
-    plan = {
+def test_render_contract_gates() -> None:
+    labeled = {
         "ok": True,
         "task_hint": "tool",
         "instructions": [
@@ -28,11 +28,27 @@ def test_labeled_weather_on_image_cues() -> None:
             {"task_type": "media_generation", "output_type": "image"},
         ],
     }
-    assert plan_requests_labeled_weather_on_image(plan)
-    assert plan_allows_search_then_info_card(plan)
-    assert not plan_allows_search_then_weather_scene(plan)
+    assert plan_image_render_mode(labeled) == "labeled-scene"
+    assert plan_allows_search_then_info_card(labeled)
+    assert not plan_allows_search_then_weather_scene(labeled)
 
-    viet = {
+    weather_scene = {
+        "ok": True,
+        "task_hint": "tool",
+        "instructions": [
+            "weather Ho Chi Minh City current forecast",
+            "RENDER: weather-scene\nSCENE: Ho Chi Minh City skyline at dusk",
+        ],
+        "task_details": [
+            {"task_type": "search", "skill": "web_search"},
+            {"task_type": "media_generation", "output_type": "image"},
+        ],
+    }
+    assert plan_image_render_mode(weather_scene) == "weather-scene"
+    assert plan_allows_search_then_weather_scene(weather_scene)
+    assert not plan_allows_search_then_info_card(weather_scene)
+
+    prose_only = {
         "ok": True,
         "task_hint": "tool",
         "instructions": [
@@ -44,12 +60,13 @@ def test_labeled_weather_on_image_cues() -> None:
             {"task_type": "media_generation", "output_type": "image"},
         ],
     }
-    assert plan_requests_labeled_weather_on_image(viet)
-    assert plan_allows_search_then_info_card(viet)
+    assert plan_image_render_mode(prose_only) == ""
+    assert not plan_allows_search_then_info_card(prose_only)
+    assert not plan_allows_search_then_weather_scene(prose_only)
 
 
 def main() -> None:
-    test_labeled_weather_on_image_cues()
+    test_render_contract_gates()
     print("OK labeled_weather_gate_unit")
 
 
