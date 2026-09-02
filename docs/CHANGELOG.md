@@ -1,3 +1,8 @@
+## 2026-09-02 17:45 +07 — zalo: fix image-gen failover signature (SyntaxError on inbound)
+
+- `media_shortcuts`: `_omni_request_image_blob_once` had an incomplete `def` signature (leftover from the failover refactor); any Zalo inbound message raised a module import `SyntaxError`, so the whole host media shortcut (and reply) failed silently.
+- Fixed the helper signature; regression test now locks the combo→member failover order and the `/v1/combos` member parsing.
+
 ## 2026-09-02 17:15 +07 — image-gen: Omni prefix wiring + combo member failover
 
 - `first-setup-omnirouter`: sync-models on custom providers; wire provider-models on Omni prefix-resolved node; seed image-gen from `/v1/combos` when catalog lacks image metadata.

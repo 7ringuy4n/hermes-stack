@@ -1,3 +1,17 @@
+## 2026-09-02 17:45 +07 — zalo: image-gen failover helper had broken signature
+
+### Symptom
+Zalo inbound message (scenic/image shortcut) got no reply; Hermes logged `SyntaxError: '(' was never closed` importing `media_shortcuts`, so the host turn threw before classification/execution.
+
+### Root cause
+Failover refactor left `_omni_request_image_blob_once` with an unterminated `def (` signature; module import failed on every inbound message, aborting the whole media shortcut path.
+
+### Fix (core)
+Restored the complete keyword-only signature on `_omni_request_image_blob_once`. Added regression tests asserting combo→member failover order and `/v1/combos` member parsing.
+
+### Prevent recurrence
+Keep image-gen helpers import-safe; unit tests import the module (which fails fast on syntax errors) and cover the failover call order.
+
 ## 2026-09-02 17:15 +07 — image-gen: custom provider wiring + host combo failover
 
 ### Symptom
