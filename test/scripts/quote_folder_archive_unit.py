@@ -51,6 +51,20 @@ def test_quote_fileurl() -> None:
     assert pre and pre["url"].endswith("prebuilt.docx"), pre
 
 
+def test_quote_local_image_path() -> None:
+    path = "/opt/data/media/out/weather-scene-abc123.jpg"
+    media = extract_media_from_quote(
+        {
+            "msgType": "webchat",
+            "content": f"Đã gửi hình.\n{path}",
+        }
+    )
+    assert media, media
+    assert media["url"] == path, media
+    assert media["kind"] == "image", media
+    assert media["fileName"].endswith(".jpg"), media
+
+
 def test_folder_zip_media() -> None:
     assert is_media_member("Folder/sub/photo.png") is True
     assert is_media_member(r"Folder\sub\note.txt") is True
@@ -73,6 +87,7 @@ def test_folder_zip_media() -> None:
 
 def main() -> int:
     test_quote_fileurl()
+    test_quote_local_image_path()
     test_folder_zip_media()
     print("quote_folder_archive_unit OK")
     return 0
