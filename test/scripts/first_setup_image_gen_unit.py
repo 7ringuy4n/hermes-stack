@@ -51,6 +51,40 @@ def test_allow_openrouter_flux() -> None:
     assert mod._is_image_output_model(_row(mid, tool_calling=True)) is True
 
 
+def test_allow_pollinations_flux() -> None:
+    mid = "pollinations/flux"
+    assert mod._is_pollinations_image_model_id(mid) is True
+    assert mod._is_pollinations_flux_model_id(mid) is True
+    assert mod._is_image_output_model(_row(mid)) is True
+    assert mod._is_bad_image_gen_combo_member(mid) is False
+
+
+def test_pollinations_slug_filters_chat_junk() -> None:
+    assert mod._is_pollinations_image_model_id("pollinations/flux") is True
+    assert mod._is_pollinations_flux_model_id("pollinations/flux") is True
+    assert mod._is_pollinations_image_model_id("pollinations/chigwell/gpt-5.4") is False
+    assert mod._is_pollinations_flux_model_id("pollinations/chigwell/gpt-5.4") is False
+
+
+def test_rank_prefers_pollinations_over_horde() -> None:
+    horde = "aihorde/ICBINP"
+    flux = "pollinations/flux"
+    assert mod._rank_image_gen_model(flux) < mod._rank_image_gen_model(horde)
+
+
+def test_rank_prefers_pollinations_over_aibox() -> None:
+    aibox = "img-gen/qwen-image-3.0-pro"
+    flux = "pollinations/flux"
+    assert mod._rank_image_gen_model(flux) < mod._rank_image_gen_model(aibox)
+
+
+def test_resolve_image_gen_head_pollinations() -> None:
+    ids = ["aihorde/ICBINP", "pollinations/flux", "img-gen/qwen-image-3.0-pro"]
+    assert mod._resolve_image_gen_head(ids, {}) == "pollinations/flux"
+    assert mod._resolve_image_gen_head(ids, {"IMAGE_GEN_HEAD_MEMBER": "aihorde/ICBINP"}) == "pollinations/flux"
+    assert mod._order_image_gen_combo_members(ids, "pollinations/flux")[0] == "pollinations/flux"
+
+
 def test_rank_prefers_aibox_over_horde() -> None:
     horde = "aihorde/ICBINP"
     aibox = "img-gen/qwen-image-3.0-pro"
@@ -186,6 +220,11 @@ def main() -> None:
     test_exclude_img_gen_namespace_junk()
     test_allow_aihorde_diffusion()
     test_allow_openrouter_flux()
+    test_allow_pollinations_flux()
+    test_pollinations_slug_filters_chat_junk()
+    test_rank_prefers_pollinations_over_horde()
+    test_rank_prefers_pollinations_over_aibox()
+    test_resolve_image_gen_head_pollinations()
     test_rank_prefers_aibox_over_horde()
     test_custom_image_model_action()
     test_aibox_image_provider_nodes_filter()

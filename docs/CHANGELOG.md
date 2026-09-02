@@ -1,3 +1,7 @@
+## 2026-09-02 08:45 +07 — first-setup: Pollinations Flux image head; drop setup smokes
+
+- `first-setup-omnirouter` ensures Pollinations provider connection, pins `IMAGE_GEN_HEAD_MEMBER` to `pollinations/flux` when catalogged, and drops setup smoke probes (image-gen, embedding, web-search).
+
 ## 2026-09-02 07:30 +07 — router-worker URL; reasoning_effort; labeled weather-on-image
 
 - Default LLM proxy URL is `router-worker:8096` (legacy `model-router` docker alias removed); `ROUTER_WORKER_URL` env preferred over `MODEL_ROUTER_URL`.
