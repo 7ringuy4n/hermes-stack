@@ -277,6 +277,11 @@ main() {
   zalo_log "setup-zalo — QR first, then stack (cuongdev hermes-zalo-plugin)"
   zalo_log "preflight: fix ~/.config ownership for $(id -un) if needed"
   zalo_ensure_config_writable
+  zalo_log "preflight: Node.js + npm (hermes-zalo-plugin)"
+  zalo_need_node || {
+    echo "ERROR: setup-zalo needs Node.js 18+ — fix install above and re-run" >&2
+    exit 1
+  }
   zalo_wait_core_for_qr || exit 1
 
   local health_json=""

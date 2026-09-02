@@ -1,3 +1,17 @@
+## 2026-09-02 09:45 +07 — setup-zalo: headless Node.js install (no apt hang)
+
+### Symptom
+`setup-zalo.sh` stopped after "core ready for QR" on fresh VPS; `apt install` stuck in stopped state (`T+`); no QR because Node was never installed.
+
+### Root cause
+`zalo_need_node` ran NodeSource `setup_20.x` via curl|bash, which spawned nested apt jobs that hung on headless SSH when debconf/readline waited on a background TTY.
+
+### Fix (core)
+Direct NodeSource apt repo add + `DEBIAN_FRONTEND=noninteractive` install; `zalo_wait_apt_lock`; Node preflight in `setup-zalo` before QR phase; clearer QR browser instructions.
+
+### Prevent recurrence
+Never pipe NodeSource setup scripts into bash on headless VPS; use explicit apt repo + noninteractive flags and apt-lock waits for any setup-zalo package installs.
+
 ## 2026-09-02 09:30 +07 — combo priority failover: classifier, embedding, web-search
 
 ### Symptom
