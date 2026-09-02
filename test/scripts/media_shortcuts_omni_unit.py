@@ -38,21 +38,10 @@ def test_image_gen_size_default() -> None:
 
 def test_image_gen_model_combo() -> None:
     os.environ["IMAGE_GEN_COMBO"] = "image-gen"
-    os.environ.pop("IMAGE_GEN_HEAD_MEMBER", None)
     try:
         assert mod._omni_image_gen_model() == "image-gen"
     finally:
         os.environ.pop("IMAGE_GEN_COMBO", None)
-
-
-def test_image_gen_model_uses_head_member() -> None:
-    os.environ["IMAGE_GEN_COMBO"] = "image-gen"
-    os.environ["IMAGE_GEN_HEAD_MEMBER"] = "img-gen/wan2.7-image-pro"
-    try:
-        assert mod._omni_image_gen_model() == "img-gen/wan2.7-image-pro"
-    finally:
-        os.environ.pop("IMAGE_GEN_COMBO", None)
-        os.environ.pop("IMAGE_GEN_HEAD_MEMBER", None)
 
 
 def test_image_gen_model_uses_member_id_when_combo_is_member() -> None:
@@ -109,7 +98,6 @@ def main() -> None:
     test_image_gen_timeout_clamped()
     test_image_gen_size_default()
     test_image_gen_model_combo()
-    test_image_gen_model_uses_head_member()
     test_image_gen_model_uses_member_id_when_combo_is_member()
     test_image_quality_mins_hd()
     test_image_quality_mins_full_hd()
