@@ -813,6 +813,37 @@ def _omni_image_quality_ok(blob: bytes, *, size: str) -> bool:
         return True
 
 
+def _omni_v1_combo_member_models(base: str, key: str, combo_name: str) -> list[str]:
+    """Ordered /v1/combos members for a combo name (API key auth)."""
+    root = (base or "").rstrip("/")
+    if root.endswith("/v1"):
+        url = f"{root}/combos"
+    else:
+        url = f"{root}/v1/combos"
+    req = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode() or "{}")
+    except Exception as e:  # noqa: BLE001
+        log.warning("omni combos list failed: %s", type(e).__name__)
+        return []
+    want = (combo_name or "").strip()
+    combo = next((c for c in (data.get("data") or []) if (c.get("name") or "") == want), None)
+    if not combo:
+        return []
+    out: list[str] = []
+    for row in combo.get("models") or []:
+        if not isinstance(row, dict):
+            continue
+        mid = str(row.get("model") or "").strip()
+        if mid and mid not in out:
+            out.append(mid)
+    return out
+
+
 def _omni_request_image_blob(
     *,
     base: str,
@@ -821,7 +852,35 @@ def _omni_request_image_blob(
     scene: str,
     size: str,
     timeout: int,
+    combo_members: list[str] | None = None,
 ) -> bytes | None:
+    tried: list[str] = []
+    candidates: list[str] = []
+    combo = (model or "").strip()
+    if combo and "/" not in combo:
+        candidates.append(combo)
+        if combo_members:
+            candidates.extend(m for m in combo_members if m and m not in candidates)
+    elif combo:
+        candidates.append(combo)
+    for candidate in candidates:
+        if not candidate or candidate in tried:
+            continue
+        tried.append(candidate)
+        blob = _omni_request_image_blob_once(
+            base=base,
+            key=key,
+            model=candidate,
+            scene=scene,
+            size=size,
+            timeout=timeout,
+        )
+        if blob:
+            return blob
+    return None
+
+
+def _omni_request_image_blob_once(
     body = json.dumps({"model": model, "prompt": scene, "n": 1, "size": size}).encode()
     req = urllib.request.Request(
         f"{base}/images/generations",
@@ -910,6 +969,7 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     if not model:
         log.warning("omni generate: no IMAGE_GEN_COMBO")
         return None
+    combo_members = _omni_v1_combo_member_models(base, key, model) if "/" not in model else []
     blob = _omni_request_image_blob(
         base=base,
         key=key,
@@ -917,6 +977,7 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
         scene=scene,
         size=size,
         timeout=timeout,
+        combo_members=combo_members,
     )
     if blob:
         for cand in _media_out_candidates():

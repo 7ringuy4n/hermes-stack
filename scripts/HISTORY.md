@@ -1,3 +1,21 @@
+## 2026-09-02 17:15 +07 — image-gen: custom provider wiring + host combo failover
+
+### Symptom
+Direct `prefix/model` image routes worked; `model=image-gen` returned `No images-capable targets` for custom providers (e.g. ai-box).
+
+### Root cause
+Omni `executeImageCombo` filters targets via built-in image registry only — custom `provider-models` are invisible to combo execution. Prefix/model routing resolves via provider-nodes to the chat provider node id.
+
+model=image-gen still returns No images-capable targets because Omni’s executeImageCombo only accepts targets in the built-in image registry — custom provider-models are ignored (OmniRoute v3.8.50).
+
+### Fix (core)
+`first-setup-omnirouter`: `POST sync-models`, register provider-models on prefix-resolved provider node from admin/`/v1/combos` image-gen members. Host diffusion (`media_shortcuts`) fails over to `/v1/combos` members as direct routes when combo name fails.
+
+Register provider-models on _prefix_resolved_provider_node_id() from provider-nodes API (same rule as Omni’s imageRouteModel.ts)
+
+### Prevent recurrence
+Do not parse provider prefixes in setup scripts; use provider-nodes + provider-models + combo APIs. Do not rely on Omni combo name alone for custom image providers until image-combo supports custom registry entries.
+
 ## 2026-09-02 16:45 +07 — image-gen: Omni provider-models sync; combo-only diffusion
 
 ### Symptom

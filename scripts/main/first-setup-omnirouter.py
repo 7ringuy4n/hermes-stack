@@ -983,7 +983,8 @@ def _catalog_row_by_id(catalog: list[dict], mid: str) -> dict | None:
 def _is_image_gen_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
     row = _catalog_row_by_id(catalog or [], mid)
     if row is None:
-        return False
+        # Custom prefix/model ids may lack v1 catalog metadata but still route via provider-models.
+        return "/" in (mid or "")
     return _is_image_output_model(row)
 
 
@@ -1131,44 +1132,92 @@ def _images_generations_provider_ids(opener) -> set[str]:
     }
 
 
-def _connection_model_is_image_gen(local_id: str) -> bool:
-    """True when an Omni-imported provider model id targets /images/generations."""
-    low = (local_id or "").strip().lower()
-    if not low or "image" not in low:
-        return False
-    for bad in ("video", "i2v", "t2v", "r2v", "videoedit"):
-        if bad in low:
-            return False
-    return True
-
-
-def _image_provider_node_id(opener, prefix: str) -> str:
-    """Provider-models target for prefix/model ids (Omni resolves prefix → chat node)."""
-    chat_id = _chat_node_id_for_prefix(opener, prefix)
-    if chat_id:
-        return chat_id
-    for node in _images_generations_provider_nodes(opener):
-        if _node_catalog_prefix(node).lower() == (prefix or "").strip().lower():
+def _prefix_resolved_provider_node_id(opener, prefix: str) -> str:
+    """Provider node id Omni uses when rewriting prefix/model (provider-nodes API)."""
+    want = (prefix or "").strip()
+    for node in _openai_compatible_provider_nodes(opener):
+        if str(node.get("prefix") or "").strip() == want:
             return str(node.get("id") or "").strip()
     return ""
 
 
-def _wired_custom_provider_image_ids(opener) -> list[str]:
-    """Catalog ids for custom provider nodes wired to /images/generations."""
+def _sync_provider_connection_models(opener, connection_id: str) -> None:
+    """Refresh imported models from upstream (Omni POST /api/providers/{id}/sync-models)."""
+    cid = (connection_id or "").strip()
+    if not cid:
+        return
+    try:
+        status, body = http_json(opener, "POST", f"{BASE}/api/providers/{cid}/sync-models", {})
+    except Exception as e:
+        print(f"WARN sync-models for {cid[:8]}…: {e}")
+        return
+    if status not in (200, 201):
+        print(f"WARN sync-models {cid[:8]}… HTTP {status}: {str(body)[:160]}")
+        return
+    count = body.get("syncedModels") if isinstance(body, dict) else None
+    print(f"OK: sync-models connection={cid[:8]}… synced={count!r}")
+
+
+def _admin_combo_member_ids(opener, combo_name: str) -> list[str]:
+    want = (combo_name or "").strip()
+    if not want:
+        return []
+    try:
+        _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    except Exception as e:
+        print(f"WARN admin combos list: {e}")
+        return []
+    combo = next((c for c in (data.get("combos") or []) if (c.get("name") or "") == want), None)
+    if not combo:
+        return []
+    return _combo_model_ids(combo)
+
+
+def _v1_combo_member_ids(api_key: str, combo_name: str) -> list[str]:
+    want = (combo_name or "").strip()
+    if not want or not api_key:
+        return []
+    req = urllib.request.Request(
+        f"{BASE}/v1/combos",
+        headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode() or "{}")
+    except Exception as e:
+        print(f"WARN /v1/combos list: {e}")
+        return []
+    combo = next((c for c in (data.get("data") or []) if (c.get("name") or "") == want), None)
+    if not combo:
+        return []
+    out: list[str] = []
+    for row in combo.get("models") or []:
+        if not isinstance(row, dict):
+            continue
+        mid = str(row.get("model") or "").strip()
+        if mid and mid not in out:
+            out.append(mid)
+    return out
+
+
+def _wired_custom_provider_image_ids(opener, catalog: list[dict] | None = None) -> list[str]:
+    """prefix/model ids wired on the Omni prefix-resolved provider node (provider-models API)."""
     out: list[str] = []
     seen: set[str] = set()
     for node in _images_generations_provider_nodes(opener):
         prefix = _node_catalog_prefix(node)
-        node_id = _image_provider_node_id(opener, prefix)
+        node_id = _prefix_resolved_provider_node_id(opener, prefix)
         if not node_id or not prefix:
             continue
         state = _custom_models_by_provider(opener, node_id)
         for model_id, row in state.items():
-            if not _connection_model_is_image_gen(model_id):
-                continue
             if _custom_image_model_action(row) != "":
                 continue
             full = f"{prefix}/{model_id}"
+            if catalog is not None:
+                cat_row = _catalog_row_by_id(catalog, full)
+                if cat_row is not None and not _is_image_output_model(cat_row):
+                    continue
             if full in seen:
                 continue
             seen.add(full)
@@ -1380,13 +1429,21 @@ def list_image_gen_models(
     seen: set[str] = set()
 
     if opener is not None:
-        wired = _sort_wired_image_model_ids(opener, _wired_custom_provider_image_ids(opener), catalog)
+        wired = _sort_wired_image_model_ids(
+            opener, _wired_custom_provider_image_ids(opener, catalog), catalog
+        )
         for mid in wired:
             if mid and mid not in seen:
                 seen.add(mid)
                 merged.append(mid)
+        custom_prefixes = _images_generations_provider_prefixes(opener)
+        if custom_prefixes and not merged:
+            for mid in _v1_combo_member_ids(api_key, "image-gen"):
+                root = mid.split("/", 1)[0] if "/" in mid else ""
+                if root in custom_prefixes and mid not in seen:
+                    seen.add(mid)
+                    merged.append(mid)
         if not merged:
-            custom_prefixes = _images_generations_provider_prefixes(opener)
             for mid in _catalog_image_ids_outside_custom_providers(catalog, custom_prefixes):
                 if mid and mid not in seen:
                     seen.add(mid)
@@ -1681,37 +1738,66 @@ def _register_provider_model(
         print(f"WARN {verb} {local_id} on {prefix}: {str(resp)[:200]}")
 
 
+def _connection_model_register_for_images(
+    catalog: list[dict],
+    prefix: str,
+    local_id: str,
+    existing: dict | None,
+    combo_members: set[str],
+) -> bool:
+    """True when a provider-imported model id should be wired for /images/generations."""
+    if existing and _custom_image_model_action(existing) == "":
+        return True
+    full = f"{prefix}/{local_id}"
+    if full in combo_members:
+        return True
+    row = _catalog_row_by_id(catalog, full)
+    if row is None:
+        return False
+    return _catalog_row_needs_provider_model_registration(row)
+
+
 def ensure_provider_image_models(opener, api_key: str) -> None:
-    """Register provider-models on images-generations nodes (Omni provider APIs)."""
+    """Wire custom openai-compatible providers for /images/generations (OmniRoute APIs only)."""
     img_nodes = _images_generations_provider_nodes(opener)
     if not img_nodes:
-        print("NOTE: no images-generations provider node — skip custom image-model registration")
+        print("NOTE: no images-generations provider node — skip custom provider image wiring")
         return
     catalog = _v1_models(api_key)
+    combo_members = set(_admin_combo_member_ids(opener, "image-gen"))
+    combo_members.update(_v1_combo_member_ids(api_key, "image-gen"))
     for img_node in img_nodes:
         prefix = _node_catalog_prefix(img_node)
-        node_id = _image_provider_node_id(opener, prefix)
-        if not node_id or not prefix:
+        if not prefix:
             continue
+        route_node_id = _prefix_resolved_provider_node_id(opener, prefix)
         chat_node_id = _chat_node_id_for_prefix(opener, prefix)
         conn = _connection_for_provider_node(opener, chat_node_id) if chat_node_id else None
-        state = _custom_models_by_provider(opener, node_id)
+        if not route_node_id or not conn or not conn.get("id"):
+            print(f"WARN: no provider connection for images-generations prefix={prefix!r}")
+            continue
+        _sync_provider_connection_models(opener, str(conn["id"]))
+        state = _custom_models_by_provider(opener, route_node_id)
         for model_id, existing in state.items():
+            if not _connection_model_register_for_images(
+                catalog, prefix, model_id, existing, combo_members
+            ):
+                continue
             _register_provider_model(
                 opener,
-                node_id=node_id,
+                node_id=route_node_id,
                 prefix=prefix,
                 local_id=model_id,
                 existing=existing,
             )
-        if not conn or not conn.get("id"):
-            continue
         for local_id in _connection_model_ids(opener, str(conn["id"])):
-            if not _connection_model_is_image_gen(local_id):
+            if not _connection_model_register_for_images(
+                catalog, prefix, local_id, state.get(local_id), combo_members
+            ):
                 continue
             _register_provider_model(
                 opener,
-                node_id=node_id,
+                node_id=route_node_id,
                 prefix=prefix,
                 local_id=local_id,
                 existing=state.get(local_id),
@@ -1721,15 +1807,22 @@ def ensure_provider_image_models(opener, api_key: str) -> None:
             local_id = _provider_model_local_id(prefix, full_id)
             if not local_id or local_id in state:
                 continue
-            if not _catalog_row_needs_provider_model_registration(row):
+            if not _connection_model_register_for_images(
+                catalog, prefix, local_id, None, combo_members
+            ):
                 continue
             _register_provider_model(
                 opener,
-                node_id=node_id,
+                node_id=route_node_id,
                 prefix=prefix,
                 local_id=local_id,
                 existing=None,
             )
+    print(
+        "NOTE: custom prefix/model image routing uses provider-nodes prefix resolution + "
+        "provider-models (images-generations); host diffusion resolves combo members when "
+        "Omni image-combo execution lacks custom registry entries"
+    )
 
 
 def _custom_models_by_provider(opener, provider: str) -> dict[str, dict]:

@@ -1,3 +1,8 @@
+## 2026-09-02 17:15 +07 — image-gen: Omni prefix wiring + combo member failover
+
+- `first-setup-omnirouter`: sync-models on custom providers; wire provider-models on Omni prefix-resolved node; seed image-gen from `/v1/combos` when catalog lacks image metadata.
+- Zalo diffusion: when Omni `image-gen` combo execution rejects custom providers, failover uses `/v1/combos` members as direct `prefix/model` routes (priority order).
+
 ## 2026-09-02 16:30 +07 — image-gen: provider-models wiring; drop head fallback
 
 - `first-setup-omnirouter`: images-generations provider nodes via Omni provider-nodes API; provider-models synced from `/api/providers/{id}/models`; combo uses wired prefix/model ids only (excludes aihorde).

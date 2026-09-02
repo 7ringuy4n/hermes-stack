@@ -74,13 +74,6 @@ def test_rank_prefers_images_generations_metadata() -> None:
     assert mod._rank_image_gen_model(horde, catalog) < mod._rank_image_gen_model(flux, catalog)
 
 
-def test_connection_model_is_image_gen() -> None:
-    assert mod._connection_model_is_image_gen("wan2.7-image-pro") is True
-    assert mod._connection_model_is_image_gen("qwen-image-2.0") is True
-    assert mod._connection_model_is_image_gen("wan2.7-i2v") is False
-    assert mod._connection_model_is_image_gen("deepseek-v4-flash") is False
-
-
 def test_connection_model_helpers() -> None:
     class _Opener:
         pass
@@ -118,6 +111,11 @@ def test_wired_custom_provider_image_ids() -> None:
     def fake_nodes(op):
         return [{"id": "openai-compatible-images-abc", "prefix": "ai-box", "apiType": "images-generations"}]
 
+    def fake_prefix_node(op, prefix):
+        if prefix == "ai-box":
+            return "openai-compatible-images-abc"
+        return ""
+
     def fake_custom(op, provider):
         if provider == "openai-compatible-images-abc":
             return {
@@ -130,8 +128,10 @@ def test_wired_custom_provider_image_ids() -> None:
         return {}
 
     orig_nodes = mod._images_generations_provider_nodes
+    orig_prefix = mod._prefix_resolved_provider_node_id
     orig_custom = mod._custom_models_by_provider
     mod._images_generations_provider_nodes = fake_nodes
+    mod._prefix_resolved_provider_node_id = fake_prefix_node
     mod._custom_models_by_provider = fake_custom
     try:
         wired = mod._wired_custom_provider_image_ids(opener)
@@ -142,6 +142,7 @@ def test_wired_custom_provider_image_ids() -> None:
         assert outside == ["provider-b/flux"]
     finally:
         mod._images_generations_provider_nodes = orig_nodes
+        mod._prefix_resolved_provider_node_id = orig_prefix
         mod._custom_models_by_provider = orig_custom
 
 
@@ -281,7 +282,6 @@ def test_web_search_member_order() -> None:
 def main() -> None:
     test_image_output_from_catalog_metadata()
     test_rank_prefers_images_generations_metadata()
-    test_connection_model_is_image_gen()
     test_connection_model_helpers()
     test_wired_custom_provider_image_ids()
     test_vision_rejects_blind_supports_vision_flag()
