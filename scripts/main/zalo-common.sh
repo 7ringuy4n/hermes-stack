@@ -23,7 +23,12 @@ ZALO_ADMIN_FILE="${ZALO_ADMIN_USERS_FILE:-${ZALO_HOST_DATA_DIR}/zalo_admin_users
 
 if [[ "$(id -u)" -ne 0 ]]; then ZALO_SUDO=sudo; else ZALO_SUDO=; fi
 
-zalo_log() { echo "==> $*"; }
+zalo_log() { echo "==> $*" >&2; }
+
+# True when an interactive terminal exists (works inside $(...) command substitution).
+zalo_have_interactive_tty() {
+  [[ -r /dev/tty && -w /dev/tty ]]
+}
 
 zalo_docker_cmd() {
   if docker info >/dev/null 2>&1; then
@@ -478,8 +483,8 @@ zalo_stop_bridge_service() {
 }
 
 zalo_print_qr_instructions() {
-  if [[ -t 1 ]]; then
-    cat <<EOF
+  if zalo_have_interactive_tty; then
+    cat >&2 <<EOF
 
 ────────────────────────────────────────────────────────────
 STEP 1 — Scan Zalo QR (required before any Zalo install)
@@ -491,7 +496,7 @@ Waiting up to ${ZALO_LOGIN_WAIT_S}s…
 ────────────────────────────────────────────────────────────
 EOF
   else
-    cat <<EOF
+    cat >&2 <<EOF
 
 ────────────────────────────────────────────────────────────
 STEP 1 — Scan Zalo QR (required before any Zalo install)
@@ -506,9 +511,16 @@ EOF
 }
 
 zalo_run_login_cli() {
-  hermes-zalo-plugin login \
-    || hermes-zalo-plugin setup --relogin \
-    || hermes-zalo-plugin setup
+  if zalo_have_interactive_tty; then
+    # setup-zalo captures stdout for health JSON — write QR/login UI to the real terminal.
+    hermes-zalo-plugin login </dev/tty >/dev/tty 2>&1 \
+      || hermes-zalo-plugin setup --relogin </dev/tty >/dev/tty 2>&1 \
+      || hermes-zalo-plugin setup </dev/tty >/dev/tty 2>&1
+  else
+    hermes-zalo-plugin login \
+      || hermes-zalo-plugin setup --relogin \
+      || hermes-zalo-plugin setup
+  fi
 }
 
 zalo_qr_login_phase() {
@@ -531,7 +543,7 @@ zalo_qr_login_phase() {
 
   zalo_print_qr_instructions
 
-  if [[ -t 1 ]]; then
+  if zalo_have_interactive_tty; then
     zalo_run_login_cli || {
       echo "ERROR: Zalo QR login failed" >&2
       return 1

@@ -1,3 +1,17 @@
+## 2026-09-02 10:15 +07 — setup-zalo: show QR/logs during health capture
+
+### Symptom
+After `core ready for QR`, setup-zalo printed nothing — no logs, no ASCII QR — until timeout or Ctrl+C.
+
+### Root cause
+`setup-zalo` captures stdout via `health_json="$(zalo_qr_login_phase)"`, swallowing all `zalo_log` output and login CLI QR. Inside `$(...)`, `[[ -t 1 ]]` is false so console QR path was skipped.
+
+### Fix (core)
+`zalo_log` → stderr; QR instructions → stderr; detect TTY via `/dev/tty`; run `hermes-zalo-plugin login` with stdin/stdout on `/dev/tty`.
+
+### Prevent recurrence
+Functions whose stdout is machine-readable JSON must log and render UI on stderr or `/dev/tty`, not stdout.
+
 ## 2026-09-02 10:00 +07 — setup-zalo: print Zalo QR in terminal
 
 ### Symptom

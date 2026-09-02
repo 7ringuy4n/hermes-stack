@@ -1,3 +1,7 @@
+## 2026-09-02 10:15 +07 — setup-zalo: show QR/logs during health capture
+
+- `zalo_log` and QR instructions go to stderr; login CLI writes to `/dev/tty` so `$(zalo_qr_login_phase)` no longer swallows the ASCII QR.
+
 ## 2026-09-02 10:10 +07 — setup-zalo: log before sudo password prompt
 
 - `zalo_sudo_hint` warns when sudo password is needed (hidden input) before apt/npm install steps.
