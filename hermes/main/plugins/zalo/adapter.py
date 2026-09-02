@@ -1689,14 +1689,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     )
             elif plan_allows_search_then_weather_scene(early_plan):
                 try:
-                    await self._as_gate_announce(
-                        str(thread_id),
-                        str(thread_type),
-                        "Đang vẽ hình…",
-                    )
-                except Exception:
-                    pass
-                try:
                     self._as_autosend_remember_turn(
                         str(thread_id),
                         "group" if str(thread_type).lower() in {"group", "g"} else "user",
@@ -1719,14 +1711,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     )
             elif plan_allows_search_then_info_card(early_plan):
                 try:
-                    await self._as_gate_announce(
-                        str(thread_id),
-                        str(thread_type),
-                        "Đang vẽ hình…",
-                    )
-                except Exception:
-                    pass
-                try:
                     self._as_autosend_remember_turn(
                         str(thread_id),
                         "group" if str(thread_type).lower() in {"group", "g"} else "user",
@@ -1748,14 +1732,6 @@ class ZaloAdapter(BasePlatformAdapter):
                         file=shortcut.get("file"),
                     )
             elif plan_allows_scene_image(early_plan):
-                try:
-                    await self._as_gate_announce(
-                        str(thread_id),
-                        str(thread_type),
-                        "Đang vẽ hình…",
-                    )
-                except Exception:
-                    pass
                 try:
                     self._as_autosend_remember_turn(
                         str(thread_id),

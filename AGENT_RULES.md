@@ -90,6 +90,12 @@ The following are mandatory and must be satisfied before finishing work:
     gitignored paths such as `scripts/temp/` and `hermes/temp/` —
     leave only durable, committed tooling. Do not leave VPS-only patch
     scripts or credential extractors behind.
+-   **Obsolete `.env` keys:** Do not add one-off cleanup logic to durable
+    setup scripts (`scripts/main/first-setup-*.py`, `patch-*.py`, etc.)
+    whose sole purpose is removing deprecated keys or values. Use a
+    **session temp script** under `scripts/temp/` (gitignored), run it on
+    the target host, verify, then delete it. Core setup must only pin
+    current keys — not chase legacy pins on every run.
 
 ------------------------------------------------------------------------
 

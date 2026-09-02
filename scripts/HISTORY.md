@@ -1,3 +1,35 @@
+## 2026-09-02 17:15 +07 — image-gen: custom provider wiring + host combo failover
+
+### Symptom
+Direct `prefix/model` image routes worked; `model=image-gen` returned `No images-capable targets` for custom providers (e.g. ai-box).
+
+### Root cause
+Omni `executeImageCombo` filters targets via built-in image registry only — custom `provider-models` are invisible to combo execution. Prefix/model routing resolves via provider-nodes to the chat provider node id.
+
+model=image-gen still returns No images-capable targets because Omni’s executeImageCombo only accepts targets in the built-in image registry — custom provider-models are ignored (OmniRoute v3.8.50).
+
+### Fix (core)
+`first-setup-omnirouter`: `POST sync-models`, register provider-models on prefix-resolved provider node from admin/`/v1/combos` image-gen members. Host diffusion (`media_shortcuts`) fails over to `/v1/combos` members as direct routes when combo name fails.
+
+Register provider-models on _prefix_resolved_provider_node_id() from provider-nodes API (same rule as Omni’s imageRouteModel.ts)
+
+### Prevent recurrence
+Do not parse provider prefixes in setup scripts; use provider-nodes + provider-models + combo APIs. Do not rely on Omni combo name alone for custom image providers until image-combo supports custom registry entries.
+
+## 2026-09-02 16:45 +07 — image-gen: Omni provider-models sync; combo-only diffusion
+
+### Symptom
+Omni `image-gen` combo listed custom-provider models (e.g. `ai-box/qwen-image-2.0`) but `/v1/images/generations` returned `No images-capable targets in combo "image-gen"`. Host diffusion fell back to slow Horde head; Zalo showed "Đang vẽ hình…" before scenic delivery.
+
+### Root cause
+Combo members used catalog ids without matching `provider-models` on an `images-generations` provider node. Chat-only provider nodes (`apiType=chat`) do not route `/images/generations`. Legacy `IMAGE_GEN_HEAD_MEMBER` bypassed combo failover.
+
+### Fix (core)
+`ensure_images_generations_nodes` uses Omni provider-nodes API (chat → images-generations sibling). `ensure_provider_image_models` syncs from `/api/providers/{id}/models` onto images-generations provider-models. Combo members = wired prefix/model ids only. Host diffusion uses combo `image-gen` only. Obsolete env keys cleared via session temp script — not in first-setup.
+
+### Prevent recurrence
+Custom image providers must be wired through OmniRoute provider-nodes + provider-models; do not parse provider prefixes in setup scripts. Do not embed obsolete env key cleanup in durable setup scripts.
+
 ## 2026-09-02 11:45 +07 — Zalo: search+image workflow split + image-gen single-provider fail
 
 ### Symptom
