@@ -34,7 +34,7 @@ COMBO_NAME = os.environ.get("OMNIROUTER_DEFAULT_COMBO", "hermes")
 CLASSIFY_COMBO_NAME = os.environ.get("OMNIROUTER_CLASSIFY_COMBO", "classifier")
 COMBO_STRATEGY = os.environ.get("OMNIROUTER_COMBO_STRATEGY", "round-robin")
 COMBO_STICKY_LIMIT = int(os.environ.get("OMNIROUTER_COMBO_STICKY_LIMIT", "1"))
-# image-gen must drain head AI Box members before free AI Horde fallbacks; a global
+# image-gen drains Pollinations Flux / AI Box heads before Horde fallbacks; a global
 # round-robin would cycle slow/free Horde workers into every scenic request.
 IMAGE_GEN_COMBO_STRATEGY = os.environ.get("OMNIROUTER_IMAGE_GEN_COMBO_STRATEGY", "priority")
 
@@ -287,6 +287,48 @@ def ensure_opencode_provider(opener) -> dict | None:
             print(f"==> OpenCode provider created id={(conn or {}).get('id')}")
             return conn if isinstance(conn, dict) else None
         print(f"WARN create opencode provider rejected: {body}")
+    return None
+
+
+def ensure_pollinations_provider(opener) -> dict | None:
+    """Ensure Pollinations image provider (free Flux) is connected for /images/generations."""
+    try:
+        _, data = http_json(opener, "GET", f"{BASE}/api/providers")
+    except Exception as e:
+        print(f"WARN providers list failed: {e}")
+        return None
+    conns = data.get("connections") or []
+    for c in conns:
+        if str(c.get("provider") or "").lower() == "pollinations":
+            print(f"==> keep Pollinations provider connection id={c.get('id')}")
+            return c if isinstance(c, dict) else None
+    api_key = (
+        os.environ.get("POLLINATIONS_API_KEY")
+        or (load_env(ROOT / ".env").get("POLLINATIONS_API_KEY") or "")
+    ).strip()
+    if not api_key:
+        api_key = "anonymous"
+    print("==> create Pollinations provider connection (free Flux image head)")
+    for payload in (
+        {
+            "provider": "pollinations",
+            "authType": "apikey",
+            "name": "pollinations-free",
+            "isActive": True,
+            "apiKey": api_key,
+        },
+        {"provider": "pollinations", "name": "pollinations-free", "isActive": True, "apiKey": api_key},
+    ):
+        try:
+            status, body = http_json(opener, "POST", f"{BASE}/api/providers", payload)
+        except urllib.error.HTTPError as e:
+            print(f"WARN create pollinations provider HTTP {e.code}: {e.read()[:200]!r}")
+            continue
+        if status in (200, 201):
+            conn = body.get("connection") if isinstance(body, dict) else None
+            print(f"==> Pollinations provider created id={(conn or {}).get('id')}")
+            return conn if isinstance(conn, dict) else None
+        print(f"WARN create pollinations provider rejected: {body}")
     return None
 
 
@@ -657,60 +699,6 @@ def ensure_web_search_omni_combo(opener) -> None:
     print(f"==> keep Omni combo {WEB_SEARCH_COMBO_NAME} n={len(models)} strategy={strategy}")
 
 
-def smoke_omni_search(key: str) -> None:
-    """Smoke Omni /v1/search — combo web-search only."""
-    combo = WEB_SEARCH_COMBO_NAME
-    body_obj = {"query": "Ho Chi Minh weather", "max_results": 2, "combo": combo}
-    body = json.dumps(body_obj).encode()
-    req = urllib.request.Request(
-        f"{BASE}/v1/search",
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=45) as resp:
-            data = json.loads(resp.read().decode() or "{}")
-        n = len(data.get("results") or [])
-        print(f"==> smoke Omni /v1/search combo={combo!r} results={n}")
-        if n > 0 or data.get("answer"):
-            print(f"==> smoke OK: combo {combo}")
-        else:
-            print(f"WARN smoke combo {combo} returned no results")
-    except urllib.error.HTTPError as e:
-        detail = e.read()[:200]
-        print(f"WARN smoke Omni /v1/search combo HTTP {e.code}: {detail!r}")
-    except Exception as e:
-        print(f"WARN smoke Omni /v1/search combo: {e}")
-
-
-def smoke_router_web_search_combo() -> None:
-    """Smoke Hermes combo web-search via Router Worker (Omni cascade inside)."""
-    url = (os.environ.get("MODEL_ROUTER_URL") or "http://127.0.0.1:8096").rstrip("/")
-    body = json.dumps({"query": "current weather Ho Chi Minh City", "max_results": 2}).encode()
-    req = urllib.request.Request(
-        f"{url}/v1/search",
-        data=body,
-        method="POST",
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            data = json.loads(resp.read().decode() or "{}")
-        backend = data.get("backend") or data.get("used_backend") or ""
-        n = len(data.get("results") or [])
-        print(f"==> smoke Router combo web-search backend={backend!r} results={n}")
-        if n > 0:
-            print("OK: smoke Router combo web-search")
-        else:
-            print("WARN smoke Router web-search returned no results")
-    except Exception as e:
-        print(f"WARN smoke Router web-search: {e}")
-
-
 def ensure_combo_round_robin(opener) -> None:
     payload = {
         "comboStrategy": COMBO_STRATEGY,
@@ -837,6 +825,68 @@ def _is_aihorde_diffusion_model_id(mid: str) -> bool:
     return (mid or "").strip().lower().startswith("aihorde/")
 
 
+def _pollinations_model_slug(mid: str) -> str:
+    low = (mid or "").strip().lower()
+    if not low.startswith("pollinations/"):
+        return ""
+    return low[len("pollinations/") :]
+
+
+_POLLINATIONS_IMAGE_SLUGS = frozenset(
+    {
+        "flux",
+        "flux-2-flex",
+        "flux-2-pro",
+        "klein",
+        "zimage",
+        "qwen-image",
+        "qwen-image-3",
+        "wan-image",
+        "wan-image-pro",
+        "gpt-image-2",
+        "gptimage",
+        "gptimage-large",
+        "dreamshaper",
+        "kontext",
+        "krea",
+        "nanobanana",
+        "nanobanana-2",
+        "nanobanana-pro",
+        "seedream",
+        "seedream-pro",
+        "seedream5",
+        "seedream5-pro",
+        "grok-imagine",
+        "grok-imagine-pro",
+        "p-image",
+        "p-image-edit",
+        "nova-canvas",
+        "ideogram-v4-balanced",
+        "ideogram-v4-quality",
+        "ideogram-v4-turbo",
+    }
+)
+
+
+def _is_pollinations_image_model_id(mid: str) -> bool:
+    slug = _pollinations_model_slug(mid)
+    if not slug or "/" in slug:
+        return False
+    if slug in _POLLINATIONS_IMAGE_SLUGS:
+        return True
+    return any(tok in slug for tok in ("flux", "zimage", "seedream", "nanobanana", "grok-imagine"))
+
+
+def _is_pollinations_flux_model_id(mid: str) -> bool:
+    low = (mid or "").strip().lower()
+    if low == "pollinations/flux":
+        return True
+    slug = _pollinations_model_slug(mid)
+    if not slug or "/" in slug:
+        return False
+    return slug == "flux" or slug.startswith("flux-")
+
+
 def _is_openrouter_image_model_id(mid: str) -> bool:
     low = (mid or "").strip().lower()
     if not low.startswith("openrouter/"):
@@ -896,6 +946,8 @@ def _is_image_output_model(row: dict) -> bool:
         return True
     if _is_image_gen_namespace_junk(mid):
         return False
+    if _is_pollinations_image_model_id(mid):
+        return True
     if _is_aihorde_diffusion_model_id(mid):
         return True
     if _is_comfyui_image_model_id(mid):
@@ -1093,7 +1145,8 @@ def _is_image_gen_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
             return _is_image_output_model(row)
     if not rows:
         return (
-            _is_aihorde_diffusion_model_id(mid)
+            _is_pollinations_image_model_id(mid)
+            or _is_aihorde_diffusion_model_id(mid)
             or _is_openrouter_image_model_id(mid)
             or _is_comfyui_image_model_id(mid)
         )
@@ -1101,8 +1154,10 @@ def _is_image_gen_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
 
 
 def _rank_image_gen_model(mid: str) -> tuple:
-    """Prefer AI Box image generators, then photoreal Horde; demote fast/anime."""
+    """Prefer Pollinations Flux (free), then AI Box; demote Horde/anime."""
     m = (mid or "").strip().lower()
+    if _is_pollinations_flux_model_id(m):
+        return (-2, 0 if "schnell" not in m else 1, m)
     if _is_aibox_image_generation_model(m):
         order = {
             "wan2.7-image-pro": 0,
@@ -1140,6 +1195,27 @@ def list_image_gen_models(api_key: str) -> list[str]:
             found_set.add(mid)
     found = sorted(found_set, key=_rank_image_gen_model)
     return found[:8]
+
+
+def _resolve_image_gen_head(image_ids: list[str], env: dict[str, str] | None = None) -> str:
+    """Pin Pollinations Flux when catalog has it; ignore stale Horde env overrides."""
+    env = env or {}
+    override = (env.get("IMAGE_GEN_HEAD_MEMBER") or os.environ.get("IMAGE_GEN_HEAD_MEMBER") or "").strip().strip('"')
+    flux = [m for m in image_ids if _is_pollinations_flux_model_id(m)]
+    if flux:
+        flux.sort(key=lambda mid: (0 if mid.lower() == "pollinations/flux" else 1, mid.lower()))
+        if override and override in image_ids and _is_pollinations_flux_model_id(override):
+            return override
+        return flux[0]
+    if override and override in image_ids:
+        return override
+    return image_ids[0] if image_ids else ""
+
+
+def _order_image_gen_combo_members(image_ids: list[str], head: str) -> list[str]:
+    if not head or head not in image_ids:
+        return image_ids
+    return [head] + [m for m in image_ids if m != head]
 
 
 def list_vision_models(opener) -> list[str]:
@@ -1246,36 +1322,6 @@ def list_embedding_models(api_key: str, opener=None) -> list[str]:
     return found[:1]
 
 
-def _smoke_embedding_combo(api_key: str) -> None:
-    body = json.dumps({"model": "embedding", "input": "setup smoke embedding"}).encode()
-    req = urllib.request.Request(
-        f"{BASE}/v1/embeddings",
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            data = json.loads(resp.read().decode() or "{}")
-    except urllib.error.HTTPError as e:
-        detail = e.read()[:400]
-        # OpenCode shell members often cannot serve /v1/embeddings yet — do not abort setup.
-        print(
-            f"WARN embedding /v1/embeddings smoke HTTP {e.code}: {detail!r} "
-            f"— keep OpenCode default; swap to an embed-capable member in Omni UI if needed"
-        )
-        return
-    rows = data.get("data") or data.get("embeddings") or []
-    if not rows:
-        print(f"WARN embedding smoke returned no vectors: {str(data)[:300]}")
-        return
-    print("OK: smoke embedding /v1/embeddings")
-
-
 def _put_or_create_combo(
     opener,
     *,
@@ -1317,54 +1363,6 @@ def _put_or_create_combo(
         raise SystemExit(f"combo {name} {action} failed: {body}")
     print(f"OK: {action} combo {name} n={len(model_ids)} first={model_ids[:3]} strategy={want_strategy}")
     return name
-
-
-def _smoke_image_gen_combo(api_key: str, head_model: str = "") -> None:
-    """Verify the preferred (head) image-gen member returns a real image.
-
-    Smoke the head model directly instead of the whole combo: the combo mixes
-    AI Box (fast, photoreal) with free AI Horde members that commonly hang past
-    any sane timeout. The head is the intended photoreal producer (AI Box
-    qwen-image family), so it is the deterministic check that diffusion wiring
-    is correct; at runtime the combo favours it via priority (fallback).
-    """
-    model = (head_model or "").strip() or "image-gen"
-    body = json.dumps(
-        {"model": model, "prompt": "setup smoke tiny skyline", "n": 1, "size": "1280x720"}
-    ).encode()
-    req = urllib.request.Request(
-        f"{BASE}/v1/images/generations",
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            raw = resp.read()
-            data = json.loads(raw.decode() or "{}") if raw else {}
-    except urllib.error.HTTPError as e:
-        detail = e.read()[:400]
-        raise SystemExit(
-            f"image-gen /images/generations smoke HTTP {e.code} for {model!r}: {detail!r} "
-            f"— refill image-gen with AI Horde / Flux members"
-        ) from e
-    if isinstance(data, list):
-        items = data
-    elif isinstance(data, dict):
-        items = data.get("data") or data.get("images") or []
-    else:
-        items = []
-    if not items:
-        raise SystemExit(f"image-gen smoke returned no image data for {model!r}: {str(data)[:300]}")
-    # Omni may return a bare list of {b64_json|url} objects.
-    first = items[0] if isinstance(items[0], dict) else {}
-    if not (first.get("b64_json") or first.get("url")):
-        raise SystemExit(f"image-gen smoke missing b64_json/url for {model!r}: {str(first)[:200]}")
-    print(f"OK: smoke image-gen /images/generations ({model})")
 
 
 def _aibox_image_provider_nodes(opener) -> list[dict]:
@@ -1459,23 +1457,31 @@ def ensure_aibox_image_models(opener) -> None:
                 print(f"WARN {action} {model_id} on {provider[:8]}…: {str(resp)[:200]}")
 
 
-def ensure_media_combos(opener, api_key: str) -> None:
+def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
     """Ensure media combos with capability-matched members (not chat-only OpenCode)."""
-    image_ids = list_image_gen_models(api_key)
-    if not image_ids:
+    all_image_ids = list_image_gen_models(api_key)
+    if not all_image_ids:
         raise SystemExit(
-            "no images-capable models in Omni catalog — connect AI Horde / image provider"
+            "no images-capable models in Omni catalog — connect Pollinations / AI Horde / image provider"
         )
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = {c.get("name"): c for c in (data.get("combos") or []) if isinstance(c, dict)}
     catalog = _v1_models(api_key)
     cur_img = _combo_model_ids(combos.get("image-gen"))
     bad_img = [m for m in cur_img if _is_bad_image_gen_combo_member(m, catalog)]
-    aibox_want = [m for m in image_ids if _is_aibox_image_generation_model(m)]
+    aibox_want = [m for m in all_image_ids if _is_aibox_image_generation_model(m)]
     aibox_have = [m for m in cur_img if _is_aibox_image_generation_model(m)]
+    pol_head = _resolve_image_gen_head(all_image_ids, env)
     if aibox_want:
-        # AI Box photoreal heads only — free AI Horde fallbacks hang and break scenic delivery.
-        image_ids = aibox_want[:4]
+        image_ids: list[str] = []
+        if pol_head:
+            image_ids.append(pol_head)
+        for mid in aibox_want[:4]:
+            if mid not in image_ids:
+                image_ids.append(mid)
+    else:
+        image_ids = all_image_ids[:8]
+    image_ids = _order_image_gen_combo_members(image_ids, pol_head or (image_ids[0] if image_ids else ""))
     horde_in_combo = [m for m in cur_img if _is_aihorde_diffusion_model_id(m)]
     need_img = (
         (not cur_img)
@@ -1483,8 +1489,9 @@ def ensure_media_combos(opener, api_key: str) -> None:
         or (bool(aibox_want) and not aibox_have)
         or (bool(aibox_want) and bool(horde_in_combo))
         or not set(cur_img).intersection(set(image_ids))
+        or (pol_head and (not cur_img or cur_img[0] != pol_head))
     )
-    want_head = image_ids[0] if image_ids else ""
+    want_head = pol_head or (image_ids[0] if image_ids else "")
     cur_head = cur_img[0] if cur_img else ""
     if (
         cur_head
@@ -1492,30 +1499,31 @@ def ensure_media_combos(opener, api_key: str) -> None:
         and cur_head != want_head
         and _rank_image_gen_model(cur_head) > _rank_image_gen_model(want_head)
     ):
-        print(f"==> image-gen head {cur_head!r} → {want_head!r} (photoreal-first reorder)")
+        print(f"==> image-gen head {cur_head!r} → {want_head!r} (Pollinations Flux / photoreal-first)")
         need_img = True
     if bad_img:
         print(
             f"==> image-gen has invalid members {bad_img[:6]!r} "
-            f"(drop img-gen chat junk; keep AI Box image generators) — refilling"
+            f"(drop img-gen chat junk; keep image generators) — refilling"
         )
     elif aibox_want and not aibox_have:
         print(f"==> image-gen missing AI Box members {aibox_want[:4]!r} — refilling")
     elif aibox_want and horde_in_combo:
-        print(f"==> image-gen drops AI Horde fallbacks {horde_in_combo[:4]!r} — AI Box only")
+        print(f"==> image-gen drops AI Horde fallbacks {horde_in_combo[:4]!r} — Pollinations / AI Box")
+    elif pol_head and pol_head not in cur_img:
+        print(f"==> image-gen adds Pollinations Flux head {pol_head!r}")
     _put_or_create_combo(
         opener,
         name="image-gen",
-        description="Image generation — AI Box / AI Horde / image-capable (diffusion only)",
+        description="Image generation — Pollinations Flux / AI Box / image-capable (diffusion only)",
         model_ids=image_ids,
         force=need_img,
         strategy=IMAGE_GEN_COMBO_STRATEGY,
     )
-    want_head = image_ids[0] if image_ids else ""
+    want_head = pol_head or (image_ids[0] if image_ids else "")
     if want_head:
         _set_stack_env_key("IMAGE_GEN_HEAD_MEMBER", want_head)
         print(f"OK: pinned IMAGE_GEN_HEAD_MEMBER={want_head}")
-    _smoke_image_gen_combo(api_key, head_model=want_head)
 
     vision_ids = list_vision_models(opener)
     if not vision_ids:
@@ -1563,7 +1571,6 @@ def ensure_media_combos(opener, api_key: str) -> None:
             model_ids=emb_ids,
             force=need_emb,
         )
-        _smoke_embedding_combo(api_key)
     elif not combos.get("embedding"):
         emb = list_oc_models(opener)[:5] or list(OPENCODE_FREE_FALLBACK[:5])
         _put_or_create_combo(
@@ -1618,6 +1625,7 @@ def main() -> int:
 
     unblock_opencode(opener)
     ensure_opencode_provider(opener)
+    ensure_pollinations_provider(opener)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
     assert_combo_oc_only(opener, combo)
@@ -1626,7 +1634,7 @@ def main() -> int:
     ensure_search_providers(opener)
     ensure_web_search_omni_combo(opener)
     ensure_aibox_image_models(opener)
-    ensure_media_combos(opener, key)
+    ensure_media_combos(opener, key, env)
     ensure_api_key_allows_combos(opener, key)
     pin_media_combos(env)
     set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
@@ -1656,10 +1664,8 @@ def main() -> int:
     recreate_model_router()
     time.sleep(3)
     patch_hermes_model_router(key, combo)
-    # Smoke hermes combo via Omni /v1/chat/completions (OpenCode cloud members).
+    # Verify hermes combo via Omni /v1/chat/completions (OpenCode cloud members).
     verify(key, combo)
-    smoke_omni_search(key)
-    smoke_router_web_search_combo()
     print(
         f"OK: first-setup omni-router complete "
         f"(hermes+classifier OpenCode; image-gen image-capable; vision-ocr multimodal; "
