@@ -1,3 +1,17 @@
+## 2026-09-02 08:45 +07 — first-setup: Pollinations Flux image head; drop setup smokes
+
+### Symptom
+`first-setup-omnirouter` aborted on VPS when AI Horde head diffusion exceeded setup timeout; `IMAGE_GEN_HEAD_MEMBER` pinned slow Horde instead of free Flux.
+
+### Root cause
+Setup smoke-tested `/images/generations` against the ranked head (AI Horde ICBINP when no AI Box); Horde workers routinely exceed any sane first-setup timeout.
+
+### Fix (core)
+Pollinations provider is created when missing (`POLLINATIONS_API_KEY` or anonymous placeholder); Flux slug is ranked first and pinned as `IMAGE_GEN_HEAD_MEMBER`. Pollinations chat/community paths are excluded from image combo membership. Setup smoke probes removed.
+
+### Prevent recurrence
+Do not hard-fail first-setup on free diffusion latency; pin a fast free Flux head instead of Horde for scenic delivery.
+
 ## 2026-09-02 07:30 +07 — router-worker URL; reasoning_effort; labeled weather-on-image
 
 ### Symptom
