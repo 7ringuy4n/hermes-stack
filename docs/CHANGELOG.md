@@ -1,3 +1,7 @@
+## 2026-09-02 10:10 +07 — setup-zalo: log before sudo password prompt
+
+- `zalo_sudo_hint` warns when sudo password is needed (hidden input) before apt/npm install steps.
+
 ## 2026-09-02 10:00 +07 — setup-zalo: print Zalo QR in terminal
 
 - `zalo_qr_login_phase` stops the background bridge and runs `hermes-zalo-plugin login` in the foreground so ASCII QR renders in the SSH console (not browser-only).

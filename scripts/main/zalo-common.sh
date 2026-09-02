@@ -184,11 +184,18 @@ zalo_wait_bridge_port() {
 }
 
 # Non-interactive apt/sudo for headless VPS (avoids debconf/readline hangs on setup-zalo).
+zalo_sudo_hint() {
+  if [[ -z "${ASSISTANT_SUDO_PASSWORD:-}" ]] && [[ "$(id -u)" -ne 0 ]]; then
+    zalo_log "sudo password required next (typing is hidden) — or set ASSISTANT_SUDO_PASSWORD in .env"
+  fi
+}
+
 zalo_sudo_run() {
   local env_prefix="DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a"
   if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
     printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S -E env $env_prefix "$@"
   else
+    zalo_sudo_hint
     $ZALO_SUDO env $env_prefix "$@"
   fi
 }
@@ -224,6 +231,7 @@ zalo_need_node() {
     zalo_log "WARN: Node.js $(node -v) is too old — installing Node 20"
   fi
 
+  zalo_log "Node.js not found — installing Node 20 (needs sudo)"
   if ! command -v curl >/dev/null 2>&1; then
     zalo_log "install curl (required for Node.js repo)"
     zalo_wait_apt_lock || return 1
@@ -280,6 +288,7 @@ zalo_install_plugin_package() {
       rm -rf "$tmp"
     }
   else
+    zalo_sudo_hint
     $ZALO_SUDO env DEBIAN_FRONTEND=noninteractive npm install -g hermes-zalo-plugin || {
       local tmp
       tmp="$(mktemp -d)"
