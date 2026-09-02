@@ -1,16 +1,16 @@
-## 2026-09-02 16:30 +07 — image-gen: provider-models wiring; combo-only diffusion
+## 2026-09-02 16:45 +07 — image-gen: Omni provider-models sync; combo-only diffusion
 
 ### Symptom
 Omni `image-gen` combo listed custom-provider models (e.g. `ai-box/qwen-image-2.0`) but `/v1/images/generations` returned `No images-capable targets in combo "image-gen"`. Host diffusion fell back to slow Horde head; Zalo showed "Đang vẽ hình…" before scenic delivery.
 
 ### Root cause
-Catalog rows with `type=image` were added to the combo without matching `provider-models` entries (`apiFormat=images-generations`). `IMAGE_GEN_HEAD_MEMBER` bypassed combo failover to aihorde.
+Combo members used catalog ids without matching `provider-models` on an `images-generations` provider node. Chat-only provider nodes (`apiType=chat`) do not route `/images/generations`. Legacy `IMAGE_GEN_HEAD_MEMBER` bypassed combo failover.
 
 ### Fix (core)
-`list_image_gen_models` uses wired `provider-models` for custom `images-generations` nodes; catalog-only rows for other providers. `ensure_provider_image_models` registers catalog image rows on custom nodes. Host calls combo `image-gen` only; first-setup clears `IMAGE_GEN_HEAD_MEMBER`. Adapter drops drawing gate announce.
+`ensure_images_generations_nodes` uses Omni provider-nodes API (chat → images-generations sibling). `ensure_provider_image_models` syncs from `/api/providers/{id}/models` onto images-generations provider-models. Combo members = wired prefix/model ids only. Host diffusion uses combo `image-gen` only. Obsolete env keys cleared via session temp script — not in first-setup.
 
 ### Prevent recurrence
-Custom provider prefixes must be resolved via provider-nodes + provider-models metadata — never hardcode prefixes or pin head members outside the combo.
+Custom image providers must be wired through OmniRoute provider-nodes + provider-models; do not parse provider prefixes in setup scripts. Do not embed obsolete env key cleanup in durable setup scripts.
 
 ## 2026-09-02 11:45 +07 — Zalo: search+image workflow split + image-gen single-provider fail
 

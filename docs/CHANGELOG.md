@@ -1,6 +1,6 @@
 ## 2026-09-02 16:30 +07 — image-gen: provider-models wiring; drop head fallback
 
-- `first-setup-omnirouter`: auto-creates `images-generations` provider nodes from chat nodes when catalog has image slugs under the same prefix; registers provider-models; combo members use wired prefix ids (excludes aihorde).
+- `first-setup-omnirouter`: images-generations provider nodes via Omni provider-nodes API; provider-models synced from `/api/providers/{id}/models`; combo uses wired prefix/model ids only (excludes aihorde).
 - Zalo host diffusion uses combo `image-gen` only (no pinned head / aihorde fallback); on failure returns media-out line only.
 - Zalo adapter: removed "Đang vẽ hình…" gate announce for scenic/image shortcuts.
 

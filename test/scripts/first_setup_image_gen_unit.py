@@ -74,11 +74,28 @@ def test_rank_prefers_images_generations_metadata() -> None:
     assert mod._rank_image_gen_model(horde, catalog) < mod._rank_image_gen_model(flux, catalog)
 
 
-def test_local_id_looks_like_image_model() -> None:
-    assert mod._local_id_looks_like_image_model("qwen-image-3.0") is True
-    assert mod._local_id_looks_like_image_model("wan2.7-image-pro") is True
-    assert mod._local_id_looks_like_image_model("wan2.7-i2v") is False
-    assert mod._local_id_looks_like_image_model("deepseek-v4-flash") is False
+def test_connection_model_helpers() -> None:
+    class _Opener:
+        pass
+
+    opener = _Opener()
+    connections = [{"id": "c1", "provider": "node-chat-1"}]
+
+    def fake_providers(op, method, url, body=None, timeout=25):
+        if url.endswith("/api/providers") and method == "GET":
+            return 200, {"connections": connections}
+        if "/api/providers/c1/models" in url and method == "GET":
+            return 200, {"models": [{"id": "wan2.7-image-pro"}, {"id": "qwen-image-2.0"}]}
+        raise AssertionError(f"unexpected {method} {url}")
+
+    orig = mod.http_json
+    mod.http_json = fake_providers
+    try:
+        conn = mod._connection_for_provider_node(opener, "node-chat-1")
+        assert conn and conn.get("id") == "c1"
+        assert mod._connection_model_ids(opener, "c1") == ["wan2.7-image-pro", "qwen-image-2.0"]
+    finally:
+        mod.http_json = orig
 
 
 def test_wired_custom_provider_image_ids() -> None:
@@ -257,7 +274,7 @@ def test_web_search_member_order() -> None:
 def main() -> None:
     test_image_output_from_catalog_metadata()
     test_rank_prefers_images_generations_metadata()
-    test_local_id_looks_like_image_model()
+    test_connection_model_helpers()
     test_wired_custom_provider_image_ids()
     test_vision_rejects_blind_supports_vision_flag()
     test_image_gen_combo_strategy_is_priority()
