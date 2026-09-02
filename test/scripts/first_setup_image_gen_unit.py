@@ -49,8 +49,54 @@ def test_resolve_image_gen_head_pollinations() -> None:
 
 def test_image_gen_combo_strategy_is_priority() -> None:
     assert mod.IMAGE_GEN_COMBO_STRATEGY == "priority"
+    assert mod.VISION_OCR_COMBO_STRATEGY == "priority"
     assert mod.COMBO_STRATEGY == "round-robin"
     assert mod.IMAGE_GEN_COMBO_STRATEGY != mod.COMBO_STRATEGY
+    assert mod.VISION_OCR_COMBO_STRATEGY != mod.COMBO_STRATEGY
+
+
+def test_put_or_create_combo_strategy_only_keeps_members() -> None:
+    original_http = getattr(mod, "http_json", None)
+    captured = {}
+
+    def fake_http(opener, method, url, body=None, timeout=25):
+        if url.endswith("/api/combos") and method == "GET":
+            return 200, {
+                "combos": [
+                    {
+                        "id": "v1",
+                        "name": "vision-ocr",
+                        "strategy": "round-robin",
+                        "models": [
+                            {"model": "oc/mimo-v2.5-free", "priority": 1},
+                            {"model": "oc/big-pickle", "priority": 2},
+                        ],
+                    }
+                ]
+            }
+        captured["method"] = method
+        captured["body"] = body
+        return 200, {"id": "v1"}
+
+    mod.http_json = fake_http
+    try:
+        mod._put_or_create_combo(
+            object(),
+            name="vision-ocr",
+            description="vision",
+            model_ids=["oc/big-pickle", "oc/mimo-v2.5-free"],
+            force=False,
+            strategy="priority",
+        )
+    finally:
+        if original_http is not None:
+            mod.http_json = original_http
+        else:
+            del mod.http_json
+    assert captured.get("method") == "PUT"
+    assert captured.get("body", {}).get("strategy") == "priority"
+    models = [m["model"] for m in captured["body"]["models"]]
+    assert models == ["oc/mimo-v2.5-free", "oc/big-pickle"]
 
 
 def test_put_or_create_combo_uses_want_strategy() -> None:
@@ -90,6 +136,7 @@ def main() -> None:
     test_rank_prefers_pollinations_flux()
     test_resolve_image_gen_head_pollinations()
     test_image_gen_combo_strategy_is_priority()
+    test_put_or_create_combo_strategy_only_keeps_members()
     test_put_or_create_combo_uses_want_strategy()
     print("OK first_setup_image_gen_unit")
 

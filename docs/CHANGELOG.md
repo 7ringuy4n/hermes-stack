@@ -1,3 +1,7 @@
+## 2026-09-02 09:15 +07 — vision-ocr combo: priority (fallback) strategy
+
+- `first-setup-omnirouter` sets `vision-ocr` combo strategy to `priority` (head-first fallback), matching `image-gen`; strategy-only updates preserve existing members.
+
 ## 2026-09-02 09:00 +07 — first-setup: catalog-only media combos; drop vendor hardcoding
 
 - `first-setup-omnirouter` seeds image-gen / vision-ocr / embedding from Omni catalog only when combos are empty; no AI Box whitelist, Horde filters, or custom-model registration.

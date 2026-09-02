@@ -7,7 +7,7 @@
 4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members
 5) Ensure media combos: image-gen (image-capable), vision-ocr (supportsVision), embedding
 6) Pin IMAGE_GEN_COMBO (image-gen) / OCR_MODEL (vision-ocr) from media worker state
-7) Set combo strategy preference (round-robin; image-gen uses fallback/priority)
+7) Set combo strategy preference (round-robin default; image-gen + vision-ocr use priority/fallback)
 8) Ensure Search: Tavily → Firecrawl → SearXNG
 9) Point Hermes at model-router; recreate router-worker for the key
 
@@ -34,8 +34,9 @@ COMBO_NAME = os.environ.get("OMNIROUTER_DEFAULT_COMBO", "hermes")
 CLASSIFY_COMBO_NAME = os.environ.get("OMNIROUTER_CLASSIFY_COMBO", "classifier")
 COMBO_STRATEGY = os.environ.get("OMNIROUTER_COMBO_STRATEGY", "round-robin")
 COMBO_STICKY_LIMIT = int(os.environ.get("OMNIROUTER_COMBO_STICKY_LIMIT", "1"))
-# image-gen combo uses priority strategy so the head member drains before fallbacks.
+# image-gen / vision-ocr combos use priority (Omni fallback: head member first).
 IMAGE_GEN_COMBO_STRATEGY = os.environ.get("OMNIROUTER_IMAGE_GEN_COMBO_STRATEGY", "priority")
+VISION_OCR_COMBO_STRATEGY = os.environ.get("OMNIROUTER_VISION_OCR_COMBO_STRATEGY", "priority")
 
 OPENCODE_MODELS_URL = "https://opencode.ai/zen/v1/models"
 OPENCODE_FREE_FALLBACK = [
@@ -1146,11 +1147,13 @@ def _put_or_create_combo(
     current = _combo_model_ids(existing)
     want_strategy = (strategy or COMBO_STRATEGY).strip() or "round-robin"
     cur_strategy = (existing.get("strategy") or existing.get("comboStrategy") or "").strip() if existing else ""
-    if existing and current and not force and (not want_strategy or cur_strategy == want_strategy):
-        print(f"==> keep combo {name} n={len(current)} first={current[:3]} strategy={cur_strategy}")
-        return name
-    if existing and current and cur_strategy != want_strategy:
-        print(f"==> combo {name} strategy {cur_strategy!r} → {want_strategy!r}")
+    if existing and current and not force:
+        if want_strategy and cur_strategy != want_strategy:
+            print(f"==> combo {name} strategy {cur_strategy!r} → {want_strategy!r}")
+            model_ids = list(current)
+        elif not want_strategy or cur_strategy == want_strategy:
+            print(f"==> keep combo {name} n={len(current)} first={current[:3]} strategy={cur_strategy}")
+            return name
     models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(model_ids)]
     payload = {
         "name": name,
@@ -1211,6 +1214,7 @@ def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
         description="Vision OCR — multimodal chat (supportsVision catalog)",
         model_ids=vision_ids,
         force=not cur_vis,
+        strategy=VISION_OCR_COMBO_STRATEGY,
     )
 
     emb_ids = list_embedding_models(api_key, opener=opener)
@@ -1294,6 +1298,7 @@ def main() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
     set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
     set_env_key(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
+    set_env_key(ROOT / ".env", "OMNIROUTER_VISION_OCR_COMBO_STRATEGY", VISION_OCR_COMBO_STRATEGY)
     set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "active"))
     # Hermes-facing Router Worker: combo web-search via Omni only (no direct adapter chain).
     _clear_stack_env_keys(
