@@ -942,6 +942,8 @@ def _is_image_output_model(row: dict) -> bool:
         return True
     if _row_api_format(row) == "images-generations":
         return True
+    if str(row.get("type") or "").strip().lower() == "image":
+        return True
     caps = row.get("capabilities") if isinstance(row.get("capabilities"), dict) else {}
     if caps.get("image_generation") is True:
         return True
@@ -1004,6 +1006,104 @@ def _rank_image_gen_row(row: dict) -> tuple:
     return (tier, provider_bonus, mid)
 
 
+def _images_generations_provider_prefixes(opener) -> set[str]:
+    return {
+        str(n.get("prefix") or "").strip()
+        for n in _images_generations_provider_nodes(opener)
+        if str(n.get("prefix") or "").strip()
+    }
+
+
+def _node_catalog_prefix(node: dict) -> str:
+    return str(node.get("prefix") or node.get("id") or "").strip()
+
+
+def _local_id_looks_like_image_model(local_id: str) -> bool:
+    """Heuristic for custom-provider catalog rows missing type/endpoints metadata."""
+    low = (local_id or "").strip().lower()
+    if not low or "image" not in low:
+        return False
+    for bad in ("video", "i2v", "t2v", "r2v", "videoedit"):
+        if bad in low:
+            return False
+    return True
+
+
+def _catalog_image_ids_for_prefix(catalog: list[dict], prefix: str) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for row in _catalog_rows_for_provider(catalog, prefix):
+        mid = str(row.get("id") or "").strip()
+        if not mid or mid in seen:
+            continue
+        local = _provider_model_local_id(prefix, mid)
+        if _is_image_output_model(row) or _local_id_looks_like_image_model(local):
+            seen.add(mid)
+            out.append(mid)
+    return out
+
+
+def _openai_compatible_provider_nodes(opener) -> list[dict]:
+    try:
+        _, data = http_json(opener, "GET", f"{BASE}/api/provider-nodes")
+    except Exception as e:
+        print(f"WARN provider-nodes list failed: {e}")
+        return []
+    return [
+        n
+        for n in (data.get("nodes") or [])
+        if isinstance(n, dict) and str(n.get("type") or "").strip() == "openai-compatible"
+    ]
+
+
+def _has_images_generations_node(nodes: list[dict], prefix: str) -> bool:
+    want = (prefix or "").strip().lower()
+    for node in nodes:
+        if str(node.get("prefix") or "").strip().lower() != want:
+            continue
+        if str(node.get("apiType") or "").strip().lower() == "images-generations":
+            return True
+    return False
+
+
+def ensure_images_generations_nodes(opener, api_key: str) -> None:
+    """Clone chat openai-compatible nodes to images-generations when catalog has image slugs."""
+    chat_nodes = _openai_compatible_provider_nodes(opener)
+    if not chat_nodes:
+        return
+    catalog = _v1_models(api_key)
+    all_nodes = chat_nodes
+    try:
+        _, data = http_json(opener, "GET", f"{BASE}/api/provider-nodes")
+        all_nodes = data.get("nodes") or chat_nodes
+    except Exception:
+        pass
+    for node in chat_nodes:
+        if str(node.get("apiType") or "").strip().lower() != "chat":
+            continue
+        prefix = str(node.get("prefix") or "").strip()
+        base_url = str(node.get("baseUrl") or "").strip()
+        name = str(node.get("name") or prefix or "custom").strip()
+        if not prefix or not base_url:
+            continue
+        if not _catalog_image_ids_for_prefix(catalog, prefix):
+            continue
+        if _has_images_generations_node(all_nodes, prefix):
+            continue
+        payload = {
+            "type": "openai-compatible",
+            "name": f"{name} Images",
+            "prefix": prefix,
+            "apiType": "images-generations",
+            "baseUrl": base_url,
+        }
+        status, resp = http_json(opener, "POST", f"{BASE}/api/provider-nodes", payload)
+        if status in (200, 201):
+            print(f"OK: created images-generations node prefix={prefix!r}")
+        else:
+            print(f"WARN create images-generations node {prefix!r}: {str(resp)[:200]}")
+
+
 def _images_generations_provider_ids(opener) -> set[str]:
     return {
         str(n.get("id") or "").strip()
@@ -1016,12 +1116,16 @@ def _wired_custom_provider_image_ids(opener) -> list[str]:
     """Catalog ids for custom provider nodes wired to /images/generations."""
     out: list[str] = []
     seen: set[str] = set()
-    for provider in sorted(_images_generations_provider_ids(opener)):
-        state = _custom_models_by_provider(opener, provider)
+    for node in _images_generations_provider_nodes(opener):
+        node_id = str(node.get("id") or "").strip()
+        prefix = _node_catalog_prefix(node)
+        if not node_id or not prefix:
+            continue
+        state = _custom_models_by_provider(opener, node_id)
         for model_id, row in state.items():
             if _custom_image_model_action(row) != "":
                 continue
-            full = f"{provider}/{model_id}"
+            full = f"{prefix}/{model_id}"
             if full in seen:
                 continue
             seen.add(full)
@@ -1197,7 +1301,7 @@ def list_image_gen_models(
 ) -> list[str]:
     """Routable /images/generations ids — custom providers via provider-models, else catalog."""
     catalog = _v1_models(api_key)
-    custom = _images_generations_provider_ids(opener) if opener is not None else set()
+    custom = _images_generations_provider_prefixes(opener) if opener is not None else set()
     found: list[str] = []
     seen: set[str] = set()
     if opener is not None:
@@ -1219,6 +1323,7 @@ def list_image_gen_models(
     ids = found[:8]
     if not _pollinations_api_key(env):
         ids = [mid for mid in ids if not str(mid).lower().startswith("pollinations/")]
+    ids = [mid for mid in ids if not str(mid).lower().startswith("aihorde/")]
     return ids
 
 
@@ -1449,22 +1554,22 @@ def _provider_model_local_id(provider: str, full_id: str) -> str:
 
 def ensure_provider_image_models(opener, api_key: str) -> None:
     """Register/repair custom provider models for /images/generations (catalog-driven)."""
-    nodes = _images_generations_provider_nodes(opener)
-    if not nodes:
+    if not _images_generations_provider_nodes(opener):
         print("NOTE: no images-generations provider node — skip custom image-model registration")
         return
     catalog = _v1_models(api_key)
-    for node in nodes:
-        provider = str(node.get("id") or "").strip()
-        if not provider:
+    for node in _images_generations_provider_nodes(opener):
+        node_id = str(node.get("id") or "").strip()
+        prefix = _node_catalog_prefix(node)
+        if not node_id or not prefix:
             continue
-        state = _custom_models_by_provider(opener, provider)
+        state = _custom_models_by_provider(opener, node_id)
         for model_id, existing in state.items():
             action = _custom_image_model_action(existing)
             if not action:
                 continue
             body = {
-                "provider": provider,
+                "provider": node_id,
                 "modelId": model_id,
                 "modelName": existing.get("modelName") or model_id,
                 "apiFormat": "images-generations",
@@ -1472,21 +1577,19 @@ def ensure_provider_image_models(opener, api_key: str) -> None:
             }
             status, resp = http_json(opener, "PUT", f"{BASE}/api/provider-models", body)
             if status in (200, 201):
-                print(f"OK: fix custom image model {provider[:8]}…/{model_id} (images-generations)")
+                print(f"OK: fix custom image model {prefix}/{model_id} (images-generations)")
             else:
-                print(f"WARN fix {model_id} on {provider[:8]}…: {str(resp)[:200]}")
-        for row in _catalog_rows_for_provider(catalog, provider):
-            if not _catalog_row_needs_provider_model_registration(row):
-                continue
+                print(f"WARN fix {model_id} on {prefix}: {str(resp)[:200]}")
+        for row in _catalog_rows_for_provider(catalog, prefix):
             full_id = str(row.get("id") or "").strip()
-            local_id = _provider_model_local_id(provider, full_id)
+            local_id = _provider_model_local_id(prefix, full_id)
             if not local_id or local_id in state or full_id in state:
                 continue
-            action = _custom_image_model_action(state.get(local_id))
-            if not action:
+            register = _catalog_row_needs_provider_model_registration(row)
+            if not register and not _local_id_looks_like_image_model(local_id):
                 continue
             body = {
-                "provider": provider,
+                "provider": node_id,
                 "modelId": local_id,
                 "modelName": local_id,
                 "apiFormat": "images-generations",
@@ -1494,9 +1597,9 @@ def ensure_provider_image_models(opener, api_key: str) -> None:
             }
             status, resp = http_json(opener, "POST", f"{BASE}/api/provider-models", body)
             if status in (200, 201):
-                print(f"OK: add custom image model {provider[:8]}…/{local_id} (images-generations)")
+                print(f"OK: add custom image model {prefix}/{local_id} (images-generations)")
             else:
-                print(f"WARN add {local_id} on {provider[:8]}…: {str(resp)[:200]}")
+                print(f"WARN add {local_id} on {prefix}: {str(resp)[:200]}")
 
 
 def _custom_models_by_provider(opener, provider: str) -> dict[str, dict]:
@@ -1652,6 +1755,7 @@ def main() -> int:
     unblock_opencode(opener)
     ensure_opencode_provider(opener)
     ensure_pollinations_provider(opener, env)
+    ensure_images_generations_nodes(opener, key)
     ensure_provider_image_models(opener, key)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)

@@ -74,6 +74,13 @@ def test_rank_prefers_images_generations_metadata() -> None:
     assert mod._rank_image_gen_model(horde, catalog) < mod._rank_image_gen_model(flux, catalog)
 
 
+def test_local_id_looks_like_image_model() -> None:
+    assert mod._local_id_looks_like_image_model("qwen-image-3.0") is True
+    assert mod._local_id_looks_like_image_model("wan2.7-image-pro") is True
+    assert mod._local_id_looks_like_image_model("wan2.7-i2v") is False
+    assert mod._local_id_looks_like_image_model("deepseek-v4-flash") is False
+
+
 def test_wired_custom_provider_image_ids() -> None:
     class _Opener:
         pass
@@ -85,10 +92,10 @@ def test_wired_custom_provider_image_ids() -> None:
     ]
 
     def fake_nodes(op):
-        return [{"id": "ai-box", "apiType": "images-generations"}]
+        return [{"id": "openai-compatible-images-abc", "prefix": "ai-box", "apiType": "images-generations"}]
 
     def fake_custom(op, provider):
-        if provider == "ai-box":
+        if provider == "openai-compatible-images-abc":
             return {
                 "qwen-image-2.0": {
                     "id": "qwen-image-2.0",
@@ -250,6 +257,7 @@ def test_web_search_member_order() -> None:
 def main() -> None:
     test_image_output_from_catalog_metadata()
     test_rank_prefers_images_generations_metadata()
+    test_local_id_looks_like_image_model()
     test_wired_custom_provider_image_ids()
     test_vision_rejects_blind_supports_vision_flag()
     test_image_gen_combo_strategy_is_priority()
