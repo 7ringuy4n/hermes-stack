@@ -1,3 +1,10 @@
+## 2026-09-02 07:30 +07 — router-worker URL; reasoning_effort; labeled weather-on-image
+
+- Default LLM proxy URL is `router-worker:8096` (legacy `model-router` docker alias removed); `ROUTER_WORKER_URL` env preferred over `MODEL_ROUTER_URL`.
+- Classify schema adds `reasoning_effort` (low|medium|high|max); router-worker forwards it to OmniRouter chat upstream.
+- Classify prompts: prior-turn recap, weather-on-image → labeled-scene (not weather-scene); search+image contract detection for host shortcuts.
+- Info-card shortcut ack + off-thread generation; session records image delivery for follow-up context.
+
 ## 2026-09-01 21:30 +07 — classify Local now for scene lighting; drop host lighting heuristics
 
 - Classify user template now includes `Local now` (wall clock from timezone) so the classifier LLM sets SCENE time-of-day lighting for weather/scenic images.

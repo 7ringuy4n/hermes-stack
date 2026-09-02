@@ -182,6 +182,12 @@ def main() -> int:
     )
     assert search["skill"] == "web_search"
     assert search["process_original_message"] is True
+    coding = normalize_plan(
+        {"task_hint": "coding", "instructions": ["fix bug"], "process_original_message": True},
+        "fix bug",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert coding.get("reasoning_effort") == "high"
     print("llm_classify_unit OK")
     return 0
 

@@ -34,3 +34,4 @@ depends_on: 0-based int array
 uncertain: bool (omit or false when sure)
 missing: string array (time|destination|output_type) when uncertain
 tasks: optional array of independent schedule objects. Each is a full create (task_hint, task_type, skill, skill_action, instructions, schedule_form, delay_seconds, clock_hm, cron_expr, cadence, target_channel, schedule_delivery, timezone_source, schedule_resolution). Use tasks[] when two+ creates have different clocks, delays, or destinations. Omit tasks[] for a single wrapper job.
+reasoning_effort: low|medium|high|max or null — how hard the downstream chat model must think for this turn. Emit on every plan. Greeting/simple Q&A/schedule extract/OCR-read/search-only synthesis=low; normal coding/document analysis=medium; debugging/complex coding/architecture/security/multi-step planning=high; extremely complex reasoning=max. Classify/routing itself is always low when you are only classifying.

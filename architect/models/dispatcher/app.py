@@ -149,7 +149,7 @@ MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 WEB_SEARCH_URL = (
     os.environ.get("WEB_SEARCH_URL")
     or os.environ.get("MODEL_ROUTER_URL")
-    or "http://model-router:8096"
+    or "http://router-worker:8096"
 ).rstrip("/")
 
 

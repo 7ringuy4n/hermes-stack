@@ -447,6 +447,7 @@ _classify_skip_until: dict[str, float] = {}
 _CLASSIFY_SKIP_TTL_S = float(os.environ.get("CLASSIFY_SKIP_TTL_S") or "300")
 # Upstream dead / inactive / bad gateway / wrong-schema members — skip that combo briefly.
 _CLASSIFY_SKIP_HTTP = {400, 401, 403, 404, 429, 502, 503}
+REASONING_EFFORTS = ("low", "medium", "high", "max")
 _OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
@@ -466,6 +467,37 @@ def strip_prior_for_classify(text: str) -> str:
         blob = blob[:start] + blob[end + len(_PRIOR_END) :]
     cleaned = blob.strip()
     return cleaned or (text or "").strip()
+
+
+def _coerce_reasoning_effort(raw: Any) -> str | None:
+    s = str(raw or "").strip().lower()
+    return s if s in REASONING_EFFORTS else None
+
+
+def infer_reasoning_effort(hint: str, task_type: str, execution_class: str) -> str:
+    h = (hint or "").strip().lower()
+    tt = (task_type or "").strip().lower()
+    ec = (execution_class or "").strip().lower()
+    if h == "coding" or tt == "coding":
+        return "high"
+    if h == "schedule" or ec == "schedule" or tt.endswith("_schedule") or tt == "create_schedule":
+        return "low"
+    if tt in {"search", "knowledge", "file_processing"} or h in {"search", "file", "knowledge"}:
+        return "low"
+    if h in {"tool", "unknown"} and tt == "media_generation":
+        return "low"
+    if h == "normal" and tt == "chat":
+        return "low"
+    return "medium"
+
+
+def _classify_has_thread_context(raw: str, *, attachments: str, quoted: str) -> bool:
+    if attachments and attachments.strip().lower() not in {"", "none"}:
+        return True
+    if quoted and quoted.strip().lower() not in {"", "none"}:
+        return True
+    low = (raw or "").lower()
+    return _PRIOR_START in low or "[quoted message]" in low
 
 
 def _coerce_output_type(raw: Any) -> str:
@@ -967,6 +999,10 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "poster_n": _coerce_poster_n(src.get("poster_n")),
         "poster_phrase": (str(src.get("poster_phrase") or "").strip()[:80] or None),
         "poster_bw": src.get("poster_bw") if isinstance(src.get("poster_bw"), bool) else None,
+        "reasoning_effort": (
+            _coerce_reasoning_effort(src.get("reasoning_effort"))
+            or infer_reasoning_effort(hint, task_type, exec_cls)
+        ),
         "uncertain": bool(src.get("uncertain") is True),
         "missing": [
             str(x).strip().lower()
@@ -990,11 +1026,14 @@ async def classify_with_llm(
 ) -> dict[str, Any]:
     cfg = _load_cfg()
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
-    blob = strip_prior_for_classify((text or "").strip())
+    raw = (text or "").strip()
+    blob = strip_prior_for_classify(raw)
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
-    # Ultra-short probes (e.g. "ê", "hi") — skip LLM; weak models misclassify these.
-    if len(blob) <= 4:
+    # Ultra-short probes (e.g. "ê", "hi") — skip LLM unless thread still carries context.
+    if len(blob) <= 4 and not _classify_has_thread_context(
+        raw, attachments=attachments, quoted=quoted
+    ):
         plan = normalize_plan(
             {"task_hint": "normal", "instructions": [blob], "process_original_message": True},
             blob,

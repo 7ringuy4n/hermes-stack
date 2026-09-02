@@ -31,7 +31,9 @@ from classify import (  # noqa: E402
     TASK_HINTS,
     classify_with_llm,
     failed_plan,
+    infer_reasoning_effort,
     outbound_with_llm,
+    _coerce_reasoning_effort,
 )
 from chat_norm import (  # noqa: E402
     chat_body_should_failover,
@@ -128,6 +130,21 @@ def _sanitize_upstream_payload(name: str, payload: dict[str, Any]) -> dict[str, 
         )
         return sanitize_for_ollama(payload, strip_thinking=strip)
     return sanitize_chat_payload(payload)
+
+
+def _apply_reasoning_effort(payload: dict[str, Any], task: str) -> dict[str, Any]:
+    out = dict(payload)
+    meta = out.get("metadata") if isinstance(out.get("metadata"), dict) else {}
+    effort = _coerce_reasoning_effort(out.get("reasoning_effort"))
+    if not effort and isinstance(meta, dict):
+        effort = _coerce_reasoning_effort(meta.get("reasoning_effort"))
+    if not effort:
+        th = str((meta or {}).get("task_hint") or (meta or {}).get("task_type") or task or "normal")
+        tt = str((meta or {}).get("task_type") or "")
+        ec = str((meta or {}).get("execution_class") or "")
+        effort = infer_reasoning_effort(th, tt, ec)
+    out["reasoning_effort"] = effort
+    return out
 
 
 def _log_failover(name: str, err: str, model: str) -> None:
@@ -337,7 +354,7 @@ async def health() -> dict[str, Any]:
     ollama = await _probe_ollama() if OLLAMA_BASE else False
     return {
         "ok": True,
-        "service": "model-router",
+        "service": "router-worker",
         "status": MESSAGES.get("health_ok", "ok"),
         "nine_router": n9,
         "omni_router": omni,
@@ -445,6 +462,8 @@ async def proxy(path: str, request: Request) -> Response:
         if skip_omni and name == "omni-router":
             continue
         payload = _sanitize_upstream_payload(name, dict(body) if body else {})
+        if is_chat:
+            payload = _apply_reasoning_effort(payload, task)
         # Always call chat upstream non-stream so we can inspect error bodies
         # (paid Omni models often 403 inside a 200 SSE stream Hermes cannot recover from).
         if is_chat:
