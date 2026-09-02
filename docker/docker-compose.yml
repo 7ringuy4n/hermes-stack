@@ -187,13 +187,17 @@ services:
     networks: [internal]
 
   ingest:
-    build: ./architect/tools/ingest
+    build:
+      context: ./architect
+      dockerfile: tools/ingest/Dockerfile
     container_name: ingest
     restart: unless-stopped
     environment:
       - VALKEY_URL=${VALKEY_URL:-redis://valkey:6379/0}
       - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
-      - OCR_URL=${OCR_URL:-http://ocr:8091}
+      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://router-worker:8096/v1}
+      - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
+      - OCR_MODEL=${OCR_MODEL:-vision-ocr}
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
       - NOTIFY_URL=${NOTIFY_URL:-http://notify:8092}
@@ -226,7 +230,8 @@ services:
   dispatcher:
     profiles: ["media"]
     build:
-      context: ./architect/models/dispatcher
+      context: ./architect
+      dockerfile: models/dispatcher/Dockerfile
       args:
         # ASR wheels are only baked in when the stack runs with WHISPER_ENABLED=1.
         INSTALL_WHISPER: ${WHISPER_ENABLED:-0}
@@ -234,7 +239,9 @@ services:
     environment:
       # Web search lives on router-worker (/v1/search) — media worker only links to it
       - WEB_SEARCH_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
-      - OCR_URL=${OCR_URL:-http://ocr:8091}
+      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://router-worker:8096/v1}
+      - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
+      - OCR_MODEL=${OCR_MODEL:-vision-ocr}
       - MEDIA_TEXT_FRAMES=${MEDIA_TEXT_FRAMES:-4}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://omni-router:20129/v1}
       - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
@@ -420,7 +427,9 @@ services:
       - HERMES_MAX_INFLIGHT=${HERMES_MAX_INFLIGHT:-3}
       - HERMES_CONTEXT_BUDGET=${HERMES_CONTEXT_BUDGET:-24000}
       # Media worker URLs (services only up when overlay is loaded)
-      - OCR_URL=${OCR_URL:-http://ocr:8091}
+      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://router-worker:8096/v1}
+      - OCR_MODEL=${OCR_MODEL:-vision-ocr}
+      - OCR_MEDIA_ROOT=/opt/data/media
       - JOBS_URL=${JOBS_URL:-http://jobs:8104}
       - WORKFLOW_URL=${WORKFLOW_URL:-http://workflow:8108}
       - SCHEDULE_URL=${SCHEDULE_URL:-http://schedule-worker:8110}

@@ -7,3 +7,5 @@ openpyxl==3.1.5
 python-docx==1.1.2
 py7zr==0.22.0
 rarfile==4.2
+pymupdf==1.25.5
+Pillow==11.1.0

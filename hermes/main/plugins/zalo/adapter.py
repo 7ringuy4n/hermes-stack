@@ -306,7 +306,12 @@ from attachment import (  # noqa: E402
     archive_password_ack_message,
     image_ocr_ack_message,
     image_analyze_ack_message,
+    image_analyze_vision_body,
+    image_analyze_vision_prompt,
+    IMAGE_ANALYZE_VISION_PROMPT_RETRY,
+    IMAGE_ANALYZE_VISION_PROMPT_SCENE,
     ocr_excerpt_for_ack,
+    vision_image_b64_for_describe,
     quoted_context_snip,
     extract_media_from_quote,
     merge_inbound_quote_media,
@@ -1881,6 +1886,191 @@ class ZaloAdapter(BasePlatformAdapter):
             return True
         return False
 
+    def _as_has_image_attachment(
+        self,
+        media_urls: list | None,
+        *,
+        media_types: list | None = None,
+        message_type=None,
+        attach_is_image: bool = False,
+    ) -> bool:
+        if attach_is_image:
+            return True
+        urls = [u for u in (media_urls or []) if str(u or "").strip()]
+        if not urls:
+            return False
+        if message_type == MessageType.PHOTO:
+            return True
+        for mt in media_types or []:
+            if str(mt or "").lower().startswith("image/"):
+                return True
+        for u in urls:
+            low = str(u or "").lower()
+            if low.endswith(
+                (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
+            ):
+                return True
+        return False
+
+    async def _as_ocr_vision_describe(
+        self, local_path: str, *, prompt: str, file_name: str = ""
+    ) -> str:
+        """Scene describe via router-worker combo vision-ocr."""
+        import asyncio
+
+        try:
+            from .vision_ocr import resolve_media_path, vision_describe
+            from .attachment import vision_image_b64_for_describe
+        except ImportError:
+            from vision_ocr import resolve_media_path, vision_describe  # type: ignore
+            from attachment import vision_image_b64_for_describe  # type: ignore
+
+        src = resolve_media_path(str(local_path or ""))
+        if src is None:
+            self._as_flow(
+                "attach_vision_miss",
+                path=str(local_path or "")[:120],
+            )
+            return ""
+        name = file_name or src.name
+
+        def _read() -> dict:
+            b64 = vision_image_b64_for_describe(str(src))
+            if b64:
+                return vision_describe(image_b64=b64, prompt=prompt)
+            return vision_describe(path=str(src), prompt=prompt)
+
+        out = await asyncio.to_thread(_read)
+        text = (out.get("text") or "").strip()
+        if out.get("ok") is True and text:
+            self._as_flow("attach_vision_read", file=name, chars=len(text))
+            return text
+        self._as_flow(
+            "attach_vision_empty",
+            file=name,
+            error=out.get("error") or "empty",
+            status=out.get("status"),
+            model=out.get("model"),
+            detail=(out.get("detail") or "")[:120],
+            preview=text[:120],
+        )
+        return ""
+
+    async def _as_try_image_analyze_vision_reply(
+        self,
+        *,
+        text: str,
+        thread_id: str,
+        thread_type: str,
+        media_urls: list | None,
+        has_image_attachment: bool = False,
+        plan: dict | None = None,
+    ) -> bool:
+        """Image-analyze chat: host reply via combo vision-ocr (bypass Hermes chat)."""
+        if not has_image_attachment:
+            return False
+        urls = [u for u in (media_urls or []) if str(u or "").strip()]
+        if not urls:
+            return False
+        try:
+            from .classify_client import (
+                classify_text,
+                coerce_image_analyze_plan,
+                plan_is_image_analyze_chat,
+                strip_prior_for_classify,
+            )
+        except ImportError:
+            from classify_client import (  # type: ignore
+                classify_text,
+                coerce_image_analyze_plan,
+                plan_is_image_analyze_chat,
+                strip_prior_for_classify,
+            )
+        current = strip_prior_for_classify(text) or str(text or "").strip()
+        if not isinstance(plan, dict):
+            plan = classify_text(
+                current,
+                thread=("group" if str(thread_type or "").lower() == "group" else "dm"),
+                attachments="image",
+            )
+        coerced = coerce_image_analyze_plan(plan, has_image=True, user_text=current)
+        if coerced is None:
+            return False
+        plan = coerced
+        if not plan_is_image_analyze_chat(plan, has_image=True):
+            return False
+        prompt = image_analyze_vision_prompt(current)
+        raw = await self._as_ocr_vision_describe(str(urls[0]), prompt=prompt)
+        reply = image_analyze_vision_body(raw, prompt=prompt)
+        if not reply:
+            raw2 = await self._as_ocr_vision_describe(
+                str(urls[0]), prompt=IMAGE_ANALYZE_VISION_PROMPT_RETRY
+            )
+            reply = image_analyze_vision_body(raw2, prompt=IMAGE_ANALYZE_VISION_PROMPT_RETRY)
+            if reply:
+                raw = raw2
+        if not reply:
+            raw3 = await self._as_ocr_vision_describe(
+                str(urls[0]), prompt=IMAGE_ANALYZE_VISION_PROMPT_SCENE
+            )
+            reply = image_analyze_vision_body(raw3, prompt=IMAGE_ANALYZE_VISION_PROMPT_SCENE)
+            if reply:
+                raw = raw3
+        meta = {
+            "thread_type": "group" if thread_type == "group" else "user",
+            "as_skip_autosend": True,
+            "as_skip_dest": True,
+            "skip_outbound_filter": True,
+        }
+        if not reply:
+            self._as_flow(
+                "attach_image_vision_fail",
+                thread_id=thread_id,
+                chars=len(raw or ""),
+                preview=(raw or "")[:120],
+                noise=bool(raw and not reply),
+            )
+            try:
+                await self.send(
+                    chat_id=str(thread_id),
+                    content="Không mô tả được ảnh — gửi lại giúp mình.",
+                    metadata={**meta, "as_skip_inflight": True},
+                )
+            except Exception:
+                logger.warning("[zalo] image vision fail ack failed thread=%s", thread_id)
+            try:
+                self._as_inflight_done(str(thread_id), {})
+            except Exception:
+                pass
+            try:
+                self._as_queue_kick(str(thread_id))
+            except Exception:
+                pass
+            return True
+        self._as_flow(
+            "attach_image_vision_reply",
+            thread_id=thread_id,
+            chars=len(reply),
+        )
+        try:
+            await self.send(
+                chat_id=str(thread_id),
+                content=reply,
+                metadata=meta,
+            )
+        except Exception:
+            logger.warning("[zalo] image vision reply failed thread=%s", thread_id)
+            return False
+        try:
+            self._as_inflight_done(str(thread_id), {})
+        except Exception:
+            pass
+        try:
+            self._as_queue_kick(str(thread_id))
+        except Exception:
+            pass
+        return True
+
     async def _as_try_workflow_submit(
         self,
         *,
@@ -3065,6 +3255,14 @@ class ZaloAdapter(BasePlatformAdapter):
             )
         store = self._as_gate_store()
         if store is None:
+            if await self._as_try_image_analyze_vision_reply(
+                text=text,
+                thread_id=thread_id,
+                thread_type=thread_type,
+                media_urls=media_urls,
+                has_image_attachment=has_image_attachment,
+            ):
+                return
             if await self._as_try_workflow_submit(
                 text=text,
                 thread_id=thread_id,
@@ -3094,6 +3292,14 @@ class ZaloAdapter(BasePlatformAdapter):
         )
         mid = str(message_id or "")
         try:
+            if await self._as_try_image_analyze_vision_reply(
+                text=text,
+                thread_id=thread_id,
+                thread_type=thread_type,
+                media_urls=media_urls,
+                has_image_attachment=has_image_attachment,
+            ):
+                return
             if await self._as_try_workflow_submit(
                 text=text,
                 thread_id=thread_id,
@@ -3359,6 +3565,20 @@ class ZaloAdapter(BasePlatformAdapter):
                         thread_id=tid,
                         thread_type=thread_type,
                         bare_text=bare_q,
+                    ):
+                        return
+                has_image = self._as_has_image_attachment(
+                    list(event.media_urls or []),
+                    media_types=list(event.media_types or []),
+                    message_type=event.message_type,
+                )
+                if has_image and list(event.media_urls or []):
+                    if await self._as_try_image_analyze_vision_reply(
+                        text=str(event.text or ""),
+                        thread_id=tid,
+                        thread_type=thread_type,
+                        media_urls=list(event.media_urls or []),
+                        has_image_attachment=True,
                     ):
                         return
                 await self.handle_message(event)
@@ -4325,6 +4545,16 @@ class ZaloAdapter(BasePlatformAdapter):
                         to_path=str(staged)[:120],
                     )
                     local_path = staged
+                elif mtype == MessageType.PHOTO or str(media.get("kind") or "").lower() in {
+                    "image",
+                    "photo",
+                    "gif",
+                }:
+                    self._as_flow(
+                        "attach_stage_miss",
+                        file=media.get("fileName") or "",
+                        from_path=str(local_path)[:120],
+                    )
                 media_urls.append(local_path)
                 media_types.append(media.get("mime") or "")
                 message_type = mtype
@@ -4373,8 +4603,8 @@ class ZaloAdapter(BasePlatformAdapter):
                     (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
                 )
             )
-            # Captioned images: Hermes multimodal owns scene/text understanding.
-            # OCR worker vision-ocr combo is for bare-image text extract only.
+            # Captioned images: image-analyze host reply via OCR vision-ocr combo.
+            # Bare images still run _as_attachment_text (same vision-ocr worker).
             if attach_is_image and not attach_bare:
                 extract_task = None
             else:
@@ -5768,12 +5998,18 @@ class ZaloAdapter(BasePlatformAdapter):
     ) -> str:
         """Readable text for one inbound file, routed to the worker that owns it.
 
-        text  → read locally · ocr → OCR worker · office → Ingest worker
+        text  → read locally · vision → vision-ocr combo · office → Ingest worker
         archive → Ingest `/v1/extract-archive` (media members only; optional password)
-        av    → Media worker `/v1/media/text` (transcript + keyframe OCR)
+        av    → Media worker `/v1/media/text` (transcript + keyframe vision read)
         """
+        import asyncio
         import os
         from pathlib import Path
+
+        try:
+            from .vision_ocr import DEFAULT_PROMPT, vision_read, vision_read_path
+        except ImportError:
+            from vision_ocr import DEFAULT_PROMPT, vision_read, vision_read_path  # type: ignore
 
         src = Path(str(local_path or ""))
         if not src.is_file():
@@ -5788,32 +6024,24 @@ class ZaloAdapter(BasePlatformAdapter):
                 except OSError:
                     text = ""
             case "ocr":
-                ocr_url = (os.getenv("OCR_URL") or "http://ocr:8091").rstrip("/")
-                text = await self._as_worker_text(
-                    f"{ocr_url}/v1/ocr",
-                    {"path": worker_path},
-                    timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
-                )
-                # Path mismatch / race → 404; retry with bytes (not on empty OCR).
-                if text == "__AS_WORKER_404__" and src.is_file():
+                prompt = DEFAULT_PROMPT
+                text = await asyncio.to_thread(vision_read_path, str(src), prompt)
+                if not text:
                     import base64
 
-                    b64 = base64.b64encode(src.read_bytes()).decode("ascii")
-                    text = await self._as_worker_text(
-                        f"{ocr_url}/v1/ocr",
-                        {
-                            "image_b64": b64,
-                        },
-                        timeout_s=ATTACHMENT_OCR_TIMEOUT_S,
+                    b64 = vision_image_b64_for_describe(str(src)) or base64.b64encode(
+                        src.read_bytes()
+                    ).decode("ascii")
+                    out = await asyncio.to_thread(
+                        vision_read, image_b64=b64, prompt=prompt
                     )
-                    self._as_flow(
-                        "attach_ocr_b64_retry",
-                        file=name,
-                        chars=len(text) if text != "__AS_WORKER_404__" else 0,
-                        path=worker_path[:160],
-                    )
-                if text == "__AS_WORKER_404__":
-                    text = ""
+                    text = str((out or {}).get("text") or "")
+                self._as_flow(
+                    "attach_vision_read",
+                    file=name,
+                    chars=len(text),
+                    path=worker_path[:160],
+                )
 
             case "office":
                 ingest_url = (os.getenv("INGEST_URL") or "http://ingest:8099").rstrip("/")
@@ -6471,8 +6699,11 @@ class ZaloAdapter(BasePlatformAdapter):
         file_name = (media or {}).get("fileName") or Path(local_path).name or "document.bin"
         kind = (media or {}).get("kind") or "file"
         ingest_url = (os.getenv("INGEST_URL") or "http://ingest:8099").rstrip("/")
-        ocr_url = (os.getenv("OCR_URL") or "http://ocr:8091").rstrip("/")
         inbound_root = Path(os.getenv("ASSISTANT_MEDIA_INBOUND", "/opt/data/media/inbound"))
+        try:
+            from .vision_ocr import vision_read_path
+        except ImportError:
+            from vision_ocr import vision_read_path  # type: ignore
 
         def _resolve_src() -> Path | None:
             p = Path(local_path)
@@ -6522,32 +6753,19 @@ class ZaloAdapter(BasePlatformAdapter):
                         except Exception:
                             ocr_text = ""
                     elif low.endswith((".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff")):
-                        self._as_flow("ocr_start", thread_id=thread_id, file=file_name, path=ingest_rel)
-                        ocr_path = f"/data/media/{ingest_rel}"
+                        self._as_flow("vision_read_start", thread_id=thread_id, file=file_name, path=ingest_rel)
                         try:
-                            async with session.post(
-                                f"{ocr_url}/v1/ocr",
-                                json={"path": ocr_path},
-                            ) as ocr_resp:
-                                ocr_body = await ocr_resp.text()
-                                try:
-                                    ocr_json = json.loads(ocr_body or "")
-                                    if isinstance(ocr_json, dict):
-                                        ocr_text = str(
-                                            ocr_json.get("text") or ocr_json.get("markdown") or ""
-                                        ).strip()
-                                except Exception:
-                                    ocr_text = ""
-                                self._as_flow(
-                                    "ocr_done",
-                                    thread_id=thread_id,
-                                    file=file_name,
-                                    status=ocr_resp.status,
-                                    chars=len(ocr_text or ocr_body or ""),
-                                )
-                        except Exception as e:
+                            ocr_text = await asyncio.to_thread(vision_read_path, str(dest))
                             self._as_flow(
-                                "ocr_fail",
+                                "vision_read_done",
+                                thread_id=thread_id,
+                                file=file_name,
+                                chars=len(ocr_text or ""),
+                            )
+                        except Exception as e:
+                            ocr_text = ""
+                            self._as_flow(
+                                "vision_read_fail",
                                 thread_id=thread_id,
                                 file=file_name,
                                 error=type(e).__name__,

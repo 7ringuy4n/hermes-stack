@@ -103,6 +103,8 @@ Keep SSH key-based auth where possible; fail2ban complements (does not replace) 
 ## Quick start (core)
 
 ```bash
+sudo mkdir -p /opt/assistant
+sudo chown -R "$(whoami):$(id -gn)" /opt/assistant
 git clone <your-repo-url> /opt/assistant
 cd /opt/assistant
 
@@ -111,6 +113,7 @@ cp -n .env.example .env
 
 sudo bash scripts/main/install-docker.sh   # skip if Docker already works
 # On clean Ubuntu: install fail2ban (see Host hardening above)
+cd /opt/assistant
 bash run.sh up
 bash run.sh first-setup-omnirouter
 bash run.sh ps

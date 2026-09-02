@@ -1,5 +1,33 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-02 22:40 +07 — model-router: keep vision parts; Zalo prompt-echo filter
+
+- `sanitize_chat_payload` preserves multimodal `image_url` parts (old `parts_to_text` stripped photos → blind “no image” / cafe hallucinations).
+- Zalo vision-ocr path: structural prompt-echo reject, image-before-text payload, `/opt/data/media` resolve; no OCR container.
+
+## 2026-09-02 22:15 +07 — zalo: fix vision path /opt/data/media in Hermes
+
+- `resolve_media_path` tries `/opt/data/media` and `/data/media` roots; Zalo image-analyze sends base64 from staged file so vision-ocr sees the photo inside Hermes.
+
+## 2026-09-02 22:00 +07 — Remove OCR worker container (vision-ocr lib only)
+
+- Deleted `architect/tools/ocr/`; all image/PDF reads use `architect/lib/vision_ocr.py` → router-worker combo `vision-ocr` (ingest, jobs, dispatcher, Zalo host).
+- Removed `ocr` compose service, `OCR_URL`, `ENABLE_OCR`, paddle/tesseract docs/skills/tests/monitor probes.
+
+## 2026-09-02 21:15 +07 — OCR worker vision-ocr only (paddle/tesseract removed)
+
+- Media OCR service: pymupdf PDF text layer → `vision-ocr` combo only; downscale large photos before vision upload.
+- Removed PaddleOCR/tesseract from OCR container build, compose env, and skills/classify policy.
+
+## 2026-09-02 21:00 +07 — zalo: image-analyze via OCR vision-ocr (not Hermes combo)
+
+- `hình gì đây` / image describe: host replies from OCR worker `vision-ocr` describe prompt; skips Hermes multimodal turn that was hallucinating wrong scenes.
+- Enqueue + queue drain call `_as_try_image_analyze_vision_reply` before workflow/Hermes.
+
+## 2026-09-02 20:45 +07 — model-router: preserve multimodal image parts
+
+- `sanitize_chat_payload` no longer collapses `image_url` parts; Zalo image describe was blind/hallucinating. Remove `OCR_URL=127.0.0.1` from stack `.env` (breaks Hermes→OCR in Docker). Hermes: `image_input_mode: native`, aux vision → `vision-ocr`.
+
 ## 2026-09-02 20:15 +07 — zalo: image analyze via Hermes chat (no txt OCR ack)
 
 - Inbound image describe/read (`đây là hình gì`, bare photo) no longer creates async `.txt` workflow files from classify instructions; plans coerce to interactive Hermes multimodal with `media_urls`.

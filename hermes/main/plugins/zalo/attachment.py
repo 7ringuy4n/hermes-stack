@@ -64,11 +64,11 @@ def stage_shared_media(
     thread_id: str = "",
     inbound_root: str = "/opt/data/media/inbound",
 ) -> str:
-    """Copy a file into the shared media volume so OCR/ingest/dispatcher can read it.
+    """Copy a file into the shared media volume so ingest/dispatcher/vision can read it.
 
     Hermes ``cache_image_from_bytes`` writes under ``/opt/data/replicas/.../cache/``,
-    which workers do not mount. Without this copy, ``POST /v1/ocr`` returns 404 and
-    the agent is asked to "open the image" with no vision tools — no Zalo reply.
+    which workers do not mount. Without this copy, vision read fails (path not found)
+    and the agent is asked to "open the image" with no vision tools — no Zalo reply.
     """
     import re
     import shutil
@@ -89,7 +89,12 @@ def stage_shared_media(
     except ValueError:
         pass
     safe = re.sub(r"[^\w.\-() ]", "_", (file_name or src.name))[:120].strip() or "file.bin"
-    dest_dir = Path(inbound_root) / (str(thread_id or "dm").strip() or "dm")
+    inbound = Path(inbound_root)
+    try:
+        inbound.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    dest_dir = inbound / (str(thread_id or "dm").strip() or "dm")
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / f"{uuid.uuid4().hex[:8]}_{safe}"
     shutil.copy2(src, dest)
@@ -800,3 +805,137 @@ def ocr_excerpt_for_ack(excerpt: str) -> str:
     if len(body) < 24 and words and all(len(w) <= 3 for w in words):
         return ""
     return body
+
+
+IMAGE_ANALYZE_VISION_PROMPT = (
+    "Viết 2–4 câu tiếng Việt mô tả cảnh trong ảnh: vật thể chính, bối cảnh, ánh sáng, "
+    "và chữ nhìn thấy (nếu có). Mô tả bằng câu hoàn chỉnh — không chỉ liệt kê nhãn/chữ "
+    "rời trên vật thể."
+)
+
+IMAGE_ANALYZE_VISION_PROMPT_RETRY = (
+    IMAGE_ANALYZE_VISION_PROMPT
+    + " Bắt buộc: ít nhất hai câu tiếng Việt; không trả về danh sách từ/cụm chữ OCR."
+)
+
+IMAGE_ANALYZE_VISION_PROMPT_SCENE = (
+    "Look at the whole photograph. Write exactly 3 complete Vietnamese sentences: "
+    "(1) main subject and action, (2) background/setting, (3) lighting, colors, and mood. "
+    "Ignore isolated label text — describe the scene."
+)
+
+
+def vision_image_b64_for_describe(local_path: str, *, max_px: int = 1536) -> str:
+    """Resize inbound photo for vision-ocr (large Zalo JPGs exceed model limits)."""
+    import base64
+    import io
+    from pathlib import Path
+
+    try:
+        from vision_ocr import resolve_media_path
+    except ImportError:
+        resolve_media_path = None  # type: ignore
+
+    raw = str(local_path or "")
+    src = resolve_media_path(raw) if resolve_media_path else None
+    if src is None:
+        src = Path(raw)
+    if not src.is_file():
+        return ""
+    try:
+        from PIL import Image
+    except ImportError:
+        return base64.b64encode(src.read_bytes()).decode("ascii")
+    try:
+        im = Image.open(src)
+        im = im.convert("RGB")
+        w, h = im.size
+        scale = min(1.0, float(max_px) / float(max(w, h)))
+        if scale < 1.0:
+            im = im.resize(
+                (max(1, int(w * scale)), max(1, int(h * scale))),
+                Image.Resampling.LANCZOS,
+            )
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=85)
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+    except OSError:
+        return ""
+
+
+def image_analyze_vision_prompt(user_text: str = "") -> str:
+    """Vision describe prompt for OCR worker (vision-ocr combo)."""
+    base = (user_text or "").strip()
+    if base and "[Attached" not in base and "[Quoted" not in base and "[Recent attachments" not in base:
+        clipped = base[:400].strip()
+        if clipped:
+            return f"{IMAGE_ANALYZE_VISION_PROMPT}\n\nCâu hỏi người dùng: {clipped}"
+    return IMAGE_ANALYZE_VISION_PROMPT
+
+
+def vision_scene_is_noise(text: str) -> bool:
+    """True when vision output is OCR token dump, not a scene description."""
+    raw = (text or "").strip()
+    if not raw:
+        return True
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    words = [w for w in raw.replace("\n", " ").split() if w]
+    if len(lines) >= 2:
+        short_lines = sum(
+            1 for ln in lines if len(ln) <= 10 and " " not in ln and len(ln.split()) <= 1
+        )
+        if short_lines >= 2 and short_lines / len(lines) >= 0.4:
+            long_words = [w for w in words if len(w) >= 6]
+            if len(long_words) <= 1:
+                return True
+    vi_chars = "àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ"
+    if not any(c in raw.lower() for c in vi_chars):
+        low = raw.lower()
+        scene_hints = (
+            "ảnh", "hình", "chụp", "camera", "photo", "picture", "the ", " a ", " is ",
+            " are ", " shows ", " depicts ", " on ", " with ", " black ", " white ",
+            " wooden ", " table ", " window ", " sky ", " city ", " river ",
+        )
+        if not any(h in low for h in scene_hints):
+            if len(words) <= 8 and (len(lines) >= 2 or all(len(w) <= 8 for w in words)):
+                return True
+    body = ocr_excerpt_for_ack(raw)
+    if not body and len(raw) < 80:
+        return True
+    return False
+
+
+def vision_describe_refused(text: str) -> bool:
+    """True when vision output is empty or OCR-noise — no phrase scan."""
+    if vision_scene_is_noise(text):
+        return True
+    return len((text or "").strip()) < 12
+
+
+def image_analyze_vision_body(
+    text: str, *, max_chars: int = 1800, prompt: str = ""
+) -> str:
+    """Zalo reply body from vision-ocr describe; empty when OCR noise or prompt echo."""
+    raw = (text or "").strip()
+    if not raw or vision_scene_is_noise(raw):
+        return ""
+    if prompt:
+        try:
+            from vision_refuse import vision_text_echoes_prompt
+        except ImportError:
+            from .vision_refuse import vision_text_echoes_prompt  # type: ignore
+        if vision_text_echoes_prompt(raw, prompt):
+            return ""
+    # Full sentences beat OCR token lists.
+    if len(raw) >= 24 and (". " in raw or "。" in raw or raw.count(" ") >= 4):
+        if len(raw) > max_chars:
+            return raw[:max_chars].rstrip() + "…"
+        return raw
+    body = image_analyze_ack_message(raw, max_chars=max_chars)
+    if body and not vision_scene_is_noise(body):
+        return body
+    if len(raw) >= 40 and len([w for w in raw.split() if len(w) >= 2]) >= 5:
+        if len(raw) > max_chars:
+            return raw[:max_chars].rstrip() + "…"
+        return raw
+    return ""

@@ -144,11 +144,11 @@ vals = {{
 }}
 if '{profile}' in ('medium', 'high'):
     vals.update({{
-      'ENABLE_OCR': '1', 'ENABLE_JOBS': '1', 'ENABLE_SEARXNG': '1',
+      'ENABLE_JOBS': '1', 'ENABLE_SEARXNG': '1',
       'OFFICE_FILE_GEN': '1', 'ENABLE_ZALO': '1',
     }})
 else:
-    vals.update({{'ENABLE_ZALO': '0', 'ENABLE_OCR': '0', 'ENABLE_JOBS': '0'}})
+    vals.update({{'ENABLE_ZALO': '0', 'ENABLE_JOBS': '0'}})
 if '{profile}' == 'high':
     vals['HERMES_REPLICAS'] = '2'
     vals['ENABLE_SECURITY'] = '1'

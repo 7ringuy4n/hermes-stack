@@ -57,7 +57,6 @@ HEALTH_TARGETS = os.environ.get(
     "qdrant=qdrant:6333/readyz,"
     "av-gateway=av-gateway:8098/health,"
     "security-manager=security-manager:8093/health,"
-    "ocr=ocr:8091/health,"
     "ingest=ingest:8099/health,"
     "authz=authz:8097/health,"
     "embedding=embedding:8094/health,"

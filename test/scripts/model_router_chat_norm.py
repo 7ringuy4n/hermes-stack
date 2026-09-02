@@ -13,6 +13,7 @@ from chat_norm import (  # noqa: E402
     chat_busy_capacity,
     chat_omni_skip_remaining,
     completion_to_sse,
+    content_has_vision_parts,
     normalize_chat_completion,
     openai_chat_ok,
     sanitize_chat_payload,
@@ -145,6 +146,32 @@ def main() -> int:
         return 1
     if not isinstance(payload["messages"][0]["content"], str):
         print("FAIL message content must be str")
+        return 1
+    vision_msg = {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this photo"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/jpeg;base64,abc123"},
+            },
+        ],
+    }
+    if not content_has_vision_parts(vision_msg["content"]):
+        print("FAIL vision part detect")
+        return 1
+    vision_payload = sanitize_chat_payload({"messages": [vision_msg]})
+    kept = vision_payload["messages"][0]["content"]
+    if not isinstance(kept, list) or len(kept) != 2:
+        print("FAIL vision sanitize must preserve multimodal list")
+        return 1
+    if kept[1].get("type") != "image_url":
+        print("FAIL vision sanitize dropped image_url part")
+        return 1
+    ollama_vision = sanitize_for_ollama({"messages": [vision_msg]})
+    ollama_kept = ollama_vision["messages"][0]["content"]
+    if not isinstance(ollama_kept, list) or ollama_kept[1].get("type") != "image_url":
+        print("FAIL ollama sanitize must preserve vision parts")
         return 1
     if not chat_body_should_failover(
         200,

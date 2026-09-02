@@ -1323,15 +1323,11 @@ def pin_media_combos(env: dict[str, str]) -> None:
     pins = {
         "IMAGE_GEN_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
         "OCR_MODEL": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
-        "OCR_VISION": "active",
         "EMBED_MODEL": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
         "OMNIROUTER_IMAGE_COMBO": env.get("OMNIROUTER_IMAGE_COMBO") or "image-gen",
         "OMNIROUTER_VISION_COMBO": env.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
         "OMNIROUTER_EMBED_COMBO": env.get("OMNIROUTER_EMBED_COMBO") or "embedding",
         "OMNI_IMAGE_GEN_TIMEOUT_S": "300",
-        # Host Zalo plugin (systemd) is outside compose DNS — use published localhost ports.
-        "OCR_URL": "http://127.0.0.1:8091",
-        "INGEST_URL": "http://127.0.0.1:8099",
     }
     for key, want in pins.items():
         cur = (env.get(key) or "").strip()
@@ -1340,6 +1336,9 @@ def pin_media_combos(env: dict[str, str]) -> None:
         set_env_key(env_path, key, want)
         env[key] = want
         print(f"OK: pinned {key}={want}")
+    # Ingest URL is compose-scoped (ingest:8099). Pinning 127.0.0.1 into stack .env
+    # breaks Hermes-in-Docker service hops.
+    _clear_stack_env_keys(["OCR_URL", "INGEST_URL"])
 
 
 def _stack_env_paths() -> list[Path]:
