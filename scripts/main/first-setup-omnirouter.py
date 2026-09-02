@@ -1377,7 +1377,9 @@ def list_image_gen_models(
     if not merged:
         return []
 
-    merged.sort(key=lambda mid: _rank_image_gen_row(_catalog_row_by_id(catalog, mid) or {"id": mid}))
+    if opener is None:
+        merged.sort(key=lambda mid: _rank_image_gen_row(_catalog_row_by_id(catalog, mid) or {"id": mid}))
+
     filtered: list[str] = []
     for mid in merged:
         if _is_excluded_image_gen_provider(mid, catalog):
