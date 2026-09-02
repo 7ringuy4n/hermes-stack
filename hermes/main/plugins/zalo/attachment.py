@@ -399,6 +399,68 @@ def quote_content_blob(quote: Dict[str, Any]) -> Dict[str, Any]:
     return blob
 
 
+_LOCAL_MEDIA_ROOTS = (
+    "/opt/data/media/",
+    "/data/assistant/media/",
+    "/data/media/",
+)
+_IMAGE_FILE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
+
+
+def _is_local_media_path(value: str) -> bool:
+    path = str(value or "").strip().strip("\"'")
+    if not path or path.startswith("http"):
+        return False
+    low = path.lower().replace("\\", "/")
+    if not any(low.startswith(root) for root in _LOCAL_MEDIA_ROOTS):
+        return False
+    return any(low.endswith(ext) for ext in _IMAGE_FILE_EXTS)
+
+
+def _local_media_path_from_text(text: str) -> str:
+    """Find a staged media path embedded in quote text (bot path replies)."""
+    for chunk in str(text or "").replace("\n", " ").split():
+        candidate = chunk.strip().strip("\"'(),[]")
+        if _is_local_media_path(candidate):
+            return candidate.replace("\\", "/")
+    return ""
+
+
+def _local_media_path_from_quote(quote: Dict[str, Any]) -> str:
+    for key in ("content", "msg", "text", "body"):
+        raw = quote.get(key)
+        if isinstance(raw, str):
+            found = _local_media_path_from_text(raw)
+            if found:
+                return found
+    qc = quote_content_blob(quote)
+    for key in ("title", "description", "href", "msg", "text"):
+        found = _local_media_path_from_text(str(qc.get(key) or ""))
+        if found:
+            return found
+    params = qc.get("params") if isinstance(qc.get("params"), dict) else {}
+    for key in ("fileName", "title", "href"):
+        found = _local_media_path_from_text(str(params.get(key) or ""))
+        if found:
+            return found
+    return ""
+
+
+def _media_dict_from_local_path(path: str) -> Dict[str, Any]:
+    clean = str(path or "").strip().replace("\\", "/")
+    name = clean.rsplit("/", 1)[-1] if "/" in clean else clean
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else "jpg"
+    return {
+        "kind": "image",
+        "url": clean,
+        "localPath": clean,
+        "fileName": name or f"image.{ext}",
+        "ext": ext,
+        "mime": "image/jpeg",
+        "size": 0,
+    }
+
+
 def _quote_href_from_blob(qc: Dict[str, Any], params: Dict[str, Any]) -> str:
     """Pick a downloadable URL from quote content/attach/params."""
     for key in (
@@ -446,17 +508,21 @@ def merge_inbound_quote_media(
     m: Dict[str, Any], media: Dict[str, Any] | None
 ) -> tuple[Dict[str, Any] | None, Dict[str, Any]]:
     """When inbound has no direct media URL, inherit from quoted/quote payload."""
-    if isinstance(media, dict) and str(media.get("url") or "").startswith("http"):
-        return media, m
+    if isinstance(media, dict):
+        url = str(media.get("url") or media.get("localPath") or "").strip()
+        if url.startswith("http") or _is_local_media_path(url):
+            return media, m
     raw_q = m.get("quoted") if isinstance(m.get("quoted"), dict) else None
     if not isinstance(raw_q, dict):
         raw_q = m.get("quote") if isinstance(m.get("quote"), dict) else None
     if isinstance(raw_q, dict):
         qmedia = extract_media_from_quote(raw_q)
-        if isinstance(qmedia, dict) and str(qmedia.get("url") or "").startswith("http"):
-            nm = dict(m)
-            nm["media"] = qmedia
-            return qmedia, nm
+        if isinstance(qmedia, dict):
+            qurl = str(qmedia.get("url") or qmedia.get("localPath") or "").strip()
+            if qurl.startswith("http") or _is_local_media_path(qurl):
+                nm = dict(m)
+                nm["media"] = qmedia
+                return qmedia, nm
     return media, m
 
 
@@ -488,6 +554,10 @@ def extract_media_from_quote(quote: Any) -> Dict[str, Any] | None:
                 pe = None
         if isinstance(pe, dict):
             href = _quote_href_from_blob(pe, params)
+    if not href:
+        local_path = _local_media_path_from_quote(quote)
+        if local_path:
+            return _media_dict_from_local_path(local_path)
     media_hint = bool(href) or quote_is_media_type(qtype)
     if not media_hint or not href:
         return None

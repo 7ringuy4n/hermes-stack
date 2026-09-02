@@ -2059,14 +2059,13 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             return True
         if plan_media_shortcut_gate(plan) and not schedule_fire:
-            await self._as_run_host_media_shortcut(
+            return await self._as_run_host_media_shortcut(
                 user_text=current,
                 thread_id=thread_id,
                 thread_type=thread_type,
                 bare_text=current,
                 plan=plan,
             )
-            return True
         origin = {
             "platform": "zalo",
             "chat_id": thread_id,
@@ -2448,14 +2447,13 @@ class ZaloAdapter(BasePlatformAdapter):
         if not workflow_enabled():
             return False
         if plan_media_shortcut_gate(plan) and not schedule_fire:
-            await self._as_run_host_media_shortcut(
+            return await self._as_run_host_media_shortcut(
                 user_text=current,
                 thread_id=thread_id,
                 thread_type=thread_type,
                 bare_text=current,
                 plan=plan,
             )
-            return True
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
         async_job = plan_is_async(plan) or len(parts) >= 2
         if not async_job or not parts:
@@ -2469,6 +2467,17 @@ class ZaloAdapter(BasePlatformAdapter):
         )
         if not data.get("ok"):
             return False
+        try:
+            if plan_is_async(plan) or len(parts) >= 2:
+                msg = self._as_ux_line(
+                    "ZALO_WORKFLOW_ACK_MSG",
+                    ("workflow", "started"),
+                    "Đang xử lý…",
+                    user_text=current,
+                )
+                await self._as_gate_announce(thread_id, thread_type, msg)
+        except Exception:
+            pass
         logger.info(f"[zalo] workflow created jobs={len(parts)} class={plan.get('execution_class')}")
         logger.info("Zalo: workflow %s jobs=%s", (data.get("workflow") or {}).get("id"), len(parts))
         return True
@@ -4820,13 +4829,33 @@ class ZaloAdapter(BasePlatformAdapter):
     async def _download_media(self, media: Dict[str, Any]) -> tuple[Optional[str], "MessageType"]:
         """Download a media URL to the Hermes cache. Returns (path, MessageType)."""
         import aiohttp
+        from pathlib import Path
 
-        url = media.get("url")
+        url = str(media.get("url") or media.get("localPath") or "").strip()
         kind = media.get("kind") or "other"
         ext = (media.get("ext") or "bin").lstrip(".")
         file_name = media.get("fileName") or f"zalo.{ext}"
         if not url:
             logger.warning("Zalo: media download skip — no url file=%s", file_name)
+            return None, MessageType.TEXT
+        if not url.startswith(("http://", "https://")):
+            candidates = [url]
+            if url.startswith("/data/assistant/"):
+                candidates.append("/opt/data" + url[len("/data/assistant") :])
+            if url.startswith("/opt/data/"):
+                candidates.append("/data/assistant" + url[len("/opt/data") :])
+            for candidate in candidates:
+                path = Path(str(candidate))
+                if not path.is_file():
+                    continue
+                if kind == "image":
+                    return str(path), MessageType.PHOTO
+                if kind == "voice":
+                    return str(path), MessageType.VOICE
+                if kind == "video":
+                    return str(path), MessageType.VIDEO
+                return str(path), MessageType.DOCUMENT
+            logger.warning("Zalo: local media missing file=%s path=%s", file_name, url[:120])
             return None, MessageType.TEXT
         if not self._session or self._session.closed:  # ASSISTANT_FILE_PROMPT_v3
             logger.warning("Zalo: media session closed — reopening for %s", file_name)

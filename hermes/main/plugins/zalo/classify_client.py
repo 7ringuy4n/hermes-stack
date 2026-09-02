@@ -631,9 +631,32 @@ def plan_allows_search_then_image(plan: dict[str, Any] | None) -> bool:
     return _plan_allows_search_then_image_base(plan)
 
 
+def plan_requests_labeled_weather_on_image(plan: dict[str, Any] | None) -> bool:
+    """Readable weather/metrics on the picture (not scenic weather-scene)."""
+    blob = _plan_instruction_blob(plan).lower()
+    if "render:" in blob and "labeled" in blob:
+        return True
+    if "title:" in blob and "scene:" in blob:
+        return True
+    cues = (
+        "ghi thông tin",
+        "ghi thoi tiet",
+        "lên hình",
+        "len hinh",
+        "on the image",
+        "on-image",
+        "labeled-scene",
+        "info-card",
+        "info card",
+    )
+    return any(cue in blob for cue in cues)
+
+
 def plan_allows_search_then_weather_scene(plan: dict[str, Any] | None) -> bool:
     """City/place scene + small weather overlay (not info-card dashboard)."""
     if not _plan_allows_search_then_image_base(plan):
+        return False
+    if plan_requests_labeled_weather_on_image(plan):
         return False
     return plan_image_render_mode(plan) in _SCENE_OVERLAY_RENDER
 
@@ -646,6 +669,8 @@ def plan_allows_search_then_info_card(plan: dict[str, Any] | None) -> bool:
     if mode in _SCENE_OVERLAY_RENDER:
         return False
     if mode in _LABELED_SCENE_RENDER or mode == "labeled-scene":
+        return True
+    if plan_requests_labeled_weather_on_image(plan):
         return True
     blob = _plan_instruction_blob(plan).upper()
     if "OVERVIEW:" in blob and "SCENE:" in blob:
