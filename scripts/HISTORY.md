@@ -1,3 +1,17 @@
+## 2026-09-02 11:45 +07 — Zalo: search+image workflow split + image-gen single-provider fail
+
+### Symptom
+Compound weather+image ask delivered a generic Hermes greeting plus a scenic image without weather labels; image-gen logged Pollinations 401; quote-image vision returned garbage.
+
+### Root cause
+Classify search+image plans expose two `instructions[]` entries — workflow treated them as separate async jobs (Hermes chat + diffusion). Host diffusion called only `IMAGE_GEN_HEAD_MEMBER` (Pollinations) with no combo failover. Pollinations without API key still appeared in image-gen catalog head selection.
+
+### Fix (core)
+`plan_is_search_then_image_turn` blocks workflow FIFO split; adapter routes unified search+image to host media shortcut. Diffusion tries combo `image-gen` then head member. first-setup skips Pollinations image members when unkeyed; repairs API key ACL when stack combos drop.
+
+### Prevent recurrence
+Dual-instruction search+image plans must never enqueue separate Hermes workflow jobs; image-gen must use combo failover, not a single pinned provider.
+
 ## 2026-09-02 11:30 +07 — Zalo: quote local image path + weather-on-image silent turns
 
 ### Symptom

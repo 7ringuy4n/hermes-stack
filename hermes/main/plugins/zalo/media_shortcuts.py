@@ -762,6 +762,23 @@ def _omni_image_gen_model() -> str:
     return combo
 
 
+def _omni_image_gen_models() -> list[str]:
+    """Models to try for diffusion — combo failover first, then pinned head."""
+    try:
+        from .omni_env import resolve_env_var
+    except ImportError:
+        from omni_env import resolve_env_var  # type: ignore
+
+    combo = (resolve_env_var("IMAGE_GEN_COMBO", "image-gen") or "image-gen").strip()
+    head = (resolve_env_var("IMAGE_GEN_HEAD_MEMBER", "") or "").strip()
+    out: list[str] = []
+    if combo:
+        out.append(combo)
+    if head and head not in out:
+        out.append(head)
+    return out
+
+
 def _omni_decode_image_blob(item: dict[str, Any]) -> bytes:
     blob = b""
     if item.get("b64_json"):
@@ -911,34 +928,34 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     scene = _photoreal_scene_prompt(_place_alias_to_official(prompt or ""))
     size = _omni_image_gen_size()
     timeout = _omni_image_gen_timeout_s()
-    model = _omni_image_gen_model()
-    if not model:
+    models = _omni_image_gen_models()
+    if not models:
         log.warning("omni generate: no IMAGE_GEN_COMBO")
         return None
-    blob = _omni_request_image_blob(
-        base=base,
-        key=key,
-        model=model,
-        scene=scene,
-        size=size,
-        timeout=timeout,
-    )
-    if not blob:
-        return None
-    for cand in _media_out_candidates():
-        try:
-            cand.mkdir(parents=True, exist_ok=True)
-            dest = cand / filename
-            dest.write_bytes(blob)
-            return {
-                "ok": True,
-                "file": str(dest),
-                "path": str(dest),
-                "provider": model,
-                "model": model,
-            }
-        except OSError:
-            continue
+    for model in models:
+        blob = _omni_request_image_blob(
+            base=base,
+            key=key,
+            model=model,
+            scene=scene,
+            size=size,
+            timeout=timeout,
+        )
+        if blob:
+            for cand in _media_out_candidates():
+                try:
+                    cand.mkdir(parents=True, exist_ok=True)
+                    dest = cand / filename
+                    dest.write_bytes(blob)
+                    return {
+                        "ok": True,
+                        "file": str(dest),
+                        "path": str(dest),
+                        "provider": model,
+                        "model": model,
+                    }
+                except OSError:
+                    continue
     return None
 
 
