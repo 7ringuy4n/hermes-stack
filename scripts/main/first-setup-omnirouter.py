@@ -1313,37 +1313,80 @@ def _rank_image_gen_model(mid: str, catalog: list[dict] | None = None) -> tuple:
     return (9, mid.lower())
 
 
+def _connection_order_for_prefix(opener, prefix: str) -> dict[str, int]:
+    chat_id = _chat_node_id_for_prefix(opener, prefix)
+    conn = _connection_for_provider_node(opener, chat_id) if chat_id else None
+    if not conn or not conn.get("id"):
+        return {}
+    ids = _connection_model_ids(opener, str(conn["id"]))
+    return {mid: idx for idx, mid in enumerate(ids)}
+
+
+def _sort_wired_image_model_ids(opener, wired: list[str], catalog: list[dict]) -> list[str]:
+    order_by_prefix: dict[str, dict[str, int]] = {}
+
+    def sort_key(mid: str) -> tuple:
+        parts = mid.split("/", 1)
+        prefix = parts[0] if len(parts) == 2 else ""
+        local = parts[1] if len(parts) == 2 else mid
+        if prefix and prefix not in order_by_prefix:
+            order_by_prefix[prefix] = _connection_order_for_prefix(opener, prefix)
+        row = _catalog_row_by_id(catalog, mid)
+        meta_tier = 0
+        if row and (_is_image_output_model(row) or _catalog_row_needs_provider_model_registration(row)):
+            meta_tier = 0
+        else:
+            meta_tier = 1
+        conn_idx = order_by_prefix.get(prefix, {}).get(local, 999)
+        return (meta_tier, conn_idx, mid.lower())
+
+    return sorted(wired, key=sort_key)
+
+
 def list_image_gen_models(
     api_key: str,
     opener=None,
     env: dict[str, str] | None = None,
 ) -> list[str]:
-    """Routable /images/generations ids — custom providers via provider-models, else catalog."""
+    """Routable /images/generations ids — wired provider-models first, then catalog."""
+    env = env or {}
     catalog = _v1_models(api_key)
-    custom = _images_generations_provider_prefixes(opener) if opener is not None else set()
-    found: list[str] = []
+    merged: list[str] = []
     seen: set[str] = set()
+
     if opener is not None:
-        for mid in _wired_custom_provider_image_ids(opener):
-            if mid not in seen:
+        wired = _sort_wired_image_model_ids(opener, _wired_custom_provider_image_ids(opener), catalog)
+        custom_prefixes = _images_generations_provider_prefixes(opener)
+        for mid in wired + _catalog_image_ids_outside_custom_providers(catalog, custom_prefixes):
+            if mid and mid not in seen:
                 seen.add(mid)
-                found.append(mid)
-        for mid in _catalog_image_ids_outside_custom_providers(catalog, custom):
-            if mid not in seen:
-                seen.add(mid)
-                found.append(mid)
+                merged.append(mid)
     else:
         for row in catalog:
             mid = str(row.get("id") or "").strip()
             if mid and _is_image_output_model(row) and mid not in seen:
                 seen.add(mid)
-                found.append(mid)
-    found.sort(key=lambda mid: _rank_image_gen_row(_catalog_row_by_id(catalog, mid) or {"id": mid}))
-    ids = found[:8]
+                merged.append(mid)
+
+    if not merged:
+        return []
+
+    merged.sort(key=lambda mid: _rank_image_gen_row(_catalog_row_by_id(catalog, mid) or {"id": mid}))
+    out = merged[:8]
     if not _pollinations_api_key(env):
-        ids = [mid for mid in ids if not str(mid).lower().startswith("pollinations/")]
-    ids = [mid for mid in ids if not str(mid).lower().startswith("aihorde/")]
-    return ids
+        out = [mid for mid in out if not mid.lower().startswith("pollinations/")]
+    out = [mid for mid in out if not _is_excluded_image_gen_provider(mid, catalog)]
+    return out
+
+
+def _is_excluded_image_gen_provider(mid: str, catalog: list[dict] | None) -> bool:
+    """Drop providers the stack no longer uses for diffusion (e.g. aihorde)."""
+    row = _catalog_row_by_id(catalog or [], mid)
+    prov = _row_provider(row) if row else ""
+    low = (mid or "").strip().lower()
+    if prov == "aihorde" or low.startswith("aihorde/"):
+        return True
+    return False
 
 
 def _omni_model_row_id(row: dict) -> str:
