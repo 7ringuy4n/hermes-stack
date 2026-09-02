@@ -73,6 +73,7 @@ HTTP_ATTEMPTS = 3
 HTTP_RETRY_SLEEP_S = 8.0
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
+_ATTACH_RECALL_START = "[recent attachments in this chat"
 _OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
 REASONING_EFFORTS = ("low", "medium", "high", "max")
 
@@ -129,6 +130,10 @@ def strip_prior_for_classify(text: str) -> str:
         if end < 0:
             break
         blob = blob[:start] + blob[end + len(_PRIOR_END) :]
+    low = blob.lower()
+    attach = low.find(_ATTACH_RECALL_START)
+    if attach >= 0:
+        blob = blob[:attach]
     cleaned = blob.strip()
     return cleaned or (text or "").strip()
 
@@ -1239,7 +1244,7 @@ def classify_text(
     base = router_worker_url()
     payload = json.dumps(
         {
-            "text": text or blob,
+            "text": blob,
             "timezone": tz,
             "thread": thread or "unknown",
             "attachments": attachments or "none",

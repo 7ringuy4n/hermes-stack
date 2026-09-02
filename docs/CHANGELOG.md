@@ -1,3 +1,14 @@
+## 2026-09-02 19:45 +07 — zalo: classify strips attachment recall; schedule with remembered files
+
+- Classify input strips host `[Recent attachments…]` recall blocks so timed remind-with-body is not misread when prior files exist in thread memory. Router classify payload sends stripped user line only.
+- Schedule classify part hardened: attachment recall must not downgrade relative remind creates.
+
+## 2026-09-02 19:15 +07 — zalo: image-gen 5m timeout; Hermes image OCR; schedule fire ack
+
+- Host scenic diffusion default/pin `OMNI_IMAGE_GEN_TIMEOUT_S=300` (5 minutes per combo member attempt).
+- Captioned inbound images skip OCR-worker vision hop; Hermes multimodal keeps `media_urls`. Bare-image empty OCR prompt directs Hermes to use the attached image.
+- Schedule: clear stale same-turn media mute before new inbound; never drop schedule fire/saved ack after a prior media delivery. Classify schedule/media parts hardened for relative remind-with-body and image-analyze paths.
+
 ## 2026-09-02 17:45 +07 — zalo: fix image-gen failover signature (SyntaxError on inbound)
 
 - `media_shortcuts`: `_omni_request_image_blob_once` had an incomplete `def` signature (leftover from the failover refactor); any Zalo inbound message raised a module import `SyntaxError`, so the whole host media shortcut (and reply) failed silently.
