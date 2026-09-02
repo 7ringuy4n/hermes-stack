@@ -1,3 +1,31 @@
+## 2026-09-02 11:00 +07 — first-setup: vision-ocr rejects blind supportsVision models
+
+### Symptom
+Vision OCR returned garbage ("crn ae maa") — model replied "I don't see any image attached" despite image in request.
+
+### Root cause
+`vision-ocr` combo included OpenCode models with `supportsVision` but no image-input modality (e.g. qwen3.7-plus).
+
+### Fix (core)
+Filter vision-ocr members by catalog image-input capability; refill combo when blind members present.
+
+### Prevent recurrence
+Do not trust `supportsVision` alone for vision-ocr; require image-input modality or explicit vision capability.
+
+## 2026-09-02 10:45 +07 — first-setup: image-gen from catalog metadata only
+
+### Symptom
+`image-gen` combo routed chat models to `/images/generations` (401/empty); some members were chat-only under image-looking ids.
+
+### Root cause
+First-setup used hardcoded provider prefixes and model-name whitelists that drift when Omni renames namespaces.
+
+### Fix (core)
+Select and rank image-gen members from catalog `supportedEndpoints` / `apiFormat` / `type` / `capabilities`; register/repair provider custom models via `images-generations` provider-nodes only.
+
+### Prevent recurrence
+Never gate image-gen on id prefixes or fixed model lists; use Omni catalog fields and provider-node `apiType`.
+
 ## 2026-09-02 10:15 +07 — setup-zalo: show QR/logs during health capture
 
 ### Symptom
