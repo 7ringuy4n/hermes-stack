@@ -21,7 +21,7 @@ spec.loader.exec_module(mod)
 
 def test_image_gen_timeout_default() -> None:
     os.environ.pop("OMNI_IMAGE_GEN_TIMEOUT_S", None)
-    assert mod._omni_image_gen_timeout_s() == 240
+    assert mod._omni_image_gen_timeout_s() == 300
 
 
 def test_image_gen_timeout_clamped() -> None:

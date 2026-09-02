@@ -451,6 +451,7 @@ REASONING_EFFORTS = ("low", "medium", "high", "max")
 _OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
+_ATTACH_RECALL_START = "[recent attachments in this chat"
 
 
 def strip_prior_for_classify(text: str) -> str:
@@ -465,6 +466,10 @@ def strip_prior_for_classify(text: str) -> str:
         if end < 0:
             break
         blob = blob[:start] + blob[end + len(_PRIOR_END) :]
+    low = blob.lower()
+    attach = low.find(_ATTACH_RECALL_START)
+    if attach >= 0:
+        blob = blob[:attach]
     cleaned = blob.strip()
     return cleaned or (text or "").strip()
 
@@ -497,7 +502,11 @@ def _classify_has_thread_context(raw: str, *, attachments: str, quoted: str) -> 
     if quoted and quoted.strip().lower() not in {"", "none"}:
         return True
     low = (raw or "").lower()
-    return _PRIOR_START in low or "[quoted message]" in low
+    return (
+        _PRIOR_START in low
+        or _ATTACH_RECALL_START in low
+        or "[quoted message]" in low
+    )
 
 
 def _coerce_output_type(raw: Any) -> str:

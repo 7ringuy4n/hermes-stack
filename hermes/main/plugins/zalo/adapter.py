@@ -2832,6 +2832,15 @@ class ZaloAdapter(BasePlatformAdapter):
             seen = self._as_job_file_sent
         seen.add(tid)
 
+    def _as_clear_job_file_sent(self, thread_id: str) -> None:
+        """Clear same-turn media-result mute so later schedule/chat text can send."""
+        tid = str(thread_id or "")
+        if not tid:
+            return
+        seen = getattr(self, "_as_job_file_sent", None)
+        if isinstance(seen, set):
+            seen.discard(tid)
+
     def _as_job_already_sent_file(self, thread_id: str) -> bool:
         seen = getattr(self, "_as_job_file_sent", None)
         return isinstance(seen, set) and str(thread_id or "") in seen
@@ -3941,6 +3950,11 @@ class ZaloAdapter(BasePlatformAdapter):
                 self._as_cancel_late_autosend(str(thread_id))
             except Exception:
                 pass
+            try:
+                # Prior media delivery must not mute later schedule ack/fire or chat.
+                self._as_clear_job_file_sent(str(thread_id))
+            except Exception:
+                pass
         self._as_autosend_remember_turn(thread_id, thread_type)  # ASSISTANT_AUTOSEND_v3
         try:
             from .channels_client import remember_inbound
@@ -4320,13 +4334,18 @@ class ZaloAdapter(BasePlatformAdapter):
                     (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
                 )
             )
-            extract_task = asyncio.create_task(
-                self._as_attachment_text(
-                    media_urls[0],
-                    attach_name,
-                    caption=str(text or ""),
+            # Captioned images: Hermes multimodal owns scene/text understanding.
+            # OCR worker vision-ocr combo is for bare-image text extract only.
+            if attach_is_image and not attach_bare:
+                extract_task = None
+            else:
+                extract_task = asyncio.create_task(
+                    self._as_attachment_text(
+                        media_urls[0],
+                        attach_name,
+                        caption=str(text or ""),
+                    )
                 )
-            )
         elif isinstance(media, dict) and media.get("url") and not media_urls:
             logger.warning("Zalo: media download empty %s", media.get("fileName") or "file")
             try:
@@ -5872,12 +5891,9 @@ class ZaloAdapter(BasePlatformAdapter):
         if is_image:
             return (
                 f"[Attached image: {file_name}]\n"
-                "Chưa có nội dung đọc được từ ảnh (file đã nhận). "
-                "Trả lời ngắn: mô tả những gì nhìn thấy được từ tên file / ngữ cảnh "
-                "hoặc nói rõ ảnh chưa đủ thông tin, rồi hỏi user muốn làm gì tiếp "
-                "(tóm tắt, dịch, lưu knowledge). "
-                "Cấm hỏi user mô tả lại ảnh, cấm bảo user mở/gửi lại file trừ khi "
-                "download thất bại, cấm gọi tool không có sẵn."
+                "OCR worker did not extract readable text. Use the attached image "
+                "(multimodal) to describe the scene and any visible text in a short "
+                "Vietnamese summary. Do not ask the user to resend or describe the image."
             )
         if kind == "av":
             return (
@@ -6710,7 +6726,20 @@ class ZaloAdapter(BasePlatformAdapter):
         if self._as_is_media_ack_only(content):
             logger.info("Zalo: drop media ack line")
             return SendResult(success=True, message_id=None)
-        if self._as_job_already_sent_file(chat_id) and (content or "").strip():
+        # Same-turn mute after a media file was already delivered — never mute
+        # schedule fire bodies, gate announces, or other skip_outbound_filter sends.
+        meta = metadata if isinstance(metadata, dict) else {}
+        allow_after_media = bool(
+            meta.get("schedule_fire")
+            or meta.get("scheduleFire")
+            or meta.get("skip_outbound_filter")
+            or meta.get("as_skip_autosend")
+        )
+        if (
+            self._as_job_already_sent_file(chat_id)
+            and (content or "").strip()
+            and not allow_after_media
+        ):
             low = (content or "").strip().lower()
             if not low.startswith("hiện chưa tạo") and "couldn't create" not in low and "couldn’t create" not in low:
                 logger.info("Zalo: drop text after media result")

@@ -39,6 +39,15 @@ def main() -> int:
     bare = strip_prior_for_classify(wrapped)
     assert "[Prior conversation]" not in bare
     assert "đặt lịch" in bare
+    attach_wrapped = (
+        "2 phút nữa nhắc tôi: tới giờ uống nước\n\n"
+        "[Recent attachments in this chat — use them if the request refers to "
+        "those files, otherwise ignore]\n"
+        "[Attachment text — photo.jpg]\nOCR line one\nOCR line two"
+    )
+    attach_bare = strip_prior_for_classify(attach_wrapped)
+    assert attach_bare == "2 phút nữa nhắc tôi: tới giờ uống nước"
+    assert "[Recent attachments" not in attach_bare
     # Classify Python must not phrase-scan schedule/destination/delay.
     assert heuristic_plan(bare) is None
     once_llm = normalize_plan(
