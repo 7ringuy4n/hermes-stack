@@ -1349,18 +1349,24 @@ def list_image_gen_models(
     env: dict[str, str] | None = None,
 ) -> list[str]:
     """Routable /images/generations ids — wired provider-models first, then catalog."""
-    env = env or {}
+    if env is None:
+        env = {}
     catalog = _v1_models(api_key)
     merged: list[str] = []
     seen: set[str] = set()
 
     if opener is not None:
         wired = _sort_wired_image_model_ids(opener, _wired_custom_provider_image_ids(opener), catalog)
-        custom_prefixes = _images_generations_provider_prefixes(opener)
-        for mid in wired + _catalog_image_ids_outside_custom_providers(catalog, custom_prefixes):
+        for mid in wired:
             if mid and mid not in seen:
                 seen.add(mid)
                 merged.append(mid)
+        if not merged:
+            custom_prefixes = _images_generations_provider_prefixes(opener)
+            for mid in _catalog_image_ids_outside_custom_providers(catalog, custom_prefixes):
+                if mid and mid not in seen:
+                    seen.add(mid)
+                    merged.append(mid)
     else:
         for row in catalog:
             mid = str(row.get("id") or "").strip()
@@ -1372,11 +1378,16 @@ def list_image_gen_models(
         return []
 
     merged.sort(key=lambda mid: _rank_image_gen_row(_catalog_row_by_id(catalog, mid) or {"id": mid}))
-    out = merged[:8]
-    if not _pollinations_api_key(env):
-        out = [mid for mid in out if not mid.lower().startswith("pollinations/")]
-    out = [mid for mid in out if not _is_excluded_image_gen_provider(mid, catalog)]
-    return out
+    filtered: list[str] = []
+    for mid in merged:
+        if _is_excluded_image_gen_provider(mid, catalog):
+            continue
+        if not _pollinations_api_key(env) and mid.lower().startswith("pollinations/"):
+            continue
+        filtered.append(mid)
+        if len(filtered) >= 8:
+            break
+    return filtered
 
 
 def _is_excluded_image_gen_provider(mid: str, catalog: list[dict] | None) -> bool:
