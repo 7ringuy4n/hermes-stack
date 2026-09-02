@@ -294,8 +294,34 @@ def ensure_opencode_provider(opener) -> dict | None:
     return None
 
 
-def ensure_pollinations_provider(opener) -> dict | None:
-    """Ensure Pollinations image provider (free Flux) is connected for /images/generations."""
+def _pollinations_api_key(env: dict | None = None) -> str:
+    env = env or load_env(ROOT / ".env")
+    return (
+        os.environ.get("POLLINATIONS_API_KEY")
+        or (env.get("POLLINATIONS_API_KEY") or "")
+    ).strip()
+
+
+def _patch_pollinations_connection(opener, conn: dict, api_key: str) -> None:
+    cid = conn.get("id")
+    if not cid or not api_key:
+        return
+    for payload in (
+        {"apiKey": api_key, "isActive": True},
+        {"connection": {"apiKey": api_key, "isActive": True}},
+    ):
+        try:
+            status, _body = http_json(opener, "PATCH", f"{BASE}/api/providers/{cid}", payload)
+            if status in (200, 201):
+                print(f"==> Pollinations provider apiKey refreshed id={cid}")
+                return
+        except Exception:
+            continue
+
+
+def ensure_pollinations_provider(opener, env: dict | None = None) -> dict | None:
+    """Ensure Pollinations image provider (optional API key; anonymous when unset)."""
+    api_key = _pollinations_api_key(env)
     try:
         _, data = http_json(opener, "GET", f"{BASE}/api/providers")
     except Exception as e:
@@ -305,24 +331,33 @@ def ensure_pollinations_provider(opener) -> dict | None:
     for c in conns:
         if str(c.get("provider") or "").lower() == "pollinations":
             print(f"==> keep Pollinations provider connection id={c.get('id')}")
+            if api_key:
+                _patch_pollinations_connection(opener, c, api_key)
             return c if isinstance(c, dict) else None
-    api_key = (
-        os.environ.get("POLLINATIONS_API_KEY")
-        or (load_env(ROOT / ".env").get("POLLINATIONS_API_KEY") or "")
-    ).strip()
-    if not api_key:
-        api_key = "anonymous"
-    print("==> create Pollinations provider connection (free Flux image head)")
-    for payload in (
-        {
-            "provider": "pollinations",
-            "authType": "apikey",
-            "name": "pollinations-free",
-            "isActive": True,
-            "apiKey": api_key,
-        },
-        {"provider": "pollinations", "name": "pollinations-free", "isActive": True, "apiKey": api_key},
-    ):
+    tier = "keyed" if api_key else "anonymous"
+    print(f"==> create Pollinations provider connection ({tier})")
+    payloads: list[dict] = []
+    if api_key:
+        payloads.extend(
+            (
+                {
+                    "provider": "pollinations",
+                    "authType": "apikey",
+                    "name": "pollinations",
+                    "isActive": True,
+                    "apiKey": api_key,
+                },
+                {"provider": "pollinations", "name": "pollinations", "isActive": True, "apiKey": api_key},
+            )
+        )
+    else:
+        payloads.extend(
+            (
+                {"provider": "pollinations", "authType": "none", "name": "pollinations", "isActive": True},
+                {"provider": "pollinations", "name": "pollinations", "isActive": True},
+            )
+        )
+    for payload in payloads:
         try:
             status, body = http_json(opener, "POST", f"{BASE}/api/providers", payload)
         except urllib.error.HTTPError as e:
@@ -854,31 +889,117 @@ def _row_has_image_modality(row: dict) -> bool:
     return False
 
 
-def _is_image_output_model(row: dict) -> bool:
-    """True when Omni catalog marks a model as image-generation output."""
-    mid = str(row.get("id") or "").strip()
-    if not mid or mid in ("image-gen", "hermes", "classifier"):
-        return False
-    if str(row.get("type") or "").strip().lower() == "image":
+_STACK_COMBO_NAMES = frozenset(
+    {"image-gen", "hermes", "classifier", "vision-ocr", "embedding", "web-search"}
+)
+
+
+def _row_api_format(row: dict) -> str:
+    return str(row.get("apiFormat") or row.get("api_format") or "").strip().lower()
+
+
+def _row_provider(row: dict) -> str:
+    return str(row.get("provider") or row.get("providerId") or "").strip().lower()
+
+
+def _row_supported_endpoints(row: dict) -> list[str]:
+    eps = row.get("supportedEndpoints") or row.get("supported_endpoints") or []
+    if isinstance(eps, list):
+        return [str(e).strip().lower() for e in eps if str(e).strip()]
+    return []
+
+
+def _row_supports_images_endpoint(row: dict) -> bool:
+    return "images" in _row_supported_endpoints(row)
+
+
+def _row_supports_chat_endpoint(row: dict) -> bool:
+    eps = _row_supported_endpoints(row)
+    return "chat" in eps if eps else False
+
+
+def _is_chat_only_catalog_row(row: dict) -> bool:
+    """Chat/completions models must not land in image-gen (even when id looks image-related)."""
+    eps = _row_supported_endpoints(row)
+    if eps:
+        return "chat" in eps and "images" not in eps
+    if _is_opencode_model_id(str(row.get("id") or "")):
         return True
-    if _row_has_image_modality(row):
+    caps = row.get("capabilities") if isinstance(row.get("capabilities"), dict) else {}
+    return caps.get("image_generation") is False
+
+
+def _is_image_output_model(row: dict) -> bool:
+    """True only when Omni catalog marks the model for /images/generations."""
+    mid = str(row.get("id") or "").strip()
+    if not mid or mid.lower() in _STACK_COMBO_NAMES:
+        return False
+    if row.get("available") is False:
+        return False
+    if _is_chat_only_catalog_row(row):
+        return False
+    if _row_supports_images_endpoint(row):
+        return True
+    if _row_api_format(row) == "images-generations":
+        return True
+    if str(row.get("type") or "").strip().lower() == "image":
         return True
     caps = row.get("capabilities") if isinstance(row.get("capabilities"), dict) else {}
     if caps.get("image_generation") is True:
         return True
     if caps.get("image_generation") is False:
         return False
+    if _row_has_image_modality(row):
+        return False
     return False
 
 
-def _is_pollinations_flux_model_id(mid: str) -> bool:
-    low = (mid or "").strip().lower()
-    if low == "pollinations/flux":
-        return True
-    if not low.startswith("pollinations/"):
+def _catalog_row_by_id(catalog: list[dict], mid: str) -> dict | None:
+    want = (mid or "").strip()
+    if not want:
+        return None
+    for row in catalog:
+        if str(row.get("id") or "").strip() == want:
+            return row
+    return None
+
+
+def _is_image_gen_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
+    row = _catalog_row_by_id(catalog or [], mid)
+    if row is None:
         return False
-    slug = low[len("pollinations/") :]
-    return bool(slug) and "/" not in slug and slug.startswith("flux")
+    return _is_image_output_model(row)
+
+
+def _is_bad_image_gen_combo_member(mid: str, catalog: list[dict] | None = None) -> bool:
+    return not _is_image_gen_model_id(mid, catalog)
+
+
+def _rank_image_gen_row(row: dict) -> tuple:
+    """Prefer catalog rows explicitly wired to images/generations (provider-agnostic)."""
+    mid = str(row.get("id") or "").lower()
+    tier = 4
+    if _row_supports_images_endpoint(row) and _row_api_format(row) == "images-generations":
+        tier = 0
+    elif _row_supports_images_endpoint(row) or str(row.get("type") or "").strip().lower() == "image":
+        tier = 1
+    elif _is_image_output_model(row):
+        tier = 2
+    provider = _row_provider(row)
+    provider_bonus = 0 if provider == "pollinations" else 1
+    return (tier, provider_bonus, mid)
+
+
+def _resolve_image_gen_head(
+    image_ids: list[str],
+    env: dict[str, str] | None = None,
+    catalog: list[dict] | None = None,
+) -> str:
+    env = env or {}
+    override = (env.get("IMAGE_GEN_HEAD_MEMBER") or os.environ.get("IMAGE_GEN_HEAD_MEMBER") or "").strip().strip('"')
+    if override and override in image_ids and _is_image_gen_model_id(override, catalog):
+        return override
+    return image_ids[0] if image_ids else ""
 
 
 def ensure_api_key_allows_combos(opener, existing_key: str) -> None:
@@ -1018,40 +1139,19 @@ def _v1_models(api_key: str) -> list[dict]:
     return [r for r in rows if isinstance(r, dict)]
 
 
-def _rank_image_gen_model(mid: str) -> tuple:
-    """Prefer pollinations/flux head when present; otherwise stable catalog order."""
-    m = (mid or "").strip().lower()
-    if m == "pollinations/flux":
-        return (0, m)
-    if _is_pollinations_flux_model_id(m):
-        return (1, m)
-    return (2, m)
+def _rank_image_gen_model(mid: str, catalog: list[dict] | None = None) -> tuple:
+    row = _catalog_row_by_id(catalog or [], mid)
+    if row is not None:
+        return _rank_image_gen_row(row)
+    return (9, mid.lower())
 
 
 def list_image_gen_models(api_key: str) -> list[str]:
-    """Models Omni catalog marks as image-generation output."""
+    """Models Omni catalog marks for /images/generations (no id-prefix guessing)."""
     rows = _v1_models(api_key)
-    found_set: set[str] = set()
-    for row in rows:
-        mid = str(row.get("id") or "").strip()
-        if mid and _is_image_output_model(row):
-            found_set.add(mid)
-    return sorted(found_set, key=_rank_image_gen_model)[:8]
-
-
-def _resolve_image_gen_head(image_ids: list[str], env: dict[str, str] | None = None) -> str:
-    """Pin Pollinations Flux when catalog has it; ignore stale Horde env overrides."""
-    env = env or {}
-    override = (env.get("IMAGE_GEN_HEAD_MEMBER") or os.environ.get("IMAGE_GEN_HEAD_MEMBER") or "").strip().strip('"')
-    flux = [m for m in image_ids if _is_pollinations_flux_model_id(m)]
-    if flux:
-        flux.sort(key=lambda mid: (0 if mid.lower() == "pollinations/flux" else 1, mid.lower()))
-        if override and override in image_ids and _is_pollinations_flux_model_id(override):
-            return override
-        return flux[0]
-    if override and override in image_ids:
-        return override
-    return image_ids[0] if image_ids else ""
+    found = [r for r in rows if _is_image_output_model(r)]
+    found.sort(key=_rank_image_gen_row)
+    return [str(r.get("id") or "").strip() for r in found if str(r.get("id") or "").strip()][:8]
 
 
 def _order_image_gen_combo_members(image_ids: list[str], head: str) -> list[str]:
@@ -1060,43 +1160,81 @@ def _order_image_gen_combo_members(image_ids: list[str], head: str) -> list[str]
     return [head] + [m for m in image_ids if m != head]
 
 
-def list_vision_models(opener) -> list[str]:
-    """Multimodal chat models for OCR vision fallback (supportsVision).
+def _omni_model_row_id(row: dict) -> str:
+    for key in ("fullModel", "model", "id"):
+        val = row.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
 
-    First-setup defaults prefer OpenCode family; other providers are fallback.
-    """
+
+def _row_supports_vision_input(row: dict) -> bool:
+    mods = row.get("input_modalities") or row.get("modalities") or []
+    if isinstance(mods, list):
+        return any(str(m).lower() in {"image", "vision"} for m in mods)
+    return False
+
+
+def _is_vision_capable_model_row(row: dict) -> bool:
+    """Chat models that accept image input for OCR (not supportsVision-only blind ids)."""
+    mid = _omni_model_row_id(row)
+    if not mid or mid.lower() in _STACK_COMBO_NAMES:
+        return False
+    if not row.get("supportsVision"):
+        return False
+    if row.get("available") is False:
+        return False
+    eps = _row_supported_endpoints(row)
+    if eps and "chat" not in eps:
+        return False
+    caps = row.get("capabilities") if isinstance(row.get("capabilities"), dict) else {}
+    if caps.get("vision") is False:
+        return False
+    if row.get("modalities") or row.get("input_modalities") or eps:
+        return _row_supports_vision_input(row)
+    return caps.get("vision") is True
+
+
+def _rank_vision_row(row: dict) -> tuple:
+    mid = _omni_model_row_id(row).lower()
+    caps = row.get("capabilities") if isinstance(row.get("capabilities"), dict) else {}
+    tier = 3
+    if caps.get("vision") is True and _row_supports_vision_input(row):
+        tier = 0
+    elif _row_supports_vision_input(row):
+        tier = 1
+    elif row.get("supportsVision"):
+        tier = 2
+    provider = _row_provider(row)
+    oc_bonus = 0 if provider in {"oc", "opencode", "opencode-go"} else 1
+    return (tier, oc_bonus, mid)
+
+
+def _is_vision_capable_model_id(mid: str, catalog: list[dict] | None = None) -> bool:
+    want = (mid or "").strip()
+    if not want:
+        return False
+    for row in catalog or []:
+        if _omni_model_row_id(row) == want:
+            return _is_vision_capable_model_row(row)
+    return False
+
+
+def _omni_admin_catalog_rows(opener) -> list[dict]:
     _, data = http_json(opener, "GET", f"{BASE}/api/models")
-    rows = data.get("models") or []
-    out: list[str] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        if not row.get("supportsVision"):
-            continue
-        if row.get("available") is False:
-            continue
-        full = row.get("fullModel") or row.get("model")
-        if isinstance(full, str) and full.strip():
-            out.append(full.strip())
-    # OpenCode-first. Prefer members that return visible content for OCR
-    # (some kimi variants spend the token budget in reasoning_content only).
-    def _rank(mid: str) -> tuple:
-        m = mid.lower()
-        if "deepseek" in m and "vision" in m:
-            return (0, m)
-        if m.startswith("opencode-go/mimo") or m.startswith("oc/mimo") or m.startswith("opencode/mimo"):
-            return (1, m)
-        if m.startswith("opencode-go/minimax") or "minimax" in m and _is_opencode_model_id(m):
-            return (2, m)
-        if _is_opencode_model_id(m) and "kimi" not in m:
-            return (3, m)
-        if _is_opencode_model_id(m):
-            return (4, m)
-        if m.startswith("gemini/"):
-            return (5, m)
-        return (6, m)
+    return [r for r in (data.get("models") or []) if isinstance(r, dict)]
 
-    out = sorted(set(out), key=_rank)
+
+def list_vision_models(opener) -> list[str]:
+    """Multimodal chat models for OCR vision fallback (catalog image-input capability)."""
+    rows = _omni_admin_catalog_rows(opener)
+    found = [r for r in rows if isinstance(r, dict) and _is_vision_capable_model_row(r)]
+    found.sort(key=_rank_vision_row)
+    out: list[str] = []
+    for row in found:
+        mid = _omni_model_row_id(row)
+        if mid and mid not in out:
+            out.append(mid)
     return out[:10]
 
 
@@ -1209,45 +1347,184 @@ def _put_or_create_combo(
     return name
 
 
+def _images_generations_provider_nodes(opener) -> list[dict]:
+    try:
+        _, data = http_json(opener, "GET", f"{BASE}/api/provider-nodes")
+    except Exception as e:
+        print(f"WARN provider-nodes list failed: {e}")
+        return []
+    out: list[dict] = []
+    for node in data.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        if str(node.get("apiType") or "").strip().lower() == "images-generations":
+            out.append(node)
+    return out
+
+
+def _catalog_rows_for_provider(catalog: list[dict], provider: str) -> list[dict]:
+    want = (provider or "").strip().lower()
+    if not want:
+        return []
+    out: list[dict] = []
+    for row in catalog:
+        if _row_provider(row) == want:
+            out.append(row)
+            continue
+        mid = str(row.get("id") or "").strip().lower()
+        if mid.startswith(f"{want}/"):
+            out.append(row)
+    return out
+
+
+def _provider_model_local_id(provider: str, full_id: str) -> str:
+    low = (full_id or "").strip()
+    prefix = f"{(provider or '').strip()}/"
+    if prefix and low.lower().startswith(prefix.lower()):
+        return low[len(prefix) :]
+    return low
+
+
+def ensure_provider_image_models(opener, api_key: str) -> None:
+    """Register/repair custom provider models for /images/generations (catalog-driven)."""
+    nodes = _images_generations_provider_nodes(opener)
+    if not nodes:
+        print("NOTE: no images-generations provider node — skip custom image-model registration")
+        return
+    catalog = _v1_models(api_key)
+    for node in nodes:
+        provider = str(node.get("id") or "").strip()
+        if not provider:
+            continue
+        state = _custom_models_by_provider(opener, provider)
+        for model_id, existing in state.items():
+            action = _custom_image_model_action(existing)
+            if not action:
+                continue
+            body = {
+                "provider": provider,
+                "modelId": model_id,
+                "modelName": existing.get("modelName") or model_id,
+                "apiFormat": "images-generations",
+                "supportedEndpoints": ["images"],
+            }
+            status, resp = http_json(opener, "PUT", f"{BASE}/api/provider-models", body)
+            if status in (200, 201):
+                print(f"OK: fix custom image model {provider[:8]}…/{model_id} (images-generations)")
+            else:
+                print(f"WARN fix {model_id} on {provider[:8]}…: {str(resp)[:200]}")
+        for row in _catalog_rows_for_provider(catalog, provider):
+            if not _is_image_output_model(row):
+                continue
+            full_id = str(row.get("id") or "").strip()
+            local_id = _provider_model_local_id(provider, full_id)
+            if not local_id or local_id in state or full_id in state:
+                continue
+            action = _custom_image_model_action(state.get(local_id))
+            if not action:
+                continue
+            body = {
+                "provider": provider,
+                "modelId": local_id,
+                "modelName": local_id,
+                "apiFormat": "images-generations",
+                "supportedEndpoints": ["images"],
+            }
+            status, resp = http_json(opener, "POST", f"{BASE}/api/provider-models", body)
+            if status in (200, 201):
+                print(f"OK: add custom image model {provider[:8]}…/{local_id} (images-generations)")
+            else:
+                print(f"WARN add {local_id} on {provider[:8]}…: {str(resp)[:200]}")
+
+
+def _custom_models_by_provider(opener, provider: str) -> dict[str, dict]:
+    query = urllib.parse.urlencode({"provider": provider})
+    try:
+        _, data = http_json(opener, "GET", f"{BASE}/api/provider-models?{query}")
+    except Exception as e:
+        print(f"WARN provider-models GET failed for {provider[:8]}…: {e}")
+        return {}
+    models = data.get("models")
+    if isinstance(models, dict):
+        bucket = models.get(provider) or []
+    elif isinstance(models, list):
+        bucket = models
+    else:
+        bucket = []
+    return {
+        str(row.get("id")): row
+        for row in bucket
+        if isinstance(row, dict) and row.get("id")
+    }
+
+
+def _custom_image_model_action(existing: dict | None) -> str:
+    if not existing:
+        return "add"
+    endpoints = [str(e) for e in (existing.get("supportedEndpoints") or [])]
+    api_format = str(existing.get("apiFormat") or "").strip()
+    if "images" in endpoints and api_format == "images-generations":
+        return ""
+    return "fix"
+
+
 def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
-    """Seed image-gen / vision-ocr / embedding combos when empty; keep operator-owned members."""
+    """Seed image-gen / vision-ocr / embedding combos; refill when chat-only members leak in."""
+    catalog = _v1_models(api_key)
     image_ids = list_image_gen_models(api_key)
     if not image_ids:
         raise SystemExit(
-            "no images-capable models in Omni catalog — add an image provider in Omni UI"
+            "no images-capable models in Omni catalog — connect an images-generations provider"
         )
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = {c.get("name"): c for c in (data.get("combos") or []) if isinstance(c, dict)}
     cur_img = _combo_model_ids(combos.get("image-gen"))
-    head = _resolve_image_gen_head(image_ids, env)
+    bad_img = [m for m in cur_img if _is_bad_image_gen_combo_member(m, catalog)]
+    head = _resolve_image_gen_head(image_ids, env, catalog)
     want_ids = _order_image_gen_combo_members(image_ids, head)
-    if not cur_img:
+    need_img = (
+        (not cur_img)
+        or bool(bad_img)
+        or not set(cur_img).intersection(set(image_ids))
+        or cur_img != want_ids
+    )
+    if bad_img:
+        print(
+            f"==> image-gen has invalid members {bad_img[:6]!r} "
+            f"(chat-only / unsupported for /images/generations) — refilling"
+        )
+    elif not cur_img:
         print(f"==> seed combo image-gen from catalog first={want_ids[:3]!r}")
     _put_or_create_combo(
         opener,
         name="image-gen",
-        description="Image generation — Omni /images/generations catalog",
+        description="Image generation — diffusion /images/generations only",
         model_ids=want_ids,
-        force=not cur_img,
+        force=need_img,
         strategy=IMAGE_GEN_COMBO_STRATEGY,
     )
     if head:
         _set_stack_env_key("IMAGE_GEN_HEAD_MEMBER", head)
         print(f"OK: pinned IMAGE_GEN_HEAD_MEMBER={head}")
 
+    vision_catalog = _omni_admin_catalog_rows(opener)
     vision_ids = list_vision_models(opener)
     if not vision_ids:
         vision_ids = list_oc_models(opener)[:5] or list(OPENCODE_FREE_FALLBACK[:5])
-        print(f"WARN no supportsVision catalog; seeding vision-ocr with OpenCode {vision_ids[:3]}")
+        print(f"WARN no vision-capable catalog; seeding vision-ocr with OpenCode {vision_ids[:3]}")
     cur_vis = _combo_model_ids(combos.get("vision-ocr"))
-    if not cur_vis:
+    bad_vis = [m for m in cur_vis if not _is_vision_capable_model_id(m, vision_catalog)]
+    need_vis = (not cur_vis) or bool(bad_vis) or cur_vis != vision_ids
+    if bad_vis:
+        print(f"==> vision-ocr has blind members {bad_vis[:6]!r} — refilling")
+    elif not cur_vis:
         print(f"==> seed combo vision-ocr from catalog first={vision_ids[:3]!r}")
     _put_or_create_combo(
         opener,
         name="vision-ocr",
-        description="Vision OCR — multimodal chat (supportsVision catalog)",
+        description="Vision OCR — multimodal chat (catalog image-input)",
         model_ids=vision_ids,
-        force=not cur_vis,
+        force=need_vis,
         strategy=VISION_OCR_COMBO_STRATEGY,
     )
 
@@ -1319,7 +1596,8 @@ def main() -> int:
 
     unblock_opencode(opener)
     ensure_opencode_provider(opener)
-    ensure_pollinations_provider(opener)
+    ensure_pollinations_provider(opener, env)
+    ensure_provider_image_models(opener, key)
     combo = ensure_combo_alias(opener)
     classify_combo = ensure_classifier_combo(opener)
     assert_combo_oc_only(opener, combo)

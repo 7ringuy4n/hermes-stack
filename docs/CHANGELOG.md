@@ -1,3 +1,15 @@
+## 2026-09-02 11:00 +07 — first-setup: vision-ocr rejects blind supportsVision models
+
+- `first-setup-omnirouter` requires catalog image-input modality for vision-ocr members; refills combo when blind models (e.g. text-only OpenCode ids) leak in.
+
+## 2026-09-02 10:50 +07 — first-setup: Pollinations without API key
+
+- `first-setup-omnirouter` creates Pollinations provider in anonymous mode when `POLLINATIONS_API_KEY` is unset (optional keyed tier when set).
+
+## 2026-09-02 10:45 +07 — first-setup: image-gen from catalog metadata only
+
+- `first-setup-omnirouter` selects image-gen combo members via `supportedEndpoints`, `apiFormat`, `type`, and `capabilities` — no provider-prefix or model-name whitelists; repairs custom provider models on `images-generations` nodes.
+
 ## 2026-09-02 10:15 +07 — setup-zalo: show QR/logs during health capture
 
 - `zalo_log` and QR instructions go to stderr; login CLI writes to `/dev/tty` so `$(zalo_qr_login_phase)` no longer swallows the ASCII QR.

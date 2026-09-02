@@ -21,30 +21,96 @@ def _row(mid: str, **extra) -> dict:
     return row
 
 
-def test_image_output_from_catalog_type() -> None:
-    assert mod._is_image_output_model(_row("pollinations/flux", type="image")) is True
-    assert mod._is_image_output_model(_row("aihorde/ICBINP", output_modalities=["image"])) is True
-    assert mod._is_image_output_model(_row("oc/big-pickle")) is False
+def test_image_output_from_catalog_metadata() -> None:
+    assert (
+        mod._is_image_output_model(
+            _row("provider-a/flux", type="image", supportedEndpoints=["images"])
+        )
+        is True
+    )
+    assert (
+        mod._is_image_output_model(
+            _row(
+                "provider-b/diffusion",
+                apiFormat="images-generations",
+                supportedEndpoints=["images"],
+            )
+        )
+        is True
+    )
+    assert (
+        mod._is_image_output_model(
+            _row("provider-c/model", supportedEndpoints=["chat"], capabilities={"image_generation": False})
+        )
+        is False
+    )
+    assert mod._is_image_output_model(_row("oc/big-pickle", supportedEndpoints=["chat"])) is False
     assert mod._is_image_output_model(_row("image-gen")) is False
+    assert (
+        mod._is_image_output_model(
+            _row("provider-d/model", output_modalities=["image"], supportedEndpoints=["chat"])
+        )
+        is False
+    )
 
 
-def test_pollinations_flux_head() -> None:
-    assert mod._is_pollinations_flux_model_id("pollinations/flux") is True
-    assert mod._is_pollinations_flux_model_id("pollinations/flux-2-flex") is True
-    assert mod._is_pollinations_flux_model_id("pollinations/chigwell/gpt-5.4") is False
+def test_rank_prefers_images_generations_metadata() -> None:
+    catalog = [
+        _row(
+            "provider-a/horde-model",
+            supportedEndpoints=["images"],
+            apiFormat="images-generations",
+            provider="provider-a",
+        ),
+        _row(
+            "provider-b/flux",
+            type="image",
+            supportedEndpoints=["images"],
+            provider="provider-b",
+        ),
+    ]
+    horde = "provider-a/horde-model"
+    flux = "provider-b/flux"
+    assert mod._rank_image_gen_model(horde, catalog) < mod._rank_image_gen_model(flux, catalog)
 
 
-def test_rank_prefers_pollinations_flux() -> None:
-    horde = "aihorde/ICBINP"
-    flux = "pollinations/flux"
-    assert mod._rank_image_gen_model(flux) < mod._rank_image_gen_model(horde)
+def test_resolve_image_gen_head_honors_override() -> None:
+    catalog = [
+        _row("provider-a/horde-model", supportedEndpoints=["images"], apiFormat="images-generations"),
+        _row("provider-b/flux", type="image", supportedEndpoints=["images"]),
+        _row(
+            "provider-c/qwen-image",
+            supportedEndpoints=["images"],
+            apiFormat="images-generations",
+        ),
+    ]
+    ids = ["provider-a/horde-model", "provider-b/flux", "provider-c/qwen-image"]
+    assert mod._resolve_image_gen_head(ids, {}, catalog) == "provider-a/horde-model"
+    assert (
+        mod._resolve_image_gen_head(ids, {"IMAGE_GEN_HEAD_MEMBER": "provider-b/flux"}, catalog)
+        == "provider-b/flux"
+    )
+    assert mod._order_image_gen_combo_members(ids, "provider-b/flux")[0] == "provider-b/flux"
 
 
-def test_resolve_image_gen_head_pollinations() -> None:
-    ids = ["aihorde/ICBINP", "pollinations/flux", "img-gen/qwen-image-3.0-pro"]
-    assert mod._resolve_image_gen_head(ids, {}) == "pollinations/flux"
-    assert mod._resolve_image_gen_head(ids, {"IMAGE_GEN_HEAD_MEMBER": "aihorde/ICBINP"}) == "pollinations/flux"
-    assert mod._order_image_gen_combo_members(ids, "pollinations/flux")[0] == "pollinations/flux"
+def test_vision_rejects_blind_supports_vision_flag() -> None:
+    blind = {
+        "fullModel": "oc/qwen3.7-plus",
+        "supportsVision": True,
+        "supportedEndpoints": ["chat"],
+        "modalities": ["text"],
+        "provider": "oc",
+    }
+    capable = {
+        "fullModel": "oc/mimo-v2.5-free",
+        "supportsVision": True,
+        "supportedEndpoints": ["chat"],
+        "modalities": ["text", "image"],
+        "capabilities": {"vision": True},
+        "provider": "oc",
+    }
+    assert mod._is_vision_capable_model_row(blind) is False
+    assert mod._is_vision_capable_model_row(capable) is True
 
 
 def test_fallback_combo_strategy_constants() -> None:
@@ -122,7 +188,7 @@ def test_put_or_create_combo_uses_want_strategy() -> None:
             object(),
             name="image-gen",
             description="diffusion only",
-            model_ids=["pollinations/flux", "aihorde/ICBINP"],
+            model_ids=["provider-a/flux", "provider-b/horde"],
             force=True,
             strategy="priority",
         )
@@ -133,7 +199,7 @@ def test_put_or_create_combo_uses_want_strategy() -> None:
             del mod.http_json
     assert captured.get("method") == "POST"
     assert captured.get("body", {}).get("strategy") == "priority"
-    assert captured["body"]["models"][0]["model"] == "pollinations/flux"
+    assert captured["body"]["models"][0]["model"] == "provider-a/flux"
 
 
 def test_web_search_member_order() -> None:
@@ -161,10 +227,10 @@ def test_web_search_member_order() -> None:
 
 
 def main() -> None:
-    test_image_output_from_catalog_type()
-    test_pollinations_flux_head()
-    test_rank_prefers_pollinations_flux()
-    test_resolve_image_gen_head_pollinations()
+    test_image_output_from_catalog_metadata()
+    test_rank_prefers_images_generations_metadata()
+    test_resolve_image_gen_head_honors_override()
+    test_vision_rejects_blind_supports_vision_flag()
     test_image_gen_combo_strategy_is_priority()
     test_put_or_create_combo_strategy_only_keeps_members()
     test_web_search_member_order()
