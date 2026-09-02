@@ -33,7 +33,7 @@ UNITS: list[tuple[str, str]] = [
     ("schedule_crud_unit.py", "34"),
     ("secret_probe_path_unit.py", "32"),
     ("ocr_refuse_unit.py", "35"),
-    ("paddle_ocr_unit.py", "36"),
+    ("vision_ocr_policy_unit.py", "36"),
     ("omni_rotate_noreply_unit.py", "37"),
     ("zalo_workflow_parallel_unit.py", "wf-par"),
     ("soul_deception_unit.py", "soul"),

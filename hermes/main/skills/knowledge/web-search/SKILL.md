@@ -18,9 +18,9 @@ Send **only the final answer** (and a generated file if the user asked for one).
 3. **Extract** — `POST http://model-router:8096/v1/extract` on the best URL (extract
    backends from config; SearXNG cannot extract). If extract fails, stop with a short failure line.
 4. **Page images** — if the useful content is in **images** (tables, posted prices, charts):
-   1. Download the image to `/opt/data/media/in/<safe>.jpg` (same volume as OCR).
-   2. `POST http://ocr:8091/v1/ocr` with `{ "path": "/data/media/in/<safe>.jpg" }`.
-   3. Use the OCR text as the source of truth.
+   1. Download the image to `/opt/data/media/in/<safe>.jpg` (shared media volume).
+   2. Read via vision-ocr combo (router-worker `POST /v1/chat/completions` model `vision-ocr`, or ingest/dispatcher `vision_read`).
+   3. Use the extracted text as the source of truth.
    4. If the user asked for an **image** of that result, call skill `image-gen` (Omni `/images/generations` model `image-gen`) with the facts in the English prompt.
 5. **Answer** — lead with the finding; note date/locale if relevant. No “want me to resend?”.
 

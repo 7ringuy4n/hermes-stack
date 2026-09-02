@@ -15,27 +15,31 @@ Set secrets in `.env` **before** `up`. Optional workers are **not** in `.env.exa
 
 ## Quick matrix
 
-| Command | Availability | What it does |
-|---|---|---|
-| `up` / `down` / `ps` / `logs` | all installs | Compose lifecycle |
-| `destroy` | all installs | Backup+verify, then remove this project's containers + networks (volumes/data kept) |
-| `update` | all installs | Backup+verify, rebuild stack, prune disk (router bootstrap: manual — see `first-setup-omnirouter`) |
-| `workers` / `profile` | all installs | Show worker activation + core flags |
-| `install NAME…` | all installs | Short name → `.env` (backup+verify, then `up`) |
-| `uninstall NAME…` | all installs | Deactivate by short name |
-| `install list` | all installs | Show install name catalog |
-| `add-components KEY=VAL…` | all installs | Backup+verify, write `.env`, then `up` (or `--update` on running host) |
-| `switch-profile <…>` | removed | Fails fast with a worker hint |
-| `backup` / `restore` / `verify` / `migrate` | all installs | DR stamp lifecycle |
-| `auto-learn` / `learn-status` | all installs | Knowledge ingest status / one-shot run |
-| `compact` / `optimize-memory` | Media\|File worker | Memory housekeeping |
-| `check-media` | Media\|File worker | Dispatcher / OCR / Jobs / SearXNG smoke |
-| `check-security` | Security / Monitor / OpenBao components | Security stack smoke |
-| `install-timers` | all installs | systemd timers: auto-learn, backup, stack-watch, and worker-specific extras |
-| `backup-sync-clouddrive` | when CloudDrive installed | Copy latest stamp to CloudDrive mirror |
-| `channel-status` | all installs | Show attached social-app flags |
+
+| Command                                     | Availability                            | What it does                                                                                       |
+| ------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `up` / `down` / `ps` / `logs`               | all installs                            | Compose lifecycle                                                                                  |
+| `destroy`                                   | all installs                            | Backup+verify, then remove this project's containers + networks (volumes/data kept)                |
+| `update`                                    | all installs                            | Backup+verify, rebuild stack, prune disk (router bootstrap: manual — see `first-setup-omnirouter`) |
+| `workers` / `profile`                       | all installs                            | Show worker activation + core flags                                                                |
+| `install NAME…`                             | all installs                            | Short name → `.env` (backup+verify, then `up`)                                                     |
+| `uninstall NAME…`                           | all installs                            | Deactivate by short name                                                                           |
+| `install list`                              | all installs                            | Show install name catalog                                                                          |
+| `add-components KEY=VAL…`                   | all installs                            | Backup+verify, write `.env`, then `up` (or `--update` on running host)                             |
+| `switch-profile <…>`                        | removed                                 | Fails fast with a worker hint                                                                      |
+| `backup` / `restore` / `verify` / `migrate` | all installs                            | DR stamp lifecycle                                                                                 |
+| `auto-learn` / `learn-status`               | all installs                            | Knowledge ingest status / one-shot run                                                             |
+| `compact` / `optimize-memory`               | Media                                   | File worker                                                                                        |
+| `check-media`                               | Media                                   | File worker                                                                                        |
+| `check-security`                            | Security / Monitor / OpenBao components | Security stack smoke                                                                               |
+| `install-timers`                            | all installs                            | systemd timers: auto-learn, backup, stack-watch, and worker-specific extras                        |
+| `backup-sync-clouddrive`                    | when CloudDrive installed               | Copy latest stamp to CloudDrive mirror                                                             |
+| `channel-status`                            | all installs                            | Show attached social-app flags                                                                     |
+
 
 ---
+
+
 
 ## First setup (clean OS)
 
@@ -58,6 +62,8 @@ bash run.sh first-setup-omnirouter         # runs on up when Omni enabled; safe 
 
 # Install optional workers (see docs/00-workers.md):
 bash run.sh install schedule media security notify message monitor
+bash run.sh up
+bash run.sh first-setup-omnirouter         # optional
 bash run.sh install list                   # all short names
 bash run.sh workers                        # confirm activation
 ```
@@ -72,6 +78,8 @@ bash scripts/main/login-zalo.sh            # re-login when stack already up
 `first-setup-llm` is **optional** and only used when `ENABLE_9ROUTER=active`.
 
 ---
+
+
 
 ## Stack lifecycle
 
@@ -104,9 +112,11 @@ bash run.sh update
 
 ---
 
+
+
 ## Worker changes
 
-Workers are off until installed. Do **not** hand-edit `WORKER_*` in `.env.example` (those keys are not in the template).
+Workers are off until installed. Do **not** hand-edit `WORKER_`* in `.env.example` (those keys are not in the template).
 
 ```bash
 bash run.sh install media
@@ -117,7 +127,7 @@ bash run.sh uninstall traefik
 bash run.sh uninstall gateway
 ```
 
-Runtime flags on a **running** host — `add-components` + **`--update`** (not plain `up`):
+Runtime flags on a **running** host — `add-components` + `--update` (not plain `up`):
 
 ```bash
 bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
@@ -136,9 +146,11 @@ Every worker install/uninstall and every `add-components`/`remove-components` ru
 
 ---
 
+
+
 ## Backup / restore / migrate
 
-Stamps land in `BACKUP_DIR` (default **`/data/assistant/backups`**).
+Stamps land in `BACKUP_DIR` (default `/data/assistant/backups`).
 
 ```bash
 bash run.sh backup
@@ -160,6 +172,8 @@ Stamps include `config/env.sealed` (full `.env`) and `config/profile-options.env
 
 ---
 
+
+
 ## Knowledge + maintenance
 
 ```bash
@@ -167,7 +181,7 @@ bash run.sh auto-learn
 bash run.sh learn-status
 ```
 
-`compact` / `optimize-memory` require the Media\|File worker (`bash run.sh install media`).
+`compact` / `optimize-memory` require the MediaFile worker (`bash run.sh install media`).
 
 ```bash
 bash run.sh compact
@@ -183,6 +197,8 @@ bash run.sh check-security
 
 ---
 
+
+
 ## Timers
 
 ```bash
@@ -191,15 +207,19 @@ sudo bash run.sh install-timers
 
 Installed timers depend on enabled components:
 
-| Timer | When |
-|---|---|
-| `assistant-auto-learn.timer` | all installs |
-| `assistant-backup.timer` | all installs |
-| `assistant-stack-watch.timer` | all installs |
-| `assistant-compact.timer` | when Media\|File worker is enabled |
-| `assistant-zalo-watch.timer` | when Zalo/Message worker is enabled |
+
+| Timer                         | When                                |
+| ----------------------------- | ----------------------------------- |
+| `assistant-auto-learn.timer`  | all installs                        |
+| `assistant-backup.timer`      | all installs                        |
+| `assistant-stack-watch.timer` | all installs                        |
+| `assistant-compact.timer`     | when Media                          |
+| `assistant-zalo-watch.timer`  | when Zalo/Message worker is enabled |
+
 
 ---
+
+
 
 ## See also
 
@@ -207,3 +227,4 @@ Installed timers depend on enabled components:
 - [00-workers.md](./00-workers.md)  
 - [config/DEFAULTS.md](./config/DEFAULTS.md)  
 - [architect/backup-restore/README.md](../architect/backup-restore/README.md)
+

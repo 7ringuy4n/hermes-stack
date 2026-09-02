@@ -17,7 +17,7 @@ Document and test **which security layer** each path uses.
 2. EICAR via `security-manager` → BLOCKED
 3. Clean txt via `security-manager` → CLEAN
 4. If Zalo on: inbound EICAR attachment → blocked at AV gate (no LLM turn)
-5. OCR: POST `ocr/v1/ocr` on clean PDF sample → 200 (no YARA in path)
+5. Vision read: ingest/dispatcher vision-ocr on clean PDF sample → text extract (no YARA in path)
 
 ## Pass criteria
 
@@ -27,7 +27,7 @@ Document and test **which security layer** each path uses.
 
 ## Fail events
 
-- EICAR reaches OCR/ingest without block
+- EICAR reaches ingest without block
 - Inbound Zalo file skips AV when `ENABLE_ANTIVIRUS=1`
 
 ## Follow-up (P0 backlog)

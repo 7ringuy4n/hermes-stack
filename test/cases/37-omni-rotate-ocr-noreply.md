@@ -2,10 +2,10 @@
 
 ## Goal
 
-1. A bare Zalo **image** with OCR text must produce a **deterministic Zalo reply**
-   containing the OCR excerpt — never silence when PaddleOCR succeeded.
+1. A bare Zalo **image** with vision-ocr text must produce a **deterministic Zalo reply**
+   containing the extract or scene summary — never silence when vision read succeeded.
 2. A bare Zalo **file** (txt/csv/xlsx/mp3/mp4/…) must produce a **deterministic
-   extract ack** after ingest/OCR/media-text — never depend on the agent when
+   extract ack** after ingest/vision/media-text — never depend on the agent when
    Omni returns capacity-busy 503.
 3. Router Worker must **rotate** the Omni chat combo (free members) with backoff
    on capacity-busy, then try `OMNIROUTER_FAILOVER_MODELS` (default
@@ -19,8 +19,8 @@
 4. Lab: rebuild `router-worker` + `hermes`; confirm env
    `MODEL_ROUTER_TIMEOUT_S=180`, `OMNIROUTER_ROTATE_ATTEMPTS=5`,
    `OMNIROUTER_BUSY_BACKOFF_S=3`, `OMNIROUTER_FAILOVER_MODELS=auto/best-free`
-5. Send bare photo + csv/xlsx/txt/mp3/mp4 → each gets an extract/OCR ack (not only
-   Knowledge-pending). Glyph-noise OCR should empty-ack.
+5. Send bare photo + csv/xlsx/txt/mp3/mp4 → each gets an extract/vision ack (not only
+   Knowledge-pending). Empty vision read should empty-ack.
 6. `POST /v1/chat/completions` with `stream:true` still returns content when the
    first Omni member is slow/blocked (router logs `[route] failover ...`)
 

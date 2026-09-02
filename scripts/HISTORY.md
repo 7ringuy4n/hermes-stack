@@ -1,3 +1,90 @@
+### Fix (core)
+`plan_is_image_analyze_chat` blocks async workflow; `_as_try_workflow_submit` no longer calls `office_shortcut` without `media_urls` when `has_image_attachment`. Image/PDF reads use `architect/lib/vision_ocr.py` → router-worker combo `vision-ocr` (no OCR container).
+
+## 2026-09-02 22:40 +07 — router-worker stripped image_url; kimi saw text only
+
+### Symptom
+Direct Omni `ai-box/kimi-k3` described the DSLR correctly; same payload via `router-worker` / `vision-ocr` returned “chưa nhận được ảnh” or invented cafe scenes.
+
+### Root cause
+Container `chat_norm.sanitize_chat_payload` still flattened every message with `parts_to_text`, dropping `image_url`. Blind text models then hallucinated scenic Vietnamese cafe replies.
+
+### Fix (core)
+Ship `normalize_message_content` that keeps vision parts; do not force `model=hermes` on vision payloads. Zalo adds structural prompt-echo gate and media path/base64 describe path.
+
+### Prevent recurrence
+`test/scripts/model_router_chat_norm.py` asserts multimodal lists survive sanitize; VPS must rebuild/restart `router-worker` after router code changes (image bake, not Hermes bind-mount alone).
+
+## 2026-09-02 22:00 +07 — Remove OCR worker container entirely
+
+### Symptom
+Separate OCR container still ran legacy paddle health on VPS; duplicate hop vs shared vision lib.
+
+### Root cause
+OCR worker was retired in code but compose/service/skills still referenced `ocr:8091`.
+
+### Fix (core)
+Deleted `architect/tools/ocr/`. Ingest/jobs/dispatcher/Zalo call `vision_read` / `vision_read_path`. Removed `ocr` service, `OCR_URL`, `ENABLE_OCR`, monitor health probes, paddle test case.
+
+### Prevent recurrence
+`test/scripts/vision_ocr_policy_unit.py` fails if `architect/tools/ocr` exists.
+
+## 2026-09-02 21:15 +07 — OCR worker: vision-ocr only (remove paddle/tesseract)
+
+### Symptom
+Image describe still wrong or empty: Paddle returned glyph noise and skipped vision; large photos refused or hallucinated on vision-ocr.
+
+### Root cause
+Media OCR worker ran pymupdf → PaddleOCR → vision-ocr → tesseract. Paddle short-circuit blocked vision; tesseract added unreliable fallback.
+
+### Fix (core)
+`architect/tools/ocr/app.py` v2: pymupdf PDF text layer → vision-ocr combo only. Large images downscaled (`OCR_VISION_MAX_PX`). Removed `paddle_engine.py`, tesseract deps, paddle compose env/volume. Skills/classify/media.txt aligned.
+
+### Prevent recurrence
+`test/scripts/vision_ocr_policy_unit.py` locks vision-only app policy.
+
+## 2026-09-02 21:00 +07 — zalo: image-analyze host reply via OCR vision-ocr
+
+### Symptom
+`hình gì đây` + Saigon skyline returned unrelated scenes (dog on sofa, girl in meadow) despite native vision attach and router multimodal fix.
+
+### Root cause
+Hermes `hermes` combo still hallucinates on inline vision; probe showed `vision-ocr` via OCR `/v1/ocr` describes skyline correctly.
+
+### Fix (core)
+`_as_try_image_analyze_vision_reply`: classify `plan_is_image_analyze_chat` → OCR worker with Vietnamese describe prompt → host Zalo reply; bypass Hermes chat turn. Hooked in enqueue + queue drain before `handle_message`.
+
+### Prevent recurrence
+`attachment.image_analyze_vision_*` helpers + unit tests in `image_analyze_chat_unit.py`.
+
+## 2026-09-02 20:45 +07 — model-router: preserve multimodal image parts
+
+### Symptom
+Zalo `hình gì đây` + Saigon skyline photo returned hallucinated text (GitHub repo page, cybernetic brain) instead of describing the attached image.
+
+### Root cause
+`architect/models/model-router/chat_norm.sanitize_chat_payload` flattened every message to text via `parts_to_text`, dropping `image_url` parts. Hermes `vision_analyze` and combo chat saw only the Vietnamese prompt — models invented content from session prior turns.
+
+### Fix (core)
+`normalize_message_content` keeps multimodal lists when vision parts are present. Remove erroneous `OCR_URL=127.0.0.1` stack pin; Hermes config: `image_input_mode: native`, `auxiliary.vision` → `vision-ocr` via router-worker. OCR container `OPENAI_BASE_URL` → router-worker.
+
+### Prevent recurrence
+`test/scripts/model_router_chat_norm.py` vision preserve case.
+
+## 2026-09-02 20:15 +07 — zalo: image analyze Hermes chat (not txt file / OCR garbage)
+
+### Symptom
+Captioned image ask (`đây là hình gì`) delivered a `.txt` file whose body was the classify instruction template. Bare image returned OCR garbage (`crn ae maa`) as the only reply.
+
+### Root cause
+Classify mis-tagged image analyze as async `file_processing` with `output_type=txt`, so workflow/file-gen wrote instructions as file content. Bare-image host-ack sent raw OCR noise without Hermes multimodal.
+
+### Fix (core)
+`plan_is_image_analyze_chat` blocks async workflow when an image is attached; coerce plan to interactive Hermes. Disable image host-ack; filter short OCR noise before prompt. Harden classify media part: image analyze never emits file output_type.
+
+### Prevent recurrence
+Unit test for txt misclassify coercion and OCR noise filter.
+
 ## 2026-09-02 19:45 +07 — zalo: classify strips attachment recall for schedule
 
 ### Symptom

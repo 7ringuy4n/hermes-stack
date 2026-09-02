@@ -3,6 +3,44 @@ from __future__ import annotations
 
 from typing import Any
 
+_VISION_PART_TYPES = frozenset({"image_url", "input_image", "image"})
+
+
+def _is_vision_part(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    ptype = str(item.get("type") or "").strip().lower()
+    if ptype in _VISION_PART_TYPES:
+        return True
+    if item.get("image_url") is not None or item.get("input_image") is not None:
+        return True
+    return False
+
+
+def content_has_vision_parts(content: Any) -> bool:
+    if not isinstance(content, list):
+        return False
+    return any(_is_vision_part(item) for item in content)
+
+
+def normalize_message_content(content: Any) -> Any:
+    """Text-only messages become str; multimodal vision turns keep image parts."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        if content_has_vision_parts(content):
+            clean: list[Any] = []
+            for item in content:
+                if isinstance(item, str) and item.strip():
+                    clean.append({"type": "text", "text": item.strip()})
+                elif isinstance(item, dict):
+                    clean.append(dict(item))
+            return clean if clean else ""
+        return parts_to_text(content)
+    return str(content)
+
 
 def parts_to_text(content: Any) -> str:
     if content is None:
@@ -33,7 +71,7 @@ def sanitize_chat_payload(payload: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(m, dict):
                 continue
             m2 = dict(m)
-            m2["content"] = parts_to_text(m2.get("content"))
+            m2["content"] = normalize_message_content(m2.get("content"))
             clean.append(m2)
         out["messages"] = clean
     tools = out.get("tools")

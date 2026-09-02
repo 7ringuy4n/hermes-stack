@@ -85,12 +85,48 @@ def patch_hermes_config(cfg: Path, key: str, model: str, base_url: str) -> bool:
             text,
             count=1,
         )
+    text = _patch_vision_routing(text, key=key, base_url=base_url)
     if text != orig:
         cfg.write_text(text, encoding="utf-8")
         print(f"OK: patched {cfg} → {base_url} model={model}")
         return True
     print(f"OK: {cfg} already points at model-router")
     return True
+
+
+def _patch_vision_routing(text: str, *, key: str, base_url: str) -> str:
+    """Native image attach + vision-ocr aux so Zalo describe skips blind text-only path."""
+    out = text
+    if not re.search(r"(?m)^agent:\s*$", out):
+        out = out.rstrip() + "\nagent:\n  image_input_mode: native\n"
+    elif not re.search(r"(?m)^  image_input_mode:\s*", out):
+        out = re.sub(r"(?m)^(agent:\s*)$", r"\1\n  image_input_mode: native", out, count=1)
+    else:
+        out = re.sub(r"(?m)^(  image_input_mode:\s*).*$", r"\1native", out, count=1)
+    if re.search(r"(?m)^  supports_vision:\s*", out):
+        out = re.sub(r"(?m)^(  supports_vision:\s*).*$", r"\1true", out, count=1)
+    elif re.search(r"(?m)^model:\s*$", out):
+        out = re.sub(r"(?m)^(model:\s*)$", r"\1\n  supports_vision: true", out, count=1)
+    vision_block = (
+        "auxiliary:\n"
+        "  vision:\n"
+        '    provider: "custom"\n'
+        '    model: "vision-ocr"\n'
+        f'    base_url: "{base_url}"\n'
+        f'    api_key: "{key}"\n'
+        "    timeout: 120\n"
+    )
+    if not re.search(r"(?m)^auxiliary:\s*$", out):
+        out = out.rstrip() + "\n" + vision_block
+    elif not re.search(r"(?m)^  vision:\s*$", out):
+        out = re.sub(r"(?m)^(auxiliary:\s*)$", r"\1\n  vision:\n    provider: \"custom\"\n    model: \"vision-ocr\"\n    base_url: \"" + base_url + "\"\n    api_key: \"" + key + "\"\n    timeout: 120", out, count=1)
+    else:
+        out = re.sub(r'(?m)^(    model:\s*).*$', r'\1"vision-ocr"', out, count=1)
+        out = re.sub(r'(?m)^(    base_url:\s*).*$', rf'\1"{base_url}"', out, count=1)
+        if key:
+            if re.search(r"(?m)^    api_key:\s*", out):
+                out = re.sub(r'(?m)^(    api_key:\s*).*$', rf'\1"{key}"', out, count=1)
+    return out
 
 
 def patch_shared_env(

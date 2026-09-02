@@ -17,18 +17,18 @@ def main() -> int:
     os.environ["ENABLE_ANTIVIRUS"] = "0"
     os.environ["ENABLE_ZALO"] = "0"
     os.environ["ENABLE_OMNIROUTER"] = "0"
-    os.environ["ENABLE_OCR"] = "1"
+    os.environ["ENABLE_JOBS"] = "1"
     assert not monitor_metrics_on()
     assert not host_expected("node-exporter")
     assert not host_expected("clamav")
     assert not host_expected("zalo-api")
     assert not host_expected("omni-router")
     assert host_expected("qdrant")
-    assert host_expected("ocr")
+    assert host_expected("jobs")
     os.environ["ENABLE_PROMETHEUS"] = "1"
     assert monitor_metrics_on()
     assert host_expected("node-exporter")
-    print("optional_scrape_unit OK")
+    print("PASS optional_scrape_unit")
     return 0
 
 

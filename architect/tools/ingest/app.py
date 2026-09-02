@@ -20,9 +20,9 @@ import httpx
 import redis
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
+from vision_ocr import vision_read_path
 
 REDIS_URL = os.environ.get("REDIS_URL") or os.environ.get("VALKEY_URL") or "redis://valkey:6379/0"
-OCR_URL = os.environ.get("OCR_URL", "http://ocr:8091").rstrip("/")
 EMBED_URL = os.environ.get("EMBED_URL", "http://embedding:8094").rstrip("/")
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://qdrant:6333").rstrip("/")
 COLLECTION = os.environ.get("QDRANT_COLLECTION_KNOWLEDGE", "knowledge_chunks")
@@ -1096,16 +1096,13 @@ def process_job(job: dict[str, Any]) -> dict[str, Any]:
             )
         if not text.strip():
             ocr_path = str(_resolve_media_path(str(job["path"])))
-            _flow("ingest_ocr_start", document_id=doc_id, path=ocr_path, collection=COLLECTION)
+            _flow("ingest_vision_start", document_id=doc_id, path=ocr_path, collection=COLLECTION)
             try:
-                with httpx.Client(timeout=180) as c:
-                    resp = c.post(f"{OCR_URL}/v1/ocr", json={"path": ocr_path})
-                    if resp.status_code < 300:
-                        text = resp.json().get("text") or ""
+                text = vision_read_path(ocr_path) or ""
             except Exception:
                 text = ""
             _flow(
-                "ingest_ocr_done",
+                "ingest_vision_done",
                 document_id=doc_id,
                 path=ocr_path,
                 chars=len(text or ""),
@@ -1283,26 +1280,10 @@ def extract_archive(req: ExtractArchiveReq) -> dict[str, Any]:
                 for x in (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
             ):
                 try:
-                    ocr_path = str(member_path)
-                    for src_pfx, dst_pfx in (
-                        ("/data/assistant/media/", "/data/media/"),
-                        ("/opt/data/media/", "/data/media/"),
-                    ):
-                        if ocr_path.startswith(src_pfx):
-                            ocr_path = dst_pfx + ocr_path[len(src_pfx) :]
-                            break
-                    with httpx.Client(timeout=60.0) as client:
-                        resp = client.post(
-                            f"{OCR_URL}/v1/ocr",
-                            json={
-                                "path": ocr_path,
-                                "prompt": "Analyze this file. Describe visible content and extract any readable text as markdown.",
-                            },
-                        )
-                        if resp.status_code < 300:
-                            data = resp.json() if resp.content else {}
-                            if isinstance(data, dict):
-                                body = str(data.get("text") or data.get("markdown") or "")
+                    body = vision_read_path(
+                        str(member_path),
+                        "Analyze this file. Describe visible content and extract any readable text as markdown.",
+                    )
                 except Exception:
                     body = ""
             elif any(

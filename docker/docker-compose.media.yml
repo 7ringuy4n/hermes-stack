@@ -1,102 +1,72 @@
-# assistant — Media|File Worker overlay (dispatcher, OCR, Jobs, SearXNG).
-# Merged when WORKER_MEDIA_FILE=active (or ENABLE_MEDIA_FILE=active / ENABLE_OCR / ENABLE_JOBS / ENABLE_SEARXNG is 1).
-#
-# Worker bundled defaults (when active): ENABLE_OCR=active ENABLE_JOBS=active OFFICE_FILE_GEN=active
-# Image diffusion: OmniRouter/9Router combo IMAGE_GEN_COMBO (no self-host diffusion).
-# File-gen lives in dispatcher (office_file.py). Web backends: Omni search providers.
-#
-# Do NOT re-list hermes/dispatcher environment here — Compose list-merge would
-# replace the base env and drop core keys.
-#
-# No container_name on optional workers — installed via `bash run.sh install media`.
-# Compose assigns project-scoped names (e.g. assistant-searxng-1). Internal DNS still
-# uses service names (searxng, ocr, …). run.sh removes legacy fixed-name orphans on up
-# for every enabled worker (schedule, media, security, notify, monitor, antivirus, …).
-
-services:
-  searxng:
-    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
-    restart: unless-stopped
-    volumes:
-      - ./config/searxng:/etc/searxng:ro
-    environment:
-      - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://searxng:8080/}
-      - TZ=${TZ:-Asia/Ho_Chi_Minh}
-    ports:
-      - "127.0.0.1:${SEARXNG_PORT:-8888}:8080"
-    networks: [internal]
-
-  ocr:
-    build:
-      context: ./architect/tools/ocr
-      args:
-        INSTALL_PADDLE: ${INSTALL_PADDLE:-1}
-    restart: unless-stopped
-    environment:
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://omni-router:20129/v1}
-      - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
-      - OCR_MODEL=${OCR_MODEL:-vision-ocr}
-      - OCR_MEDIA_ROOT=/data/media
-      - OCR_FALLBACK=${OCR_FALLBACK:-1}
-      - OCR_PADDLE=${OCR_PADDLE:-1}
-      - OCR_VISION=${OCR_VISION:-1}
-      - OCR_PADDLE_MOBILE=${OCR_PADDLE_MOBILE:-1}
-      - OCR_PADDLE_TIMEOUT_S=${OCR_PADDLE_TIMEOUT_S:-90}
-      - TZ=${TZ:-Asia/Ho_Chi_Minh}
-    volumes:
-      - ${ASSISTANT_DATA_DIR:-/data/assistant}/media:/data/media
-      - ${ASSISTANT_DATA_DIR:-/data/assistant}/media/.cache/paddleocr:/tmp/.paddlex
-    ports:
-      - "127.0.0.1:${OCR_PORT:-8091}:8091"
-    networks: [internal]
-    mem_limit: ${OCR_MEM_LIMIT:-3g}
-
-  jobs:
-    build: ./architect/tools/jobs
-    restart: unless-stopped
-    environment:
-      - VALKEY_URL=${VALKEY_URL:-valkey://valkey:6379/0}
-      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
-      - RQ_QUEUES=${RQ_QUEUES:-default,ingest,memory,learn,security}
-      - INGEST_URL=${INGEST_URL:-http://ingest:8099}
-      - MEMORY_URL=${MEMORY_URL:-http://memory:8095}
-      - OCR_URL=${OCR_URL:-http://ocr:8091}
-      - TZ=${TZ:-Asia/Ho_Chi_Minh}
-    depends_on:
-      valkey:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:${JOBS_PORT:-8104}:8104"
-    networks: [internal]
-
-  jobs-worker:
-    build: ./architect/tools/jobs
-    restart: unless-stopped
-    command: ["python", "worker.py"]
-    environment:
-      - VALKEY_URL=${VALKEY_URL:-valkey://valkey:6379/0}
-      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
-      - RQ_QUEUES=${RQ_QUEUES:-default,ingest,memory,learn,security}
-      - INGEST_URL=${INGEST_URL:-http://ingest:8099}
-      - MEMORY_URL=${MEMORY_URL:-http://memory:8095}
-      - OCR_URL=${OCR_URL:-http://ocr:8091}
-      - TZ=${TZ:-Asia/Ho_Chi_Minh}
-    depends_on:
-      valkey:
-        condition: service_healthy
-      jobs:
-        condition: service_started
-    networks: [internal]
-
-  dispatcher:
-    depends_on:
-      - searxng
-
-  hermes:
-    depends_on:
-      - ocr
-      - jobs
-
-  ingest:
-    depends_on:
-      - ocr
+# assistant — Media|File Worker overlay (dispatcher, Jobs, SearXNG).
+# Merged when WORKER_MEDIA_FILE=active (or ENABLE_MEDIA_FILE=active / ENABLE_JOBS / ENABLE_SEARXNG is 1).
+#
+# Worker bundled defaults (when active): ENABLE_JOBS=active OFFICE_FILE_GEN=active
+# Image diffusion: OmniRouter/9Router combo IMAGE_GEN_COMBO (no self-host diffusion).
+# File-gen lives in dispatcher (office_file.py). Web backends: Omni search providers.
+# Image/PDF reads: combo vision-ocr via router-worker (no separate OCR container).
+#
+# Do NOT re-list hermes/dispatcher environment here — Compose list-merge would
+# replace the base env and drop core keys.
+
+services:
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    restart: unless-stopped
+    volumes:
+      - ./config/searxng:/etc/searxng:ro
+    environment:
+      - SEARXNG_BASE_URL=${SEARXNG_BASE_URL:-http://searxng:8080/}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    ports:
+      - "127.0.0.1:${SEARXNG_PORT:-8888}:8080"
+    networks: [internal]
+
+  jobs:
+    build:
+      context: ./architect
+      dockerfile: tools/jobs/Dockerfile
+    restart: unless-stopped
+    environment:
+      - VALKEY_URL=${VALKEY_URL:-valkey://valkey:6379/0}
+      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
+      - RQ_QUEUES=${RQ_QUEUES:-default,ingest,memory,learn,security}
+      - INGEST_URL=${INGEST_URL:-http://ingest:8099}
+      - MEMORY_URL=${MEMORY_URL:-http://memory:8095}
+      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://router-worker:8096/v1}
+      - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
+      - OCR_MODEL=${OCR_MODEL:-vision-ocr}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      valkey:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${JOBS_PORT:-8104}:8104"
+    networks: [internal]
+
+  jobs-worker:
+    build:
+      context: ./architect
+      dockerfile: tools/jobs/Dockerfile
+    restart: unless-stopped
+    command: ["python", "worker.py"]
+    environment:
+      - VALKEY_URL=${VALKEY_URL:-valkey://valkey:6379/0}
+      - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
+      - RQ_QUEUES=${RQ_QUEUES:-default,ingest,memory,learn,security}
+      - INGEST_URL=${INGEST_URL:-http://ingest:8099}
+      - MEMORY_URL=${MEMORY_URL:-http://memory:8095}
+      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://router-worker:8096/v1}
+      - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-${N9ROUTER_API_KEY:-}}
+      - OCR_MODEL=${OCR_MODEL:-vision-ocr}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    depends_on:
+      valkey:
+        condition: service_healthy
+      jobs:
+        condition: service_started
+    networks: [internal]
+
+  dispatcher:
+    depends_on:
+      - searxng

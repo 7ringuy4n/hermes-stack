@@ -129,7 +129,7 @@ compose() {
   PROFILE="${ASSISTANT_PROFILE:-$PROFILE}"
   HERMES_REPLICAS="${HERMES_REPLICAS:-1}"
   local existing=(--project-directory "${ROOT}" -f "${ROOT}/docker/docker-compose.yml")
-  if _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}" || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
+  if _env_active "${ENABLE_JOBS:-}" || _env_active "${ENABLE_SEARXNG:-}" || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
     [[ -f "${ROOT}/docker/docker-compose.media.yml" ]] && existing+=(-f "${ROOT}/docker/docker-compose.media.yml")
   fi
   if _env_active "${ENABLE_SECURITY:-}" || _env_active "${ENABLE_MONITOR:-}" || _env_active "${ENABLE_NOTIFY:-}" || _env_active "${ENABLE_OPENBAO:-}" || _env_active "${ENABLE_SIEM:-}" || _env_active "${ENABLE_AUTHZ:-}" || _env_active "${ENABLE_CLOUDDRIVE:-}" || _env_active "${ENABLE_ANTIVIRUS:-}" || _env_active "${SECURITY_SANDBOX:-}"; then
@@ -149,7 +149,7 @@ compose() {
   _env_active "${SECURITY_SANDBOX:-}" && profiles+=(--profile sandbox)
   _env_active "${ENABLE_CLOUDDRIVE:-}" && profiles+=(--profile clouddrive)
   _env_active "${ENABLE_SCHEDULE:-}" && profiles+=(--profile schedule)
-  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || _env_active "${ENABLE_OCR:-}" || _env_active "${ENABLE_JOBS:-}"; then
+  if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || _env_active "${ENABLE_JOBS:-}"; then
     profiles+=(--profile media)
   fi
   assistant_append_monitor_profiles profiles
@@ -253,10 +253,7 @@ heal_by_health() {
     probe gateway "http://127.0.0.1:${GATEWAY_HOST_PORT:-8088}/health" || failed=1
   fi
 
-  if _env_active "${ENABLE_OCR:-}" || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || component_running ocr; then
-    probe ocr "http://127.0.0.1:${OCR_PORT:-8091}/health" || { failed=1; mark_failed ocr; }
-  fi
-  if _env_active "${ENABLE_JOBS:-}" || component_running jobs; then
+  if _env_active "${ENABLE_JOBS:-}" || [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || component_running jobs; then
     probe jobs "http://127.0.0.1:${JOBS_PORT:-8104}/health" || { failed=1; mark_failed jobs; }
   fi
   if _env_active "${ENABLE_GRAFANA:-}"; then

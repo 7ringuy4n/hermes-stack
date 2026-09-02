@@ -27,7 +27,6 @@ LISTEN_QUEUES = [
     if q.strip()
 ]
 INGEST_URL = os.environ.get("INGEST_URL", "http://ingest:8099").rstrip("/")
-OCR_URL = os.environ.get("OCR_URL", "http://ocr:8091").rstrip("/")
 MEMORY_URL = os.environ.get("MEMORY_URL", "http://memory:8095").rstrip("/")
 SECURITY_URL = os.environ.get("SECURITY_URL", "http://security-manager:8093").rstrip("/")
 SIEM_URL = os.environ.get("SIEM_URL", "http://siem:8105").rstrip("/")
@@ -108,10 +107,13 @@ def job_security_scan_meta(payload: dict) -> dict:
 
 
 def job_ocr(payload: dict) -> dict:
-    r = httpx.post(f"{OCR_URL}/v1/ocr", json=payload, timeout=JOB_OCR_TIMEOUT)
-    r.raise_for_status()
-    out = r.json()
-    _siem("job.ocr", ok=out.get("ok"))
+    from vision_ocr import DEFAULT_PROMPT, vision_read
+
+    path = str(payload.get("path") or "").strip() or None
+    image_b64 = str(payload.get("image_b64") or "").strip() or None
+    prompt = str(payload.get("prompt") or "").strip() or DEFAULT_PROMPT
+    out = vision_read(path=path, image_b64=image_b64, prompt=prompt)
+    _siem("job.vision_read", ok=out.get("ok"))
     return out
 
 

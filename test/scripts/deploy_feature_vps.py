@@ -161,8 +161,7 @@ for line in lines:
 if cur.get("ENABLE_ZALO") == "1":
     want["ENABLE_MESSAGE"] = "1"
 if (
-    cur.get("ENABLE_OCR") == "1"
-    or cur.get("ENABLE_JOBS") == "1"
+    cur.get("ENABLE_JOBS") == "1"
     or (cur.get("ENABLE_MEDIA_FILE") or "").strip().lower() == "active"
     or (cur.get("WORKER_MEDIA_FILE") or "").strip().lower() == "active"
     or cur.get("ENABLE_MEDIA_FILE") == "1"
@@ -201,7 +200,7 @@ sed -i 's/\r$//' /opt/assistant/scripts/main/stack-watch.sh /opt/assistant/run.s
 
 # Component overlays â€” not ASSISTANT_PROFILE
 files="-f /opt/assistant/docker/docker-compose.yml"
-if [[ "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
+if [[ "${ENABLE_JOBS:-0}" == "1" || "${ENABLE_SEARXNG:-0}" == "1" || "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]]; then
   files="$files -f /opt/assistant/docker/docker-compose.media.yml"
 fi
 if [[ "${ENABLE_SECURITY:-0}" == "1" || "${ENABLE_MONITOR:-0}" == "1" || "${ENABLE_NOTIFY:-0}" == "1" || "${ENABLE_OPENBAO:-0}" == "1" || "${ENABLE_SIEM:-0}" == "1" || "${ENABLE_AUTHZ:-0}" == "1" || "${ENABLE_CLOUDDRIVE:-0}" == "1" ]]; then
@@ -222,7 +221,7 @@ profiles=""
 [[ "${ENABLE_LOKI:-0}" == "1" ]] && profiles="$profiles --profile loki"
 [[ "${ENABLE_ALLOY:-0}" == "1" ]] && profiles="$profiles --profile alloy"
 [[ "${ENABLE_SCHEDULE:-0}" == "1" ]] && profiles="$profiles --profile schedule"
-[[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_OCR:-0}" == "1" || "${ENABLE_JOBS:-0}" == "1" ]] && profiles="$profiles --profile media"
+[[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" || "${ENABLE_JOBS:-0}" == "1" ]] && profiles="$profiles --profile media"
 [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles="$profiles --profile clouddrive"
 [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles="$profiles --profile comfy-gpu"
 

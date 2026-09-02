@@ -353,7 +353,6 @@ VIDEO_TEXT_EXTS = {".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi"}
 AUDIO_TEXT_EXTS = {".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".flac"}
 MEDIA_TEXT_FRAMES = int(os.environ.get("MEDIA_TEXT_FRAMES", "4"))
 MEDIA_TEXT_FRAME_TIMEOUT_S = float(os.environ.get("MEDIA_TEXT_FRAME_TIMEOUT_S", "40"))
-OCR_URL = (os.environ.get("OCR_URL") or "http://ocr:8091").rstrip("/")
 
 
 class MediaTextReq(BaseModel):
@@ -420,21 +419,13 @@ def _video_keyframes(src: Path, frames: int) -> list[Path]:
     return out
 
 
-def _ocr_file(path: Path) -> str:
+def _vision_file(path: Path, prompt: str = "Extract all visible text as markdown.") -> str:
+    from vision_ocr import vision_read_path
+
     try:
-        with httpx.Client(timeout=90.0) as client:
-            r = client.post(
-                f"{OCR_URL}/v1/ocr",
-                json={"path": str(path), "prompt": "Extract all visible text as markdown."},
-            )
-            if r.status_code >= 300:
-                return ""
-            data = r.json()
+        return vision_read_path(str(path), prompt) or ""
     except Exception:  # noqa: BLE001
         return ""
-    if not isinstance(data, dict):
-        return ""
-    return str(data.get("text") or data.get("markdown") or "").strip()
 
 
 @app.post("/v1/media/text")
@@ -458,7 +449,7 @@ def media_text(req: MediaTextReq) -> dict[str, Any]:
         keyframes = _video_keyframes(src, req.frames)
         frames_read = len(keyframes)
         for frame in keyframes:
-            hit = _ocr_file(frame)
+            hit = _vision_file(frame)
             if hit:
                 frame_text.append(hit)
             try:

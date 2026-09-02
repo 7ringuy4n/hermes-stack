@@ -4,3 +4,5 @@ pydantic==2.11.3
 httpx==0.28.1
 redis==5.2.1
 rq==2.1.0
+pymupdf==1.25.5
+Pillow==11.1.0

@@ -1,5 +1,0 @@
-# Installed only when the image is built with INSTALL_PADDLE=1.
-# paddlepaddle itself is installed from the Paddle CPU index in the Dockerfile.
-# Keep paddleocr/paddlex on the same minor line (see paddleocr_and_paddlex docs).
-paddleocr==3.7.0
-paddlex==3.7.2
