@@ -818,6 +818,55 @@ def plan_file_instruction(plan: dict[str, Any] | None, fallback: str = "") -> st
     return str(fallback or "").strip()
 
 
+def _instruction_is_office_file_body(parts: list[str]) -> bool:
+    blob = "\n".join(parts).upper()
+    return "TITLE:" in blob or "SUBTITLE:" in blob
+
+
+def plan_is_image_analyze_chat(
+    plan: dict[str, Any] | None, *, has_image: bool = False
+) -> bool:
+    """Image read/describe must answer in Hermes chat — never async txt/pdf workflow."""
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    if _instruction_is_office_file_body(parts) or _instruction_blob_has_image_contract(parts):
+        return False
+    if len(parts) >= 2:
+        return False
+    image_ctx = bool(has_image)
+    if not image_ctx and src.get("attachments_required") is True:
+        types = src.get("attachment_types") or []
+        if isinstance(types, list):
+            lowered = {str(x).strip().lower() for x in types if str(x).strip()}
+            image_ctx = bool(lowered & {"image", "photo"})
+    if not image_ctx:
+        return False
+    skill = str(src.get("skill") or "").strip().lower()
+    action = str(src.get("skill_action") or "").strip().lower()
+    hint = str(src.get("task_hint") or "").strip().lower()
+    task_type = str(src.get("task_type") or "").strip().lower()
+    if skill not in {"", "media_file"} and hint != "file":
+        return False
+    if action not in {"process_file", ""} and task_type != "file_processing":
+        return False
+    return True
+
+
+def apply_image_analyze_plan_coercion(plan: dict[str, Any]) -> dict[str, Any]:
+    """Normalize misclassified image-analyze plans (e.g. output_type=txt file jobs)."""
+    if not plan_is_image_analyze_chat(plan):
+        return plan
+    plan["process_original_message"] = True
+    plan["execution_class"] = "interactive"
+    plan["response_mode"] = "ack_then_deliver"
+    plan["task_type"] = "chat"
+    plan["output_type"] = None
+    plan["task_details"] = []
+    return plan
+
+
 def plan_output_type(plan: dict[str, Any] | None) -> str:
     src = plan if isinstance(plan, dict) else {}
     ot = _coerce_output_type(src.get("output_type"))
@@ -902,6 +951,8 @@ def plan_is_host_direct_reply(plan: dict[str, Any] | None) -> bool:
 def plan_is_async(plan: dict[str, Any] | None) -> bool:
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
+        return False
+    if str(src.get("execution_class") or "").strip().lower() == "interactive":
         return False
     for detail in src.get("task_details") or []:
         if not isinstance(detail, dict):
@@ -1221,7 +1272,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         )
     ):
         plan["process_original_message"] = False
-    return plan
+    return apply_image_analyze_plan_coercion(plan)
 
 
 def classify_text(

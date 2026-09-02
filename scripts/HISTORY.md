@@ -1,3 +1,17 @@
+## 2026-09-02 20:15 +07 — zalo: image analyze Hermes chat (not txt file / OCR garbage)
+
+### Symptom
+Captioned image ask (`đây là hình gì`) delivered a `.txt` file whose body was the classify instruction template. Bare image returned OCR garbage (`crn ae maa`) as the only reply.
+
+### Root cause
+Classify mis-tagged image analyze as async `file_processing` with `output_type=txt`, so workflow/file-gen wrote instructions as file content. Bare-image host-ack sent raw OCR noise without Hermes multimodal.
+
+### Fix (core)
+`plan_is_image_analyze_chat` blocks async workflow when an image is attached; coerce plan to interactive Hermes. Disable image host-ack; filter short OCR noise before prompt. Harden classify media part: image analyze never emits file output_type.
+
+### Prevent recurrence
+Unit test for txt misclassify coercion and OCR noise filter.
+
 ## 2026-09-02 19:45 +07 — zalo: classify strips attachment recall for schedule
 
 ### Symptom

@@ -306,6 +306,7 @@ from attachment import (  # noqa: E402
     archive_password_ack_message,
     image_ocr_ack_message,
     image_analyze_ack_message,
+    ocr_excerpt_for_ack,
     quoted_context_snip,
     extract_media_from_quote,
     merge_inbound_quote_media,
@@ -1879,6 +1880,7 @@ class ZaloAdapter(BasePlatformAdapter):
         schedule_fire: bool = False,
         _schedule_fanout_child: bool = False,
         received_at=None,
+        has_image_attachment: bool = False,
     ) -> bool:
         try:
             from .workflow_client import create_schedule, create_workflow, workflow_enabled
@@ -1894,8 +1896,10 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_async,
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
+                plan_is_image_analyze_chat,
                 plan_is_search_then_image_turn,
                 plan_media_shortcut_gate,
+                apply_image_analyze_plan_coercion,
             )
             from .classify_client import strip_prior_for_classify
             from .knowledge_cite import plan_is_knowledge
@@ -1913,19 +1917,25 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_async,
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
+                plan_is_image_analyze_chat,
                 plan_is_search_then_image_turn,
                 plan_media_shortcut_gate,
+                apply_image_analyze_plan_coercion,
             )
             from classify_client import strip_prior_for_classify  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
         if received_at is None:
             received_at = datetime.now(timezone.utc)
         current = strip_prior_for_classify(text) or str(text or "").strip()
+        attach_hint = "image" if has_image_attachment else "none"
         if not isinstance(plan, dict):
             plan = classify_text(
                 text or current,
                 thread=("group" if str(thread_type or "").lower() == "group" else "dm"),
+                attachments=attach_hint,
             )
+        if has_image_attachment and plan_is_image_analyze_chat(plan, has_image=True):
+            plan = apply_image_analyze_plan_coercion(plan)
         if plan.get("ok") is False:
             # Omni/classify outages must not dead-end chat. Fall through to Hermes.
             logger.info(
@@ -2422,6 +2432,8 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception:
                 pass
             return True
+        if has_image_attachment and plan_is_image_analyze_chat(plan, has_image=True):
+            return False
         if not workflow_enabled():
             return False
         if (plan_media_shortcut_gate(plan) or plan_is_search_then_image_turn(plan)) and not schedule_fire:
@@ -3009,6 +3021,7 @@ class ZaloAdapter(BasePlatformAdapter):
         rate_notify: bool,
         event,
         schedule_fire: bool = False,
+        has_image_attachment: bool = False,
     ) -> None:
         try:
             from .inbound_queue import (
@@ -3036,6 +3049,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 sender_name=sender_name,
                 chat_type=chat_type,
                 schedule_fire=schedule_fire,
+                has_image_attachment=has_image_attachment,
             ):
                 return
             await self._as_dispatch_event(event, text)
@@ -3064,6 +3078,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 sender_name=sender_name,
                 chat_type=chat_type,
                 schedule_fire=schedule_fire,
+                has_image_attachment=has_image_attachment,
             ):
                 return
             # Schedule fires must not wait behind stuck answering / FIFO queue —
@@ -4421,7 +4436,15 @@ class ZaloAdapter(BasePlatformAdapter):
             # Office/text/archive SoT is ingest/OCR workers — never pass binaries to Hermes
             # (local docx/terminal/zipfile forensics). Whitespace-only = blank.
             excerpt_meaningful = self._as_meaningful_learn_text(excerpt or "")
-            excerpt_for_prompt = excerpt if excerpt_meaningful else ""
+            if attach_is_image and excerpt_meaningful:
+                cleaned = ocr_excerpt_for_ack(excerpt or "")
+                if not cleaned:
+                    excerpt_meaningful = False
+                    excerpt_for_prompt = ""
+                else:
+                    excerpt_for_prompt = cleaned
+            else:
+                excerpt_for_prompt = excerpt if excerpt_meaningful else ""
             # vision is handled by the OCR worker (OCR_MODEL=vision-ocr),
             # so a second host-side image hop is redundant. Empty extract falls
             # through to the neutral attachment prompt for Hermes classify.
@@ -4478,8 +4501,9 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             # Bare attachment OR blank office/text: deterministic worker extract ack.
             # Images: host-ack only when bare AND we have OCR/vision text; else classify path.
+            # Images always continue to Hermes multimodal — never host-ack OCR noise as final reply.
             if attach_is_image:
-                host_ack = attach_bare and excerpt_meaningful
+                host_ack = False
             else:
                 host_ack = attach_bare or attach_kind in {
                     "archive",
@@ -4741,6 +4765,13 @@ class ZaloAdapter(BasePlatformAdapter):
                 rate_notify=rate_notify,
                 event=event,
                 schedule_fire=bool(m.get("scheduleFire") or m.get("schedule_fire")),
+                has_image_attachment=bool(
+                    media_urls
+                    and (
+                        message_type == MessageType.PHOTO
+                        or attach_is_image
+                    )
+                ),
             )
             return
         await self._as_dispatch_event(event, text)

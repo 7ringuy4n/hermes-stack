@@ -797,4 +797,6 @@ def ocr_excerpt_for_ack(excerpt: str) -> str:
     words = [w for w in body.replace("\n", " ").split() if len(w) >= 2]
     if len(body) >= 12 and len(words) <= 1 and len(lines) >= 4:
         return ""
+    if len(body) < 24 and words and all(len(w) <= 3 for w in words):
+        return ""
     return body

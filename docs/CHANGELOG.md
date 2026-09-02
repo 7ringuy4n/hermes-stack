@@ -1,3 +1,8 @@
+## 2026-09-02 20:15 +07 — zalo: image analyze via Hermes chat (no txt OCR ack)
+
+- Inbound image describe/read (`đây là hình gì`, bare photo) no longer creates async `.txt` workflow files from classify instructions; plans coerce to interactive Hermes multimodal with `media_urls`.
+- Host never final-replies bare-image OCR noise (e.g. glyph garbage); low-quality OCR excerpts filtered before prompt/ack. Captioned images skip OCR worker as before.
+
 ## 2026-09-02 19:45 +07 — zalo: classify strips attachment recall; schedule with remembered files
 
 - Classify input strips host `[Recent attachments…]` recall blocks so timed remind-with-body is not misread when prior files exist in thread memory. Router classify payload sends stripped user line only.
