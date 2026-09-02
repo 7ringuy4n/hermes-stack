@@ -1918,6 +1918,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_async,
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
+                plan_is_search_then_image_turn,
                 plan_media_shortcut_gate,
             )
             from .classify_client import strip_prior_for_classify
@@ -1936,6 +1937,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_async,
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
+                plan_is_search_then_image_turn,
                 plan_media_shortcut_gate,
             )
             from classify_client import strip_prior_for_classify  # type: ignore
@@ -2058,7 +2060,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan=plan,
             )
             return True
-        if plan_media_shortcut_gate(plan) and not schedule_fire:
+        if (plan_media_shortcut_gate(plan) or plan_is_search_then_image_turn(plan)) and not schedule_fire:
             return await self._as_run_host_media_shortcut(
                 user_text=current,
                 thread_id=thread_id,
@@ -2446,7 +2448,7 @@ class ZaloAdapter(BasePlatformAdapter):
             return True
         if not workflow_enabled():
             return False
-        if plan_media_shortcut_gate(plan) and not schedule_fire:
+        if (plan_media_shortcut_gate(plan) or plan_is_search_then_image_turn(plan)) and not schedule_fire:
             return await self._as_run_host_media_shortcut(
                 user_text=current,
                 thread_id=thread_id,
@@ -2455,7 +2457,11 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan=plan,
             )
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
-        async_job = plan_is_async(plan) or len(parts) >= 2
+        async_job = plan_is_async(plan) or (
+            len(parts) >= 2
+            and not plan_media_shortcut_gate(plan)
+            and not plan_is_search_then_image_turn(plan)
+        )
         if not async_job or not parts:
             return False
         data = create_workflow(

@@ -1,3 +1,9 @@
+## 2026-09-02 11:45 +07 — Zalo: search+image one host turn; image-gen combo failover
+
+- Search + image dual instructions no longer split into separate workflow/Hermes jobs; host media shortcut owns the full turn.
+- Image diffusion tries Omni combo `image-gen` first (member failover), then pinned head — avoids hard-fail on a single provider (e.g. Pollinations 401).
+- `first-setup-omnirouter`: skip Pollinations image head/combo members when `POLLINATIONS_API_KEY` unset; repair API key ACL when stack combos drop off; fix Pollinations patch typo.
+
 ## 2026-09-02 11:30 +07 — Zalo: quote local image path + weather-on-image host gate
 
 - Quote-reply to a bot line with `/opt/data/media/...` resolves as inbound image for OCR/vision (đọc hình).

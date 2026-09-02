@@ -11,7 +11,10 @@ sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 from classify_client import (  # noqa: E402
     plan_allows_search_then_info_card,
     plan_allows_search_then_weather_scene,
+    plan_compound_sequential,
     plan_image_render_mode,
+    plan_is_search_then_image_turn,
+    plan_media_shortcut_gate,
 )
 
 
@@ -63,6 +66,10 @@ def test_render_contract_gates() -> None:
     assert plan_image_render_mode(prose_only) == ""
     assert not plan_allows_search_then_info_card(prose_only)
     assert not plan_allows_search_then_weather_scene(prose_only)
+
+    assert plan_is_search_then_image_turn(labeled)
+    assert plan_media_shortcut_gate(labeled) == "info_card"
+    assert not plan_compound_sequential(labeled)
 
 
 def main() -> None:
