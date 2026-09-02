@@ -47,6 +47,25 @@ def main() -> int:
     assert coerced.get("execution_class") == "interactive"
     assert plan_is_async(coerced) is False
 
+    skip = normalize_plan(
+        {
+            "task_hint": "file",
+            "task_type": "file_processing",
+            "skill": "media_file",
+            "skill_action": "process_file",
+            "output_type": "txt",
+            "attachments_required": True,
+            "attachment_types": ["image"],
+            "instructions": ["Mô tả ngắn gọn trong chat: hình gì"],
+        },
+        "đây là hình gì",
+        "Asia/Ho_Chi_Minh",
+    )
+    from classify_client import plan_allows_office_shortcut, plan_skips_media_shortcut  # noqa: E402
+
+    assert plan_skips_media_shortcut(skip) is True
+    assert plan_allows_office_shortcut(skip) is False
+
     pdf_create = normalize_plan(
         {
             "task_hint": "file",

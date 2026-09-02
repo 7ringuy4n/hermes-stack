@@ -1589,6 +1589,7 @@ class ZaloAdapter(BasePlatformAdapter):
         bare_text: str | None = None,
         plan: dict | None = None,
         media_urls: list | None = None,
+        has_image_attachment: bool = False,
     ) -> bool:
         """Run host-owned media shortcuts. True when the turn was consumed."""
         shortcut_user_text = (user_text or "").strip()
@@ -1597,8 +1598,10 @@ class ZaloAdapter(BasePlatformAdapter):
         if (
             not shortcut_user_text
             or urls
+            or has_image_attachment
             or "[Attachment text —" in bare
             or "[Attached file:" in bare
+            or "[Attached image:" in bare
         ):
             return False
         try:
@@ -1610,10 +1613,12 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_allows_search_then_info_card,
                 plan_allows_search_then_office,
                 plan_allows_search_then_weather_scene,
+                plan_is_image_analyze_chat,
                 plan_media_shortcut_gate,
                 plan_output_type,
                 plan_search_then_office_output,
                 plan_skips_media_shortcut,
+                apply_image_analyze_plan_coercion,
             )
             from .media_shortcuts import (
                 media_fail_line,
@@ -1635,10 +1640,12 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_allows_search_then_info_card,
                 plan_allows_search_then_office,
                 plan_allows_search_then_weather_scene,
+                plan_is_image_analyze_chat,
                 plan_media_shortcut_gate,
                 plan_output_type,
                 plan_search_then_office_output,
                 plan_skips_media_shortcut,
+                apply_image_analyze_plan_coercion,
             )
             from media_shortcuts import (  # type: ignore
                 media_fail_line,
@@ -1654,7 +1661,14 @@ class ZaloAdapter(BasePlatformAdapter):
         shortcut = None
         shortcut_gate = ""
         try:
-            early_plan = plan if isinstance(plan, dict) else classify_text(shortcut_user_text)
+            attach_hint = "image" if has_image_attachment else "none"
+            early_plan = plan if isinstance(plan, dict) else classify_text(
+                shortcut_user_text, attachments=attach_hint
+            )
+            if has_image_attachment and plan_is_image_analyze_chat(early_plan, has_image=True):
+                return False
+            if has_image_attachment:
+                early_plan = apply_image_analyze_plan_coercion(early_plan)
             shortcut_gate = plan_media_shortcut_gate(early_plan)
             inner = ""
             ins = early_plan.get("instructions") or []
@@ -1900,6 +1914,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_search_then_image_turn,
                 plan_media_shortcut_gate,
                 apply_image_analyze_plan_coercion,
+                plan_output_type,
+                _instruction_is_office_file_body,
             )
             from .classify_client import strip_prior_for_classify
             from .knowledge_cite import plan_is_knowledge
@@ -1921,6 +1937,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_search_then_image_turn,
                 plan_media_shortcut_gate,
                 apply_image_analyze_plan_coercion,
+                plan_output_type,
+                _instruction_is_office_file_body,
             )
             from classify_client import strip_prior_for_classify  # type: ignore
             from knowledge_cite import plan_is_knowledge  # type: ignore
@@ -2432,8 +2450,13 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception:
                 pass
             return True
-        if has_image_attachment and plan_is_image_analyze_chat(plan, has_image=True):
-            return False
+        if has_image_attachment:
+            ins_parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
+            explicit_office = bool(
+                plan_output_type(plan) and _instruction_is_office_file_body(ins_parts)
+            )
+            if plan_is_image_analyze_chat(plan, has_image=True) or not explicit_office:
+                return False
         if not workflow_enabled():
             return False
         if (plan_media_shortcut_gate(plan) or plan_is_search_then_image_turn(plan)) and not schedule_fire:
@@ -2443,6 +2466,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_type=thread_type,
                 bare_text=current,
                 plan=plan,
+                has_image_attachment=has_image_attachment,
             )
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
         async_job = plan_is_async(plan) or (

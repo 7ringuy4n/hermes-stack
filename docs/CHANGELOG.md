@@ -1,3 +1,5 @@
+- Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
+
 ## 2026-09-02 20:15 +07 — zalo: image analyze via Hermes chat (no txt OCR ack)
 
 - Inbound image describe/read (`đây là hình gì`, bare photo) no longer creates async `.txt` workflow files from classify instructions; plans coerce to interactive Hermes multimodal with `media_urls`.

@@ -465,6 +465,8 @@ def plan_skips_media_shortcut(plan: dict[str, Any] | None) -> bool:
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
         return True
+    if plan_is_image_analyze_chat(src):
+        return True
     hint = str(src.get("task_hint") or "").strip().lower()
     if hint == "schedule":
         return True
@@ -495,6 +497,8 @@ def plan_allows_office_shortcut(plan: dict[str, Any] | None) -> bool:
     """Single file-create job from classify — Dispatcher may run without phrase-scan."""
     src = plan if isinstance(plan, dict) else {}
     if plan_skips_media_shortcut(src):
+        return False
+    if plan_is_image_analyze_chat(src):
         return False
     if str(src.get("task_hint") or "").strip().lower() == "file":
         return True
