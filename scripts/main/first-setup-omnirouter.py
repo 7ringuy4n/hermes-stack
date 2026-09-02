@@ -1131,6 +1131,17 @@ def _images_generations_provider_ids(opener) -> set[str]:
     }
 
 
+def _connection_model_is_image_gen(local_id: str) -> bool:
+    """True when an Omni-imported provider model id targets /images/generations."""
+    low = (local_id or "").strip().lower()
+    if not low or "image" not in low:
+        return False
+    for bad in ("video", "i2v", "t2v", "r2v", "videoedit"):
+        if bad in low:
+            return False
+    return True
+
+
 def _image_provider_node_id(opener, prefix: str) -> str:
     """Provider-models target for prefix/model ids (Omni resolves prefix → chat node)."""
     chat_id = _chat_node_id_for_prefix(opener, prefix)
@@ -1153,6 +1164,8 @@ def _wired_custom_provider_image_ids(opener) -> list[str]:
             continue
         state = _custom_models_by_provider(opener, node_id)
         for model_id, row in state.items():
+            if not _connection_model_is_image_gen(model_id):
+                continue
             if _custom_image_model_action(row) != "":
                 continue
             full = f"{prefix}/{model_id}"
@@ -1694,6 +1707,8 @@ def ensure_provider_image_models(opener, api_key: str) -> None:
         if not conn or not conn.get("id"):
             continue
         for local_id in _connection_model_ids(opener, str(conn["id"])):
+            if not _connection_model_is_image_gen(local_id):
+                continue
             _register_provider_model(
                 opener,
                 node_id=node_id,

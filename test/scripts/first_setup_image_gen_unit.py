@@ -74,6 +74,13 @@ def test_rank_prefers_images_generations_metadata() -> None:
     assert mod._rank_image_gen_model(horde, catalog) < mod._rank_image_gen_model(flux, catalog)
 
 
+def test_connection_model_is_image_gen() -> None:
+    assert mod._connection_model_is_image_gen("wan2.7-image-pro") is True
+    assert mod._connection_model_is_image_gen("qwen-image-2.0") is True
+    assert mod._connection_model_is_image_gen("wan2.7-i2v") is False
+    assert mod._connection_model_is_image_gen("deepseek-v4-flash") is False
+
+
 def test_connection_model_helpers() -> None:
     class _Opener:
         pass
@@ -274,6 +281,7 @@ def test_web_search_member_order() -> None:
 def main() -> None:
     test_image_output_from_catalog_metadata()
     test_rank_prefers_images_generations_metadata()
+    test_connection_model_is_image_gen()
     test_connection_model_helpers()
     test_wired_custom_provider_image_ids()
     test_vision_rejects_blind_supports_vision_flag()
