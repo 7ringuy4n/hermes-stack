@@ -469,22 +469,37 @@ zalo_stop_bridge_service() {
 }
 
 zalo_print_qr_instructions() {
-  cat <<EOF
+  if [[ -t 1 ]]; then
+    cat <<EOF
 
 ────────────────────────────────────────────────────────────
 STEP 1 — Scan Zalo QR (required before any Zalo install)
 
-QR is served by the host bridge (not printed in this terminal).
+The QR code will appear below in this terminal (ASCII).
+Open Zalo on your phone → (+) → Scan QR code.
 
-Remote VPS — on your PC, keep SSH open with port forward:
-  ssh -L ${ZALO_PORT}:127.0.0.1:${ZALO_PORT} $(whoami)@$(hostname -f 2>/dev/null || hostname)
+Waiting up to ${ZALO_LOGIN_WAIT_S}s…
+────────────────────────────────────────────────────────────
+EOF
+  else
+    cat <<EOF
 
-Then open in your browser:
+────────────────────────────────────────────────────────────
+STEP 1 — Scan Zalo QR (required before any Zalo install)
+
+Not an interactive terminal — open in a browser (forward port ${ZALO_PORT} if remote):
   ${ZALO_QR_URL}
 
 Scan with the Zalo app. Waiting up to ${ZALO_LOGIN_WAIT_S}s…
 ────────────────────────────────────────────────────────────
 EOF
+  fi
+}
+
+zalo_run_login_cli() {
+  hermes-zalo-plugin login \
+    || hermes-zalo-plugin setup --relogin \
+    || hermes-zalo-plugin setup
 }
 
 zalo_qr_login_phase() {
@@ -500,22 +515,29 @@ zalo_qr_login_phase() {
     return 0
   fi
 
+  # Background bridge login is headless (no TTY) — stop it so hermes-zalo-plugin login
+  # can render the ASCII QR in this SSH session (upstream ZaloClient uses qrcode-terminal).
+  zalo_log "stopping bridge for interactive QR login"
+  zalo_stop_bridge_service
+
   zalo_print_qr_instructions
 
-  # login CLI can hang after a successful scan while /health already shows loggedIn.
-  # Poll health as source of truth; stop the helper when login completes.
-  (
-    hermes-zalo-plugin login 2>/dev/null \
-      || hermes-zalo-plugin setup --relogin 2>/dev/null \
-      || hermes-zalo-plugin setup 2>/dev/null \
-      || true
-  ) &
-  local login_pid=$!
+  if [[ -t 1 ]]; then
+    zalo_run_login_cli || {
+      echo "ERROR: Zalo QR login failed" >&2
+      return 1
+    }
+  else
+    zalo_log "WARN: not a TTY — starting bridge; scan QR at ${ZALO_QR_URL}"
+    zalo_start_bridge_service || return 1
+    curl -sf -X POST "http://127.0.0.1:${ZALO_PORT}/relogin" \
+      -H 'Content-Type: application/json' -d '{}' >/dev/null 2>&1 || true
+  fi
+
+  zalo_start_bridge_service || return 1
 
   local health_json=""
   if health_json="$(zalo_wait_bridge_logged_in)"; then
-    kill "$login_pid" 2>/dev/null || true
-    wait "$login_pid" 2>/dev/null || true
     systemctl --user try-restart com.hermes.zaloplugin.service 2>/dev/null \
       || systemctl --user try-restart assistant-zalo.service 2>/dev/null \
       || true
@@ -523,8 +545,6 @@ zalo_qr_login_phase() {
     return 0
   fi
 
-  kill "$login_pid" 2>/dev/null || true
-  wait "$login_pid" 2>/dev/null || true
   return 1
 }
 
