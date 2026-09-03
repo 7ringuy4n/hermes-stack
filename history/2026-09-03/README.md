@@ -80,3 +80,41 @@ Restore dispatcher `overlay.py` + `/v1/overlay` (bottom-left Noto badge). `run_s
 ### Prevent recurrence
 
 `test/scripts/weather_overlay_unit.py`; `test/scripts/zalo_tn_pdf_zip_weather_inject.py` for Tn inject lab.
+
+## 08:45 — Visual weather PDF bad layout / SERP dump
+
+### Symptom
+
+Zalo Tn request for attractive HCM weather PDF returned plain SERP chrome (district lists, PM stubs, create-sentence title) or a sparse card without city hero image / with markdown table leftovers.
+
+### Root cause
+
+Host search→office previously scraped SERP result snippets into the PDF body. After Hermes composition, `write_pdf_styled` used a minimal single-column layout, did not full-bleed `IMAGE:`, and did not skip markdown table separators; classify/file-gen did not hard-require city image-gen before office-file.
+
+### Technical detail
+
+- **Function:** `media_shortcuts.py::build_office_body_from_search()` — must use classify bullets + search `answer` only (no `results[]` scrape).
+- **Function:** `office_file.py::write_pdf_styled()` — L126+ — flat fact rows → full-bleed hero + 2-column cards; `_skip_structural_junk` drops `|---|` rows.
+- **Function:** `classify_client.py::_office_body_trivial_for_host_shortcut()` — removed topic keyword list; structural + `process_original_message` gate only.
+- **Lines:** `office_file.py:L98–L280` (styled render); `media.txt` VISUAL PDF block; `file-gen/SKILL.md` visual workflow.
+- **Field:** office-file `prompt` markdown — require `#` / `##` / `IMAGE:` / `- Label: value`.
+- **Key:** N/A — infra-only image path `/opt/data/media/out/` for hero stills.
+
+### AI decision
+
+Fix durable renderer + classify/skill contract; keep LLM-authored content; no domain SERP noise lists.
+
+### Fix (core)
+
+Upgrade styled PDF layout; strengthen classify/file-gen for city IMAGE path; case 39 + `zalo_tn_visual_weather_pdf_inject.py`.
+
+### Todo list
+
+- Reproduce from VPS PDFs
+- Core renderer + prompt
+- Unit + Tn inject
+- Merge after PASS
+
+### Prevent recurrence
+
+`test/cases/39-zalo-tn-visual-weather-pdf.md`; unit assert skips `|---|` in extracted PDF text.

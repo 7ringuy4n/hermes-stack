@@ -126,7 +126,7 @@ def _gen_openai_images(
     payload: dict[str, Any] = {"model": model, "prompt": prompt, "n": 1}
     if size and str(size).strip():
         payload["size"] = str(size).strip()
-    with httpx.Client(timeout=180.0) as client:
+    with httpx.Client(timeout=300.0) as client:
         r = client.post(endpoint, headers=headers, json=payload)
         r.raise_for_status()
         data = r.json()

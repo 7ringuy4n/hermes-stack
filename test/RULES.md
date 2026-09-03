@@ -486,6 +486,7 @@ When re-testing a live High/Zalo lab:
 | Vision-ocr combo for images/PDF | `cases/36-vision-ocr-combo.md` |
 | Omni rotate + OCR never silent | `cases/37-omni-rotate-ocr-noreply.md` |
 | Omni combo preflight (hermes + classifier filled) | `cases/38-omni-combo-preflight.md` |
+| Zalo Tn visual weather PDF (hero + clean facts) | `cases/39-zalo-tn-visual-weather-pdf.md` |
 
 **Unit scripts (no VPS, run in small batches):**
 
@@ -516,6 +517,7 @@ When re-testing a live High/Zalo lab:
 |--------|------|
 | `test/scripts/zalo_tn_greeting_inject.py` | 32 (Tn greeting reply) |
 | `test/scripts/omni_combo_preflight.py` | 38 (hermes + classifier combos filled) |
+| `test/scripts/zalo_tn_visual_weather_pdf_inject.py` | 39 (visual weather PDF) |
 | `test/scripts/zalo_latency_lab.py` | 17 |
 | `test/scripts/zalo_special_four_lab.py` | 25 |
 | `test/scripts/zalo_weather_fuel_lab.py` | 26 |
