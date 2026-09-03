@@ -89,6 +89,7 @@ compose() {
   # Media GPU profile removed — image gen is Omni/9Router only.
   _env_active "${ENABLE_ZALO:-}" && profiles+=(--profile zalo)
   _env_active "${ENABLE_NOTIFY:-}" && profiles+=(--profile notify)
+  _env_active "${ENABLE_OPENBAO:-}" && profiles+=(--profile openbao)
   _env_active "${ENABLE_SECURITY:-}" && profiles+=(--profile security)
   _env_active "${ENABLE_ANTIVIRUS:-}" && profiles+=(--profile antivirus)
   if _env_active "${SECURITY_SANDBOX:-}"; then
@@ -208,8 +209,11 @@ do_stop_disabled_optionals() {
   if [[ "${ENABLE_NOTIFY:-0}" != "1" ]]; then
     extra+=(notify alert-watch)
   fi
+  if ! _env_active "${ENABLE_OPENBAO:-}"; then
+    extra+=(openbao)
+  fi
   if [[ "${ENABLE_SECURITY:-0}" != "1" ]]; then
-    extra+=(openbao security-manager authz siem policy-center)
+    extra+=(security-manager authz siem policy-center)
   fi
   if [[ "${ENABLE_ANTIVIRUS:-0}" != "1" ]]; then
     extra+=(clamav av-gateway)
@@ -654,6 +658,9 @@ do_zalo_setup_hint() {
 do_post_up_hooks() {
   # Full stack bring-up hooks — skipped when ASSISTANT_UP_LIGHT=1 (e.g. setup-zalo after QR).
   ensure_profile_timers
+  if _env_active "${ENABLE_OPENBAO:-}"; then
+    do_load_openbao_env_for_compose || true
+  fi
   if _env_active "${ENABLE_9ROUTER:-}" && [[ -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
     echo "==> first-setup-llm (9Router key + hermes combo)"
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
@@ -996,8 +1003,9 @@ First setup:
   first-setup-llm         # 9Router Default Key → combo hermes (only when ENABLE_9ROUTER=active)
 
 Security overlay:
-  first-setup-openbao     # seed API keys → OpenBao UI (:8200); also on up|update
-  load-openbao-env        # pull KV → $ASSISTANT_DATA_DIR/.env.openbao for compose
+  first-setup-openbao     # seed/merge API keys → OpenBao KV (:8200); core default on up|update
+  load-openbao-env        # pull KV → .env.openbao + fill compose keys in .env
+  sync-openbao-env        # load-openbao-env + recreate hermes/router-worker after KV edit
   check-security          # smoke OpenBao / Grafana / AV / authz / …
   backup-sync-clouddrive  # when ENABLE_CLOUDDRIVE=active
 
@@ -1099,6 +1107,14 @@ case "$cmd" in
     export ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-/data/assistant}"
     export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$ASSISTANT_DATA_DIR}"
     python3 "${SCRIPTS_DIR}/load-openbao-env.py"
+    ;;
+  sync-openbao-env)
+    need_security sync-openbao-env || exit 1
+    do_load_openbao_env_for_compose
+    echo "==> recreate hermes + router-worker + omni-router (pick up KV changes)"
+    compose up -d --no-deps --build hermes router-worker omni-router 2>/dev/null \
+      || compose up -d --no-deps hermes router-worker omni-router \
+      || echo "WARN: sync-openbao-env partial — run: bash run.sh update hermes"
     ;;
   setup-zalo)
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"

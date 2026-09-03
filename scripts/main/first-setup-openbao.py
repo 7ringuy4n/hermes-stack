@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""High first-setup: seed API keys from .env into OpenBao (+ export .env.openbao).
+"""First-setup / update: seed API keys from .env into OpenBao KV.
 
-SoT after this script: OpenBao KV at secret/assistant/api-keys (UI on :8200).
-Host .env stays for worker/component flags, paths, OpenBao bootstrap token, and Compose interpolate. API keys/passwords are also stored in OpenBao by this script — do not leave OpenBao empty while secrets only sit in .env.
+SoT after seed: OpenBao at secret/assistant/api-keys (UI :8200).
+Host .env keeps flags + OPENBAO_DEV_ROOT_TOKEN only; compose-required keys are
+re-filled from KV by load-openbao-env before each up|update.
 
-Usage (stack already up with the security/OpenBao components enabled):
-  python3 scripts/main/first-setup-openbao.py
+Usage:
+  python3 scripts/main/first-setup-openbao.py          # core: seed missing + merge updates
+  python3 scripts/main/first-setup-openbao.py --update  # same (explicit repair)
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -17,6 +20,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from openbao_common import OBSOLETE_SECRET_KEYS, OPENBAO_SECRET_PATH, SEED_KEYS
+
 ROOT = Path(os.environ.get("STACK_ROOT") or Path(__file__).resolve().parents[2])
 ENV_PATH = ROOT / ".env"
 DATA_DIR = Path(os.environ.get("ASSISTANT_DATA_DIR") or os.environ.get("HERMES_DATA_DIR") or "/data/assistant")
@@ -24,54 +29,7 @@ EXPORT_PATH = DATA_DIR / ".env.openbao"
 
 BAO_ADDR = (os.environ.get("OPENBAO_ADDR") or "http://127.0.0.1:8200").rstrip("/")
 BAO_TOKEN = os.environ.get("OPENBAO_DEV_ROOT_TOKEN") or ""
-SECRET_PATH = os.environ.get("OPENBAO_SECRET_PATH") or "secret/data/assistant/api-keys"
-
-# Keys copied from .env → OpenBao (empty values skipped)
-SEED_KEYS = (
-    "N9ROUTER_API_KEY",
-    "N9ROUTER_INITIAL_PASSWORD",
-    "OMNIROUTER_API_KEY",
-    "OMNIROUTER_INITIAL_PASSWORD",
-    "API_SERVER_KEY",
-    "GATEWAY_API_KEYS",
-    "TAVILY_API_KEY",
-    "FIRECRAWL_API_KEY",
-    "HERMES_DASHBOARD_PASSWORD",
-    "HERMES_DASHBOARD_SECRET",
-    "MEMORY_DB_PASSWORD",
-    "ZALO_API_TOKEN",
-    "ZALO_PLUGIN_TOKEN",
-    "GRAFANA_ADMIN_PASSWORD",
-    "TELEGRAM_BOT_TOKEN",
-    "GEMINI_API_KEY",
-    "DEEPSEEK_API_KEY",
-)
-
-# Retired image-vendor keys — drop from KV on each seed so leftover secrets do not linger.
-OBSOLETE_SECRET_KEYS = (
-    "FAL_KEY",
-    "FLUXAI_API_KEY",
-    "POLLINATIONS_API_KEY",
-    "IMAGE_LLM_API_KEY",
-    "IMAGE_VENDOR_API_KEY",
-    "IMAGE_OMNI_MODEL",
-    "IMAGE_GEN_SIZE",
-    "IMAGE_ALLOW_PILLOW",
-)
-
-def purge_obsolete(token: str, current: dict) -> dict:
-    """Remove retired image-vendor keys from OpenBao KV (and export map)."""
-    data = dict(current)
-    removed = [k for k in OBSOLETE_SECRET_KEYS if k in data]
-    if not removed:
-        return data
-    for k in removed:
-        data.pop(k, None)
-    path = SECRET_PATH.lstrip("/")
-    http_json("POST", f"{BAO_ADDR}/v1/{path}", token, {"data": data})
-    print(f"OK: purged obsolete OpenBao keys: {', '.join(removed)}")
-    return data
-
+SECRET_PATH = os.environ.get("OPENBAO_SECRET_PATH") or OPENBAO_SECRET_PATH
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -121,15 +79,57 @@ def wait_ready(token: str, tries: int = 30) -> None:
     raise SystemExit(f"OpenBao not ready at {BAO_ADDR}")
 
 
-def ensure_kv_v2(token: str) -> None:
-    # Dev mode usually mounts secret/ as kv v2 already.
+def kv_get(token: str) -> dict[str, str]:
     try:
-        http_json("GET", f"{BAO_ADDR}/v1/sys/mounts", token)
+        got = http_json("GET", f"{BAO_ADDR}/v1/{SECRET_PATH.lstrip('/')}", token)
     except urllib.error.HTTPError as e:
-        print(f"WARN: mounts check failed: {e}", flush=True)
+        if e.code == 404:
+            return {}
+        raise
+    data = ((got.get("data") or {}).get("data") or {})
+    if not isinstance(data, dict):
+        return {}
+    return {k: str(v) for k, v in data.items() if str(v).strip()}
 
 
-def main() -> int:
+def kv_put(token: str, data: dict[str, str]) -> None:
+    http_json("POST", f"{BAO_ADDR}/v1/{SECRET_PATH.lstrip('/')}", token, {"data": data})
+
+
+def purge_obsolete(token: str, current: dict[str, str]) -> dict[str, str]:
+    data = dict(current)
+    removed = [k for k in OBSOLETE_SECRET_KEYS if k in data]
+    if not removed:
+        return data
+    for k in removed:
+        data.pop(k, None)
+    kv_put(token, data)
+    print(f"OK: purged obsolete OpenBao keys: {', '.join(removed)}")
+    return data
+
+
+def collect_seed_payload(env: dict[str, str]) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    for key in SEED_KEYS:
+        val = (os.environ.get(key) or env.get(key) or "").strip()
+        if val and not val.startswith("CHANGE_ME"):
+            payload[key] = val
+    return payload
+
+
+def export_openbao_file(data: dict[str, str]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    lines = [f"{k}={v}" for k, v in sorted(data.items()) if str(v).strip()]
+    EXPORT_PATH.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    try:
+        os.chmod(EXPORT_PATH, 0o600)
+    except OSError:
+        pass
+    print(f"OK: wrote {EXPORT_PATH}", flush=True)
+
+
+def run_seed(*, update: bool = False) -> int:
+    del update  # merge is always on — flag kept for CLI symmetry with other first-setup scripts
     env = load_dotenv(ENV_PATH)
     token = BAO_TOKEN or env.get("OPENBAO_DEV_ROOT_TOKEN", "")
     if not token or token.startswith("CHANGE_ME"):
@@ -137,60 +137,30 @@ def main() -> int:
         return 1
 
     wait_ready(token)
-    ensure_kv_v2(token)
+    incoming = collect_seed_payload(env)
+    existing = kv_get(token)
+    merged = dict(existing)
+    merged.update(incoming)
+    merged = purge_obsolete(token, merged)
 
-    payload: dict[str, str] = {}
-    for key in SEED_KEYS:
-        val = (os.environ.get(key) or env.get(key) or "").strip()
-        if val and not val.startswith("CHANGE_ME"):
-            payload[key] = val
+    if not merged and not incoming:
+        print("WARN: no API keys in .env to seed — fill .env then re-run", flush=True)
+    elif incoming:
+        kv_put(token, merged)
+        print(
+            f"OK: seeded/merged {len(incoming)} key(s) → {SECRET_PATH} "
+            f"(KV total {len(merged)})",
+            flush=True,
+        )
+    elif merged:
+        print(f"OK: KV unchanged ({len(merged)} keys); obsolete purge applied if any", flush=True)
 
-    if not payload:
-        print("WARN: no API keys found to seed (fill .env then re-run)", flush=True)
-    else:
-        body = {"data": payload}
-        http_json("POST", f"{BAO_ADDR}/v1/{SECRET_PATH.lstrip('/')}", token, body)
-        # Verify readable (OpenBao -dev is in-memory; empty UI usually means seed never stuck)
-        try:
-            got = http_json("GET", f"{BAO_ADDR}/v1/{SECRET_PATH.lstrip('/')}", token)
-            data = ((got.get("data") or {}).get("data") or {})
-            if not isinstance(data, dict) or not data:
-                raise SystemExit(f"OpenBao verify empty after seed at {SECRET_PATH}")
-            missing = [k for k in payload if k not in data]
-            if missing:
-                raise SystemExit(f"OpenBao verify missing keys: {missing}")
-            print(
-                f"OK: seeded {len(payload)} keys → {SECRET_PATH} "
-                f"({', '.join(sorted(data.keys()))})",
-                flush=True,
-            )
-        except urllib.error.HTTPError as e:
-            raise SystemExit(f"OpenBao verify GET failed: {e}") from e
+    # Verify readable
+    verify = kv_get(token)
+    if incoming and not verify:
+        raise SystemExit(f"OpenBao verify empty after seed at {SECRET_PATH}")
 
-    # Always drop retired image-vendor keys left from older installs.
-    try:
-        got = http_json("GET", f"{BAO_ADDR}/v1/{SECRET_PATH.lstrip('/')}", token)
-        data = ((got.get("data") or {}).get("data") or {})
-        if isinstance(data, dict) and data:
-            data = purge_obsolete(token, data)
-            # Keep export aligned with live KV when we only purged.
-            for k in OBSOLETE_SECRET_KEYS:
-                payload.pop(k, None)
-            for k, v in data.items():
-                if k in SEED_KEYS and k not in payload and isinstance(v, str) and v:
-                    payload[k] = v
-    except urllib.error.HTTPError as e:
-        print(f"WARN: OpenBao obsolete-key purge skipped: {e}", flush=True)
-
-    # Export for backup / local consumers (SoT remains OpenBao UI)
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    lines = [f"{k}={v}" for k, v in sorted(payload.items())]
-    EXPORT_PATH.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
-    try:
-        os.chmod(EXPORT_PATH, 0o600)
-    except OSError:
-        pass
-    print(f"OK: wrote {EXPORT_PATH}", flush=True)
+    export_openbao_file(verify or merged)
     port = os.environ.get("OPENBAO_PORT", "8200")
     print(
         f"UI:  http://127.0.0.1:{port}  → Secrets → secret/ → assistant/api-keys\n"
@@ -199,6 +169,13 @@ def main() -> int:
         flush=True,
     )
     return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--update", action="store_true", help="Repair/sync KV from .env (merge)")
+    args = ap.parse_args()
+    return run_seed(update=args.update)
 
 
 if __name__ == "__main__":

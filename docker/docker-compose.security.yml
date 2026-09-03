@@ -24,7 +24,7 @@ volumes:
 
 services:
   openbao:
-    profiles: ["security"]
+    profiles: ["security", "openbao"]
     image: ${OPENBAO_IMAGE:-openbao/openbao:2.2.0}
     restart: unless-stopped
     cap_add: ["IPC_LOCK"]
