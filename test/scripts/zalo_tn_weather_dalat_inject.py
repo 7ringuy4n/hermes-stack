@@ -119,34 +119,21 @@ def _ocr_rate(c, img_path: str) -> dict:
         container_path = img_path
     remote = f"""
 set -euo pipefail
-docker exec assistant-dispatcher-1 python3 - <<'PY'
-import json
+docker exec assistant-dispatcher-1 python3 -c '
 from pathlib import Path
+import json
 p = Path({container_path!r})
 print("PATH_EXISTS", p.is_file(), p)
 text = ""
 try:
     from vision_ocr import vision_read_path
-    text = vision_read_path(str(p), prompt="Read all visible Vietnamese and Latin text on this weather image overlay. Return plain text only.")
+    text = vision_read_path(str(p), prompt="Read all visible Vietnamese and Latin text on this weather image overlay. Return plain text only.") or ""
 except Exception as e:
-    try:
-        import urllib.request
-        body = json.dumps({{"path": str(p), "prompt": "Read overlay text"}}).encode()
-        req = urllib.request.Request(
-            "http://127.0.0.1:8090/v1/extract-text",
-            data=body,
-            headers={{"Content-Type": "application/json"}},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=120) as r:
-            data = json.loads(r.read().decode() or "{{}}")
-        text = str(data.get("text") or data.get("extract") or data)
-    except Exception as e2:
-        print("OCR_FAIL", type(e).__name__, type(e2).__name__)
+    print("OCR_FAIL", type(e).__name__, e)
 print("OCR_BEGIN")
-print(text or "")
+print(text)
 print("OCR_END")
-PY
+'
 """
     raw = _clean_remote(sudo_bash(c, remote, timeout=180))
     ocr = ""
