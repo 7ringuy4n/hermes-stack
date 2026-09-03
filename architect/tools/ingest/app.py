@@ -573,6 +573,52 @@ def _pptx_text(p: Path) -> str:
     return "\n\n".join(parts)
 
 
+def _pdf_text(p: Path) -> str:
+    try:
+        from vision_ocr import pymupdf_text
+
+        return (pymupdf_text(p) or "")[:TEXT_EXTRACT_CHARS]
+    except Exception:
+        return ""
+
+
+def _read_member_text(member_path: Path, name: str) -> str:
+    """Best-effort text for one archive member (office, pdf, image, plain)."""
+    if not member_path.is_file():
+        return ""
+    low = name.lower()
+    if any(low.endswith(x) for x in (".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml", ".xml")):
+        try:
+            return member_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+    if any(low.endswith(x) for x in (".docx", ".doc", ".xlsx", ".xlsm", ".xls", ".pptx", ".pdf")):
+        body = _extract_text_from_path(str(member_path))
+        if body.strip():
+            return body
+        if low.endswith(".pdf"):
+            try:
+                return vision_read_path(
+                    str(member_path),
+                    "Extract all readable text from this PDF as markdown.",
+                )
+            except Exception:
+                return ""
+        return body
+    if any(
+        low.endswith(x)
+        for x in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
+    ):
+        try:
+            return vision_read_path(
+                str(member_path),
+                "Describe this image and extract any readable text as markdown.",
+            )
+        except Exception:
+            return ""
+    return ""
+
+
 def _extract_text_from_path(path: str) -> str:
     """Best-effort text for office/CSV files before OCR."""
     p = _resolve_media_path(path)
@@ -586,6 +632,8 @@ def _extract_text_from_path(path: str) -> str:
             return _docx_text(p)
         if ext in SLIDE_EXTS:
             return _pptx_text(p)
+        if ext == ".pdf":
+            return _pdf_text(p)
         if ext in PLAIN_TEXT_EXTS:
             return p.read_text(encoding="utf-8", errors="replace")[:TEXT_EXTRACT_CHARS]
     except Exception:
@@ -1207,6 +1255,14 @@ def extract_text(req: ExtractTextReq) -> dict[str, Any]:
     """Synchronous office/CSV text so the agent can summarize in the same turn."""
     p = _resolve_media_path(req.path)
     text = _extract_text_from_path(req.path)
+    if not text and p.suffix.lower() == ".pdf":
+        try:
+            text = vision_read_path(
+                str(p),
+                "Extract all readable text from this PDF as markdown.",
+            )
+        except Exception:
+            text = ""
     limit = max(1000, min(int(req.max_chars or TEXT_EXTRACT_CHARS), TEXT_EXTRACT_CHARS))
     _flow(
         "extract_text",
@@ -1259,6 +1315,8 @@ def extract_archive(req: ExtractArchiveReq) -> dict[str, Any]:
                 "reason": reason,
             }
         written = list(got.get("written") or [])
+        persist_root = MEDIA_ROOT / "extracted" / p.stem
+        persist_root.mkdir(parents=True, exist_ok=True)
         has_content = False
         for item in written:
             name = str(item.get("name") or "file")
@@ -1266,45 +1324,14 @@ def extract_archive(req: ExtractArchiveReq) -> dict[str, Any]:
             member_path = Path(str(item.get("path") or ""))
             if not member_path.is_file():
                 continue
-            low = name.lower()
-            body = ""
-            if any(low.endswith(x) for x in (".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml", ".xml")):
-                try:
-                    body = member_path.read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    body = ""
-            elif any(low.endswith(x) for x in (".docx", ".doc", ".xlsx", ".xlsm", ".xls", ".pptx")):
-                body = _extract_text_from_path(str(member_path))
-            elif any(
-                low.endswith(x)
-                for x in (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff")
-            ):
-                try:
-                    body = vision_read_path(
-                        str(member_path),
-                        "Analyze this file. Describe visible content and extract any readable text as markdown.",
-                    )
-                except Exception:
-                    body = ""
-            elif any(
-                low.endswith(x)
-                for x in (
-                    ".mp4",
-                    ".webm",
-                    ".mov",
-                    ".m4v",
-                    ".mkv",
-                    ".avi",
-                    ".mp3",
-                    ".m4a",
-                    ".aac",
-                    ".wav",
-                    ".ogg",
-                    ".opus",
-                    ".flac",
-                )
-            ):
-                body = f"(media file `{name}` listed; open separately for transcript)"
+            safe_name = Path(name).name or "file"
+            persisted = persist_root / safe_name
+            try:
+                shutil.copy2(member_path, persisted)
+                read_path = persisted
+            except OSError:
+                read_path = member_path
+            body = _read_member_text(read_path, name)
             compact = "".join((body or "").split())
             if compact:
                 has_content = True

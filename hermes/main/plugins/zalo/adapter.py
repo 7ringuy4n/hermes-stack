@@ -6025,17 +6025,30 @@ class ZaloAdapter(BasePlatformAdapter):
                     text = ""
             case "ocr":
                 prompt = DEFAULT_PROMPT
-                text = await asyncio.to_thread(vision_read_path, str(src), prompt)
-                if not text:
-                    import base64
-
-                    b64 = vision_image_b64_for_describe(str(src)) or base64.b64encode(
-                        src.read_bytes()
-                    ).decode("ascii")
-                    out = await asyncio.to_thread(
-                        vision_read, image_b64=b64, prompt=prompt
+                low_name = name.lower()
+                if low_name.endswith(".pdf"):
+                    ingest_url = (os.getenv("INGEST_URL") or "http://ingest:8099").rstrip("/")
+                    text = await self._as_worker_text(
+                        f"{ingest_url}/v1/extract-text",
+                        {"path": worker_path, "max_chars": ATTACHMENT_TEXT_CHARS},
+                        timeout_s=max(ATTACHMENT_OFFICE_TIMEOUT_S, 120.0),
                     )
-                    text = str((out or {}).get("text") or "")
+                    if text == "__AS_WORKER_404__":
+                        text = ""
+                    if not text:
+                        text = await asyncio.to_thread(vision_read_path, str(src), prompt)
+                else:
+                    text = await asyncio.to_thread(vision_read_path, str(src), prompt)
+                    if not text:
+                        import base64
+
+                        b64 = vision_image_b64_for_describe(str(src)) or base64.b64encode(
+                            src.read_bytes()
+                        ).decode("ascii")
+                        out = await asyncio.to_thread(
+                            vision_read, image_b64=b64, prompt=prompt
+                        )
+                        text = str((out or {}).get("text") or "")
                 self._as_flow(
                     "attach_vision_read",
                     file=name,
