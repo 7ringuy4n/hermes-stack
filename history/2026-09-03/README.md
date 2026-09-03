@@ -40,6 +40,7 @@ Async offload for classify on inbound paths; tighter classify timeouts; mark bad
 ### Prevent recurrence
 
 Watchdog must not see classify on the loop; unit/lab must OCR rate deliverables, not assert-only.
+Run `bash run.sh update-omnirouter` when `image-gen` returns “No images-capable targets”.
 
 ## 07:15 — OmniRouter setup vs update split; history/ root-cause log
 

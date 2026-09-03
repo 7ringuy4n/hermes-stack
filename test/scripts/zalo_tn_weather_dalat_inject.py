@@ -119,21 +119,13 @@ def _ocr_rate(c, img_path: str) -> dict:
         container_path = img_path
     remote = f"""
 set -euo pipefail
-docker exec assistant-dispatcher-1 python3 -c '
-from pathlib import Path
-import json
-p = Path({container_path!r})
-print("PATH_EXISTS", p.is_file(), p)
-text = ""
+docker exec assistant-dispatcher-1 python3 -c "from pathlib import Path; p=Path({container_path!r}); print('PATH_EXISTS', p.is_file(), p); text='';
 try:
-    from vision_ocr import vision_read_path
-    text = vision_read_path(str(p), prompt="Read all visible Vietnamese and Latin text on this weather image overlay. Return plain text only.") or ""
+ from vision_ocr import vision_read_path
+ text=vision_read_path(str(p), prompt='Read all visible Vietnamese and Latin text on this weather image overlay. Return plain text only.') or ''
 except Exception as e:
-    print("OCR_FAIL", type(e).__name__, e)
-print("OCR_BEGIN")
-print(text)
-print("OCR_END")
-'
+ print('OCR_FAIL', type(e).__name__, e)
+print('OCR_BEGIN'); print(text); print('OCR_END')"
 """
     raw = _clean_remote(sudo_bash(c, remote, timeout=180))
     ocr = ""

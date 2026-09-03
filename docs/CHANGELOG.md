@@ -6,6 +6,7 @@
 - Classify skill `timeout_s=35`, `retry=1`; mark combo bad on upstream timeout then fall back to chat combo.
 - AGENT_RULES §29.2: VPS LLM labs must OCR/rate real artifacts, not assert-only.
 - Classify media prompt: omit empty weather `Label:` bullets when values unknown.
+- Omni `image-gen` 400 “no images-capable targets”: refill via `update-omnirouter`; host image-gen fails over combo members after brief 5xx retries (do not burn full timeout on one upstream).
 
 ## 2026-09-03 18:45 +07 — dispatcher: PDF via LLM HTML→WeasyPrint; remove ReportLab layout
 
