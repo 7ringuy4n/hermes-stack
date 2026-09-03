@@ -1,12 +1,21 @@
 ---
 name: file-gen
-description: "Create/edit office files (xlsx, docx, txt, pdf, csv) via Dispatcher and deliver on Zalo. RESULT-ONLY (see media-out). Images → image-gen."
+description: "Create/edit office files (xlsx, docx, txt, pdf, csv) via Dispatcher. LLM composes layout first; worker renders. RESULT-ONLY (see media-out)."
 ---
 
 # File generation → send (result only)
 
 Follow skill **`media-out`**. When the user asks to **create / export / edit** an
 **xlsx · csv · docx · txt · pdf · md** file:
+
+## LLM layout first (required)
+
+Before any API call, **you** (the LLM) must build the structured layout documented in
+[`LAYOUT.md`](./LAYOUT.md): `TITLE`, facts, `SHEET` tables, etc. Hermes/worker only
+**render** that body — they do not infer layout from the user's original sentence alone.
+
+After `web_search` for live metrics, put fetched facts into `- Label: value` lines in
+the layout, then call office-file once.
 
 ## Default (must) — Dispatcher office API
 
@@ -21,7 +30,7 @@ Create **and** deliver in one call:
 curl -sS -X POST http://dispatcher:8090/v1/office-file \
   -H 'Content-Type: application/json' \
   -d '{
-    "prompt":"<structured body>",
+    "prompt":"<structured LAYOUT body — see LAYOUT.md, not raw user text>",
     "thread_id":"<inbound thread id>",
     "thread_type":"user",
     "filename":"<safe-name.pdf>",
