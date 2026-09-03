@@ -1,5 +1,11 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-03 07:00 +07 — zalo: weather Pillow overlay; PDF/zip via ingest
+
+- Weather scene (`scene-overlay`): scenic Omni image-gen without diffusion text, then Unicode-safe bottom-left badge via dispatcher `/v1/overlay` (Noto fonts).
+- PDF attachments and zip media members: ingest `/v1/extract-text` uses pymupdf text layer → vision-ocr fallback; archive members persist under `media/extracted/` for re-read.
+- Omni combo `image-gen`: default wait 300s per member; 5xx retries within budget before combo failover.
+
 ## 2026-09-02 22:40 +07 — model-router: keep vision parts; Zalo prompt-echo filter
 
 - `sanitize_chat_payload` preserves multimodal `image_url` parts (old `parts_to_text` stripped photos → blind “no image” / cafe hallucinations).

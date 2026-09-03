@@ -172,7 +172,7 @@ class ModeReq(BaseModel):
 
 class ImageReq(BaseModel):
     """Generate an image; optionally refine via LLM then push to Zalo."""
-    prompt: str
+    prompt: str = ""
     filename: Optional[str] = None
     provider: Optional[str] = None  # omni|n9|text|info-card
     mode: Optional[str] = None  # text|poster → exact glyph poster, skip diffusion
@@ -186,6 +186,7 @@ class ImageReq(BaseModel):
     caption: str = ""
     refine: bool = True  # DeepSeek/LLM rewrite prompt before gen; wait for reply
     overlay: Optional[list[str]] = None  # short fact lines already fetched by the agent
+    overlay_corner: Optional[str] = None  # bottom-left | bottom-bar
 
 
 class VideoReq(BaseModel):
@@ -824,10 +825,15 @@ def _send_zalo_base64(thread_id: str, thread_type: str, dest: Path, caption: str
     return _send_zalo_attachment(thread_id, thread_type, dest, caption)
 
 
-def _apply_image_overlay(dest: Path, lines) -> int:
-    """Retired Pillow overlay layout — facts belong in the Omni diffusion prompt."""
-    del dest, lines
-    return 0
+def _apply_image_overlay(dest: Path, lines, *, corner: str = "bottom-left") -> int:
+    """Pillow post-process: Unicode-safe weather badge (not diffusion text)."""
+    from overlay import apply_overlay, clean_overlay_lines
+
+    facts = clean_overlay_lines(lines)
+    if not facts or not dest.is_file():
+        return 0
+    apply_overlay(dest, facts, corner=corner or "bottom-left")
+    return len(facts)
 
 
 def _chown_media(path: Path) -> None:
@@ -933,17 +939,35 @@ def text_poster_generate(req: ImageReq) -> dict[str, Any]:
 
 @app.post("/v1/overlay")
 def image_overlay(req: ImageReq) -> dict[str, Any]:
-    """Retired — bake overlay facts into the Omni image-gen SCENE prompt instead."""
-    raise HTTPException(
-        410,
-        {
-            "error": "overlay_retired",
-            "detail": (
-                "Pillow /v1/overlay removed. Include weather/metric lines in the "
-                "Omni combo image-gen SCENE prompt (classify/image-gen skills)."
-            ),
-        },
-    )
+    """Apply Unicode-safe overlay onto an existing media/out file."""
+    name = (req.filename or "").strip()
+    if not name:
+        raise HTTPException(400, "filename required (media/out basename or absolute path)")
+    dest = Path(name)
+    if not dest.is_file():
+        dest = MEDIA_DIR / "out" / Path(name).name
+    if not dest.is_file():
+        raise HTTPException(404, f"image not found: {name}")
+    corner = (req.overlay_corner or "bottom-left").strip() or "bottom-left"
+    overlay_n = _apply_image_overlay(dest, req.overlay, corner=corner)
+    result: dict[str, Any] = {
+        "ok": True,
+        "file": str(dest),
+        "hermes_path": f"/opt/data/media/out/{dest.name}",
+        "overlay": overlay_n,
+        "backend": "overlay",
+        "corner": corner,
+    }
+    if req.send_zalo:
+        if not req.thread_id:
+            raise HTTPException(400, "thread_id required when send_zalo=true")
+        if not _claim_generated_file(dest, req.thread_id):
+            result["zalo"] = {"ok": True, "skipped": True, "reason": "already_sent"}
+        else:
+            result["zalo"] = _send_zalo_attachment(
+                req.thread_id, req.thread_type, dest, req.caption or ""
+            )
+    return result
 
 
 @app.post("/v1/video")
