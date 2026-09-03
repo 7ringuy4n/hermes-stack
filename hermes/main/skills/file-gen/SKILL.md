@@ -32,13 +32,26 @@ renders markdown + optional `IMAGE:` — not the user's raw create sentence.
 
 When the user wants an **attractive PDF with city imagery**:
 
-1. Run **`web_search`** for live weather/facts.
+1. Run **`web_search`** for live facts (keep only labeled metrics).
 2. Run **`image-gen`** for a scenic city photo (English SCENE, photorealistic). Save
    under `/opt/data/media/out/` (note the path returned or written).
-3. Compose markdown (title, subtitle, `IMAGE: <path>`, labeled fact bullets from search).
-4. One **`POST /v1/office-file`** with that prompt.
+3. Compose markdown **exactly** in this shape (no create sentence, no SERP chrome,
+   no markdown tables):
+
+```text
+# Title
+## Subtitle or update time
+IMAGE: /opt/data/media/out/<hero>.png
+- Label: value
+- Label: value
+One short prose paragraph optional.
+```
+
+4. One **`POST /v1/office-file`** with that prompt (`output_type=pdf`).
 
 Do **not** rely on the host search→office shortcut for designed PDFs — you must compose.
+If image-gen fails, still deliver the PDF with title + fact cards (omit `IMAGE:`).
+Never greet, never `/help`, never narrate tools.
 
 ## Default (must) — Dispatcher office API
 

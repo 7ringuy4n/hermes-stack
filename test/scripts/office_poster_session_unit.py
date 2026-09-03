@@ -265,9 +265,20 @@ def main() -> int:
             "## Cập nhật trực tiếp\n"
             "- Nhiệt độ: 31°C (cảm giác 36°C)\n"
             "- Độ ẩm: 70%\n"
-            "- Điều kiện: Nắng\n",
+            "- Điều kiện: Nắng\n"
+            "|------|-----------|\n"
+            "Trời quang, oi bức.\n",
         )
         assert out.is_file() and out.stat().st_size > 400, out.stat().st_size
+        try:
+            from pypdf import PdfReader
+
+            extracted = PdfReader(str(out)).pages[0].extract_text() or ""
+            assert "Thời tiết" in extracted, extracted
+            assert "|------" not in extracted, extracted
+            assert "31°C" in extracted or "70%" in extracted, extracted
+        except ImportError:
+            print("SKIP pdf text extract (no pypdf)")
         out.unlink(missing_ok=True)
     except ImportError:
         print("SKIP styled pdf render (no reportlab locally)")

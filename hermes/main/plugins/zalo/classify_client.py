@@ -605,7 +605,11 @@ def plan_allows_search_then_office(plan: dict[str, Any] | None) -> bool:
 
 
 def _office_body_trivial_for_host_shortcut(plan: dict[str, Any] | None) -> bool:
-    """Host may assemble search→office only for a short literal file body."""
+    """Host may assemble search→office only for a short literal file body.
+
+    Visual/designed PDFs must set process_original_message true in classify so
+    this gate never runs. Do not phrase-scan topic words here (AGENT_RULES §8).
+    """
     body = plan_file_instruction(plan, "").strip()
     if not body or "\n" in body:
         return False
@@ -622,28 +626,25 @@ def _office_body_trivial_for_host_shortcut(plan: dict[str, Any] | None) -> bool:
         "make ",
         "điền vào ",
         "dien vao ",
+        "cập nhật ",
+        "cap nhat ",
+        "update ",
     ):
         if low.startswith(prefix):
             return False
-    for token in (
-        "pdf",
-        "docx",
-        "xlsx",
-        "layout",
-        "bắt mắt",
-        "bat mat",
-        "hình ảnh",
-        "hinh anh",
-        "image",
-        "photo",
-        "weather",
-        "thời tiết",
-        "thoi tiet",
-        "skyline",
-        "thiết kế",
-        "thiet ke ",
+    # Contract / layout markers mean Hermes (or classify) owns composition.
+    up = body.upper()
+    for marker in (
+        "TITLE:",
+        "SUBTITLE:",
+        "ICON:",
+        "RENDER:",
+        "SCENE:",
+        "IMAGE:",
+        "OVERVIEW:",
+        "# ",
     ):
-        if token in low:
+        if marker in up or body.startswith("#"):
             return False
     return True
 
