@@ -329,22 +329,28 @@ def scene_prompt_from_instruction(text: str) -> str:
 
 
 def _overlay_header(user_ask: str = "", scene: str = "") -> str:
-    """Short badge title — never use English SCENE / diffusion policy prose."""
+    """Short badge title — never dump the full user ask or SCENE diffusion prose."""
+    del scene
     ask = " ".join((user_ask or "").split())
-    if ask:
-        return ask[:42]
-    sc = " ".join((scene or "").split())
-    low = sc.lower()
-    if (
-        not sc
-        or sc.upper().startswith("SCENE")
-        or "photoreal" in low
-        or "photograph" in low
-        or "safe-for-work" in low
-        or "safe for work" in low
+    # Long create/update sentences make a bad badge — keep a compact title.
+    if not ask or len(ask) > 28:
+        return "Thời tiết"
+    low = ask.lower()
+    if any(
+        x in low
+        for x in (
+            "cập nhật",
+            "cap nhat",
+            "tạo ",
+            "tao ",
+            "ghi thông",
+            "hình ảnh",
+            "bắt mắt",
+            "không sai",
+        )
     ):
         return "Thời tiết"
-    return sc[:42]
+    return ask[:28]
 
 
 def _weather_overlay_lines(
@@ -358,7 +364,10 @@ def _weather_overlay_lines(
         s = str(raw or "").strip()
         if not s or _skip_structural_junk(s):
             continue
-        lines.append(s[:80])
+        low = s.lower()
+        if "unavailable" in low or "details unavailable" in low:
+            continue
+        lines.append(s[:72])
         if len(lines) >= 5:
             break
     lines.append(f"Cập nhật: {now}")
@@ -805,7 +814,7 @@ def run_search_then_weather_scene(
         )
     facts = _collect_host_facts(img_ins or "", search)
     if not facts:
-        facts = ["current weather details unavailable"]
+        facts = []
     prompt = _weather_scene_visual_prompt(scene, facts)
     fname = f"weather-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
     out = _omni_generate_still(prompt, filename=fname)

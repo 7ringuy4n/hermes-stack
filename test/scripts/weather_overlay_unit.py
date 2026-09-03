@@ -38,16 +38,23 @@ def main() -> int:
     lines = _weather_overlay_lines(
         facts,
         scene="SAFE-FOR-WORK; photorealistic photograph of Ho Chi Minh City",
-        user_ask="thời tiết hồ chí minh góc trái bên dưới",
+        user_ask="cập nhật thông tin thời tiết hồ chí minh lúc này, sau đó ghi thông tin lên hình",
     )
     blob = "\n".join(lines)
     assert "SAFE-FOR-WORK" not in blob.upper().replace("-", ""), lines
     assert "value after" not in blob.lower(), lines
     assert "SCENE:" not in blob, lines
+    assert lines[0] == "Thời tiết", lines
     assert any("Nhiệt độ" in ln for ln in lines), lines
     assert any("Thời tiết" in ln for ln in lines), lines
     assert any("Cập nhật:" in ln for ln in lines), lines
-    assert "thời tiết hồ chí minh" in lines[0].lower(), lines
+    assert "unavailable" not in blob.lower(), lines
+    empty = _weather_overlay_lines(
+        ["current weather details unavailable"],
+        user_ask="cập nhật thông tin thời tiết",
+    )
+    assert all("unavailable" not in ln.lower() for ln in empty), empty
+    assert empty[0] == "Thời tiết", empty
 
     collected = _collect_host_facts(
         "RENDER: weather-scene\nSCENE: city\n- Nhiệt độ: <value after search>\n- Độ ẩm: 70%",
