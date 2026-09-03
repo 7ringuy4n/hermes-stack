@@ -85,7 +85,7 @@ def run_web_search(query: str, max_results: int = 6) -> Optional[dict]:
 
 
 def _skip_structural_junk(line: str) -> bool:
-    """Drop empty lines, URLs, and raw JSON/dict blobs — no domain NLU."""
+    """Drop empty lines, URLs, JSON blobs, and unfilled template placeholders."""
     s = (line or "").strip()
     if not s or len(s) < 2:
         return True
@@ -96,6 +96,19 @@ def _skip_structural_junk(line: str) -> bool:
     low = s.lower()
     if low.startswith("http://") or low.startswith("https://"):
         return True
+    if "<" in s or ">" in s:
+        return True
+    if "value after" in low:
+        return True
+    if "safe-for-work" in low or "safe for work" in low:
+        return True
+    # Label-only bullets with no value: "Nhiệt độ:" / "Humidity:"
+    if s.endswith(":") and ":" == s[-1:] and s.count(":") == 1:
+        return True
+    if ": " in s:
+        _left, right = s.split(": ", 1)
+        if not right.strip():
+            return True
     return False
 
 
@@ -276,29 +289,85 @@ def run_search_then_office(
     )
 
 
+def _strip_diffusion_policy_tokens(scene: str) -> str:
+    """Remove policy tokens that must never become readable on-image text."""
+    s = (scene or "").strip()
+    if not s:
+        return ""
+    for token in (
+        "SAFE-FOR-WORK",
+        "safe-for-work",
+        "Safe-for-work",
+        "safe for work",
+        "Safe for work",
+    ):
+        s = s.replace(token, " ")
+    parts = [p for p in s.replace(";", ",").split(",") if p.strip()]
+    cleaned: list[str] = []
+    for part in parts:
+        bit = " ".join(part.split())
+        if not bit:
+            continue
+        low = bit.lower()
+        if "safe" in low and "work" in low:
+            continue
+        cleaned.append(bit)
+    return ", ".join(cleaned) if cleaned else " ".join(s.split())
+
+
 def scene_prompt_from_instruction(text: str) -> str:
     """English diffusion scene from classify SCENE: marker (not user NLU)."""
     for raw in (text or "").splitlines():
         line = raw.strip()
         if line.upper().startswith("SCENE:"):
-            return line.split(":", 1)[1].strip()
+            return _strip_diffusion_policy_tokens(line.split(":", 1)[1].strip())
     src = (text or "").strip()
     up = src.upper()
     if src and "TITLE:" not in up and "RENDER:" not in up:
-        return src
+        return _strip_diffusion_policy_tokens(src)
     return ""
+
+
+def _overlay_header(user_ask: str = "", scene: str = "") -> str:
+    """Short badge title — never dump the full user ask or SCENE diffusion prose."""
+    del scene
+    ask = " ".join((user_ask or "").split())
+    # Long create/update sentences make a bad badge — keep a compact title.
+    if not ask or len(ask) > 28:
+        return "Thời tiết"
+    low = ask.lower()
+    if any(
+        x in low
+        for x in (
+            "cập nhật",
+            "cap nhat",
+            "tạo ",
+            "tao ",
+            "ghi thông",
+            "hình ảnh",
+            "bắt mắt",
+            "không sai",
+        )
+    ):
+        return "Thời tiết"
+    return ask[:28]
+
 
 def _weather_overlay_lines(
     facts: list[str], *, scene: str = "", user_ask: str = ""
 ) -> list[str]:
     """Compact lines for Pillow overlay — facts from classify/search only."""
-    header = (scene or user_ask or "Cập nhật").strip()[:48]
+    header = _overlay_header(user_ask=user_ask, scene=scene)
     now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H:%M · %d/%m/%Y")
-    lines = [header or "Cập nhật"]
+    lines = [header or "Thời tiết"]
     for raw in facts or []:
         s = str(raw or "").strip()
-        if s:
-            lines.append(s[:80])
+        if not s or _skip_structural_junk(s):
+            continue
+        low = s.lower()
+        if "unavailable" in low or "details unavailable" in low:
+            continue
+        lines.append(s[:72])
         if len(lines) >= 5:
             break
     lines.append(f"Cập nhật: {now}")
@@ -354,8 +423,12 @@ def _photoreal_scene_prompt(prompt: str) -> str:
 
 def _weather_scene_visual_prompt(scene: str, facts: list[str]) -> str:
     """Weather scenic diffusion — SCENE from classify; facts as atmospheric reference only."""
-    base = _photoreal_scene_prompt(scene or "")
-    clean = [str(f).strip() for f in (facts or []) if str(f).strip()]
+    base = _photoreal_scene_prompt(_strip_diffusion_policy_tokens(scene or ""))
+    clean = [
+        str(f).strip()
+        for f in (facts or [])
+        if str(f).strip() and not _skip_structural_junk(str(f))
+    ]
     extra = ""
     if clean:
         extra = (
@@ -372,21 +445,19 @@ def _weather_scene_visual_prompt(scene: str, facts: list[str]) -> str:
 
 
 def _labeled_scene_prompt(scene: str, facts: list[str]) -> str:
-    """Info-card / labeled dashboard diffusion — readable labels from classify facts."""
-    base = _photoreal_scene_prompt(scene or "")
-    clean = [str(f).strip() for f in (facts or []) if str(f).strip()]
-    if not clean:
-        return base
-    board = "; ".join(clean[:6])
+    """Scenic still for labeled asks — no burned-in text; facts go to /v1/overlay."""
+    del facts
+    base = _photoreal_scene_prompt(_strip_diffusion_policy_tokens(scene or ""))
     return (
-        f"{base}. Include a small, readable, safe-for-work on-image information board "
-        f"with these fact labels in English: {board}. Official place names only, "
-        "no close-up people, not cartoon, not anime, not illustration"
+        f"{base} "
+        "No readable text, no letters, no signs, no captions, no watermarks, "
+        "no labels, no information board in the image. "
+        "No close-up people, not cartoon, not anime, not illustration"
     )
 
 
 def _scene_prompt_with_facts(scene: str, facts: list[str]) -> str:
-    """Bake live fact lines into the Omni diffusion SCENE (no Pillow overlay)."""
+    """Scenic diffusion only — live facts are applied via Pillow overlay."""
     return _labeled_scene_prompt(scene, facts)
 
 
@@ -743,7 +814,7 @@ def run_search_then_weather_scene(
         )
     facts = _collect_host_facts(img_ins or "", search)
     if not facts:
-        facts = ["current weather details unavailable"]
+        facts = []
     prompt = _weather_scene_visual_prompt(scene, facts)
     fname = f"weather-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
@@ -761,7 +832,7 @@ def run_search_then_info_card(
     *,
     classified: bool = False,
 ) -> Optional[dict]:
-    """Host search → Omni combo image-gen (LLM/diffusion layout; no Pillow info-card)."""
+    """Host search → scenic still (no diffusion text) → bottom-left Pillow overlay."""
     del thread_type
     if not classified:
         return None
@@ -776,15 +847,18 @@ def run_search_then_info_card(
     img_ins = plan_image_instruction(plan, user_ask)
     search = run_web_search(query or user_ask)
     scene = scene_prompt_from_instruction(img_ins) or (
-        "Photorealistic photograph of a clean outdoor information board in a city plaza, "
-        "readable labels, real camera photo, natural light, not cartoon"
+        "Photorealistic photograph of a city plaza with visible sky, "
+        "real camera photo, natural light, not cartoon"
     )
     facts = _collect_host_facts(img_ins or "", search)
+    if not facts:
+        facts = _search_answer_lines(search, limit=4)
     prompt = _scene_prompt_with_facts(scene, facts)
     fname = f"info-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
-        return out
+        overlay = _weather_overlay_lines(facts, scene=scene, user_ask=user_ask)
+        return _apply_weather_overlay(out, overlay)
     return shortcut_consumed()
 
 def run_text_poster(
