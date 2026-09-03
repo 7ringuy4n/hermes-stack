@@ -179,11 +179,19 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
         if low.startswith("image:"):
             hero_path = _resolve_pdf_image(line.split(":", 1)[1].strip())
             continue
-        if line.startswith("# "):
-            title = line[2:].strip()
-            continue
-        if line.startswith("## "):
-            subtitle = line[3:].strip()
+        if line.startswith("#"):
+            hashes = 0
+            while hashes < len(line) and line[hashes] == "#":
+                hashes += 1
+            rest = line[hashes:].strip()
+            if hashes == 1 and rest:
+                title = rest
+                continue
+            if hashes == 2 and rest:
+                subtitle = rest
+                continue
+            if rest:
+                prose.append(rest)
             continue
         if line.startswith(("- ", "• ", "* ")):
             item = line[2:].strip()
