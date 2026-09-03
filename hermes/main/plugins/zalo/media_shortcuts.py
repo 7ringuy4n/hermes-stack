@@ -176,6 +176,127 @@ def _collect_host_facts(instruction: str, search: dict[str, Any] | None) -> list
     return facts[:8]
 
 
+def _search_notes_blob(search: dict[str, Any] | None, *, limit: int = 4) -> str:
+    """Concat result content fields for LLM synthesis (not titles; not host NLU)."""
+    if not isinstance(search, dict):
+        return ""
+    chunks: list[str] = []
+    ans = search.get("answer")
+    if isinstance(ans, str) and ans.strip():
+        chunks.append(ans.strip()[:800])
+    for row in search.get("results") or []:
+        if not isinstance(row, dict):
+            continue
+        content = str(row.get("content") or row.get("snippet") or "").strip()
+        if not content or len(content) < 8:
+            continue
+        chunks.append(content[:400])
+        if len(chunks) >= limit + (1 if ans else 0):
+            break
+    return "\n---\n".join(chunks)[:2400]
+
+
+def _parse_label_value_lines(text: str) -> list[str]:
+    """Keep short Label: value lines from model output (structural colon split only)."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in (text or "").replace("\r", "\n").split("\n"):
+        line = _clean_fact_line(raw)
+        if not line or _skip_structural_junk(line):
+            continue
+        if ":" not in line:
+            continue
+        left, right = line.split(":", 1)
+        if not left.strip() or not right.strip():
+            continue
+        if len(line) > 72:
+            line = line[:72].rstrip()
+        key = line.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(line)
+        if len(out) >= 4:
+            break
+    return out
+
+
+def _synthesize_overlay_facts(
+    search: dict[str, Any] | None,
+    *,
+    query: str = "",
+) -> list[str]:
+    """When search has no structured answer, ask chat combo for Label: value overlay lines."""
+    notes = _search_notes_blob(search)
+    if not notes.strip():
+        return []
+    try:
+        from .omni_env import resolve_omni_api_key, resolve_omni_base_url
+    except ImportError:
+        from omni_env import resolve_omni_api_key, resolve_omni_base_url  # type: ignore
+
+    base = resolve_omni_base_url()
+    key = resolve_omni_api_key()
+    if not base or not key:
+        return []
+    model = (
+        os.getenv("OMNIROUTER_DEFAULT_COMBO")
+        or os.getenv("HERMES_CHAT_COMBO")
+        or "hermes"
+    ).strip() or "hermes"
+    q = (query or "").strip()[:120]
+    system = (
+        "You extract live facts for a small image overlay. "
+        "Reply with 3 or 4 lines only. Each line MUST be Label: value. "
+        "Use Vietnamese labels when the query is Vietnamese: Nhiệt độ, Độ ẩm, Thời tiết, Gió. "
+        "Values must come from the notes. Never invent. Never placeholders. "
+        "No markdown, no bullets, no SCENE, no SAFE-FOR-WORK, no extra prose."
+    )
+    user = f"Query: {q or 'current weather'}\nNotes:\n{notes}"
+    body = json.dumps(
+        {
+            "model": model,
+            "stream": False,
+            "temperature": 0,
+            "max_tokens": 180,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base.rstrip('/')}/chat/completions",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            data = json.loads(resp.read().decode("utf-8") or "{}")
+    except Exception as e:  # noqa: BLE001
+        log.warning("overlay fact synthesize failed: %s", type(e).__name__)
+        return []
+    text = ""
+    try:
+        choices = data.get("choices") if isinstance(data, dict) else None
+        if isinstance(choices, list) and choices:
+            msg = (choices[0] or {}).get("message") if isinstance(choices[0], dict) else {}
+            if isinstance(msg, dict):
+                text = str(msg.get("content") or "").strip()
+    except Exception:
+        text = ""
+    lines = _parse_label_value_lines(text)
+    if not lines:
+        log.warning("overlay fact synthesize empty model=%r", model)
+    return lines
+
+
 def build_office_body_from_search(
     *,
     file_instruction: str,
@@ -806,7 +927,7 @@ def run_search_then_weather_scene(
     *,
     classified: bool = False,
 ) -> Optional[dict]:
-    """Host search → Omni combo image-gen with facts in SCENE (no Pillow overlay/card)."""
+    """Host search → Omni scenic image-gen → Pillow /v1/overlay with live facts."""
     del thread_type
     if not classified:
         return None
@@ -828,7 +949,7 @@ def run_search_then_weather_scene(
         )
     facts = _collect_host_facts(img_ins or "", search)
     if not facts:
-        facts = []
+        facts = _synthesize_overlay_facts(search, query=query or user_ask)
     prompt = _weather_scene_visual_prompt(scene, facts)
     fname = f"weather-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
@@ -867,6 +988,8 @@ def run_search_then_info_card(
     facts = _collect_host_facts(img_ins or "", search)
     if not facts:
         facts = _search_answer_lines(search, limit=4)
+    if not facts:
+        facts = _synthesize_overlay_facts(search, query=query or user_ask)
     prompt = _scene_prompt_with_facts(scene, facts)
     fname = f"info-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
