@@ -21,9 +21,6 @@ from zoneinfo import ZoneInfo
 
 log = logging.getLogger("hermes_plugins.zalo_platform.media_shortcuts")
 
-# Classify/Hermes contract markers (not user NLU).
-_MARKERS = ("TITLE:", "SUBTITLE:", "ICON:", "STYLE:", "OVERVIEW:", "BACKGROUND:")
-
 _MEDIA_FAIL_LINE_VI = (
     "Hiện chưa tạo được file này. Bạn thử lại sau hoặc rút gọn yêu cầu giúp mình."
 )
@@ -87,400 +84,83 @@ def run_web_search(query: str, max_results: int = 6) -> Optional[dict]:
     return None
 
 
-def extract_contract_markers(text: str) -> dict[str, str]:
-    """Pull TITLE/SUBTITLE/ICON/STYLE/OVERVIEW/BACKGROUND from classify contract text.
-
-    Markers may sit mid-line after a create-verb wrapper. Values run until the
-    next marker or end of string. Not user-prose NLU.
-    """
-    src = (text or "").replace("\r", "\n")
-    upper = src.upper()
-    # Longer keys first so SUBTITLE: is not mistaken for TITLE:
-    ordered = ("BACKGROUND:", "OVERVIEW:", "SUBTITLE:", "STYLE:", "TITLE:", "ICON:")
-    hits: list[tuple[int, str]] = []
-    claimed: set[int] = set()
-    for m in ordered:
-        start = 0
-        while True:
-            i = upper.find(m, start)
-            if i < 0:
-                break
-            start = i + 1
-            # Skip mid-token (e.g. TITLE: inside SUBTITLE:)
-            if i > 0 and upper[i - 1].isalnum():
-                continue
-            if any(i <= c < i + len(m) for c in claimed):
-                continue
-            for j in range(i, i + len(m)):
-                claimed.add(j)
-            hits.append((i, m))
-    hits.sort(key=lambda x: x[0])
-    out: dict[str, str] = {}
-    for idx, (pos, key) in enumerate(hits):
-        val_start = pos + len(key)
-        val_end = hits[idx + 1][0] if idx + 1 < len(hits) else len(src)
-        val = src[val_start:val_end].strip().strip(" .;—-|")
-        if "\n" in val:
-            val = val.split("\n", 1)[0].strip()
-        if key == "TITLE:" and len(val) > 80:
-            val = val[:80].rstrip()
-        if key in {"OVERVIEW:", "BACKGROUND:"} and len(val) > 160:
-            val = val[:160].rstrip()
-        if key == "ICON:":
-            val = val.split()[0].lower() if val else "cloud"
-            if "|" in val:
-                val = val.split("|", 1)[0].strip() or "cloud"
-        out[key[:-1].lower()] = val
-    return out
-
-
-def _is_serp_noise(text: str) -> bool:
-    """Drop SEO / JSON / markdown / wire junk. String checks only (no intent regex)."""
-    s = (text or "").strip()
-    if not s or len(s) < 3:
+def _skip_structural_junk(line: str) -> bool:
+    """Drop empty lines, URLs, and raw JSON/dict blobs — no domain NLU."""
+    s = (line or "").strip()
+    if not s or len(s) < 2:
         return True
-    low = s.lower()
-    # Raw JSON / Python-dict dumps must never appear on the card
     if s.startswith(("{", "[", "'{", '"{')):
         return True
-    if "{'" in s or '{"' in s or "': {" in s or '": {' in s:
+    if "{'" in s or '{"' in s:
         return True
-    if any(
-        k in low
-        for k in (
-            "'location'",
-            '"location"',
-            "'tz_id'",
-            '"tz_id"',
-            "'lat'",
-            '"lon"',
-            "weather parameters",
-        )
-    ):
-        return True
+    low = s.lower()
     if low.startswith("http://") or low.startswith("https://"):
         return True
-    if s.startswith("#") or low.startswith("title:"):
-        return True
-    if " | " in s:
-        return True
-    # Label-only rows with no value
-    if ":" not in s and low in {
-        "direction",
-        "wind speed",
-        "gust speed",
-        "gust spee",
-        "temperature",
-        "precipitation",
-        "humidity",
-        "nhiệt độ",
-        "độ ẩm",
-        "áp suất",
-        "ngày/đêm",
-        "sáng/tối",
-        "pressure",
-        "dawn",
-        "mặt",
-    }:
-        return True
-    # Truncated / chrome leftovers
-    if low.endswith(" image") or low.endswith(" spee") or low.endswith(" temp"):
-        return True
-    noise_bits = (
-        "dubaothoitiet",
-        "accuweather",
-        "weather.com",
-        "xem dự báo thời tiết tỉnh",
-        "dự báo thời tiết hôm nay, ngày m",
-        "cập nhật lần cuối",
-        "gust speed image",
-        "feels like temperature",
-        "có thể bạn quan",
-        "tiện ích",
-        "pm2.5",
-        "pm10",
-        "so2",
-        "thư viện ảnh",
-        "góp ý",
-        "toàn cầu",
-        "gió xoáy",
-    )
-    for bit in noise_bits:
-        if bit in low:
-            # Allow "Nhiệt độ: 31" / "Feels like: 36°C"
-            if ":" in s and not low.startswith(bit):
-                continue
-            return True
-    if low.startswith("quận ") or low.startswith("quan "):
-        return True
-    if "hà nội" in low and "hồ chí minh" in low and len(s) > 40:
-        return True
-    if s in {"Ngày/đêm", "Nhiệt độ", "Sáng/tối", "Áp suất", "Mặt", "pressure", "dawn"}:
-        return True
     return False
-
-
-def _looks_like_wind_bearing(token: str) -> bool:
-    """246°WSW / 90°N — compass after degree, not Celsius."""
-    t = (token or "").strip()
-    if "°" not in t and "º" not in t:
-        return False
-    sep = "°" if "°" in t else "º"
-    after = t.split(sep, 1)[1].upper()
-    if not after:
-        return False
-    if after.startswith("C") or after.startswith("F"):
-        return False
-    return after[0].isalpha()
 
 
 def _clean_fact_line(text: str) -> str:
     s = (text or "").strip()
     if s.startswith(("- ", "• ", "* ")):
         s = s[2:].strip()
-    # Strip markdown heading markers
     while s.startswith("#"):
         s = s.lstrip("#").strip()
-    # Prefer right-hand side when SERP glued "Page Title: actual fact"
-    if ": " in s and " | " not in s:
-        left, right = s.split(": ", 1)
-        if len(left) > 48 and len(right) >= 8:
-            s = right.strip()
-    return s[:140]
+    return s[:200]
 
 
-# Known weather API / Open-Meteo / WeatherAPI field → display label (data map, not NLU).
-_WEATHER_KEY_LABELS: dict[str, str] = {
-    "temp_c": "Nhiệt độ",
-    "temp_f": "Nhiệt độ (°F)",
-    "temperature": "Nhiệt độ",
-    "temperature_2m": "Nhiệt độ",
-    "feelslike_c": "Cảm giác như",
-    "feelslike_f": "Cảm giác như (°F)",
-    "apparent_temperature": "Cảm giác như",
-    "humidity": "Độ ẩm",
-    "relativehumidity_2m": "Độ ẩm",
-    "relative_humidity": "Độ ẩm",
-    "wind_kph": "Gió",
-    "wind_mph": "Gió (mph)",
-    "windspeed_10m": "Gió",
-    "wind_speed": "Gió",
-    "wind_degree": "Hướng gió",
-    "wind_dir": "Hướng gió",
-    "precip_mm": "Mưa",
-    "precipitation": "Mưa",
-    "uv": "Chỉ số UV",
-    "cloud": "Mây",
-    "cloudcover": "Mây",
-    "pressure_mb": "Áp suất",
-    "vis_km": "Tầm nhìn",
-    "condition": "Tình trạng",
-    "text": "Tình trạng",
-    "weathercode": "Mã thời tiết",
-}
-
-
-def _facts_from_weather_obj(obj: Any, *, prefix: str = "") -> list[str]:
-    """Flatten known weather keys from a parsed JSON/dict into label: value lines."""
+def _search_answer_lines(search: dict[str, Any] | None, *, limit: int = 8) -> list[str]:
+    """Plain answer prose lines only — never scrape SERP result titles/snippets."""
+    if not isinstance(search, dict):
+        return []
+    ans = search.get("answer")
+    if not isinstance(ans, str) or not ans.strip():
+        return []
     out: list[str] = []
-    if isinstance(obj, list):
-        for item in obj[:5]:
-            out.extend(_facts_from_weather_obj(item, prefix=prefix))
-        return out
-    if not isinstance(obj, dict):
-        return out
-    # Prefer nested current/now blocks first
-    for nest in ("current", "now", "current_weather", "data"):
-        nested = obj.get(nest)
-        if isinstance(nested, dict):
-            out.extend(_facts_from_weather_obj(nested, prefix=prefix))
-    for key, val in obj.items():
-        k = str(key or "").strip().lower()
-        if k in {"location", "forecast", "alerts", "request", "astro"}:
-            if k == "location" and isinstance(val, dict):
-                name = val.get("name") or val.get("city")
-                if name:
-                    out.append(f"Địa điểm: {name}")
+    seen: set[str] = set()
+    for part in ans.replace("\r", "\n").split("\n"):
+        line = _clean_fact_line(part)
+        if _skip_structural_junk(line):
             continue
-        if k == "condition" and isinstance(val, dict):
-            text = val.get("text") or val.get("description")
-            if text:
-                out.append(f"Tình trạng: {text}")
+        key = line.lower()
+        if key in seen:
             continue
-        if isinstance(val, (dict, list)):
-            out.extend(_facts_from_weather_obj(val, prefix=k))
-            continue
-        label = _WEATHER_KEY_LABELS.get(k)
-        if not label:
-            continue
-        if val is None or val == "":
-            continue
-        unit = ""
-        if k.endswith("_c") or k in {"temperature", "temperature_2m", "apparent_temperature"}:
-            unit = "°C"
-        elif k.endswith("_kph") or k in {"windspeed_10m", "wind_speed"}:
-            unit = " km/h"
-        elif k in {"humidity", "relativehumidity_2m", "relative_humidity", "cloud", "cloudcover"}:
-            unit = "%"
-        elif k.endswith("_mm") or k == "precipitation":
-            unit = " mm"
-        elif k == "uv":
-            unit = ""
-        out.append(f"{label}: {val}{unit}")
+        seen.add(key)
+        out.append(line)
+        if len(out) >= limit:
+            break
     return out
 
 
-def _try_json_facts(raw: str) -> list[str]:
-    """If blob is JSON (or close), return structured weather facts; else []."""
-    s = (raw or "").strip()
-    if not s:
-        return []
-    # Find a JSON object/array start
-    start_obj = s.find("{")
-    start_arr = s.find("[")
-    starts = [i for i in (start_obj, start_arr) if i >= 0]
-    if not starts:
-        return []
-    i = min(starts)
-    blob = s[i:]
-    try:
-        data = json.loads(blob)
-    except Exception:
-        # Python-repr style single quotes — only attempt when it looks like a dict dump
-        if "{'" in blob or "': " in blob:
-            return []  # do not put raw dict on the card
-        return []
-    return _facts_from_weather_obj(data)
+def _bullets_from_instruction(text: str) -> list[str]:
+    out: list[str] = []
+    for raw in (text or "").splitlines():
+        s = raw.strip()
+        if s.startswith(("- ", "• ", "* ")):
+            line = _clean_fact_line(s)
+            if line and not _skip_structural_junk(line):
+                out.append(line)
+    return out
 
 
-def _facts_from_search(search: dict[str, Any] | None) -> list[str]:
+def _collect_host_facts(instruction: str, search: dict[str, Any] | None) -> list[str]:
+    """Classify fact bullets + search answer lines (LLM/search own content quality)."""
     facts: list[str] = []
     seen: set[str] = set()
 
-    def add(raw: str) -> None:
-        # Prefer structured JSON extraction over dumping the blob
-        structured = _try_json_facts(raw)
-        if structured:
-            for line in structured:
-                add_line(line)
+    def add(line: str) -> None:
+        if not line:
             return
-        add_line(raw)
-
-    def add_line(raw: str) -> None:
-        line = _clean_fact_line(raw)
-        if _is_serp_noise(line):
-            return
-        if _looks_like_wind_bearing(line.split()[0] if line.split() else ""):
-            # Bare bearing token as whole fact
-            if ":" not in line and _looks_like_wind_bearing(line.replace(" ", "")):
-                return
         key = line.lower()
         if key in seen:
             return
         seen.add(key)
         facts.append(line)
 
-    if not isinstance(search, dict):
-        return facts
-
-    # Direct structured answer (dict) from search backends
-    ans = search.get("answer")
-    if isinstance(ans, (dict, list)):
-        for line in _facts_from_weather_obj(ans):
-            add_line(line)
-        if len(facts) >= 6:
-            return facts[:8]
-    elif ans is not None and str(ans).strip():
-        text = str(ans).strip()
-        structured = _try_json_facts(text)
-        if structured:
-            for line in structured:
-                add_line(line)
-        else:
-            for part in text.replace("\r", "\n").split("\n"):
-                p = part.strip()
-                if p:
-                    add(p)
-                if len(facts) >= 8:
-                    return facts
-
-    rows = search.get("results") if isinstance(search.get("results"), list) else []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        # Some backends put structured weather on the row itself
-        for line in _facts_from_weather_obj(row):
-            add_line(line)
-        snip = str(
-            row.get("content") or row.get("snippet") or row.get("body") or ""
-        ).strip()
-        title = str(row.get("title") or "").strip()
-        if snip:
-            add(snip)
-        elif title and not _is_serp_noise(title):
-            add(title)
-        if len(facts) >= 8:
-            break
+    for line in _bullets_from_instruction(instruction):
+        add(line)
+    for line in _search_answer_lines(search):
+        add(line)
     return facts[:8]
-
-
-def _infer_icon(facts: list[str], fallback: str = "cloud") -> str:
-    blob = " ".join(facts).lower()
-    if any(w in blob for w in ("storm", "giông", "thunder", "sét")):
-        return "storm"
-    if any(w in blob for w in ("rain", "mưa", "mua", "shower", "drizzle")):
-        return "rain"
-    if any(w in blob for w in ("sun", "sunny", "clear", "nắng", "nang", "quang")):
-        return "sun"
-    if any(w in blob for w in ("cloud", "cloudy", "mây", "overcast", "nhiều mây")):
-        return "cloud"
-    return fallback or "cloud"
-
-
-def _prose_snippets_from_search(search: dict[str, Any] | None, *, limit: int = 2) -> list[str]:
-    """Short clean sentences from search answer/snippets for OVERVIEW/BACKGROUND."""
-    if not isinstance(search, dict):
-        return []
-    chunks: list[str] = []
-    ans = search.get("answer")
-    if isinstance(ans, str) and ans.strip():
-        chunks.append(ans.strip())
-    for key in ("snippets", "results"):
-        block = search.get(key)
-        if isinstance(block, list):
-            for item in block[:6]:
-                if isinstance(item, str):
-                    chunks.append(item)
-                elif isinstance(item, dict):
-                    for k in ("snippet", "content", "description", "text", "answer"):
-                        v = item.get(k)
-                        if isinstance(v, str) and v.strip():
-                            chunks.append(v.strip())
-                            break
-    out: list[str] = []
-    for chunk in chunks:
-        # Split on sentence enders without regex NLU
-        parts: list[str] = []
-        buf = ""
-        for ch in chunk.replace("\n", " "):
-            buf += ch
-            if ch in ".!?。" and len(buf.strip()) >= 24:
-                parts.append(buf.strip())
-                buf = ""
-        if buf.strip():
-            parts.append(buf.strip())
-        for p in parts:
-            line = _clean_fact_line(p)
-            if not line or _is_serp_noise(line):
-                continue
-            if ":" in line and len(line.split(":", 1)[0]) <= 24:
-                # Prefer label:value for facts, not overview
-                continue
-            if line not in out:
-                out.append(line[:160])
-            if len(out) >= limit:
-                return out
-    return out
 
 
 def build_office_body_from_search(
@@ -489,20 +169,29 @@ def build_office_body_from_search(
     user_ask: str,
     search: dict[str, Any] | None,
 ) -> str:
-    """Trivial host shortcut only — short literal body + cleaned search facts."""
+    """Trivial host shortcut — literal body + classify bullets + search answer lines."""
+    del user_ask
     fi = (file_instruction or "").strip()
     base = fi
     if not base or "\n" in base or len(base) > 48:
         base = ""
+    else:
+        up = base.upper()
+        for prefix in (
+            "TITLE:",
+            "SUBTITLE:",
+            "ICON:",
+            "STYLE:",
+            "OVERVIEW:",
+            "BACKGROUND:",
+            "RENDER:",
+            "SCENE:",
+        ):
+            if up.startswith(prefix):
+                base = ""
+                break
 
-    facts = _facts_from_search(search)
-    for raw in fi.splitlines():
-        s = raw.strip()
-        if s.startswith(("- ", "• ", "* ")):
-            line = _clean_fact_line(s)
-            if line and not _is_serp_noise(line) and line not in facts:
-                facts.append(line)
-
+    facts = _collect_host_facts(fi, search)
     parts: list[str] = []
     if base:
         parts.append(base)
@@ -599,54 +288,19 @@ def scene_prompt_from_instruction(text: str) -> str:
         return src
     return ""
 
-def _place_vi_label(text: str) -> str:
-    """Official Vietnamese place names for on-image weather badges."""
-    low = (text or "").lower()
-    if any(x in low for x in ("hồ chí minh", "ho chi minh", "sài gòn", "saigon", "tp.hcm", "hcmc", "tp hcm")):
-        return "Thành phố Hồ Chí Minh"
-    if any(x in low for x in ("hà nội", "ha noi", "hanoi")):
-        return "Hà Nội"
-    if any(x in low for x in ("đà nẵng", "da nang", "danang")):
-        return "Đà Nẵng"
-    return "Thành phố Hồ Chí Minh"
-
-
 def _weather_overlay_lines(
     facts: list[str], *, scene: str = "", user_ask: str = ""
 ) -> list[str]:
-    """Compact Vietnamese lines for Pillow overlay (not diffusion text)."""
-    place = _place_vi_label(f"{scene} {user_ask}")
+    """Compact lines for Pillow overlay — facts from classify/search only."""
+    header = (scene or user_ask or "Cập nhật").strip()[:48]
     now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H:%M · %d/%m/%Y")
-    lines = [f"Thời tiết · {place}"]
-    picked: list[str] = []
+    lines = [header or "Cập nhật"]
     for raw in facts or []:
         s = str(raw or "").strip()
-        if not s:
-            continue
-        low = s.lower()
-        if any(
-            k in low
-            for k in (
-                "nhiệt độ",
-                "temp",
-                "độ ẩm",
-                "humid",
-                "tình trạng",
-                "condition",
-                "gió",
-                "wind",
-                "mưa",
-                "rain",
-                "cảm giác",
-                "feels",
-            )
-        ):
-            picked.append(s)
-        if len(picked) >= 4:
+        if s:
+            lines.append(s[:80])
+        if len(lines) >= 5:
             break
-    if not picked:
-        picked = [str(f).strip() for f in (facts or [])[:4] if str(f).strip()]
-    lines.extend(picked[:4])
     lines.append(f"Cập nhật: {now}")
     return lines[:6]
 
@@ -676,31 +330,6 @@ def _apply_weather_overlay(out: dict[str, Any], lines: list[str]) -> dict[str, A
     return out
 
 
-def _place_alias_to_official(scene: str) -> str:
-    """Map colloquial place aliases to official English names (no regex)."""
-    text = scene or ""
-    pairs = (
-        ("sài gòn", "Ho Chi Minh City"),
-        ("sai gòn", "Ho Chi Minh City"),
-        ("sai gon", "Ho Chi Minh City"),
-        ("saigon", "Ho Chi Minh City"),
-    )
-    for old, new in pairs:
-        low = text.lower()
-        needle = old.lower()
-        parts: list[str] = []
-        i = 0
-        while True:
-            j = low.find(needle, i)
-            if j < 0:
-                parts.append(text[i:])
-                break
-            parts.append(text[i:j])
-            parts.append(new)
-            i = j + len(old)
-        text = "".join(parts)
-    return text
-
 def _photoreal_scene_prompt(prompt: str) -> str:
     """Ensure diffusion prompts ask for real photos, not cartoon/anime styles."""
     p = (prompt or "").strip()
@@ -722,24 +351,10 @@ def _photoreal_scene_prompt(prompt: str) -> str:
         return ", ".join(extras)
     return f"{p}, " + ", ".join(missing)
 
-def weather_scene_to_info_card_instruction(img_ins: str) -> str:
-    """Legacy helper kept for tests — maps scene markers to TITLE body text only."""
-    scene = scene_prompt_from_instruction(img_ins or "")
-    facts: list[str] = []
-    for line in (img_ins or "").splitlines():
-        s = line.strip()
-        if s.startswith("-"):
-            facts.append(s.lstrip("- ").strip())
-    parts = ["TITLE: Live conditions", f"OVERVIEW: {scene or 'City weather scene'}"]
-    for f in facts[:6]:
-        if f:
-            parts.append(f"- {f}")
-    return "\n".join(parts)
-
 
 def _weather_scene_visual_prompt(scene: str, facts: list[str]) -> str:
-    """Weather scenic diffusion — SCENE from classify (LLM time-aware); no on-image text."""
-    base = _photoreal_scene_prompt(_place_alias_to_official(scene or ""))
+    """Weather scenic diffusion — SCENE from classify; facts as atmospheric reference only."""
+    base = _photoreal_scene_prompt(scene or "")
     clean = [str(f).strip() for f in (facts or []) if str(f).strip()]
     extra = ""
     if clean:
@@ -757,8 +372,8 @@ def _weather_scene_visual_prompt(scene: str, facts: list[str]) -> str:
 
 
 def _labeled_scene_prompt(scene: str, facts: list[str]) -> str:
-    """Info-card / labeled dashboard diffusion — may include readable labels (not weather scenic)."""
-    base = _photoreal_scene_prompt(_place_alias_to_official(scene or ""))
+    """Info-card / labeled dashboard diffusion — readable labels from classify facts."""
+    base = _photoreal_scene_prompt(scene or "")
     clean = [str(f).strip() for f in (facts or []) if str(f).strip()]
     if not clean:
         return base
@@ -1027,7 +642,7 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     if not key:
         log.warning("omni generate: missing OMNIROUTER_API_KEY")
         return None
-    scene = _photoreal_scene_prompt(_place_alias_to_official(prompt or ""))
+    scene = _photoreal_scene_prompt(prompt or "")
     size = _omni_image_gen_size()
     timeout = _omni_image_gen_timeout_s()
     model = _omni_image_gen_model()
@@ -1090,7 +705,7 @@ def run_scene_image(
             "Photorealistic photograph of a cityscape with visible sky and urban skyline, "
             "real camera photo, natural lighting, wide view, not cartoon, not anime"
         )
-    prompt = _photoreal_scene_prompt(_place_alias_to_official(scene))
+    prompt = _photoreal_scene_prompt(scene)
     fname = f"scene-{str(thread_id)[-8:] or 'zalo'}.webp"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
@@ -1126,7 +741,7 @@ def run_search_then_weather_scene(
             "Photorealistic photograph of a cityscape with visible sky and urban skyline, "
             "real camera photo, natural lighting, wide view, not cartoon, not anime"
         )
-    facts = _facts_from_search(search)
+    facts = _collect_host_facts(img_ins or "", search)
     if not facts:
         facts = ["current weather details unavailable"]
     prompt = _weather_scene_visual_prompt(scene, facts)
@@ -1164,12 +779,7 @@ def run_search_then_info_card(
         "Photorealistic photograph of a clean outdoor information board in a city plaza, "
         "readable labels, real camera photo, natural light, not cartoon"
     )
-    facts = _facts_from_search(search)
-    # Prefer labeled bullets from classify instruction when present.
-    for line in (img_ins or "").splitlines():
-        s = line.strip()
-        if s.startswith("-") and s.lstrip("- ").strip():
-            facts.append(s.lstrip("- ").strip())
+    facts = _collect_host_facts(img_ins or "", search)
     prompt = _scene_prompt_with_facts(scene, facts)
     fname = f"info-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
     out = _omni_generate_still(prompt, filename=fname)

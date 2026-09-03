@@ -890,14 +890,10 @@ def vision_scene_is_noise(text: str) -> bool:
                 return True
     vi_chars = "àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ"
     if not any(c in raw.lower() for c in vi_chars):
-        low = raw.lower()
-        scene_hints = (
-            "ảnh", "hình", "chụp", "camera", "photo", "picture", "the ", " a ", " is ",
-            " are ", " shows ", " depicts ", " on ", " with ", " black ", " white ",
-            " wooden ", " table ", " window ", " sky ", " city ", " river ",
-        )
-        if not any(h in low for h in scene_hints):
-            if len(words) <= 8 and (len(lines) >= 2 or all(len(w) <= 8 for w in words)):
+        if len(words) <= 8 and (len(lines) >= 2 or all(len(w) <= 8 for w in words)):
+            has_long_word = any(len(w) >= 6 for w in words)
+            has_punct = any(ch in raw for ch in ".!?,;:")
+            if not has_long_word and not has_punct:
                 return True
     body = ocr_excerpt_for_ack(raw)
     if not body and len(raw) < 80:

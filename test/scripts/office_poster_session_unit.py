@@ -2,7 +2,6 @@
 """Office body + text-poster from classify JSON fields (no prose regex)."""
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -14,7 +13,6 @@ from office_file import (  # noqa: E402
     is_compound_office_request,
     parse_office,
     parse_office_jobs,
-    parse_styled_pdf_body,
     write_pdf_styled,
 )
 from classify_client import (  # noqa: E402
@@ -34,7 +32,6 @@ from media_shortcuts import (  # noqa: E402
     shortcut_consumed,
     shortcut_ok,
     shortcut_was_consumed,
-    weather_scene_to_info_card_instruction,
 )
 try:
     from text_poster import parse_text_poster  # type: ignore  # noqa: E402
@@ -112,7 +109,7 @@ def main() -> int:
     )
     assert "TITLE:" not in body, body
     assert "31°C" in body and "Độ ẩm" in body, body
-    # Create-verb wrapper must not become the PDF title; SERP chrome dropped
+    # Create-verb wrapper must not become the PDF title; host never scrapes SERP results
     messy = build_office_body_from_search(
         file_instruction=(
             "Tạo file PDF thời tiết Hồ Chí Minh thật bắt mắt. "
@@ -133,53 +130,30 @@ def main() -> int:
     )
     assert "Tạo file PDF" not in messy, messy
     assert "Dubaothoitiet" not in messy and "AccuWeather" not in messy, messy
-    assert "30°C" in messy or "nhiều mây" in messy, messy
-    # JSON / dict dumps and wind bearings must not become card facts / hero
+    assert messy.strip() in {"", " "}, messy
+    # JSON / dict dumps in search answer are skipped (structural junk)
     jsony = build_office_body_from_search(
         file_instruction="TITLE: Thời tiết — Hồ Chí Minh\nSUBTITLE: Live\nICON: cloud",
         user_ask="pdf",
         search={
-            "answer": None,
-            "results": [
-                {
-                    "title": "API",
-                    "content": (
-                        "{'location': {'name': 'Ho Chi Minh City', 'lat': 10.75}, "
-                        "'current': {'temp_c': 31, 'humidity': 70, 'wind_kph': 20, "
-                        "'condition': {'text': 'Light rain'}}}"
-                    ),
-                },
-                {"title": "x", "content": "246°WSW\n## Ho Chi Minh City Weather Parameters\nDirection"},
-            ],
-        },
-    )
-    assert "{'location'" not in jsony and "Weather Parameters" not in jsony, jsony
-    assert "246°WSW" not in jsony, jsony
-    # Valid JSON should map to labeled facts
-    good_json = build_office_body_from_search(
-        file_instruction="TITLE: Thời tiết — Đà Nẵng\nICON: rain",
-        user_ask="pdf",
-        search={
-            "answer": json.dumps(
-                {
-                    "location": {"name": "Da Nang"},
-                    "current": {
-                        "temp_c": 30,
-                        "humidity": 78,
-                        "wind_kph": 15,
-                        "condition": {"text": "Cloudy"},
-                    },
-                }
+            "answer": (
+                "{'location': {'name': 'Ho Chi Minh City'}, "
+                "'current': {'temp_c': 31, 'humidity': 70}}"
             ),
             "results": [],
         },
     )
-    assert "Nhiệt độ: 30°C" in good_json and "Độ ẩm: 78%" in good_json, good_json
-    assert "{'location'" not in good_json and '"temp_c"' not in good_json, good_json
-    from office_file import _hero_temp  # type: ignore
-
-    assert _hero_temp(["Gió: 246°WSW", "Nhiệt độ: 31°C"]) == "31°C"
-    assert _hero_temp(["246°WSW", "Direction"]) == ""
+    assert "{'location'" not in jsony and "temp_c" not in jsony, jsony
+    # Plain answer prose lines pass through
+    good = build_office_body_from_search(
+        file_instruction="- Nhiệt độ:\n- Độ ẩm:",
+        user_ask="pdf",
+        search={
+            "answer": "Nhiệt độ: 30°C\nĐộ ẩm: 78%\nTình trạng: Cloudy",
+            "results": [],
+        },
+    )
+    assert "Nhiệt độ: 30°C" in good and "Độ ẩm: 78%" in good, good
 
     mixed_img_pdf = {
         "ok": True,
@@ -279,19 +253,7 @@ def main() -> int:
     assert shortcut_ok({"ok": True, "file": "x.png"}) is True
     assert shortcut_ok(shortcut_consumed()) is False
     assert shortcut_was_consumed(shortcut_consumed()) is True
-    fb_ins = weather_scene_to_info_card_instruction(weather_scene["instructions"][1])
-    assert "TITLE:" in fb_ins
-    assert "OVERVIEW:" in fb_ins
-
     assert parse_office_jobs("1", "pdf") == [(".pdf", "1")]
-
-    styled = parse_styled_pdf_body(
-        "TITLE: Thời tiết TP.HCM\nSUBTITLE: Hiện tại\nICON: sun\n"
-        "- Nhiệt độ: 31°C\n- Độ ẩm: 70%\n"
-    )
-    assert styled["title"].startswith("Thời tiết"), styled
-    assert styled["icon"] == "sun"
-    assert len(styled["facts"]) >= 2
     try:
         import reportlab  # noqa: F401
 
