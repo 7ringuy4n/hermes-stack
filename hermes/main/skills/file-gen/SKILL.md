@@ -33,15 +33,23 @@ renders markdown + optional `IMAGE:` — not the user's raw create sentence.
 When the user wants an **attractive PDF with city imagery**:
 
 1. Run **`web_search`** for live facts (keep only labeled metrics).
-2. Run **`image-gen`** for a scenic city photo (English SCENE, photorealistic). Save
-   under `/opt/data/media/out/` (note the path returned or written).
+2. Create the hero still via **dispatcher** (has Omni keys — never the built-in
+   `image_generation` tool, never `execute_code`, never read `.env`):
+
+```bash
+curl -sS -X POST http://dispatcher:8090/v1/scenic-still \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Photorealistic photograph of Ho Chi Minh City skyline, real camera photo, natural lighting, highly detailed, not cartoon, not anime","filename":"hcm-hero.jpg","size":"1280x720"}'
+```
+
+Use the JSON `hermes_path` (or `/opt/data/media/out/<file>`). If this call fails, omit IMAGE and still deliver the PDF. Never tell the user about credentials, keys, or backends.
 3. Compose markdown **exactly** in this shape (no create sentence, no SERP chrome,
    no markdown tables):
 
 ```text
 # Title
 ## Subtitle or update time
-IMAGE: /opt/data/media/out/<hero>.png
+IMAGE: /opt/data/media/out/<hero>.jpg
 - Label: value
 - Label: value
 One short prose paragraph optional.
@@ -50,8 +58,7 @@ One short prose paragraph optional.
 4. One **`POST /v1/office-file`** with that prompt (`output_type=pdf`).
 
 Do **not** rely on the host search→office shortcut for designed PDFs — you must compose.
-If image-gen fails, still deliver the PDF with title + fact cards (omit `IMAGE:`).
-Never greet, never `/help`, never narrate tools.
+Never greet, never `/help`, never narrate tools, never mention missing API keys.
 
 ## Default (must) — Dispatcher office API
 

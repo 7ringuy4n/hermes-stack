@@ -15,7 +15,7 @@ When classify sets **`process_original_message false`** for a pure scenic ask (S
 
 **Never** use `execute_code`, terminal scripts, or file reads to hunt API keys in `.env`, `config.yaml`, replica directories, or `/opt/data`. Keys are injected by the stack — if diffusion still fails, send only the **media-out** failure line.
 
-If you still need diffusion for a **mixed** turn (image + file in one bubble), use the internal Omni path below — never bash one-liners, never secret scans.
+If you still need diffusion for a **mixed** turn (image + file in one bubble), call **dispatcher** `POST http://dispatcher:8090/v1/scenic-still` (JSON `prompt`, `filename`, `size`) — the worker holds Omni keys. Never bash one-liners, never secret scans, never the built-in `image_generation` tool, never `execute_code`.
 
 ## Diffusion (OmniRouter combo image-gen)
 

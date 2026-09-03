@@ -901,6 +901,43 @@ def text_poster_generate(req: ImageReq) -> dict[str, Any]:
     return image_generate(req)
 
 
+@app.post("/v1/scenic-still")
+def scenic_still(req: ImageReq) -> dict[str, Any]:
+    """Omni combo still for Hermes file-gen hero images (dispatcher holds the API key)."""
+    from image_backends import generate_image_bytes
+
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(400, _msg("prompt_required", "A prompt is required."))
+    name = (req.filename or f"scene-{uuid.uuid4().hex[:10]}.jpg").strip()
+    if not name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+        name += ".jpg"
+    out_dir = MEDIA_DIR / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dest = out_dir / Path(name).name
+    try:
+        blob, backend, _errors = generate_image_bytes(
+            prompt, size=(req.size or "1280x720").strip() or "1280x720"
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, {"error": "scenic_still_failed", "detail": type(e).__name__}) from e
+    dest.write_bytes(blob)
+    try:
+        uid = int(os.environ.get("HERMES_UID") or "1000")
+        gid = int(os.environ.get("HERMES_GID") or str(uid))
+        os.chown(out_dir, uid, gid)
+        os.chown(dest, uid, gid)
+    except OSError:
+        pass
+    return {
+        "ok": True,
+        "file": dest.name,
+        "path": str(dest),
+        "hermes_path": f"/opt/data/media/out/{dest.name}",
+        "backend": backend,
+    }
+
+
 @app.post("/v1/overlay")
 def image_overlay(req: ImageReq) -> dict[str, Any]:
     """Apply Unicode-safe overlay onto an existing media/out file."""

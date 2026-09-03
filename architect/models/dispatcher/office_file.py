@@ -135,14 +135,15 @@ def _split_label_value(fact: str) -> tuple[str, str]:
 
 
 def _hero_metric(facts: list[str]) -> str:
-    """First short labeled value that looks like a metric (contains ° or % or digit)."""
+    """First labeled value with ° or % — keep the short token before '('."""
     for fact in facts:
-        label, value = _split_label_value(fact)
-        if not value:
+        _label, value = _split_label_value(fact)
+        src = (value or fact).strip()
+        if "°" not in src and "%" not in src:
             continue
-        if "°" in value or "%" in value or any(ch.isdigit() for ch in value):
-            if len(value) <= 24:
-                return value.strip()
+        token = src.split("(", 1)[0].strip()
+        if token:
+            return token[:18]
     return ""
 
 
@@ -249,14 +250,12 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
     # Two-column metric cards
     col_gap = 12
     col_w = (width - 2 * margin - col_gap) / 2
-    card_h = 52
+    card_h = 64
     col = 0
     row_y = y
-    drawn = 0
     for fact in facts[:10]:
         label, value = _split_label_value(fact)
-        # Skip duplicate of hero metric row
-        if hero_val and value and value.strip() == hero_val.strip():
+        if hero_val and value and value.split("(", 1)[0].strip() == hero_val.strip():
             continue
         if row_y - card_h < 72:
             c.showPage()
@@ -271,12 +270,15 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
         c.roundRect(x0, row_y - card_h, col_w, card_h, 10, fill=1, stroke=1)
         c.setFillColor(accent)
         c.setFont(title_font, 9)
-        c.drawString(x0 + 12, row_y - 18, (label or "•")[:28])
+        c.drawString(x0 + 12, row_y - 16, (label or "•")[:28])
         c.setFillColor(text)
-        c.setFont(font, 12)
-        body_line = (value or fact)[:42]
-        c.drawString(x0 + 12, row_y - 36, body_line)
-        drawn += 1
+        wrap_src = (value or fact).strip()
+        rows = _pdf_wrap_line(c, wrap_src, font, 11, col_w - 24)
+        ty = row_y - 34
+        for row in rows[:2]:
+            c.setFont(font, 11)
+            c.drawString(x0 + 12, ty, row[:48])
+            ty -= 14
         if col == 0:
             col = 1
         else:

@@ -33,6 +33,7 @@ Applies to **every** create/export/send of a file or media asset: images, PDF, D
 - Step-by-step plans, “Now I have the page…”, “Let me fetch…”, session-restored notices  
 - Image API keys, `.env` missing keys, Omni auth, numbered “how should I continue?” menus
 - `execute_code` or scripts that scan `.env`, `config.yaml`, or replica dirs for secrets
+- Any follow-up after a file was already sent (“credentials”, “unable to generate the image”, “Không tạo được ảnh”) — file delivery is the result
 
 ## Route by type
 
