@@ -11,26 +11,46 @@ Follow skill **`media-out`**. When the user asks to **create / export / edit** a
 ## LLM authors content (required)
 
 **You** decide structure, sections, tables, tone, and language. Compose the complete
-file body for `prompt` — prose, markdown, bullet lists, tables, or any layout that fits
-the ask. Fetch live facts with `web_search` when needed, then weave them into your draft.
+file body for `prompt` — **markdown** the worker understands:
 
-Do **not** use a fixed marker schema (`TITLE:`, `OVERVIEW:`, `SHEET:`, etc.). The worker
-renders what you write; it does not impose a weather card or dashboard template.
+```text
+# Main title
+## Subtitle or date line
+IMAGE: /opt/data/media/out/hero.png
+- Nhiệt độ: 31°C
+- Độ ẩm: 70%
+Short prose paragraph when needed.
+```
+
+Fetch live facts with `web_search` when needed, then weave them into your draft.
+Never paste search-page chrome, district lists, or raw JSON into the body.
+
+Do **not** use legacy marker schemas (`TITLE:`, `OVERVIEW:`, `SHEET:`). The worker
+renders markdown + optional `IMAGE:` — not the user's raw create sentence.
+
+## Visual PDF with city / hero photo
+
+When the user wants an **attractive PDF with city imagery**:
+
+1. Run **`web_search`** for live weather/facts.
+2. Run **`image-gen`** for a scenic city photo (English SCENE, photorealistic). Save
+   under `/opt/data/media/out/` (note the path returned or written).
+3. Compose markdown (title, subtitle, `IMAGE: <path>`, labeled fact bullets from search).
+4. One **`POST /v1/office-file`** with that prompt.
+
+Do **not** rely on the host search→office shortcut for designed PDFs — you must compose.
 
 ## Default (must) — Dispatcher office API
 
 Do **not** install `pypdf` / `reportlab` / `openpyxl` in Hermes. Do **not** call
-`skill_view` / `skill_manage` for ambiguous names `pdf` / `docx` / `xlsx` (name
-collisions refuse to load — that path fails and leaves the user with no file).
+`skill_view` / `skill_manage` for ambiguous names `pdf` / `docx` / `xlsx`.
 Never narrate reportlab/pip/uv. Dispatcher owns PDF rendering server-side.
-
-Create **and** deliver in one call:
 
 ```bash
 curl -sS -X POST http://dispatcher:8090/v1/office-file \
   -H 'Content-Type: application/json' \
   -d '{
-    "prompt":"<full file body you authored>",
+    "prompt":"<markdown body you authored>",
     "thread_id":"<inbound thread id>",
     "thread_type":"user",
     "filename":"<safe-name.pdf>",
@@ -41,32 +61,17 @@ curl -sS -X POST http://dispatcher:8090/v1/office-file \
 
 Requires Media|File worker with `OFFICE_FILE_GEN=active`. Success: `"ok":true` and
 Zalo receives the file (empty caption). User-facing text per **media-out**:
-**file only** — no “Đã tạo file…” sentence.
-
-Standalone scenic images (not inside the PDF) → **`image-gen`** only when the user
-clearly wants a separate picture; never block PDF delivery on image-backend failure.
+**file only**.
 
 ## Fallback (txt/md only)
 
-If office-file returns 503, write a plain text file then send:
-
-```bash
-printf '%s\n' "1" > /opt/data/media/out/number.txt
-curl -sS -X POST http://dispatcher:8090/v1/send-file \
-  -H 'Content-Type: application/json' \
-  -d '{"path":"/opt/data/media/out/number.txt","thread_id":"<id>","thread_type":"user","caption":""}'
-```
-
-Autosend may also pick up a new file under `/opt/data/media/out/` — never both
-office-file **and** a second send for the same file.
+If office-file returns 503, write plain text then `send-file` (see prior skill text).
 
 ## Do not
 
-- Narrate pip/uv install failures or invent “file created” when tools failed
-- Ask for approval or for API keys / backend config
-- Dump server paths
-- Block a PDF deliverable on image-backend failures — finish the PDF via office-file
-- Force weather/dashboard/screen templates — layout is your choice per the user ask
+- Pass the user's create sentence verbatim as `prompt`
+- Dump SERP titles or navigation chrome into the PDF body
+- Block PDF delivery on image-backend failure — finish text layout; omit IMAGE if gen failed
 
 ## Related
 

@@ -418,55 +418,188 @@ def verify_styled_pdf_layout(dest: Path, body: str = "") -> list[str]:
 
 
 def write_pdf_styled(dest: Path, body: str) -> Path:
-    """Render LLM-authored body as a plain Unicode PDF (no weather/dashboard template)."""
+    """Render LLM markdown body: # title, ## subtitle, IMAGE:, fact bullets, prose."""
+    from reportlab.lib.colors import Color, white
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
 
     font = _pdf_font()
     bold = _pdf_font_bold()
+    title_font = bold if bold != "Helvetica" else font
     width, height = A4
-    c = canvas.Canvas(str(dest), pagesize=A4)
-    y = height - 72
-    margin = 56
-    line_h = 16
-    max_w = width - 2 * margin
+    margin = 48
+    accent = Color(0.12, 0.45, 0.82)
+    text = Color(0.12, 0.18, 0.28)
+    muted = Color(0.45, 0.52, 0.60)
 
-    def _wrap(line: str, size: int = 12) -> list[str]:
-        c.setFont(font, size)
-        words = line.split()
-        if not words:
-            return [""]
-        rows: list[str] = []
-        cur = words[0]
-        for w in words[1:]:
-            trial = f"{cur} {w}"
-            if c.stringWidth(trial, font, size) <= max_w:
-                cur = trial
-            else:
-                rows.append(cur)
-                cur = w
-        rows.append(cur)
-        return rows
+    hero_path: Path | None = None
+    title = ""
+    subtitle = ""
+    facts: list[str] = []
+    prose: list[str] = []
 
-    for raw in (body or "").splitlines() or [body or " "]:
-        line = raw.rstrip()
-        if not line.strip():
-            y -= line_h
+    for raw in (body or "").splitlines():
+        line = raw.strip()
+        if not line:
             continue
-        is_heading = line.startswith("#") or (line.isupper() and len(line) < 80)
-        size = 14 if is_heading else 12
-        use_font = bold if is_heading and bold != "Helvetica" else font
-        c.setFont(use_font, size)
-        display = line.lstrip("#").strip() if line.startswith("#") else line
-        for row in _wrap(display, size):
-            if y < 72:
-                c.showPage()
-                y = height - 72
-                c.setFont(use_font, size)
-            c.drawString(margin, y, row[:200])
-            y -= line_h + (4 if is_heading else 0)
+        low = line.lower()
+        if low.startswith("image:"):
+            hero_path = _resolve_pdf_image(line.split(":", 1)[1].strip())
+            continue
+        if line.startswith("# "):
+            title = line[2:].strip()
+            continue
+        if line.startswith("## "):
+            subtitle = line[3:].strip()
+            continue
+        if line.startswith(("- ", "• ", "* ")):
+            facts.append(line[2:].strip())
+            continue
+        if _pdf_line_is_noise(line):
+            continue
+        prose.append(line)
+
+    if not title and prose:
+        title = prose.pop(0)[:72]
+    if not title:
+        title = "Báo cáo"
+
+    c = canvas.Canvas(str(dest), pagesize=A4)
+    y = height - margin
+
+    if hero_path and hero_path.is_file():
+        img_h = 200
+        try:
+            c.drawImage(
+                str(hero_path),
+                margin,
+                y - img_h,
+                width=width - 2 * margin,
+                height=img_h,
+                preserveAspectRatio=True,
+                anchor="n",
+            )
+            y -= img_h + 16
+        except Exception as e:  # noqa: BLE001
+            log.warning("pdf hero image skipped: %s", type(e).__name__)
+
+    band_h = 72
+    c.setFillColor(accent)
+    c.roundRect(margin, y - band_h, width - 2 * margin, band_h, 12, fill=1, stroke=0)
+    c.setFillColor(white)
+    c.setFont(title_font, 18)
+    c.drawString(margin + 16, y - 28, title[:56])
+    if subtitle:
+        c.setFont(font, 11)
+        c.drawString(margin + 16, y - 48, subtitle[:64])
+    y -= band_h + 24
+
+    hero_temp = _hero_temp(facts)
+    if hero_temp:
+        c.setFillColor(accent)
+        c.setFont(title_font, 32)
+        c.drawString(margin, y, hero_temp)
+        y -= 40
+
+    c.setFillColor(text)
+    for fact in facts[:10]:
+        label, value = _split_label_value(fact)
+        if label and _fact_icon_kind(label, value) == "temp" and hero_temp:
+            continue
+        if y < 96:
+            c.showPage()
+            y = height - margin
+            c.setFillColor(text)
+        _draw_fact_mini_icon(c, _fact_icon_kind(label, value), margin + 8, y - 6, accent)
+        c.setFont(title_font, 10)
+        c.setFillColor(accent)
+        c.drawString(margin + 28, y, (label or "Chi tiết")[:28])
+        c.setFont(font, 12)
+        c.setFillColor(text)
+        c.drawString(margin + 160, y, (value or fact)[:70])
+        y -= 26
+
+    for para in prose[:6]:
+        if y < 72:
+            c.showPage()
+            y = height - margin
+        c.setFont(font, 11)
+        c.setFillColor(muted)
+        for row in _pdf_wrap_line(c, para, font, 11, width - 2 * margin):
+            c.drawString(margin, y, row[:110])
+            y -= 14
+
     c.save()
     return dest
+
+
+def _resolve_pdf_image(raw: str) -> Path | None:
+    p = (raw or "").strip().strip("'").strip('"')
+    if not p:
+        return None
+    candidates: list[Path] = []
+    if p.startswith("/"):
+        candidates.append(Path(p))
+    for base in (
+        Path("/opt/data/media/out"),
+        Path("/data/assistant/media/out"),
+        Path("/opt/data/media/inbound"),
+    ):
+        candidates.append(base / p)
+        if p.startswith("media/"):
+            candidates.append(base.parent / p)
+    for cand in candidates:
+        try:
+            if cand.is_file():
+                return cand
+        except OSError:
+            continue
+    return None
+
+
+def _pdf_line_is_noise(line: str) -> bool:
+    s = (line or "").strip()
+    if not s or len(s) < 3:
+        return True
+    low = s.lower()
+    if s.startswith(("{", "[", "'{", '"{')):
+        return True
+    if " | " in s:
+        return True
+    if low.startswith("http://") or low.startswith("https://"):
+        return True
+    for bit in (
+        "dubaothoitiet",
+        "accuweather",
+        "pm2.5",
+        "pm10",
+        "tiện ích",
+        "có thể bạn quan",
+        "thư viện ảnh",
+    ):
+        if bit in low:
+            return True
+    if low.startswith("quận ") or low.startswith("quan "):
+        return True
+    return False
+
+
+def _pdf_wrap_line(c: Any, text: str, font_name: str, size: int, max_w: float) -> list[str]:
+    c.setFont(font_name, size)
+    words = text.split()
+    if not words:
+        return [""]
+    rows: list[str] = []
+    cur = words[0]
+    for w in words[1:]:
+        trial = f"{cur} {w}"
+        if c.stringWidth(trial, font_name, size) <= max_w:
+            cur = trial
+        else:
+            rows.append(cur)
+            cur = w
+    rows.append(cur)
+    return rows
 
 
 def _write_pdf_styled_fallback(dest: Path, body: str) -> Path:
