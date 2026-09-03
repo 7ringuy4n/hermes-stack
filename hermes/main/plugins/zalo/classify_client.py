@@ -74,7 +74,7 @@ HTTP_RETRY_SLEEP_S = 8.0
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
 _ATTACH_RECALL_START = "[recent attachments in this chat"
-_OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
+_OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md", "pptx"}
 REASONING_EFFORTS = ("low", "medium", "high", "max")
 
 
@@ -580,8 +580,8 @@ def plan_allows_search_then_office(plan: dict[str, Any] | None) -> bool:
     """Live-data office create (search sibling + one file) — host search then office-file.
 
     Only for **trivial literal fills** (short body, no create/layout prose). Visual or
-    designed PDFs route through Hermes (process_original_message true) so the LLM
-    composes markdown + optional IMAGE lines before office-file.
+    designed PDFs/PPTX route through Hermes (process_original_message true) so the LLM
+    composes HTML (pdf) or markdown (pptx) before office-file.
     """
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
@@ -597,7 +597,11 @@ def plan_allows_search_then_office(plan: dict[str, Any] | None) -> bool:
         return False
     if not _plan_has_search(src):
         return False
-    if not plan_search_then_office_output(src):
+    ot = plan_search_then_office_output(src)
+    if not ot:
+        return False
+    # PPTX decks always need Hermes composition (never host shortcut).
+    if ot == "pptx":
         return False
     if not _office_body_trivial_for_host_shortcut(src):
         return False
@@ -610,11 +614,18 @@ def _office_body_trivial_for_host_shortcut(plan: dict[str, Any] | None) -> bool:
     Visual/designed PDFs must set process_original_message true in classify so
     this gate never runs. Do not phrase-scan topic words here (AGENT_RULES §8).
     """
+    if plan_search_then_office_output(plan) == "pptx":
+        return False
     body = plan_file_instruction(plan, "").strip()
     if not body or "\n" in body:
         return False
     if len(body) > 48:
         return False
+    # Topic stubs like "Thời tiết Vũng Tàu — PPTX" are Hermes-owned, not literal fills.
+    if "—" in body or "–" in body or " - " in body:
+        low_body = body.lower()
+        if "pptx" in low_body or "pdf" in low_body or "docx" in low_body:
+            return False
     low = body.lower()
     for prefix in (
         "tạo ",
@@ -643,8 +654,10 @@ def _office_body_trivial_for_host_shortcut(plan: dict[str, Any] | None) -> bool:
         "IMAGE:",
         "OVERVIEW:",
         "# ",
+        "<!DOCTYPE",
+        "<HTML",
     ):
-        if marker in up or body.startswith("#"):
+        if marker in up or body.startswith("#") or body.lstrip().startswith("<"):
             return False
     return True
 

@@ -1,6 +1,6 @@
 # 2026-09-03
 
-2 incident(s). Times are UTC+7.
+5 incident(s). Times are UTC+7.
 
 ## 07:15 — OmniRouter setup vs update split; history/ root-cause log
 
@@ -118,3 +118,77 @@ Upgrade styled PDF layout; strengthen classify/file-gen for city IMAGE path; cas
 ### Prevent recurrence
 
 `test/cases/39-zalo-tn-visual-weather-pdf.md`; unit assert skips `|---|` in extracted PDF text.
+
+## 18:30 — Weather-on-image placeholders / empty PPTX
+
+### Symptom
+
+Weather facts on HCM photo showed unfilled `<value after search>`, misspelled Vietnamese labels, and `SAFE-FOR-WORK` as on-image header. PPTX weather ask produced a near-empty deliverable (topic line only).
+
+### Root cause
+
+Classify routed weather-on-image to `labeled-scene` with diffusion-burned boards and template fact bullets. Host info-card path baked those bullets into Omni SCENE. SCENE policy token `safe-for-work` leaked as overlay/diffusion text. Office-file had no `pptx` writer (`output_type` remapped/fell through).
+
+### Technical detail
+
+- **Function:** `media_shortcuts.py::_labeled_scene_prompt` / `run_search_then_info_card` — diffusion info board → scenic still + `_apply_weather_overlay`.
+- **Function:** `media_shortcuts.py::_skip_structural_junk` / `_weather_overlay_lines` / `_overlay_header` — drop placeholders/SFW; never use SCENE as badge title.
+- **Function:** `office_file.py::write_pptx_styled` + `_KIND_EXT["pptx"]`; `_hero_metric` short temp token.
+- **Lines:** `classify/parts/media.txt` WEATHER ON IMAGE → `RENDER: weather-scene`; OFFICE CREATE includes pptx.
+- **Key:** `python-pptx` on dispatcher requirements.
+- **Field:** classify `output_type=pptx` in `_OUTPUT_TYPES`.
+
+### AI decision
+
+Keep Vietnamese facts on Pillow `/v1/overlay` only; strengthen classify contract; add durable PPTX render — no hotpatch.
+
+### Fix (core)
+
+Prompt + host overlay path + pptx writer; case 40 inject script.
+
+### Todo list
+
+- Core fix
+- Unit tests
+- VPS Tn inject
+- MR after PASS
+
+### Prevent recurrence
+
+`test/cases/40-zalo-tn-weather-overlay-pptx.md`; `weather_overlay_unit.py` rejects placeholders/SFW.
+
+## 18:45 — ReportLab PDF layout removed; HTML→PDF
+
+### Symptom
+
+Attractive PDF asks still looked like rigid card templates with truncated metrics (host ReportLab `write_pdf_styled`).
+
+### Root cause
+
+Dispatcher owned page layout in Python (fonts, hero band, two-column cards) instead of letting the LLM author HTML/PDF and converting.
+
+### Technical detail
+
+- **Removed:** `write_pdf_styled`, `_pdf_font`, `_pdf_font_bold`, `_hero_metric`, `_pdf_wrap_line`, `_register_font`, `reportlab_font_name`.
+- **Function:** `office_file.py::write_pdf` / `write_pdf_from_html` — HTML or raw/`PDF_BASE64` → WeasyPrint or PyMuPDF Story.
+- **Deps:** drop `reportlab`; add `weasyprint`; Dockerfile pango/gdk libs.
+- **Skills:** `file-gen` + classify `media.txt` require HTML for PDF bodies.
+
+### AI decision
+
+LLM owns visual layout via HTML; worker only converts.
+
+### Fix (core)
+
+Rewrite PDF path; update classify/file-gen contracts; unit coverage via HTML fixtures.
+
+### Todo list
+
+- Remove ReportLab layout
+- HTML convert path
+- Prompt/skills
+- Units
+
+### Prevent recurrence
+
+`test/scripts/office_pptx_unit.py` / `office_poster_session_unit.py` assert HTML→`%PDF`.

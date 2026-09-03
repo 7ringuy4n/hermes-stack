@@ -19,11 +19,18 @@ def _font(size: int, *, bold: bool = True) -> ImageFont.FreeTypeFont | ImageFont
 
 
 def clean_overlay_lines(lines: Sequence[str] | None, *, limit: int = MAX_OVERLAY_LINES) -> list[str]:
-    """Keep short non-empty lines. Caller supplies facts; this does not parse prose."""
+    """Keep short non-empty lines. Drop unfilled template / policy tokens."""
     out: list[str] = []
     for raw in lines or []:
         t = " ".join(str(raw or "").split())
         if not t:
+            continue
+        low = t.lower()
+        if "<" in t or ">" in t or "value after" in low:
+            continue
+        if "safe-for-work" in low or "safe for work" in low:
+            continue
+        if t.upper().startswith("SCENE:"):
             continue
         out.append(t[:120])
         if len(out) >= limit:
