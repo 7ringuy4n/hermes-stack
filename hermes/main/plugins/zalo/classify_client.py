@@ -68,9 +68,9 @@ LIFECYCLE_TASK_TYPES = (
     "run_schedule",
 )
 LIFECYCLE_ACTIONS = ("pause", "resume", "update", "run_now", "run")
-DEFAULT_TIMEOUT_S = 70.0
-HTTP_ATTEMPTS = 3
-HTTP_RETRY_SLEEP_S = 8.0
+DEFAULT_TIMEOUT_S = 45.0
+HTTP_ATTEMPTS = 2
+HTTP_RETRY_SLEEP_S = 4.0
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
 _ATTACH_RECALL_START = "[recent attachments in this chat"
@@ -1495,6 +1495,27 @@ def classify_text(
         if attempt + 1 < HTTP_ATTEMPTS:
             time.sleep(HTTP_RETRY_SLEEP_S)
     return failed_plan(tz, last_error)
+
+
+async def classify_text_async(
+    text: str,
+    *,
+    timezone: str = "Asia/Ho_Chi_Minh",
+    thread: str = "unknown",
+    attachments: str = "none",
+    quoted: str = "none",
+) -> dict[str, Any]:
+    """Offload sync classify HTTP so Hermes asyncio liveness probes stay healthy."""
+    import asyncio
+
+    return await asyncio.to_thread(
+        classify_text,
+        text,
+        timezone=timezone,
+        thread=thread,
+        attachments=attachments,
+        quoted=quoted,
+    )
 
 
 OUTBOUND_ACTION_MAP = {

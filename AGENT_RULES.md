@@ -1010,6 +1010,33 @@ After the **final** lab round, before stopping the VPS or declaring complete:
 
 ------------------------------------------------------------------------
 
+### 29.2 VPS / LLM lab: evaluate real artifacts (not assert-only)
+
+When `# DECISION` requires testing improvements on a VPS with live LLM
+models (Zalo Tn inject, OmniRoute, image/office delivery):
+
+1.  **Obtain the deliverable** the user would see (image path under
+    `media/out`, office file, chat text). Do not stop at HTTP 200,
+    inject `exit 0`, or unit asserts alone.
+2.  **Self-evaluate** each case: open/read the file; for images run
+    vision-OCR (or equivalent) and **rate** spelling, layout, required
+    facts, and absence of placeholders / SFW noise; for office files
+    check slides/pages and live values.
+3.  Record a short **PASS / PASS_PARTIAL_QUOTA / FAIL** with evidence
+    (paths, OCR snippets, missing metrics). Soft-skip only when free
+    models or quota/rate-limit genuinely blocked the hop — still note
+    what was verified.
+4.  Assert scripts may gate plumbing; they **do not** replace artifact
+    judgment. Add or update durable cases under `test/` when a class of
+    failure recurs.
+5.  Stay cautious on OmniRoute queue budgets (`maxWaitMs`); space LLM
+    heavy steps; do not hammer classify/image-gen in parallel.
+
+Cross-check: [`HARDEN_RULE.md`](./HARDEN_RULE.md) (observe real
+response) and [`test/RULES.md`](./test/RULES.md).
+
+------------------------------------------------------------------------
+
 ## 30. Editable Companions
 
   ---------------------------------------------------------------------------

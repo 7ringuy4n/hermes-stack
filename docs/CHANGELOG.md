@@ -1,5 +1,13 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-03 19:40 +07 — zalo: never block event loop on classify; tighten budget
+
+- Media shortcut / workflow / image-analyze / sheet follow-up use `classify_text_async` (`asyncio.to_thread`).
+- Classify skill `timeout_s=35`, `retry=1`; mark combo bad on upstream timeout then fall back to chat combo.
+- AGENT_RULES §29.2: VPS LLM labs must OCR/rate real artifacts, not assert-only.
+- Classify media prompt: omit empty weather `Label:` bullets when values unknown.
+- Omni `image-gen` 400 “no images-capable targets”: refill via `update-omnirouter`; host image-gen fails over combo members after brief 5xx retries (do not burn full timeout on one upstream).
+
 ## 2026-09-03 18:45 +07 — dispatcher: PDF via LLM HTML→WeasyPrint; remove ReportLab layout
 
 - Removed `write_pdf_styled` / `_pdf_font` / hero-card ReportLab path from `office_file.py`.

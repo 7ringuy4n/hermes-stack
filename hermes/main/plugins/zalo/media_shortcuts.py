@@ -627,8 +627,9 @@ def _omni_request_image_blob_once(
         "Accept": "application/json",
     }
     deadline = time.monotonic() + max(60, int(timeout))
+    soft_5xx = 0
     while time.monotonic() < deadline:
-        wait_s = max(5, min(120, int(deadline - time.monotonic())))
+        wait_s = max(5, min(90, int(deadline - time.monotonic())))
         req = urllib.request.Request(
             f"{base}/images/generations",
             data=body,
@@ -640,9 +641,22 @@ def _omni_request_image_blob_once(
                 data = json.loads(resp.read().decode() or "{}")
         except urllib.error.HTTPError as e:
             code = int(getattr(e, "code", 0) or 0)
+            err_body = ""
+            try:
+                err_body = (e.read() or b"").decode("utf-8", "replace")[:400]
+            except Exception:
+                err_body = ""
             detail = f"HTTPError {code}"
+            if err_body:
+                detail = f"{detail} body={err_body!r}"
             log.warning("omni generate failed model=%r: %s", model, detail)
-            if code >= 500 and time.monotonic() < deadline:
+            # Combo alias with no image targets (400) → next member immediately.
+            if code == 400:
+                return None
+            # Provider 5xx: brief retry then failover to next combo member (do not
+            # burn the full OMNI_IMAGE_GEN_TIMEOUT_S on one stuck upstream).
+            if code >= 500 and soft_5xx < 2 and time.monotonic() < deadline:
+                soft_5xx += 1
                 time.sleep(min(8.0, max(0.0, deadline - time.monotonic())))
                 continue
             return None

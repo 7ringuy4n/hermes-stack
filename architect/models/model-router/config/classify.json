@@ -1,8 +1,8 @@
 {
-  "timeout_s": 90,
+  "timeout_s": 35,
   "max_tokens": 1536,
   "temperature": 0,
-  "retry": 2,
+  "retry": 1,
   "parts": [
     "core",
     "schedule",
