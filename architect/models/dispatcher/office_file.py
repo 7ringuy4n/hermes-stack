@@ -1,6 +1,11 @@
-"""Office file create + Zalo send. Enable: OFFICE_FILE_GEN=active (compose / Media worker)."""
+"""Office file create + Zalo send. Enable: OFFICE_FILE_GEN=active (compose / Media worker).
+
+PDF path: LLM authors HTML (preferred) or raw PDF bytes; dispatcher converts HTML→PDF.
+No ReportLab layout templates.
+"""
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import uuid
@@ -23,12 +28,12 @@ _KIND_EXT = {
     "ppt": ".pptx",
 }
 
-# Prefer Unicode TTFs so Vietnamese PDF does not fall back to .txt
-# (resolved via fonts.py — bundled Noto Sans first).
-_FONT_CANDIDATES = ()  # legacy unused; kept for import compatibility
-_FONT_BOLD_CANDIDATES = ()
-
-# Structured markers Hermes may put in legacy office prompts (markdown preferred).
+_MEDIA_ROOTS = (
+    Path("/opt/data/media/out"),
+    Path("/data/assistant/media/out"),
+    Path("/opt/data/media/inbound"),
+    Path("/data/assistant/media/inbound"),
+)
 
 try:
     from pydantic import BaseModel as _PydanticBase
@@ -49,7 +54,6 @@ class OfficeFileReq(_PydanticBase):
 
 
 def _enabled() -> bool:
-    # Default off; Media worker / compose sets OFFICE_FILE_GEN=active when office create is on.
     v = (
         os.environ.get("OFFICE_FILE_GEN") or os.environ.get("ZALO_OFFICE_FILE") or "inactive"
     ).strip().lower()
@@ -78,27 +82,8 @@ def parse_office_jobs(prompt: str, output_type: str = "") -> list[tuple[str, str
     return [parse_office(raw, output_type)]
 
 
-def _register_font(candidates: tuple[str, ...], name: str) -> str:
-    del candidates, name
-    from fonts import reportlab_font_name
-
-    return reportlab_font_name(bold=False)
-
-
-def _pdf_font() -> str:
-    from fonts import reportlab_font_name
-
-    return reportlab_font_name(bold=False)
-
-
-def _pdf_font_bold() -> str:
-    from fonts import reportlab_font_name
-
-    return reportlab_font_name(bold=True)
-
-
 def _skip_structural_junk(line: str) -> bool:
-    """Drop empty lines, URLs, JSON blobs, placeholders, and markdown table chrome."""
+    """Drop empty lines, URLs, JSON blobs, unfilled templates, markdown table chrome."""
     s = (line or "").strip()
     if not s or len(s) < 2:
         return True
@@ -109,13 +94,10 @@ def _skip_structural_junk(line: str) -> bool:
     low = s.lower()
     if low.startswith("http://") or low.startswith("https://"):
         return True
-    if "<" in s or ">" in s:
-        return True
-    if "value after" in low:
+    if "value after" in low or "<value" in low:
         return True
     if "safe-for-work" in low or "safe for work" in low:
         return True
-    # Markdown table separator / empty pipe rows: |---|---|
     if s.startswith("|"):
         core = (
             s.replace("|", "")
@@ -129,41 +111,221 @@ def _skip_structural_junk(line: str) -> bool:
     return False
 
 
-def _split_label_value(fact: str) -> tuple[str, str]:
-    s = (fact or "").strip()
-    if ": " in s:
-        left, right = s.split(": ", 1)
-        if 1 <= len(left) <= 40 and right.strip():
-            return left.strip(), right.strip()
-    if ":" in s and s.index(":") < 40:
-        left, right = s.split(":", 1)
-        if right.strip():
-            return left.strip(), right.strip()
-    return "", s
+def _looks_like_pdf_bytes(data: bytes) -> bool:
+    return bool(data) and data.lstrip().startswith(b"%PDF")
 
 
-def _hero_metric(facts: list[str]) -> str:
-    """First labeled value with ° or % — keep the short token before '('."""
-    for fact in facts:
-        _label, value = _split_label_value(fact)
-        src = (value or fact).strip()
-        if "°" not in src and "%" not in src:
+def _decode_pdf_body(body: str) -> bytes | None:
+    """Accept raw %PDF text or PDF_BASE64: / data:application/pdf;base64, payloads."""
+    raw = (body or "").strip()
+    if not raw:
+        return None
+    if raw.lstrip().startswith("%PDF"):
+        return raw.encode("latin-1", errors="ignore")
+    marker = "PDF_BASE64:"
+    if raw.upper().startswith(marker):
+        b64 = raw[len(marker) :].strip()
+        try:
+            blob = base64.b64decode(b64, validate=False)
+        except Exception:  # noqa: BLE001
+            return None
+        return blob if _looks_like_pdf_bytes(blob) else None
+    prefix = "data:application/pdf;base64,"
+    if raw.lower().startswith(prefix):
+        try:
+            blob = base64.b64decode(raw[len(prefix) :].strip(), validate=False)
+        except Exception:  # noqa: BLE001
+            return None
+        return blob if _looks_like_pdf_bytes(blob) else None
+    return None
+
+
+def _unwrap_fenced(body: str, *, lang: str) -> str | None:
+    """Pull content from ```lang ... ``` fences without regex."""
+    s = (body or "").strip()
+    if not s.startswith("```"):
+        return None
+    first_nl = s.find("\n")
+    if first_nl < 0:
+        return None
+    header = s[3:first_nl].strip().lower()
+    if header and header != lang.lower():
+        return None
+    rest = s[first_nl + 1 :]
+    end = rest.rfind("```")
+    if end < 0:
+        return None
+    return rest[:end].strip() or None
+
+
+def _extract_html(body: str) -> str | None:
+    """Return HTML document/fragment authored by the LLM, if present."""
+    s = (body or "").strip()
+    if not s:
+        return None
+    fenced = _unwrap_fenced(s, lang="html")
+    if fenced:
+        s = fenced
+    low = s.lower().lstrip()
+    if low.startswith("<!doctype") or low.startswith("<html"):
+        return s
+    if "<html" in low:
+        idx = low.find("<html")
+        return s[idx:]
+    # HTML fragment (has tags) — wrap later
+    if "<" in s and "</" in s and ("<div" in low or "<p" in low or "<h1" in low or "<table" in low or "<section" in low or "<img" in low):
+        return s
+    return None
+
+
+def _resolve_media_path(raw: str) -> Path | None:
+    p = (raw or "").strip().strip("'").strip('"')
+    if p.startswith("file://"):
+        p = p[7:]
+    if not p:
+        return None
+    candidates: list[Path] = []
+    if p.startswith("/"):
+        candidates.append(Path(p))
+    for base in _MEDIA_ROOTS:
+        candidates.append(base / p)
+        if p.startswith("media/"):
+            candidates.append(base.parent / p)
+    for cand in candidates:
+        try:
+            if cand.is_file():
+                return cand
+        except OSError:
             continue
-        token = src
-        for sep in ("(", "（", " - ", " — "):
-            if sep in token:
-                token = token.split(sep, 1)[0].strip()
-        if token and len(token) <= 16:
-            return token
-        # Prefer leading number+unit (e.g. 27°C) when the value is long.
-        words = token.split()
-        if words:
-            first = words[0].strip(" ,;")
-            if "°" in first or "%" in first:
-                return first[:12]
-        if token:
-            return token[:12]
-    return ""
+    return None
+
+
+def _html_document(fragment_or_doc: str) -> str:
+    """Ensure a full HTML document with Unicode-friendly base CSS."""
+    src = (fragment_or_doc or "").strip()
+    low = src.lower().lstrip()
+    if low.startswith("<!doctype") or low.startswith("<html"):
+        return src
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="vi"><head><meta charset="utf-8"/>'
+        "<title>Document</title>"
+        "<style>"
+        "html,body{margin:0;padding:0;font-family:'Noto Sans',DejaVu Sans,Arial,sans-serif;"
+        "color:#142033;background:#f4f7fb;}"
+        "main{padding:28px 32px;}"
+        "h1{font-size:28px;margin:0 0 8px;color:#1a3a66;}"
+        "h2{font-size:16px;margin:0 0 18px;color:#5a6a7a;font-weight:600;}"
+        ".hero{width:100%;max-height:280px;object-fit:cover;border-radius:12px;margin:0 0 18px;}"
+        ".cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 20px;}"
+        ".card{background:#fff;border:1px solid #d9e6f5;border-radius:12px;padding:12px 14px;}"
+        ".card .k{font-size:11px;color:#2a6ebd;text-transform:uppercase;letter-spacing:.02em;}"
+        ".card .v{font-size:16px;margin-top:4px;}"
+        "ul{padding-left:18px;} li{margin:4px 0;} p{line-height:1.45;}"
+        "</style></head><body><main>"
+        f"{src}"
+        "</main></body></html>"
+    )
+
+
+def _rewrite_img_src_to_file_urls(html: str) -> str:
+    """Turn hermes media paths in src= into file:// URLs WeasyPrint can open."""
+    out: list[str] = []
+    i = 0
+    src_token = 'src="'
+    src_token2 = "src='"
+    while i < len(html):
+        lower = html.lower()
+        a = lower.find(src_token, i)
+        b = lower.find(src_token2, i)
+        if a < 0 and b < 0:
+            out.append(html[i:])
+            break
+        if a < 0 or (b >= 0 and b < a):
+            quote = "'"
+            start = b
+            token = src_token2
+        else:
+            quote = '"'
+            start = a
+            token = src_token
+        out.append(html[i:start + len(token)])
+        end = html.find(quote, start + len(token))
+        if end < 0:
+            out.append(html[start + len(token) :])
+            break
+        raw_src = html[start + len(token) : end]
+        path = _resolve_media_path(raw_src)
+        if path is not None:
+            out.append(path.resolve().as_uri())
+        else:
+            out.append(raw_src)
+        out.append(quote)
+        i = end + 1
+    return "".join(out)
+
+
+def write_pdf_from_html(dest: Path, html: str) -> Path:
+    """Convert LLM HTML to PDF (WeasyPrint when available; else PyMuPDF Story)."""
+    import contextlib
+    import io
+
+    doc = _rewrite_img_src_to_file_urls(_html_document(html))
+    base = str(_MEDIA_ROOTS[0]) if _MEDIA_ROOTS[0].is_dir() else str(dest.parent)
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            from weasyprint import HTML
+
+            HTML(string=doc, base_url=base).write_pdf(str(dest))
+        return dest
+    except Exception as e:  # noqa: BLE001
+        log.warning("weasyprint html->pdf skipped: %s", type(e).__name__)
+    return _write_pdf_pymupdf_story(dest, doc)
+
+
+def _write_pdf_pymupdf_story(dest: Path, html: str) -> Path:
+    """HTML→PDF via PyMuPDF Story (no GTK; good Unicode coverage)."""
+    import pymupdf
+
+    mediabox = pymupdf.paper_rect("a4")
+    where = mediabox + (36, 36, -36, -36)
+    story = pymupdf.Story(html=html)
+    writer = pymupdf.DocumentWriter(str(dest))
+    more = True
+    while more:
+        device = writer.begin_page(mediabox)
+        more, where = story.place(where)
+        story.draw(device)
+        writer.end_page()
+        where = mediabox + (36, 36, -36, -36)
+    writer.close()
+    return dest
+
+
+def write_pdf(dest: Path, body: str) -> Path:
+    """Write PDF from LLM HTML or raw/base64 PDF. No ReportLab page layout."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    pdf_blob = _decode_pdf_body(body)
+    if pdf_blob is not None:
+        dest.write_bytes(pdf_blob)
+        return dest
+    html = _extract_html(body)
+    if html:
+        return write_pdf_from_html(dest, html)
+    # Last resort: wrap plain text as a minimal HTML page (not a card template).
+    safe = (
+        (body or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    paragraphs = []
+    for line in safe.splitlines() or [safe]:
+        if not line.strip():
+            continue
+        paragraphs.append(f"<p>{line}</p>")
+    return write_pdf_from_html(dest, "\n".join(paragraphs) or "<p> </p>")
 
 
 def write_pptx_styled(dest: Path, body: str) -> Path:
@@ -282,214 +444,6 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
     return dest
 
 
-def write_pdf_styled(dest: Path, body: str) -> Path:
-    """Render LLM markdown: full-bleed hero IMAGE:, title band, 2-col fact cards, prose."""
-    from reportlab.lib.colors import Color, white
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
-
-    font = _pdf_font()
-    bold = _pdf_font_bold()
-    title_font = bold if bold != "Helvetica" else font
-    width, height = A4
-    margin = 40
-    accent = Color(0.10, 0.42, 0.78)
-    accent_soft = Color(0.90, 0.95, 0.99)
-    card = Color(0.97, 0.98, 1.0)
-    text = Color(0.10, 0.16, 0.26)
-    muted = Color(0.42, 0.48, 0.56)
-    page_bg = Color(0.94, 0.96, 0.99)
-
-    hero_path: Path | None = None
-    title = ""
-    subtitle = ""
-    facts: list[str] = []
-    prose: list[str] = []
-
-    for raw in (body or "").splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        low = line.lower()
-        if low.startswith("image:"):
-            hero_path = _resolve_pdf_image(line.split(":", 1)[1].strip())
-            continue
-        if line.startswith("#"):
-            hashes = 0
-            while hashes < len(line) and line[hashes] == "#":
-                hashes += 1
-            rest = line[hashes:].strip()
-            if hashes == 1 and rest:
-                title = rest
-                continue
-            if hashes == 2 and rest:
-                subtitle = rest
-                continue
-            if rest:
-                prose.append(rest)
-            continue
-        if line.startswith(("- ", "• ", "* ")):
-            item = line[2:].strip()
-            if item and not _skip_structural_junk(item):
-                facts.append(item)
-            continue
-        if _skip_structural_junk(line):
-            continue
-        prose.append(line)
-
-    if not title and prose:
-        title = prose.pop(0)[:72]
-    if not title:
-        title = "Báo cáo"
-
-    c = canvas.Canvas(str(dest), pagesize=A4)
-    c.setFillColor(page_bg)
-    c.rect(0, 0, width, height, fill=1, stroke=0)
-    y = height
-
-    hero_ok = False
-    if hero_path and hero_path.is_file():
-        img_h = 260
-        try:
-            c.drawImage(
-                str(hero_path),
-                0,
-                y - img_h,
-                width=width,
-                height=img_h,
-                preserveAspectRatio=True,
-                anchor="n",
-            )
-            # Soft fade into page at bottom of hero
-            c.setFillColor(page_bg)
-            c.rect(0, y - img_h, width, 28, fill=1, stroke=0)
-            y -= img_h + 8
-            hero_ok = True
-        except Exception as e:  # noqa: BLE001
-            log.warning("pdf hero image skipped: %s", type(e).__name__)
-            y = height - margin
-
-    if not hero_ok:
-        y = height - margin
-
-    band_h = 78 if subtitle else 58
-    c.setFillColor(accent)
-    c.roundRect(margin, y - band_h, width - 2 * margin, band_h, 14, fill=1, stroke=0)
-    c.setFillColor(white)
-    c.setFont(title_font, 20)
-    c.drawString(margin + 18, y - 28, title[:52])
-    if subtitle:
-        c.setFont(font, 11)
-        c.drawString(margin + 18, y - 50, subtitle[:64])
-    y -= band_h + 18
-
-    hero_val = _hero_metric(facts)
-    if hero_val:
-        c.setFillColor(accent)
-        c.setFont(title_font, 36)
-        c.drawString(margin + 4, y - 8, hero_val[:20])
-        y -= 48
-
-    # Two-column metric cards
-    col_gap = 12
-    col_w = (width - 2 * margin - col_gap) / 2
-    card_h = 64
-    col = 0
-    row_y = y
-    for fact in facts[:10]:
-        label, value = _split_label_value(fact)
-        if hero_val and value and value.split("(", 1)[0].strip() == hero_val.strip():
-            continue
-        if row_y - card_h < 72:
-            c.showPage()
-            c.setFillColor(page_bg)
-            c.rect(0, 0, width, height, fill=1, stroke=0)
-            row_y = height - margin
-            col = 0
-        x0 = margin + col * (col_w + col_gap)
-        c.setFillColor(card)
-        c.setStrokeColor(accent_soft)
-        c.setLineWidth(1)
-        c.roundRect(x0, row_y - card_h, col_w, card_h, 10, fill=1, stroke=1)
-        c.setFillColor(accent)
-        c.setFont(title_font, 9)
-        c.drawString(x0 + 12, row_y - 16, (label or "•")[:28])
-        c.setFillColor(text)
-        wrap_src = (value or fact).strip()
-        rows = _pdf_wrap_line(c, wrap_src, font, 11, col_w - 24)
-        ty = row_y - 34
-        for row in rows[:2]:
-            c.setFont(font, 11)
-            c.drawString(x0 + 12, ty, row)
-            ty -= 14
-        if col == 0:
-            col = 1
-        else:
-            col = 0
-            row_y -= card_h + 10
-    if col == 1:
-        row_y -= card_h + 10
-    y = row_y - 8
-
-    for para in prose[:6]:
-        if y < 72:
-            c.showPage()
-            c.setFillColor(page_bg)
-            c.rect(0, 0, width, height, fill=1, stroke=0)
-            y = height - margin
-        c.setFont(font, 11)
-        c.setFillColor(muted)
-        for row in _pdf_wrap_line(c, para, font, 11, width - 2 * margin):
-            c.drawString(margin, y, row[:110])
-            y -= 14
-        y -= 6
-
-    c.save()
-    return dest
-
-
-def _resolve_pdf_image(raw: str) -> Path | None:
-    p = (raw or "").strip().strip("'").strip('"')
-    if not p:
-        return None
-    candidates: list[Path] = []
-    if p.startswith("/"):
-        candidates.append(Path(p))
-    for base in (
-        Path("/opt/data/media/out"),
-        Path("/data/assistant/media/out"),
-        Path("/opt/data/media/inbound"),
-    ):
-        candidates.append(base / p)
-        if p.startswith("media/"):
-            candidates.append(base.parent / p)
-    for cand in candidates:
-        try:
-            if cand.is_file():
-                return cand
-        except OSError:
-            continue
-    return None
-
-
-def _pdf_wrap_line(c: Any, text: str, font_name: str, size: int, max_w: float) -> list[str]:
-    c.setFont(font_name, size)
-    words = text.split()
-    if not words:
-        return [""]
-    rows: list[str] = []
-    cur = words[0]
-    for w in words[1:]:
-        trial = f"{cur} {w}"
-        if c.stringWidth(trial, font_name, size) <= max_w:
-            cur = trial
-        else:
-            rows.append(cur)
-            cur = w
-    rows.append(cur)
-    return rows
-
-
 def write_office(dest: Path, ext: str, body: str) -> Path:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if ext in {".txt", ".md", ".csv"}:
@@ -527,41 +481,22 @@ def write_office(dest: Path, ext: str, body: str) -> Path:
             return dest
     if ext == ".pdf":
         try:
-            return write_pdf_styled(dest, body)
+            return write_pdf(dest, body)
         except Exception as e:  # noqa: BLE001
-            log.warning("styled pdf failed, plain fallback: %s", e)
-            try:
-                from reportlab.lib.pagesizes import A4
-                from reportlab.pdfgen import canvas
-
-                font = _pdf_font()
-                c = canvas.Canvas(str(dest), pagesize=A4)
-                c.setFont(font, 12)
-                y = 800
-                for line in body.splitlines() or [body]:
-                    c.drawString(72, y, line[:110])
-                    y -= 16
-                    if y < 72:
-                        c.showPage()
-                        c.setFont(font, 12)
-                        y = 800
-                c.save()
-                return dest
-            except Exception as e2:  # noqa: BLE001
-                log.warning("pdf write failed, fallback txt: %s", e2)
-                dest = dest.with_suffix(".txt")
-                dest.write_text(body + "\n", encoding="utf-8")
-                return dest
+            log.warning("pdf write failed, fallback txt: %s", type(e).__name__)
+            dest = dest.with_suffix(".txt")
+            dest.write_text(body + "\n", encoding="utf-8")
+            return dest
     if ext == ".pptx":
         try:
             return write_pptx_styled(dest, body)
         except Exception as e:  # noqa: BLE001
-            log.warning("pptx write failed, fallback pdf: %s", e)
+            log.warning("pptx write failed, fallback pdf: %s", type(e).__name__)
             dest = dest.with_suffix(".pdf")
             try:
-                return write_pdf_styled(dest, body)
+                return write_pdf(dest, body)
             except Exception as e2:  # noqa: BLE001
-                log.warning("pptx→pdf fallback failed: %s", e2)
+                log.warning("pptx→pdf fallback failed: %s", type(e2).__name__)
                 dest = dest.with_suffix(".txt")
                 dest.write_text(body + "\n", encoding="utf-8")
                 return dest
@@ -626,7 +561,6 @@ def register_office_file(
                     lock_thread=True,
                 )
             except Exception as e:  # noqa: BLE001
-                # File is on disk under media/out — Hermes autosend can still deliver.
                 zalo_error = str(getattr(e, "detail", None) or e)[:300]
                 log.warning(
                     "office-file wrote %s but zalo send failed: %s",

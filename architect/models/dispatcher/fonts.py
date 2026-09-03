@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-"""Shared Unicode font resolution for Dispatcher media (PDF + Pillow).
+"""Shared Unicode font resolution for Dispatcher media (Pillow overlay / posters).
 
 Prefer bundled Noto Sans (Vietnamese-complete), then system fonts. Never use the
 PIL bitmap default when a TTF is available — that produces tofu for diacritics.
@@ -85,25 +84,10 @@ def pillow_font(size: int, *, bold: bool = False) -> Any:
     try:
         return ImageFont.truetype(path, size=max(8, int(size)))
     except OSError:
-        # Last resort — caller should avoid this path for Vietnamese.
         log.error("truetype failed for %s; Vietnamese will break", path)
         return ImageFont.load_default()
-
-
-@lru_cache(maxsize=4)
-def reportlab_font_name(*, bold: bool = False) -> str:
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-
-    name = "MediaSansBold" if bold else "MediaSans"
-    if name in pdfmetrics.getRegisteredFontNames():
-        return name
-    path = resolve_font_path(bold=bold)
-    pdfmetrics.registerFont(TTFont(name, path))
-    return name
 
 
 def clear_font_caches() -> None:
     resolve_font_path.cache_clear()
     pillow_font.cache_clear()
-    reportlab_font_name.cache_clear()

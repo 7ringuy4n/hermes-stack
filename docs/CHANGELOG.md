@@ -1,5 +1,11 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-03 18:45 +07 — dispatcher: PDF via LLM HTML→WeasyPrint; remove ReportLab layout
+
+- Removed `write_pdf_styled` / `_pdf_font` / hero-card ReportLab path from `office_file.py`.
+- PDF office-file accepts HTML (or raw/`PDF_BASE64`) and converts with WeasyPrint; classify/file-gen require HTML for PDF.
+- Dropped `reportlab` dep; Dockerfile adds WeasyPrint system libs.
+
 ## 2026-09-03 18:30 +07 — zalo/office: weather overlay Pillow path; PPTX create
 
 - Weather-on-image classify route uses `weather-scene` + host `/v1/overlay` (no diffusion-burned boards, no SFW/placeholder bullets).

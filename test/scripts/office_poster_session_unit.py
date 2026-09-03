@@ -13,7 +13,7 @@ from office_file import (  # noqa: E402
     is_compound_office_request,
     parse_office,
     parse_office_jobs,
-    write_pdf_styled,
+    write_pdf,
 )
 from classify_client import (  # noqa: E402
     plan_allows_office_shortcut,
@@ -255,19 +255,22 @@ def main() -> int:
     assert shortcut_was_consumed(shortcut_consumed()) is True
     assert parse_office_jobs("1", "pdf") == [(".pdf", "1")]
     try:
-        import reportlab  # noqa: F401
-
-        out = ROOT / "scripts" / "temp" / "_styled_weather_unit.pdf"
+        out = ROOT / "scripts" / "temp" / "_html_weather_unit.pdf"
         out.parent.mkdir(parents=True, exist_ok=True)
-        write_pdf_styled(
+        write_pdf(
             out,
-            "# Thời tiết TP. Hồ Chí Minh\n"
-            "## Cập nhật trực tiếp\n"
-            "- Nhiệt độ: 31°C (cảm giác 36°C)\n"
-            "- Độ ẩm: 70%\n"
-            "- Điều kiện: Nắng\n"
-            "|------|-----------|\n"
-            "Trời quang, oi bức.\n",
+            """<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"/><title>w</title></head>
+<body>
+<h1>Thời tiết TP. Hồ Chí Minh</h1>
+<h2>Cập nhật trực tiếp</h2>
+<ul>
+<li>Nhiệt độ: 31°C (cảm giác 36°C)</li>
+<li>Độ ẩm: 70%</li>
+<li>Điều kiện: Nắng</li>
+</ul>
+<p>Trời quang, oi bức.</p>
+</body></html>""",
         )
         assert out.is_file() and out.stat().st_size > 400, out.stat().st_size
         try:
@@ -280,8 +283,8 @@ def main() -> int:
         except ImportError:
             print("SKIP pdf text extract (no pypdf)")
         out.unlink(missing_ok=True)
-    except ImportError:
-        print("SKIP styled pdf render (no reportlab locally)")
+    except Exception as e:  # noqa: BLE001
+        print(f"SKIP html pdf render ({type(e).__name__})")
 
     if parse_text_poster is None:
         print("SKIP text_poster (optional dep missing)")

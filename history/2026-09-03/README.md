@@ -1,6 +1,6 @@
 # 2026-09-03
 
-4 incident(s). Times are UTC+7.
+5 incident(s). Times are UTC+7.
 
 ## 07:15 — OmniRouter setup vs update split; history/ root-cause log
 
@@ -156,3 +156,39 @@ Prompt + host overlay path + pptx writer; case 40 inject script.
 ### Prevent recurrence
 
 `test/cases/40-zalo-tn-weather-overlay-pptx.md`; `weather_overlay_unit.py` rejects placeholders/SFW.
+
+## 18:45 — ReportLab PDF layout removed; HTML→PDF
+
+### Symptom
+
+Attractive PDF asks still looked like rigid card templates with truncated metrics (host ReportLab `write_pdf_styled`).
+
+### Root cause
+
+Dispatcher owned page layout in Python (fonts, hero band, two-column cards) instead of letting the LLM author HTML/PDF and converting.
+
+### Technical detail
+
+- **Removed:** `write_pdf_styled`, `_pdf_font`, `_pdf_font_bold`, `_hero_metric`, `_pdf_wrap_line`, `_register_font`, `reportlab_font_name`.
+- **Function:** `office_file.py::write_pdf` / `write_pdf_from_html` — HTML or raw/`PDF_BASE64` → WeasyPrint or PyMuPDF Story.
+- **Deps:** drop `reportlab`; add `weasyprint`; Dockerfile pango/gdk libs.
+- **Skills:** `file-gen` + classify `media.txt` require HTML for PDF bodies.
+
+### AI decision
+
+LLM owns visual layout via HTML; worker only converts.
+
+### Fix (core)
+
+Rewrite PDF path; update classify/file-gen contracts; unit coverage via HTML fixtures.
+
+### Todo list
+
+- Remove ReportLab layout
+- HTML convert path
+- Prompt/skills
+- Units
+
+### Prevent recurrence
+
+`test/scripts/office_pptx_unit.py` / `office_poster_session_unit.py` assert HTML→`%PDF`.

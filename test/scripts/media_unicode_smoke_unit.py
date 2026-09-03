@@ -26,8 +26,8 @@ if not (DISP / "fonts.py").is_file():
     DISP = Path("/app")
 sys.path.insert(0, str(DISP))
 
-from fonts import pillow_font, resolve_font_path, reportlab_font_name  # noqa: E402
-from office_file import write_office, write_pdf_styled  # noqa: E402
+from fonts import pillow_font, resolve_font_path  # noqa: E402
+from office_file import write_office, write_pdf  # noqa: E402
 from text_poster import render_text_poster_bytes  # noqa: E402
 
 OUT = ROOT / "scripts" / "temp" / "media_smoke"
@@ -43,24 +43,24 @@ def _assert_font_covers() -> None:
     for ch in "ồứậưở":
         mask = font.getmask(ch)
         assert mask.size[0] > 0 and mask.size[1] > 0, (ch, path)
-    reportlab_font_name(bold=False)
-    reportlab_font_name(bold=True)
     print("FONT_OK", path)
 
 
 def _one_pdf(i: int) -> Path:
     p = OUT / f"weather_{i}.pdf"
-    body = (
-        f"TITLE: Thời tiết TP. Hồ Chí Minh #{i}\n"
-        "SUBTITLE: Cập nhật hiện tại\n"
-        "ICON: sun\n"
-        "- Nhiệt độ: 27.0°C (cảm giác 32.1°C)\n"
-        "- Độ ẩm: 85%\n"
-        "- Mưa: 0.00 mm · xác suất 100%\n"
-        "- Mặt trời mọc 05:43 · lặn 18:05\n"
-    )
-    write_pdf_styled(p, body)
-    assert p.stat().st_size > 3000, p.stat().st_size
+    body = f"""<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"/><title>w{i}</title></head>
+<body>
+<h1>Thời tiết TP. Hồ Chí Minh #{i}</h1>
+<h2>Cập nhật hiện tại</h2>
+<ul>
+<li>Nhiệt độ: 27.0°C (cảm giác 32.1°C)</li>
+<li>Độ ẩm: 85%</li>
+<li>Mưa: 0.00 mm</li>
+</ul>
+</body></html>"""
+    write_pdf(p, body)
+    assert p.stat().st_size > 800, p.stat().st_size
     return p
 
 

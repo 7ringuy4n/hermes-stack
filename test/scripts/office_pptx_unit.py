@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Office PPTX + PDF hero metric unit (no LLM)."""
+"""Office PPTX + HTML→PDF unit (no LLM)."""
 from __future__ import annotations
 
 import sys
@@ -9,24 +9,13 @@ ROOT = Path(__file__).resolve().parents[2]
 DISP = ROOT / "architect" / "models" / "dispatcher"
 sys.path.insert(0, str(DISP))
 
-from office_file import (  # noqa: E402
-    _hero_metric,
-    parse_office,
-    write_office,
-)
+from office_file import parse_office, write_office, write_pdf  # noqa: E402
 
 OUT = ROOT / "scripts" / "temp" / "office_pptx_unit"
 
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
-    hero = _hero_metric(
-        [
-            "Nhiệt độ: 27°C (cảm giác như 29°C)",
-            "Độ ẩm: 77%",
-        ]
-    )
-    assert hero == "27°C", hero
 
     ext, body = parse_office(
         "# Thời tiết Vũng Tàu\n## Hiện tại\n- Nhiệt độ: 30°C\n- Độ ẩm: 70%\n- Thời tiết: nắng nhẹ\n",
@@ -37,16 +26,23 @@ def main() -> int:
     assert dest.suffix.lower() == ".pptx", dest
     assert dest.is_file() and dest.stat().st_size > 2000, dest.stat().st_size
 
-    # Placeholder bullets must not become body facts for PDF either
-    from office_file import write_pdf_styled
+    html = """<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"/><title>t</title></head>
+<body><h1>Thời tiết TP.HCM</h1><h2>Cập nhật</h2>
+<div>Nhiệt độ: 27°C</div><div>Độ ẩm: 77%</div>
+<p>Trời âm u.</p></body></html>"""
+    pdf = write_pdf(OUT / "hero.pdf", html)
+    assert pdf.is_file() and pdf.stat().st_size > 800, pdf.stat().st_size
+    assert pdf.read_bytes()[:4] == b"%PDF"
 
-    pdf = write_pdf_styled(
-        OUT / "hero.pdf",
-        "# Thời tiết TP.HCM\n## Cập nhật\n- Nhiệt độ: 27°C (cảm giác như 29°C)\n"
-        "- Độ ẩm: <value after search>\n- Thời tiết: trời âm u\n",
+    # Placeholders must not appear when HTML is authored cleanly
+    bad = write_pdf(
+        OUT / "plain.pdf",
+        "Nhiệt độ: 27°C\nĐộ ẩm: 70%\n",
     )
-    assert pdf.is_file()
-    print("OFFICE_PPTX_OK", dest.name, pdf.name, hero)
+    assert bad.is_file() and bad.read_bytes()[:4] == b"%PDF"
+
+    print("OFFICE_PPTX_OK", dest.name, pdf.name)
     return 0
 
 
