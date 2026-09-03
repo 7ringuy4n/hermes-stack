@@ -85,7 +85,7 @@ def main() -> int:
     }
     assert plan_skips_media_shortcut(weather_pdf) is True
     assert plan_allows_office_shortcut(weather_pdf) is False
-    assert plan_allows_search_then_office(weather_pdf) is True
+    assert plan_allows_search_then_office(weather_pdf) is False
     weather_pdf_split = {
         "ok": True,
         "task_hint": "file",
@@ -100,7 +100,7 @@ def main() -> int:
             {"task_type": "file_processing", "output_type": "pdf"},
         ],
     }
-    assert plan_allows_search_then_office(weather_pdf_split) is True
+    assert plan_allows_search_then_office(weather_pdf_split) is False
     assert plan_allows_office_shortcut(weather_pdf_split) is False
     body = build_office_body_from_search(
         file_instruction="TITLE: Thời tiết TP.HCM\nICON: rain",
@@ -110,7 +110,7 @@ def main() -> int:
             "results": [{"title": "HCM", "content": "light rain"}],
         },
     )
-    assert "TITLE: Thời tiết TP.HCM" in body and "ICON: rain" in body, body
+    assert "TITLE:" not in body, body
     assert "31°C" in body and "Độ ẩm" in body, body
     # Create-verb wrapper must not become the PDF title; SERP chrome dropped
     messy = build_office_body_from_search(
@@ -131,8 +131,7 @@ def main() -> int:
             ],
         },
     )
-    assert "TITLE: Thời tiết hiện tại — Hồ Chí Minh" in messy, messy
-    assert "Tạo file PDF" in messy.split("\n")[0], messy
+    assert "Tạo file PDF" not in messy, messy
     assert "Dubaothoitiet" not in messy and "AccuWeather" not in messy, messy
     assert "30°C" in messy or "nhiều mây" in messy, messy
     # JSON / dict dumps and wind bearings must not become card facts / hero
@@ -300,8 +299,11 @@ def main() -> int:
         out.parent.mkdir(parents=True, exist_ok=True)
         write_pdf_styled(
             out,
-            "TITLE: Thời tiết TP. Hồ Chí Minh\nSUBTITLE: Open-Meteo\nICON: sun\n"
-            "- Nhiệt độ: 31°C (cảm giác 36°C)\n- Độ ẩm: 70%\n- Điều kiện: Nắng\n",
+            "# Thời tiết TP. Hồ Chí Minh\n"
+            "## Cập nhật trực tiếp\n"
+            "- Nhiệt độ: 31°C (cảm giác 36°C)\n"
+            "- Độ ẩm: 70%\n"
+            "- Điều kiện: Nắng\n",
         )
         assert out.is_file() and out.stat().st_size > 400, out.stat().st_size
         out.unlink(missing_ok=True)

@@ -579,11 +579,14 @@ def plan_search_then_office_output(plan: dict[str, Any] | None) -> str:
 def plan_allows_search_then_office(plan: dict[str, Any] | None) -> bool:
     """Live-data office create (search sibling + one file) — host search then office-file.
 
-    Plain office shortcut must stay skipped (search present). Hermes often answers
-    chat-only after search; host owns the PDF delivery for this family.
+    Only for **trivial literal fills** (short body, no create/layout prose). Visual or
+    designed PDFs route through Hermes (process_original_message true) so the LLM
+    composes markdown + optional IMAGE lines before office-file.
     """
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
+        return False
+    if src.get("process_original_message") is not False:
         return False
     if str(src.get("task_hint") or "").strip().lower() == "schedule":
         return False
@@ -596,6 +599,52 @@ def plan_allows_search_then_office(plan: dict[str, Any] | None) -> bool:
         return False
     if not plan_search_then_office_output(src):
         return False
+    if not _office_body_trivial_for_host_shortcut(src):
+        return False
+    return True
+
+
+def _office_body_trivial_for_host_shortcut(plan: dict[str, Any] | None) -> bool:
+    """Host may assemble search→office only for a short literal file body."""
+    body = plan_file_instruction(plan, "").strip()
+    if not body or "\n" in body:
+        return False
+    if len(body) > 48:
+        return False
+    low = body.lower()
+    for prefix in (
+        "tạo ",
+        "tao ",
+        "create ",
+        "hãy ",
+        "hay ",
+        "design ",
+        "make ",
+        "điền vào ",
+        "dien vao ",
+    ):
+        if low.startswith(prefix):
+            return False
+    for token in (
+        "pdf",
+        "docx",
+        "xlsx",
+        "layout",
+        "bắt mắt",
+        "bat mat",
+        "hình ảnh",
+        "hinh anh",
+        "image",
+        "photo",
+        "weather",
+        "thời tiết",
+        "thoi tiet",
+        "skyline",
+        "thiết kế",
+        "thiet ke ",
+    ):
+        if token in low:
+            return False
     return True
 
 

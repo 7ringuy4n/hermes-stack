@@ -1,5 +1,10 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-03 08:00 +07 — file-gen: visual PDF via Hermes markdown; block host SERP dump
+
+- Host search→office shortcut limited to trivial literal fills; weather/design PDFs route through Hermes.
+- Dispatcher PDF renders markdown (# title, IMAGE:, fact bullets) with styled layout.
+
 ## 2026-09-03 07:45 +07 — core: OpenBao default secrets SoT
 
 - `ENABLE_OPENBAO=active` by default; openbao compose profile independent of full Security worker.

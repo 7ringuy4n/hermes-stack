@@ -195,6 +195,15 @@ def _is_serp_noise(text: str) -> bool:
         "cập nhật lần cuối",
         "gust speed image",
         "feels like temperature",
+        "có thể bạn quan",
+        "tiện ích",
+        "pm2.5",
+        "pm10",
+        "so2",
+        "thư viện ảnh",
+        "góp ý",
+        "toàn cầu",
+        "gió xoáy",
     )
     for bit in noise_bits:
         if bit in low:
@@ -202,6 +211,10 @@ def _is_serp_noise(text: str) -> bool:
             if ":" in s and not low.startswith(bit):
                 continue
             return True
+    if low.startswith("quận ") or low.startswith("quan "):
+        return True
+    if "hà nội" in low and "hồ chí minh" in low and len(s) > 40:
+        return True
     if s in {"Ngày/đêm", "Nhiệt độ", "Sáng/tối", "Áp suất", "Mặt", "pressure", "dawn"}:
         return True
     return False
@@ -476,10 +489,11 @@ def build_office_body_from_search(
     user_ask: str,
     search: dict[str, Any] | None,
 ) -> str:
-    """Pass LLM/classify file body through; append search facts as bullets only."""
+    """Trivial host shortcut only — short literal body + cleaned search facts."""
     fi = (file_instruction or "").strip()
-    ask = (user_ask or "").strip()
-    base = fi or ask
+    base = fi
+    if not base or "\n" in base or len(base) > 48:
+        base = ""
 
     facts = _facts_from_search(search)
     for raw in fi.splitlines():
@@ -492,7 +506,7 @@ def build_office_body_from_search(
     parts: list[str] = []
     if base:
         parts.append(base)
-    for f in facts[:10]:
+    for f in facts[:8]:
         parts.append(f"- {f}")
     if not parts:
         return " "
