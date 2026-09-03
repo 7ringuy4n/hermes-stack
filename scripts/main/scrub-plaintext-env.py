@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""Remove plaintext secret exports after deploy / restore / OpenBao seed.
+"""Remove plaintext secret exports after OpenBao seed / update.
 
-SoT for API keys is OpenBao KV. Compose may briefly use ASSISTANT_DATA_DIR/.env.openbao
-(env_file, required:false). After the stack is up, delete those host exports so a
-host scan cannot list secrets. Re-run: bash run.sh load-openbao-env before the next
-compose recreate when ENABLE_OPENBAO=active.
-
-Also strips seeded API-key values from ROOT/.env (keys kept empty) so the stack
-.env is flags/bootstrap only — except compose-interpolated host keys that
-`load-openbao-env` re-fills from OpenBao before the next up|update.
+SoT for API keys is OpenBao KV. Deletes host-side .env.openbao copies after compose
+has started; strips seeded key values from ROOT/.env (keys kept, values empty).
+Re-run load-openbao-env before the next compose recreate.
 """
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
+
+from openbao_common import ENV_SCRUB_KEYS
 
 ROOT = Path(os.environ.get("STACK_ROOT") or Path(__file__).resolve().parents[2])
 ENV_PATH = ROOT / ".env"
@@ -24,30 +21,13 @@ DATA_DIR = Path(
     or "/data/assistant"
 )
 
-# Wipe values that OpenBao can re-export. Do NOT scrub compose-interpolated
-# required host keys — docker compose ${VAR} / ${VAR:?} reads ROOT/.env at
-# parse time. load-openbao-env re-fills the rest before up|update.
-SCRUB_VALUE_KEYS = (
-    "TAVILY_API_KEY",
-    "FIRECRAWL_API_KEY",
-    "ZALO_API_TOKEN",
-    "ZALO_PLUGIN_TOKEN",
-    "GRAFANA_ADMIN_PASSWORD",
-    "TELEGRAM_BOT_TOKEN",
-    "GEMINI_API_KEY",
-    "DEEPSEEK_API_KEY",
-    "FAL_KEY",
-    "FLUXAI_API_KEY",
-    "POLLINATIONS_API_KEY",
-)
-
 
 def _scrub_env_file(path: Path) -> int:
     if not path.is_file():
         return 0
     lines_out: list[str] = []
     changed = 0
-    want = {k.casefold() for k in SCRUB_VALUE_KEYS}
+    want = {k.casefold() for k in ENV_SCRUB_KEYS}
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         raw = line.strip()
         if not raw or raw.startswith("#") or "=" not in line:
