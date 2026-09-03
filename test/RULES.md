@@ -15,6 +15,7 @@ Hard gates that always apply to lab work (see AGENT_RULES):
 | Restore defaults after testing | §19 Test Configuration Cleanup |
 | Post-test / post-patch crash-loop log watch | §18.1 / §19 (HISTORY 2026-08-21 11:20) |
 | Source-first fixes (no lab hotpatch) | §15 Source-First Fixes |
+| VPS LLM: OCR / rate real artifacts | §29.2 (not assert-only) |
 
 ## Cases not to run (AGENT_RULES §28)
 

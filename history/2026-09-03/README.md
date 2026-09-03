@@ -1,6 +1,46 @@
 # 2026-09-03
 
-5 incident(s). Times are UTC+7.
+6 incident(s). Times are UTC+7.
+
+## 19:40 — Classify blocked asyncio; weather image silent (499 hedge)
+
+### Symptom
+
+User weather+image ask got no Zalo reply. OmniRoute showed many `499` / Request aborted on `classifier` and `qwen3.8-flash`; Hermes exited watchdog code 75; no `weather-scene` output.
+
+### Root cause
+
+Host media-shortcut called sync `classify_text` (urllib) on the asyncio event loop. OmniRoute `classifier` combo hedged multiple upstream members and stalled (~90s). Liveness probes failed → gateway kill before search/image-gen. Multi-model rows are combo hedge + model-router fallback to chat combo `hermes`, not parallel Hermes chat jobs.
+
+### Technical detail
+
+- **Function:** `adapter.py::_as_run_host_media_shortcut` — sync `classify_text` → `classify_text_async` / `asyncio.to_thread`.
+- **Function:** `classify_client.py::classify_text_async` — offload HTTP; client timeout `45s`, attempts `2`.
+- **Function:** `model-router/classify.py` — on `httpx.TimeoutException` / connect errors `_mark_classify_model_bad` then next candidate.
+- **Config:** `hermes/main/skills/classify/classify.json` — `timeout_s` `90`→`35`, `retry` `2`→`1` (baked copy synced).
+- **Prompt:** `parts/media.txt` — omit empty `Label:` weather bullets when values unknown.
+- **Lines:** `adapter.py` media shortcut / workflow submit / image-analyze / sheet follow-up / AV refuse paths.
+- **Key:** OmniRoute combo `classifier` members race → client abort `499` / `hedge-cancelled` when Hermes disconnects.
+
+### AI decision
+
+Keep one classify hop; never block the event loop; shorten classify budget and prefer chat fallback after timeout; evaluate delivered media via OCR (AGENT_RULES §29.2).
+
+### Fix (core)
+
+Async offload for classify on inbound paths; tighter classify timeouts; mark bad combo on timeout; prompt omit empty overlay bullets; AGENT_RULES §29.2 artifact self-eval.
+
+### Todo list
+
+- Offload classify / office / poster from event loop
+- Tighten classify.json + mark-bad on timeout
+- Prompt empty-bullet rule
+- AGENT_RULES §29.2 + VPS Tn OCR eval
+
+### Prevent recurrence
+
+Watchdog must not see classify on the loop; unit/lab must OCR rate deliverables, not assert-only.
+Run `bash run.sh update-omnirouter` when `image-gen` returns “No images-capable targets”.
 
 ## 07:15 — OmniRouter setup vs update split; history/ root-cause log
 
