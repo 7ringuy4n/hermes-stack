@@ -640,7 +640,14 @@ def _omni_request_image_blob_once(
                 data = json.loads(resp.read().decode() or "{}")
         except urllib.error.HTTPError as e:
             code = int(getattr(e, "code", 0) or 0)
+            body = ""
+            try:
+                body = (e.read() or b"").decode("utf-8", "replace")[:400]
+            except Exception:
+                body = ""
             detail = f"HTTPError {code}"
+            if body:
+                detail = f"{detail} body={body!r}"
             log.warning("omni generate failed model=%r: %s", model, detail)
             if code >= 500 and time.monotonic() < deadline:
                 time.sleep(min(8.0, max(0.0, deadline - time.monotonic())))

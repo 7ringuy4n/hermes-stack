@@ -59,6 +59,23 @@ def _first_path(listing: str) -> str:
     return ""
 
 
+def _stat_mtime(c, path: str) -> float:
+    if not path:
+        return 0.0
+    raw = _clean_remote(
+        sudo_bash(
+            c,
+            f"stat -c %Y {path!r} 2>/dev/null || echo 0",
+            timeout=30,
+        )
+    )
+    for ln in raw.splitlines():
+        s = ln.strip()
+        if s.isdigit():
+            return float(s)
+    return 0.0
+
+
 def _inject(c, text: str) -> str:
     remote = f"""
 set -euo pipefail
@@ -94,8 +111,11 @@ def _ocr_rate(c, img_path: str) -> dict:
     # Map host /data path into dispatcher mount if needed.
     container_path = img_path
     if img_path.startswith("/data/assistant/media/"):
-        container_path = "/opt/data/media/" + img_path[len("/data/assistant/media/") :]
+        container_path = "/data/media/" + img_path[len("/data/assistant/media/") :]
     elif img_path.startswith("/opt/data/media/"):
+        # Hermes replica path → dispatcher shared mount
+        container_path = "/data/media/" + img_path[len("/opt/data/media/") :]
+    elif img_path.startswith("/data/media/"):
         container_path = img_path
     remote = f"""
 set -euo pipefail
@@ -184,7 +204,10 @@ def main() -> int:
                 "ls -1t /data/assistant/media/out/*.{jpg,jpeg,webp,png} 2>/dev/null | head -8 || true",
             )
         )
+        before_path = _first_path(before)
+        before_mtime = _stat_mtime(c, before_path) if before_path else 0.0
         report["before"] = before
+        report["before_mtime"] = before_mtime
         print(f"[{ts()}] inject dalat weather+image", flush=True)
         report["steps"].append({"inject": _inject(c, MSG)[-400:]})
         time.sleep(WAIT_S)
@@ -195,14 +218,16 @@ def main() -> int:
             )
         )
         newest = _first_path(after)
+        after_mtime = _stat_mtime(c, newest) if newest else 0.0
         report["after"] = after
         report["newest_img"] = newest
+        report["after_mtime"] = after_mtime
         logs = _clean_remote(
             sudo_bash(
                 c,
                 "docker logs --since 25m $(docker ps -qf name=assistant-hermes | head -1) 2>&1 | "
                 "grep -Ei 'dalat|đà lạt|weather-scene|shutdown_watchdog|exit.?75|classify|search_weather|"
-                "maxWaitMs|rate.?limit|499' | tail -n 80 || true; "
+                "maxWaitMs|rate.?limit|499|HTTPError' | tail -n 80 || true; "
                 "docker logs --since 25m $(docker ps -qf name=router-worker | head -1) 2>&1 | "
                 "grep -Ei 'classify|fallback|ReadTimeout|ok via' | tail -n 40 || true",
             )
@@ -211,12 +236,24 @@ def main() -> int:
         log_l = logs.lower()
         watchdog = ("shutdown_watchdog" in log_l) or ("exiting with code 75" in log_l)
         report["watchdog_hit"] = watchdog
-        img_ok = bool(newest) and newest not in before
+        # Same filename is reused (weather-scene-<tid>.jpg) — detect rewrite by mtime.
+        img_ok = bool(newest) and (
+            newest not in before or after_mtime > before_mtime + 1.0
+        )
         ocr = _ocr_rate(c, newest) if img_ok else {"ok": False, "ocr": "", "score": 0, "notes": ["no_new_image"]}
         report["ocr_eval"] = ocr
         quota = any(
             x in log_l
-            for x in ("maxwaitms", "rate limit", "request dropped", "insufficient_quota", "429")
+            for x in (
+                "maxwaitms",
+                "rate limit",
+                "request dropped",
+                "insufficient_quota",
+                "429",
+                "httperror 400",
+                "httperror 429",
+                "httperror 503",
+            )
         )
         report["quota_soft"] = quota
         if watchdog and not img_ok:
