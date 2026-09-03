@@ -34,12 +34,7 @@ _install_pairs() {
       echo ENABLE_POLICY=active
       ;;
     openbao|bao)
-      # OpenBao requires Security worker overlay (workers.sh forces ENABLE_OPENBAO=inactive otherwise).
-      echo WORKER_SECURITY=active
-      echo ENABLE_SECURITY=active
-      echo ENABLE_AUTHZ=active
-      echo ENABLE_SIEM=active
-      echo ENABLE_POLICY=active
+      # Core secrets store — does not require full Security worker (authz/siem/policy).
       echo ENABLE_OPENBAO=active
       ;;
     notify|notification)
@@ -116,13 +111,15 @@ _uninstall_pairs() {
       echo ENABLE_SEARXNG=inactive
       echo OFFICE_FILE_GEN=inactive
       ;;
-    security|sec|openbao|bao)
+    security|sec)
       echo WORKER_SECURITY=inactive
       echo ENABLE_SECURITY=inactive
-      echo ENABLE_OPENBAO=inactive
       echo ENABLE_AUTHZ=inactive
       echo ENABLE_SIEM=inactive
       echo ENABLE_POLICY=inactive
+      ;;
+    openbao|bao)
+      echo ENABLE_OPENBAO=inactive
       ;;
     notify|notification)
       echo WORKER_NOTIFY=inactive

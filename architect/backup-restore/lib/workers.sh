@@ -105,8 +105,8 @@ assistant_workers_apply() {
   else
     export WORKER_SECURITY=inactive
     export ENABLE_SECURITY=inactive
-    # Force off so leftover .env ENABLE_*=1 does not keep security intent
-    export ENABLE_OPENBAO=inactive
+    # OpenBao is core (secrets SoT) — independent of full Security worker stack.
+    export ENABLE_OPENBAO="${ENABLE_OPENBAO:-active}"
     export ENABLE_OPENBAO_AGENT=inactive
     export ENABLE_AUTHZ=inactive
     export ENABLE_SIEM=inactive

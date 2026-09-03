@@ -1,5 +1,10 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-03 07:45 +07 — core: OpenBao default secrets SoT
+
+- `ENABLE_OPENBAO=active` by default; openbao compose profile independent of full Security worker.
+- `first-setup-openbao` merges KV on update; shared key lists in `openbao_common.py`; scrub clears plaintext API keys from `.env`.
+
 ## 2026-09-03 07:30 +07 — file-gen: LLM-owned layout; drop weather PDF template
 
 - Removed `file-gen/LAYOUT.md` and mandatory TITLE/OVERVIEW/SHEET markers from skills/classify.

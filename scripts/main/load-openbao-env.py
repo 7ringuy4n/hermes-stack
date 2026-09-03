@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Load OpenBao KV secret/assistant/api-keys into ASSISTANT_DATA_DIR/.env.openbao.
 
-Compose can mount this via env_file when ENABLE_OPENBAO=active so runtime secrets
-are not .env-only. Also fills empty compose-required keys in ROOT/.env from the
-same KV so the next `run.sh up|update` can interpolate after scrub.
+Compose mounts this via env_file on hermes. Fills empty compose-required keys in
+ROOT/.env from the same KV so docker compose can interpolate after env scrub.
 
   python3 scripts/main/load-openbao-env.py
-  # or: bash run.sh first-setup-openbao  (seeds then exports)
 """
 from __future__ import annotations
 
@@ -15,6 +13,8 @@ import os
 import sys
 import urllib.request
 from pathlib import Path
+
+from openbao_common import COMPOSE_HOST_KEYS, OPENBAO_SECRET_PATH
 
 ROOT = Path(os.environ.get("STACK_ROOT") or Path(__file__).resolve().parents[2])
 ENV_PATH = ROOT / ".env"
@@ -25,21 +25,7 @@ DATA_DIR = Path(
 )
 EXPORT_PATH = DATA_DIR / ".env.openbao"
 BAO_ADDR = (os.environ.get("OPENBAO_ADDR") or "http://127.0.0.1:8200").rstrip("/")
-SECRET_PATH = os.environ.get("OPENBAO_SECRET_PATH") or "secret/data/assistant/api-keys"
-
-# Compose ${VAR} reads ROOT/.env at parse time. Fill these from KV when empty so
-# scrub of API-key exports cannot break the next `run.sh up|update` / recreate.
-COMPOSE_HOST_KEYS = (
-    "MEMORY_DB_PASSWORD",
-    "HERMES_DASHBOARD_PASSWORD",
-    "HERMES_DASHBOARD_SECRET",
-    "API_SERVER_KEY",
-    "OMNIROUTER_API_KEY",
-    "OMNIROUTER_INITIAL_PASSWORD",
-    "N9ROUTER_API_KEY",
-    "N9ROUTER_INITIAL_PASSWORD",
-    "GATEWAY_API_KEYS",
-)
+SECRET_PATH = os.environ.get("OPENBAO_SECRET_PATH") or OPENBAO_SECRET_PATH
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -129,7 +115,6 @@ def main() -> int:
         os.chmod(EXPORT_PATH, 0o600)
     except OSError:
         pass
-    # Restore compose-interpolated host keys when .env was emptied by an older scrub.
     fill = {
         k: str(data.get(k) or "").strip()
         for k in COMPOSE_HOST_KEYS
