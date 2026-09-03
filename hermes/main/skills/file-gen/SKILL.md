@@ -1,6 +1,6 @@
 ---
 name: file-gen
-description: "Create/edit office files (xlsx, docx, txt, pdf, csv) via Dispatcher. LLM composes layout first; worker renders. RESULT-ONLY (see media-out)."
+description: "Create/edit office files (xlsx, docx, txt, pdf, csv) via Dispatcher. LLM authors full file content; worker renders. RESULT-ONLY (see media-out)."
 ---
 
 # File generation → send (result only)
@@ -8,14 +8,14 @@ description: "Create/edit office files (xlsx, docx, txt, pdf, csv) via Dispatche
 Follow skill **`media-out`**. When the user asks to **create / export / edit** an
 **xlsx · csv · docx · txt · pdf · md** file:
 
-## LLM layout first (required)
+## LLM authors content (required)
 
-Before any API call, **you** (the LLM) must build the structured layout documented in
-[`LAYOUT.md`](./LAYOUT.md): `TITLE`, facts, `SHEET` tables, etc. Hermes/worker only
-**render** that body — they do not infer layout from the user's original sentence alone.
+**You** decide structure, sections, tables, tone, and language. Compose the complete
+file body for `prompt` — prose, markdown, bullet lists, tables, or any layout that fits
+the ask. Fetch live facts with `web_search` when needed, then weave them into your draft.
 
-After `web_search` for live metrics, put fetched facts into `- Label: value` lines in
-the layout, then call office-file once.
+Do **not** use a fixed marker schema (`TITLE:`, `OVERVIEW:`, `SHEET:`, etc.). The worker
+renders what you write; it does not impose a weather card or dashboard template.
 
 ## Default (must) — Dispatcher office API
 
@@ -30,7 +30,7 @@ Create **and** deliver in one call:
 curl -sS -X POST http://dispatcher:8090/v1/office-file \
   -H 'Content-Type: application/json' \
   -d '{
-    "prompt":"<structured LAYOUT body — see LAYOUT.md, not raw user text>",
+    "prompt":"<full file body you authored>",
     "thread_id":"<inbound thread id>",
     "thread_type":"user",
     "filename":"<safe-name.pdf>",
@@ -39,37 +39,12 @@ curl -sS -X POST http://dispatcher:8090/v1/office-file \
   }'
 ```
 
-### Visual / attractive PDF body (required shape)
-
-When the user wants an attractive PDF (icons, layout, designed look — any topic), put
-**live facts already fetched** into the `prompt` like:
-
-```text
-TITLE: <topic or place>
-SUBTITLE: <optional context>
-ICON: <optional short motif token>
-OVERVIEW: <short place or subject intro when TITLE is a place/city/region>
-BACKGROUND: <atmosphere / setting / landmark context for that place>
-- <label>: <value>
-- <label>: <value>
-```
-
-**Place / city subjects:** if TITLE names a place (any language — judge by meaning),
-`OVERVIEW` and `BACKGROUND` are required. Fetch a brief place intro + atmosphere from
-search (or prior context), not metrics alone. Do not hardcode a city list.
-
-Dispatcher styles the sheet (Unicode-safe fonts, icons when motif/facts fit; place
-overview/background panels when those markers are present). Do not call Omni
-diffusion or deprecated dispatcher `/v1/image` to paint labels onto a PDF. Scenic
-images are optional decoration only and must never block PDF delivery.
-
-In-document visuals stay on **one** `office-file` PDF. Optionally also send a
-standalone `info-card` PNG via **`image-gen`** if they clearly want a separate
-picture; never fail the PDF on image-backend 502.
-
 Requires Media|File worker with `OFFICE_FILE_GEN=active`. Success: `"ok":true` and
 Zalo receives the file (empty caption). User-facing text per **media-out**:
 **file only** — no “Đã tạo file…” sentence.
+
+Standalone scenic images (not inside the PDF) → **`image-gen`** only when the user
+clearly wants a separate picture; never block PDF delivery on image-backend failure.
 
 ## Fallback (txt/md only)
 
@@ -91,7 +66,7 @@ office-file **and** a second send for the same file.
 - Ask for approval or for API keys / backend config
 - Dump server paths
 - Block a PDF deliverable on image-backend failures — finish the PDF via office-file
-- Generate decorative images here → only **`image-gen`** when the user asked for a **standalone** picture
+- Force weather/dashboard/screen templates — layout is your choice per the user ask
 
 ## Related
 
