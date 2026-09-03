@@ -189,7 +189,7 @@ async def _omni_search(query: str, max_results: int) -> dict[str, Any]:
         raise HTTPException(503, "Omni search unavailable (OMNIROUTER_BASE_URL / OMNIROUTER_API_KEY)")
     n = max(1, min(int(max_results or _combo_max_results()), SEARCH_RESULT_CAP))
     combo = _web_search_combo_name()
-    body = {"query": query, "max_results": n, "combo": combo}
+    body = {"query": query, "max_results": n, "combo": combo, "include_answer": True}
     per_timeout = _provider_timeout_s()
     async with httpx.AsyncClient(timeout=per_timeout) as client:
         r = await client.post(

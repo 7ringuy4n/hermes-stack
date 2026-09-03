@@ -63,6 +63,30 @@ def main() -> int:
     assert all("<" not in x and "value after" not in x.lower() for x in collected), collected
     assert any("31°C" in x or "70%" in x or "nắng" in x for x in collected), collected
 
+    from media_shortcuts import (  # noqa: E402
+        _parse_label_value_lines,
+        _search_notes_blob,
+    )
+
+    notes = _search_notes_blob(
+        {
+            "answer": None,
+            "results": [
+                {
+                    "title": "ignore title",
+                    "content": "Thời tiết hiện tại\n30°C\nNhiều mây\nGió nhẹ 5 km/h\nđộ ẩm 80%",
+                }
+            ],
+        }
+    )
+    assert "30°C" in notes and "ignore title" not in notes
+    parsed = _parse_label_value_lines(
+        "Nhiệt độ: 30°C\nĐộ ẩm: 80%\nThời tiết: nhiều mây\nGió: nhẹ 5 km/h\nextra prose"
+    )
+    assert len(parsed) >= 3
+    assert any("30°C" in x for x in parsed)
+    assert all(":" in x for x in parsed)
+
     from PIL import Image
 
     img = OUT / "scene.jpg"
