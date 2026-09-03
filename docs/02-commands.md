@@ -21,6 +21,7 @@ Set secrets in `.env` **before** `up`. Optional workers are **not** in `.env.exa
 | `up` / `down` / `ps` / `logs`               | all installs                            | Compose lifecycle                                                                                  |
 | `destroy`                                   | all installs                            | Backup+verify, then remove this project's containers + networks (volumes/data kept)                |
 | `update`                                    | all installs                            | Backup+verify, rebuild stack, prune disk (router bootstrap: manual — see `first-setup-omnirouter`) |
+| `update-omnirouter` / `sync-omnirouter`     | when OmniRouter installed               | Repair/sync combos, providers, media wiring — does **not** reset API key if already set            |
 | `workers` / `profile`                       | all installs                            | Show worker activation + core flags                                                                |
 | `install NAME…`                             | all installs                            | Short name → `.env` (backup+verify, then `up`)                                                     |
 | `uninstall NAME…`                           | all installs                            | Deactivate by short name                                                                           |
@@ -58,7 +59,8 @@ python3 scripts/temp/generate_env_secrets.py --out .env --force   # optional loc
 sudo bash scripts/main/install-docker.sh   # if Docker is missing
 
 bash run.sh up                             # core stack; workers still inactive
-bash run.sh first-setup-omnirouter         # runs on up when Omni enabled; safe to re-run
+bash run.sh first-setup-omnirouter         # core-only on up when Omni enabled (missing key/combos only)
+bash run.sh update-omnirouter              # after catalog drift or custom providers — refill/sync combos
 
 # Install optional workers (see docs/00-workers.md):
 bash run.sh install schedule media security notify message monitor
