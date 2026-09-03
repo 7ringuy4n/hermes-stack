@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional
 
 log = logging.getLogger("office_file")
 
-_OFFICE_OK = {".txt", ".csv", ".md", ".xlsx", ".docx", ".pdf"}
+_OFFICE_OK = {".txt", ".csv", ".md", ".xlsx", ".docx", ".pdf", ".pptx"}
 _KIND_EXT = {
     "pdf": ".pdf",
     "txt": ".txt",
@@ -19,6 +19,8 @@ _KIND_EXT = {
     "csv": ".csv",
     "md": ".md",
     "markdown": ".md",
+    "pptx": ".pptx",
+    "ppt": ".pptx",
 }
 
 # Prefer Unicode TTFs so Vietnamese PDF does not fall back to .txt
@@ -96,7 +98,7 @@ def _pdf_font_bold() -> str:
 
 
 def _skip_structural_junk(line: str) -> bool:
-    """Drop empty lines, URLs, JSON blobs, and markdown table chrome — no domain NLU."""
+    """Drop empty lines, URLs, JSON blobs, placeholders, and markdown table chrome."""
     s = (line or "").strip()
     if not s or len(s) < 2:
         return True
@@ -106,6 +108,12 @@ def _skip_structural_junk(line: str) -> bool:
         return True
     low = s.lower()
     if low.startswith("http://") or low.startswith("https://"):
+        return True
+    if "<" in s or ">" in s:
+        return True
+    if "value after" in low:
+        return True
+    if "safe-for-work" in low or "safe for work" in low:
         return True
     # Markdown table separator / empty pipe rows: |---|---|
     if s.startswith("|"):
@@ -141,10 +149,137 @@ def _hero_metric(facts: list[str]) -> str:
         src = (value or fact).strip()
         if "°" not in src and "%" not in src:
             continue
-        token = src.split("(", 1)[0].strip()
+        token = src
+        for sep in ("(", "（", " - ", " — "):
+            if sep in token:
+                token = token.split(sep, 1)[0].strip()
+        if token and len(token) <= 16:
+            return token
+        # Prefer leading number+unit (e.g. 27°C) when the value is long.
+        words = token.split()
+        if words:
+            first = words[0].strip(" ,;")
+            if "°" in first or "%" in first:
+                return first[:12]
         if token:
-            return token[:18]
+            return token[:12]
     return ""
+
+
+def write_pptx_styled(dest: Path, body: str) -> Path:
+    """Markdown-ish body → title + facts/sections PPTX deck."""
+    from pptx import Presentation
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
+    from pptx.util import Inches, Pt
+
+    title = ""
+    subtitle = ""
+    facts: list[str] = []
+    prose: list[str] = []
+    sections: list[tuple[str, list[str]]] = []
+    cur_section = ""
+    cur_bullets: list[str] = []
+
+    def flush_section() -> None:
+        nonlocal cur_section, cur_bullets
+        if cur_section or cur_bullets:
+            sections.append((cur_section or "Chi tiết", list(cur_bullets)))
+        cur_section = ""
+        cur_bullets = []
+
+    for raw in (body or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        low = line.lower()
+        if low.startswith("image:"):
+            continue
+        if line.startswith("#"):
+            hashes = 0
+            while hashes < len(line) and line[hashes] == "#":
+                hashes += 1
+            rest = line[hashes:].strip()
+            if hashes == 1 and rest and not title:
+                title = rest[:80]
+                continue
+            if hashes == 2 and rest and not subtitle and not sections and not facts:
+                subtitle = rest[:100]
+                continue
+            if rest:
+                flush_section()
+                cur_section = rest[:80]
+            continue
+        if line.startswith(("- ", "• ", "* ")):
+            item = line[2:].strip()
+            if item and not _skip_structural_junk(item):
+                if cur_section:
+                    cur_bullets.append(item)
+                else:
+                    facts.append(item)
+            continue
+        if _skip_structural_junk(line):
+            continue
+        prose.append(line)
+
+    flush_section()
+    if not title:
+        title = (prose.pop(0) if prose else "Báo cáo")[:72]
+
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+
+    def _fill_para(para, text: str, *, size: int, bold: bool = False, color=(16, 32, 56)) -> None:
+        para.text = text
+        for run in para.runs:
+            run.font.size = Pt(size)
+            run.font.bold = bold
+            run.font.color.rgb = RGBColor(*color)
+            run.font.name = "Calibri"
+
+    def _add_bullets(slide, heading: str, items: list[str]) -> None:
+        h = slide.shapes.add_textbox(Inches(0.7), Inches(0.4), Inches(12), Inches(0.7))
+        _fill_para(h.text_frame.paragraphs[0], heading[:60], size=24, bold=True)
+        body_box = slide.shapes.add_textbox(Inches(0.7), Inches(1.3), Inches(12), Inches(5.5))
+        btf = body_box.text_frame
+        btf.word_wrap = True
+        first = True
+        for item in items[:12]:
+            para = btf.paragraphs[0] if first else btf.add_paragraph()
+            first = False
+            _fill_para(para, f"• {item[:120]}", size=18)
+
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    box = slide.shapes.add_textbox(Inches(0.7), Inches(2.2), Inches(12), Inches(1.2))
+    tf = box.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.LEFT
+    _fill_para(p, title, size=36, bold=True)
+    if subtitle:
+        sub = slide.shapes.add_textbox(Inches(0.7), Inches(3.5), Inches(12), Inches(0.8))
+        _fill_para(
+            sub.text_frame.paragraphs[0],
+            subtitle,
+            size=18,
+            bold=False,
+            color=(70, 90, 110),
+        )
+
+    if facts:
+        _add_bullets(prs.slides.add_slide(prs.slide_layouts[6]), title[:60], facts)
+
+    for sec_title, bullets in sections[:6]:
+        rows = bullets or prose[:6]
+        if rows:
+            _add_bullets(prs.slides.add_slide(prs.slide_layouts[6]), sec_title[:60], rows)
+
+    if prose and not sections and not facts:
+        _add_bullets(prs.slides.add_slide(prs.slide_layouts[6]), title[:60], prose[:10])
+
+    prs.save(str(dest))
+    return dest
 
 
 def write_pdf_styled(dest: Path, body: str) -> Path:
@@ -285,7 +420,7 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
         ty = row_y - 34
         for row in rows[:2]:
             c.setFont(font, 11)
-            c.drawString(x0 + 12, ty, row[:48])
+            c.drawString(x0 + 12, ty, row)
             ty -= 14
         if col == 0:
             col = 1
@@ -414,6 +549,19 @@ def write_office(dest: Path, ext: str, body: str) -> Path:
                 return dest
             except Exception as e2:  # noqa: BLE001
                 log.warning("pdf write failed, fallback txt: %s", e2)
+                dest = dest.with_suffix(".txt")
+                dest.write_text(body + "\n", encoding="utf-8")
+                return dest
+    if ext == ".pptx":
+        try:
+            return write_pptx_styled(dest, body)
+        except Exception as e:  # noqa: BLE001
+            log.warning("pptx write failed, fallback pdf: %s", e)
+            dest = dest.with_suffix(".pdf")
+            try:
+                return write_pdf_styled(dest, body)
+            except Exception as e2:  # noqa: BLE001
+                log.warning("pptx→pdf fallback failed: %s", e2)
                 dest = dest.with_suffix(".txt")
                 dest.write_text(body + "\n", encoding="utf-8")
                 return dest

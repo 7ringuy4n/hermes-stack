@@ -7,5 +7,6 @@ Pillow==11.1.0
 reportlab==4.3.1
 openpyxl==3.1.5
 python-docx==1.1.2
+python-pptx==1.0.2
 pymupdf==1.25.5
 # ASR lives in requirements-whisper.txt (build with INSTALL_WHISPER=1, run with WHISPER_ENABLED=1).

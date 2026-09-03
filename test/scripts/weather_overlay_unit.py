@@ -11,11 +11,14 @@ DISP = ROOT / "architect" / "models" / "dispatcher"
 sys.path.insert(0, str(ZALO))
 sys.path.insert(0, str(DISP))
 
-from media_shortcuts import _weather_overlay_lines  # noqa: E402
+from media_shortcuts import (  # noqa: E402
+    _collect_host_facts,
+    _skip_structural_junk,
+    _weather_overlay_lines,
+)
 from overlay import apply_overlay  # noqa: E402
 
 OUT = ROOT / "scripts" / "temp" / "weather_overlay_unit"
-VI_SAMPLE = "Thành phố Hồ Chí Minh"
 
 
 def main() -> int:
@@ -23,18 +26,35 @@ def main() -> int:
     facts = [
         "Nhiệt độ: 28°C",
         "Độ ẩm: 83%",
-        "Tình trạng: mây dần tăng",
+        "Thời tiết: mây dần tăng",
         "Gió: 12 km/h",
+        "Nhiệt đô: <value after search>",
+        "SAFE-FOR-WORK",
     ]
+    assert _skip_structural_junk("Nhiệt độ: <value after search>")
+    assert _skip_structural_junk("SAFE-FOR-WORK")
+    assert not _skip_structural_junk("Nhiệt độ: 28°C")
+
     lines = _weather_overlay_lines(
         facts,
-        scene="SCENE: Ho Chi Minh City skyline at dusk",
-        user_ask="thời tiết hồ chí minh",
+        scene="SAFE-FOR-WORK; photorealistic photograph of Ho Chi Minh City",
+        user_ask="thời tiết hồ chí minh góc trái bên dưới",
     )
-    assert any(VI_SAMPLE in ln for ln in lines), lines
-    assert all("Thổi" not in ln and "Thời thết" not in ln for ln in lines), lines
+    blob = "\n".join(lines)
+    assert "SAFE-FOR-WORK" not in blob.upper().replace("-", ""), lines
+    assert "value after" not in blob.lower(), lines
+    assert "SCENE:" not in blob, lines
     assert any("Nhiệt độ" in ln for ln in lines), lines
+    assert any("Thời tiết" in ln for ln in lines), lines
     assert any("Cập nhật:" in ln for ln in lines), lines
+    assert "thời tiết hồ chí minh" in lines[0].lower(), lines
+
+    collected = _collect_host_facts(
+        "RENDER: weather-scene\nSCENE: city\n- Nhiệt độ: <value after search>\n- Độ ẩm: 70%",
+        {"answer": "Nhiệt độ: 31°C\nThời tiết: nắng nhẹ"},
+    )
+    assert all("<" not in x and "value after" not in x.lower() for x in collected), collected
+    assert any("31°C" in x or "70%" in x or "nắng" in x for x in collected), collected
 
     from PIL import Image
 

@@ -74,7 +74,7 @@ HTTP_RETRY_SLEEP_S = 8.0
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
 _ATTACH_RECALL_START = "[recent attachments in this chat"
-_OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
+_OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md", "pptx"}
 REASONING_EFFORTS = ("low", "medium", "high", "max")
 
 

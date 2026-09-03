@@ -1,12 +1,12 @@
 ---
 name: file-gen
-description: "Create/edit office files (xlsx, docx, txt, pdf, csv) via Dispatcher. LLM authors full file content; worker renders. RESULT-ONLY (see media-out)."
+description: "Create/edit office files (xlsx, docx, txt, pdf, csv, pptx, md) via Dispatcher. LLM authors full file content; worker renders. RESULT-ONLY (see media-out)."
 ---
 
 # File generation → send (result only)
 
 Follow skill **`media-out`**. When the user asks to **create / export / edit** an
-**xlsx · csv · docx · txt · pdf · md** file:
+**xlsx · csv · docx · txt · pdf · md · pptx** file:
 
 ## LLM authors content (required)
 
@@ -62,9 +62,9 @@ Never greet, never `/help`, never narrate tools, never mention missing API keys.
 
 ## Default (must) — Dispatcher office API
 
-Do **not** install `pypdf` / `reportlab` / `openpyxl` in Hermes. Do **not** call
-`skill_view` / `skill_manage` for ambiguous names `pdf` / `docx` / `xlsx`.
-Never narrate reportlab/pip/uv. Dispatcher owns PDF rendering server-side.
+Do **not** install `pypdf` / `reportlab` / `openpyxl` / `python-pptx` in Hermes. Do **not** call
+`skill_view` / `skill_manage` for ambiguous names `pdf` / `docx` / `xlsx` / `pptx`.
+Never narrate reportlab/pip/uv. Dispatcher owns PDF/PPTX rendering server-side.
 
 ```bash
 curl -sS -X POST http://dispatcher:8090/v1/office-file \
@@ -73,11 +73,13 @@ curl -sS -X POST http://dispatcher:8090/v1/office-file \
     "prompt":"<markdown body you authored>",
     "thread_id":"<inbound thread id>",
     "thread_type":"user",
-    "filename":"<safe-name.pdf>",
+    "filename":"<safe-name.pdf|safe-name.pptx>",
     "output_type":"pdf",
     "caption":""
   }'
 ```
+
+For PPTX decks with live facts: same markdown body (`#` / `##` / `- Label: value` with filled values; never `<value after search>`), `output_type=pptx`, filename ending `.pptx`.
 
 Requires Media|File worker with `OFFICE_FILE_GEN=active`. Success: `"ok":true` and
 Zalo receives the file (empty caption). User-facing text per **media-out**:

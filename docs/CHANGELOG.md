@@ -1,5 +1,11 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-03 18:30 +07 — zalo/office: weather overlay Pillow path; PPTX create
+
+- Weather-on-image classify route uses `weather-scene` + host `/v1/overlay` (no diffusion-burned boards, no SFW/placeholder bullets).
+- Host rejects unfilled `<value after…>` / SFW fact lines; labeled-scene also scenic+overlay.
+- Dispatcher office-file supports `pptx` (`python-pptx`); PDF hero metric truncates feel-like parentheticals cleanly.
+
 ## 2026-09-03 08:00 +07 — file-gen: visual PDF via Hermes markdown; block host SERP dump
 
 - Host search→office shortcut limited to trivial literal fills; weather/design PDFs route through Hermes.
