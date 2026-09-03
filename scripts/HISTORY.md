@@ -1,6 +1,20 @@
 ### Fix (core)
 `plan_is_image_analyze_chat` blocks async workflow; `_as_try_workflow_submit` no longer calls `office_shortcut` without `media_urls` when `has_image_attachment`. Image/PDF reads use `architect/lib/vision_ocr.py` → router-worker combo `vision-ocr` (no OCR container).
 
+## 2026-09-03 07:00 +07 — Weather Pillow overlay; ingest PDF/zip read
+
+### Symptom
+Weather-on-image showed garbled Vietnamese from diffusion text. Bare PDF and zip inner files returned empty extract or member listing only.
+
+### Root cause
+Labeled facts were baked into image-gen SCENE (models corrupt diacritics). Hermes read PDF locally without pymupdf; archive temp dir deleted before durable member read.
+
+### Fix (core)
+Restore dispatcher `overlay.py` + `/v1/overlay` (bottom-left Noto badge). `run_search_then_weather_scene` applies overlay after scenic gen. Ingest adds pymupdf PDF layer + persisted `media/extracted/` members. Zalo PDF → ingest `/v1/extract-text` first. Image-gen waits 300s with 5xx retry before combo failover.
+
+### Prevent recurrence
+`test/scripts/weather_overlay_unit.py`; `test/scripts/zalo_tn_pdf_zip_weather_inject.py` for Tn inject lab.
+
 ## 2026-09-02 22:40 +07 — router-worker stripped image_url; kimi saw text only
 
 ### Symptom

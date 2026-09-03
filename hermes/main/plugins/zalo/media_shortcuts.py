@@ -11,9 +11,13 @@ import base64
 import json
 import logging
 import os
+import time
 import urllib.error
 import urllib.request
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
+from zoneinfo import ZoneInfo
 
 log = logging.getLogger("hermes_plugins.zalo_platform.media_shortcuts")
 
@@ -632,6 +636,83 @@ def scene_prompt_from_instruction(text: str) -> str:
         return src
     return ""
 
+def _place_vi_label(text: str) -> str:
+    """Official Vietnamese place names for on-image weather badges."""
+    low = (text or "").lower()
+    if any(x in low for x in ("hồ chí minh", "ho chi minh", "sài gòn", "saigon", "tp.hcm", "hcmc", "tp hcm")):
+        return "Thành phố Hồ Chí Minh"
+    if any(x in low for x in ("hà nội", "ha noi", "hanoi")):
+        return "Hà Nội"
+    if any(x in low for x in ("đà nẵng", "da nang", "danang")):
+        return "Đà Nẵng"
+    return "Thành phố Hồ Chí Minh"
+
+
+def _weather_overlay_lines(
+    facts: list[str], *, scene: str = "", user_ask: str = ""
+) -> list[str]:
+    """Compact Vietnamese lines for Pillow overlay (not diffusion text)."""
+    place = _place_vi_label(f"{scene} {user_ask}")
+    now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H:%M · %d/%m/%Y")
+    lines = [f"Thời tiết · {place}"]
+    picked: list[str] = []
+    for raw in facts or []:
+        s = str(raw or "").strip()
+        if not s:
+            continue
+        low = s.lower()
+        if any(
+            k in low
+            for k in (
+                "nhiệt độ",
+                "temp",
+                "độ ẩm",
+                "humid",
+                "tình trạng",
+                "condition",
+                "gió",
+                "wind",
+                "mưa",
+                "rain",
+                "cảm giác",
+                "feels",
+            )
+        ):
+            picked.append(s)
+        if len(picked) >= 4:
+            break
+    if not picked:
+        picked = [str(f).strip() for f in (facts or [])[:4] if str(f).strip()]
+    lines.extend(picked[:4])
+    lines.append(f"Cập nhật: {now}")
+    return lines[:6]
+
+
+def _apply_weather_overlay(out: dict[str, Any], lines: list[str]) -> dict[str, Any]:
+    """Post-process scenic still with Unicode-safe bottom-left badge."""
+    if not lines:
+        return out
+    path = str(out.get("path") or out.get("file") or "")
+    name = Path(path).name if path else ""
+    if not name:
+        return out
+    try:
+        _post(
+            "/v1/overlay",
+            {
+                "filename": name,
+                "overlay": lines,
+                "overlay_corner": "bottom-left",
+                "prompt": "",
+            },
+            timeout=45.0,
+        )
+        out["overlay"] = len(lines)
+    except Exception as e:  # noqa: BLE001
+        log.warning("weather overlay failed: %s", type(e).__name__)
+    return out
+
+
 def _place_alias_to_official(scene: str) -> str:
     """Map colloquial place aliases to official English names (no regex)."""
     text = scene or ""
@@ -891,36 +972,48 @@ def _omni_request_image_blob_once(
     timeout: int,
 ) -> bytes | None:
     body = json.dumps({"model": model, "prompt": scene, "n": 1, "size": size}).encode()
-    req = urllib.request.Request(
-        f"{base}/images/generations",
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode() or "{}")
-    except Exception as e:  # noqa: BLE001
-        detail = type(e).__name__
-        if isinstance(e, urllib.error.HTTPError):
-            detail = f"HTTPError {getattr(e, 'code', '?')}"
-        log.warning("omni generate failed model=%r: %s", model, detail)
-        return None
-    items = data if isinstance(data, list) else (data.get("data") or data.get("images") or [])
-    if not items or not isinstance(items[0], dict):
-        log.warning("omni generate: empty response model=%r", model)
-        return None
-    blob = _omni_decode_image_blob(items[0])
-    if not blob:
-        log.warning("omni generate: empty image payload model=%r", model)
-        return None
-    if not _omni_image_quality_ok(blob, size=size):
-        return None
-    return blob
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    deadline = time.monotonic() + max(60, int(timeout))
+    while time.monotonic() < deadline:
+        wait_s = max(5, min(120, int(deadline - time.monotonic())))
+        req = urllib.request.Request(
+            f"{base}/images/generations",
+            data=body,
+            method="POST",
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=wait_s) as resp:
+                data = json.loads(resp.read().decode() or "{}")
+        except urllib.error.HTTPError as e:
+            code = int(getattr(e, "code", 0) or 0)
+            detail = f"HTTPError {code}"
+            log.warning("omni generate failed model=%r: %s", model, detail)
+            if code >= 500 and time.monotonic() < deadline:
+                time.sleep(min(8.0, max(0.0, deadline - time.monotonic())))
+                continue
+            return None
+        except Exception as e:  # noqa: BLE001
+            detail = type(e).__name__
+            log.warning("omni generate failed model=%r: %s", model, detail)
+            return None
+        items = data if isinstance(data, list) else (data.get("data") or data.get("images") or [])
+        if not items or not isinstance(items[0], dict):
+            log.warning("omni generate: empty response model=%r", model)
+            return None
+        blob = _omni_decode_image_blob(items[0])
+        if not blob:
+            log.warning("omni generate: empty image payload model=%r", model)
+            return None
+        if not _omni_image_quality_ok(blob, size=size):
+            return None
+        return blob
+    log.warning("omni generate: budget exhausted model=%r timeout=%ss", model, timeout)
+    return None
 
 
 def _media_out_candidates() -> list:
@@ -1077,7 +1170,8 @@ def run_search_then_weather_scene(
     fname = f"weather-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
-        return out
+        overlay = _weather_overlay_lines(facts, scene=scene, user_ask=user_ask)
+        return _apply_weather_overlay(out, overlay)
     return shortcut_consumed()
 
 
