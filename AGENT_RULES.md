@@ -5,7 +5,8 @@ repository.\
 **Source of truth:** This file at the repository root.\
 **Lab methodology:** [`test/RULES.md`](./test/RULES.md)\
 **Git workflow:** [`docs/GIT.md`](./docs/GIT.md)\
-**Change history:** [`docs/CHANGELOG.md`](./docs/CHANGELOG.md)
+**Change history:** [`docs/CHANGELOG.md`](./docs/CHANGELOG.md)\
+**Root-cause history (by date):** [`history/README.md`](./history/README.md)
 
 > These rules govern agent behavior. Do not hardcode them into
 > application runtime messages, prompts, adapters, or business logic.
@@ -141,6 +142,86 @@ architecture and their behavior is explicitly justified.
 
 A fix is incomplete if the original failure disappears but the
 underlying failure class can still recur.
+
+### 4.1 Root-cause history (`history/`)
+
+When you find a **root cause** and apply a durable fix, you **must** append
+a dated note under repository-root [`history/`](./history/) — not only
+[`scripts/HISTORY.md`](./scripts/HISTORY.md) (ops append log).
+
+**Layout**
+
+```text
+history/
+  README.md                 # index of dates
+  YYYY-MM-DD/
+    README.md                 # all incidents that calendar day (UTC+7)
+```
+
+**One incident block** (repeat per fix the same day):
+
+```markdown
+## HH:MM — Short title
+
+### Symptom
+What the user or lab saw.
+
+### Root cause
+Why it happened (one underlying cause, not symptoms).
+
+### Technical detail (required)
+Exact code/config anchors — a future agent must re-open the failure site without re-grepping.
+
+Record **all that apply** (function, line, key/value, API field, combo/service).
+Minimum: **≥1 function**, **≥1 line anchor** (`path/file.py:Lstart–Lend`), and **≥1 key/value or API field**
+(or explicit “N/A — infra-only” with service name).
+
+### AI decision
+How you chose the fix (options considered, why not hotpatch/VPS-only).
+
+### Fix (core)
+Files/scripts changed and behavior after fix.
+
+### Todo list
+Checklist used for this fix (reproduce, core change, test, VPS verify).
+
+### Prevent recurrence
+Tests, docs, or guards added so the class cannot return silently.
+```
+
+**Technical detail — kinds to record**
+
+| Kind | What to record |
+|------|----------------|
+| **Function / method** | `path/file.py::name()` — wrong behavior or missing call |
+| **Line(s)** | Snapshot at fix time: `path/file.py:Lstart–Lend` (approximate OK) |
+| **Env / config keys** | Key name + bad → fixed value (e.g. `FOO`: `60` → `300`) |
+| **JSON / API fields** | Request/response field + bad → fixed shape |
+| **Combo / route / service** | Omni combo slug, docker service, URL path when routing caused the bug |
+
+**Technical detail — example**
+
+```markdown
+### Technical detail
+
+- **Function:** `media_shortcuts.py::run_search_then_weather_scene()` — Vietnamese labels in SCENE; diffusion garbled diacritics.
+- **Lines:** `media_shortcuts.py:L1138–L1205` (SCENE builder); post-fix calls `POST /v1/overlay` at `L701`.
+- **Key:** `OMNI_IMAGE_GEN_TIMEOUT_S` — default `60` → combo pin `300` (`first-setup-omnirouter.py:L1330`).
+- **Field:** `ImageReq.prompt` (`dispatcher/app.py:L173`) — required → optional default `""` (overlay 422).
+- **Deploy gap:** `overlay.py` missing from `dispatcher/Dockerfile` COPY — `/v1/overlay` 404 in image.
+```
+
+**Rules**
+
+- Partition by **calendar date (UTC+7)** of the fix, not the report date.
+- **`### Technical detail` is mandatory** — never omit function names, keys/values, or line anchors when the bug is in code/config.
+- Write in **generic** terms — no user chat quotes, passwords, or host secrets (redact token **values**; key **names** are OK).
+- Do **not** duplicate user request text from tickets into docs/CHANGELOG.
+- After writing `history/`, add a **one-line** pointer in `scripts/HISTORY.md`
+  if operators still use that log (optional summary only).
+- Backfilled days from the legacy log may lack technical detail — enrich them when you touch that incident again.
+- To backfill or rebuild day folders from the legacy log:
+  `python3 scripts/main/backfill-root-history.py --since YYYY-MM-DD`
 
 ------------------------------------------------------------------------
 

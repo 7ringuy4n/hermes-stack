@@ -1,5 +1,16 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-03 07:20 +07 — ops: history/ technical-detail rule (functions, keys, lines)
+
+- AGENT_RULES §4.1: mandatory `### Technical detail` with function names, env/API keys (bad → fixed), and line anchors.
+- Backfill script emits placeholder when legacy log lacks technical section.
+
+## 2026-09-03 07:15 +07 — ops: history/ root-cause log; omni setup vs update split; file-gen LAYOUT
+
+- `AGENT_RULES.md` §4.1: dated `history/YYYY-MM-DD/README.md` incident blocks; backfill via `scripts/main/backfill-root-history.py`.
+- `first-setup-omnirouter.py`: default run is core-only (login, missing API key/combos); combo refill/sync moved to `bash run.sh update-omnirouter`.
+- File-create skills: LLM composes structured layout per `hermes/main/skills/file-gen/LAYOUT.md` before dispatcher `office-file`.
+
 ## 2026-09-03 07:00 +07 — zalo: weather Pillow overlay; PDF/zip via ingest
 
 - Weather scene (`scene-overlay`): scenic Omni image-gen without diffusion text, then Unicode-safe bottom-left badge via dispatcher `/v1/overlay` (Noto fonts).

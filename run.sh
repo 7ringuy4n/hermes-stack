@@ -1086,6 +1086,10 @@ case "$cmd" in
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
     python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py"
     ;;
+  update-omnirouter|sync-omnirouter)
+    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
+    python3 "${SCRIPTS_DIR}/update-omnirouter.py"
+    ;;
   first-setup-openbao|setup-openbao)
     do_first_setup_openbao
     ;;

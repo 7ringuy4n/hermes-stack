@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
-"""First-setup OmniRouter (OmniRoute) after ENABLE_OMNIROUTER=active:
+"""First-setup OmniRouter (OmniRoute) — core install only.
 
-1) Login with OMNIROUTER_INITIAL_PASSWORD (else N9ROUTER_INITIAL_PASSWORD)
-2) Read/create Default Key → OMNIROUTER_API_KEY
-3) Ensure OpenCode provider; fill chat combo ``hermes`` with cloud ``oc/*`` members
-4) Ensure classify combo ``classifier`` with cloud ``oc/*`` members
-5) Ensure media combos: image-gen (image-capable), vision-ocr (supportsVision), embedding
-6) Pin IMAGE_GEN_COMBO (image-gen) / OCR_MODEL (vision-ocr) from media worker state
-7) Set combo strategy preference (round-robin for hermes; priority/fallback for classifier, media, embedding, web-search)
-8) Ensure Search: Tavily → Firecrawl → SearXNG
-9) Point Hermes at model-router; recreate router-worker for the key
+Creates login session, Default Key (only when OMNIROUTER_API_KEY missing),
+empty combo shells, and missing .env pins. Does **not** refill combos,
+rewire custom image providers, or restart router-worker.
 
-Stack sends combo *names* as OpenAI ``model``. Chat = ``hermes``; classify = ``classifier``.
+For repair/sync (combo refill, provider-models, API key ACL):
+  bash run.sh update-omnirouter
+  python3 scripts/main/update-omnirouter.py
 """
 from __future__ import annotations
 
@@ -87,6 +83,15 @@ def set_env_key(path: Path, key: str, value: str) -> None:
     else:
         text = text.rstrip() + "\n" + line + "\n"
     path.write_text(text, encoding="utf-8")
+
+
+def set_env_key_if_missing(path: Path, key: str, value: str, env: dict[str, str]) -> None:
+    """First-setup only: never overwrite operator-owned .env pins."""
+    if (env.get(key) or "").strip():
+        return
+    set_env_key(path, key, value)
+    env[key] = value
+    print(f"OK: init {key}={value}")
 
 
 def clear_env_keys(path: Path, keys: list[str]) -> None:
@@ -459,6 +464,7 @@ def ensure_opencode_combo(
     member_limit: int | None = None,
     refill_if_below: int | None = None,
     strategy: str = "",
+    setup_only: bool = False,
 ) -> str:
     """Fill Omni combo with cloud OpenCode members when empty; keep live oc/opencode/opencode-go.
 
@@ -477,6 +483,9 @@ def ensure_opencode_combo(
     if leftover:
         print(f"==> strip leftover non-OpenCode members from {name}: {leftover[:8]!r}")
     thin = refill_if_below is not None and len(good) < refill_if_below
+    if setup_only and good and not thin and not leftover:
+        print(f"==> keep combo {name} (setup-only, operator-owned members)")
+        return name
     if good and not thin:
         if leftover or (want_strategy and cur_strategy != want_strategy):
             models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(good)]
@@ -529,7 +538,7 @@ def ensure_opencode_combo(
     return name
 
 
-def ensure_classifier_combo(opener) -> str:
+def ensure_classifier_combo(opener, *, setup_only: bool = False) -> str:
     """Ensure classify combo ``classifier`` via Omni OpenCode cloud members."""
     return ensure_opencode_combo(
         opener,
@@ -537,15 +546,17 @@ def ensure_classifier_combo(opener) -> str:
         description="Classify/intent combo — Omni OpenCode cloud (priority failover)",
         member_limit=5,
         strategy=CLASSIFIER_COMBO_STRATEGY,
+        setup_only=setup_only,
     )
 
 
-def ensure_combo_alias(opener) -> str:
+def ensure_combo_alias(opener, *, setup_only: bool = False) -> str:
     """Ensure chat combo ``hermes`` via Omni OpenCode cloud members."""
     return ensure_opencode_combo(
         opener,
         name=COMBO_NAME,
         description="Stack chat combo — Omni OpenCode cloud (round-robin)",
+        setup_only=setup_only,
     )
 
 
@@ -746,7 +757,7 @@ def list_web_search_combo_members(opener) -> list[str]:
     return out
 
 
-def ensure_web_search_omni_combo(opener) -> None:
+def ensure_web_search_omni_combo(opener, *, setup_only: bool = False) -> None:
     """Seed combo ``web-search`` when empty; fix strategy to priority without reordering members."""
     members = list_web_search_combo_members(opener)
     if not members:
@@ -756,6 +767,9 @@ def ensure_web_search_omni_combo(opener) -> None:
     combos = data.get("combos") or []
     existing = next((c for c in combos if (c.get("name") or "") == WEB_SEARCH_COMBO_NAME), None)
     cur = _combo_model_ids(existing)
+    if setup_only and cur:
+        print(f"==> keep combo {WEB_SEARCH_COMBO_NAME} (setup-only)")
+        return
     if not cur:
         print(f"==> seed combo {WEB_SEARCH_COMBO_NAME} members={members!r}")
     _put_or_create_combo(
@@ -765,6 +779,7 @@ def ensure_web_search_omni_combo(opener) -> None:
         model_ids=members,
         force=not cur,
         strategy=WEB_SEARCH_COMBO_STRATEGY,
+        setup_only=setup_only,
     )
 
 
@@ -1302,6 +1317,22 @@ def _media_worker_active(env: dict[str, str]) -> bool:
     return False
 
 
+def pin_media_combos_setup(env: dict[str, str]) -> None:
+    """First-setup: init missing media combo name pins only (never overwrite)."""
+    env_path = ROOT / ".env"
+    defaults = {
+        "IMAGE_GEN_COMBO": "image-gen",
+        "OCR_MODEL": "vision-ocr",
+        "EMBED_MODEL": "embedding",
+        "OMNIROUTER_IMAGE_COMBO": "image-gen",
+        "OMNIROUTER_VISION_COMBO": "vision-ocr",
+        "OMNIROUTER_EMBED_COMBO": "embedding",
+        "OMNI_IMAGE_GEN_TIMEOUT_S": "300",
+    }
+    for key, want in defaults.items():
+        set_env_key_if_missing(env_path, key, want, env)
+
+
 def pin_media_combos(env: dict[str, str]) -> None:
     """Pin media combo *names* when the media worker is active.
 
@@ -1636,6 +1667,7 @@ def _put_or_create_combo(
     model_ids: list[str],
     force: bool,
     strategy: str = "",
+    setup_only: bool = False,
 ) -> str:
     if not model_ids:
         raise SystemExit(f"combo {name}: no candidate models")
@@ -1645,6 +1677,9 @@ def _put_or_create_combo(
     current = _combo_model_ids(existing)
     want_strategy = (strategy or COMBO_STRATEGY).strip() or "round-robin"
     cur_strategy = (existing.get("strategy") or existing.get("comboStrategy") or "").strip() if existing else ""
+    if setup_only and existing and current:
+        print(f"==> keep combo {name} (setup-only) n={len(current)} strategy={cur_strategy}")
+        return name
     if existing and current and not force:
         if want_strategy and cur_strategy != want_strategy:
             print(f"==> combo {name} strategy {cur_strategy!r} -> {want_strategy!r}")
@@ -1859,72 +1894,91 @@ def _custom_image_model_action(existing: dict | None) -> str:
     return "fix"
 
 
-def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
+def ensure_media_combos(opener, api_key: str, env: dict[str, str], *, setup_only: bool = False) -> None:
     """Seed image-gen / vision-ocr / embedding combos; refill when chat-only members leak in."""
     catalog = _v1_models(api_key)
     image_ids = list_image_gen_models(api_key, opener, env)
-    if not image_ids:
+    if not image_ids and not setup_only:
         raise SystemExit(
             "no images-capable models in Omni catalog — connect an images-generations provider "
             "and run ensure_provider_image_models (provider-models apiFormat=images-generations)"
         )
+    if not image_ids and setup_only:
+        print("WARN setup-only: no images-capable catalog models — skip image-gen seed")
+        image_ids = []
     _, data = http_json(opener, "GET", f"{BASE}/api/combos")
     combos = {c.get("name"): c for c in (data.get("combos") or []) if isinstance(c, dict)}
     cur_img = _combo_model_ids(combos.get("image-gen"))
     want_ids = list(image_ids)
-    bad_img = [m for m in cur_img if m not in want_ids]
-    need_img = (not cur_img) or bool(bad_img) or cur_img != want_ids
-    if bad_img:
-        print(
-            f"==> image-gen has unroutable members {bad_img[:6]!r} "
-            f"(not wired for /images/generations) — refilling"
+    if setup_only:
+        need_img = not cur_img and bool(want_ids)
+    else:
+        bad_img = [m for m in cur_img if m not in want_ids]
+        need_img = (not cur_img) or bool(bad_img) or cur_img != want_ids
+        if bad_img:
+            print(
+                f"==> image-gen has unroutable members {bad_img[:6]!r} "
+                f"(not wired for /images/generations) — refilling"
+            )
+        elif not cur_img:
+            print(f"==> seed combo image-gen from catalog first={want_ids[:3]!r}")
+    if want_ids:
+        _put_or_create_combo(
+            opener,
+            name="image-gen",
+            description="Image generation — diffusion /images/generations only",
+            model_ids=want_ids,
+            force=need_img,
+            strategy=IMAGE_GEN_COMBO_STRATEGY,
+            setup_only=setup_only,
         )
-    elif not cur_img:
-        print(f"==> seed combo image-gen from catalog first={want_ids[:3]!r}")
-    _put_or_create_combo(
-        opener,
-        name="image-gen",
-        description="Image generation — diffusion /images/generations only",
-        model_ids=want_ids,
-        force=need_img,
-        strategy=IMAGE_GEN_COMBO_STRATEGY,
-    )
 
     vision_catalog = _omni_admin_catalog_rows(opener)
     vision_ids = list_vision_models(opener)
     if not vision_ids:
         vision_ids = list_oc_models(opener)[:5] or list(OPENCODE_FREE_FALLBACK[:5])
-        print(f"WARN no vision-capable catalog; seeding vision-ocr with OpenCode {vision_ids[:3]}")
+        if not setup_only:
+            print(f"WARN no vision-capable catalog; seeding vision-ocr with OpenCode {vision_ids[:3]}")
     cur_vis = _combo_model_ids(combos.get("vision-ocr"))
-    bad_vis = [m for m in cur_vis if not _is_vision_capable_model_id(m, vision_catalog)]
-    need_vis = (not cur_vis) or bool(bad_vis) or cur_vis != vision_ids
-    if bad_vis:
-        print(f"==> vision-ocr has blind members {bad_vis[:6]!r} — refilling")
-    elif not cur_vis:
-        print(f"==> seed combo vision-ocr from catalog first={vision_ids[:3]!r}")
-    _put_or_create_combo(
-        opener,
-        name="vision-ocr",
-        description="Vision OCR — multimodal chat (catalog image-input)",
-        model_ids=vision_ids,
-        force=need_vis,
-        strategy=VISION_OCR_COMBO_STRATEGY,
-    )
+    if setup_only:
+        need_vis = not cur_vis and bool(vision_ids)
+    else:
+        bad_vis = [m for m in cur_vis if not _is_vision_capable_model_id(m, vision_catalog)]
+        need_vis = (not cur_vis) or bool(bad_vis) or cur_vis != vision_ids
+        if bad_vis:
+            print(f"==> vision-ocr has blind members {bad_vis[:6]!r} — refilling")
+        elif not cur_vis:
+            print(f"==> seed combo vision-ocr from catalog first={vision_ids[:3]!r}")
+    if vision_ids:
+        _put_or_create_combo(
+            opener,
+            name="vision-ocr",
+            description="Vision OCR — multimodal chat (catalog image-input)",
+            model_ids=vision_ids,
+            force=need_vis,
+            strategy=VISION_OCR_COMBO_STRATEGY,
+            setup_only=setup_only,
+        )
 
     emb_ids = list_embedding_models(api_key, opener=opener)
     cur_emb = _combo_model_ids(combos.get("embedding"))
     if emb_ids:
-        if not cur_emb:
+        if setup_only:
+            need_emb = not cur_emb
+        else:
+            need_emb = not cur_emb
+        if not cur_emb and not setup_only:
             print(f"==> seed combo embedding {emb_ids!r}")
         _put_or_create_combo(
             opener,
             name="embedding",
             description="Embeddings — Omni /v1/embeddings",
             model_ids=emb_ids,
-            force=not cur_emb,
+            force=need_emb and not setup_only,
             strategy=EMBEDDING_COMBO_STRATEGY,
+            setup_only=setup_only,
         )
-    elif not combos.get("embedding"):
+    elif not combos.get("embedding") and not setup_only:
         emb = list_oc_models(opener)[:1] or list(OPENCODE_FREE_FALLBACK[:1])
         _put_or_create_combo(
             opener,
@@ -1935,6 +1989,8 @@ def ensure_media_combos(opener, api_key: str, env: dict[str, str]) -> None:
             strategy=EMBEDDING_COMBO_STRATEGY,
         )
         print("WARN: no embed-capable catalog models — seeded shell only")
+    elif setup_only and not combos.get("embedding"):
+        print("WARN setup-only: combo embedding missing — run update-omnirouter")
     else:
         print("OK: combo embedding exists (operator-owned members)")
 
@@ -1957,7 +2013,72 @@ def assert_combo_oc_only(opener, name: str) -> None:
     print(f"OK: combo {name} OpenCode-only n={len(ids)} first={ids[:3]}")
 
 
-def main() -> int:
+def setup_core() -> int:
+    """First install only: login, key if missing, create empty combos — never reset operator wiring."""
+    env = load_env(ROOT / ".env")
+    omni_flag = (env.get("ENABLE_OMNIROUTER") or "inactive").strip().lower()
+    if omni_flag in {"1", "true", "yes", "on"}:
+        set_env_key_if_missing(ROOT / ".env", "ENABLE_OMNIROUTER", "active", env)
+        omni_flag = "active"
+    if omni_flag != "active":
+        print("SKIP: ENABLE_OMNIROUTER is not active")
+        return 0
+    password = env.get("OMNIROUTER_INITIAL_PASSWORD") or env.get("N9ROUTER_INITIAL_PASSWORD") or ""
+    if not password:
+        raise SystemExit("OMNIROUTER_INITIAL_PASSWORD / N9ROUTER_INITIAL_PASSWORD empty")
+
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+    key = fetch_default_key(opener, password, env.get("OMNIROUTER_API_KEY", ""))
+    if not _looks_full_key(env.get("OMNIROUTER_API_KEY", "")):
+        set_env_key(ROOT / ".env", "OMNIROUTER_API_KEY", key)
+        env["OMNIROUTER_API_KEY"] = key
+        print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
+    else:
+        key = env.get("OMNIROUTER_API_KEY", "").strip()
+
+    unblock_opencode(opener)
+    ensure_opencode_provider(opener)
+    ensure_pollinations_provider(opener, env)
+    combo = ensure_combo_alias(opener, setup_only=True)
+    classify_combo = ensure_classifier_combo(opener, setup_only=True)
+    ensure_search_providers(opener)
+    ensure_web_search_omni_combo(opener, setup_only=True)
+    ensure_media_combos(opener, key, env, setup_only=True)
+    pin_media_combos_setup(env)
+    env_path = ROOT / ".env"
+    for key_name, val in (
+        ("OMNIROUTER_DEFAULT_COMBO", COMBO_NAME),
+        ("OMNIROUTER_CLASSIFY_COMBO", classify_combo),
+        ("MODEL_ROUTER_CLASSIFY_MODEL", classify_combo),
+        ("OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY),
+        ("OMNIROUTER_FALLBACK_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY),
+        ("OMNIROUTER_VISION_OCR_COMBO_STRATEGY", VISION_OCR_COMBO_STRATEGY),
+        ("OMNIROUTER_CLASSIFIER_COMBO_STRATEGY", CLASSIFIER_COMBO_STRATEGY),
+        ("OMNIROUTER_EMBEDDING_COMBO_STRATEGY", EMBEDDING_COMBO_STRATEGY),
+        ("OMNIROUTER_WEB_SEARCH_COMBO_STRATEGY", WEB_SEARCH_COMBO_STRATEGY),
+        ("OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "active")),
+    ):
+        set_env_key_if_missing(env_path, key_name, val, env)
+    web_combo = (env.get("MODEL_ROUTER_WEB_SEARCH_COMBO") or env.get("WEB_SEARCH_COMBO") or WEB_SEARCH_COMBO_NAME).strip()
+    if not web_combo:
+        web_combo = WEB_SEARCH_COMBO_NAME
+    for key_name, val in (
+        ("OMNIROUTER_WEB_SEARCH_COMBO", web_combo),
+        ("WEB_SEARCH_COMBO", web_combo),
+        ("MODEL_ROUTER_WEB_SEARCH_COMBO", web_combo),
+    ):
+        set_env_key_if_missing(env_path, key_name, val, env)
+
+    patch_hermes_model_router(key, combo)
+    print(
+        f"OK: first-setup omni-router core "
+        f"(login + missing key/combos only; run update-omnirouter to repair/sync)"
+    )
+    return 0
+
+
+def run_update() -> int:
+    """Repair/sync: refill combos, wire custom image providers, refresh API key ACL."""
     env = load_env(ROOT / ".env")
     omni_flag = (env.get("ENABLE_OMNIROUTER") or "inactive").strip().lower()
     if omni_flag in {"1", "true", "yes", "on"}:
@@ -2031,11 +2152,17 @@ def main() -> int:
     # Verify hermes combo via Omni /v1/chat/completions (OpenCode cloud members).
     verify(key, combo)
     print(
-        f"OK: first-setup omni-router complete "
+        f"OK: update omni-router complete "
         f"(hermes+classifier OpenCode; image-gen image-capable; vision-ocr multimodal; "
         f"classify→{classify_combo!r}; combo web-search Tavily->Firecrawl->SearXNG)"
     )
     return 0
+
+
+def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] in {"--update", "update"}:
+        return run_update()
+    return setup_core()
 
 
 if __name__ == "__main__":

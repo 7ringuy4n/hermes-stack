@@ -1,12 +1,18 @@
 ---
 name: documents
-description: "MODE=documents — create/read office & text files via Dispatcher office-file. RESULT-ONLY (see media-out). Images → image-gen."
+description: "MODE=documents — LLM composes layout; Dispatcher office-file renders. RESULT-ONLY (see media-out)."
 ---
 
 # Documents (md · txt · pdf · docx · xlsx · csv)
 
 Follow skill **`media-out`**. Medium+ when `OFFICE_FILE_GEN=active`. Hard refuse music/video.
 **Images** → **`image-gen`**.
+
+## Layout before create (required)
+
+Read **`file-gen/LAYOUT.md`**. The LLM must turn the user request into a structured
+`prompt` (TITLE, OVERVIEW, `- facts`, SHEET tables) **before** calling office-file.
+Never pass the user's bubble verbatim as `prompt`.
 
 ## Create + send (required)
 
@@ -17,7 +23,7 @@ Always use Dispatcher (has reportlab/openpyxl baked in). Do **not** use Hermes
 curl -sS -X POST http://dispatcher:8090/v1/office-file \
   -H 'Content-Type: application/json' \
   -d '{
-    "prompt":"<full user request>",
+    "prompt":"<structured layout per file-gen/LAYOUT.md>",
     "thread_id":"<inbound thread_id>",
     "thread_type":"user",
     "filename":"<safe>.pdf",
