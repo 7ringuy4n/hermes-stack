@@ -1,6 +1,6 @@
 ---
 name: documents
-description: "MODE=documents — LLM composes layout; Dispatcher office-file renders. RESULT-ONLY (see media-out)."
+description: "MODE=documents — LLM authors file content; Dispatcher office-file renders. RESULT-ONLY (see media-out)."
 ---
 
 # Documents (md · txt · pdf · docx · xlsx · csv)
@@ -8,11 +8,11 @@ description: "MODE=documents — LLM composes layout; Dispatcher office-file ren
 Follow skill **`media-out`**. Medium+ when `OFFICE_FILE_GEN=active`. Hard refuse music/video.
 **Images** → **`image-gen`**.
 
-## Layout before create (required)
+## Author before create (required)
 
-Read **`file-gen/LAYOUT.md`**. The LLM must turn the user request into a structured
-`prompt` (TITLE, OVERVIEW, `- facts`, SHEET tables) **before** calling office-file.
-Never pass the user's bubble verbatim as `prompt`.
+**You** write the full file body: structure, headings, tables, and facts. Use `web_search`
+for live data when the ask needs it. Pass your composed text as `prompt` — not the user's
+bubble verbatim, and not a fixed template.
 
 ## Create + send (required)
 
@@ -23,7 +23,7 @@ Always use Dispatcher (has reportlab/openpyxl baked in). Do **not** use Hermes
 curl -sS -X POST http://dispatcher:8090/v1/office-file \
   -H 'Content-Type: application/json' \
   -d '{
-    "prompt":"<structured layout per file-gen/LAYOUT.md>",
+    "prompt":"<full content you authored>",
     "thread_id":"<inbound thread_id>",
     "thread_type":"user",
     "filename":"<safe>.pdf",
@@ -35,7 +35,7 @@ Examples:
 
 | User | Call |
 |------|------|
-| tạo 1 file pdf và điền vào số 1 | `prompt` that text, `filename":"so_1.pdf"` |
+| tạo 1 file pdf và điền vào số 1 | `prompt` with your layout (e.g. a line containing `1`), `filename":"so_1.pdf"` |
 | tạo 1 file text điền số 1 | same API (parser picks `.txt`) or `filename":"number.txt"` |
 
 ## Do not
@@ -43,3 +43,4 @@ Examples:
 - Narrate steps / claim success without `"ok":true`
 - Ask for approval / invent “cannot send file on Zalo”
 - Dump server paths
+- Impose weather card, dashboard, or screen layouts unless the user asked for that style

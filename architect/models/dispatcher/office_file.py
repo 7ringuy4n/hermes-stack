@@ -418,46 +418,54 @@ def verify_styled_pdf_layout(dest: Path, body: str = "") -> list[str]:
 
 
 def write_pdf_styled(dest: Path, body: str) -> Path:
-    """Clean weather-app sheet as a full-page image PDF (verified after write)."""
-    import tempfile
+    """Render LLM-authored body as a plain Unicode PDF (no weather/dashboard template)."""
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
 
-    try:
-        from weather_sheet import render_weather_sheet_bytes
-    except Exception as e:  # noqa: BLE001
-        log.warning("weather_sheet unavailable: %s", type(e).__name__)
-        return _write_pdf_styled_fallback(dest, body)
+    font = _pdf_font()
+    bold = _pdf_font_bold()
+    width, height = A4
+    c = canvas.Canvas(str(dest), pagesize=A4)
+    y = height - 72
+    margin = 56
+    line_h = 16
+    max_w = width - 2 * margin
 
-    png = render_weather_sheet_bytes(body)
-    tmp = Path(tempfile.mkdtemp(prefix="wxsheet_")) / "sheet.png"
-    try:
-        tmp.write_bytes(png)
-        width, height = A4
-        c = canvas.Canvas(str(dest), pagesize=A4)
-        # Full-bleed sheet with slim margin
-        margin = 18
-        c.drawImage(
-            str(tmp),
-            margin,
-            margin,
-            width=width - 2 * margin,
-            height=height - 2 * margin,
-            preserveAspectRatio=True,
-            anchor="c",
-        )
-        c.save()
-    finally:
-        try:
-            tmp.unlink(missing_ok=True)
-            tmp.parent.rmdir()
-        except OSError:
-            pass
+    def _wrap(line: str, size: int = 12) -> list[str]:
+        c.setFont(font, size)
+        words = line.split()
+        if not words:
+            return [""]
+        rows: list[str] = []
+        cur = words[0]
+        for w in words[1:]:
+            trial = f"{cur} {w}"
+            if c.stringWidth(trial, font, size) <= max_w:
+                cur = trial
+            else:
+                rows.append(cur)
+                cur = w
+        rows.append(cur)
+        return rows
 
-    problems = verify_styled_pdf_layout(dest, body)
-    if problems:
-        log.warning("styled pdf layout verify failed: %s — fallback", ",".join(problems))
-        return _write_pdf_styled_fallback(dest, body)
+    for raw in (body or "").splitlines() or [body or " "]:
+        line = raw.rstrip()
+        if not line.strip():
+            y -= line_h
+            continue
+        is_heading = line.startswith("#") or (line.isupper() and len(line) < 80)
+        size = 14 if is_heading else 12
+        use_font = bold if is_heading and bold != "Helvetica" else font
+        c.setFont(use_font, size)
+        display = line.lstrip("#").strip() if line.startswith("#") else line
+        for row in _wrap(display, size):
+            if y < 72:
+                c.showPage()
+                y = height - 72
+                c.setFont(use_font, size)
+            c.drawString(margin, y, row[:200])
+            y -= line_h + (4 if is_heading else 0)
+    c.save()
     return dest
 
 

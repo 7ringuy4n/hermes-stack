@@ -1,5 +1,11 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-03 07:30 +07 — file-gen: LLM-owned layout; drop weather PDF template
+
+- Removed `file-gen/LAYOUT.md` and mandatory TITLE/OVERVIEW/SHEET markers from skills/classify.
+- Dispatcher `write_pdf_styled` renders plain Unicode flow PDF; no Pillow weather sheet template.
+- Host `build_office_body_from_search` passes LLM body through + search fact bullets only.
+
 ## 2026-09-03 07:20 +07 — ops: history/ technical-detail rule (functions, keys, lines)
 
 - AGENT_RULES §4.1: mandatory `### Technical detail` with function names, env/API keys (bad → fixed), and line anchors.
