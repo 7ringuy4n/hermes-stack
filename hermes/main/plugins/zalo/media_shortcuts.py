@@ -476,38 +476,12 @@ def build_office_body_from_search(
     user_ask: str,
     search: dict[str, Any] | None,
 ) -> str:
-    """Assemble clean TITLE/ICON/OVERVIEW/BACKGROUND/fact lines for styled office-file."""
+    """Pass LLM/classify file body through; append search facts as bullets only."""
     fi = (file_instruction or "").strip()
     ask = (user_ask or "").strip()
-    markers = extract_contract_markers(fi) if fi else {}
-    if not markers.get("title"):
-        markers.update(extract_contract_markers(ask))
-
-    title = (markers.get("title") or "").strip()
-    # Reject create-verb wrappers mistakenly used as title
-    low_t = title.lower()
-    if (
-        not title
-        or low_t.startswith("tạo ")
-        or low_t.startswith("tao ")
-        or low_t.startswith("create ")
-        or low_t.startswith("design ")
-        or low_t.startswith("hãy ")
-        or low_t.startswith("hay ")
-        or "file pdf" in low_t
-    ):
-        title = ""
-    if not title:
-        title = "Cập nhật"
-
-    subtitle = (markers.get("subtitle") or "").strip() or "Cập nhật trực tiếp"
-    icon = (markers.get("icon") or "").strip().lower() or "cloud"
-    overview = (markers.get("overview") or "").strip()
-    background = (markers.get("background") or "").strip()
-    style = (markers.get("style") or "").strip().lower()
+    base = fi or ask
 
     facts = _facts_from_search(search)
-    # Keep classify-authored fact bullets (lines starting with -) if present
     for raw in fi.splitlines():
         s = raw.strip()
         if s.startswith(("- ", "• ", "* ")):
@@ -515,39 +489,14 @@ def build_office_body_from_search(
             if line and not _is_serp_noise(line) and line not in facts:
                 facts.append(line)
 
-    if not facts:
-        facts = ["Chưa lấy được chi tiết — thử lại sau."]
-
-    # Place-oriented sheets: fill OVERVIEW/BACKGROUND from search prose when classify
-    # opened those markers (or STYLE hints place context). No city-name dictionary.
-    fi_u = fi.upper()
-    wants_place_context = (
-        bool(overview or background)
-        or "OVERVIEW:" in fi_u
-        or "BACKGROUND:" in fi_u
-        or style in {"place", "city", "overview", "landmark", "region"}
-    )
-    if wants_place_context:
-        prose = _prose_snippets_from_search(search, limit=2)
-        if not overview and prose:
-            overview = prose[0]
-        if not background and len(prose) > 1:
-            background = prose[1]
-
-    icon = _infer_icon(facts, icon)
-
-    lines = [
-        f"TITLE: {title[:72]}",
-        f"SUBTITLE: {subtitle[:80]}",
-        f"ICON: {icon}",
-    ]
-    if overview:
-        lines.append(f"OVERVIEW: {overview[:160]}")
-    if background:
-        lines.append(f"BACKGROUND: {background[:160]}")
+    parts: list[str] = []
+    if base:
+        parts.append(base)
     for f in facts[:10]:
-        lines.append(f"- {f}")
-    return "\n".join(lines)
+        parts.append(f"- {f}")
+    if not parts:
+        return " "
+    return "\n".join(parts).strip()
 
 
 def run_office_create(
