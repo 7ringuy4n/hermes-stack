@@ -7,6 +7,7 @@ never competes with media work here. Heavy endpoints stay sync (threadpool);
 from __future__ import annotations
 
 import itertools
+import logging
 import os
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ from image_backends import image_backends
 from video_summary import health_fields, omni_refuse_message, policy_block_response, register_video_summary
 
 app = FastAPI(title="assistant dispatcher", version="1.1.0")
+log = logging.getLogger("dispatcher")
 
 SESSION_URL = os.environ.get("SESSION_URL", "http://session:8107").rstrip("/")
 N9_UPSTREAM = os.environ.get("OPENAI_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
@@ -920,7 +922,10 @@ def scenic_still(req: ImageReq) -> dict[str, Any]:
             prompt, size=(req.size or "1280x720").strip() or "1280x720"
         )
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, {"error": "scenic_still_failed", "detail": type(e).__name__}) from e
+        log.warning("scenic_still failed: %s: %s", type(e).__name__, e)
+        raise HTTPException(
+            502, {"error": "scenic_still_failed", "detail": type(e).__name__}
+        ) from e
     dest.write_bytes(blob)
     try:
         uid = int(os.environ.get("HERMES_UID") or "1000")
