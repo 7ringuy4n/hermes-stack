@@ -1,5 +1,11 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-04 06:50 +07 — zalo: weather overlay synthesizes Label:value from search
+
+- Omni `/v1/search` often returns result snippets with no `answer`; weather badge was title+timestamp only.
+- Host `_synthesize_overlay_facts` asks chat combo for compact Vietnamese Label: value lines from search notes when classify bullets / answer are empty.
+- Model-router search requests `include_answer` when the gateway supports it; classify media notes host must paint metrics when search has condition data.
+
 ## 2026-09-03 19:40 +07 — zalo: never block event loop on classify; tighten budget
 
 - Media shortcut / workflow / image-analyze / sheet follow-up use `classify_text_async` (`asyncio.to_thread`).
