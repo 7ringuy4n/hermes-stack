@@ -480,42 +480,6 @@ def media_text(req: MediaTextReq) -> dict[str, Any]:
 
 
 
-def _pillow_stub(prompt: str, dest: Path) -> None:
-    from PIL import Image, ImageDraw
-
-    im = Image.new("RGB", (768, 512), (24, 48, 72))
-    d = ImageDraw.Draw(im)
-    low = (prompt or "").lower()
-    # Simple keyword drawings so JPEG is never blank when APIs fail
-    if any(k in low for k in ("mặt trời", "mat troi", "sun", "ông trời", "ong mat")):
-        d.ellipse((280, 120, 480, 320), fill=(255, 200, 40), outline=(255, 140, 0), width=4)
-        for ang in range(0, 360, 30):
-            import math
-
-            rad = math.radians(ang)
-            x1, y1 = 380 + 110 * math.cos(rad), 220 + 110 * math.sin(rad)
-            x2, y2 = 380 + 160 * math.cos(rad), 220 + 160 * math.sin(rad)
-            d.line((x1, y1, x2, y2), fill=(255, 180, 30), width=6)
-        d.ellipse((340, 180, 370, 210), fill=(40, 40, 40))
-        d.ellipse((390, 180, 420, 210), fill=(40, 40, 40))
-        d.arc((340, 230, 420, 280), 20, 160, fill=(40, 40, 40), width=4)
-    elif any(k in low for k in ("khỉ", "khi", "monkey")):
-        d.ellipse((280, 140, 480, 340), fill=(120, 80, 40))
-        d.ellipse((300, 160, 360, 220), fill=(90, 60, 30))
-        d.ellipse((400, 160, 460, 220), fill=(90, 60, 30))
-        d.ellipse((340, 220, 370, 250), fill=(20, 20, 20))
-        d.ellipse((390, 220, 420, 250), fill=(20, 20, 20))
-    else:
-        d.rectangle((40, 40, 728, 472), outline=(200, 180, 80), width=3)
-    text = (prompt or "assistant")[:180]
-    y = 400
-    for i in range(0, min(len(text), 96), 48):
-        d.text((56, y), text[i : i + 48], fill=(240, 240, 240))
-        y += 22
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    im.save(dest, quality=88)
-
-
 def _refine_prompt_llm(prompt: str) -> tuple[str, dict[str, Any]]:
     """Wait for DeepSeek (or 9Router chat) to rewrite an image prompt. Sync."""
     meta: dict[str, Any] = {"refined": False}
