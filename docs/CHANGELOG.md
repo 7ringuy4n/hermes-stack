@@ -9,6 +9,7 @@
 
 - Host media shortcuts use classify bullets + search `answer` lines only (structural junk skip); no SERP scrape or weather JSON key maps.
 - Removed legacy Pillow `weather_sheet.py`, weather PDF icons, and domain noise lists from `office_file.py`.
+- AGENT_RULES §8: explicit ban on domain keyword maps; removed dead PDF layout-verify strings, Pillow keyword stub, diffusion alias map, OCR scene-hint list.
 
 ## 2026-09-03 07:45 +07 — core: OpenBao default secrets SoT
 

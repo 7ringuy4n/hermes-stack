@@ -61,42 +61,9 @@ def backend_available(name: str) -> bool:
     return False
 
 
-def _replace_ci(text: str, old: str, new: str) -> str:
-    """Case-insensitive substring replace without regex."""
-    if not text or not old:
-        return text
-    lower = text.lower()
-    needle = old.lower()
-    out: list[str] = []
-    i = 0
-    while True:
-        j = lower.find(needle, i)
-        if j < 0:
-            out.append(text[i:])
-            break
-        out.append(text[i:j])
-        out.append(new)
-        i = j + len(old)
-    return "".join(out)
-
-
 def _diffusion_safe_prompt(prompt: str) -> str:
-    """Map known safety-filter false-positive place aliases to official English names.
-
-    AI Horde workers censor prompts containing colloquial "Saigon" even for SFW cityscapes.
-    Classify/image-gen should already emit Ho Chi Minh City; this is a durable host guard.
-    """
-    p = (prompt or "").strip()
-    if not p:
-        return p
-    for old, new in (
-        ("sài gòn", "Ho Chi Minh City"),
-        ("sai gòn", "Ho Chi Minh City"),
-        ("sai gon", "Ho Chi Minh City"),
-        ("saigon", "Ho Chi Minh City"),
-    ):
-        p = _replace_ci(p, old, new)
-    return p
+    """Return trimmed diffusion prompt — place aliases and SFW wording belong in classify/skills."""
+    return (prompt or "").strip()
 
 
 def _looks_like_nsfw_censor_placeholder(blob: bytes) -> bool:

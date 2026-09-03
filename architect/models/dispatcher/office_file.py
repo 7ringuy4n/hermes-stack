@@ -110,19 +110,6 @@ def _skip_structural_junk(line: str) -> bool:
     return False
 
 
-def _layout_score_from_text(extracted: str) -> list[str]:
-    """Return layout problems in extracted PDF text (empty = ok)."""
-    problems: list[str] = []
-    text = extracted or ""
-    if "Nắng Mây Mưa Giông" in text or "Nhiệt Ẩm Gió UV" in text:
-        problems.append("badge_strip_clutter")
-    if "biểu tượng + hình minh họa" in text:
-        problems.append("debug_footer")
-    if not text.strip():
-        problems.append("empty_text")
-    return problems
-
-
 def _split_label_value(fact: str) -> tuple[str, str]:
     s = (fact or "").strip()
     if ": " in s:
@@ -134,36 +121,6 @@ def _split_label_value(fact: str) -> tuple[str, str]:
         if right.strip():
             return left.strip(), right.strip()
     return "", s
-
-
-def verify_styled_pdf_layout(dest: Path, body: str = "") -> list[str]:
-    """Post-render layout checks. Empty list means accept."""
-    del body
-    problems: list[str] = []
-    try:
-        size = dest.stat().st_size
-    except OSError:
-        return ["missing_file"]
-    if size < 20000:
-        problems.append("too_small")
-    # Image-based weather sheets often have no extractable text — size is the signal.
-    image_sheet = size >= 40000
-    try:
-        from pypdf import PdfReader
-
-        reader = PdfReader(str(dest))
-        if len(reader.pages) < 1:
-            problems.append("no_pages")
-        extracted = ""
-        for page in reader.pages[:1]:
-            extracted += page.extract_text() or ""
-        text_problems = _layout_score_from_text(extracted)
-        if image_sheet:
-            text_problems = [p for p in text_problems if p != "empty_text"]
-        problems.extend(text_problems)
-    except Exception:
-        pass
-    return problems
 
 
 def write_pdf_styled(dest: Path, body: str) -> Path:

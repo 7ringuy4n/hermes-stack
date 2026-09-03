@@ -332,7 +332,30 @@ Application code should handle deterministic responsibilities such as:
 
 **LLM understands; application code validates and executes.**
 
-String operations are allowed for deterministic formats and protocols.
+String operations are allowed for deterministic formats and protocols (JSON
+markers, MIME types, file extensions, HTTP status codes, classify contract
+prefixes such as `RENDER:` / `SCENE:` / `#` markdown — not user-intent NLU).
+
+### Prohibited hardcoding (host / worker Python)
+
+Do **not** add or keep in application code:
+
+-   domain keyword lists for intent or content (weather terms, city aliases,
+    SERP site names, animal/object names, “scene hint” English phrases);
+-   API-field → display-label maps (e.g. `temp_c` → localized label) — let
+    classify/Hermes emit labeled bullets;
+-   SERP/JSON “noise” filters beyond **structural** skips (empty line, URL,
+    raw `{`/`[` blob, missing file);
+-   layout or quality checks that grep for legacy UI chrome strings;
+-   `re` / regex for natural-language understanding (see also project BE rules).
+
+When content quality, facts, labels, icons, or layout copy are wrong, fix
+**classify** (`classify.json`, `skills/classify/parts/*.txt`) and Hermes skills —
+not host shortcuts with growing exception lists.
+
+**Allowed in code:** structural validation, classify JSON field gates
+(`task_type`, `RENDER:`, `output_type`), protocol drops in `gateway_noise`
+(agent status frames only — not user prose), and numeric/size thresholds.
 
 ------------------------------------------------------------------------
 
