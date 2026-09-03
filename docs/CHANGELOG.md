@@ -5,6 +5,11 @@
 - Host search→office shortcut limited to trivial literal fills; weather/design PDFs route through Hermes.
 - Dispatcher PDF renders markdown (# title, IMAGE:, fact bullets) with styled layout.
 
+## 2026-09-03 08:15 +07 — zalo/dispatcher: drop host SERP/weather NLU hardcoding
+
+- Host media shortcuts use classify bullets + search `answer` lines only (structural junk skip); no SERP scrape or weather JSON key maps.
+- Removed legacy Pillow `weather_sheet.py`, weather PDF icons, and domain noise lists from `office_file.py`.
+
 ## 2026-09-03 07:45 +07 — core: OpenBao default secrets SoT
 
 - `ENABLE_OPENBAO=active` by default; openbao compose profile independent of full Security worker.

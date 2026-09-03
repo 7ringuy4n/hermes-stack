@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import math
 import os
 import uuid
 from pathlib import Path
@@ -27,12 +26,7 @@ _KIND_EXT = {
 _FONT_CANDIDATES = ()  # legacy unused; kept for import compatibility
 _FONT_BOLD_CANDIDATES = ()
 
-# Structured markers Hermes puts in the office-file prompt (not user NLU).
-_TITLE_PREFIXES = ("TITLE:", "Title:", "title:")
-_ICON_PREFIXES = ("ICON:", "Icon:", "icon:")
-_SUBTITLE_PREFIXES = ("SUBTITLE:", "Subtitle:", "subtitle:")
-_OVERVIEW_PREFIXES = ("OVERVIEW:", "Overview:", "overview:")
-_BACKGROUND_PREFIXES = ("BACKGROUND:", "Background:", "background:")
+# Structured markers Hermes may put in legacy office prompts (markdown preferred).
 
 try:
     from pydantic import BaseModel as _PydanticBase
@@ -101,144 +95,32 @@ def _pdf_font_bold() -> str:
     return reportlab_font_name(bold=True)
 
 
-def _strip_prefix(line: str, prefixes: tuple[str, ...]) -> str | None:
-    for p in prefixes:
-        if line.startswith(p):
-            return line[len(p) :].strip()
-    return None
+def _skip_structural_junk(line: str) -> bool:
+    """Drop empty lines, URLs, and raw JSON blobs — no domain NLU."""
+    s = (line or "").strip()
+    if not s or len(s) < 2:
+        return True
+    if s.startswith(("{", "[", "'{", '"{')):
+        return True
+    if "{'" in s or '{"' in s:
+        return True
+    low = s.lower()
+    if low.startswith("http://") or low.startswith("https://"):
+        return True
+    return False
 
 
-def parse_styled_pdf_body(body: str) -> dict[str, Any]:
-    """Parse Hermes-authored TITLE/ICON/SUBTITLE/OVERVIEW/BACKGROUND markers; rest are fact lines."""
-    title = ""
-    subtitle = ""
-    icon = "sun"
-    overview = ""
-    background = ""
-    facts: list[str] = []
-
-    def _marker_at(upper: str, marker: str, start: int = 0) -> int:
-        """Index of marker not mid-token (avoids TITLE: inside SUBTITLE:)."""
-        i = start
-        while True:
-            j = upper.find(marker, i)
-            if j < 0:
-                return -1
-            if j == 0 or not upper[j - 1].isalnum():
-                return j
-            i = j + 1
-
-    for raw in (body or "").splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        upper = line.upper()
-        # Mid-line contract markers after a create-verb wrapper
-        cut = -1
-        for marker in ("BACKGROUND:", "OVERVIEW:", "SUBTITLE:", "TITLE:", "ICON:"):
-            mi = _marker_at(upper, marker)
-            if mi > 0:
-                cut = mi if cut < 0 else min(cut, mi)
-        if cut > 0:
-            line = line[cut:]
-            upper = line.upper()
-
-        t = _strip_prefix(line, _TITLE_PREFIXES)
-        if t is not None:
-            title = t
-            continue
-        s = _strip_prefix(line, _SUBTITLE_PREFIXES)
-        if s is not None:
-            subtitle = s
-            continue
-        ic = _strip_prefix(line, _ICON_PREFIXES)
-        if ic is not None:
-            icon = (ic or "sun").split()[0].lower()
-            if "|" in icon:
-                icon = icon.split("|", 1)[0].strip() or "sun"
-            continue
-        ov = _strip_prefix(line, _OVERVIEW_PREFIXES)
-        if ov is not None:
-            overview = ov
-            continue
-        bg = _strip_prefix(line, _BACKGROUND_PREFIXES)
-        if bg is not None:
-            background = bg
-            continue
-        if line.startswith(("- ", "• ", "* ")):
-            facts.append(line[2:].strip())
-        else:
-            facts.append(line)
-    if not title and facts:
-        title = facts.pop(0)
-    return {
-        "title": title or "Report",
-        "subtitle": subtitle,
-        "icon": icon or "sun",
-        "overview": overview,
-        "background": background,
-        "facts": facts,
-    }
-
-
-def _draw_weather_icon(c: Any, icon: str, cx: float, cy: float, scale: float = 1.0) -> None:
-    """Vector weather motif — no external image API / emoji font required."""
-    from reportlab.lib.colors import Color, white
-
-    kind = (icon or "sun").lower()
-    r = 28 * scale
-    if kind in {"rain", "storm", "mưa", "mua"}:
-        c.setFillColor(Color(0.45, 0.55, 0.70))
-        c.circle(cx - 12 * scale, cy, 16 * scale, fill=1, stroke=0)
-        c.circle(cx + 10 * scale, cy + 4 * scale, 18 * scale, fill=1, stroke=0)
-        c.circle(cx, cy - 2 * scale, 20 * scale, fill=1, stroke=0)
-        c.setStrokeColor(Color(0.25, 0.40, 0.75))
-        c.setLineWidth(2.5 * scale)
-        for i in range(4):
-            x = cx - 18 * scale + i * 12 * scale
-            c.line(x, cy - 22 * scale, x - 4 * scale, cy - 38 * scale)
-        if kind == "storm":
-            c.setFillColor(Color(1.0, 0.85, 0.2))
-            c.line(cx + 4 * scale, cy + 8 * scale, cx - 6 * scale, cy - 18 * scale)
-        return
-    if kind in {"cloud", "cloudy", "mây", "may", "overcast"}:
-        c.setFillColor(Color(0.75, 0.80, 0.88))
-        c.circle(cx - 14 * scale, cy, 18 * scale, fill=1, stroke=0)
-        c.circle(cx + 12 * scale, cy + 2 * scale, 20 * scale, fill=1, stroke=0)
-        c.circle(cx, cy - 4 * scale, 22 * scale, fill=1, stroke=0)
-        return
-    # default / sun / clear / nắng
-    c.setFillColor(Color(1.0, 0.78, 0.15))
-    c.circle(cx, cy, r * 0.55, fill=1, stroke=0)
-    c.setStrokeColor(Color(1.0, 0.65, 0.05))
-    c.setLineWidth(3 * scale)
-    for i in range(8):
-        ang = i * math.pi / 4
-        c.line(
-            cx + math.cos(ang) * r * 0.75,
-            cy + math.sin(ang) * r * 0.75,
-            cx + math.cos(ang) * r * 1.15,
-            cy + math.sin(ang) * r * 1.15,
-        )
-    c.setFillColor(white)
-
-
-def _wrap_text(text: str, font_name: str, size: int, max_width: float, c: Any) -> list[str]:
-    """Word-wrap for reportlab canvas (width in points)."""
-    words = (text or "").split()
-    if not words:
-        return [""]
-    lines: list[str] = []
-    cur = words[0]
-    for w in words[1:]:
-        trial = f"{cur} {w}"
-        if c.stringWidth(trial, font_name, size) <= max_width:
-            cur = trial
-        else:
-            lines.append(cur)
-            cur = w
-    lines.append(cur)
-    return lines
+def _layout_score_from_text(extracted: str) -> list[str]:
+    """Return layout problems in extracted PDF text (empty = ok)."""
+    problems: list[str] = []
+    text = extracted or ""
+    if "Nắng Mây Mưa Giông" in text or "Nhiệt Ẩm Gió UV" in text:
+        problems.append("badge_strip_clutter")
+    if "biểu tượng + hình minh họa" in text:
+        problems.append("debug_footer")
+    if not text.strip():
+        problems.append("empty_text")
+    return problems
 
 
 def _split_label_value(fact: str) -> tuple[str, str]:
@@ -252,135 +134,6 @@ def _split_label_value(fact: str) -> tuple[str, str]:
         if right.strip():
             return left.strip(), right.strip()
     return "", s
-
-
-def _hero_temp(facts: list[str]) -> str:
-    """Pick a Celsius temperature for the header (never wind bearings like 246°WSW)."""
-    labeled: list[str] = []
-    unlabeled: list[str] = []
-    for fact in facts:
-        label = ""
-        value = fact
-        if ": " in fact:
-            label, value = fact.split(": ", 1)
-        elif ":" in fact and fact.index(":") < 40:
-            label, value = fact.split(":", 1)
-        low_l = label.lower().strip()
-        target = labeled if any(
-            x in low_l for x in ("nhiệt", "temp", "feels", "cảm giác")
-        ) else unlabeled
-        for token in value.replace(",", " ").split():
-            t = token.strip().strip(".,;")
-            if not t:
-                continue
-            # Reject compass bearings (246°WSW)
-            if "°" in t or "º" in t:
-                sep = "°" if "°" in t else "º"
-                after = t.split(sep, 1)[1].upper()
-                if after and after[0].isalpha() and not after.startswith(("C", "F")):
-                    continue
-            if t.endswith(("°C", "ºC")) or "℃" in t:
-                target.append(t if "°" in t or "℃" in t else f"{t}°C")
-                continue
-            # bare number on a temperature-labeled row → append °C
-            core = t
-            if core.replace(".", "", 1).isdigit() and any(
-                x in low_l for x in ("nhiệt", "temp", "feels", "cảm giác")
-            ):
-                target.append(f"{core}°C")
-    if labeled:
-        return labeled[0]
-    if unlabeled:
-        return unlabeled[0]
-    return ""
-
-
-def _fact_icon_kind(label: str, value: str = "") -> str:
-    low = f"{label} {value}".lower()
-    if any(x in low for x in ("nhiệt", "temp", "feels", "cảm giác")):
-        return "temp"
-    if any(x in low for x in ("ẩm", "humid")):
-        return "humidity"
-    if any(x in low for x in ("gió", "wind", "hướng gió")):
-        return "wind"
-    if any(x in low for x in ("uv", "tím ngoại")):
-        return "uv"
-    if any(x in low for x in ("mưa", "rain", "precip")):
-        return "rain"
-    if any(x in low for x in ("áp suất", "pressure")):
-        return "pressure"
-    if any(x in low for x in ("địa điểm", "location", "city")):
-        return "location"
-    if any(x in low for x in ("mây", "cloud", "tình trạng", "condition")):
-        return "cloud"
-    return "sun"
-
-
-def _draw_fact_mini_icon(c: Any, kind: str, cx: float, cy: float, accent: Any) -> None:
-    from reportlab.lib.colors import Color
-
-    k = (kind or "sun").lower()
-    if k == "temp":
-        c.setFillColor(accent)
-        c.roundRect(cx - 3, cy - 8, 6, 12, 2, fill=1, stroke=0)
-        c.circle(cx, cy + 8, 5, fill=1, stroke=0)
-        return
-    if k == "humidity":
-        c.setFillColor(Color(0.25, 0.55, 0.90))
-        path = c.beginPath()
-        path.moveTo(cx, cy + 9)
-        path.curveTo(cx + 9, cy + 1, cx + 7, cy - 8, cx, cy - 10)
-        path.curveTo(cx - 7, cy - 8, cx - 9, cy + 1, cx, cy + 9)
-        c.drawPath(path, fill=1, stroke=0)
-        return
-    if k == "wind":
-        c.setStrokeColor(accent)
-        c.setLineWidth(2)
-        c.line(cx - 10, cy + 2, cx + 10, cy + 2)
-        c.line(cx - 6, cy - 5, cx + 12, cy - 5)
-        c.line(cx - 8, cy + 8, cx + 8, cy + 8)
-        return
-    if k == "uv":
-        c.setFillColor(Color(1.0, 0.75, 0.15))
-        c.circle(cx, cy, 6, fill=1, stroke=0)
-        return
-    if k == "rain":
-        c.setFillColor(Color(0.65, 0.72, 0.82))
-        c.circle(cx - 4, cy - 2, 7, fill=1, stroke=0)
-        c.circle(cx + 5, cy - 4, 8, fill=1, stroke=0)
-        c.setStrokeColor(Color(0.25, 0.45, 0.85))
-        c.setLineWidth(1.8)
-        c.line(cx - 4, cy + 6, cx - 7, cy + 14)
-        c.line(cx + 3, cy + 6, cx, cy + 14)
-        return
-    if k == "pressure":
-        c.setStrokeColor(accent)
-        c.setLineWidth(1.8)
-        c.circle(cx, cy, 8, fill=0, stroke=1)
-        c.line(cx, cy, cx + 5, cy - 4)
-        return
-    if k == "location":
-        c.setFillColor(Color(0.85, 0.25, 0.30))
-        c.circle(cx, cy - 2, 5, fill=1, stroke=0)
-        path = c.beginPath()
-        path.moveTo(cx, cy + 10)
-        path.lineTo(cx - 7, cy)
-        path.lineTo(cx + 7, cy)
-        path.close()
-        c.drawPath(path, fill=1, stroke=0)
-        return
-    if k == "cloud":
-        c.setFillColor(Color(0.72, 0.78, 0.86))
-        c.circle(cx - 5, cy, 7, fill=1, stroke=0)
-        c.circle(cx + 5, cy - 2, 8, fill=1, stroke=0)
-        return
-    _draw_weather_icon(c, "sun", cx, cy, scale=0.35)
-
-
-def _embed_weather_banner(c: Any, body: str, x: float, y: float, w: float, h: float) -> bool:
-    """Retired Pillow weather banner — styled PDF uses text/markers only."""
-    del c, body, x, y, w, h
-    return False
 
 
 def verify_styled_pdf_layout(dest: Path, body: str = "") -> list[str]:
@@ -404,11 +157,7 @@ def verify_styled_pdf_layout(dest: Path, body: str = "") -> list[str]:
         extracted = ""
         for page in reader.pages[:1]:
             extracted += page.extract_text() or ""
-        try:
-            from weather_sheet import layout_score_from_text
-        except Exception:
-            from weather_sheet import layout_score_from_text  # type: ignore
-        text_problems = layout_score_from_text(extracted)
+        text_problems = _layout_score_from_text(extracted)
         if image_sheet:
             text_problems = [p for p in text_problems if p != "empty_text"]
         problems.extend(text_problems)
@@ -455,7 +204,7 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
         if line.startswith(("- ", "• ", "* ")):
             facts.append(line[2:].strip())
             continue
-        if _pdf_line_is_noise(line):
+        if _skip_structural_junk(line):
             continue
         prose.append(line)
 
@@ -494,26 +243,16 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
         c.drawString(margin + 16, y - 48, subtitle[:64])
     y -= band_h + 24
 
-    hero_temp = _hero_temp(facts)
-    if hero_temp:
-        c.setFillColor(accent)
-        c.setFont(title_font, 32)
-        c.drawString(margin, y, hero_temp)
-        y -= 40
-
     c.setFillColor(text)
     for fact in facts[:10]:
         label, value = _split_label_value(fact)
-        if label and _fact_icon_kind(label, value) == "temp" and hero_temp:
-            continue
         if y < 96:
             c.showPage()
             y = height - margin
             c.setFillColor(text)
-        _draw_fact_mini_icon(c, _fact_icon_kind(label, value), margin + 8, y - 6, accent)
         c.setFont(title_font, 10)
         c.setFillColor(accent)
-        c.drawString(margin + 28, y, (label or "Chi tiết")[:28])
+        c.drawString(margin + 16, y, (label or "•")[:28])
         c.setFont(font, 12)
         c.setFillColor(text)
         c.drawString(margin + 160, y, (value or fact)[:70])
@@ -557,33 +296,6 @@ def _resolve_pdf_image(raw: str) -> Path | None:
     return None
 
 
-def _pdf_line_is_noise(line: str) -> bool:
-    s = (line or "").strip()
-    if not s or len(s) < 3:
-        return True
-    low = s.lower()
-    if s.startswith(("{", "[", "'{", '"{')):
-        return True
-    if " | " in s:
-        return True
-    if low.startswith("http://") or low.startswith("https://"):
-        return True
-    for bit in (
-        "dubaothoitiet",
-        "accuweather",
-        "pm2.5",
-        "pm10",
-        "tiện ích",
-        "có thể bạn quan",
-        "thư viện ảnh",
-    ):
-        if bit in low:
-            return True
-    if low.startswith("quận ") or low.startswith("quan "):
-        return True
-    return False
-
-
 def _pdf_wrap_line(c: Any, text: str, font_name: str, size: int, max_w: float) -> list[str]:
     c.setFont(font_name, size)
     words = text.split()
@@ -600,55 +312,6 @@ def _pdf_wrap_line(c: Any, text: str, font_name: str, size: int, max_w: float) -
             cur = w
     rows.append(cur)
     return rows
-
-
-def _write_pdf_styled_fallback(dest: Path, body: str) -> Path:
-    """Minimal clean card if sheet render/verify fails (no badge strip)."""
-    from reportlab.lib.colors import Color, white
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
-
-    meta = parse_styled_pdf_body(body)
-    font = _pdf_font()
-    bold = _pdf_font_bold()
-    width, height = A4
-    c = canvas.Canvas(str(dest), pagesize=A4)
-    accent = Color(0.15, 0.50, 0.85)
-    c.setFillColor(Color(0.93, 0.96, 0.99))
-    c.rect(0, 0, width, height, fill=1, stroke=0)
-    c.setFillColor(accent)
-    c.roundRect(36, height - 200, width - 72, 160, 18, fill=1, stroke=0)
-    _draw_weather_icon(c, meta["icon"], width - 110, height - 120, scale=1.3)
-    title_font = bold if bold != "Helvetica" else font
-    c.setFillColor(white)
-    c.setFont(title_font, 18)
-    c.drawString(56, height - 80, meta["title"][:48])
-    c.setFont(font, 11)
-    c.drawString(56, height - 105, (meta["subtitle"] or "Cập nhật trực tiếp")[:60])
-    hero = _hero_temp(meta["facts"] or [])
-    if hero:
-        c.setFont(title_font, 36)
-        c.drawString(56, height - 160, hero)
-    y = height - 250
-    c.setFillColor(Color(0.12, 0.18, 0.28))
-    for fact in (meta["facts"] or [])[:8]:
-        label, value = _split_label_value(fact)
-        if label and _fact_icon_kind(label, value) == "temp" and hero:
-            continue
-        c.setFont(title_font, 10)
-        c.setFillColor(accent)
-        c.drawString(56, y, (label or "Chi tiết")[:28])
-        c.setFillColor(Color(0.12, 0.18, 0.28))
-        c.setFont(font, 12)
-        c.drawString(200, y, (value or fact)[:70])
-        y -= 28
-        if y < 72:
-            break
-    c.setFont(font, 8)
-    c.setFillColor(Color(0.45, 0.52, 0.60))
-    c.drawString(56, 40, "Bản tin thời tiết")
-    c.save()
-    return dest
 
 
 def write_office(dest: Path, ext: str, body: str) -> Path:
