@@ -5,6 +5,12 @@
 - Host search→office shortcut limited to trivial literal fills; weather/design PDFs route through Hermes.
 - Dispatcher PDF renders markdown (# title, IMAGE:, fact bullets) with styled layout.
 
+## 2026-09-03 08:45 +07 — file-gen: visual PDF hero layout + city IMAGE required
+
+- Dispatcher `write_pdf_styled`: full-bleed hero `IMAGE:`, accent title band, two-column fact cards; skip markdown table separators.
+- Classify/file-gen: attractive city PDF uses dispatcher `POST /v1/scenic-still` (Omni keys stay on the worker); never native image_generation / credential chatter.
+- Host trivial-office gate no longer phrase-scans topic keywords (structural + `process_original_message` only).
+
 ## 2026-09-03 08:15 +07 — zalo/dispatcher: drop host SERP/weather NLU hardcoding
 
 - Host media shortcuts use classify bullets + search `answer` lines only (structural junk skip); no SERP scrape or weather JSON key maps.

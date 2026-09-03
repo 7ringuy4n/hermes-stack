@@ -7,6 +7,7 @@ never competes with media work here. Heavy endpoints stay sync (threadpool);
 from __future__ import annotations
 
 import itertools
+import logging
 import os
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ from image_backends import image_backends
 from video_summary import health_fields, omni_refuse_message, policy_block_response, register_video_summary
 
 app = FastAPI(title="assistant dispatcher", version="1.1.0")
+log = logging.getLogger("dispatcher")
 
 SESSION_URL = os.environ.get("SESSION_URL", "http://session:8107").rstrip("/")
 N9_UPSTREAM = os.environ.get("OPENAI_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
@@ -899,6 +901,46 @@ def text_poster_generate(req: ImageReq) -> dict[str, Any]:
     """Pillow exact-text poster (not Omni diffusion)."""
     req.mode = "text-poster"
     return image_generate(req)
+
+
+@app.post("/v1/scenic-still")
+def scenic_still(req: ImageReq) -> dict[str, Any]:
+    """Omni combo still for Hermes file-gen hero images (dispatcher holds the API key)."""
+    from image_backends import generate_image_bytes
+
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(400, _msg("prompt_required", "A prompt is required."))
+    name = (req.filename or f"scene-{uuid.uuid4().hex[:10]}.jpg").strip()
+    if not name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+        name += ".jpg"
+    out_dir = MEDIA_DIR / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dest = out_dir / Path(name).name
+    try:
+        blob, backend, _errors = generate_image_bytes(
+            prompt, size=(req.size or "1280x720").strip() or "1280x720"
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning("scenic_still failed: %s: %s", type(e).__name__, e)
+        raise HTTPException(
+            502, {"error": "scenic_still_failed", "detail": type(e).__name__}
+        ) from e
+    dest.write_bytes(blob)
+    try:
+        uid = int(os.environ.get("HERMES_UID") or "1000")
+        gid = int(os.environ.get("HERMES_GID") or str(uid))
+        os.chown(out_dir, uid, gid)
+        os.chown(dest, uid, gid)
+    except OSError:
+        pass
+    return {
+        "ok": True,
+        "file": dest.name,
+        "path": str(dest),
+        "hermes_path": f"/opt/data/media/out/{dest.name}",
+        "backend": backend,
+    }
 
 
 @app.post("/v1/overlay")

@@ -96,7 +96,7 @@ def _pdf_font_bold() -> str:
 
 
 def _skip_structural_junk(line: str) -> bool:
-    """Drop empty lines, URLs, and raw JSON blobs — no domain NLU."""
+    """Drop empty lines, URLs, JSON blobs, and markdown table chrome — no domain NLU."""
     s = (line or "").strip()
     if not s or len(s) < 2:
         return True
@@ -107,6 +107,17 @@ def _skip_structural_junk(line: str) -> bool:
     low = s.lower()
     if low.startswith("http://") or low.startswith("https://"):
         return True
+    # Markdown table separator / empty pipe rows: |---|---|
+    if s.startswith("|"):
+        core = (
+            s.replace("|", "")
+            .replace("-", "")
+            .replace(":", "")
+            .replace(" ", "")
+            .replace(".", "")
+        )
+        if not core:
+            return True
     return False
 
 
@@ -123,8 +134,21 @@ def _split_label_value(fact: str) -> tuple[str, str]:
     return "", s
 
 
+def _hero_metric(facts: list[str]) -> str:
+    """First labeled value with ° or % — keep the short token before '('."""
+    for fact in facts:
+        _label, value = _split_label_value(fact)
+        src = (value or fact).strip()
+        if "°" not in src and "%" not in src:
+            continue
+        token = src.split("(", 1)[0].strip()
+        if token:
+            return token[:18]
+    return ""
+
+
 def write_pdf_styled(dest: Path, body: str) -> Path:
-    """Render LLM markdown body: # title, ## subtitle, IMAGE:, fact bullets, prose."""
+    """Render LLM markdown: full-bleed hero IMAGE:, title band, 2-col fact cards, prose."""
     from reportlab.lib.colors import Color, white
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
@@ -133,10 +157,13 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
     bold = _pdf_font_bold()
     title_font = bold if bold != "Helvetica" else font
     width, height = A4
-    margin = 48
-    accent = Color(0.12, 0.45, 0.82)
-    text = Color(0.12, 0.18, 0.28)
-    muted = Color(0.45, 0.52, 0.60)
+    margin = 40
+    accent = Color(0.10, 0.42, 0.78)
+    accent_soft = Color(0.90, 0.95, 0.99)
+    card = Color(0.97, 0.98, 1.0)
+    text = Color(0.10, 0.16, 0.26)
+    muted = Color(0.42, 0.48, 0.56)
+    page_bg = Color(0.94, 0.96, 0.99)
 
     hero_path: Path | None = None
     title = ""
@@ -152,14 +179,24 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
         if low.startswith("image:"):
             hero_path = _resolve_pdf_image(line.split(":", 1)[1].strip())
             continue
-        if line.startswith("# "):
-            title = line[2:].strip()
-            continue
-        if line.startswith("## "):
-            subtitle = line[3:].strip()
+        if line.startswith("#"):
+            hashes = 0
+            while hashes < len(line) and line[hashes] == "#":
+                hashes += 1
+            rest = line[hashes:].strip()
+            if hashes == 1 and rest:
+                title = rest
+                continue
+            if hashes == 2 and rest:
+                subtitle = rest
+                continue
+            if rest:
+                prose.append(rest)
             continue
         if line.startswith(("- ", "• ", "* ")):
-            facts.append(line[2:].strip())
+            item = line[2:].strip()
+            if item and not _skip_structural_junk(item):
+                facts.append(item)
             continue
         if _skip_structural_junk(line):
             continue
@@ -171,59 +208,106 @@ def write_pdf_styled(dest: Path, body: str) -> Path:
         title = "Báo cáo"
 
     c = canvas.Canvas(str(dest), pagesize=A4)
-    y = height - margin
+    c.setFillColor(page_bg)
+    c.rect(0, 0, width, height, fill=1, stroke=0)
+    y = height
 
+    hero_ok = False
     if hero_path and hero_path.is_file():
-        img_h = 200
+        img_h = 260
         try:
             c.drawImage(
                 str(hero_path),
-                margin,
+                0,
                 y - img_h,
-                width=width - 2 * margin,
+                width=width,
                 height=img_h,
                 preserveAspectRatio=True,
                 anchor="n",
             )
-            y -= img_h + 16
+            # Soft fade into page at bottom of hero
+            c.setFillColor(page_bg)
+            c.rect(0, y - img_h, width, 28, fill=1, stroke=0)
+            y -= img_h + 8
+            hero_ok = True
         except Exception as e:  # noqa: BLE001
             log.warning("pdf hero image skipped: %s", type(e).__name__)
+            y = height - margin
 
-    band_h = 72
+    if not hero_ok:
+        y = height - margin
+
+    band_h = 78 if subtitle else 58
     c.setFillColor(accent)
-    c.roundRect(margin, y - band_h, width - 2 * margin, band_h, 12, fill=1, stroke=0)
+    c.roundRect(margin, y - band_h, width - 2 * margin, band_h, 14, fill=1, stroke=0)
     c.setFillColor(white)
-    c.setFont(title_font, 18)
-    c.drawString(margin + 16, y - 28, title[:56])
+    c.setFont(title_font, 20)
+    c.drawString(margin + 18, y - 28, title[:52])
     if subtitle:
         c.setFont(font, 11)
-        c.drawString(margin + 16, y - 48, subtitle[:64])
-    y -= band_h + 24
+        c.drawString(margin + 18, y - 50, subtitle[:64])
+    y -= band_h + 18
 
-    c.setFillColor(text)
+    hero_val = _hero_metric(facts)
+    if hero_val:
+        c.setFillColor(accent)
+        c.setFont(title_font, 36)
+        c.drawString(margin + 4, y - 8, hero_val[:20])
+        y -= 48
+
+    # Two-column metric cards
+    col_gap = 12
+    col_w = (width - 2 * margin - col_gap) / 2
+    card_h = 64
+    col = 0
+    row_y = y
     for fact in facts[:10]:
         label, value = _split_label_value(fact)
-        if y < 96:
+        if hero_val and value and value.split("(", 1)[0].strip() == hero_val.strip():
+            continue
+        if row_y - card_h < 72:
             c.showPage()
-            y = height - margin
-            c.setFillColor(text)
-        c.setFont(title_font, 10)
+            c.setFillColor(page_bg)
+            c.rect(0, 0, width, height, fill=1, stroke=0)
+            row_y = height - margin
+            col = 0
+        x0 = margin + col * (col_w + col_gap)
+        c.setFillColor(card)
+        c.setStrokeColor(accent_soft)
+        c.setLineWidth(1)
+        c.roundRect(x0, row_y - card_h, col_w, card_h, 10, fill=1, stroke=1)
         c.setFillColor(accent)
-        c.drawString(margin + 16, y, (label or "•")[:28])
-        c.setFont(font, 12)
+        c.setFont(title_font, 9)
+        c.drawString(x0 + 12, row_y - 16, (label or "•")[:28])
         c.setFillColor(text)
-        c.drawString(margin + 160, y, (value or fact)[:70])
-        y -= 26
+        wrap_src = (value or fact).strip()
+        rows = _pdf_wrap_line(c, wrap_src, font, 11, col_w - 24)
+        ty = row_y - 34
+        for row in rows[:2]:
+            c.setFont(font, 11)
+            c.drawString(x0 + 12, ty, row[:48])
+            ty -= 14
+        if col == 0:
+            col = 1
+        else:
+            col = 0
+            row_y -= card_h + 10
+    if col == 1:
+        row_y -= card_h + 10
+    y = row_y - 8
 
     for para in prose[:6]:
         if y < 72:
             c.showPage()
+            c.setFillColor(page_bg)
+            c.rect(0, 0, width, height, fill=1, stroke=0)
             y = height - margin
         c.setFont(font, 11)
         c.setFillColor(muted)
         for row in _pdf_wrap_line(c, para, font, 11, width - 2 * margin):
             c.drawString(margin, y, row[:110])
             y -= 14
+        y -= 6
 
     c.save()
     return dest
