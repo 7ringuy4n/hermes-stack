@@ -1119,6 +1119,17 @@ async def classify_with_llm(
                     flush=True,
                 )
                 last_err = "classify_llm_failed"
+                # Timeout / connect stall: skip this combo briefly and try chat fallback.
+                if isinstance(
+                    exc,
+                    (
+                        httpx.TimeoutException,
+                        httpx.ConnectError,
+                        httpx.RemoteProtocolError,
+                    ),
+                ):
+                    _mark_classify_model_bad(model_id)
+                    break
                 continue
             parsed = _json_object(content) or _loads_first(content)
             if not parsed:

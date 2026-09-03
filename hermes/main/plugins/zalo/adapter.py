@@ -1611,7 +1611,7 @@ class ZaloAdapter(BasePlatformAdapter):
             return False
         try:
             from .classify_client import (
-                classify_text,
+                classify_text_async,
                 plan_allows_office_shortcut,
                 plan_allows_poster_shortcut,
                 plan_allows_scene_image,
@@ -1638,7 +1638,7 @@ class ZaloAdapter(BasePlatformAdapter):
             )
         except ImportError:
             from classify_client import (  # type: ignore
-                classify_text,
+                classify_text_async,
                 plan_allows_office_shortcut,
                 plan_allows_poster_shortcut,
                 plan_allows_scene_image,
@@ -1667,8 +1667,13 @@ class ZaloAdapter(BasePlatformAdapter):
         shortcut_gate = ""
         try:
             attach_hint = "image" if has_image_attachment else "none"
-            early_plan = plan if isinstance(plan, dict) else classify_text(
-                shortcut_user_text, attachments=attach_hint
+            # Never block the asyncio loop on Omni classify (watchdog exit 75).
+            early_plan = (
+                plan
+                if isinstance(plan, dict)
+                else await classify_text_async(
+                    shortcut_user_text, attachments=attach_hint
+                )
             )
             if has_image_attachment and plan_is_image_analyze_chat(early_plan, has_image=True):
                 return False
@@ -1681,7 +1686,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 inner = str(ins[0] or "").strip()
             work = inner or shortcut_user_text
             if plan_allows_office_shortcut(early_plan) and not plan_skips_media_shortcut(early_plan):
-                shortcut = run_office_create(
+                shortcut = await asyncio.to_thread(
+                    run_office_create,
                     work,
                     str(thread_id),
                     str(thread_type),
@@ -1691,7 +1697,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 if shortcut_ok(shortcut):
                     self._as_flow("office_shortcut", thread_id=thread_id, file=shortcut.get("file"))
             elif plan_allows_search_then_office(early_plan):
-                shortcut = run_search_then_office(
+                shortcut = await asyncio.to_thread(
+                    run_search_then_office,
                     shortcut_user_text,
                     early_plan,
                     str(thread_id),
@@ -1774,7 +1781,8 @@ class ZaloAdapter(BasePlatformAdapter):
                         file=shortcut.get("file"),
                     )
             elif plan_allows_poster_shortcut(early_plan):
-                shortcut = run_text_poster(
+                shortcut = await asyncio.to_thread(
+                    run_text_poster,
                     work,
                     str(thread_id),
                     str(thread_type),
@@ -1974,21 +1982,21 @@ class ZaloAdapter(BasePlatformAdapter):
             return False
         try:
             from .classify_client import (
-                classify_text,
+                classify_text_async,
                 coerce_image_analyze_plan,
                 plan_is_image_analyze_chat,
                 strip_prior_for_classify,
             )
         except ImportError:
             from classify_client import (  # type: ignore
-                classify_text,
+                classify_text_async,
                 coerce_image_analyze_plan,
                 plan_is_image_analyze_chat,
                 strip_prior_for_classify,
             )
         current = strip_prior_for_classify(text) or str(text or "").strip()
         if not isinstance(plan, dict):
-            plan = classify_text(
+            plan = await classify_text_async(
                 current,
                 thread=("group" if str(thread_type or "").lower() == "group" else "dm"),
                 attachments="image",
@@ -2095,7 +2103,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_enabled,
             )
             from .classify_client import (
-                classify_text,
+                classify_text_async,
                 plan_compound_sequential,
                 plan_is_async,
                 plan_is_host_direct_reply,
@@ -2118,7 +2126,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_enabled,
             )
             from classify_client import (  # type: ignore
-                classify_text,
+                classify_text_async,
                 plan_compound_sequential,
                 plan_is_async,
                 plan_is_host_direct_reply,
@@ -2137,7 +2145,7 @@ class ZaloAdapter(BasePlatformAdapter):
         current = strip_prior_for_classify(text) or str(text or "").strip()
         attach_hint = "image" if has_image_attachment else "none"
         if not isinstance(plan, dict):
-            plan = classify_text(
+            plan = await classify_text_async(
                 text or current,
                 thread=("group" if str(thread_type or "").lower() == "group" else "dm"),
                 attachments=attach_hint,
@@ -4775,7 +4783,9 @@ class ZaloAdapter(BasePlatformAdapter):
                 if attach_kind not in {"archive", "office"}:
                     body = self._as_short_secret_ask_body(excerpt or "")
                     refuse_body = (
-                        self._as_classify_refuse_body(body) if body else ""
+                        await asyncio.to_thread(self._as_classify_refuse_body, body)
+                        if body
+                        else ""
                     )
                     if body and (
                         self._as_secret_probe_text(body) or refuse_body
@@ -4903,14 +4913,16 @@ class ZaloAdapter(BasePlatformAdapter):
                     "Workbook sheets:" in extract or "## Sheet" in extract
                 ):
                     try:
-                        from .classify_client import classify_text, plan_sheet_ref
+                        from .classify_client import classify_text_async, plan_sheet_ref
                     except ImportError:
                         from classify_client import (  # type: ignore
-                            classify_text,
+                            classify_text_async,
                             plan_sheet_ref,
                         )
                     # Classify the user line only (not the injected extract) — save tokens.
-                    sheet_plan = classify_text(user_text_before_attach or bare_text)
+                    sheet_plan = await classify_text_async(
+                        user_text_before_attach or bare_text
+                    )
                     ref = plan_sheet_ref(sheet_plan)
                     if not ref:
                         ins = sheet_plan.get("instructions") or []
@@ -6440,7 +6452,11 @@ class ZaloAdapter(BasePlatformAdapter):
         # Secret refuse only on an explicit user ask. Ignore Zalo fileExt wire JSON
         # and filename-alone (blank/docs false positives). Prior learn-skip does not abort.
         ask_blob = self._as_user_secret_ask_blob(user_text, media if isinstance(media, dict) else {})
-        refuse_body = self._as_classify_refuse_body(ask_blob) if ask_blob else ""
+        refuse_body = (
+            await asyncio.to_thread(self._as_classify_refuse_body, ask_blob)
+            if ask_blob
+            else ""
+        )
         if ask_blob and (
             self._as_secret_probe_text(ask_blob) or refuse_body
         ):

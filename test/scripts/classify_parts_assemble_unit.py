@@ -31,6 +31,10 @@ def main() -> int:
     assert "schedule_resolution" in system
     assert "schedule_request_received_at" in system
     assert env.get("parts") == ["core", "schedule", "media", "delivery", "schema"]
+    assert int(env.get("timeout_s") or 0) <= 45, env.get("timeout_s")
+    assert int(env.get("retry") or 99) <= 1, env.get("retry")
+    media = (skill / "parts" / "media.txt").read_text(encoding="utf-8")
+    assert "OMIT the bullet lines entirely" in media or "omit bullets entirely" in media
     tmpl = str(env.get("user_template") or "")
     assert "{local_now}" in tmpl, tmpl
     assert str(CFG_PATH).replace("\\", "/").endswith("skills/classify/classify.json"), CFG_PATH
