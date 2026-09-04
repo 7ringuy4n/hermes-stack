@@ -18,7 +18,6 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     cleaned = clean_overlay_lines(
         [
-            "SAFE-FOR-WORK",
             "Nhiệt độ: <value after search>",
             "SCENE: Ho Chi Minh City",
             "Nhiệt độ: 29°C",

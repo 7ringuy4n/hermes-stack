@@ -1,0 +1,19 @@
+{
+  "scene_suffix": "Create a cohesive, high-quality image that follows the requested subject, mood, viewpoint, medium, and visual style without replacing them with a fixed house style.",
+  "composition_scene_suffix": "Reserve calm negative space for a separate information layer. Do not render readable text, letters, digits, interface panels, captions, labels, logos, or watermarks into the generated pixels.",
+  "composition_system": "You are a visual information designer. Convert the grounded source material into one concise, adaptable image-overlay plan. Follow the requested overlay language exactly; otherwise use English. Select only facts supported by the source material. Choose a title, a small set of facts, their emphasis, and a visual treatment that suits the subject and scene instead of applying a topic-specific template. Typography must complement the background and remain legible; Inter SemiBold, Inter Regular, and Inter Medium are references, not mandatory choices. Prefer auto placement and theme so the renderer can inspect the generated pixels, unless the request or scene establishes a clear choice. Return one JSON object only with keys title, facts, design, and include_timestamp. facts is an array of objects with label, value, and emphasis where emphasis is primary, important, or normal. design has placement, theme, alignment, font_family, title_weight, body_weight, important_weight, accent, and density. Allowed values: placement=auto|top-left|top-right|bottom-left|bottom-right|bottom-bar; theme=auto|light|dark; alignment=left|center|right; font_family=auto|inter|noto-sans|serif|mono; weights=regular|medium|semibold|bold; accent=auto|cool|warm|neutral|vibrant; density=compact|comfortable. Never invent values, never include a timestamp fact, and never add commentary or markdown.",
+  "composition_user_template": "Request:\n{query}\n\nClassifier brief:\n{instruction}\n\nGrounded source material:\n{notes}",
+  "fallback_title": "Highlights",
+  "timestamp_label": "Updated",
+  "default_design": {
+    "placement": "auto",
+    "theme": "auto",
+    "alignment": "left",
+    "font_family": "auto",
+    "title_weight": "semibold",
+    "body_weight": "regular",
+    "important_weight": "medium",
+    "accent": "auto",
+    "density": "comfortable"
+  }
+}

@@ -1615,9 +1615,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_allows_office_shortcut,
                 plan_allows_poster_shortcut,
                 plan_allows_scene_image,
-                plan_allows_search_then_info_card,
+                plan_allows_search_then_composed_image,
                 plan_allows_search_then_office,
-                plan_allows_search_then_live_scene,
                 plan_is_image_analyze_chat,
                 plan_is_media_policy_refuse,
                 plan_media_shortcut_gate,
@@ -1630,9 +1629,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 media_fail_line,
                 run_office_create,
                 run_scene_image,
-                run_search_then_info_card,
+                run_search_then_composed_image,
                 run_search_then_office,
-                run_search_then_live_scene,
                 run_text_poster,
                 run_video_policy_refuse,
                 shortcut_ok,
@@ -1644,9 +1642,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_allows_office_shortcut,
                 plan_allows_poster_shortcut,
                 plan_allows_scene_image,
-                plan_allows_search_then_info_card,
+                plan_allows_search_then_composed_image,
                 plan_allows_search_then_office,
-                plan_allows_search_then_live_scene,
                 plan_is_image_analyze_chat,
                 plan_is_media_policy_refuse,
                 plan_media_shortcut_gate,
@@ -1659,9 +1656,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 media_fail_line,
                 run_office_create,
                 run_scene_image,
-                run_search_then_info_card,
+                run_search_then_composed_image,
                 run_search_then_office,
-                run_search_then_live_scene,
                 run_text_poster,
                 run_video_policy_refuse,
                 shortcut_ok,
@@ -1729,7 +1725,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         thread_id=thread_id,
                         file=shortcut.get("file"),
                     )
-            elif plan_allows_search_then_live_scene(early_plan):
+            elif plan_allows_search_then_composed_image(early_plan):
                 try:
                     self._as_autosend_remember_turn(
                         str(thread_id),
@@ -1738,7 +1734,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
                 shortcut = await asyncio.to_thread(
-                    run_search_then_live_scene,
+                    run_search_then_composed_image,
                     shortcut_user_text,
                     early_plan,
                     str(thread_id),
@@ -1747,29 +1743,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
                 if shortcut_ok(shortcut):
                     self._as_flow(
-                        "search_live_scene_shortcut",
-                        thread_id=thread_id,
-                        file=shortcut.get("file"),
-                    )
-            elif plan_allows_search_then_info_card(early_plan):
-                try:
-                    self._as_autosend_remember_turn(
-                        str(thread_id),
-                        "group" if str(thread_type).lower() in {"group", "g"} else "user",
-                    )
-                except Exception:
-                    pass
-                shortcut = await asyncio.to_thread(
-                    run_search_then_info_card,
-                    shortcut_user_text,
-                    early_plan,
-                    str(thread_id),
-                    str(thread_type),
-                    classified=True,
-                )
-                if shortcut_ok(shortcut):
-                    self._as_flow(
-                        "search_info_card_shortcut",
+                        "search_composed_image_shortcut",
                         thread_id=thread_id,
                         file=shortcut.get("file"),
                     )
