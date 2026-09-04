@@ -1,3 +1,9 @@
+## 2026-09-04 11:50 +07 — labs: §15 units aligned; greeting + visual weather inject
+
+- Case-index units match `active`/`inactive` defaults, classify-owned secret-probe markers, and multi-clock `tasks[]` fan-out.
+- `run_case_index_lab.py` lists newer units/VPS labs (OpenBao, refuse, archive, remaining suite, visual weather PDF).
+- Visual weather PDF lab inject uses remote urllib (sanitize was redacting `127.0.0.1` and breaking curl).
+
 ## 2026-09-04 11:30 +07 — router: abandon primary on Playwright 502; archive lab; office shell
 
 - Model-router: Cloudflare Playground / Playwright session failures abandon remaining primary combo rotates and jump to failover model ids (do not skip all Omni; brief backoff).

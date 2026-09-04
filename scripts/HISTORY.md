@@ -1,3 +1,17 @@
+## 2026-09-04 11:50 +07 — §15 unit align; greeting PASS; visual weather inject fix
+
+### Symptom
+Offline case-index units failed on legacy `1`/`0` defaults and empty secret-probe markers; visual weather PDF lab curl failed after sanitize redacted loopback IP.
+
+### Root cause
+Product moved to `active`/`inactive` and classify-owned soft secret probes; lab sanitize strips IPs from inject URLs.
+
+### Fix
+Update units/fixtures; visual weather inject via remote urllib. Omni combo preflight + Tn greeting PASS on VPS.
+
+### Prevent recurrence
+`test/scripts/run_case_index_lab.py` includes newer scripts; do not sanitize live inject URLs.
+
 ## 2026-09-04 11:30 +07 — Playwright primary abandon; archive lab; office shell
 
 ### Symptom
