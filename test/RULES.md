@@ -533,6 +533,8 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/openbao_kv_lab.py` | 43 OpenBao store/update/scrub/load |
 | `test/scripts/zalo_tn_youtube_refuse_inject.py` | YouTube URL refuse (no image-gen) |
 | `test/scripts/embedding_compact_lab.py` | embedding combo + memory compact |
+| `test/scripts/zalo_tn_remaining_suite_lab.py` | image-gen / vision / docs / search / schedule slice |
+| `test/scripts/env_obsolete_cleanup_lab.py` | VPS `.env` vs `.env.example` obsolete cleanup |
 
 ## Production failure gap cases (40–74)
 
