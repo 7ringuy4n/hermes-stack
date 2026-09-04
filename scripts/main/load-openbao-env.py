@@ -14,7 +14,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from openbao_common import COMPOSE_HOST_KEYS, OPENBAO_SECRET_PATH
+from openbao_common import COMPOSE_HOST_KEYS, OBSOLETE_ENV_KEYS, OPENBAO_SECRET_PATH
 
 ROOT = Path(os.environ.get("STACK_ROOT") or Path(__file__).resolve().parents[2])
 ENV_PATH = ROOT / ".env"
@@ -179,7 +179,33 @@ def persist_root_token(token: str) -> None:
         pass
 
 
+def _cleanup_obsolete_host_env() -> None:
+    """Drop retired KEY= lines before refill (idempotent)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "cleanup_obsolete_env",
+        Path(__file__).resolve().parent / "cleanup-obsolete-env.py",
+    )
+    if not spec or not spec.loader:
+        return
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for p in (ENV_PATH, DATA_DIR / ".env"):
+        gone = mod.remove_obsolete_keys(p, OBSOLETE_ENV_KEYS)
+        if gone:
+            print(
+                f"OK: removed {len(gone)} obsolete key(s) from {p}: "
+                f"{', '.join(sorted(set(gone)))}",
+                flush=True,
+            )
+
+
 def main() -> int:
+    try:
+        _cleanup_obsolete_host_env()
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN: obsolete env cleanup skipped: {e}", file=sys.stderr)
     env = load_dotenv(ENV_PATH)
     token = (os.environ.get("OPENBAO_DEV_ROOT_TOKEN") or env.get("OPENBAO_DEV_ROOT_TOKEN") or "").strip()
     if not token or token.startswith("CHANGE_ME"):
@@ -207,7 +233,12 @@ def main() -> int:
         print(f"ERROR: empty KV at {SECRET_PATH} — run first-setup-openbao first", file=sys.stderr)
         return 1
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    lines = [f"{k}={v}" for k, v in sorted(data.items()) if str(v).strip()]
+    skip = {k.casefold() for k in OBSOLETE_ENV_KEYS}
+    lines = [
+        f"{k}={v}"
+        for k, v in sorted(data.items())
+        if str(v).strip() and str(k).strip().casefold() not in skip
+    ]
     EXPORT_PATH.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
     try:
         os.chmod(EXPORT_PATH, 0o600)
