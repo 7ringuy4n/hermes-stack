@@ -488,6 +488,7 @@ When re-testing a live High/Zalo lab:
 | Omni rotate + OCR never silent | `cases/37-omni-rotate-ocr-noreply.md` |
 | Omni combo preflight (hermes + classifier filled) | `cases/38-omni-combo-preflight.md` |
 | Zalo Tn visual weather PDF (hero + clean facts) | `cases/39-zalo-tn-visual-weather-pdf.md` |
+| OpenBao KV store / scrub / load fill | `cases/43-openbao-kv-scrub.md` |
 
 **Unit scripts (no VPS, run in small batches):**
 
@@ -511,6 +512,8 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/omni_rotate_noreply_unit.py` | 37 (Omni rotate free models; OCR image always acks) |
 | `test/scripts/zalo_workflow_parallel_unit.py` | Zalo workflow parallel default |
 | `test/scripts/soul_deception_unit.py` | SOUL must not trip deception_hide |
+| `test/scripts/openbao_common_unit.py` | 43 OpenBao key lists |
+| `test/scripts/media_refuse_unit.py` | video_gen refuse never scene_image |
 
 **Lab scripts (SSH, one case per invocation — AGENT_RULES §17 / §18: explicit permission required):**
 
@@ -527,6 +530,9 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/defaults_routers_lab.py` | 21 |
 | `test/scripts/zalo_tn_history_regression.py` | HISTORY no-reply / PDF / schedule gaps |
 | `test/scripts/run_case_index_lab.py` | Full §15 batch (units + VPS scripts) |
+| `test/scripts/openbao_kv_lab.py` | 43 OpenBao store/update/scrub/load |
+| `test/scripts/zalo_tn_youtube_refuse_inject.py` | YouTube URL refuse (no image-gen) |
+| `test/scripts/embedding_compact_lab.py` | embedding combo + memory compact |
 
 ## Production failure gap cases (40–74)
 

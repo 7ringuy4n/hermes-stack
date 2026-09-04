@@ -1619,6 +1619,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_allows_search_then_office,
                 plan_allows_search_then_weather_scene,
                 plan_is_image_analyze_chat,
+                plan_is_media_policy_refuse,
                 plan_media_shortcut_gate,
                 plan_output_type,
                 plan_search_then_office_output,
@@ -1633,6 +1634,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 run_search_then_office,
                 run_search_then_weather_scene,
                 run_text_poster,
+                run_video_policy_refuse,
                 shortcut_ok,
                 shortcut_was_consumed,
             )
@@ -1646,6 +1648,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_allows_search_then_office,
                 plan_allows_search_then_weather_scene,
                 plan_is_image_analyze_chat,
+                plan_is_media_policy_refuse,
                 plan_media_shortcut_gate,
                 plan_output_type,
                 plan_search_then_office_output,
@@ -1660,6 +1663,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 run_search_then_office,
                 run_search_then_weather_scene,
                 run_text_poster,
+                run_video_policy_refuse,
                 shortcut_ok,
                 shortcut_was_consumed,
             )
@@ -1685,7 +1689,18 @@ class ZaloAdapter(BasePlatformAdapter):
             if isinstance(ins, list) and ins:
                 inner = str(ins[0] or "").strip()
             work = inner or shortcut_user_text
-            if plan_allows_office_shortcut(early_plan) and not plan_skips_media_shortcut(early_plan):
+            if plan_is_media_policy_refuse(early_plan):
+                shortcut = await asyncio.to_thread(
+                    run_video_policy_refuse,
+                    shortcut_user_text,
+                    early_plan,
+                    str(thread_id),
+                    str(thread_type),
+                    classified=True,
+                )
+                if shortcut_ok(shortcut):
+                    self._as_flow("video_policy_refuse", thread_id=thread_id)
+            elif plan_allows_office_shortcut(early_plan) and not plan_skips_media_shortcut(early_plan):
                 shortcut = await asyncio.to_thread(
                     run_office_create,
                     work,
@@ -1809,6 +1824,41 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
             except Exception:
                 pass
+            refuse_text = ""
+            try:
+                if str((shortcut or {}).get("kind") or "") == "text_refuse":
+                    refuse_text = str((shortcut or {}).get("text") or "").strip()
+            except Exception:
+                refuse_text = ""
+            if refuse_text:
+                try:
+                    await self._as_gate_announce(
+                        str(thread_id),
+                        str(thread_type),
+                        refuse_text,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Zalo: video-policy refuse send failed: %s",
+                        type(e).__name__,
+                    )
+                try:
+                    from .session_memory import append_turn
+                except ImportError:
+                    from session_memory import append_turn  # type: ignore
+                try:
+                    append_turn(str(thread_id), str(thread_type), bare, refuse_text)
+                except Exception:
+                    pass
+                try:
+                    self._as_inflight_done(str(thread_id), {})
+                except Exception:
+                    pass
+                try:
+                    self._as_queue_kick(str(thread_id))
+                except Exception:
+                    pass
+                return True
             image_delivered = False
             try:
                 img_path = str((shortcut or {}).get("file") or (shortcut or {}).get("path") or "")
@@ -1859,6 +1909,11 @@ class ZaloAdapter(BasePlatformAdapter):
             return True
         if shortcut_gate or shortcut_was_consumed(shortcut):
             fail_line = media_fail_line()
+            if str(shortcut_gate) == "refuse":
+                fail_line = (
+                    "This stack does not download or transcribe video/music links. "
+                    "Use the native app, or ask for a still image / office file instead."
+                )
             try:
                 await self._as_gate_announce(
                     str(thread_id),
