@@ -169,11 +169,16 @@ def main() -> int:
     adapter_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(
         encoding="utf-8"
     )
-    assert (
-        "(plan_media_shortcut_gate(plan) or plan_is_search_then_image_turn(plan)) "
-        "and not schedule_fire"
-    ) not in adapter_source
-    assert "scheduled images fall" in adapter_source
+    assert "and not schedule_fire" not in "\n".join(
+        line
+        for line in adapter_source.splitlines()
+        if "plan_media_shortcut_gate(plan)" in line
+        or "plan_is_search_then_image_turn(plan)" in line
+    )
+    assert adapter_source.count(
+        ') and (schedule_fire or plan.get("task_hint") != "schedule")'
+    ) == 2
+    assert "creation plan must continue" in adapter_source
     print("media_shortcut_gate_unit OK")
     return 0
 
