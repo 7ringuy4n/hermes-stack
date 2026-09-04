@@ -25,37 +25,35 @@ Example HTML body:
 
 ```html
 <!DOCTYPE html>
-<html lang="vi"><head><meta charset="utf-8"/>
-<title>Thời tiết TP.HCM</title>
+<html lang="en"><head><meta charset="utf-8"/>
+<title>City briefing</title>
 <style>
-body{font-family:'Noto Sans',DejaVu Sans,Arial,sans-serif;margin:0;background:#eef3f8;color:#142033}
-@page{size:A4;margin:18mm 16mm}
-main{padding:0}
-.hero{width:100%;max-height:260px;object-fit:cover;display:block;border-radius:10pt}
-.band{background:#1a3a66;color:#fff;padding:14pt 16pt;margin:12pt 0 14pt;border-radius:8pt}
-.band h1{font-size:20pt;margin:0 0 4pt;color:#fff}
-.band h2{font-size:11pt;margin:0;color:#cfe0f5;font-weight:600}
+body{font-family:'Noto Sans',DejaVu Sans,Arial,sans-serif;margin:0;background:#e8eef5;color:#142033}
+@page{size:A4;margin:14mm}
+main{padding:0 2pt}
+.accent{height:5pt;background:linear-gradient(90deg,#1a3a66,#2a6ebd 55%,#5eb0e0);margin:0 0 12pt;border-radius:2pt}
+.hero{width:100%;max-height:280px;object-fit:cover;display:block;border-radius:10pt}
+.band{background:#1a3a66;color:#fff;padding:16pt 18pt;margin:12pt 0 14pt;border-radius:10pt}
+.band h1{font-size:22pt;margin:0 0 6pt;color:#fff}
+.band h2{font-size:11pt;margin:0;color:#c5d6ea;font-weight:500}
 .cards{display:table;width:100%;border-collapse:separate;border-spacing:8pt;margin:0 0 14pt}
-.card{display:table-cell;width:50%;background:#fff;border:1pt solid #d0deed;border-radius:8pt;padding:10pt 12pt;vertical-align:top}
-.k{font-size:9pt;color:#2a6ebd;text-transform:uppercase;letter-spacing:.04em}
-.v{font-size:16pt;margin-top:4pt;font-weight:700}
-p{line-height:1.5;font-size:11pt;orphans:3;widows:3}
+.card{display:table-cell;width:50%;background:#fff;border:1pt solid #c8d6e8;border-radius:8pt;padding:12pt 14pt;vertical-align:top}
+.k{font-size:8.5pt;color:#2a6ebd;text-transform:uppercase;letter-spacing:.05em}
+.v{font-size:16pt;margin-top:5pt;font-weight:700;color:#0f1a28}
+p{line-height:1.55;font-size:11pt;orphans:3;widows:3}
 </style></head><body><main>
-<img class="hero" src="/opt/data/media/out/hcm-hero.jpg" alt=""/>
-<div class="band"><h1>Thời tiết TP. Hồ Chí Minh</h1><h2>Cập nhật hiện tại</h2></div>
+<div class="accent"></div>
+<img class="hero" src="/opt/data/media/out/city-hero.jpg" alt=""/>
+<div class="band"><h1>City briefing</h1><h2>Live snapshot</h2></div>
 <div class="cards">
-  <div class="card"><div class="k">Nhiệt độ</div><div class="v">31°C</div></div>
-  <div class="card"><div class="k">Độ ẩm</div><div class="v">70%</div></div>
+  <div class="card"><div class="k">Metric A</div><div class="v">…</div></div>
+  <div class="card"><div class="k">Metric B</div><div class="v">…</div></div>
 </div>
-<div class="cards">
-  <div class="card"><div class="k">Thời tiết</div><div class="v">Nắng nhẹ</div></div>
-  <div class="card"><div class="k">Gió</div><div class="v">12 km/h</div></div>
-</div>
-<p>Trời nắng nhẹ, oi bức.</p>
+<p>Short supporting prose in the user's language.</p>
 </main></body></html>
 ```
 
-Never emit placeholders like `<value after search>`. Spell Vietnamese labels correctly (Nhiệt độ, Thời tiết, Độ ẩm, Gió).
+Never emit placeholders like `<value after search>`. Choose labels and language from the user ask (not a fixed weather schema).
 
 ### PPTX / DOCX / XLSX / MD (presentation-ready)
 

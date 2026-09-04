@@ -1,3 +1,10 @@
+## 2026-09-04 12:00 +07 — live-scene overlays; soften classify media / file-gen examples
+
+- Host live-facts path renamed to `live_scene` (weather names kept as aliases); overlay timestamp uses `ASSISTANT_TZ`/`TZ`.
+- Classify media: EXACT-TEXT ON IMAGE; weather-scene is a live-scene synonym (not weather-only).
+- file-gen PDF HTML example is topic-agnostic (not a fixed weather schema).
+- Info-card scenic filenames are unique per turn (uuid).
+
 ## 2026-09-04 11:50 +07 — labs: §15 units aligned; greeting + visual weather inject
 
 - Case-index units match `active`/`inactive` defaults, classify-owned secret-probe markers, and multi-clock `tasks[]` fan-out.
@@ -13,6 +20,19 @@
 ## 2026-09-04 11:10 +07 — labs: remaining Tn suite; OpenBao token recover
 
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
+- Remaining RULES slice lab: image-gen vision rate, vision-ocr samples, docs extract, web-search, schedule once_after (honest OCR/vision).
+- `load-openbao-env` recovers `OPENBAO_DEV_ROOT_TOKEN` from OpenBao `-dev` container (`BAO_DEV_ROOT_TOKEN_ID`) when host `.env` was emptied.
+- Env obsolete cleanup lab clears retired secret values (e.g. `ADMIN_API_TOKEN`).
+
+## 2026-09-04 10:40 +07 — openbao labs; video refuse host path; compact via embedding
+
+- OpenBao case 43: unit + VPS lab for KV store, update propagation, scrub, and load-before-compose fill (`POLLINATIONS_API_KEY` stays a seed/scrub key).
+- Host owns `video_gen` / refuse turns via dispatcher `/v1/video-policy-refuse` — never scenic image-gen or photorealistic SCENE shortcuts.
+- Web-search and embedding requests send `model` (combo id) for Omni Requested Model; memory `EMBED_MODEL` defaults to combo `embedding`; `/v1/compact` reindexes via that combo.
+- Classify media refuse: YouTube/TikTok/Facebook URL asks must stay `skill=video_gen` (no SCENE invent).
+
+## 2026-09-04 11:10 +07 — labs: remaining Tn suite; OpenBao token recover
+
 - Remaining RULES slice lab: image-gen vision rate, vision-ocr samples, docs extract, web-search, schedule once_after (honest OCR/vision).
 - `load-openbao-env` recovers `OPENBAO_DEV_ROOT_TOKEN` from OpenBao `-dev` container (`BAO_DEV_ROOT_TOKEN_ID`) when host `.env` was emptied.
 - Env obsolete cleanup lab clears retired secret values (e.g. `ADMIN_API_TOKEN`).

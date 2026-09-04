@@ -33,11 +33,11 @@ Host uses search answer prose lines and classify `-` fact bullets only — never
 FILE BODY (file_processing instruction): when Hermes will compose (visual/designed presentation doc), emit a short topic line only (e.g. `Current conditions — City — PDF`) — NOT the user's full create sentence. Hermes expands into the kind-specific body. For trivial literal fill only, the instruction may be the exact payload (e.g. `1`).
 "1 file" => exactly 1 instruction. Never infer a different office kind from content when the user named pdf|pptx|docx|xlsx|md.
 
-TEXT POSTER (fill N lines of a phrase; often quotes; may say B&W):
+EXACT-TEXT ON IMAGE (fill N lines of a phrase the user supplies; often quotes; may ask B&W):
 NOT scene diffusion. task_hint=tool, task_type=media_generation, execution_class=async, skill=media_file, skill_action=generate_media, output_type=image.
 Set poster_n (integer), poster_phrase (exact glyphs), poster_bw (bool). Host will not parse N/phrase from prose. Do not rewrite into a scenic prompt.
 
-LIVE-FACTS SCENE IMAGE (draw/paint a picture OF a place with live facts the user wants shown — weather, scores, prices, rates, or other lookup metrics — any language, any topic):
+LIVE-FACTS SCENE IMAGE (draw/paint a picture OF a place with live facts the user wants shown — any lookup metrics: conditions, scores, prices, rates, or other topics — any language):
 NOT a metrics-only dashboard card unless the user asked for panels. NOT hello/normal. NOT a /help intro. NOT scenic-only without the requested live facts.
 LOCAL NOW RULE (mandatory): read `Local now: YYYY-MM-DD HH:MM` in the user message. Set SCENE lighting from that clock — hour 05-06 dawn, 07-16 daytime, 17-18 golden hour/dusk, 19-22 evening/blue hour with city lights, 23-04 night. Never write bright midday sun when Local now is evening or night.
 task_hint=tool, task_type=media_generation, execution_class=async, response_mode=ack_then_deliver, skill=media_file, skill_action=generate_media, output_type=image, process_original_message false.
@@ -48,7 +48,7 @@ SCENE: <one English photorealistic photograph sentence — real camera photo of 
 - <optional fact bullets ONLY with real filled values after search — labels in the user's language when appropriate; host paints these via /v1/overlay, NOT diffusion. If values are unknown yet, OMIT the bullet lines entirely. NEVER emit placeholders like `<value after search>`, empty `Label:`, or policy tokens as bullets>
 Host MUST paint live metrics on the badge when search returns usable facts — either from filled classify bullets or by synthesizing Label: value lines from the search payload. Overlay content is dynamic from the ask (not a fixed weather-only schema).
 Do NOT emit TITLE:/SUBTITLE:/ICON:/STYLE: (legacy Pillow markers — retired). Host delivers search→scenic image-gen (no on-image text) then Unicode bottom-left overlay. Never collapse to chat-only Q&A.
-Compatibility: RENDER: weather-scene is accepted as an alias of live-scene when the topic is weather.
+Compatibility: RENDER: weather-scene is accepted only as a synonym of live-scene (any live-facts topic — not weather-exclusive).
 
 LABELED INFO IMAGE (metrics dashboard / info card with panels — labeled facts card, NOT a scenic live-facts picture — any language):
 NOT hello/normal. NOT a /help intro. NOT an English scene-diffusion prompt as the only instruction.
@@ -68,7 +68,7 @@ Host owns delivery (Omni combo image-gen via internal HTTP — no Hermes shell c
 NO search sibling when the ask is purely scenic (no live/current facts or metrics needed on the image).
 Image instruction = one English SCENE: line — translate the user ask into a clear photorealistic English diffusion prompt (viewpoint only if the user stated one, place, lighting, subjects). Read Local now and Timezone to set lighting when the user did not specify time-of-day. Prefer street-level / eye-level photos when the user did not specify viewpoint — never invent aerial/top-down wording on your own. Prefer stable official English place names for diffusion. Safe-for-work outdoor scenes; avoid close-up people unless the user asked for portraits.
 Never leave instructions as the raw non-English ask alone. On backend failure host sends only the media-out failure line.
-Preserve on-image exact-text poster requests, B&W, style, quantity. Do not convert to PDF/TXT.
+Preserve on-image exact-text requests (poster_n / poster_phrase / poster_bw), B&W, style, quantity. Do not convert to PDF/TXT.
 If the ask needs current/live facts on the picture, use LIVE-FACTS SCENE IMAGE. If the ask needs a metrics dashboard card, use LABELED INFO IMAGE — not this scenic-only path.
 If the ask names an office format (pdf/file/…), use OFFICE CREATE / VISUAL OFFICE FILE — not this path.
 
