@@ -6,14 +6,16 @@ has started; strips seeded key values from ROOT/.env (keys kept, values empty).
 
 run.sh must call load-openbao-env immediately after this scrub so COMPOSE_HOST_KEYS
 (and hermes env_file .env.openbao) are refilled for the next compose recreate.
+Also removes retired KEY= lines (ADMIN_API_TOKEN, WEB_BACKENDS, …).
 """
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 from pathlib import Path
 
-from openbao_common import ENV_SCRUB_KEYS
+from openbao_common import ENV_SCRUB_KEYS, OBSOLETE_ENV_KEYS
 
 ROOT = Path(os.environ.get("STACK_ROOT") or Path(__file__).resolve().parents[2])
 ENV_PATH = ROOT / ".env"
@@ -61,6 +63,24 @@ def _unlink(path: Path) -> bool:
     return False
 
 
+def _cleanup_obsolete() -> None:
+    spec = importlib.util.spec_from_file_location(
+        "cleanup_obsolete_env",
+        Path(__file__).resolve().parent / "cleanup-obsolete-env.py",
+    )
+    if not spec or not spec.loader:
+        return
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for p in (ENV_PATH, DATA_DIR / ".env"):
+        gone = mod.remove_obsolete_keys(p, OBSOLETE_ENV_KEYS)
+        if gone:
+            print(
+                f"OK: removed {len(gone)} obsolete key(s) from {p}: "
+                f"{', '.join(sorted(set(gone)))}"
+            )
+
+
 def main() -> int:
     removed = []
     for p in (
@@ -75,6 +95,10 @@ def main() -> int:
     print(f"OK: removed {len(removed)} plaintext export(s); scrubbed {n} key value(s) in {ENV_PATH}")
     for p in removed:
         print(f"  - {p}")
+    try:
+        _cleanup_obsolete()
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN: obsolete env cleanup skipped: {e}", file=sys.stderr)
     return 0
 
 
