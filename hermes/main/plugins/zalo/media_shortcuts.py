@@ -450,28 +450,28 @@ def scene_prompt_from_instruction(text: str) -> str:
     return ""
 
 
-def _overlay_header(user_ask: str = "", scene: str = "") -> str:
-    """Short badge title — never dump the full user ask or SCENE diffusion prose."""
+def _overlay_header(user_ask: str = "", scene: str = "", facts: list[str] | None = None) -> str:
+    """Short badge title from live facts or a compact ask fragment — not diffusion SCENE prose."""
     del scene
+    for raw in facts or []:
+        s = str(raw or "").strip()
+        if ":" in s and not _skip_structural_junk(s):
+            label = s.split(":", 1)[0].strip()
+            if 2 <= len(label) <= 28:
+                return label
     ask = " ".join((user_ask or "").split())
     if not ask:
         return "Facts"
-    # Long create/update sentences make a bad badge — keep a compact topic word.
-    if len(ask) > 28:
-        # Prefer a short leading noun phrase when present; else generic.
-        for token in ask.replace(",", " ").split():
-            t = token.strip()
-            if len(t) >= 3 and t[0].isalpha():
-                return t[:24]
-        return "Facts"
-    return ask[:28]
+    if len(ask) <= 28:
+        return ask
+    return "Facts"
 
 
 def _live_overlay_lines(
     facts: list[str], *, scene: str = "", user_ask: str = ""
 ) -> list[str]:
     """Compact lines for Pillow overlay — facts from classify/search only."""
-    header = _overlay_header(user_ask=user_ask, scene=scene)
+    header = _overlay_header(user_ask=user_ask, scene=scene, facts=facts)
     tz_name = (os.getenv("ASSISTANT_TZ") or os.getenv("TZ") or "Asia/Ho_Chi_Minh").strip()
     try:
         now = datetime.now(ZoneInfo(tz_name)).strftime("%H:%M · %d/%m/%Y")
