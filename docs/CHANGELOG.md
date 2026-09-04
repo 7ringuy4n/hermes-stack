@@ -1,3 +1,15 @@
+## 2026-09-04 20:10 +07 — scheduled live-scene execution and clean overlays
+
+- Classify now treats outer timing as authoritative, preserves search→media work as one `process` schedule, emits an English overlay heading, and uses a bounded low-reasoning classifier budget.
+- Zalo executes media shortcuts when a stored schedule fires while still preventing immediate execution during schedule creation.
+- Live-scene rendering owns all factual text in one Pillow card: source timestamps are deduplicated and facts are excluded from diffusion prompts to prevent generated duplicate labels.
+- The real-channel lab polls schedule/artifact state instead of using an LLM cooldown, accepts managed `ID | label` targets structurally, and rejects stale artifacts by modification time.
+
+## 2026-09-04 18:10 +07 — preserve OpenBao export ownership
+
+- Privileged OpenBao refreshes keep `.env.openbao` owned by the runtime data-directory owner while retaining mode `0600`, with the invoking sudo user as a guarded fallback.
+- Unit coverage verifies the ownership handoff, and a privileged VPS refresh confirms the stack operator can continue managing generated exports.
+
 ## 2026-09-04 16:55 +07 — Omni maxWaitMs forced to 24h on every update
 
 - Default `OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS` is Omni's 24h clamp; `ensure_request_queue_max_wait` always PATCH `/api/resilience` (Omni recreate resets to 15s).

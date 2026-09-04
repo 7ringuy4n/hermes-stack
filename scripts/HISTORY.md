@@ -1,3 +1,11 @@
+## 2026-09-04 20:10 +07 — scheduled live-scene execution and overlay ownership
+
+See `history/2026-09-04/README.md` sections “Scheduled live-scene intent survives storage and fire” and “One renderer owns live-scene text”.
+
+## 2026-09-04 18:10 +07 — OpenBao export ownership
+
+See `history/2026-09-04/README.md` section “Privileged OpenBao refresh preserves runtime ownership”.
+
 ## 2026-09-04 16:55 +07 — Omni still drops at maxWaitMs 15000 after update
 
 ### Symptom

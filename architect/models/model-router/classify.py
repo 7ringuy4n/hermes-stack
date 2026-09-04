@@ -448,6 +448,7 @@ _CLASSIFY_SKIP_TTL_S = float(os.environ.get("CLASSIFY_SKIP_TTL_S") or "300")
 # Upstream dead / inactive / bad gateway / wrong-schema members — skip that combo briefly.
 _CLASSIFY_SKIP_HTTP = {400, 401, 403, 404, 429, 502, 503}
 REASONING_EFFORTS = ("low", "medium", "high", "max")
+CLASSIFY_REASONING_EFFORT = "low"
 _OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
@@ -666,6 +667,17 @@ def _outbound_llm_model(cfg: dict[str, Any], override: str | None = None) -> str
 
 def assemble_classify_system(skill_dir: Path, data: dict[str, Any]) -> str:
     """Join classify parts/*.txt into one system prompt. Bake JSON may already have system."""
+    priority = data.get("priority_rules")
+    priority_lines = [
+        str(item).strip()
+        for item in (priority if isinstance(priority, list) else [])
+        if str(item).strip()
+    ]
+    priority_block = ""
+    if priority_lines:
+        priority_block = "HARD PRIORITY RULES — apply before every other rule:\n" + "\n".join(
+            f"{index}. {line}" for index, line in enumerate(priority_lines, start=1)
+        )
     names = data.get("parts")
     chunks: list[str] = []
     if isinstance(names, list):
@@ -682,8 +694,11 @@ def assemble_classify_system(skill_dir: Path, data: dict[str, Any]) -> str:
             except OSError:
                 continue
     if chunks:
-        return "\n\n".join(chunks)
-    return str(data.get("system") or "").strip()
+        return "\n\n".join(([priority_block] if priority_block else []) + chunks)
+    system = str(data.get("system") or "").strip()
+    if priority_block and priority_block not in system:
+        return "\n\n".join((priority_block, system)) if system else priority_block
+    return system
 
 
 def _load_cfg() -> dict[str, Any]:
@@ -952,6 +967,16 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         attachments_required = False
     delivery_raw = str(src.get("schedule_delivery") or "").strip().lower()
     schedule_delivery = delivery_raw if delivery_raw in SCHEDULE_DELIVERIES else None
+    if (
+        hint == "schedule"
+        and task_type == "create_schedule"
+        and schedule_delivery == "process"
+        and instructions
+    ):
+        # A process schedule fires the classified inner work. Keep that payload
+        # structurally tied to instructions even if a provider hallucinates a
+        # chat/role JSON wrapper in message. Intent remains entirely LLM-owned.
+        message = "\n".join(instructions)
     contract = _schedule_contract_fields(src, hint)
     llm_tz = str(src.get("timezone") or "").strip()
     if (
@@ -1067,6 +1092,10 @@ async def classify_with_llm(
             "model": model_id,
             "stream": False,
             "temperature": float(cfg.get("temperature") or 0),
+            # Classification is schema extraction, not downstream task solving.
+            # Reasoning models otherwise can consume the entire output allowance
+            # on hidden thought and return no JSON content.
+            "reasoning_effort": CLASSIFY_REASONING_EFFORT,
             "messages": [
                 {"role": "system", "content": str(cfg.get("system") or "")},
                 {
