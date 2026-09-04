@@ -26,9 +26,9 @@ schedule_selector: {id:null, name, match:{content_hint, time_hint}} or null — 
 target_channel: string or null — display name only
 schedule_delivery: verbatim|process|transform or null
 output_type: image|pdf|txt|docx|xlsx|csv|md or null
-poster_n: int or null — text poster line count
-poster_phrase: string or null — exact poster glyphs
-poster_bw: bool or null
+poster_n: int or null — exact-text-on-image line count (when user wants N lines of a phrase)
+poster_phrase: string or null — exact glyphs to render on the image
+poster_bw: bool or null — black-and-white exact-text image when requested
 task_details: array of {task_type, output_type, depends_on?} when mixed or instructions length>=2
 depends_on: 0-based int array
 uncertain: bool (omit or false when sure)

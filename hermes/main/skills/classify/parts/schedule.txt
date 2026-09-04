@@ -25,7 +25,7 @@ timezone=null and timezone_source=user_default unless the user named a zone. If 
 RESOLUTION (schedule-specific; omit on non-schedule):
 schedule_resolution=clear | needs_confirmation | ambiguous | invalid
 confirmation_required=true unless timing, recurrence, inner work, destination, and delivery_mode are all unambiguous.
-Examples of families (not a dictionary): "every day at 06:00 check weather" => clear, confirmation_required false. "remind me tomorrow afternoon" with no hour => needs_confirmation, leave clock_hm/delay_seconds null, missing=["time"]. "schedule it later" => ambiguous. Impossible recurrence => invalid. Never map those to task_hint=normal.
+Examples of families (not a dictionary): "every day at 06:00 check live conditions" => clear, confirmation_required false. "remind me tomorrow afternoon" with no hour => needs_confirmation, leave clock_hm/delay_seconds null, missing=["time"]. "schedule it later" => ambiguous. Impossible recurrence => invalid. Never map those to task_hint=normal.
 
 LIST / INSPECT (where / show / xem / liệt kê / lịch đâu / chưa nhắc / check reminders):
 task_type=list_schedule, skill_action=list. cron_expr, delay_seconds, schedule_form, schedule_delivery MUST be null. Do NOT create. Do NOT delete. Quotes of old create bodies do not upgrade this to delete.
