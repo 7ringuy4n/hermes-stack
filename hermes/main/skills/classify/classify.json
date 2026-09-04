@@ -1,6 +1,6 @@
 {
-  "timeout_s": 35,
-  "max_tokens": 1536,
+  "timeout_s": 60,
+  "max_tokens": 3072,
   "temperature": 0,
   "retry": 1,
   "priority_rules": [
