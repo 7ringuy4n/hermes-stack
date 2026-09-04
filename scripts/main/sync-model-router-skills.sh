@@ -11,6 +11,10 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DST_DIR="$ROOT/architect/models/model-router/config"
 mkdir -p "$DST_DIR"
 
+if [[ "$(id -u)" -ne 0 ]] || [[ -w "$DST_DIR" ]]; then
+  exec python3 "$ROOT/scripts/main/sync_model_router_skills.py"
+fi
+
 _dst_owner() {
   # Prefer directory owner so git checkout trees stay operator-writable.
   if command -v stat >/dev/null 2>&1; then

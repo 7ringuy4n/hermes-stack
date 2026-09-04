@@ -662,13 +662,6 @@ def _office_body_trivial_for_host_shortcut(plan: dict[str, Any] | None) -> bool:
     return True
 
 
-_LABELED_SCENE_RENDER = frozenset({"labeled-scene", "labeled_scene", "info-card", "info_card", "card", "dashboard"})
-_SCENE_OVERLAY_RENDER = frozenset(
-    {"scene-overlay", "scene_overlay", "weather-scene", "weather_scene", "scenic-overlay", "live-scene", "live_scene"}
-)
-_INFO_CARD_RENDER = _LABELED_SCENE_RENDER  # legacy alias
-
-
 def _plan_instruction_blob(plan: dict[str, Any] | None) -> str:
     src = plan if isinstance(plan, dict) else {}
     parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
@@ -676,22 +669,17 @@ def _plan_instruction_blob(plan: dict[str, Any] | None) -> str:
 
 
 def plan_image_render_mode(plan: dict[str, Any] | None) -> str:
-    """RENDER: contract from classify (scene | scene-overlay | info-card)."""
+    """Read the classifier-owned render protocol field."""
     blob = _plan_instruction_blob(plan)
     for raw in blob.splitlines():
         line = raw.strip()
         if line.upper().startswith("RENDER:"):
             return line.split(":", 1)[1].strip().lower()
-    up = blob.upper()
-    if "TITLE:" in up or "STYLE:" in up:
-        return "info-card"
-    if "SCENE:" in up:
-        return "scene"
     return ""
 
 
 def _plan_allows_search_then_image_base(plan: dict[str, Any] | None) -> bool:
-    """Search + one image job — shared gate for weather-scene and info-card host paths."""
+    """Validate the shared search plus one-image workflow shape."""
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
         return False
@@ -724,38 +712,11 @@ def _plan_allows_search_then_image_base(plan: dict[str, Any] | None) -> bool:
     return True
 
 
-def plan_allows_search_then_image(plan: dict[str, Any] | None) -> bool:
-    """Live-data image (search + media_generation) — live-scene overlay or info-card."""
-    return _plan_allows_search_then_image_base(plan)
-
-
-def plan_allows_search_then_live_scene(plan: dict[str, Any] | None) -> bool:
-    """Place scene + small live-facts overlay (not info-card dashboard) — any topic."""
+def plan_allows_search_then_composed_image(plan: dict[str, Any] | None) -> bool:
+    """One generic search-to-image composition path for any grounded subject."""
     if not _plan_allows_search_then_image_base(plan):
         return False
-    mode = plan_image_render_mode(plan)
-    if mode in _LABELED_SCENE_RENDER or mode == "labeled-scene":
-        return False
-    return mode in _SCENE_OVERLAY_RENDER
-
-
-# Compat: weather was the first live-facts topic.
-plan_allows_search_then_weather_scene = plan_allows_search_then_live_scene
-
-
-def plan_allows_search_then_info_card(plan: dict[str, Any] | None) -> bool:
-    """Metrics dashboard info-card (search + media_generation, not scene-overlay)."""
-    if not _plan_allows_search_then_image_base(plan):
-        return False
-    mode = plan_image_render_mode(plan)
-    if mode in _SCENE_OVERLAY_RENDER:
-        return False
-    if mode in _LABELED_SCENE_RENDER or mode == "labeled-scene":
-        return True
-    blob = _plan_instruction_blob(plan).upper()
-    if "OVERVIEW:" in blob and "SCENE:" in blob:
-        return True
-    return "TITLE:" in blob
+    return bool(plan_image_render_mode(plan))
 
 
 def plan_is_media_policy_refuse(plan: dict[str, Any] | None) -> bool:
@@ -793,7 +754,7 @@ def plan_allows_scene_image(plan: dict[str, Any] | None) -> bool:
     if not _plan_has_media_generation(src):
         return False
     mode = plan_image_render_mode(plan)
-    if mode in _SCENE_OVERLAY_RENDER or mode in _LABELED_SCENE_RENDER or mode in {"info-card", "labeled-scene"}:
+    if mode:
         return False
     ot = _coerce_output_type(src.get("output_type"))
     if ot and ot != "image":
@@ -822,15 +783,7 @@ def coerce_scenic_misrouted_as_office(plan: dict[str, Any] | None) -> dict[str, 
     upper = blob.upper()
     if "SCENE:" not in upper:
         return src
-    if any(
-        m in upper
-        for m in (
-            "RENDER: WEATHER-SCENE",
-            "RENDER: LIVE-SCENE",
-            "RENDER: LABELED-SCENE",
-            "RENDER: INFO-CARD",
-        )
-    ):
+    if plan_image_render_mode(src):
         return src
     # Keep SCENE line(s) as the image instruction; drop office output_type.
     lines = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
@@ -890,16 +843,14 @@ def plan_sheet_ref(plan: dict[str, Any] | None) -> str:
 
 
 def plan_image_instruction(plan: dict[str, Any] | None, fallback: str = "") -> str:
-    """Pick the info-card body instruction from classify (markers preferred)."""
+    """Pick the media instruction from classifier protocol markers."""
     src = plan if isinstance(plan, dict) else {}
     parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
     details = src.get("task_details") if isinstance(src.get("task_details"), list) else []
-    # Prefer scene/weather contract, then info-card markers
+    # Protocol markers identify the media task without interpreting user prose.
     for p in parts:
         up = p.upper()
         if "RENDER:" in up or "SCENE:" in up:
-            return p
-        if "TITLE:" in up or "OVERVIEW:" in up:
             return p
     for i, detail in enumerate(details):
         if not isinstance(detail, dict):
@@ -1150,10 +1101,8 @@ def plan_media_shortcut_gate(plan: dict[str, Any] | None) -> str:
         return "office"
     if plan_allows_search_then_office(plan):
         return "search_office"
-    if plan_allows_search_then_weather_scene(plan):
-        return "weather_scene"
-    if plan_allows_search_then_info_card(plan):
-        return "info_card"
+    if plan_allows_search_then_composed_image(plan):
+        return "composed_image"
     if plan_allows_scene_image(plan):
         return "scene_image"
     if plan_allows_poster_shortcut(plan):

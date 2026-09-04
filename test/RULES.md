@@ -514,6 +514,8 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/soul_deception_unit.py` | SOUL must not trip deception_hide |
 | `test/scripts/openbao_common_unit.py` | 43 OpenBao key lists |
 | `test/scripts/media_refuse_unit.py` | video_gen refuse never scene_image |
+| `test/scripts/composed_image_gate_unit.py` | Generic search-to-image protocol gate |
+| `test/scripts/composed_image_overlay_unit.py` | Model-authored design validation and adaptive overlay |
 
 **Lab scripts (SSH, one case per invocation — AGENT_RULES §17 / §18: explicit permission required):**
 

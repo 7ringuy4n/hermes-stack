@@ -5476,3 +5476,6 @@ Do not `gh pr create --base main` from `develop`. Do not commit `_tmp_` probes.
 | Disk full on Hermes extract | 15 Aug 14:20 |
 | No entries 12â€“14 Aug | note under 18 Aug 07:50 block |
 
+## 2026-09-04 20:52 +07 — topic-specific image composition created future gaps
+
+See `history/2026-09-04/README.md` section “Generic image composition replaces fixed render families”.

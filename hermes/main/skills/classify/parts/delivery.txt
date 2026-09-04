@@ -1,19 +1,9 @@
-DELIVERY POLICY — destination is NEVER mixed into message/instructions.
+DELIVERY POLICY
+target_channel contains only a human-readable destination name. Never place a destination, internal id, platform prefix, or server path inside message or instructions.
 
-target_channel: DISPLAY NAME only (e.g. "LC group"). Never null when a group is named. Never prefix zalo/telegram. Never use "content" / "body" as the channel name. Never invent channel IDs. Host resolves IDs from this field.
+For scheduled delivery:
+- verbatim means the stored characters are sent unchanged.
+- process means the assistant must look up, reason about, or generate the result at fire time.
+- transform means the assistant rewrites or summarizes supplied material at fire time without an external lookup.
 
-schedule_delivery (create_schedule fire):
-VERBATIM = fire must POST fixed characters (remind me / send text + content: or nội dung: with the send-text; or send into a group a fixed quote with no work verb). Words like "describe" INSIDE a dictated content: body are payload.
-PROCESS = assistant must produce or look up content at fire time. Destination + work verb (describe / update / forecast / draw / search / summarize) and no content:/nội dung: send-marker = process. Inner work only in message/instructions.
-TRANSFORM = rewrite/translate/summarize a given payload at fire time without an external lookup. Still not verbatim. source stays in instructions.
-Decision test: fire emits unchanged characters → verbatim; fire must invent/search/generate first → process; fire must rewrite given text → transform.
-
-After content: / nội dung: copy the body VERBATIM into message, then split that body into instructions[] by skill. Never paraphrase. Never copy "in N minutes send into …" wrappers into fire text.
-
-IMMEDIATE DELIVER (send/post into a named group or person, no relative delay and no clock/recurrence):
-NOT create_schedule. NOT zalo-api. task_hint=normal, skill_action=deliver, execution_class=interactive, response_mode=confirm, process_original_message false, skill=null.
-target_channel = display name. message and instructions = body VERBATIM.
-If the same ask has a future/relative time, it is a schedule, not immediate deliver.
-"send now" / "gửi ngay" = immediate, unless they also ask for a future/repeated run.
-
-Never put internal chat/thread identifiers or server folder-path narration into message/instructions (any language; map by intent).
+For an immediate send with no future timing, use normal interactive delivery, response_mode confirm, process_original_message false, and skill_action deliver. Preserve the body exactly. A future or recurring send is always a schedule.
