@@ -307,6 +307,107 @@ def _pollinations_api_key(env: dict | None = None) -> str:
     ).strip()
 
 
+def ensure_pollinations_api_key(env: dict[str, str] | None = None, *, interactive: bool = False) -> str:
+    """Ensure POLLINATIONS_API_KEY is present for free Pollinations image targets.
+
+    Prefer an existing env/OpenBao value. Optionally run Pollinations device-flow
+    when interactive (or POLLINATIONS_DEVICE_FLOW=1) so first-setup can register
+    a free keyed provider and avoid empty image-capable combos.
+    """
+    env = env if env is not None else load_env(ROOT / ".env")
+    existing = _pollinations_api_key(env)
+    if existing:
+        print("OK: POLLINATIONS_API_KEY present")
+        return existing
+    want_flow = interactive or (os.environ.get("POLLINATIONS_DEVICE_FLOW") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+        "active",
+    }
+    if not want_flow:
+        print(
+            "WARN: POLLINATIONS_API_KEY empty — Pollinations image members need a key "
+            "(set in OpenBao/.env, or re-run with POLLINATIONS_DEVICE_FLOW=1)"
+        )
+        return ""
+    try:
+        key = _pollinations_device_flow_key()
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN: Pollinations device-flow failed: {e}")
+        return ""
+    if not key:
+        return ""
+    set_env_key(ROOT / ".env", "POLLINATIONS_API_KEY", key)
+    env["POLLINATIONS_API_KEY"] = key
+    os.environ["POLLINATIONS_API_KEY"] = key
+    print("OK: wrote POLLINATIONS_API_KEY from Pollinations device-flow")
+    return key
+
+
+def _pollinations_device_flow_key(*, timeout_s: int = 300) -> str:
+    """RFC 8628 device flow against enter.pollinations.ai → scoped sk_ key."""
+    code_url = "https://enter.pollinations.ai/api/device/code"
+    token_url = "https://enter.pollinations.ai/api/device/token"
+    req = urllib.request.Request(
+        code_url,
+        data=b"{}",
+        method="POST",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        meta = json.loads(resp.read().decode() or "{}")
+    device_code = str(meta.get("device_code") or "").strip()
+    user_code = str(meta.get("user_code") or "").strip()
+    verify = str(meta.get("verification_uri") or meta.get("verification_uri_complete") or "").strip()
+    if not device_code or not user_code:
+        raise RuntimeError(f"device/code missing fields: {meta!r}")
+    if verify and not verify.startswith("http"):
+        verify = f"https://enter.pollinations.ai{verify}"
+    if not verify:
+        verify = "https://enter.pollinations.ai/device"
+    interval = max(3, int(meta.get("interval") or 5))
+    print(f"==> Pollinations device-flow: open {verify} and enter code {user_code}")
+    deadline = time.monotonic() + max(60, int(timeout_s))
+    while time.monotonic() < deadline:
+        time.sleep(interval)
+        body = json.dumps({"device_code": device_code}).encode()
+        tok_req = urllib.request.Request(
+            token_url,
+            data=body,
+            method="POST",
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(tok_req, timeout=30) as resp:
+                tok = json.loads(resp.read().decode() or "{}")
+        except urllib.error.HTTPError as e:
+            raw = (e.read() or b"").decode("utf-8", "replace")
+            try:
+                tok = json.loads(raw or "{}")
+            except Exception:
+                tok = {"error": raw[:200], "status": e.code}
+        err = str(tok.get("error") or "").strip().lower()
+        if err in {"authorization_pending", "slow_down"}:
+            if err == "slow_down":
+                interval = min(30, interval + 2)
+            continue
+        if err:
+            raise RuntimeError(f"device/token error: {tok!r}")
+        for k in ("access_token", "api_key", "key", "secret"):
+            val = tok.get(k)
+            if isinstance(val, str) and val.strip().startswith(("sk_", "pk_")):
+                return val.strip()
+        nested = tok.get("token") if isinstance(tok.get("token"), dict) else {}
+        for k in ("access_token", "api_key", "key"):
+            val = nested.get(k) if nested else None
+            if isinstance(val, str) and val.strip().startswith(("sk_", "pk_")):
+                return val.strip()
+        raise RuntimeError(f"device/token missing sk_ key: {tok!r}")
+    raise RuntimeError("Pollinations device-flow timed out waiting for authorization")
+
+
 def _patch_pollinations_connection(opener, conn: dict, api_key: str) -> None:
     cid = conn.get("id")
     if not cid or not api_key:
@@ -1455,51 +1556,66 @@ def list_image_gen_models(
     opener=None,
     env: dict[str, str] | None = None,
 ) -> list[str]:
-    """Routable /images/generations ids — wired provider-models first, then catalog."""
+    """Routable /images/generations ids — catalog-proven image models first, then wired custom.
+
+    Prefer catalog rows with explicit image/images-generations metadata (e.g. pollinations)
+    over custom prefix members that are registered but Omni will not execute as
+    images-capable targets (common failure: ``No images-capable targets in combo image-gen``).
+    """
     if env is None:
         env = {}
     catalog = _v1_models(api_key)
     merged: list[str] = []
     seen: set[str] = set()
 
+    catalog_imgs = [
+        str(row.get("id") or "").strip()
+        for row in catalog
+        if str(row.get("id") or "").strip() and _is_image_output_model(row)
+    ]
+    catalog_imgs.sort(
+        key=lambda mid: _rank_image_gen_row(_catalog_row_by_id(catalog, mid) or {"id": mid})
+    )
+    for mid in catalog_imgs:
+        if mid and mid not in seen:
+            seen.add(mid)
+            merged.append(mid)
+
     if opener is not None:
         wired = _sort_wired_image_model_ids(
             opener, _wired_custom_provider_image_ids(opener, catalog), catalog
         )
         for mid in wired:
-            if mid and mid not in seen:
-                seen.add(mid)
-                merged.append(mid)
+            if not mid or mid in seen:
+                continue
+            row = _catalog_row_by_id(catalog, mid)
+            # Skip chat-only catalog rows mis-listed as wired image members.
+            if row is not None and not _is_image_output_model(row):
+                continue
+            seen.add(mid)
+            merged.append(mid)
         custom_prefixes = _images_generations_provider_prefixes(opener)
-        if custom_prefixes and not merged:
+        if custom_prefixes and not any("/" in m and m.split("/", 1)[0] in custom_prefixes for m in merged):
             for mid in _v1_combo_member_ids(api_key, "image-gen"):
                 root = mid.split("/", 1)[0] if "/" in mid else ""
                 if root in custom_prefixes and mid not in seen:
+                    row = _catalog_row_by_id(catalog, mid)
+                    if row is not None and not _is_image_output_model(row):
+                        continue
                     seen.add(mid)
                     merged.append(mid)
-        if not merged:
-            for mid in _catalog_image_ids_outside_custom_providers(catalog, custom_prefixes):
-                if mid and mid not in seen:
-                    seen.add(mid)
-                    merged.append(mid)
-    else:
-        for row in catalog:
-            mid = str(row.get("id") or "").strip()
-            if mid and _is_image_output_model(row) and mid not in seen:
-                seen.add(mid)
-                merged.append(mid)
 
     if not merged:
         return []
 
-    if opener is None:
-        merged.sort(key=lambda mid: _rank_image_gen_row(_catalog_row_by_id(catalog, mid) or {"id": mid}))
-
     filtered: list[str] = []
+    pol_key = _pollinations_api_key(env)
     for mid in merged:
         if _is_excluded_image_gen_provider(mid, catalog):
             continue
-        if not _pollinations_api_key(env) and mid.lower().startswith("pollinations/"):
+        low = mid.lower()
+        # Anonymous Pollinations uses pol/*; pollinations/* may need a key.
+        if low.startswith("pollinations/") and not pol_key:
             continue
         filtered.append(mid)
         if len(filtered) >= 8:
@@ -1533,11 +1649,13 @@ def _row_supports_vision_input(row: dict) -> bool:
 
 
 def _is_vision_capable_model_row(row: dict) -> bool:
-    """Chat models that accept image input for OCR (not supportsVision-only blind ids)."""
+    """Chat models that accept image input for OCR.
+
+    Trust catalog ``supportsVision`` / ``capabilities.vision`` when modalities are
+    omitted (common for AI Box Kimi and similar multimodal chat ids).
+    """
     mid = _omni_model_row_id(row)
     if not mid or mid.lower() in _STACK_COMBO_NAMES:
-        return False
-    if not row.get("supportsVision"):
         return False
     if row.get("available") is False:
         return False
@@ -1547,9 +1665,12 @@ def _is_vision_capable_model_row(row: dict) -> bool:
     caps = row.get("capabilities") if isinstance(row.get("capabilities"), dict) else {}
     if caps.get("vision") is False:
         return False
-    if row.get("modalities") or row.get("input_modalities") or eps:
-        return _row_supports_vision_input(row)
-    return caps.get("vision") is True
+    if _row_supports_vision_input(row):
+        return True
+    if caps.get("vision") is True:
+        return True
+    # Omni often sets supportsVision without input_modalities — not "blind".
+    return row.get("supportsVision") is True
 
 
 def _rank_vision_row(row: dict) -> tuple:
@@ -1894,6 +2015,41 @@ def _custom_image_model_action(existing: dict | None) -> str:
     return "fix"
 
 
+def _smoke_image_gen_combo(api_key: str) -> bool:
+    """True when Omni can execute combo ``image-gen`` for /v1/images/generations."""
+    body = json.dumps(
+        {
+            "model": "image-gen",
+            "prompt": "photorealistic blue sky smoke test",
+            "size": "512x512",
+            "n": 1,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        f"{BASE}/v1/images/generations",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            ok = resp.status in (200, 201)
+            if ok:
+                print("OK: image-gen smoke /v1/images/generations")
+            return ok
+    except urllib.error.HTTPError as e:
+        detail = e.read()[:280]
+        print(f"WARN image-gen smoke HTTP {e.code}: {detail!r}")
+        return False
+    except Exception as e:
+        print(f"WARN image-gen smoke failed: {type(e).__name__}: {e}")
+        return False
+
+
 def ensure_media_combos(opener, api_key: str, env: dict[str, str], *, setup_only: bool = False) -> None:
     """Seed image-gen / vision-ocr / embedding combos; refill when chat-only members leak in."""
     catalog = _v1_models(api_key)
@@ -1932,6 +2088,22 @@ def ensure_media_combos(opener, api_key: str, env: dict[str, str], *, setup_only
             strategy=IMAGE_GEN_COMBO_STRATEGY,
             setup_only=setup_only,
         )
+        if not setup_only and not _smoke_image_gen_combo(api_key):
+            catalog_only = list_image_gen_models(api_key, opener=None, env=env)
+            if catalog_only and catalog_only != want_ids:
+                print(
+                    "==> image-gen not executable with current members — "
+                    f"refill catalog-proven first={catalog_only[:3]!r}"
+                )
+                _put_or_create_combo(
+                    opener,
+                    name="image-gen",
+                    description="Image generation — diffusion /images/generations only",
+                    model_ids=catalog_only,
+                    force=True,
+                    strategy=IMAGE_GEN_COMBO_STRATEGY,
+                    setup_only=False,
+                )
 
     vision_catalog = _omni_admin_catalog_rows(opener)
     vision_ids = list_vision_models(opener)
@@ -2038,6 +2210,7 @@ def setup_core() -> int:
 
     unblock_opencode(opener)
     ensure_opencode_provider(opener)
+    ensure_pollinations_api_key(env)
     ensure_pollinations_provider(opener, env)
     combo = ensure_combo_alias(opener, setup_only=True)
     classify_combo = ensure_classifier_combo(opener, setup_only=True)
@@ -2078,7 +2251,7 @@ def setup_core() -> int:
 
 
 def run_update() -> int:
-    """Repair/sync: refill combos, wire custom image providers, refresh API key ACL."""
+    """Repair/sync providers + ACL; never rewrite operator combo membership."""
     env = load_env(ROOT / ".env")
     omni_flag = (env.get("ENABLE_OMNIROUTER") or "inactive").strip().lower()
     if omni_flag in {"1", "true", "yes", "on"}:
@@ -2098,31 +2271,46 @@ def run_update() -> int:
     set_env_key(ROOT / ".env", "OMNIROUTER_API_KEY", key)
     print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
 
+    # Providers / nodes / catalog wiring only — operator owns combo members in Omni UI.
     unblock_opencode(opener)
     ensure_opencode_provider(opener)
+    ensure_pollinations_api_key(env)
     ensure_pollinations_provider(opener, env)
     ensure_images_generations_nodes(opener, key)
     ensure_provider_image_models(opener, key)
-    combo = ensure_combo_alias(opener)
-    classify_combo = ensure_classifier_combo(opener)
-    assert_combo_oc_only(opener, combo)
-    assert_combo_oc_only(opener, classify_combo)
-    ensure_combo_round_robin(opener)
+    # setup_only=True: create missing shell combos only; never refill/replace members.
+    combo = ensure_combo_alias(opener, setup_only=True)
+    classify_combo = ensure_classifier_combo(opener, setup_only=True)
     ensure_search_providers(opener)
-    ensure_web_search_omni_combo(opener)
-    ensure_media_combos(opener, key, env)
+    ensure_web_search_omni_combo(opener, setup_only=True)
+    ensure_media_combos(opener, key, env, setup_only=True)
     ensure_api_key_allows_combos(opener, key)
-    pin_media_combos(env)
-    set_env_key(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME)
-    set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo)
-    set_env_key(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo)
-    set_env_key(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY)
-    set_env_key(ROOT / ".env", "OMNIROUTER_FALLBACK_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
-    set_env_key(ROOT / ".env", "OMNIROUTER_VISION_OCR_COMBO_STRATEGY", VISION_OCR_COMBO_STRATEGY)
-    set_env_key(ROOT / ".env", "OMNIROUTER_CLASSIFIER_COMBO_STRATEGY", CLASSIFIER_COMBO_STRATEGY)
-    set_env_key(ROOT / ".env", "OMNIROUTER_EMBEDDING_COMBO_STRATEGY", EMBEDDING_COMBO_STRATEGY)
-    set_env_key(ROOT / ".env", "OMNIROUTER_WEB_SEARCH_COMBO_STRATEGY", WEB_SEARCH_COMBO_STRATEGY)
-    set_env_key(ROOT / ".env", "OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "active"))
+    pin_media_combos_setup(env)
+    # Env name pins only when missing — do not overwrite operator combo *names* either.
+    set_env_key_if_missing(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME, env)
+    set_env_key_if_missing(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo, env)
+    set_env_key_if_missing(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo, env)
+    set_env_key_if_missing(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY, env)
+    set_env_key_if_missing(ROOT / ".env", "OMNIROUTER_FALLBACK_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY, env)
+    set_env_key_if_missing(
+        ROOT / ".env", "OMNIROUTER_VISION_OCR_COMBO_STRATEGY", VISION_OCR_COMBO_STRATEGY, env
+    )
+    set_env_key_if_missing(
+        ROOT / ".env", "OMNIROUTER_CLASSIFIER_COMBO_STRATEGY", CLASSIFIER_COMBO_STRATEGY, env
+    )
+    set_env_key_if_missing(
+        ROOT / ".env", "OMNIROUTER_EMBEDDING_COMBO_STRATEGY", EMBEDDING_COMBO_STRATEGY, env
+    )
+    set_env_key_if_missing(
+        ROOT / ".env", "OMNIROUTER_WEB_SEARCH_COMBO_STRATEGY", WEB_SEARCH_COMBO_STRATEGY, env
+    )
+    set_env_key_if_missing(
+        ROOT / ".env",
+        "OMNIROUTER_ENABLE_MEMORY",
+        env.get("OMNIROUTER_ENABLE_MEMORY", "active"),
+        env,
+    )
+    set_env_key_if_missing(ROOT / ".env", "OMNI_IMAGE_GEN_TIMEOUT_S", "300", env)
     # Hermes-facing Router Worker: combo web-search via Omni only (no direct adapter chain).
     _clear_stack_env_keys(
         [
@@ -2140,10 +2328,7 @@ def run_update() -> int:
         ("WEB_SEARCH_COMBO", web_combo),
         ("MODEL_ROUTER_WEB_SEARCH_COMBO", web_combo),
     ):
-        if (env.get(key_name) or "").strip() != val:
-            set_env_key(ROOT / ".env", key_name, val)
-            env[key_name] = val
-            print(f"OK: pinned {key_name}={val}")
+        set_env_key_if_missing(ROOT / ".env", key_name, val, env)
     enable_omni_memory(opener)
 
     recreate_model_router()
@@ -2153,8 +2338,8 @@ def run_update() -> int:
     verify(key, combo)
     print(
         f"OK: update omni-router complete "
-        f"(hermes+classifier OpenCode; image-gen image-capable; vision-ocr multimodal; "
-        f"classify→{classify_combo!r}; combo web-search Tavily->Firecrawl->SearXNG)"
+        f"(providers/ACL refreshed; operator combo membership preserved; "
+        f"classify→{classify_combo!r}; default→{combo!r})"
     )
     return 0
 

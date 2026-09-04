@@ -42,9 +42,9 @@ Exact text posters only (not scenic diffusion or labeled dashboards):
 |------|------|
 | Exact text poster | `POST http://dispatcher:8090/v1/text-poster` |
 
-Labeled metrics / weather pictures with facts on-image → **Omni combo image-gen** (`model=image-gen`) with facts baked into the English SCENE prompt (see `infographic-design` skill). Do **not** call retired `POST /v1/info-card` or `/v1/overlay`.
+Labeled metrics / live-facts pictures with facts on-image → **Omni combo image-gen** (`model=image-gen`) for the scenic still (no burned-in text), then host/dispatcher `POST /v1/overlay` for Label: value facts. Do **not** call retired `POST /v1/info-card`.
 
-Do **not** call deprecated `POST http://dispatcher:8090/v1/image` for scenic generation.
+Do **not** call deprecated `POST http://dispatcher:8090/v1/image` for scenic generation. Do **not** use the built-in `image_generation` tool and never tell the user that “credentials aren’t available” — keys live on Omni/dispatcher; on failure send only the media-out failure line.
 
 ## Output
 

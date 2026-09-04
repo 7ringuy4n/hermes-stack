@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Draw short fact lines onto an existing image (weather badge, labels)."""
+"""Draw short fact lines onto an existing image (live-facts badge, labels)."""
 from __future__ import annotations
 
 from pathlib import Path
