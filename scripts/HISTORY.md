@@ -5479,3 +5479,6 @@ Do not `gh pr create --base main` from `develop`. Do not commit `_tmp_` probes.
 ## 2026-09-04 20:52 +07 — topic-specific image composition created future gaps
 
 See `history/2026-09-04/README.md` section “Generic image composition replaces fixed render families”.
+## 2026-09-04 21:04 +07 — update guidance referenced a missing helper
+
+See `history/2026-09-04/README.md` section “Production update guidance points to the real entrypoint”.

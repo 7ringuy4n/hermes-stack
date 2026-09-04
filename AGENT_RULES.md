@@ -743,8 +743,9 @@ When operating against a remote host:
 -   fail immediately on non-zero exit codes;
 -   handle PowerShell escaping correctly;
 -   preserve UTF-8;
--   prefer `scripts/main/Update-StackRemote.ps1` for approved remote
-    synchronization.
+-   for an authorized production update, fast-forward the deployment checkout
+    to verified `origin/main`, then run `bash run.sh update`; do not deploy from
+    a feature branch, `develop`, or an uncommitted tree.
 
 Never send scripts to the VPS for testing without explicit permission.
 Do not access a VPS at all when the current decision excludes VPS testing or
@@ -1092,8 +1093,8 @@ response) and [`test/RULES.md`](./test/RULES.md).
 
   `config/agent/bad-words.txt`            Scrubbed words/phrases
 
-  `scripts/main/Update-StackRemote.ps1`   Approved remote synchronization
-                                          helper
+  `run.sh update`                         Backup-first update from the verified
+                                          current checkout
   ---------------------------------------------------------------------------
 
 ------------------------------------------------------------------------
