@@ -176,7 +176,7 @@ class ImageReq(BaseModel):
     """Generate an image; optionally refine via LLM then push to Zalo."""
     prompt: str = ""
     filename: Optional[str] = None
-    provider: Optional[str] = None  # omni|n9|text|info-card
+    provider: Optional[str] = None
     mode: Optional[str] = None  # text|poster → exact glyph poster, skip diffusion
     size: Optional[str] = None  # optional; skill declares HD default (1920x1080, 16:9)
     poster_n: Optional[int] = None
@@ -188,7 +188,8 @@ class ImageReq(BaseModel):
     caption: str = ""
     refine: bool = True  # DeepSeek/LLM rewrite prompt before gen; wait for reply
     overlay: Optional[list[str]] = None  # short fact lines already fetched by the agent
-    overlay_corner: Optional[str] = None  # bottom-left | bottom-bar
+    overlay_corner: Optional[str] = None
+    overlay_design: Optional[dict[str, Any]] = None
 
 
 class VideoReq(BaseModel):
@@ -480,68 +481,6 @@ def media_text(req: MediaTextReq) -> dict[str, Any]:
         "error": transcript_error if not text else "",
     }
 
-
-
-def _refine_prompt_llm(prompt: str) -> tuple[str, dict[str, Any]]:
-    """Wait for DeepSeek (or 9Router chat) to rewrite an image prompt. Sync."""
-    meta: dict[str, Any] = {"refined": False}
-    system = (
-        "You rewrite user image requests into a concise English image-generation prompt. "
-        "Output ONLY the prompt, no quotes or explanation. Keep subject, style, jpeg-friendly."
-    )
-    # Prefer DeepSeek chat API (not image — DeepSeek cloud has no hosted image-gen)
-    ds_key = (
-        os.environ.get("DEEPSEEK_API_KEY")
-        or os.environ.get("DEEPSEEK_OCR_API_KEY")
-        or ""
-    ).strip()
-    ds_base = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
-    ds_model = os.environ.get("DEEPSEEK_CHAT_MODEL", "deepseek-chat")
-    oa_base = os.environ.get("OPENAI_BASE_URL", "").rstrip("/")
-    oa_key = (os.environ.get("OPENAI_API_KEY") or os.environ.get("N9ROUTER_API_KEY") or "").strip()
-    oa_model = os.environ.get("REFINE_MODEL") or os.environ.get("HERMES_MODEL") or "hermes"
-
-    attempts: list[tuple[str, str, str, str]] = []
-    # Prefer 9Router/Hermes first when DeepSeek billing may be exhausted (402)
-    if oa_base and oa_key:
-        attempts.append(("openai", oa_base, oa_key, oa_model))
-    if ds_key:
-        attempts.append(("deepseek", ds_base, ds_key, ds_model))
-
-    for name, base, key, model in attempts:
-        try:
-            with httpx.Client(timeout=90.0) as client:
-                r = client.post(
-                    f"{base}/chat/completions",
-                    headers={
-                        "authorization": f"Bearer {key}",
-                        "content-type": "application/json",
-                    },
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": system},
-                            {"role": "user", "content": prompt},
-                        ],
-                        "temperature": 0.4,
-                        "max_tokens": 200,
-                    },
-                )
-                r.raise_for_status()
-                data = r.json()
-                content = (
-                    ((data.get("choices") or [{}])[0].get("message") or {}).get("content")
-                    or ""
-                ).strip()
-                if content:
-                    meta.update({"refined": True, "via": name, "model": model, "raw": content[:300]})
-                    return content.strip("\"' \n"), meta
-                meta.setdefault("errors", []).append(f"{name}: empty content")
-        except Exception as e:  # noqa: BLE001
-            meta.setdefault("errors", []).append(f"{name}: {e}")
-    return prompt, meta
-
-
 _SEND_FILE_OK = {
     ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
     ".txt", ".csv", ".rtf", ".odt", ".ods", ".md",
@@ -791,14 +730,16 @@ def _send_zalo_base64(thread_id: str, thread_type: str, dest: Path, caption: str
     return _send_zalo_attachment(thread_id, thread_type, dest, caption)
 
 
-def _apply_image_overlay(dest: Path, lines, *, corner: str = "bottom-left") -> int:
-    """Pillow post-process: Unicode-safe weather badge (not diffusion text)."""
+def _apply_image_overlay(
+    dest: Path, lines, *, corner: str = "auto", design: dict[str, Any] | None = None
+) -> int:
+    """Pillow post-process for a validated, model-authored information layer."""
     from overlay import apply_overlay, clean_overlay_lines
 
     facts = clean_overlay_lines(lines)
     if not facts or not dest.is_file():
         return 0
-    apply_overlay(dest, facts, corner=corner or "bottom-left")
+    apply_overlay(dest, facts, corner=corner or "auto", design=design)
     return len(facts)
 
 
@@ -855,19 +796,6 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             "phrase": poster["phrase"],
         }
 
-    if mode in {"info-card", "card", "infocard", "weather-card", "overlay"} or "TITLE:" in prompt.upper():
-        raise HTTPException(
-            410,
-            {
-                "error": "pillow_layout_retired",
-                "detail": (
-                    "Pillow info-card/overlay layout is removed. "
-                    "Use OmniRouter POST /v1/images/generations with model image-gen "
-                    "(combo image-gen); put labels/facts in the English SCENE prompt."
-                ),
-            },
-        )
-
     raise HTTPException(
         410,
         {
@@ -879,23 +807,6 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             ),
         },
     )
-
-
-@app.post("/v1/info-card")
-def info_card_generate(req: ImageReq) -> dict[str, Any]:
-    """Retired — use Omni combo image-gen with facts in the SCENE prompt."""
-    raise HTTPException(
-        410,
-        {
-            "error": "info_card_retired",
-            "detail": (
-                "Pillow info-card removed. POST OmniRouter /v1/images/generations "
-                "model=image-gen with an English SCENE prompt that includes labels/facts."
-            ),
-        },
-    )
-
-
 @app.post("/v1/text-poster")
 def text_poster_generate(req: ImageReq) -> dict[str, Any]:
     """Pillow exact-text poster (not Omni diffusion)."""
@@ -954,8 +865,10 @@ def image_overlay(req: ImageReq) -> dict[str, Any]:
         dest = MEDIA_DIR / "out" / Path(name).name
     if not dest.is_file():
         raise HTTPException(404, f"image not found: {name}")
-    corner = (req.overlay_corner or "bottom-left").strip() or "bottom-left"
-    overlay_n = _apply_image_overlay(dest, req.overlay, corner=corner)
+    corner = (req.overlay_corner or "auto").strip() or "auto"
+    overlay_n = _apply_image_overlay(
+        dest, req.overlay, corner=corner, design=req.overlay_design
+    )
     result: dict[str, Any] = {
         "ok": True,
         "file": str(dest),

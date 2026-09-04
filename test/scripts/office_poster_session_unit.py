@@ -19,9 +19,8 @@ from classify_client import (  # noqa: E402
     plan_allows_office_shortcut,
     plan_allows_poster_shortcut,
     plan_allows_scene_image,
-    plan_allows_search_then_info_card,
+    plan_allows_search_then_composed_image,
     plan_allows_search_then_office,
-    plan_allows_search_then_weather_scene,
     plan_image_render_mode,
     plan_media_shortcut_gate,
     plan_skips_media_shortcut,
@@ -176,26 +175,24 @@ def main() -> int:
             "SCENE: Ho Chi Minh City skyline at golden hour, photorealistic photograph, real camera photo"
         ],
     }
-    assert plan_image_render_mode(scenic_plan) == "scene"
+    assert plan_image_render_mode(scenic_plan) == ""
     assert plan_allows_scene_image(scenic_plan) is True
-    assert plan_allows_search_then_weather_scene(scenic_plan) is False
-    assert plan_allows_search_then_info_card(scenic_plan) is False
+    assert plan_allows_search_then_composed_image(scenic_plan) is False
     assert (
         scene_prompt_from_instruction(scenic_plan["instructions"][0])
         == "Ho Chi Minh City skyline at golden hour, photorealistic photograph, real camera photo"
     )
 
-    weather_scene = {
+    composed_image = {
         "ok": True,
         "task_hint": "tool",
         "task_type": "media_generation",
         "output_type": "image",
         "instructions": [
-            "current weather Ho Chi Minh City temperature humidity",
+            "current public information for the requested subject",
             (
-                "RENDER: weather-scene\n"
-                "SCENE: Ho Chi Minh City street scene with visible sky, photorealistic photograph\n"
-                "- Nhiệt độ:\n- Độ ẩm:\n- Điều kiện:"
+                "RENDER: composed-image\n"
+                "SCENE: editorial city illustration with calm negative space"
             ),
         ],
         "task_details": [
@@ -203,53 +200,11 @@ def main() -> int:
             {"task_type": "media_generation", "output_type": "image"},
         ],
     }
-    assert plan_image_render_mode(weather_scene) == "weather-scene"
-    assert plan_allows_search_then_weather_scene(weather_scene) is True
-    assert plan_allows_search_then_info_card(weather_scene) is False
-    assert plan_allows_scene_image(weather_scene) is False
-
-    legacy_weather = dict(weather_scene)
-    legacy_weather["instructions"] = [
-        weather_scene["instructions"][0],
-        weather_scene["instructions"][1].replace("RENDER: weather-scene", "RENDER: scene-overlay"),
-    ]
-    assert plan_image_render_mode(legacy_weather) == "scene-overlay"
-    assert plan_allows_search_then_weather_scene(legacy_weather) is True
-
-    info_card_img = {
-        "ok": True,
-        "task_hint": "tool",
-        "task_type": "media_generation",
-        "output_type": "image",
-        "instructions": [
-            "weather Ho Chi Minh City now",
-            (
-                "RENDER: labeled-scene\n"
-                "SCENE: Clean outdoor information board in Ho Chi Minh City plaza, photorealistic\n"
-                "OVERVIEW: Current conditions\n"
-                "- Nhiệt độ:"
-            ),
-        ],
-        "task_details": [
-            {"task_type": "search", "output_type": None},
-            {"task_type": "media_generation", "output_type": "image"},
-        ],
-    }
-    assert plan_allows_search_then_info_card(info_card_img) is True
-    assert plan_allows_search_then_weather_scene(info_card_img) is False
-
-    legacy_info = {
-        **info_card_img,
-        "instructions": [
-            info_card_img["instructions"][0],
-            "RENDER: info-card\nTITLE: Thời tiết HCM\nICON: sun\nSTYLE: midnight\n- Nhiệt độ:",
-        ],
-    }
-    assert plan_allows_search_then_info_card(legacy_info) is True
-    assert plan_allows_search_then_weather_scene(legacy_info) is False
+    assert plan_image_render_mode(composed_image) == "composed-image"
+    assert plan_allows_search_then_composed_image(composed_image) is True
+    assert plan_allows_scene_image(composed_image) is False
     assert plan_media_shortcut_gate(scenic_plan) == "scene_image"
-    assert plan_media_shortcut_gate(weather_scene) == "weather_scene"
-    assert plan_media_shortcut_gate(info_card_img) == "info_card"
+    assert plan_media_shortcut_gate(composed_image) == "composed_image"
     assert shortcut_ok({"ok": True, "file": "x.png"}) is True
     assert shortcut_ok(shortcut_consumed()) is False
     assert shortcut_was_consumed(shortcut_consumed()) is True

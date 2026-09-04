@@ -76,6 +76,12 @@ The following are mandatory and must be satisfied before finishing work:
 -   **Always ask the user before creating merge requests** (or pushing
     / deploying). Never open, merge, or push an MR without explicit
     permission in the current conversation.
+-   Treat the current request's `# DECISION` block as the authorization
+    boundary. Create or merge MRs only when that block authorizes them;
+    apply or roll out to a VPS only when it separately authorizes remote
+    deployment. An MR decision never implies VPS access.
+-   Start implementation work with a concrete to-do checklist and close
+    it with verification evidence.
 -   Never bypass security, authorization, validation, or isolation
     merely to make a workflow succeed.
 -   Never claim success without verifying the affected behavior.
@@ -91,12 +97,15 @@ The following are mandatory and must be satisfied before finishing work:
     gitignored paths such as `scripts/temp/` and `hermes/temp/` —
     leave only durable, committed tooling. Do not leave VPS-only patch
     scripts or credential extractors behind.
--   **Obsolete `.env` keys:** Do not add one-off cleanup logic to durable
-    setup scripts (`scripts/main/first-setup-*.py`, `patch-*.py`, etc.)
-    whose sole purpose is removing deprecated keys or values. Use a
-    **session temp script** under `scripts/temp/` (gitignored), run it on
-    the target host, verify, then delete it. Core setup must only pin
-    current keys — not chase legacy pins on every run.
+-   **Obsolete `.env` keys:** setup templates and generated runtime env
+    files must contain only the current supported contract. When a schema
+    change retires keys, implement a durable, idempotent migration or
+    cleanup in the owning setup/update path, cover it with tests, and
+    remove the migration after its documented compatibility window. Never
+    ship a one-off patch file or session-only workaround as the fix.
+-   **First setup is setup only:** first-install paths may provision,
+    validate configuration, and report readiness, but must not run product
+    test cases, mutate test fixtures, or apply repair patches.
 
 ------------------------------------------------------------------------
 
@@ -352,6 +361,14 @@ Do **not** add or keep in application code:
 When content quality, facts, labels, icons, or layout copy are wrong, fix
 **classify** (`classify.json`, `skills/classify/parts/*.txt`) and Hermes skills —
 not host shortcuts with growing exception lists.
+
+Runtime prompt prose must not be embedded in Python or other application
+code. Store prompts in versioned prompt assets beside the owning skill
+(for classifier-owned media flows, under `hermes/main/skills/classify/parts/`).
+Application code may load, validate, parameterize, and execute those assets.
+Prompt assets must be generic, English-only, and organized around semantic
+capabilities rather than fixed topics, locales, layouts, or observed cases.
+Test fixtures may contain literal prompts needed to verify a case.
 
 **Allowed in code:** structural validation, classify JSON field gates
 (`task_type`, `RENDER:`, `output_type`), protocol drops in `gateway_noise`
@@ -710,6 +727,11 @@ Before implementing a new requirement:
 
 Do not merge directly into protected branches.
 
+When a data or schema change can conflict with persisted rows, inspect the
+affected table before rollout and provide a versioned migration, archival,
+or explicit cleanup step. Never silently retain incompatible records or
+clear unrelated data.
+
 ------------------------------------------------------------------------
 
 ## 18. Remote Operations
@@ -725,6 +747,8 @@ When operating against a remote host:
     synchronization.
 
 Never send scripts to the VPS for testing without explicit permission.
+Do not access a VPS at all when the current decision excludes VPS testing or
+deployment.
 
 ### 18.1 Monitor while patching
 
@@ -771,6 +795,12 @@ After testing:
 
 A test is not complete until the environment is restored **and** no
 new crash-loop or abnormal log storm remains.
+
+For schedule test cases, cap the requested delay at 120 seconds. This test
+limit does not constrain production schedules. After an isolated test
+checkout finishes, restore it to the intended `origin/main` or
+`origin/develop` baseline. Never run `reset --hard` in a shared or dirty
+worktree; preserve user-owned files and changes.
 
 ------------------------------------------------------------------------
 
@@ -1031,6 +1061,10 @@ models (Zalo Tn inject, OmniRoute, image/office delivery):
     failure recurs.
 5.  Stay cautious on OmniRoute queue budgets (`maxWaitMs`); space LLM
     heavy steps; do not hammer classify/image-gen in parallel.
+6.  A case blocked specifically by a free-model outage, exhausted quota,
+    or provider rate limit may be recorded as `PASS_PARTIAL_QUOTA` and
+    skipped after the unaffected stages are verified. Do not relabel a
+    functional failure as quota-related.
 
 Cross-check: [`HARDEN_RULE.md`](./HARDEN_RULE.md) (observe real
 response) and [`test/RULES.md`](./test/RULES.md).
@@ -1045,6 +1079,12 @@ response) and [`test/RULES.md`](./test/RULES.md).
   `docs/GIT.md`                           Branch / MR workflow
 
   `docs/CHANGELOG.md`                     Timestamped change history
+
+  `docs/HISTORY.md`                       History navigation and policy
+
+  `history/`                              Root-cause records by date
+
+  `scripts/HISTORY.md`                    Operational history index
 
   `test/RULES.md`                         Lab/deployment/test procedure
 

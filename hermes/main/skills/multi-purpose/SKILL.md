@@ -11,10 +11,14 @@ When the user asks for a **structured multi-part visual** (infographic with seve
    - OmniRouter: `POST /v1/chat/completions` `model=hermes`
    - 9Router: same when enabled
 2. **Deliver** using stack tools — never invent matplotlib/HTML screenshots:
-   - Readable metrics / panels on a picture → **`image-gen`** `mode=info-card` (TITLE/SUBTITLE/ICON markers)
-   - Scenic photo + small overlay facts → **`image-gen`** Omni `/images/generations` model `image-gen` (+ optional overlay via dispatcher if needed)
+   - Grounded information on a generated background → classifier `RENDER: composed-image`, Omni `image-gen`, then the model-authored `/v1/overlay` design
+   - Pure visual with no information layer → Omni `/images/generations` model `image-gen`
    - PDF / office document → **`file-gen`**
 3. Fetch live facts once via search when needed, then one generation call.
+
+Do not prescribe fixed panels, labels, typography, colors, or placement. The
+composition model adapts these choices to the user's complete brief and the
+available grounded material.
 
 Follow **`media-out`**: result file or final answer only — no process chatter.
 

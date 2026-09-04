@@ -23,15 +23,13 @@ def main() -> int:
     env = json.loads((skill / "classify.json").read_text(encoding="utf-8"))
     system = assemble_classify_system(skill, env)
     assert system.startswith("HARD PRIORITY RULES"), system[:120]
-    assert "outer timing intent" in system
-    assert "RENDER: live-scene" in system
-    assert "OVERLAY_HEADING:" in system
-    assert "Never invent current fact values" in system
-    assert "PRIMARY DUTY" in system
+    assert "outer timing" in system
+    assert "RENDER: composed-image" in system
+    assert "Never invent current values" in system
+    assert "MULTI-REQUESTS" in system
     assert "SCHEDULE POLICY" in system
-    assert "NEVER DOWNGRADE TIMED INTENT" in system
-    assert "Host does not scan" in system
-    assert "FILE / MEDIA POLICY" in system
+    assert "Never downgrade" in system
+    assert "FILE AND MEDIA POLICY" in system
     assert "DELIVERY POLICY" in system
     assert "OUTPUT SCHEMA" in system
     assert "schedule_resolution" in system
@@ -43,10 +41,14 @@ def main() -> int:
     assert int(env.get("max_tokens") or 0) >= 3072, env.get("max_tokens")
     assert CLASSIFY_REASONING_EFFORT == "low"
     media = (skill / "parts" / "media.txt").read_text(encoding="utf-8")
-    assert "OMIT the bullet lines entirely" in media or "omit bullets entirely" in media
+    assert "Never invent live values" in media
     tmpl = str(env.get("user_template") or "")
     assert "{local_now}" in tmpl, tmpl
     assert str(CFG_PATH).replace("\\", "/").endswith("skills/classify/classify.json"), CFG_PATH
+    classify_source = (
+        ROOT / "architect" / "models" / "model-router" / "classify.py"
+    ).read_text(encoding="utf-8")
+    assert 'system = "Return JSON with' not in classify_source
 
     from classify import _fill_user_template, _local_now_label  # noqa: E402
 
@@ -189,7 +191,7 @@ def main() -> int:
             "message": '[{"role":"system","content":"not a task payload"}]',
             "instructions": [
                 "current conditions in Da Lat",
-                "RENDER: live-scene\nOVERLAY_HEADING: Da Lat Weather\nSCENE: evening city photograph",
+                "RENDER: composed-image\nSCENE: evening city illustration with calm negative space",
             ],
         },
         "five minutes later create a current conditions picture",
