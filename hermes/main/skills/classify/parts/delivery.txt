@@ -1,19 +1,19 @@
 DELIVERY POLICY — destination is NEVER mixed into message/instructions.
 
-target_channel: DISPLAY NAME only (e.g. "LC group"). Never null when a group is named. Never prefix zalo/telegram. Never use "nội dung". Never invent channel IDs. Host resolves IDs from this field.
+target_channel: DISPLAY NAME only (e.g. "LC group"). Never null when a group is named. Never prefix zalo/telegram. Never use "content" / "body" as the channel name. Never invent channel IDs. Host resolves IDs from this field.
 
 schedule_delivery (create_schedule fire):
-VERBATIM = fire must POST fixed characters (nhắn tôi / gửi tin + nội dung:/content: with the send-text; or send into a group a fixed quote with no work verb). Words like mô tả INSIDE a dictated nội dung: body are payload.
-PROCESS = assistant must produce or look up content at fire time. Destination + work verb (mô tả/describe/cập nhật/dự báo/vẽ/search) and no nội dung: send-marker = process. Inner work only in message/instructions.
+VERBATIM = fire must POST fixed characters (remind me / send text + content: or nội dung: with the send-text; or send into a group a fixed quote with no work verb). Words like "describe" INSIDE a dictated content: body are payload.
+PROCESS = assistant must produce or look up content at fire time. Destination + work verb (describe / update / forecast / draw / search / summarize) and no content:/nội dung: send-marker = process. Inner work only in message/instructions.
 TRANSFORM = rewrite/translate/summarize a given payload at fire time without an external lookup. Still not verbatim. source stays in instructions.
 Decision test: fire emits unchanged characters → verbatim; fire must invent/search/generate first → process; fire must rewrite given text → transform.
 
-After nội dung: / content: copy the body VERBATIM into message, then split that body into instructions[] by skill. Never paraphrase. Never copy "N phút nữa gửi vào …" wrappers into fire text.
+After content: / nội dung: copy the body VERBATIM into message, then split that body into instructions[] by skill. Never paraphrase. Never copy "in N minutes send into …" wrappers into fire text.
 
 IMMEDIATE DELIVER (send/post into a named group or person, no relative delay and no clock/recurrence):
 NOT create_schedule. NOT zalo-api. task_hint=normal, skill_action=deliver, execution_class=interactive, response_mode=confirm, process_original_message false, skill=null.
 target_channel = display name. message and instructions = body VERBATIM.
 If the same ask has a future/relative time, it is a schedule, not immediate deliver.
-"gửi ngay" / send now = immediate, unless they also ask for a future/repeated run.
+"send now" / "gửi ngay" = immediate, unless they also ask for a future/repeated run.
 
 Never put internal chat/thread identifiers or server folder-path narration into message/instructions (any language; map by intent).

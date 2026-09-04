@@ -28,10 +28,47 @@ BAO_ADDR = (os.environ.get("OPENBAO_ADDR") or "http://127.0.0.1:8200").rstrip("/
 SECRET_PATH = os.environ.get("OPENBAO_SECRET_PATH") or OPENBAO_SECRET_PATH
 
 
+def repair_literal_newlines(path: Path) -> bool:
+    """Fix host .env files whose newlines were written as literal \\n (unsourceable).
+
+    Returns True when the file was rewritten. Never logs secret values.
+    """
+    if not path.is_file():
+        return False
+    raw = path.read_bytes()
+    text = raw.decode("utf-8", errors="replace")
+    literal_n = text.count("\\n")
+    real_n = text.count("\n")
+    if literal_n <= max(real_n * 5, 20):
+        return False
+    fixed = text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+    fixed = fixed.replace("\r\n", "\n").replace("\r", "\n")
+    if not fixed.endswith("\n"):
+        fixed += "\n"
+    bak = path.with_name(path.name + ".corrupt-literal-n.bak")
+    try:
+        if not bak.is_file():
+            bak.write_bytes(raw)
+    except OSError:
+        pass
+    path.write_text(fixed, encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    print(
+        f"OK: repaired literal \\\\n in {path} "
+        f"(was {literal_n} escapes / {real_n} newlines → {fixed.count(chr(10))} lines)",
+        flush=True,
+    )
+    return True
+
+
 def load_dotenv(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     if not path.is_file():
         return out
+    repair_literal_newlines(path)
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         s = line.strip()
         if not s or s.startswith("#") or "=" not in s:
@@ -46,6 +83,7 @@ def upsert_env_keys(path: Path, updates: dict[str, str]) -> int:
     """Fill empty compose-required keys in ROOT/.env. Never overwrite non-empty values."""
     if not updates:
         return 0
+    repair_literal_newlines(path)
     lines: list[str] = []
     if path.is_file():
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -120,6 +158,7 @@ def recover_root_token_from_container() -> str:
 def persist_root_token(token: str) -> None:
     if not token or not ENV_PATH.parent.is_dir():
         return
+    repair_literal_newlines(ENV_PATH)
     lines: list[str] = []
     if ENV_PATH.is_file():
         lines = ENV_PATH.read_text(encoding="utf-8", errors="replace").splitlines()
