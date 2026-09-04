@@ -175,6 +175,25 @@ def main() -> int:
     )
     assert transform.get("schedule_delivery") == "transform"
 
+    process = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "schedule_form": "once_after",
+            "delay_seconds": 300,
+            "schedule_delivery": "process",
+            "message": '[{"role":"system","content":"not a task payload"}]',
+            "instructions": [
+                "current conditions in Da Lat",
+                "RENDER: live-scene\nOVERLAY_HEADING: Da Lat Weather\nSCENE: evening city photograph",
+            ],
+        },
+        "five minutes later create a current conditions picture",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert process.get("message") == "\n".join(process.get("instructions") or [])
+
     unsure = normalize_plan(
         {
             "task_hint": "schedule",
