@@ -1,6 +1,41 @@
 # 2026-09-04
 
-1 incident(s). Times are UTC+7.
+2 incident(s). Times are UTC+7.
+
+## 07:05 — sync-model-router-skills PermissionError on classify.json
+
+### Symptom
+
+`bash run.sh update` / `bash scripts/main/sync-model-router-skills.sh` printed `PermissionError: … classify.json` and `WARN: sync-model-router-skills failed` while updating from `main`.
+
+### Root cause
+
+Bake file `architect/models/model-router/config/classify.json` was left `root:root` (mode 644) after a root/sudo sync, while the config directory stayed operator-owned. Later non-root `tn` runs could not overwrite the file.
+
+### Technical detail
+
+- **Script:** `scripts/main/sync-model-router-skills.sh` — Python `Path.write_text` directly onto `classify.json`.
+- **Path:** `/opt/assistant/architect/models/model-router/config/classify.json` — `root:root 644`; dir `tn:tn`.
+- **Fix:** assemble to temp under the config dir, then `_install_file` removes a non-writable dst (via `sudo` when needed), `mv`, and `chown` to the directory owner.
+
+### AI decision
+
+Treat ownership restoration as part of durable sync, not a one-off VPS chown.
+
+### Fix (core)
+
+Atomic install + chown-to-dir-owner in `sync-model-router-skills.sh`.
+
+### Todo list
+
+- Reproduce ownership mismatch
+- Core sync fix
+- VPS chown + re-sync
+- MR after operator approval
+
+### Prevent recurrence
+
+Never leave bake `classify.json` root-owned after sync; always match config directory owner.
 
 ## 06:50 — Weather overlay missing live metrics (title+timestamp only)
 
