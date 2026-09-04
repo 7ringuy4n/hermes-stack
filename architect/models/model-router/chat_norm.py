@@ -214,8 +214,14 @@ def chat_omni_skip_remaining(status: int, data: Any) -> bool:
         return True
     if "no available accounts" in msg or "no active accounts" in msg:
         return True
-    if status == 503 and ("temporarily unavailable" in msg or "service unavailable" in msg):
-        # Instant 503 on hermes/classifier (TI:0) — further Omni hops waste time.
+    if status == 503 and (
+        "temporarily unavailable" in msg
+        or "service unavailable" in msg
+        or "all targets were skipped" in msg
+        or "skipped by pre-di" in msg
+        or "skipped by pre-dispatch" in msg
+    ):
+        # Instant 503 on hermes/classifier (TI:0 / pre-dispatch skip) — further Omni hops waste time.
         return True
     # Groq free TPM / request-too-large: Omni marks the whole Groq provider
     # exhausted and RR only hits more groq/* members (413 again). Skip Omni.
