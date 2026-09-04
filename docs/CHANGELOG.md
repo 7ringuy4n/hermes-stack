@@ -1,3 +1,8 @@
+## 2026-09-04 14:35 +07 — classify delivery English; repair literal-\\n .env
+
+- Soften `classify/parts/delivery.txt` to English multi-purpose delivery examples (keep `content:` / `nội dung:` markers).
+- `load-openbao-env`: auto-repair host `.env` when newlines were stored as literal `\\n` (unsourceable; breaks `HERMES_REPLICAS` and compose).
+
 ## 2026-09-04 13:10 +07 — classify parts: English multi-purpose examples
 
 - Soften `core.txt` / `schedule.txt` / `schema.txt` examples away from Vietnamese-only and weather/poster-specific wording (intent families stay language-agnostic).
