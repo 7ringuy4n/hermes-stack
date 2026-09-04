@@ -30,7 +30,7 @@ Use **urllib**, **requests**, or a short checked-in helper script — not `curl 
 
 Omni may return a **top-level JSON array** of `{b64_json|url}` (not always `{"data":[...]}`). Always accept both shapes.
 
-**Scenic prompts (any user language):** Prefer the classify `SCENE:` English line when present. Otherwise translate the user ask into one clear English diffusion sentence (place + subjects + **photorealistic photograph**). Only include aerial/top-down wording when the user asked for that viewpoint — never invent it. Prefer street-level / eye-level framing by default. Use official English place names — colloquial Saigon / Sài Gòn → Ho Chi Minh City (some providers falsely NSFW-block colloquial aliases). Match **local time-of-day lighting** from stack TZ (evening/night/dawn/day — not always daytime). **Weather-scene** (`RENDER: weather-scene`): express conditions only through sky, clouds, lighting, and atmosphere — **no readable text, letters, signs, or captions on the image**. Safe-for-work outdoor scenes; avoid close-up people unless the user asked for portraits. Always include: `photorealistic photograph, real camera photo, natural lighting, highly detailed, not cartoon, not anime, not illustration`. If the provider returns a tiny censor placeholder, strengthen the SCENE (SFW, official names, wider establishing shot) and retry once — do not invent hardcoded cityscape templates in code.
+**Visual prompts (any user language):** Prefer the classifier's English `SCENE:` line. Preserve the user's requested subject, medium, viewpoint, mood, composition, and constraints; do not replace them with a fixed photographic style or location template. For `RENDER: composed-image`, generate only the background and reserve readable negative space. The editable prompt policy in `skills/classify/parts/image-runtime.json` supplies generic generation and composition instructions; application code must not embed replacement prompt prose.
 
 On Omni failure: one **media-out** failure line only. When the ask was primarily a **PDF/office file**, finish via **`file-gen`**.
 
@@ -42,7 +42,7 @@ Exact text posters only (not scenic diffusion or labeled dashboards):
 |------|------|
 | Exact text poster | `POST http://dispatcher:8090/v1/text-poster` |
 
-Labeled metrics / live-facts pictures with facts on-image → **Omni combo image-gen** (`model=image-gen`) for the scenic still (no burned-in text), then host/dispatcher `POST /v1/overlay` for Label: value facts. Do **not** call retired `POST /v1/info-card`.
+Grounded information images use **Omni combo image-gen** (`model=image-gen`) for the background, then the host's generic composition model and dispatcher `POST /v1/overlay`. The model chooses the content hierarchy and visual treatment; the renderer validates and executes it.
 
 Do **not** call deprecated `POST http://dispatcher:8090/v1/image` for scenic generation. Do **not** use the built-in `image_generation` tool and never tell the user that “credentials aren’t available” — keys live on Omni/dispatcher; on failure send only the media-out failure line.
 

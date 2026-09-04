@@ -56,7 +56,7 @@ def test_pure_media_process_false() -> None:
     assert plan.get("process_original_message") is False
 
 
-def test_weather_on_image_gate() -> None:
+def test_grounded_information_image_gate() -> None:
     raw = {
         "ok": True,
         "task_hint": "tool",
@@ -67,8 +67,8 @@ def test_weather_on_image_gate() -> None:
         "skill_action": "generate_media",
         "output_type": "image",
         "instructions": [
-            "current weather Ho Chi Minh City",
-            "RENDER: weather-scene\nSCENE: Ho Chi Minh City street-level photograph, natural light\n- Nhiệt độ: 29°C\n- Độ ẩm: 70%",
+            "current public information for the requested subject",
+            "RENDER: composed-image\nSCENE: editorial city illustration with calm negative space",
         ],
         "task_details": [
             {"task_type": "search", "output_type": None},
@@ -80,10 +80,10 @@ def test_weather_on_image_gate() -> None:
         "cập nhật thông tin thời tiết hồ chí minh, ghi thông tin lên hình góc trái bên dưới",
         "Asia/Ho_Chi_Minh",
     )
-    assert plan_media_shortcut_gate(plan) == "weather_scene", plan
+    assert plan_media_shortcut_gate(plan) == "composed_image", plan
 
 
-def test_labeled_scene_still_gates_info_card() -> None:
+def test_another_subject_uses_same_composed_gate() -> None:
     raw = {
         "ok": True,
         "task_hint": "tool",
@@ -93,16 +93,16 @@ def test_labeled_scene_still_gates_info_card() -> None:
         "skill_action": "generate_media",
         "output_type": "image",
         "instructions": [
-            "fuel prices Ho Chi Minh",
-            "RENDER: labeled-scene\nSCENE: plaza photograph\n- Xăng RON95: 21000",
+            "current public rankings for the requested event",
+            "RENDER: composed-image\nSCENE: energetic stadium illustration with negative space",
         ],
         "task_details": [
             {"task_type": "search"},
             {"task_type": "media_generation", "output_type": "image"},
         ],
     }
-    plan = normalize_plan(raw, "hình ảnh chứa thông tin giá xăng", "Asia/Ho_Chi_Minh")
-    assert plan_media_shortcut_gate(plan) == "info_card", plan
+    plan = normalize_plan(raw, "create an image with current rankings", "Asia/Ho_Chi_Minh")
+    assert plan_media_shortcut_gate(plan) == "composed_image", plan
 
 
 def test_scenic_misrouted_as_pdf_coerced() -> None:
@@ -162,8 +162,8 @@ def test_weather_pdf_with_search_not_coerced_to_image() -> None:
 def main() -> int:
     test_scenic_plan_gate()
     test_pure_media_process_false()
-    test_weather_on_image_gate()
-    test_labeled_scene_still_gates_info_card()
+    test_grounded_information_image_gate()
+    test_another_subject_uses_same_composed_gate()
     test_scenic_misrouted_as_pdf_coerced()
     test_weather_pdf_with_search_not_coerced_to_image()
     adapter_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(

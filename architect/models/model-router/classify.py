@@ -710,13 +710,10 @@ def _load_cfg() -> dict[str, Any]:
         data = {}
     system = assemble_classify_system(CFG_PATH.parent, data)
     if not system:
-        system = "Return JSON with task_hint, instructions, cadence, cron_expr."
+        raise RuntimeError("classify prompt asset is missing or empty")
     data["system"] = system
     if not str(data.get("user_template") or "").strip():
-        data["user_template"] = (
-            "Timezone: {timezone}\nLocal now: {local_now}\nThread: {thread}\n"
-            "Attachments: {attachments}\nQuoted: {quoted}\nMessage:\n{text}"
-        )
+        raise RuntimeError("classify user template is missing")
     data.setdefault("timeout_s", 20)
     data.setdefault("temperature", 0)
     return data

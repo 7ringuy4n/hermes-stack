@@ -1,5 +1,70 @@
 ﻿# 2026-09-04
 
+## 20:52 — Generic image composition replaces fixed render families
+
+### Symptom
+
+Information images were routed through several topic- and layout-shaped modes,
+and runtime Python embedded fixed scene and fact-extraction instructions. New
+subjects or visual styles could therefore miss the intended path or inherit a
+design that did not fit the request.
+
+### Root cause
+
+Classification mixed semantic intent with presentation templates, while the
+host owned both prompt copy and a fixed bottom-left card. Prompt policy,
+content selection, visual design, and deterministic rendering were not cleanly
+separated.
+
+### Technical detail
+
+- **Protocol:** `RENDER: composed-image` is the single classifier marker for a
+  generated background plus grounded information.
+- **Prompt asset:** `hermes/main/skills/classify/parts/image-runtime.json`
+  contains the generic scene and structured composition contracts.
+- **Functions:** `media_shortcuts::_synthesize_overlay_plan()` obtains title,
+  facts, emphasis, and design; `_safe_overlay_design()` validates the bounded
+  vocabulary; dispatcher `overlay::apply_overlay()` selects a quiet region,
+  derives contrast, and renders role-specific typography.
+- **API fields:** `/v1/overlay` accepts optional `overlay_design` alongside
+  structural `overlay` lines; unrecognized design values fall back safely.
+- **Timing:** `OMNI_IMAGE_GEN_TIMEOUT_S` defaults to and is capped at 300
+  seconds per image-combo member.
+
+### AI decision
+
+The architecture assigns semantic and aesthetic choices to the LLM, keeps
+editable instructions outside application code, and limits Python to protocol
+parsing, validation, I/O, and rendering. A growing set of aliases or
+topic-specific templates was rejected because it would reproduce the same gap.
+
+### Fix (core)
+
+- Collapsed live and labeled image modes into the generic composed-image path.
+- Removed runtime prompt prose and fixed photographic styling from the Zalo
+  shortcut code.
+- Added adaptive placement, theme, alignment, accent, density, and font-role
+  rendering with Inter and Unicode-capable fallbacks.
+- Rebuilt the classifier fallback from English-only semantic parts and added a
+  cross-platform source-of-truth sync command.
+- Replaced obsolete mode tests with generic contract and adaptive-render tests.
+
+### Todo list
+
+- [x] Inspect classifier, shortcut, dispatcher, skills, and existing tests.
+- [x] Externalize runtime prompts and remove fixed render aliases.
+- [x] Add structured design validation and adaptive rendering.
+- [x] Update operational rules and project history.
+- [x] Run local syntax, classifier, routing, timeout, and rendering tests.
+- [x] Keep VPS access outside the explicitly authorized scope.
+
+### Prevent recurrence
+
+Classifier parts are required to remain English-only and semantic. New image
+subjects use the existing composed-image protocol; they must not add a new
+topic mode. Unit coverage verifies prompt loading, mode gating, timeout bounds,
+design fallback, content roles, and real Pillow output.
+
 ## 20:05 — Scheduled live-scene intent survives storage and fire
 
 ### Symptom

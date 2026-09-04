@@ -1,41 +1,26 @@
-SCHEDULE POLICY — classifier never invents now, timezone offset, or next_run_at (always null). Host is the only clock: fire_at = request_received_at + delay_seconds (once_after), or storage cron from clock_hm (once_at). Host does not scan the message for phút/lúc/vào/nhóm. If you omit delay_seconds, clock_hm, or cron_expr on a create, the job cannot be stored. Use the Timezone line only as context for local clock phrases.
+SCHEDULE POLICY
+Any future, delayed, or recurring action is a schedule even when the inner work is an image, search, file, or chat task. The classifier never invents the current time, UTC offset, or next_run_at. Use the Timezone and Local now context only to interpret the request.
 
-NEVER DOWNGRADE TIMED INTENT TO normal. Any future/relative/recurring action stays task_hint=schedule even when the clock is incomplete. Losing a timed ask is worse than asking a clarification.
+CREATE
+Use task_hint schedule, task_type create_schedule, execution_class schedule, skill schedule, skill_action create, and process_original_message false. message and instructions contain only the inner work. Exclude timing wrappers and destination wording.
 
-CREATE (timed reminder / once / recurring):
-task_hint=schedule, task_type=create_schedule, execution_class=schedule, skill=schedule, skill_action=create, process_original_message false.
-message and instructions = INNER WORK / execution payload only. Never put timing, destination phrases, or "đặt lịch" into message/instructions.
-original_request is host-only — do not copy the full inbound bubble into fire text.
+TEMPORAL FORMS
+- once_after: cadence once, integer delay_seconds measured from schedule_request_received_at, cron_expr null, and reference_time_source schedule_request_received_at.
+- once_at: cadence once, clock_hm in 24-hour HH:MM form, delay_seconds null, and cron_expr null.
+- recurring: a valid five-field cron_expr, delay_seconds null, and the requested cadence.
 
-TEMPORAL FORMS (exactly one per create task):
-1) once_after — relative delay. schedule_form=once_after, delay_seconds=<integer seconds from request receipt>, cadence=once, cron_expr=null, reference_time_source=schedule_request_received_at. Convert units yourself (1 minute=60, 2 minutes=120, 30s=30). Never add delay to a wall clock. Sequential "sau" / "then" / "after that" delays in one bubble: accumulate from request receipt into each task's delay_seconds (1 phút rồi 30s rồi 30s => 60, 90, 120). Never emit 30,30,30 unless each delay is independently from now.
-RELATIVE REMIND WITH BODY (any language): when the bubble combines a relative delay AND reminder body ("N minutes later remind me: …" / "N phút nữa nhắc tôi: …" / "in N min remind: …"), emit create_schedule with schedule_form=once_after, delay_seconds=N converted to seconds, instructions[] and message = INNER BODY ONLY (text after the colon — never the timing phrase). process_original_message false. Never map to normal/hello even when the body is short.
-ATTACHMENT RECALL MUST NOT BLOCK SCHEDULE: when the host appends [Recent attachments in this chat…] after the user line, classify ONLY from the user line before that block. Timed remind-with-body stays create_schedule — never downgrade to sheet follow-up, file OCR, or normal hello because prior files are remembered.
-2) once_at — absolute local clock/date. schedule_form=once_at, cadence=once, cron_expr=null, delay_seconds=null, clock_hm="HH:MM" (24h digits you extract). Host does not scan the user message for clocks.
-3) recurring — mỗi ngày / hằng ngày / weekly / monthly. schedule_form=recurring, cron_expr required (five-field), delay_seconds=null. You compute the five fields from the local clock phrase.
-Forbidden mixes: once_at+cron_expr from the classifier; once_after+cron_expr; recurring+delay_seconds.
-Same clock + several skills = ONE create task; split instructions[] by skill. Different clocks OR different delays = separate independent tasks[] entries, each a full create (task_type, schedule_form, delay_seconds or clock_hm, instructions, schedule_delivery). Do not execute inner work at create time.
+Never mix the timing fields of different forms. Convert relative units exactly. When successive delays are relative to the previous item, accumulate them from request receipt. Do not execute inner work while creating the schedule.
 
-INDEPENDENT SCHEDULE OBJECTS:
-When two or more timed jobs appear in one bubble, emit tasks[] with one complete schedule object per job. The worker must not treat instructions[] as one schedule. Wrapper delay_seconds may be omitted when every create lives in tasks[].
+MULTIPLE SCHEDULES
+Use tasks when jobs have different times, delays, recurrences, or destinations. Each task must be a complete schedule object. One scheduled deliverable containing several dependent steps remains one schedule with several instructions.
 
-TIMEZONE CONTRACT:
-timezone=null and timezone_source=user_default unless the user named a zone. If they named a zone, timezone="Area/City" and timezone_source=explicit. Never invent offsets.
+TIMEZONE
+Use timezone_source user_default and timezone null unless the user explicitly names a timezone. For an explicit timezone, emit its Area/City identifier and timezone_source explicit.
 
-RESOLUTION (schedule-specific; omit on non-schedule):
-schedule_resolution=clear | needs_confirmation | ambiguous | invalid
-confirmation_required=true unless timing, recurrence, inner work, destination, and delivery_mode are all unambiguous.
-Examples of families (not a dictionary): "every day at 06:00 check live conditions" => clear, confirmation_required false. "remind me tomorrow afternoon" with no hour => needs_confirmation, leave clock_hm/delay_seconds null, missing=["time"]. "schedule it later" => ambiguous. Impossible recurrence => invalid. Never map those to task_hint=normal.
+RESOLUTION
+Use clear only when timing, recurrence, inner work, destination, and delivery mode are complete. Otherwise use needs_confirmation, ambiguous, or invalid with confirmation_required and the relevant missing fields. Never downgrade an incomplete timed request to normal chat.
 
-LIST / INSPECT (where / show / xem / liệt kê / lịch đâu / chưa nhắc / check reminders):
-task_type=list_schedule, skill_action=list. cron_expr, delay_seconds, schedule_form, schedule_delivery MUST be null. Do NOT create. Do NOT delete. Quotes of old create bodies do not upgrade this to delete.
+LIFECYCLE
+List, delete, pause, resume, update, and run-now requests use their matching task_type and skill_action. Never invent a schedule id. Use schedule_selector with id null and semantic match details supplied by the user. A request to inspect is never deletion.
 
-DELETE / cancel (only explicit remove/cancel/delete; đâu/where/list/show are NOT delete):
-task_type=delete_schedule, skill_action=delete. Do not invent a new reminder.
-
-PAUSE / RESUME / UPDATE / RUN NOW:
-task_hint=schedule, skill=schedule. skill_action=pause|resume|update|run_now. Matching task_type=pause_schedule|resume_schedule|update_schedule|run_schedule.
-Never invent schedule id. Emit schedule_selector={id:null, name:null or short label, match:{content_hint, time_hint}} from the user's description. If several records could match, schedule_resolution=ambiguous.
-Do not force these through create_schedule.
-
-Never claim a schedule was saved.
+Never claim that a schedule was saved or executed.

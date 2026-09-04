@@ -2643,3 +2643,10 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 - No VPS deploy in this change.
 
 
+## 2026-09-04 20:52 +07 — generic model-authored image composition
+
+- Replaced topic-specific live-image render modes with one `composed-image` protocol for any grounded information-image request.
+- Moved runtime scene and composition instructions into an English prompt asset; Python now loads, validates, and executes structured model decisions.
+- Added adaptive overlay placement, contrast-aware light/dark treatment, semantic text weights, and Inter/Noto font selection with safe fallbacks.
+- Capped each image-combo member at the documented five-minute generation budget and added cross-platform classifier bake synchronization.
+- Strengthened operational rules for decision-scoped MRs/VPS access, source-owned migrations, first-setup isolation, schedule-test limits, and temporary cleanup.

@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
@@ -196,40 +197,84 @@ def _search_notes_blob(search: dict[str, Any] | None, *, limit: int = 4) -> str:
     return "\n---\n".join(chunks)[:2400]
 
 
-def _parse_label_value_lines(text: str) -> list[str]:
-    """Keep short Label: value lines from model output (structural colon split only)."""
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in (text or "").replace("\r", "\n").split("\n"):
-        line = _clean_fact_line(raw)
-        if not line or _skip_structural_junk(line):
+@lru_cache(maxsize=1)
+def _image_prompt_assets() -> dict[str, Any]:
+    """Load editable image-composition prompts; runtime Python owns no prompt prose."""
+    configured = (os.getenv("CLASSIFY_IMAGE_PROMPTS_FILE") or "").strip()
+    candidates = [
+        Path(configured) if configured else None,
+        Path("/opt/data/skills/classify/parts/image-runtime.json"),
+        Path(__file__).resolve().parents[2]
+        / "skills"
+        / "classify"
+        / "parts"
+        / "image-runtime.json",
+    ]
+    for candidate in candidates:
+        if candidate is None or not candidate.is_file():
             continue
-        if ":" not in line:
+        try:
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            log.warning("image prompt asset unreadable path=%s error=%s", candidate, type(exc).__name__)
             continue
-        left, right = line.split(":", 1)
-        if not left.strip() or not right.strip():
-            continue
-        if len(line) > 72:
-            line = line[:72].rstrip()
-        key = line.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(line)
-        if len(out) >= 4:
-            break
+        if isinstance(payload, dict):
+            return payload
+    log.error("image prompt asset missing")
+    return {}
+
+
+def _safe_overlay_design(raw: Any) -> dict[str, Any]:
+    assets = _image_prompt_assets()
+    defaults = assets.get("default_design")
+    base = dict(defaults) if isinstance(defaults, dict) else {}
+    source = raw if isinstance(raw, dict) else {}
+    allowed = {
+        "placement": {"auto", "top-left", "top-right", "bottom-left", "bottom-right", "bottom-bar"},
+        "theme": {"auto", "light", "dark"},
+        "alignment": {"left", "center", "right"},
+        "font_family": {"auto", "inter", "noto-sans", "serif", "mono"},
+        "title_weight": {"regular", "medium", "semibold", "bold"},
+        "body_weight": {"regular", "medium", "semibold", "bold"},
+        "important_weight": {"regular", "medium", "semibold", "bold"},
+        "accent": {"auto", "cool", "warm", "neutral", "vibrant"},
+        "density": {"compact", "comfortable"},
+    }
+    out: dict[str, Any] = {}
+    for key, choices in allowed.items():
+        value = str(source.get(key) or base.get(key) or "auto").strip().lower()
+        out[key] = value if value in choices else str(base.get(key) or "auto")
     return out
 
 
-def _synthesize_overlay_facts(
+def _json_object(text: str) -> dict[str, Any]:
+    raw = (text or "").strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    try:
+        value = json.loads(raw[start : end + 1])
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _synthesize_overlay_plan(
     search: dict[str, Any] | None,
     *,
     query: str = "",
-) -> list[str]:
-    """When search has no structured answer, ask chat combo for Label: value overlay lines."""
+    instruction: str = "",
+) -> dict[str, Any]:
+    """Ask the chat combo for grounded content and generic visual-design decisions."""
     notes = _search_notes_blob(search)
     if not notes.strip():
-        return []
+        return {}
+    assets = _image_prompt_assets()
+    system = str(assets.get("composition_system") or "").strip()
+    user_template = str(assets.get("composition_user_template") or "").strip()
+    if not system or not user_template:
+        return {}
     try:
         from .omni_env import resolve_omni_api_key, resolve_omni_base_url
     except ImportError:
@@ -238,29 +283,21 @@ def _synthesize_overlay_facts(
     base = resolve_omni_base_url()
     key = resolve_omni_api_key()
     if not base or not key:
-        return []
+        return {}
     model = (
         os.getenv("OMNIROUTER_DEFAULT_COMBO")
         or os.getenv("HERMES_CHAT_COMBO")
         or "hermes"
     ).strip() or "hermes"
-    q = (query or "").strip()[:120]
-    system = (
-        "You extract live facts for a small image overlay from the user query and notes. "
-        "Reply with 3 or 4 lines only. Each line MUST be Label: value. "
-        "Use concise English labels unless the query explicitly requests another overlay "
-        "language. Choose labels that match the query topic (weather, scores, prices, "
-        "rates, or other metrics — do not force a fixed weather-only schema). "
-        "Values must come from the notes. Never invent. Never placeholders. "
-        "No markdown, no bullets, no SCENE, no policy tokens, no extra prose."
-    )
-    user = f"Query: {q or 'live facts'}\nNotes:\n{notes}"
+    user = user_template.replace("{query}", (query or "").strip()[:240])
+    user = user.replace("{instruction}", (instruction or "").strip()[:1200])
+    user = user.replace("{notes}", notes)
     body = json.dumps(
         {
             "model": model,
             "stream": False,
             "temperature": 0,
-            "max_tokens": 180,
+            "max_tokens": 420,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -283,7 +320,7 @@ def _synthesize_overlay_facts(
             data = json.loads(resp.read().decode("utf-8") or "{}")
     except Exception as e:  # noqa: BLE001
         log.warning("overlay fact synthesize failed: %s", type(e).__name__)
-        return []
+        return {}
     text = ""
     try:
         choices = data.get("choices") if isinstance(data, dict) else None
@@ -293,10 +330,40 @@ def _synthesize_overlay_facts(
                 text = str(msg.get("content") or "").strip()
     except Exception:
         text = ""
-    lines = _parse_label_value_lines(text)
-    if not lines:
-        log.warning("overlay fact synthesize empty model=%r", model)
-    return lines
+    parsed = _json_object(text)
+    facts: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in parsed.get("facts") or []:
+        if not isinstance(item, dict):
+            continue
+        label = " ".join(str(item.get("label") or "").split())[:40]
+        value = " ".join(str(item.get("value") or "").split())[:72]
+        emphasis = str(item.get("emphasis") or "normal").strip().lower()
+        if not label or not value or _skip_structural_junk(value):
+            continue
+        key2 = f"{label.casefold()}:{value.casefold()}"
+        if key2 in seen:
+            continue
+        seen.add(key2)
+        facts.append(
+            {
+                "label": label,
+                "value": value,
+                "emphasis": emphasis if emphasis in {"primary", "important", "normal"} else "normal",
+            }
+        )
+        if len(facts) >= 4:
+            break
+    title = " ".join(str(parsed.get("title") or "").split())[:64]
+    if not facts:
+        log.warning("overlay plan synthesize empty model=%r", model)
+        return {}
+    return {
+        "title": title,
+        "facts": facts,
+        "design": _safe_overlay_design(parsed.get("design")),
+        "include_timestamp": bool(parsed.get("include_timestamp", True)),
+    }
 
 
 def build_office_body_from_search(
@@ -412,115 +479,54 @@ def run_search_then_office(
     )
 
 
-def _strip_diffusion_policy_tokens(scene: str) -> str:
-    """Remove policy tokens that must never become readable on-image text."""
-    s = (scene or "").strip()
-    if not s:
-        return ""
-    for token in (
-        "SAFE-FOR-WORK",
-        "safe-for-work",
-        "Safe-for-work",
-        "safe for work",
-        "Safe for work",
-    ):
-        s = s.replace(token, " ")
-    parts = [p for p in s.replace(";", ",").split(",") if p.strip()]
-    cleaned: list[str] = []
-    for part in parts:
-        bit = " ".join(part.split())
-        if not bit:
-            continue
-        low = bit.lower()
-        if "safe" in low and "work" in low:
-            continue
-        cleaned.append(bit)
-    return ", ".join(cleaned) if cleaned else " ".join(s.split())
-
-
 def scene_prompt_from_instruction(text: str) -> str:
-    """English diffusion scene from classify SCENE: marker (not user NLU)."""
+    """Read the classifier-owned scene field without interpreting user prose."""
     for raw in (text or "").splitlines():
         line = raw.strip()
         if line.upper().startswith("SCENE:"):
-            return _strip_diffusion_policy_tokens(line.split(":", 1)[1].strip())
+            return line.split(":", 1)[1].strip()
     src = (text or "").strip()
     up = src.upper()
     if src and "TITLE:" not in up and "RENDER:" not in up:
-        return _strip_diffusion_policy_tokens(src)
+        return src
     return ""
 
 
-def overlay_heading_from_instruction(text: str) -> str:
-    """Read the classifier-owned overlay heading marker without interpreting user prose."""
-    for raw in (text or "").splitlines():
-        line = raw.strip()
-        if line.upper().startswith("OVERLAY_HEADING:"):
-            heading = " ".join(line.split(":", 1)[1].split())
-            return heading[:48]
-    return ""
-
-
-def _overlay_header(user_ask: str = "", heading: str = "") -> str:
-    """Use the classifier heading; compact literal asks remain a compatibility fallback."""
-    clean_heading = " ".join((heading or "").split())
-    if clean_heading:
-        return clean_heading[:48]
-    ask = " ".join((user_ask or "").split())
-    if not ask:
-        return "Facts"
-    if len(ask) <= 28:
-        return ask
-    return "Facts"
-
-
-def _is_renderer_timestamp_fact(text: str) -> bool:
-    """Drop source timestamps because the renderer appends one authoritative timestamp."""
-    label, separator, _value = (text or "").partition(":")
-    if not separator:
-        return False
-    normalized = " ".join(label.casefold().split())
-    return normalized in {
-        "updated",
-        "last updated",
-        "update time",
-        "timestamp",
-        "cập nhật",
-        "cập nhật lúc",
-        "thời gian cập nhật",
-    }
-
-
-def _live_overlay_lines(
-    facts: list[str], *, scene: str = "", user_ask: str = "", heading: str = ""
-) -> list[str]:
-    """Compact lines for Pillow overlay — facts from classify/search only."""
-    del scene
-    header = _overlay_header(user_ask=user_ask, heading=heading)
-    tz_name = (os.getenv("ASSISTANT_TZ") or os.getenv("TZ") or "Asia/Ho_Chi_Minh").strip()
-    try:
-        now = datetime.now(ZoneInfo(tz_name)).strftime("%H:%M · %d/%m/%Y")
-    except Exception:  # noqa: BLE001
-        now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H:%M · %d/%m/%Y")
-    lines = [header or "Facts"]
-    for raw in facts or []:
-        s = str(raw or "").strip()
-        if not s or _skip_structural_junk(s):
+def _overlay_payload(composition: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
+    """Convert a validated LLM composition into renderer data."""
+    assets = _image_prompt_assets()
+    title = " ".join(str(composition.get("title") or assets.get("fallback_title") or "").split())[:64]
+    lines = [title] if title else []
+    roles = ["title"] if title else []
+    for fact in composition.get("facts") or []:
+        if not isinstance(fact, dict):
             continue
-        if _is_renderer_timestamp_fact(s):
+        label = " ".join(str(fact.get("label") or "").split())[:40]
+        value = " ".join(str(fact.get("value") or "").split())[:72]
+        if not label or not value:
             continue
-        low = s.lower()
-        if "unavailable" in low or "details unavailable" in low:
-            continue
-        lines.append(s[:72])
+        lines.append(f"{label}: {value}")
+        roles.append(str(fact.get("emphasis") or "normal"))
         if len(lines) >= 5:
             break
-    lines.append(f"Updated: {now}")
-    return lines[:6]
+    tz_name = (os.getenv("ASSISTANT_TZ") or os.getenv("TZ") or "Asia/Ho_Chi_Minh").strip()
+    try:
+        now = datetime.now(ZoneInfo(tz_name)).strftime("%H:%M · %Y-%m-%d")
+    except Exception:  # noqa: BLE001
+        now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H:%M · %Y-%m-%d")
+    if composition.get("include_timestamp", True):
+        stamp = " ".join(str(assets.get("timestamp_label") or "").split())
+        if stamp:
+            lines.append(f"{stamp}: {now}")
+            roles.append("meta")
+    design = _safe_overlay_design(composition.get("design"))
+    design["line_roles"] = roles[:6]
+    return lines[:6], design
 
 
-def _apply_live_overlay(out: dict[str, Any], lines: list[str]) -> dict[str, Any]:
-    """Post-process scenic still with Unicode-safe bottom-left badge."""
+def _apply_composed_overlay(out: dict[str, Any], composition: dict[str, Any]) -> dict[str, Any]:
+    """Post-process an image using the model-authored, renderer-validated design."""
+    lines, design = _overlay_payload(composition)
     if not lines:
         return out
     path = str(out.get("path") or out.get("file") or "")
@@ -533,7 +539,8 @@ def _apply_live_overlay(out: dict[str, Any], lines: list[str]) -> dict[str, Any]
             {
                 "filename": name,
                 "overlay": lines,
-                "overlay_corner": "bottom-left",
+                "overlay_corner": design.get("placement", "auto"),
+                "overlay_design": design,
                 "prompt": "",
             },
             timeout=45.0,
@@ -544,74 +551,27 @@ def _apply_live_overlay(out: dict[str, Any], lines: list[str]) -> dict[str, Any]
     return out
 
 
-# Compat aliases (weather was the first live-facts topic).
-_weather_overlay_lines = _live_overlay_lines
-_apply_weather_overlay = _apply_live_overlay
-
-
-def _photoreal_scene_prompt(prompt: str) -> str:
-    """Ensure diffusion prompts ask for real photos, not cartoon/anime styles."""
-    p = (prompt or "").strip()
-    low = p.lower()
-    extras = [
-        "photorealistic photograph",
-        "real camera photo",
-        "natural lighting",
-        "highly detailed",
-        "not cartoon",
-        "not anime",
-        "not illustration",
-        "not stylized 3d render",
-    ]
-    missing = [x for x in extras if x not in low]
-    if not missing:
-        return p
-    if not p:
-        return ", ".join(extras)
-    return f"{p}, " + ", ".join(missing)
-
-
-def _live_scene_visual_prompt(scene: str, facts: list[str]) -> str:
-    """Build a clean scenic background; factual text belongs only in the Pillow overlay."""
-    del facts
-    base = _photoreal_scene_prompt(_strip_diffusion_policy_tokens(scene or ""))
-    return (
-        f"{base} "
-        "Create a clean scenic background with empty visual space for a separate overlay. "
-        "Do not create any UI, weather card, information board, or data stamp. "
-        "No readable text, no letters, no digits, no symbols, no signs, no captions, "
-        "no watermarks, and no labels anywhere in the image. "
-        "No close-up people, not cartoon, not anime, not illustration"
-    )
-
-
-_weather_scene_visual_prompt = _live_scene_visual_prompt
-
-
-def _labeled_scene_prompt(scene: str, facts: list[str]) -> str:
-    """Scenic still for labeled asks — no burned-in text; facts go to /v1/overlay."""
-    del facts
-    base = _photoreal_scene_prompt(_strip_diffusion_policy_tokens(scene or ""))
-    return (
-        f"{base} "
-        "No readable text, no letters, no signs, no captions, no watermarks, "
-        "no labels, no information board in the image. "
-        "No close-up people, not cartoon, not anime, not illustration"
-    )
-
-
-def _scene_prompt_with_facts(scene: str, facts: list[str]) -> str:
-    """Scenic diffusion only — live facts are applied via Pillow overlay."""
-    return _labeled_scene_prompt(scene, facts)
+def _scene_visual_prompt(scene: str, *, composed: bool = False) -> str:
+    """Build a scene prompt entirely from classifier output and editable prompt assets."""
+    assets = _image_prompt_assets()
+    parts = [" ".join((scene or "").split())]
+    suffix = str(assets.get("scene_suffix") or "").strip()
+    if suffix:
+        parts.append(suffix)
+    if composed:
+        composition_suffix = str(assets.get("composition_scene_suffix") or "").strip()
+        if composition_suffix:
+            parts.append(composition_suffix)
+    return " ".join(part for part in parts if part).strip()
 
 
 def _omni_image_gen_timeout_s() -> int:
     import os
 
-    # Default 300s (5 minutes) per combo image-gen member; clamp 60..600.
+    # Default and maximum: 300s (5 minutes) per combo image-gen member.
     raw = (os.getenv("OMNI_IMAGE_GEN_TIMEOUT_S") or "300").strip()
     try:
-        return max(60, min(int(raw), 600))
+        return max(60, min(int(raw), 300))
     except ValueError:
         return 300
 
@@ -755,6 +715,7 @@ def _omni_request_image_blob(
 ) -> bytes | None:
     tried: list[str] = []
     candidates: list[str] = []
+    deadline = time.monotonic() + max(1, int(timeout))
     combo = (model or "").strip()
     members = [m for m in (combo_members or []) if m and "/" in m]
     # Prefer concrete members so Omni UI shows Requested Model and so we bypass
@@ -764,6 +725,9 @@ def _omni_request_image_blob(
     elif combo:
         candidates.append(combo)
     for candidate in candidates:
+        remaining = int(deadline - time.monotonic())
+        if remaining <= 0:
+            break
         if not candidate or candidate in tried:
             continue
         tried.append(candidate)
@@ -773,7 +737,7 @@ def _omni_request_image_blob(
             model=candidate,
             scene=scene,
             size=size,
-            timeout=timeout,
+            timeout=remaining,
         )
         if blob:
             return blob
@@ -795,10 +759,10 @@ def _omni_request_image_blob_once(
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
-    deadline = time.monotonic() + max(60, int(timeout))
+    deadline = time.monotonic() + max(1, int(timeout))
     soft_5xx = 0
     while time.monotonic() < deadline:
-        wait_s = max(5, min(90, int(deadline - time.monotonic())))
+        wait_s = max(1, min(300, int(deadline - time.monotonic())))
         req = urllib.request.Request(
             f"{base}/images/generations",
             data=body,
@@ -896,7 +860,7 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     if not key:
         log.warning("omni generate: missing OMNIROUTER_API_KEY")
         return None
-    scene = _photoreal_scene_prompt(prompt or "")
+    scene = (prompt or "").strip()
     size = _omni_image_gen_size()
     timeout = _omni_image_gen_timeout_s()
     model = _omni_image_gen_model()
@@ -1018,11 +982,8 @@ def run_scene_image(
             if scene:
                 break
     if not scene:
-        scene = (
-            "Photorealistic photograph of a cityscape with visible sky and urban skyline, "
-            "real camera photo, natural lighting, wide view, not cartoon, not anime"
-        )
-    prompt = _photoreal_scene_prompt(scene)
+        return shortcut_consumed()
+    prompt = _scene_visual_prompt(scene)
     # Unique per turn — avoid concurrent scenic jobs overwriting the same path.
     import uuid
 
@@ -1033,7 +994,7 @@ def run_scene_image(
     return shortcut_consumed()
 
 
-def run_search_then_live_scene(
+def run_search_then_composed_image(
     user_ask: str,
     plan: dict[str, Any],
     thread_id: str,
@@ -1041,7 +1002,7 @@ def run_search_then_live_scene(
     *,
     classified: bool = False,
 ) -> Optional[dict]:
-    """Host search → Omni scenic image-gen → Pillow /v1/overlay with live facts (any topic)."""
+    """Search, generate a scene, then render the model-authored information design."""
     del thread_type
     if not classified:
         return None
@@ -1057,77 +1018,21 @@ def run_search_then_live_scene(
     search = run_web_search(query or user_ask)
     scene = scene_prompt_from_instruction(img_ins)
     if not scene:
-        scene = (
-            "Photorealistic photograph of a cityscape with visible sky and urban skyline, "
-            "real camera photo, natural lighting, wide view, not cartoon, not anime"
-        )
-    facts = _collect_host_facts(img_ins or "", search)
-    if not facts:
-        facts = _synthesize_overlay_facts(search, query=query or user_ask)
-    prompt = _live_scene_visual_prompt(scene, facts)
-    import uuid
-
-    fname = f"live-scene-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.jpg"
-    out = _omni_generate_still(prompt, filename=fname)
-    if isinstance(out, dict) and out.get("ok"):
-        overlay = _live_overlay_lines(
-            facts,
-            scene=scene,
-            user_ask=user_ask,
-            heading=overlay_heading_from_instruction(img_ins),
-        )
-        return _apply_live_overlay(out, overlay)
-    return shortcut_consumed()
-
-
-# Compat: weather was the first live-facts topic.
-run_search_then_weather_scene = run_search_then_live_scene
-
-
-def run_search_then_info_card(
-    user_ask: str,
-    plan: dict[str, Any],
-    thread_id: str,
-    thread_type: str = "user",
-    *,
-    classified: bool = False,
-) -> Optional[dict]:
-    """Host search → scenic still (no diffusion text) → bottom-left Pillow overlay."""
-    del thread_type
-    if not classified:
-        return None
-    try:
-        from .classify_client import plan_image_instruction, plan_search_query
-    except ImportError:
-        from classify_client import (  # type: ignore
-            plan_image_instruction,
-            plan_search_query,
-        )
-    query = plan_search_query(plan, user_ask)
-    img_ins = plan_image_instruction(plan, user_ask)
-    search = run_web_search(query or user_ask)
-    scene = scene_prompt_from_instruction(img_ins) or (
-        "Photorealistic photograph of a city plaza with visible sky, "
-        "real camera photo, natural light, not cartoon"
+        return shortcut_consumed()
+    composition = _synthesize_overlay_plan(
+        search,
+        query=query or user_ask,
+        instruction=img_ins or user_ask,
     )
-    facts = _collect_host_facts(img_ins or "", search)
-    if not facts:
-        facts = _search_answer_lines(search, limit=4)
-    if not facts:
-        facts = _synthesize_overlay_facts(search, query=query or user_ask)
-    prompt = _scene_prompt_with_facts(scene, facts)
+    if not composition:
+        return shortcut_consumed()
+    prompt = _scene_visual_prompt(scene, composed=True)
     import uuid
 
-    fname = f"info-scene-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.jpg"
+    fname = f"composed-image-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
-        overlay = _live_overlay_lines(
-            facts,
-            scene=scene,
-            user_ask=user_ask,
-            heading=overlay_heading_from_instruction(img_ins),
-        )
-        return _apply_live_overlay(out, overlay)
+        return _apply_composed_overlay(out, composition)
     return shortcut_consumed()
 
 

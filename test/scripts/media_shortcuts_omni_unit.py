@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import base64
 import json
 import os
 import sys
@@ -27,7 +28,7 @@ def test_image_gen_timeout_default() -> None:
 def test_image_gen_timeout_clamped() -> None:
     os.environ["OMNI_IMAGE_GEN_TIMEOUT_S"] = "9999"
     try:
-        assert mod._omni_image_gen_timeout_s() == 600
+        assert mod._omni_image_gen_timeout_s() == 300
     finally:
         os.environ.pop("OMNI_IMAGE_GEN_TIMEOUT_S", None)
 
@@ -76,22 +77,15 @@ def test_media_out_candidates_shared_first() -> None:
         os.environ.pop("HERMES_SHARED_DATA", None)
 
 
-def test_weather_scene_visual_prompt_no_text_board() -> None:
-    prompt = mod._weather_scene_visual_prompt(
-        "Ho Chi Minh City skyline at evening, city lights illuminated",
-        ["Temperature: 28C", "Humidity: 80%", "Partly cloudy"],
+def test_composed_scene_visual_prompt_uses_external_policy() -> None:
+    prompt = mod._scene_visual_prompt(
+        "Editorial paper-cut skyline at evening", composed=True
     )
     low = prompt.lower()
-    assert "caption board" not in low
-    assert "no readable text" in low
-    assert "no letters" in low
-    assert "ho chi minh city" in low
-    assert "evening" in low or "city lights" in low
-
-
-def test_labeled_scene_prompt_keeps_board() -> None:
-    prompt = mod._labeled_scene_prompt("City plaza", ["Temp: 30C"])
-    assert "information board" in prompt.lower() or "readable" in prompt.lower()
+    assert "paper-cut" in low
+    assert "readable text" in low
+    assert "negative space" in low
+    assert "photorealistic" not in low
 
 
 def test_combo_failover_tries_combo_then_members() -> None:
@@ -120,7 +114,7 @@ def test_combo_failover_tries_combo_then_members() -> None:
         mod._omni_request_image_blob_once = original
 
     assert blob == b"\x89PNG-fake-blob"
-    assert calls == ["image-gen", "pollinations/flux", "ai-box/wan2.7-image-pro"]
+    assert calls == ["pollinations/flux", "ai-box/wan2.7-image-pro"]
 
 
 def test_combo_member_models_parses_v1_combos() -> None:
@@ -161,6 +155,44 @@ def test_combo_member_models_parses_v1_combos() -> None:
     assert members == ["ai-box/wan"]
 
 
+def test_image_request_can_wait_full_five_minute_budget() -> None:
+    captured = {"timeout": 0}
+
+    class _Resp:
+        def read(self):
+            body = {"data": [{"b64_json": base64.b64encode(b"image").decode()}]}
+            return json.dumps(body).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def fake_open(_req, timeout=0):
+        captured["timeout"] = timeout
+        return _Resp()
+
+    original_open = mod.urllib.request.urlopen
+    original_quality = mod._omni_image_quality_ok
+    mod.urllib.request.urlopen = fake_open
+    mod._omni_image_quality_ok = lambda _blob, *, size: True
+    try:
+        result = mod._omni_request_image_blob_once(
+            base="http://omni/v1",
+            key="k",
+            model="provider/model",
+            scene="test scene",
+            size="1280x720",
+            timeout=300,
+        )
+    finally:
+        mod.urllib.request.urlopen = original_open
+        mod._omni_image_quality_ok = original_quality
+    assert result == b"image"
+    assert 298 <= captured["timeout"] <= 300, captured
+
+
 def main() -> None:
     test_image_gen_timeout_default()
     test_image_gen_timeout_clamped()
@@ -170,10 +202,10 @@ def main() -> None:
     test_image_quality_mins_hd()
     test_image_quality_mins_full_hd()
     test_media_out_candidates_shared_first()
-    test_weather_scene_visual_prompt_no_text_board()
-    test_labeled_scene_prompt_keeps_board()
+    test_composed_scene_visual_prompt_uses_external_policy()
     test_combo_failover_tries_combo_then_members()
     test_combo_member_models_parses_v1_combos()
+    test_image_request_can_wait_full_five_minute_budget()
     print("OK media_shortcuts_omni_unit")
 
 
