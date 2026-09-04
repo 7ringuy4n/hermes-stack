@@ -1,7 +1,12 @@
-- Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
+## 2026-09-04 11:30 +07 — router: abandon primary on Playwright 502; archive lab; office shell
+
+- Model-router: Cloudflare Playground / Playwright session failures abandon remaining primary combo rotates and jump to failover model ids (do not skip all Omni; brief backoff).
+- Tn archive extract lab for Security `1–4.zip` (password-required handled honestly).
+- Dispatcher PDF HTML shell: accent bar, clearer band/subtitle contrast, larger metric cards (WeasyPrint-safe).
 
 ## 2026-09-04 11:10 +07 — labs: remaining Tn suite; OpenBao token recover
 
+- Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 - Remaining RULES slice lab: image-gen vision rate, vision-ocr samples, docs extract, web-search, schedule once_after (honest OCR/vision).
 - `load-openbao-env` recovers `OPENBAO_DEV_ROOT_TOKEN` from OpenBao `-dev` container (`BAO_DEV_ROOT_TOKEN_ID`) when host `.env` was emptied.
 - Env obsolete cleanup lab clears retired secret values (e.g. `ADMIN_API_TOKEN`).

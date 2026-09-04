@@ -1,3 +1,17 @@
+## 2026-09-04 11:30 +07 — Playwright primary abandon; archive lab; office shell
+
+### Symptom
+Hermes chat hung / 503 after Omni returned Cloudflare Playground Playwright 502; rotate retries burned on the same `hermes` combo id.
+
+### Root cause
+`expand_chat_candidates` retries the primary combo several times for Omni RR; Playwright session death does not recover on the same combo pool within that budget.
+
+### Fix (core)
+`chat_abandon_primary_rotates` + router loop skips remaining primary rotates and continues failover model ids (not full Omni skip). Office PDF HTML shell polish. Archive extract Tn lab for Security zips.
+
+### Prevent recurrence
+`test/scripts/model_router_chat_norm.py` Playwright cases; `test/scripts/zalo_tn_archive_extract_lab.py`. See `history/2026-09-04/`.
+
 ### Fix (core)
 `plan_is_image_analyze_chat` blocks async workflow; `_as_try_workflow_submit` no longer calls `office_shortcut` without `media_urls` when `has_image_attachment`. Image/PDF reads use `architect/lib/vision_ocr.py` → router-worker combo `vision-ocr` (no OCR container).
 

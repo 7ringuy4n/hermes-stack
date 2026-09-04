@@ -9,9 +9,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
 
 from chat_norm import (  # noqa: E402
+    chat_abandon_primary_rotates,
     chat_body_should_failover,
     chat_busy_capacity,
     chat_omni_skip_remaining,
+    chat_playwright_session_fail,
     completion_to_sse,
     content_has_vision_parts,
     normalize_chat_completion,
@@ -209,6 +211,29 @@ def main() -> int:
         return 1
     if not chat_busy_capacity(503, busy):
         print("FAIL chat_busy_capacity")
+        return 1
+    playwright = {
+        "error": {
+            "message": (
+                "[502]: Cloudflare Playground browser session failed: "
+                "Playwright is not available"
+            )
+        }
+    }
+    if not chat_body_should_failover(502, playwright):
+        print("FAIL Playwright 502 must failover")
+        return 1
+    if not chat_playwright_session_fail(502, playwright):
+        print("FAIL chat_playwright_session_fail")
+        return 1
+    if not chat_abandon_primary_rotates(502, playwright):
+        print("FAIL Playwright must abandon primary rotates")
+        return 1
+    if chat_omni_skip_remaining(502, playwright):
+        print("FAIL Playwright must NOT skip all Omni (keep failovers)")
+        return 1
+    if not chat_busy_capacity(502, playwright):
+        print("FAIL Playwright should count as busy for brief backoff")
         return 1
     sse = completion_to_sse(
         {
