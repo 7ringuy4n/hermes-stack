@@ -33,8 +33,8 @@ _install_file() {
   owner="$(_dst_owner)"
   if [[ -e "$dst" ]] && [[ ! -w "$dst" ]]; then
     # Common case: root-owned file in an operator-writable directory.
-    if command -v sudo >/dev/null 2>&1; then
-      sudo rm -f "$dst"
+    if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+      sudo -n rm -f "$dst"
     else
       echo "cannot replace non-writable $dst — run: sudo chown ${owner} $dst" >&2
       rm -f "$src"
@@ -43,8 +43,8 @@ _install_file() {
   fi
   if [[ -w "$(dirname "$dst")" ]]; then
     mv -f "$src" "$dst"
-  elif command -v sudo >/dev/null 2>&1; then
-    sudo mv -f "$src" "$dst"
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo -n mv -f "$src" "$dst"
   else
     echo "cannot write $dst — run: sudo chown -R ${owner} $(dirname "$dst")" >&2
     rm -f "$src"
@@ -53,8 +53,8 @@ _install_file() {
   # Keep the bake tree operator-owned so the next non-root update works.
   if [[ "$(id -u)" -eq 0 ]]; then
     chown "$owner" "$dst" 2>/dev/null || true
-  elif command -v sudo >/dev/null 2>&1; then
-    sudo chown "$owner" "$dst" 2>/dev/null || true
+  elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo -n chown "$owner" "$dst" 2>/dev/null || true
   fi
   chmod u+rw,go+r "$dst" 2>/dev/null || true
 }
