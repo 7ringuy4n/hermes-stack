@@ -1,18 +1,16 @@
-﻿# 2026-09-04 — Playwright failover + archive lab + office shell
+﻿# 2026-09-04 — §15 units + greeting + visual weather
 
-## Core
-- Model-router abandons primary combo rotates on Cloudflare Playground / Playwright 502; keeps Omni failovers + Ollama
-- Host `video_gen` refuse → dispatcher `/v1/video-policy-refuse`
-- OpenBao case 43; memory `/v1/compact` + embedding combo model
-- `load-openbao-env` recovers root token from OpenBao container when `.env` wiped
-- PDF HTML shell: accent bar + clearer metric cards
+## Core / labs
+- Case-index units aligned to `active`/`inactive`, classify-owned secret probe, multi-clock `tasks[]`
+- Visual weather PDF inject fixed (no sanitize on loopback URLs)
+- Model-router Playwright primary-combo abandon; archive extract lab; PDF shell polish
+- `run_case_index_lab.py` includes newer §15 scripts
 
 ## VPS gate (PASS)
-- Concurrent scenic + weather PDF (earlier)
-- OpenBao / embedding-compact / YouTube refuse
-- Remaining suite: cat image-gen (vision: tabby on table), vision-ocr (person + text image), docs PDF/TXT extract, web-search (5 hits), schedule once_after, no restart storm
-- Archive extract Security `1–4.zip` (4.zip password_required handled)
-- Cleared retired `ADMIN_API_TOKEN`; restored OpenBao token + compose keys after lab scrub
+- Omni combo preflight (hermes/classifier filled)
+- Tn greeting reply (~31s send)
+- Visual weather HCMC PDF (`hcm-weather-forecast.pdf`, no SERP chrome)
+- Archive extract Security `1–4.zip`; remaining suite; OpenBao / refuse (earlier)
 
 ## Merge
 Promote via MR develop → main; VPS update from `main` only.
