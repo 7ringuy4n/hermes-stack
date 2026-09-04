@@ -29,6 +29,8 @@ def main() -> int:
         "Độ ẩm: 83%",
         "Thời tiết: mây dần tăng",
         "Gió: 12 km/h",
+        "Updated: 2026-09-04 19:15",
+        "Thời gian cập nhật: 19:15",
         "Nhiệt đô: <value after search>",
         "SAFE-FOR-WORK",
     ]
@@ -50,7 +52,9 @@ def main() -> int:
     assert lines[0] != lines[1].split(":", 1)[0], lines
     assert any("Nhiệt độ" in ln for ln in lines), lines
     assert any("Thời tiết" in ln for ln in lines), lines
-    assert any(ln.startswith("Updated:") for ln in lines), lines
+    updated = [ln for ln in lines if ln.startswith("Updated:")]
+    assert len(updated) == 1, lines
+    assert "2026-09-04 19:15" not in blob, lines
     assert "unavailable" not in blob.lower(), lines
     empty = _weather_overlay_lines(
         ["current weather details unavailable"],
