@@ -1,3 +1,17 @@
+## 2026-09-04 15:35 +07 — Omni maxWaitMs 15s drops slow free models
+
+### Symptom
+Omni returned “Request dropped after exceeding the local rate-limit queue budget maxWaitMs (15000ms)” for slow OpenCode members.
+
+### Root cause
+`resilienceSettings.requestQueue.maxWaitMs` defaults to 15s Bottleneck job expiration. `PATCH /api/settings` silently ignores nested resilienceSettings.
+
+### Fix
+`ensure_request_queue_max_wait` patches `PATCH /api/resilience` (default 600000ms via `OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS`) on first-setup and update-omnirouter. Does not rewrite operator combo membership.
+
+### Prevent recurrence
+Always use `/api/resilience` for queue knobs; never set maxWaitMs to 0 (skip-never-queue).
+
 ## 2026-09-04 15:05 +07 — Omni 401: scrub emptied compose keys
 
 ### Symptom
