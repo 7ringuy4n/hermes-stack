@@ -474,6 +474,23 @@ def _overlay_header(user_ask: str = "", heading: str = "") -> str:
     return "Facts"
 
 
+def _is_renderer_timestamp_fact(text: str) -> bool:
+    """Drop source timestamps because the renderer appends one authoritative timestamp."""
+    label, separator, _value = (text or "").partition(":")
+    if not separator:
+        return False
+    normalized = " ".join(label.casefold().split())
+    return normalized in {
+        "updated",
+        "last updated",
+        "update time",
+        "timestamp",
+        "cập nhật",
+        "cập nhật lúc",
+        "thời gian cập nhật",
+    }
+
+
 def _live_overlay_lines(
     facts: list[str], *, scene: str = "", user_ask: str = "", heading: str = ""
 ) -> list[str]:
@@ -489,6 +506,8 @@ def _live_overlay_lines(
     for raw in facts or []:
         s = str(raw or "").strip()
         if not s or _skip_structural_junk(s):
+            continue
+        if _is_renderer_timestamp_fact(s):
             continue
         low = s.lower()
         if "unavailable" in low or "details unavailable" in low:
