@@ -35,11 +35,11 @@ def main() -> int:
     else:
         print("PASS WORKER_SCHEDULE default inactive")
     checks = [
-        ("ENABLE_OMNIROUTER", "1"),
-        ("ENABLE_MODEL_ROUTER", "1"),
-        ("ENABLE_OPENVPN", "0"),
-        ("ENABLE_API_GATEWAY", "1"),
-        ("ZALO_INBOUND_QUEUE", "1"),
+        ("ENABLE_OMNIROUTER", "active"),
+        ("ENABLE_MODEL_ROUTER", "active"),
+        ("ENABLE_OPENVPN", "inactive"),
+        ("ENABLE_API_GATEWAY", "active"),
+        ("ZALO_INBOUND_QUEUE", "active"),
         ("TRAEFIK_MODE", "local"),
         ("HERMES_REPLICAS", "1"),
     ]
@@ -70,11 +70,12 @@ def main() -> int:
         fails += 1
     else:
         print("PASS router-worker container name")
-    if '"max_tokens"' in classify:
-        print("FAIL classify.json still has max_tokens")
+    # classify.json may set max_tokens for the classify chat call (not Hermes outbound).
+    if '"timeout_s"' not in classify:
+        print("FAIL classify.json missing timeout_s")
         fails += 1
     else:
-        print("PASS classify.json has no max_tokens")
+        print("PASS classify.json has timeout_s")
     return 1 if fails else 0
 
 

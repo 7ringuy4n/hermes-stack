@@ -205,13 +205,13 @@ def main() -> int:
     if len(multi) != 3:
         print(f"FAIL multi-clock schedule expected 3 parts, got {multi!r}")
         return 1
-    if "06:00" not in multi[0] or "12:00" not in multi[1] or "18:00" not in multi[2]:
-        print(f"FAIL multi-clock clocks: {multi!r}")
+    # Timing lives in tasks[].clock_hm — instructions are inner work only.
+    if "chào" not in multi[0] or "xăng" not in multi[1] or "thời tiết" not in multi[2]:
+        print(f"FAIL multi-clock content: {multi!r}")
         return 1
     print("PASS multi-clock schedule splits to 3 timed jobs")
 
     from classify_fixtures import FIXTURE_DAILY_LC_TASK  # noqa: E402
-    from multi_request import _clock_pairs, _split_multi_clock_schedule  # noqa: E402
 
     hydr = (
         "[Prior conversation]\n"
@@ -221,20 +221,6 @@ def main() -> int:
         "[/Prior conversation]\n\n"
         + FIXTURE_DAILY_LC_TASK
     )
-    # Fan-out uses clocks inside classify instructions, not inbound prose.
-    skills_no_clock = [
-        "mô tả 1 bài thơ ngắn 4 dòng về trời xanh gió mát chim hót líu lo chào ngày mới",
-        "cập nhật giá xăng E5 RON92 và E10 RON95 mới nhất",
-        "dự báo thời tiết hồ chí minh trong ngày",
-    ]
-    assert _split_multi_clock_schedule(hydr, skills_no_clock) is None
-    skills_clocked = [
-        "lúc 06:00 gửi tin chào buổi sáng",
-        "lúc 12:00 cập nhật giá xăng E5 RON92 và E10 RON95",
-        "lúc 18:00 báo thời tiết HCMC",
-    ]
-    assert _clock_pairs(skills_clocked[0]) == [(6, 0)]
-    assert len(_split_multi_clock_schedule(hydr, skills_clocked) or []) == 3
     daily_kept = split_compound_requests(hydr)
     if daily_kept != [FIXTURE_DAILY_LC_TASK]:
         print(f"FAIL hydrated daily must stay one schedule, got {daily_kept!r}")

@@ -39,12 +39,16 @@ UNITS: list[tuple[str, str]] = [
     ("soul_deception_unit.py", "soul"),
     ("workflow_cadence_unit.py", "wf"),
     ("zalo_store_unit.py", "zalo-store"),
+    ("openbao_common_unit.py", "43"),
+    ("media_refuse_unit.py", "refuse"),
+    ("model_router_chat_norm.py", "router"),
 ]
 
 VPS: list[tuple[str, str]] = [
     ("vps_health_check.py", "health"),
     ("omni_combo_preflight.py", "38"),
     ("zalo_tn_greeting_inject.py", "32"),
+    ("zalo_tn_visual_weather_pdf_inject.py", "39"),
     ("zalo_latency_lab.py", "17"),
     ("zalo_special_four_lab.py", "25"),
     ("zalo_weather_fuel_lab.py", "26"),
@@ -52,6 +56,12 @@ VPS: list[tuple[str, str]] = [
     ("grafana_integration_lab.py", "20"),
     ("defaults_routers_lab.py", "21"),
     ("zalo_tn_history_regression.py", "history"),
+    ("openbao_kv_lab.py", "43"),
+    ("zalo_tn_youtube_refuse_inject.py", "yt-refuse"),
+    ("embedding_compact_lab.py", "embed"),
+    ("zalo_tn_remaining_suite_lab.py", "remaining"),
+    ("env_obsolete_cleanup_lab.py", "env-clean"),
+    ("zalo_tn_archive_extract_lab.py", "archive"),
 ]
 
 
