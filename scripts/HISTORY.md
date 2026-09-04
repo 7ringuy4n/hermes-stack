@@ -1,3 +1,17 @@
+## 2026-09-04 16:20 +07 — Hermes non-owner Zalo adapter ERROR spam
+
+### Symptom
+Scaled non-owner Hermes replicas logged `Platform 'zalo' is registered but adapter creation failed` on every start.
+
+### Root cause
+Replica entry cleared `ZALO_PLUGIN_URL` for non-owners but still symlinked shared `config.yaml` with Zalo platform + `zalo-platform` plugin enabled.
+
+### Fix
+`hermes-replica-entry.sh`: non-owners get a local config copy with gateway Zalo disabled and `zalo-platform` removed; owners keep the shared config symlink.
+
+### Prevent recurrence
+Never leave messaging platform enabled in config when the replica intentionally has no plugin URL.
+
 ## 2026-09-04 15:35 +07 — Omni maxWaitMs 15s drops slow free models
 
 ### Symptom
