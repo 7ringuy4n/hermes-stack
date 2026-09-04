@@ -37,75 +37,105 @@ def ts() -> str:
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
 
 
-def _inject_text(c, text: str, *, label: str) -> dict:
-    payload = {
-        "type": "message",
-        "threadId": TN_ID,
-        "threadType": "user",
-        "senderId": TN_ID,
-        "senderName": "Tn",
-        "text": text,
-        "messageId": f"lab-{label}-{int(datetime.now().timestamp())}",
-    }
-    cmd = (
-        "curl -sfS -X POST http://127.0.0.1:8787/inject-event "
-        f"-H 'Content-Type: application/json' -d {_sanitize(json.dumps(payload))}"
-    )
-    raw = sudo_bash(c, cmd)
-    return {"label": label, "inject": raw[:500]}
+def _clean(text: str) -> str:
+    lines = []
+    for ln in (text or "").splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        low = s.lower()
+        if "sudo" in low and "password" in low:
+            continue
+        if low.startswith("[sudo"):
+            continue
+        lines.append(s)
+    return "\n".join(lines)
 
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     c = connect()
-    report: dict = {"ts": ts(), "user": TN_ID, "message": MSG, "steps": []}
+    marker = f"lab-visual-weather-pdf-{int(time.time())}"
+    report: dict = {"ts": ts(), "user": TN_ID, "message": MSG, "marker": marker}
     try:
-        before = sudo_bash(
-            c,
-            "ls -1t /data/assistant/media/out/*.pdf 2>/dev/null | head -1 || true",
+        before = _clean(
+            sudo_bash(c, "ls -1t /data/assistant/media/out/*.pdf 2>/dev/null | head -1 || true")
         ).strip()
         report["pdf_before"] = before
-        report["steps"].append(_inject_text(c, MSG, label="visual-weather-pdf"))
-        print(f"INJECTED wait={WAIT_S}s (rate-limit cushion)", flush=True)
-        time.sleep(WAIT_S)
 
-        after = sudo_bash(
-            c,
-            "ls -1t /data/assistant/media/out/*.pdf 2>/dev/null | head -3 || true",
-        ).strip()
-        report["pdf_after"] = after
-        newest = (after.splitlines() or [""])[0].strip()
-        report["newest_pdf"] = newest
+        # Do not pipe JSON through sanitize() — it redacts 127.0.0.1 and breaks curl.
+        remote = f"""
+set -euo pipefail
+START_EPOCH=$(date +%s)
+python3 - <<'PY'
+import json, urllib.request
+payload = {{
+    "type": "message",
+    "threadId": {TN_ID!r},
+    "threadType": "user",
+    "senderId": {TN_ID!r},
+    "senderName": "Tn",
+    "text": {MSG!r},
+    "messageId": {marker!r},
+}}
+req = urllib.request.Request(
+    "http://127.0.0.1:8787/inject-event",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={{"Content-Type": "application/json"}},
+    method="POST",
+)
+with urllib.request.urlopen(req, timeout=30) as r:
+    print(r.read().decode("utf-8", "replace")[:400])
+print("INJECT_OK")
+PY
+NEWPDF=""
+for i in $(seq 1 {WAIT_S}); do
+  cand=$(find /data/assistant/media/out -type f -name '*.pdf' -newermt "@$START_EPOCH" 2>/dev/null | head -1 || true)
+  if [[ -n "$cand" ]]; then
+    NEWPDF="$cand"
+    echo "NEW_PDF $cand"
+    break
+  fi
+  sleep 1
+done
+if [[ -z "$NEWPDF" ]]; then
+  echo "NO_NEW_PDF"
+  ls -1t /data/assistant/media/out/*.pdf 2>/dev/null | head -3 || true
+  exit 0
+fi
+HOST_PDF="$NEWPDF"
+CONT_PDF="${{HOST_PDF/\\/data\\/assistant\\/media/\\/data\\/media}}"
+docker exec -e P="$CONT_PDF" -e P2="$HOST_PDF" assistant-dispatcher-1 python - <<'PY'
+import os
+from pathlib import Path
+p = Path(os.environ.get("P") or "")
+if not p.is_file():
+    p = Path(os.environ.get("P2") or "")
+print("size", p.stat().st_size if p.is_file() else 0)
+try:
+    from pypdf import PdfReader
+    t = (PdfReader(str(p)).pages[0].extract_text() or "") if p.is_file() else ""
+    print(t[:2000])
+except Exception as e:
+    print("extract", type(e).__name__, e)
+PY
+"""
+        print(f"INJECTED wait up to {WAIT_S}s", flush=True)
+        out = _clean(sudo_bash(c, remote, timeout=WAIT_S + 120))
+        report["remote"] = _sanitize(out)[-8000:]
+        print(out[-2000:], flush=True)
 
-        text_extract = ""
-        if newest:
-            text_extract = sudo_bash(
+        logs = _clean(
+            sudo_bash(
                 c,
-                "docker exec assistant-dispatcher-1 python - <<'PY'\n"
-                "from pathlib import Path\n"
-                f"p=Path({newest!r}.replace('/data/assistant/media','/data/media'))\n"
-                "if not p.is_file():\n"
-                f" p=Path({newest!r})\n"
-                "print('size', p.stat().st_size if p.is_file() else 0)\n"
-                "try:\n"
-                " from pypdf import PdfReader\n"
-                " t=(PdfReader(str(p)).pages[0].extract_text() or '') if p.is_file() else ''\n"
-                " print(t[:2000])\n"
-                "except Exception as e:\n"
-                " print('extract', type(e).__name__, e)\n"
-                "PY",
+                "docker logs --since 8m assistant-hermes-2 2>&1 | tail -n 80; "
+                "docker logs --since 8m assistant-hermes-3 2>&1 | tail -n 80",
+                timeout=60,
             )
-        report["pdf_text"] = text_extract[-4000:]
-
-        logs = sudo_bash(
-            c,
-            "docker logs --since 8m assistant-hermes-2 2>&1 | tail -n 80; "
-            "docker logs --since 8m assistant-hermes-3 2>&1 | tail -n 80; "
-            "journalctl --user -u com.hermes.zaloplugin -n 50 --no-pager 2>/dev/null || true",
         )
-        report["logs_tail"] = logs[-14000:]
+        report["logs_tail"] = _sanitize(logs)[-8000:]
 
-        blob = (text_extract + "\n" + logs).lower()
+        blob = (out + "\n" + logs).lower()
         fail_bits = (
             "dubaothoitiet",
             "accuweather",
@@ -124,12 +154,15 @@ def main() -> int:
         )
         report["fail_bits"] = bad
         report["greeting_leak"] = greeting_leak
-        new_pdf = bool(newest) and newest != before
+        new_pdf = "NEW_PDF" in out
         report["new_pdf"] = new_pdf
 
         out_path = OUT / f"report-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
         out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"REPORT {out_path}", flush=True)
+        if "INJECT_OK" not in out:
+            print("FAIL inject", flush=True)
+            return 1
         if bad:
             print("FAIL serp/create chrome in pdf/logs:", bad, flush=True)
             return 1
@@ -138,7 +171,6 @@ def main() -> int:
             return 1
         if not new_pdf:
             print("FAIL no new pdf produced (quota/rate-limit → skip)", flush=True)
-            # Rate-limit / free-model miss: skip rather than hard fail when logs show queue
             if "maxwaitms" in blob or "rate-limit" in blob or "quota" in blob:
                 print("SKIP rate-limit/quota", flush=True)
                 return 0

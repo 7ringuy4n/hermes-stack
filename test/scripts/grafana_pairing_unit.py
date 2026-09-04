@@ -16,7 +16,10 @@ def main() -> int:
     workers = (ROOT / "architect" / "backup-restore" / "lib" / "workers.sh").read_text(
         encoding="utf-8"
     )
-    nine_default_off = 'ENABLE_9ROUTER="${ENABLE_9ROUTER:-0}"' in workers
+    nine_default_off = (
+        'ENABLE_9ROUTER="${ENABLE_9ROUTER:-inactive}"' in workers
+        or 'ENABLE_9ROUTER="${ENABLE_9ROUTER:-0}"' in workers
+    )
     compose = (ROOT / "docker" / "docker-compose.security.yml").read_text(encoding="utf-8")
     if "9router=9router:20128" not in compose:
         if nine_default_off:

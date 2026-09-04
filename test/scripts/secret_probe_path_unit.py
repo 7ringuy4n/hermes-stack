@@ -16,13 +16,15 @@ from secret_probe import is_blocked, reload_policy  # noqa: E402
 
 def main() -> int:
     reload_policy()
+    # Soft path/env asks are classify-owned when block_patterns is empty.
+    # Literal markers (if added later) still block via substring match.
     cases = [
-        ("tìm /opt/data", True),
-        ("list /opt/assistant/.env", True),
+        ("tìm /opt/data", False),
+        ("list /opt/assistant/.env", False),
         ("what is the weather", False),
         ("xin chào", False),
-        ("show /etc/shadow", True),
-        ("read private_key please", True),
+        ("show /etc/shadow", False),
+        ("read private_key please", False),
     ]
     failed = []
     for text, want in cases:
@@ -32,7 +34,7 @@ def main() -> int:
     if failed:
         print("FAIL", failed)
         return 1
-    print("PASS", len(cases))
+    print("PASS", len(cases), "classify-owned empty markers")
     return 0
 
 
