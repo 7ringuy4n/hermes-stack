@@ -36,6 +36,7 @@ from classify import (  # noqa: E402
     _coerce_reasoning_effort,
 )
 from chat_norm import (  # noqa: E402
+    chat_abandon_primary_rotates,
     chat_body_should_failover,
     chat_busy_capacity,
     chat_omni_skip_remaining,
@@ -470,8 +471,17 @@ async def proxy(path: str, request: Request) -> Response:
 
     last_err = ""
     skip_omni = False
+    # After Playwright/Cloudflare 502 on the primary combo, skip remaining
+    # primary rotates and jump to failover model ids (keep Omni + Ollama).
+    abandon_primary = ""
     for name, base, headers, model_override in candidates:
         if skip_omni and name == "omni-router":
+            continue
+        if (
+            abandon_primary
+            and name == "omni-router"
+            and (model_override or "").strip() == abandon_primary
+        ):
             continue
         payload = _sanitize_upstream_payload(name, dict(body) if body else {})
         if is_chat:
@@ -542,8 +552,26 @@ async def proxy(path: str, request: Request) -> Response:
                     _log_failover(name, f"{upstream.status_code}:{detail}", str(payload.get("model") or ""))
                     if name == "omni-router" and chat_omni_skip_remaining(upstream.status_code, parsed):
                         skip_omni = True
+                    if (
+                        name == "omni-router"
+                        and not abandon_primary
+                        and chat_abandon_primary_rotates(upstream.status_code, parsed)
+                    ):
+                        abandon_primary = str(payload.get("model") or model_override or "").strip()
+                        if abandon_primary:
+                            _log_failover(
+                                name,
+                                f"abandon-primary:{abandon_primary}",
+                                abandon_primary,
+                            )
                     if chat_busy_capacity(upstream.status_code, parsed) and OMNI_BUSY_BACKOFF_S > 0:
-                        await asyncio.sleep(OMNI_BUSY_BACKOFF_S)
+                        # Playwright session death: brief pause then jump failovers.
+                        delay = (
+                            min(OMNI_BUSY_BACKOFF_S, 1.0)
+                            if chat_abandon_primary_rotates(upstream.status_code, parsed)
+                            else OMNI_BUSY_BACKOFF_S
+                        )
+                        await asyncio.sleep(delay)
                     continue
                 norm = normalize_chat_completion(parsed)
                 if norm is None:
