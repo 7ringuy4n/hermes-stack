@@ -1,3 +1,8 @@
+## 2026-09-04 16:20 +07 — non-owner Hermes replica: disable local Zalo gateway
+
+- Non-owner scaled Hermes replicas clear `ZALO_PLUGIN_URL` but still linked shared `config.yaml` with `gateway.platforms.zalo.enabled` and `zalo-platform` plugin → ERROR spam on adapter creation.
+- `hermes-replica-entry.sh` copies a local config and disables Zalo for non-owners; owner keeps the shared config link.
+
 ## 2026-09-04 15:35 +07 — Omni requestQueue maxWaitMs via /api/resilience
 
 - first-setup / update-omnirouter raises `resilienceSettings.requestQueue.maxWaitMs` (default 600000) through `PATCH /api/resilience` so slow free models are not dropped at the legacy 15s Bottleneck expiration.
