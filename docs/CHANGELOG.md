@@ -2650,3 +2650,6 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 - Added adaptive overlay placement, contrast-aware light/dark treatment, semantic text weights, and Inter/Noto font selection with safe fallbacks.
 - Capped each image-combo member at the documented five-minute generation budget and added cross-platform classifier bake synchronization.
 - Strengthened operational rules for decision-scoped MRs/VPS access, source-owned migrations, first-setup isolation, schedule-test limits, and temporary cleanup.
+## 2026-09-04 21:04 +07 — correct production update guidance
+
+- Replaced a stale reference to a nonexistent remote-update helper with the repository's backup-first `run.sh update` workflow from a verified `main` checkout.

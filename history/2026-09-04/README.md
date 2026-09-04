@@ -1,5 +1,44 @@
 ﻿# 2026-09-04
 
+## 21:04 — Production update guidance points to the real entrypoint
+
+### Symptom
+
+The operations rules recommended a remote-update helper that was not present in
+the repository, leaving the final deployment step ambiguous.
+
+### Root cause
+
+The documented helper name survived after the update workflow consolidated in
+the root lifecycle script.
+
+### Technical detail
+
+- **Entrypoint:** `run.sh::do_update()` performs a verified backup before any
+  rebuild and synchronizes classifier and Zalo source-of-truth assets.
+- **Branch gate:** production updates must fast-forward a clean checkout to
+  verified `origin/main` before invoking the update entrypoint.
+
+### AI decision
+
+The rule now references the existing backup-first lifecycle command instead of
+adding another wrapper with overlapping ownership.
+
+### Fix (core)
+
+- Replaced both stale helper references in the operations rules.
+- Kept the authorization and main-only deployment gates explicit.
+
+### Todo list
+
+- [x] Resolve the documented helper path.
+- [x] Inspect the current update implementation.
+- [x] Point the rule and companion table to the source-owned entrypoint.
+
+### Prevent recurrence
+
+Documentation must resolve every named operational script before it is merged.
+
 ## 20:52 — Generic image composition replaces fixed render families
 
 ### Symptom
