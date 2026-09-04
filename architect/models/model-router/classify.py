@@ -966,6 +966,16 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         attachments_required = False
     delivery_raw = str(src.get("schedule_delivery") or "").strip().lower()
     schedule_delivery = delivery_raw if delivery_raw in SCHEDULE_DELIVERIES else None
+    if (
+        hint == "schedule"
+        and task_type == "create_schedule"
+        and schedule_delivery == "process"
+        and instructions
+    ):
+        # A process schedule fires the classified inner work. Keep that payload
+        # structurally tied to instructions even if a provider hallucinates a
+        # chat/role JSON wrapper in message. Intent remains entirely LLM-owned.
+        message = "\n".join(instructions)
     contract = _schedule_contract_fields(src, hint)
     llm_tz = str(src.get("timezone") or "").strip()
     if (
