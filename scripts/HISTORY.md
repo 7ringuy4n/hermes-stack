@@ -1,3 +1,17 @@
+## 2026-09-04 15:05 +07 — Omni 401: scrub emptied compose keys
+
+### Symptom
+Host probes to Omni returned AUTH_002; `OMNIROUTER_API_KEY` / `API_SERVER_KEY` / `GATEWAY_API_KEYS` empty in ROOT/.env while OpenBao KV still held values.
+
+### Root cause
+`run.sh update` seeded OpenBao then `scrub-plaintext-env` cleared compose host keys and deleted `.env.openbao` without an immediate refill.
+
+### Fix
+After scrub, always `do_load_openbao_env_for_compose`. VPS: refill + recreate router-worker.
+
+### Prevent recurrence
+Never leave scrub as the last OpenBao step before idle; refill COMPOSE_HOST_KEYS in the same update.
+
 ## 2026-09-04 14:35 +07 — VPS .env literal-\\n; Hermes scale; delivery soften
 
 ### Symptom
