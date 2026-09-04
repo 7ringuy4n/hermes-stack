@@ -15,6 +15,7 @@ from media_shortcuts import (  # noqa: E402
     _collect_host_facts,
     _skip_structural_junk,
     _weather_overlay_lines,
+    overlay_heading_from_instruction,
 )
 from overlay import apply_overlay  # noqa: E402
 
@@ -39,12 +40,14 @@ def main() -> int:
         facts,
         scene="SAFE-FOR-WORK; photorealistic photograph of Ho Chi Minh City",
         user_ask="cập nhật thông tin thời tiết hồ chí minh lúc này, sau đó ghi thông tin lên hình",
+        heading="Ho Chi Minh City Weather",
     )
     blob = "\n".join(lines)
     assert "SAFE-FOR-WORK" not in blob.upper().replace("-", ""), lines
     assert "value after" not in blob.lower(), lines
     assert "SCENE:" not in blob, lines
-    assert lines[0] == "Nhiệt độ", lines
+    assert lines[0] == "Ho Chi Minh City Weather", lines
+    assert lines[0] != lines[1].split(":", 1)[0], lines
     assert any("Nhiệt độ" in ln for ln in lines), lines
     assert any("Thời tiết" in ln for ln in lines), lines
     assert any(ln.startswith("Updated:") for ln in lines), lines
@@ -55,6 +58,13 @@ def main() -> int:
     )
     assert all("unavailable" not in ln.lower() for ln in empty), empty
     assert empty[0] in {"Facts", "cập nhật thông tin thời tiết"}, empty
+
+    marker = (
+        "RENDER: live-scene\n"
+        "OVERLAY_HEADING: Da Lat Weather\n"
+        "SCENE: Da Lat at dusk, photorealistic photograph"
+    )
+    assert overlay_heading_from_instruction(marker) == "Da Lat Weather"
 
     collected = _collect_host_facts(
         "RENDER: weather-scene\nSCENE: city\n- Nhiệt độ: <value after search>\n- Độ ẩm: 70%",

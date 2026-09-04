@@ -666,6 +666,17 @@ def _outbound_llm_model(cfg: dict[str, Any], override: str | None = None) -> str
 
 def assemble_classify_system(skill_dir: Path, data: dict[str, Any]) -> str:
     """Join classify parts/*.txt into one system prompt. Bake JSON may already have system."""
+    priority = data.get("priority_rules")
+    priority_lines = [
+        str(item).strip()
+        for item in (priority if isinstance(priority, list) else [])
+        if str(item).strip()
+    ]
+    priority_block = ""
+    if priority_lines:
+        priority_block = "HARD PRIORITY RULES — apply before every other rule:\n" + "\n".join(
+            f"{index}. {line}" for index, line in enumerate(priority_lines, start=1)
+        )
     names = data.get("parts")
     chunks: list[str] = []
     if isinstance(names, list):
@@ -682,8 +693,11 @@ def assemble_classify_system(skill_dir: Path, data: dict[str, Any]) -> str:
             except OSError:
                 continue
     if chunks:
-        return "\n\n".join(chunks)
-    return str(data.get("system") or "").strip()
+        return "\n\n".join(([priority_block] if priority_block else []) + chunks)
+    system = str(data.get("system") or "").strip()
+    if priority_block and priority_block not in system:
+        return "\n\n".join((priority_block, system)) if system else priority_block
+    return system
 
 
 def _load_cfg() -> dict[str, Any]:

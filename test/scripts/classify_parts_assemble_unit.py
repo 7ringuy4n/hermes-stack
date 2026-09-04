@@ -21,6 +21,11 @@ def main() -> int:
     skill = ROOT / "hermes" / "main" / "skills" / "classify"
     env = json.loads((skill / "classify.json").read_text(encoding="utf-8"))
     system = assemble_classify_system(skill, env)
+    assert system.startswith("HARD PRIORITY RULES"), system[:120]
+    assert "outer timing intent" in system
+    assert "RENDER: live-scene" in system
+    assert "OVERLAY_HEADING:" in system
+    assert "Never invent current fact values" in system
     assert "PRIMARY DUTY" in system
     assert "SCHEDULE POLICY" in system
     assert "NEVER DOWNGRADE TIMED INTENT" in system
@@ -31,6 +36,7 @@ def main() -> int:
     assert "schedule_resolution" in system
     assert "schedule_request_received_at" in system
     assert env.get("parts") == ["core", "schedule", "media", "delivery", "schema"]
+    assert len(env.get("priority_rules") or []) >= 5
     assert int(env.get("timeout_s") or 0) <= 45, env.get("timeout_s")
     assert int(env.get("retry") or 99) <= 1, env.get("retry")
     media = (skill / "parts" / "media.txt").read_text(encoding="utf-8")

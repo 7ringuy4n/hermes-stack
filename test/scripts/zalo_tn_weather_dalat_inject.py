@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Zalo Tn: Da Lat weather+image; OCR/rate artifact (AGENT_RULES §29.2)."""
+"""Zalo lab: scheduled Da Lat weather image; poll and OCR/rate the artifact."""
 from __future__ import annotations
 
 import io
 import json
 import os
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,13 +17,13 @@ if hasattr(sys.stdout, "buffer"):
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-weather-dalat"
-TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937").strip()
-WAIT_S = int(os.environ.get("ZALO_TEST_WAIT_S") or "420")
-COOLDOWN_S = int(os.environ.get("ZALO_TEST_COOLDOWN_S") or "90")
+TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
+WAIT_S = int(os.environ.get("ZALO_TEST_WAIT_S") or "900")
 
-MSG = (
-    "tìm thông tin thời tiết thành phố đà lạt hiện tại, sau đó vẽ 1 "
-    "bức ảnh thể hiện thông tin thời tiết ở đà lạt thật bắt mắt"
+MSG = os.environ.get(
+    "ZALO_TEST_MESSAGE",
+    "5 phút nữa cập nhật thời tiết hiện tại ở Đà Lạt và vẽ vào hình ảnh, "
+    "giao diện phải bắt mắt và hợp gu người nhìn",
 )
 
 
@@ -104,6 +103,40 @@ PY
     return _clean_remote(sudo_bash(c, remote, timeout=60))
 
 
+def _wait_for_new_image(c, before_path: str, before_mtime: float) -> str:
+    """Poll artifact state until it changes; no fixed LLM cooldown or blind wait."""
+    remote = f"""
+set -euo pipefail
+python3 - <<'PY'
+import time
+from pathlib import Path
+
+deadline = time.monotonic() + {WAIT_S}
+before_path = {before_path!r}
+before_mtime = {before_mtime!r}
+patterns = ("*.jpg", "*.jpeg", "*.webp", "*.png")
+while time.monotonic() < deadline:
+    files = []
+    root = Path("/data/assistant/media/out")
+    for pattern in patterns:
+        files.extend(root.glob(pattern))
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in files:
+        name = path.name.lower()
+        if "_smoke" in name or "_overlay_crop" in name:
+            continue
+        mtime = path.stat().st_mtime
+        if str(path) != before_path or mtime > before_mtime + 1.0:
+            print(path)
+            raise SystemExit(0)
+    time.sleep(2)
+print("NO_NEW_IMAGE")
+raise SystemExit(0)
+PY
+"""
+    return _clean_remote(sudo_bash(c, remote, timeout=WAIT_S + 30))
+
+
 def _ocr_rate(c, img_path: str) -> dict:
     """Vision-OCR via dispatcher container; rate overlay spelling/layout."""
     if not img_path:
@@ -171,12 +204,14 @@ print('OCR_BEGIN'); print(text); print('OCR_END')"
 
 
 def main() -> int:
+    if not TN_ID:
+        print("ERROR: ZALO_TEST_USER_ID is required", file=sys.stderr)
+        return 2
     OUT.mkdir(parents=True, exist_ok=True)
     c = connect()
     report: dict = {"ts": ts(), "user": TN_ID, "msg": MSG, "steps": []}
     try:
-        print(f"[{ts()}] cooldown {COOLDOWN_S}s (rate-limit)", flush=True)
-        time.sleep(COOLDOWN_S)
+        print(f"[{ts()}] no artificial cooldown; one LLM-heavy request", flush=True)
         before = _clean_remote(
             sudo_bash(
                 c,
@@ -189,7 +224,8 @@ def main() -> int:
         report["before_mtime"] = before_mtime
         print(f"[{ts()}] inject dalat weather+image", flush=True)
         report["steps"].append({"inject": _inject(c, MSG)[-400:]})
-        time.sleep(WAIT_S)
+        waited = _wait_for_new_image(c, before_path, before_mtime)
+        report["steps"].append({"artifact_poll": waited[-400:]})
         after = _clean_remote(
             sudo_bash(
                 c,
