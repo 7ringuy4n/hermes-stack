@@ -15,6 +15,7 @@ from media_shortcuts import (  # noqa: E402
     _collect_host_facts,
     _skip_structural_junk,
     _weather_overlay_lines,
+    overlay_heading_from_instruction,
 )
 from overlay import apply_overlay  # noqa: E402
 
@@ -28,6 +29,8 @@ def main() -> int:
         "Độ ẩm: 83%",
         "Thời tiết: mây dần tăng",
         "Gió: 12 km/h",
+        "Updated: 2026-09-04 19:15",
+        "Thời gian cập nhật: 19:15",
         "Nhiệt đô: <value after search>",
         "SAFE-FOR-WORK",
     ]
@@ -39,15 +42,19 @@ def main() -> int:
         facts,
         scene="SAFE-FOR-WORK; photorealistic photograph of Ho Chi Minh City",
         user_ask="cập nhật thông tin thời tiết hồ chí minh lúc này, sau đó ghi thông tin lên hình",
+        heading="Ho Chi Minh City Weather",
     )
     blob = "\n".join(lines)
     assert "SAFE-FOR-WORK" not in blob.upper().replace("-", ""), lines
     assert "value after" not in blob.lower(), lines
     assert "SCENE:" not in blob, lines
-    assert lines[0] == "Nhiệt độ", lines
+    assert lines[0] == "Ho Chi Minh City Weather", lines
+    assert lines[0] != lines[1].split(":", 1)[0], lines
     assert any("Nhiệt độ" in ln for ln in lines), lines
     assert any("Thời tiết" in ln for ln in lines), lines
-    assert any(ln.startswith("Updated:") for ln in lines), lines
+    updated = [ln for ln in lines if ln.startswith("Updated:")]
+    assert len(updated) == 1, lines
+    assert "2026-09-04 19:15" not in blob, lines
     assert "unavailable" not in blob.lower(), lines
     empty = _weather_overlay_lines(
         ["current weather details unavailable"],
@@ -55,6 +62,13 @@ def main() -> int:
     )
     assert all("unavailable" not in ln.lower() for ln in empty), empty
     assert empty[0] in {"Facts", "cập nhật thông tin thời tiết"}, empty
+
+    marker = (
+        "RENDER: live-scene\n"
+        "OVERLAY_HEADING: Da Lat Weather\n"
+        "SCENE: Da Lat at dusk, photorealistic photograph"
+    )
+    assert overlay_heading_from_instruction(marker) == "Da Lat Weather"
 
     collected = _collect_host_facts(
         "RENDER: weather-scene\nSCENE: city\n- Nhiệt độ: <value after search>\n- Độ ẩm: 70%",
@@ -64,9 +78,20 @@ def main() -> int:
     assert any("31°C" in x or "70%" in x or "nắng" in x for x in collected), collected
 
     from media_shortcuts import (  # noqa: E402
+        _live_scene_visual_prompt,
         _parse_label_value_lines,
         _search_notes_blob,
     )
+
+    visual_prompt = _live_scene_visual_prompt(
+        "Da Lat city in natural evening light",
+        ["Location: Da Lat, Vietnam", "Temperature: 17.8°C", "Updated: 19:15"],
+    )
+    assert "Da Lat city" in visual_prompt, visual_prompt
+    assert "Location:" not in visual_prompt, visual_prompt
+    assert "17.8" not in visual_prompt, visual_prompt
+    assert "19:15" not in visual_prompt, visual_prompt
+    assert "No readable text" in visual_prompt, visual_prompt
 
     notes = _search_notes_blob(
         {

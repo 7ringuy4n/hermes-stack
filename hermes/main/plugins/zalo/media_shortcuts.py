@@ -248,7 +248,8 @@ def _synthesize_overlay_facts(
     system = (
         "You extract live facts for a small image overlay from the user query and notes. "
         "Reply with 3 or 4 lines only. Each line MUST be Label: value. "
-        "Choose labels that match the query topic and language (weather, scores, prices, "
+        "Use concise English labels unless the query explicitly requests another overlay "
+        "language. Choose labels that match the query topic (weather, scores, prices, "
         "rates, or other metrics — do not force a fixed weather-only schema). "
         "Values must come from the notes. Never invent. Never placeholders. "
         "No markdown, no bullets, no SCENE, no policy tokens, no extra prose."
@@ -450,15 +451,21 @@ def scene_prompt_from_instruction(text: str) -> str:
     return ""
 
 
-def _overlay_header(user_ask: str = "", scene: str = "", facts: list[str] | None = None) -> str:
-    """Short badge title from live facts or a compact ask fragment — not diffusion SCENE prose."""
-    del scene
-    for raw in facts or []:
-        s = str(raw or "").strip()
-        if ":" in s and not _skip_structural_junk(s):
-            label = s.split(":", 1)[0].strip()
-            if 2 <= len(label) <= 28:
-                return label
+def overlay_heading_from_instruction(text: str) -> str:
+    """Read the classifier-owned overlay heading marker without interpreting user prose."""
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if line.upper().startswith("OVERLAY_HEADING:"):
+            heading = " ".join(line.split(":", 1)[1].split())
+            return heading[:48]
+    return ""
+
+
+def _overlay_header(user_ask: str = "", heading: str = "") -> str:
+    """Use the classifier heading; compact literal asks remain a compatibility fallback."""
+    clean_heading = " ".join((heading or "").split())
+    if clean_heading:
+        return clean_heading[:48]
     ask = " ".join((user_ask or "").split())
     if not ask:
         return "Facts"
@@ -467,11 +474,29 @@ def _overlay_header(user_ask: str = "", scene: str = "", facts: list[str] | None
     return "Facts"
 
 
+def _is_renderer_timestamp_fact(text: str) -> bool:
+    """Drop source timestamps because the renderer appends one authoritative timestamp."""
+    label, separator, _value = (text or "").partition(":")
+    if not separator:
+        return False
+    normalized = " ".join(label.casefold().split())
+    return normalized in {
+        "updated",
+        "last updated",
+        "update time",
+        "timestamp",
+        "cập nhật",
+        "cập nhật lúc",
+        "thời gian cập nhật",
+    }
+
+
 def _live_overlay_lines(
-    facts: list[str], *, scene: str = "", user_ask: str = ""
+    facts: list[str], *, scene: str = "", user_ask: str = "", heading: str = ""
 ) -> list[str]:
     """Compact lines for Pillow overlay — facts from classify/search only."""
-    header = _overlay_header(user_ask=user_ask, scene=scene, facts=facts)
+    del scene
+    header = _overlay_header(user_ask=user_ask, heading=heading)
     tz_name = (os.getenv("ASSISTANT_TZ") or os.getenv("TZ") or "Asia/Ho_Chi_Minh").strip()
     try:
         now = datetime.now(ZoneInfo(tz_name)).strftime("%H:%M · %d/%m/%Y")
@@ -481,6 +506,8 @@ def _live_overlay_lines(
     for raw in facts or []:
         s = str(raw or "").strip()
         if not s or _skip_structural_junk(s):
+            continue
+        if _is_renderer_timestamp_fact(s):
             continue
         low = s.lower()
         if "unavailable" in low or "details unavailable" in low:
@@ -545,24 +572,15 @@ def _photoreal_scene_prompt(prompt: str) -> str:
 
 
 def _live_scene_visual_prompt(scene: str, facts: list[str]) -> str:
-    """Live-facts scenic diffusion — SCENE from classify; facts as atmospheric reference only."""
+    """Build a clean scenic background; factual text belongs only in the Pillow overlay."""
+    del facts
     base = _photoreal_scene_prompt(_strip_diffusion_policy_tokens(scene or ""))
-    clean = [
-        str(f).strip()
-        for f in (facts or [])
-        if str(f).strip() and not _skip_structural_junk(str(f))
-    ]
-    extra = ""
-    if clean:
-        extra = (
-            " Reflect live conditions through environment and atmosphere: "
-            + "; ".join(clean[:4])
-            + "."
-        )
     return (
-        f"{base}{extra} "
-        "Express live conditions only through sky, lighting, environment, and atmosphere. "
-        "No readable text, no letters, no signs, no captions, no watermarks, no labels in the image. "
+        f"{base} "
+        "Create a clean scenic background with empty visual space for a separate overlay. "
+        "Do not create any UI, weather card, information board, or data stamp. "
+        "No readable text, no letters, no digits, no symbols, no signs, no captions, "
+        "no watermarks, and no labels anywhere in the image. "
         "No close-up people, not cartoon, not anime, not illustration"
     )
 
@@ -1052,7 +1070,12 @@ def run_search_then_live_scene(
     fname = f"live-scene-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
-        overlay = _live_overlay_lines(facts, scene=scene, user_ask=user_ask)
+        overlay = _live_overlay_lines(
+            facts,
+            scene=scene,
+            user_ask=user_ask,
+            heading=overlay_heading_from_instruction(img_ins),
+        )
         return _apply_live_overlay(out, overlay)
     return shortcut_consumed()
 
@@ -1098,7 +1121,12 @@ def run_search_then_info_card(
     fname = f"info-scene-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
-        overlay = _live_overlay_lines(facts, scene=scene, user_ask=user_ask)
+        overlay = _live_overlay_lines(
+            facts,
+            scene=scene,
+            user_ask=user_ask,
+            heading=overlay_heading_from_instruction(img_ins),
+        )
         return _apply_live_overlay(out, overlay)
     return shortcut_consumed()
 
