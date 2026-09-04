@@ -87,9 +87,68 @@ def upsert_env_keys(path: Path, updates: dict[str, str]) -> int:
     return changed
 
 
+def recover_root_token_from_container() -> str:
+    """If host .env lost OPENBAO_DEV_ROOT_TOKEN, recover from the -dev container env."""
+    import subprocess
+
+    try:
+        out = subprocess.check_output(
+            [
+                "docker",
+                "inspect",
+                "assistant-openbao-1",
+                "--format",
+                "{{range .Config.Env}}{{println .}}{{end}}",
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+    except Exception:
+        return ""
+    for prefix in (
+        "BAO_DEV_ROOT_TOKEN_ID=",
+        "VAULT_DEV_ROOT_TOKEN_ID=",
+        "BAO_DEV_ROOT_TOKEN=",
+    ):
+        for ln in out.splitlines():
+            if ln.startswith(prefix):
+                return ln.split("=", 1)[1].strip()
+    return ""
+
+
+def persist_root_token(token: str) -> None:
+    if not token or not ENV_PATH.parent.is_dir():
+        return
+    lines: list[str] = []
+    if ENV_PATH.is_file():
+        lines = ENV_PATH.read_text(encoding="utf-8", errors="replace").splitlines()
+    out: list[str] = []
+    seen = False
+    for line in lines:
+        if line.startswith("OPENBAO_DEV_ROOT_TOKEN="):
+            out.append(f"OPENBAO_DEV_ROOT_TOKEN={token}")
+            seen = True
+        else:
+            out.append(line)
+    if not seen:
+        out.append(f"OPENBAO_DEV_ROOT_TOKEN={token}")
+    ENV_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
+    try:
+        os.chmod(ENV_PATH, 0o600)
+    except OSError:
+        pass
+
+
 def main() -> int:
     env = load_dotenv(ENV_PATH)
     token = (os.environ.get("OPENBAO_DEV_ROOT_TOKEN") or env.get("OPENBAO_DEV_ROOT_TOKEN") or "").strip()
+    if not token or token.startswith("CHANGE_ME"):
+        recovered = recover_root_token_from_container()
+        if recovered:
+            persist_root_token(recovered)
+            token = recovered
+            print("OK: recovered OPENBAO_DEV_ROOT_TOKEN from openbao container", flush=True)
     if not token or token.startswith("CHANGE_ME"):
         print("ERROR: OPENBAO_DEV_ROOT_TOKEN missing", file=sys.stderr)
         return 1
