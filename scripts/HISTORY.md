@@ -1,3 +1,17 @@
+## 2026-09-04 16:55 +07 — Omni still drops at maxWaitMs 15000 after update
+
+### Symptom
+Chat returned “Request dropped … maxWaitMs (15000ms)” even when host `.env` pinned `OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS=600000`.
+
+### Root cause
+Omni container recreate resets resilience DB defaults to 15s. `run.sh update` did not re-run update-omnirouter; ensure skipped PATCH when a prior read looked high enough; API-key GET `/api/resilience` is 403 (cookie login required).
+
+### Fix
+Default pin 86400000 (24h clamp); always force PATCH `/api/resilience`; call `update-omnirouter` from `run.sh update` after compose (membership stays setup_only).
+
+### Prevent recurrence
+Never rely on env alone for Omni resilience; always re-PATCH after Omni recreate.
+
 ## 2026-09-04 16:40 +07 — obsolete env pins linger after scrub
 
 ### Symptom

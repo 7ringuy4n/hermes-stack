@@ -903,27 +903,28 @@ def ensure_combo_round_robin(opener) -> None:
 
 
 def _request_queue_max_wait_ms() -> int:
-    """Omni Bottleneck job expiration (legacy name maxWaitMs). Default 10 minutes.
+    """Omni Bottleneck job expiration (legacy name maxWaitMs).
 
-    Omni ``PATCH /api/settings`` ignores nested resilienceSettings; the durable
-    write path is ``PATCH /api/resilience``. Do not use 0 — Omni treats that as
-    skip-never-queue (immediate drop when the lane is busy).
+    Default is Omni's clamp ceiling (24h) so slow free models are not dropped
+    by the legacy 15s budget. Omni ``PATCH /api/settings`` ignores nested
+    resilienceSettings; durable write path is ``PATCH /api/resilience``.
+    Do not use 0 — Omni treats that as skip-never-queue (immediate drop when busy).
     """
     raw = (
         os.environ.get("OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS")
         or os.environ.get("OMNI_REQUEST_QUEUE_MAX_WAIT_MS")
-        or "600000"
+        or "86400000"
     ).strip()
     try:
         val = int(raw)
     except ValueError:
-        val = 600000
-    # Omni normalize clamps [1, 24h]; keep a safe floor above the old 15s default.
+        val = 86_400_000
+    # Omni normalize clamps [1, 24h]; never leave the historical 15s default.
     return max(60_000, min(val, 24 * 60 * 60 * 1000))
 
 
 def ensure_request_queue_max_wait(opener) -> None:
-    """Raise Omni requestQueue.maxWaitMs so slow free models are not dropped at 15s."""
+    """Force Omni requestQueue.maxWaitMs so jobs are not dropped at 15s."""
     want = _request_queue_max_wait_ms()
     try:
         status, body = http_json(opener, "GET", f"{BASE}/api/resilience")
@@ -939,9 +940,7 @@ def ensure_request_queue_max_wait(opener) -> None:
         cur_i = int(cur_ms) if cur_ms is not None else 0
     except (TypeError, ValueError):
         cur_i = 0
-    if cur_i >= want:
-        print(f"==> resilience requestQueue.maxWaitMs ok ({cur_i}ms)")
-        return
+    # Always PATCH: Omni recreate resets DB defaults to 15s even when env already pins a high value.
     print(f"==> resilience requestQueue.maxWaitMs {cur_i} → {want}")
     status, body = http_json(
         opener,
@@ -958,6 +957,11 @@ def ensure_request_queue_max_wait(opener) -> None:
             "maxWaitMs"
         )
         print(f"==> resilience requestQueue.maxWaitMs now {got}")
+        try:
+            if int(got) < want:
+                print(f"WARN resilience maxWaitMs verify expected >={want}, got {got}")
+        except (TypeError, ValueError):
+            print(f"WARN resilience maxWaitMs verify unexpected: {got!r}")
     except Exception as e:  # noqa: BLE001
         print(f"WARN resilience verify failed: {e}")
 
@@ -2280,6 +2284,11 @@ def setup_core() -> int:
     ensure_web_search_omni_combo(opener, setup_only=True)
     ensure_media_combos(opener, key, env, setup_only=True)
     pin_media_combos_setup(env)
+    set_env_key(
+        ROOT / ".env",
+        "OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS",
+        str(_request_queue_max_wait_ms()),
+    )
     env_path = ROOT / ".env"
     for key_name, val in (
         ("OMNIROUTER_DEFAULT_COMBO", COMBO_NAME),
@@ -2374,6 +2383,12 @@ def run_update() -> int:
         env,
     )
     set_env_key_if_missing(ROOT / ".env", "OMNI_IMAGE_GEN_TIMEOUT_S", "300", env)
+    # Pin queue budget so host .env matches what we PATCH into Omni (24h default).
+    set_env_key(
+        ROOT / ".env",
+        "OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS",
+        str(_request_queue_max_wait_ms()),
+    )
     # Hermes-facing Router Worker: combo web-search via Omni only (no direct adapter chain).
     _clear_stack_env_keys(
         [

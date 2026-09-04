@@ -590,6 +590,15 @@ do_update() {
   # immediately so the next compose recreate / host probes still authenticate.
   do_load_openbao_env_for_compose || true
 
+  # Omni recreate resets resilienceDefaults (maxWaitMs=15s). Re-apply without rewriting
+  # operator combo members (update-omnirouter uses setup_only for membership).
+  if _env_active "${ENABLE_OMNIROUTER:-}"; then
+    echo "==> update-omnirouter (resilience maxWaitMs + provider repair; keep combo members)"
+    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
+    python3 "${SCRIPTS_DIR}/update-omnirouter.py" \
+      || echo "WARN: update-omnirouter failed — re-run: bash run.sh update-omnirouter"
+  fi
+
   echo "==> disk cleanup"
   docker builder prune -af >/dev/null 2>&1 || true
   docker image prune -af >/dev/null 2>&1 || true

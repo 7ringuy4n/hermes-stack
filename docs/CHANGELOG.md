@@ -1,3 +1,8 @@
+## 2026-09-04 16:55 +07 — Omni maxWaitMs forced to 24h on every update
+
+- Default `OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS` is Omni's 24h clamp; `ensure_request_queue_max_wait` always PATCH `/api/resilience` (Omni recreate resets to 15s).
+- `run.sh update` runs `update-omnirouter` after compose so queue budget is re-applied without rewriting operator combo members.
+
 ## 2026-09-04 16:40 +07 — durable obsolete env key removal
 
 - `cleanup-obsolete-env.py` deletes retired KEY= lines (`ADMIN_API_TOKEN`, `WEB_BACKENDS`, legacy image/LLM pins) from ROOT/.env and data `.env`.
