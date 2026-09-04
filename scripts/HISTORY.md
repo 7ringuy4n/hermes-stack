@@ -1,3 +1,17 @@
+## 2026-09-04 14:35 +07 — VPS .env literal-\\n; Hermes scale; delivery soften
+
+### Symptom
+Only one Hermes replica up despite `HERMES_REPLICAS=2`; bash could not source host `.env`; chat later hit Omni member 503.
+
+### Root cause
+`/opt/assistant/.env` had nearly all newlines stored as literal `\\n` (unparseable). A compose run without `--project-directory` also bound `pg_hba.conf` to a directory under `docker/docker/…`.
+
+### Fix
+Expanded literal newlines (backup kept); recreated postgres with correct project-dir mount; scaled Hermes to 2. Softened classify `delivery.txt`. `load-openbao-env` now auto-repairs literal-`\\n` `.env` files.
+
+### Prevent recurrence
+Always use `run.sh` / `--project-directory $ROOT`. Do not rewrite operator Omni combos — refill unhealthy free members in UI when pre-dispatch skips everything.
+
 ## 2026-09-04 12:00 +07 — flexible live-scene overlays; soften media prompts
 
 ### Symptom
