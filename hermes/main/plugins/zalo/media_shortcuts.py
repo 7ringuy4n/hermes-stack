@@ -572,24 +572,15 @@ def _photoreal_scene_prompt(prompt: str) -> str:
 
 
 def _live_scene_visual_prompt(scene: str, facts: list[str]) -> str:
-    """Live-facts scenic diffusion — SCENE from classify; facts as atmospheric reference only."""
+    """Build a clean scenic background; factual text belongs only in the Pillow overlay."""
+    del facts
     base = _photoreal_scene_prompt(_strip_diffusion_policy_tokens(scene or ""))
-    clean = [
-        str(f).strip()
-        for f in (facts or [])
-        if str(f).strip() and not _skip_structural_junk(str(f))
-    ]
-    extra = ""
-    if clean:
-        extra = (
-            " Reflect live conditions through environment and atmosphere: "
-            + "; ".join(clean[:4])
-            + "."
-        )
     return (
-        f"{base}{extra} "
-        "Express live conditions only through sky, lighting, environment, and atmosphere. "
-        "No readable text, no letters, no signs, no captions, no watermarks, no labels in the image. "
+        f"{base} "
+        "Create a clean scenic background with empty visual space for a separate overlay. "
+        "Do not create any UI, weather card, information board, or data stamp. "
+        "No readable text, no letters, no digits, no symbols, no signs, no captions, "
+        "no watermarks, and no labels anywhere in the image. "
         "No close-up people, not cartoon, not anime, not illustration"
     )
 
