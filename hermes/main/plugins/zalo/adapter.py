@@ -2318,10 +2318,11 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             return True
         # A process schedule fires its inner work with the timing wrapper already
-        # removed. Let that classified media/search plan use the same host-owned
-        # shortcut as an immediate request; otherwise scheduled images fall
-        # through to a text-only Hermes job.
-        if plan_media_shortcut_gate(plan) or plan_is_search_then_image_turn(plan):
+        # removed. Let that fire use the host-owned shortcut, while a schedule
+        # creation plan must continue below and be stored instead of executed now.
+        if (
+            plan_media_shortcut_gate(plan) or plan_is_search_then_image_turn(plan)
+        ) and (schedule_fire or plan.get("task_hint") != "schedule"):
             return await self._as_run_host_media_shortcut(
                 user_text=current,
                 thread_id=thread_id,
@@ -2716,7 +2717,9 @@ class ZaloAdapter(BasePlatformAdapter):
                 return False
         if not workflow_enabled():
             return False
-        if plan_media_shortcut_gate(plan) or plan_is_search_then_image_turn(plan):
+        if (
+            plan_media_shortcut_gate(plan) or plan_is_search_then_image_turn(plan)
+        ) and (schedule_fire or plan.get("task_hint") != "schedule"):
             return await self._as_run_host_media_shortcut(
                 user_text=current,
                 thread_id=thread_id,
