@@ -1,5 +1,10 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-04 07:05 +07 — ops: sync-model-router-skills owns bake classify.json
+
+- Root-owned `architect/models/model-router/config/classify.json` blocked operator `tn` updates (`PermissionError`).
+- Sync writes via temp file and restores ownership to the config directory owner after install.
+
 ## 2026-09-04 06:50 +07 — zalo: weather overlay synthesizes Label:value from search
 
 - Omni `/v1/search` often returns result snippets with no `answer`; weather badge was title+timestamp only.
