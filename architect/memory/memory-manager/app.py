@@ -34,7 +34,7 @@ DSN = os.environ.get(
 QDRANT_URL = os.environ.get("QDRANT_URL", "").rstrip("/")
 QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "conversational_memory")
 EMBED_URL = os.environ.get("EMBED_URL", "").rstrip("/")  # OpenAI-compat embeddings
-EMBED_MODEL = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
+EMBED_MODEL = os.environ.get("EMBED_MODEL", "embedding")
 EMBED_API_KEY = os.environ.get("EMBED_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
 DEFAULT_BUDGET = int(os.environ.get("CONTEXT_BUDGET_TOKENS", "24000"))
 WRITE_MODE = os.environ.get("MEMORY_WRITE_MODE", "live")  # live | staging | off
@@ -573,6 +573,79 @@ def stats() -> dict[str, Any]:
     }
 
 
+@app.post("/v1/compact")
+def compact(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
+    """Housekeep memory index via the embedding combo (run.sh compact / timer).
+
+    Re-embeds recent active rows into Qdrant when EMBED_URL is configured.
+    Soft-deactivates very old staged rows. Never raises on empty DB.
+    """
+    reindexed = 0
+    deactivated = 0
+    embed_ok = False
+    embed_err = ""
+    model = (EMBED_MODEL or "embedding").strip() or "embedding"
+    with db().connection() as conn:
+        # Drop stale staged drafts (keep live memories).
+        try:
+            cur = conn.execute(
+                """
+                UPDATE memories
+                SET active = false
+                WHERE staged AND active
+                  AND created_at < NOW() - INTERVAL '30 days'
+                """
+            )
+            deactivated = int(cur.rowcount or 0)
+            conn.commit()
+        except Exception as e:  # noqa: BLE001
+            embed_err = f"staged_cleanup:{type(e).__name__}"
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        rows = conn.execute(
+            """
+            SELECT id, content, type, importance
+            FROM memories
+            WHERE active AND NOT staged
+            ORDER BY updated_at DESC NULLS LAST, created_at DESC
+            LIMIT %s
+            """,
+            (int(limit),),
+        ).fetchall()
+    if not EMBED_URL:
+        return {
+            "ok": True,
+            "reindexed": 0,
+            "deactivated_staged": deactivated,
+            "embed_model": model,
+            "embed": False,
+            "note": "EMBED_URL unset",
+        }
+    for row in rows:
+        try:
+            _index_memory(
+                str(row["id"]),
+                str(row.get("content") or ""),
+                str(row.get("type") or "fact"),
+                float(row.get("importance") or 0.5),
+            )
+            reindexed += 1
+            embed_ok = True
+        except Exception as e:  # noqa: BLE001
+            embed_err = type(e).__name__
+            break
+    return {
+        "ok": True,
+        "reindexed": reindexed,
+        "deactivated_staged": deactivated,
+        "embed_model": model,
+        "embed": embed_ok or reindexed > 0,
+        "error": embed_err or None,
+    }
+
+
 def _index_memory(mid: str, content: str, typ: str, importance: float) -> None:
     if not QDRANT_URL or not EMBED_URL:
         return
@@ -604,10 +677,11 @@ def _embed(text: str) -> list[float] | None:
     if not EMBED_URL:
         return None
     headers = {"Authorization": f"Bearer {EMBED_API_KEY}"} if EMBED_API_KEY else {}
+    mid = (EMBED_MODEL or "embedding").strip() or "embedding"
     r = httpx.post(
         f"{EMBED_URL}/embeddings",
         headers=headers,
-        json={"model": EMBED_MODEL, "input": text[:8000]},
+        json={"model": mid, "input": text[:8000]},
         timeout=30.0,
     )
     if r.status_code >= 400:

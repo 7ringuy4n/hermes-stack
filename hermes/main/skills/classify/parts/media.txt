@@ -3,6 +3,7 @@ FILE / MEDIA POLICY — preserve requested output_type exactly. Never inherit fo
 REFUSE MEDIA (video clips, music/song generation, synthetic audio/TTS as a product, YouTube/TikTok/Facebook download or transcript, music lyric-from-URL transcription):
 task_hint=tool, task_type=media_generation, skill=video_gen (or skill=media_file with skill_action that maps to refuse), process_original_message false.
 Do NOT emit media_generation that invents video/music pipelines. Do NOT invent a scenic SCENE: or photorealistic diffusion prompt for a refuse path — host/Hermes use dispatcher video-policy-refuse. Still images and office files remain allowed via image-gen / file-gen when the user asked for those deliverables.
+CRITICAL: a YouTube/TikTok/Facebook URL ask (download, transcript, summarize, lyrics-from-URL) is ALWAYS skill=video_gen refuse — never SCENE IMAGE, never image-gen, never photorealistic English SCENE lines. Host short-circuits to /v1/video-policy-refuse.
 
 MULTI-PURPOSE VISUAL BRIEF (multi-panel layout, sections + icons + metrics + captions — any topic, any language):
 Prefer skill=multi_purpose / media_file with a clear deliverable: info-card image and/or office file. Plan content via chat combo hermes when needed; deliver via dispatcher image-gen (combo image-gen) or file-gen. Let the model design composition from the ask — do not force a fixed weather/poster template when the user asked for something else.
