@@ -164,10 +164,31 @@ def chat_body_should_failover(status: int, data: Any) -> bool:
     return normalize_chat_completion(data) is None
 
 
+def chat_playwright_session_fail(status: int, data: Any) -> bool:
+    """Omni Cloudflare Playground / Playwright session death (often HTTP 502).
+
+    Retrying the same combo id burns rotate budget on the same broken browser
+    pool. Fail over to the next combo/model id instead (do not skip all Omni).
+    """
+    _ = status
+    msg = _error_text(data).lower()
+    return any(
+        needle in msg
+        for needle in (
+            "playwright",
+            "cloudflare playground",
+            "browser session failed",
+            "browser session",
+        )
+    )
+
+
 def chat_busy_capacity(status: int, data: Any) -> bool:
     """Omni free-tier capacity busy — worth sleeping before the next rotate hop."""
-    if status not in {429, 503} and not (
-        isinstance(data, dict) and data.get("error")
+    if chat_playwright_session_fail(status, data):
+        return True
+    if status not in {429, 502, 503} and not (
+        isinstance(data, dict) and (data.get("error") or data.get("message"))
     ):
         return False
     msg = _error_text(data).lower()
@@ -177,9 +198,17 @@ def chat_busy_capacity(status: int, data: Any) -> bool:
     )
 
 
+def chat_abandon_primary_rotates(status: int, data: Any) -> bool:
+    """Stop re-hitting the same primary combo id; continue Omni failovers + Ollama."""
+    return chat_playwright_session_fail(status, data)
+
+
 def chat_omni_skip_remaining(status: int, data: Any) -> bool:
     """Omni errors where retrying the same combo/failover id cannot succeed."""
     msg = _error_text(data).lower()
+    # Playwright/Cloudflare: abandon primary rotates only — keep failover models.
+    if chat_playwright_session_fail(status, data):
+        return False
     # Omni UI / API variants for empty or dead hermes combo members.
     if "all upstream accounts are inactive" in msg:
         return True
