@@ -1,3 +1,8 @@
+## 2026-09-04 16:40 +07 — durable obsolete env key removal
+
+- `cleanup-obsolete-env.py` deletes retired KEY= lines (`ADMIN_API_TOKEN`, `WEB_BACKENDS`, legacy image/LLM pins) from ROOT/.env and data `.env`.
+- Wired into `scrub-plaintext-env` + `load-openbao-env`; OpenBao export skips obsolete keys; `.env.example` drops `WEB_BACKENDS`.
+
 ## 2026-09-04 16:20 +07 — non-owner Hermes replica: disable local Zalo gateway
 
 - Non-owner scaled Hermes replicas clear `ZALO_PLUGIN_URL` but still linked shared `config.yaml` with `gateway.platforms.zalo.enabled` and `zalo-platform` plugin → ERROR spam on adapter creation.

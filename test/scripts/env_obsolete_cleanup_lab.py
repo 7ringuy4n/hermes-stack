@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Compare VPS .env keys to repo .env.example; report obsolete keys (no secret values)."""
+"""VPS lab: run cleanup-obsolete-env; assert retired keys removed (no secret values)."""
 from __future__ import annotations
 
 import io
@@ -18,7 +18,8 @@ if hasattr(sys.stdout, "buffer"):
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-env-obsolete-cleanup"
-EXAMPLE = ROOT / ".env.example"
+SCRUB = ROOT / "scripts" / "main" / "cleanup-obsolete-env.py"
+COMMON = ROOT / "scripts" / "main" / "openbao_common.py"
 
 
 def ts() -> str:
@@ -35,17 +36,28 @@ def _clean(text: str) -> str:
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
-    if not EXAMPLE.is_file():
-        print("FAIL missing .env.example")
-        return 2
+    for p in (SCRUB, COMMON):
+        if not p.is_file():
+            print(f"FAIL missing {p}")
+            return 2
     c = connect()
     print(sudo_bash(c, "mkdir -p /tmp/hs-suite && chmod 777 /tmp/hs-suite", timeout=30))
-    sftp_put(c, _file_bytes(EXAMPLE), "/tmp/hs-suite/env.example")
-    remote = r"""
+    sftp_put(c, _file_bytes(SCRUB), "/tmp/hs-suite/cleanup-obsolete-env.py")
+    sftp_put(c, _file_bytes(COMMON), "/tmp/hs-suite/openbao_common.py")
+    # Seed a retired pin if missing so the lab always exercises deletion.
+    seed = r"""
 set -euo pipefail
+cd /opt/assistant
+if ! grep -qE '^ADMIN_API_TOKEN=' .env 2>/dev/null; then
+  printf '\nADMIN_API_TOKEN=\n' >> .env
+fi
+if ! grep -qE '^WEB_BACKENDS=' .env 2>/dev/null; then
+  printf '\nWEB_BACKENDS=omni\n' >> .env
+fi
+STACK_ROOT=/opt/assistant ASSISTANT_DATA_DIR=/data/assistant \
+  python3 /tmp/hs-suite/cleanup-obsolete-env.py
 python3 - <<'PY'
 from pathlib import Path
-import json
 
 def keys(path):
     out=set()
@@ -60,50 +72,17 @@ def keys(path):
             out.add(k)
     return out
 
-example=keys(Path('/tmp/hs-suite/env.example'))
 root=keys(Path('/opt/assistant/.env'))
 data=keys(Path('/data/assistant/.env')) if Path('/data/assistant/.env').is_file() else set()
-# Known retired / obsolete families still scrubbed by OpenBao
-obsolete_known = {
-    'FAL_KEY','FLUXAI_API_KEY','IMAGE_LLM_API_KEY','IMAGE_VENDOR_API_KEY',
-    'IMAGE_OMNI_MODEL','IMAGE_GEN_SIZE','IMAGE_ALLOW_PILLOW','ADMIN_API_TOKEN',
-    'MEM0_API_KEY','OLLAMA_HOST','QWEN_MODEL',
-}
-extra_root = sorted(k for k in root - example if k not in {'OPENBAO_DEV_ROOT_TOKEN'})
-extra_data = sorted(data - example) if data else []
-retired_present = sorted((root|data) & obsolete_known)
-print('EXAMPLE', len(example))
-print('ROOT_KEYS', len(root))
-print('DATA_KEYS', len(data))
-print('EXTRA_ROOT', ','.join(extra_root[:80]))
-print('EXTRA_DATA', ','.join(extra_data[:80]))
-print('RETIRED_PRESENT', ','.join(retired_present))
-# Soft cleanup: comment is enough — do not delete operator flags blindly.
-# Only clear values for retired secret keys if present (keep key line empty).
-env_path=Path('/opt/assistant/.env')
-changed=0
-if env_path.is_file() and retired_present:
-    lines=[]
-    for ln in env_path.read_text(encoding='utf-8', errors='replace').splitlines():
-        if '=' in ln and not ln.strip().startswith('#'):
-            k=ln.split('=',1)[0].strip()
-            if k in obsolete_known and ln.split('=',1)[1].strip():
-                lines.append(f'{k}=')
-                changed += 1
-                continue
-        lines.append(ln)
-    env_path.write_text('\\n'.join(lines)+'\\n', encoding='utf-8')
-print('CLEARED_RETIRED_VALUES', changed)
-print('VERDICT', 'PASS')
-print(json.dumps({
-  'extra_root': extra_root,
-  'extra_data': extra_data,
-  'retired_present': retired_present,
-  'cleared': changed,
-}, ensure_ascii=False))
+retired={'ADMIN_API_TOKEN','WEB_BACKENDS','FAL_KEY','IMAGE_OMNI_MODEL','MEM0_API_KEY'}
+hit=sorted((root|data) & retired)
+print('ROOT_HAS_ADMIN', 'ADMIN_API_TOKEN' in root)
+print('ROOT_HAS_WEB_BACKENDS', 'WEB_BACKENDS' in root)
+print('RETIRED_STILL_PRESENT', ','.join(hit) if hit else '')
+print('VERDICT', 'PASS' if not hit else 'FAIL')
 PY
 """
-    out = _clean(sudo_bash(c, remote, timeout=120))
+    out = _clean(sudo_bash(c, seed, timeout=120))
     (OUT / "remote.txt").write_text(out, encoding="utf-8")
     print(out)
     verdict = "PASS" if "VERDICT PASS" in out else "FAIL"

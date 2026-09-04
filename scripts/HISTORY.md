@@ -1,3 +1,17 @@
+## 2026-09-04 16:40 +07 — obsolete env pins linger after scrub
+
+### Symptom
+VPS ROOT/.env still had empty `ADMIN_API_TOKEN` and example still shipped `WEB_BACKENDS=omni` after combo-only search.
+
+### Root cause
+Scrub emptied secret *values* but left retired keys; no durable delete of non-secret obsolete pins.
+
+### Fix
+`scripts/main/cleanup-obsolete-env.py` + `OBSOLETE_ENV_KEYS` in `openbao_common.py`; called from scrub and load-openbao; KV export filters obsolete keys.
+
+### Prevent recurrence
+Add new retirements to `OBSOLETE_ENV_KEYS` / `OBSOLETE_SECRET_KEYS` only — never delete live `ENABLE_*` / `WORKER_*` install flags blindly.
+
 ## 2026-09-04 16:20 +07 — Hermes non-owner Zalo adapter ERROR spam
 
 ### Symptom
