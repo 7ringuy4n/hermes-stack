@@ -480,6 +480,9 @@ async def proxy(path: str, request: Request) -> Response:
         # (paid Omni models often 403 inside a 200 SSE stream Hermes cannot recover from).
         if is_chat:
             payload["stream"] = False
+            # Hermes often sends stream_options with stream=true; after forcing
+            # non-stream, OpenCode/GLM 400 unless stream_options is dropped.
+            payload.pop("stream_options", None)
             if task == "normal" and not has_vision:
                 payload["model"] = OMNI_DEFAULT_MODEL
         if model_override and "model" in payload:

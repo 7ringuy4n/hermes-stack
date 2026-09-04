@@ -28,19 +28,28 @@ Example HTML body:
 <html lang="vi"><head><meta charset="utf-8"/>
 <title>Thời tiết TP.HCM</title>
 <style>
-body{font-family:sans-serif;margin:0;background:#f4f7fb;color:#142033}
-main{padding:28px}
-.hero{width:100%;max-height:280px;object-fit:cover;border-radius:12px}
-.cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.card{background:#fff;border:1px solid #d9e6f5;border-radius:12px;padding:12px}
-.k{font-size:12px;color:#2a6ebd}.v{font-size:18px}
+body{font-family:'Noto Sans',DejaVu Sans,Arial,sans-serif;margin:0;background:#eef3f8;color:#142033}
+@page{size:A4;margin:18mm 16mm}
+main{padding:0}
+.hero{width:100%;max-height:260px;object-fit:cover;display:block;border-radius:10pt}
+.band{background:#1a3a66;color:#fff;padding:14pt 16pt;margin:12pt 0 14pt;border-radius:8pt}
+.band h1{font-size:20pt;margin:0 0 4pt;color:#fff}
+.band h2{font-size:11pt;margin:0;color:#cfe0f5;font-weight:600}
+.cards{display:table;width:100%;border-collapse:separate;border-spacing:8pt;margin:0 0 14pt}
+.card{display:table-cell;width:50%;background:#fff;border:1pt solid #d0deed;border-radius:8pt;padding:10pt 12pt;vertical-align:top}
+.k{font-size:9pt;color:#2a6ebd;text-transform:uppercase;letter-spacing:.04em}
+.v{font-size:16pt;margin-top:4pt;font-weight:700}
+p{line-height:1.5;font-size:11pt;orphans:3;widows:3}
 </style></head><body><main>
 <img class="hero" src="/opt/data/media/out/hcm-hero.jpg" alt=""/>
-<h1>Thời tiết TP. Hồ Chí Minh</h1>
-<h2>Cập nhật hiện tại</h2>
+<div class="band"><h1>Thời tiết TP. Hồ Chí Minh</h1><h2>Cập nhật hiện tại</h2></div>
 <div class="cards">
   <div class="card"><div class="k">Nhiệt độ</div><div class="v">31°C</div></div>
   <div class="card"><div class="k">Độ ẩm</div><div class="v">70%</div></div>
+</div>
+<div class="cards">
+  <div class="card"><div class="k">Thời tiết</div><div class="v">Nắng nhẹ</div></div>
+  <div class="card"><div class="k">Gió</div><div class="v">12 km/h</div></div>
 </div>
 <p>Trời nắng nhẹ, oi bức.</p>
 </main></body></html>
@@ -48,13 +57,16 @@ main{padding:28px}
 
 Never emit placeholders like `<value after search>`. Spell Vietnamese labels correctly (Nhiệt độ, Thời tiết, Độ ẩm, Gió).
 
-### PPTX / other office
+### PPTX / DOCX / XLSX / MD (presentation-ready)
 
-For pptx/xlsx/docx/txt/md: compose markdown or plain lines the worker understands (`#` title, `##` subtitle, `- Label: value`).
+For pptx/docx/md: compose markdown the worker understands (`#` title, `##` subtitle, `- Label: value`, short prose). Decks and reports must look presentation-ready — title, metrics, sections — not a chat dump.
+For xlsx: labeled header row + metric rows with filled values only.
 
 Fetch live facts with `web_search` when needed. Never paste search-page chrome into the body.
 
-## Visual PDF with city / hero photo
+## Visual presentation docs with city / hero photo (pdf|pptx|docx|xlsx|md)
+
+Applies to **every** presentation-capable office kind the user named — not PDF-only.
 
 1. **`web_search`** for live facts (labeled metrics only).
 2. Hero still via dispatcher (Omni keys on the worker — never built-in `image_generation`, never `execute_code`, never read `.env`):
@@ -65,12 +77,18 @@ curl -sS -X POST http://dispatcher:8090/v1/scenic-still \
   -d '{"prompt":"Photorealistic photograph of Ho Chi Minh City skyline, real camera photo, natural lighting, highly detailed, not cartoon, not anime","filename":"hcm-hero.jpg","size":"1280x720"}'
 ```
 
-Use `hermes_path` / `/opt/data/media/out/<file>` in an HTML `<img src="…">`. If scenic-still fails, omit the image and still deliver the PDF. Never mention credentials.
-3. Compose the **HTML document** (filled values only).
-4. One **`POST /v1/office-file`** with that HTML as `prompt` (`output_type=pdf`).
+Use `hermes_path` / `/opt/data/media/out/<file>` in PDF HTML `<img src="…">` (and note the path in pptx/docx bodies when useful). If scenic-still fails, omit the image and still deliver the file. Never mention credentials.
+3. Compose the **kind-specific body** (filled values only):
+   - **pdf** — full HTML; WeasyPrint-safe CSS (`@page`, `display:table` metric rows — avoid Grid/Flex-only layouts).
+   - **pptx|docx|md** — structured markdown slides/sections with metric bullets.
+   - **xlsx** — clear metric sheet.
+4. One **`POST /v1/office-file`** with that body and the exact `output_type` / filename extension.
 
-Do **not** rely on the host search→office shortcut for designed PDFs — you must compose.
+Never `write_file` draft HTML/markdown under `/tmp` (outside `HERMES_WRITE_SAFE_ROOT`). Compose the body in the tool call JSON only and POST office-file so the worker writes `/opt/data/media/out/<file>`.
+
+Do **not** rely on the host search→office shortcut for designed presentation docs — you must compose.
 Never greet, never `/help`, never narrate tools, never mention missing API keys.
+Never silently remap pptx/docx/xlsx → pdf.
 
 ## Default (must) — Dispatcher office API
 

@@ -147,6 +147,18 @@ def main() -> int:
     if not isinstance(payload["messages"][0]["content"], str):
         print("FAIL message content must be str")
         return 1
+    stripped = sanitize_chat_payload(
+        {"stream": False, "stream_options": {"include_usage": True}, "messages": [{"role": "user", "content": "hi"}]}
+    )
+    if "stream_options" in stripped:
+        print("FAIL stream_options must drop when stream=false")
+        return 1
+    kept_so = sanitize_chat_payload(
+        {"stream": True, "stream_options": {"include_usage": True}, "messages": [{"role": "user", "content": "hi"}]}
+    )
+    if kept_so.get("stream_options") != {"include_usage": True}:
+        print("FAIL stream_options must keep when stream=true")
+        return 1
     vision_msg = {
         "role": "user",
         "content": [

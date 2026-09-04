@@ -664,7 +664,7 @@ def _office_body_trivial_for_host_shortcut(plan: dict[str, Any] | None) -> bool:
 
 _LABELED_SCENE_RENDER = frozenset({"labeled-scene", "labeled_scene", "info-card", "info_card", "card", "dashboard"})
 _SCENE_OVERLAY_RENDER = frozenset(
-    {"scene-overlay", "scene_overlay", "weather-scene", "weather_scene", "scenic-overlay"}
+    {"scene-overlay", "scene_overlay", "weather-scene", "weather_scene", "scenic-overlay", "live-scene", "live_scene"}
 )
 _INFO_CARD_RENDER = _LABELED_SCENE_RENDER  # legacy alias
 
@@ -777,6 +777,66 @@ def plan_allows_scene_image(plan: dict[str, Any] | None) -> bool:
     if ot and ot != "image":
         return False
     return True
+
+
+def coerce_scenic_misrouted_as_office(plan: dict[str, Any] | None) -> dict[str, Any]:
+    """If classify put SCENE: draw under pdf/file without search, restore host scene_image path.
+
+    Contract markers only (SCENE: / RENDER:) — not user-phrase NLU.
+    """
+    src = plan if isinstance(plan, dict) else {}
+    if not src or src.get("ok") is False:
+        return src
+    ot = _coerce_output_type(src.get("output_type"))
+    office_kinds = {"pdf", "docx", "xlsx", "csv", "md", "pptx", "txt"}
+    misrouted_office = ot in office_kinds or (
+        _plan_has_file_processing(src) and ot not in {"image", "png", "jpg", "jpeg", "webp"}
+    )
+    if not misrouted_office:
+        return src
+    if _plan_has_search(src):
+        return src
+    blob = _plan_instruction_blob(src)
+    upper = blob.upper()
+    if "SCENE:" not in upper:
+        return src
+    if any(
+        m in upper
+        for m in (
+            "RENDER: WEATHER-SCENE",
+            "RENDER: LIVE-SCENE",
+            "RENDER: LABELED-SCENE",
+            "RENDER: INFO-CARD",
+        )
+    ):
+        return src
+    # Keep SCENE line(s) as the image instruction; drop office output_type.
+    lines = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    scene_lines = [ln for ln in lines if "SCENE:" in ln.upper()]
+    if not scene_lines:
+        scene_lines = lines[:1] if lines else ["SCENE: photorealistic city photograph"]
+    out = dict(src)
+    out["task_hint"] = "tool"
+    out["task_type"] = "media_generation"
+    out["skill"] = "media_file"
+    out["skill_action"] = "generate_media"
+    out["output_type"] = "image"
+    out["process_original_message"] = False
+    out["execution_class"] = "async"
+    out["response_mode"] = "ack_then_deliver"
+    out["instructions"] = scene_lines
+    details = []
+    for d in src.get("task_details") or []:
+        if not isinstance(d, dict):
+            continue
+        tt = str(d.get("task_type") or "").strip().lower()
+        if tt in {"file_processing", "file"}:
+            continue
+        details.append(d)
+    if not details:
+        details = [{"task_type": "media_generation", "output_type": "image"}]
+    out["task_details"] = details
+    return out
 
 
 def plan_sheet_ref(plan: dict[str, Any] | None) -> str:
@@ -1426,6 +1486,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     }
     if not plan_schema_ok(plan):
         return failed_plan(tz, "classify_invalid")
+    plan = coerce_scenic_misrouted_as_office(plan)
     if (
         plan_media_shortcut_gate(plan)
         or plan_is_search_then_image_turn(plan)
