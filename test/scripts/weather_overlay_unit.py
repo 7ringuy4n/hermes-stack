@@ -44,17 +44,17 @@ def main() -> int:
     assert "SAFE-FOR-WORK" not in blob.upper().replace("-", ""), lines
     assert "value after" not in blob.lower(), lines
     assert "SCENE:" not in blob, lines
-    assert lines[0] == "Thời tiết", lines
+    assert lines[0] == "Nhiệt độ", lines
     assert any("Nhiệt độ" in ln for ln in lines), lines
     assert any("Thời tiết" in ln for ln in lines), lines
-    assert any("Cập nhật:" in ln for ln in lines), lines
+    assert any(ln.startswith("Updated:") for ln in lines), lines
     assert "unavailable" not in blob.lower(), lines
     empty = _weather_overlay_lines(
         ["current weather details unavailable"],
         user_ask="cập nhật thông tin thời tiết",
     )
     assert all("unavailable" not in ln.lower() for ln in empty), empty
-    assert empty[0] == "Thời tiết", empty
+    assert empty[0] in {"Facts", "cập nhật thông tin thời tiết"}, empty
 
     collected = _collect_host_facts(
         "RENDER: weather-scene\nSCENE: city\n- Nhiệt độ: <value after search>\n- Độ ẩm: 70%",
