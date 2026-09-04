@@ -1,3 +1,7 @@
+## 2026-09-04 18:10 +07 — OpenBao export ownership
+
+See `history/2026-09-04/README.md` section “Privileged OpenBao refresh preserves runtime ownership”.
+
 ## 2026-09-04 16:55 +07 — Omni still drops at maxWaitMs 15000 after update
 
 ### Symptom
