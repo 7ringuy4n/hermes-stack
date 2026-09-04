@@ -1,5 +1,13 @@
 ﻿# 2026-09-04
 
+## Omni maxWaitMs reset on update
+
+### Technical detail
+- **Symptom:** Jobs still dropped at `maxWaitMs=15000` after stack update.
+- **Root cause:** Omni recreate resets resilience defaults; `run.sh update` did not re-apply `/api/resilience`.
+- **Fix:** Default 24h clamp; force PATCH every setup/update; `run.sh update` → `update-omnirouter` (keeps combo members).
+- **Verify:** Cookie-session `GET /api/resilience` shows `maxWaitMs=86400000`; live chat has no 15000 drop string.
+
 ## Obsolete env key cleanup
 
 ### Technical detail
