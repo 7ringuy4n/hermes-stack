@@ -1,5 +1,12 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-04 10:40 +07 — openbao labs; video refuse host path; compact via embedding
+
+- OpenBao case 43: unit + VPS lab for KV store, update propagation, scrub, and load-before-compose fill (`POLLINATIONS_API_KEY` stays a seed/scrub key).
+- Host owns `video_gen` / refuse turns via dispatcher `/v1/video-policy-refuse` — never scenic image-gen or photorealistic SCENE shortcuts.
+- Web-search and embedding requests send `model` (combo id) for Omni Requested Model; memory `EMBED_MODEL` defaults to combo `embedding`; `/v1/compact` reindexes via that combo.
+- Classify media refuse: YouTube/TikTok/Facebook URL asks must stay `skill=video_gen` (no SCENE invent).
+
 ## 2026-09-04 09:40 +07 — router: drop stream_options after forced non-stream
 
 - Router-worker always proxies chat upstream with `stream=false` for error inspection; Hermes often sends `stream_options` with `stream=true`, which then 400s OpenCode/GLM. Drop `stream_options` after forcing non-stream.
