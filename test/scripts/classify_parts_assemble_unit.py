@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
 
 from classify import (  # noqa: E402
+    CLASSIFY_REASONING_EFFORT,
     CFG_PATH,
     assemble_classify_system,
     normalize_plan,
@@ -39,6 +40,7 @@ def main() -> int:
     assert len(env.get("priority_rules") or []) >= 5
     assert int(env.get("timeout_s") or 0) <= 45, env.get("timeout_s")
     assert int(env.get("retry") or 99) <= 1, env.get("retry")
+    assert CLASSIFY_REASONING_EFFORT == "low"
     media = (skill / "parts" / "media.txt").read_text(encoding="utf-8")
     assert "OMIT the bullet lines entirely" in media or "omit bullets entirely" in media
     tmpl = str(env.get("user_template") or "")
