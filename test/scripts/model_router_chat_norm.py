@@ -115,6 +115,14 @@ def main() -> int:
     if not chat_omni_skip_remaining(503, inactive):
         print("FAIL inactive omni must skip remaining hops")
         return 1
+    pre_di = {
+        "error": {
+            "message": "Service temporarily unavailable: all targets were skipped by pre-dispatch"
+        }
+    }
+    if not chat_omni_skip_remaining(503, pre_di):
+        print("FAIL pre-dispatch skip 503 must skip remaining Omni hops")
+        return 1
     tpm413 = {
         "error": {
             "message": (
