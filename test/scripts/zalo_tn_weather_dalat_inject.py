@@ -115,20 +115,24 @@ deadline = time.monotonic() + {WAIT_S}
 before_path = {before_path!r}
 before_mtime = {before_mtime!r}
 patterns = ("*.jpg", "*.jpeg", "*.webp", "*.png")
-while time.monotonic() < deadline:
-    files = []
-    root = Path("/data/assistant/media/out")
+    while time.monotonic() < deadline:
+        files = []
+        root = Path("/data/assistant/media/out")
     for pattern in patterns:
         files.extend(root.glob(pattern))
-    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    for path in files:
-        name = path.name.lower()
-        if "_smoke" in name or "_overlay_crop" in name:
-            continue
-        mtime = path.stat().st_mtime
-        if str(path) != before_path or mtime > before_mtime + 1.0:
-            print(path)
-            raise SystemExit(0)
+        files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        eligible = [
+            path
+            for path in files
+            if "_smoke" not in path.name.lower()
+            and "_overlay_crop" not in path.name.lower()
+        ]
+        if eligible:
+            newest = eligible[0]
+            mtime = newest.stat().st_mtime
+            if mtime > before_mtime + 1.0:
+                print(newest)
+                raise SystemExit(0)
     time.sleep(2)
 print("NO_NEW_IMAGE")
 raise SystemExit(0)

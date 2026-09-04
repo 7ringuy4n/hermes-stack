@@ -166,6 +166,14 @@ def main() -> int:
     test_labeled_scene_still_gates_info_card()
     test_scenic_misrouted_as_pdf_coerced()
     test_weather_pdf_with_search_not_coerced_to_image()
+    adapter_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "(plan_media_shortcut_gate(plan) or plan_is_search_then_image_turn(plan)) "
+        "and not schedule_fire"
+    ) not in adapter_source
+    assert "scheduled images fall" in adapter_source
     print("media_shortcut_gate_unit OK")
     return 0
 
