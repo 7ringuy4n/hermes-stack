@@ -1,3 +1,7 @@
+## 2026-09-04 13:10 +07 — classify parts: English multi-purpose examples
+
+- Soften `core.txt` / `schedule.txt` / `schema.txt` examples away from Vietnamese-only and weather/poster-specific wording (intent families stay language-agnostic).
+
 ## 2026-09-04 12:00 +07 — live-scene overlays; soften classify media / file-gen examples
 
 - Host live-facts path renamed to `live_scene` (weather names kept as aliases); overlay timestamp uses `ASSISTANT_TZ`/`TZ`.
