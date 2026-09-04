@@ -70,11 +70,12 @@ def _err_detail(resp: httpx.Response) -> str:
 
 
 def _embed_once(model: str, payload_input: str | list[str]) -> dict[str, Any]:
+    mid = (model or MODEL or "embedding").strip() or "embedding"
     with httpx.Client(timeout=60) as c:
         resp = c.post(
             f"{UPSTREAM}/embeddings",
             headers=_headers(),
-            json={"model": model, "input": payload_input},
+            json={"model": mid, "input": payload_input},
         )
         if resp.status_code >= 300:
             raise httpx.HTTPStatusError(
@@ -82,7 +83,11 @@ def _embed_once(model: str, payload_input: str | list[str]) -> dict[str, Any]:
                 request=resp.request,
                 response=resp,
             )
-        return resp.json()
+        data = resp.json()
+        if isinstance(data, dict):
+            # Ensure Omni / callers see the requested combo or member id.
+            data.setdefault("model", mid)
+        return data
 
 
 def _list_embed_models() -> list[str]:

@@ -695,6 +695,8 @@ def _plan_allows_search_then_image_base(plan: dict[str, Any] | None) -> bool:
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
         return False
+    if plan_is_media_policy_refuse(src):
+        return False
     if str(src.get("task_hint") or "").strip().lower() == "schedule":
         return False
     action = str(src.get("skill_action") or "").strip().lower()
@@ -752,10 +754,26 @@ def plan_allows_search_then_info_card(plan: dict[str, Any] | None) -> bool:
     return "TITLE:" in blob
 
 
+def plan_is_media_policy_refuse(plan: dict[str, Any] | None) -> bool:
+    """True when classify mapped the turn to video/music/URL download refuse (not still gen)."""
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    skill = str(src.get("skill") or "").strip().lower()
+    action = str(src.get("skill_action") or "").strip().lower()
+    if skill in {"video_gen", "video-gen"}:
+        return True
+    if "refuse" in action:
+        return True
+    return False
+
+
 def plan_allows_scene_image(plan: dict[str, Any] | None) -> bool:
     """Pure scenic image — diffusion only, no live-data search sibling."""
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
+        return False
+    if plan_is_media_policy_refuse(src):
         return False
     if str(src.get("task_hint") or "").strip().lower() == "schedule":
         return False
@@ -1122,6 +1140,8 @@ def plan_allows_poster_shortcut(plan: dict[str, Any] | None) -> bool:
 
 def plan_media_shortcut_gate(plan: dict[str, Any] | None) -> str:
     """Host media shortcut kind when the adapter must own the turn (no Hermes fallthrough)."""
+    if plan_is_media_policy_refuse(plan):
+        return "refuse"
     if plan_allows_office_shortcut(plan) and not plan_skips_media_shortcut(plan):
         return "office"
     if plan_allows_search_then_office(plan):

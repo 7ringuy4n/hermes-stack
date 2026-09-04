@@ -901,6 +901,62 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     return None
 
 
+def run_video_policy_refuse(
+    user_ask: str,
+    plan: dict[str, Any],
+    thread_id: str,
+    thread_type: str = "user",
+    *,
+    classified: bool = False,
+) -> Optional[dict]:
+    """Host owns video/music/URL-transcript refuse — never scenic image-gen."""
+    del thread_id, thread_type
+    if not classified:
+        return None
+    try:
+        from .classify_client import plan_is_media_policy_refuse
+    except ImportError:
+        from classify_client import plan_is_media_policy_refuse  # type: ignore
+    if not plan_is_media_policy_refuse(plan):
+        return None
+    # Topic from classify contract fields only — not user-phrase NLU.
+    skill = str((plan or {}).get("skill") or "").strip().lower()
+    action = str((plan or {}).get("skill_action") or "").strip().lower()
+    topic = str((plan or {}).get("refuse_topic") or "").strip().lower()
+    if not topic:
+        if "music" in action:
+            topic = "music_generate"
+        elif "audio" in action:
+            topic = "audio_generate"
+        elif "summary" in action or "social" in action:
+            topic = "social_summary"
+        elif "transcript" in action:
+            topic = "transcript"
+        elif skill in {"video_gen", "video-gen"}:
+            topic = "video_generate"
+        else:
+            topic = "transcript"
+    ask = (user_ask or "").strip()
+    try:
+        out = _post(
+            "/v1/video-policy-refuse",
+            {"topic": topic, "context": ask[:2000], "language": "vi"},
+            timeout=45.0,
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning("video-policy-refuse failed: %s", type(e).__name__)
+        return shortcut_consumed()
+    msg = ""
+    if isinstance(out, dict):
+        msg = str(out.get("message") or out.get("text") or "").strip()
+    if not msg:
+        msg = (
+            "This stack does not download or transcribe video/music links. "
+            "Use the native app, or ask for a still image / office file instead."
+        )
+    return {"ok": True, "kind": "text_refuse", "text": msg}
+
+
 def run_scene_image(
     user_ask: str,
     plan: dict[str, Any],
@@ -914,9 +970,16 @@ def run_scene_image(
     if not classified:
         return None
     try:
-        from .classify_client import plan_image_instruction
+        from .classify_client import plan_image_instruction, plan_is_media_policy_refuse
     except ImportError:
-        from classify_client import plan_image_instruction  # type: ignore
+        from classify_client import (  # type: ignore
+            plan_image_instruction,
+            plan_is_media_policy_refuse,
+        )
+    if plan_is_media_policy_refuse(plan):
+        return run_video_policy_refuse(
+            user_ask, plan, thread_id, thread_type="user", classified=True
+        )
     img_ins = plan_image_instruction(plan, user_ask)
     scene = scene_prompt_from_instruction(img_ins)
     if not scene:
