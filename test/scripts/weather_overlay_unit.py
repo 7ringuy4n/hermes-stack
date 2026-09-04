@@ -78,9 +78,20 @@ def main() -> int:
     assert any("31°C" in x or "70%" in x or "nắng" in x for x in collected), collected
 
     from media_shortcuts import (  # noqa: E402
+        _live_scene_visual_prompt,
         _parse_label_value_lines,
         _search_notes_blob,
     )
+
+    visual_prompt = _live_scene_visual_prompt(
+        "Da Lat city in natural evening light",
+        ["Location: Da Lat, Vietnam", "Temperature: 17.8°C", "Updated: 19:15"],
+    )
+    assert "Da Lat city" in visual_prompt, visual_prompt
+    assert "Location:" not in visual_prompt, visual_prompt
+    assert "17.8" not in visual_prompt, visual_prompt
+    assert "19:15" not in visual_prompt, visual_prompt
+    assert "No readable text" in visual_prompt, visual_prompt
 
     notes = _search_notes_blob(
         {

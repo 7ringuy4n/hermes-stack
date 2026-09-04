@@ -17,7 +17,15 @@ if hasattr(sys.stdout, "buffer"):
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-weather-dalat"
-TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
+
+
+def _normalize_target_id(raw: str) -> str:
+    """Accept the managed ``ID | label`` format without retaining the label."""
+    candidate = (raw or "").split("|", 1)[0].strip()
+    return candidate if candidate.isdigit() else ""
+
+
+TN_ID = _normalize_target_id(os.environ.get("ZALO_TEST_USER_ID") or "")
 WAIT_S = int(os.environ.get("ZALO_TEST_WAIT_S") or "900")
 
 MSG = os.environ.get(
