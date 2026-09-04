@@ -586,6 +586,9 @@ do_update() {
     do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
   fi
   do_scrub_plaintext_env
+  # Scrub clears COMPOSE_HOST_KEYS in ROOT/.env and deletes .env.openbao; refill
+  # immediately so the next compose recreate / host probes still authenticate.
+  do_load_openbao_env_for_compose || true
 
   echo "==> disk cleanup"
   docker builder prune -af >/dev/null 2>&1 || true
@@ -680,6 +683,7 @@ do_post_up_hooks() {
     do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
   fi
   do_scrub_plaintext_env
+  do_load_openbao_env_for_compose || true
   do_post_ready_learn
   do_zalo_setup_hint
 }

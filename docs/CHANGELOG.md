@@ -1,3 +1,7 @@
+## 2026-09-04 15:05 +07 — refill OpenBao compose keys after plaintext scrub
+
+- `run.sh` update / post-up: after `scrub-plaintext-env`, immediately `load-openbao-env` so `OMNIROUTER_API_KEY` / `API_SERVER_KEY` / `GATEWAY_API_KEYS` are not left empty on disk (Omni 401 / compose miss).
+
 ## 2026-09-04 14:35 +07 — classify delivery English; repair literal-\\n .env
 
 - Soften `classify/parts/delivery.txt` to English multi-purpose delivery examples (keep `content:` / `nội dung:` markers).
