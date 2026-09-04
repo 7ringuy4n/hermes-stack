@@ -3,7 +3,9 @@
 
 SoT for API keys is OpenBao KV. Deletes host-side .env.openbao copies after compose
 has started; strips seeded key values from ROOT/.env (keys kept, values empty).
-Re-run load-openbao-env before the next compose recreate.
+
+run.sh must call load-openbao-env immediately after this scrub so COMPOSE_HOST_KEYS
+(and hermes env_file .env.openbao) are refilled for the next compose recreate.
 """
 from __future__ import annotations
 
