@@ -725,18 +725,22 @@ def _plan_allows_search_then_image_base(plan: dict[str, Any] | None) -> bool:
 
 
 def plan_allows_search_then_image(plan: dict[str, Any] | None) -> bool:
-    """Live-data image (search + media_generation) — weather scene or info-card."""
+    """Live-data image (search + media_generation) — live-scene overlay or info-card."""
     return _plan_allows_search_then_image_base(plan)
 
 
-def plan_allows_search_then_weather_scene(plan: dict[str, Any] | None) -> bool:
-    """City/place scene + small weather overlay (not info-card dashboard)."""
+def plan_allows_search_then_live_scene(plan: dict[str, Any] | None) -> bool:
+    """Place scene + small live-facts overlay (not info-card dashboard) — any topic."""
     if not _plan_allows_search_then_image_base(plan):
         return False
     mode = plan_image_render_mode(plan)
     if mode in _LABELED_SCENE_RENDER or mode == "labeled-scene":
         return False
     return mode in _SCENE_OVERLAY_RENDER
+
+
+# Compat: weather was the first live-facts topic.
+plan_allows_search_then_weather_scene = plan_allows_search_then_live_scene
 
 
 def plan_allows_search_then_info_card(plan: dict[str, Any] | None) -> bool:

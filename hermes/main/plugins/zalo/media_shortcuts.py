@@ -467,12 +467,16 @@ def _overlay_header(user_ask: str = "", scene: str = "") -> str:
     return ask[:28]
 
 
-def _weather_overlay_lines(
+def _live_overlay_lines(
     facts: list[str], *, scene: str = "", user_ask: str = ""
 ) -> list[str]:
     """Compact lines for Pillow overlay — facts from classify/search only."""
     header = _overlay_header(user_ask=user_ask, scene=scene)
-    now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H:%M · %d/%m/%Y")
+    tz_name = (os.getenv("ASSISTANT_TZ") or os.getenv("TZ") or "Asia/Ho_Chi_Minh").strip()
+    try:
+        now = datetime.now(ZoneInfo(tz_name)).strftime("%H:%M · %d/%m/%Y")
+    except Exception:  # noqa: BLE001
+        now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H:%M · %d/%m/%Y")
     lines = [header or "Facts"]
     for raw in facts or []:
         s = str(raw or "").strip()
@@ -488,7 +492,7 @@ def _weather_overlay_lines(
     return lines[:6]
 
 
-def _apply_weather_overlay(out: dict[str, Any], lines: list[str]) -> dict[str, Any]:
+def _apply_live_overlay(out: dict[str, Any], lines: list[str]) -> dict[str, Any]:
     """Post-process scenic still with Unicode-safe bottom-left badge."""
     if not lines:
         return out
@@ -509,8 +513,13 @@ def _apply_weather_overlay(out: dict[str, Any], lines: list[str]) -> dict[str, A
         )
         out["overlay"] = len(lines)
     except Exception as e:  # noqa: BLE001
-        log.warning("weather overlay failed: %s", type(e).__name__)
+        log.warning("live overlay failed: %s", type(e).__name__)
     return out
+
+
+# Compat aliases (weather was the first live-facts topic).
+_weather_overlay_lines = _live_overlay_lines
+_apply_weather_overlay = _apply_live_overlay
 
 
 def _photoreal_scene_prompt(prompt: str) -> str:
@@ -535,7 +544,7 @@ def _photoreal_scene_prompt(prompt: str) -> str:
     return f"{p}, " + ", ".join(missing)
 
 
-def _weather_scene_visual_prompt(scene: str, facts: list[str]) -> str:
+def _live_scene_visual_prompt(scene: str, facts: list[str]) -> str:
     """Live-facts scenic diffusion — SCENE from classify; facts as atmospheric reference only."""
     base = _photoreal_scene_prompt(_strip_diffusion_policy_tokens(scene or ""))
     clean = [
@@ -556,6 +565,9 @@ def _weather_scene_visual_prompt(scene: str, facts: list[str]) -> str:
         "No readable text, no letters, no signs, no captions, no watermarks, no labels in the image. "
         "No close-up people, not cartoon, not anime, not illustration"
     )
+
+
+_weather_scene_visual_prompt = _live_scene_visual_prompt
 
 
 def _labeled_scene_prompt(scene: str, facts: list[str]) -> str:
@@ -1003,7 +1015,7 @@ def run_scene_image(
     return shortcut_consumed()
 
 
-def run_search_then_weather_scene(
+def run_search_then_live_scene(
     user_ask: str,
     plan: dict[str, Any],
     thread_id: str,
@@ -1011,7 +1023,7 @@ def run_search_then_weather_scene(
     *,
     classified: bool = False,
 ) -> Optional[dict]:
-    """Host search → Omni scenic image-gen → Pillow /v1/overlay with live facts."""
+    """Host search → Omni scenic image-gen → Pillow /v1/overlay with live facts (any topic)."""
     del thread_type
     if not classified:
         return None
@@ -1034,15 +1046,19 @@ def run_search_then_weather_scene(
     facts = _collect_host_facts(img_ins or "", search)
     if not facts:
         facts = _synthesize_overlay_facts(search, query=query or user_ask)
-    prompt = _weather_scene_visual_prompt(scene, facts)
+    prompt = _live_scene_visual_prompt(scene, facts)
     import uuid
 
     fname = f"live-scene-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
-        overlay = _weather_overlay_lines(facts, scene=scene, user_ask=user_ask)
-        return _apply_weather_overlay(out, overlay)
+        overlay = _live_overlay_lines(facts, scene=scene, user_ask=user_ask)
+        return _apply_live_overlay(out, overlay)
     return shortcut_consumed()
+
+
+# Compat: weather was the first live-facts topic.
+run_search_then_weather_scene = run_search_then_live_scene
 
 
 def run_search_then_info_card(
@@ -1077,12 +1093,15 @@ def run_search_then_info_card(
     if not facts:
         facts = _synthesize_overlay_facts(search, query=query or user_ask)
     prompt = _scene_prompt_with_facts(scene, facts)
-    fname = f"info-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
+    import uuid
+
+    fname = f"info-scene-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
-        overlay = _weather_overlay_lines(facts, scene=scene, user_ask=user_ask)
-        return _apply_weather_overlay(out, overlay)
+        overlay = _live_overlay_lines(facts, scene=scene, user_ask=user_ask)
+        return _apply_live_overlay(out, overlay)
     return shortcut_consumed()
+
 
 def run_text_poster(
     text: str,

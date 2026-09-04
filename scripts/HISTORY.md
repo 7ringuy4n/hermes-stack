@@ -1,3 +1,17 @@
+## 2026-09-04 12:00 +07 — flexible live-scene overlays; soften media prompts
+
+### Symptom
+Live overlay / classify media still read weather-first; fixed poster/weather headings left gaps for other topics.
+
+### Root cause
+First live-facts path was weather-named; classify/file-gen examples biased to weather.
+
+### Fix (core)
+`run_search_then_live_scene` + aliases; classify EXACT-TEXT / live-scene synonyms; generic file-gen HTML example; unique info-scene filenames.
+
+### Prevent recurrence
+Prefer topic-agnostic live-scene naming; keep weather aliases only for compatibility.
+
 ## 2026-09-04 11:50 +07 — §15 unit align; greeting PASS; visual weather inject fix
 
 ### Symptom

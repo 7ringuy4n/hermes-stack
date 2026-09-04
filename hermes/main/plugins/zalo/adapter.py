@@ -1617,7 +1617,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_allows_scene_image,
                 plan_allows_search_then_info_card,
                 plan_allows_search_then_office,
-                plan_allows_search_then_weather_scene,
+                plan_allows_search_then_live_scene,
                 plan_is_image_analyze_chat,
                 plan_is_media_policy_refuse,
                 plan_media_shortcut_gate,
@@ -1632,7 +1632,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 run_scene_image,
                 run_search_then_info_card,
                 run_search_then_office,
-                run_search_then_weather_scene,
+                run_search_then_live_scene,
                 run_text_poster,
                 run_video_policy_refuse,
                 shortcut_ok,
@@ -1646,7 +1646,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_allows_scene_image,
                 plan_allows_search_then_info_card,
                 plan_allows_search_then_office,
-                plan_allows_search_then_weather_scene,
+                plan_allows_search_then_live_scene,
                 plan_is_image_analyze_chat,
                 plan_is_media_policy_refuse,
                 plan_media_shortcut_gate,
@@ -1661,7 +1661,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 run_scene_image,
                 run_search_then_info_card,
                 run_search_then_office,
-                run_search_then_weather_scene,
+                run_search_then_live_scene,
                 run_text_poster,
                 run_video_policy_refuse,
                 shortcut_ok,
@@ -1729,7 +1729,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         thread_id=thread_id,
                         file=shortcut.get("file"),
                     )
-            elif plan_allows_search_then_weather_scene(early_plan):
+            elif plan_allows_search_then_live_scene(early_plan):
                 try:
                     self._as_autosend_remember_turn(
                         str(thread_id),
@@ -1738,7 +1738,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
                 shortcut = await asyncio.to_thread(
-                    run_search_then_weather_scene,
+                    run_search_then_live_scene,
                     shortcut_user_text,
                     early_plan,
                     str(thread_id),
@@ -1747,7 +1747,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
                 if shortcut_ok(shortcut):
                     self._as_flow(
-                        "search_weather_scene_shortcut",
+                        "search_live_scene_shortcut",
                         thread_id=thread_id,
                         file=shortcut.get("file"),
                     )

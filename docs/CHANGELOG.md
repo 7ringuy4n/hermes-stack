@@ -1,3 +1,10 @@
+## 2026-09-04 12:00 +07 — live-scene overlays; soften classify media / file-gen examples
+
+- Host live-facts path renamed to `live_scene` (weather names kept as aliases); overlay timestamp uses `ASSISTANT_TZ`/`TZ`.
+- Classify media: EXACT-TEXT ON IMAGE; weather-scene is a live-scene synonym (not weather-only).
+- file-gen PDF HTML example is topic-agnostic (not a fixed weather schema).
+- Info-card scenic filenames are unique per turn (uuid).
+
 ## 2026-09-04 11:50 +07 — labs: §15 units aligned; greeting + visual weather inject
 
 - Case-index units match `active`/`inactive` defaults, classify-owned secret-probe markers, and multi-clock `tasks[]` fan-out.

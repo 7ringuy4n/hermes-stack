@@ -1,16 +1,13 @@
-﻿# 2026-09-04 — §15 units + greeting + visual weather
+﻿# 2026-09-04 — live-scene overlays + soft classify (no RULES batch)
 
-## Core / labs
-- Case-index units aligned to `active`/`inactive`, classify-owned secret probe, multi-clock `tasks[]`
-- Visual weather PDF inject fixed (no sanitize on loopback URLs)
-- Model-router Playwright primary-combo abandon; archive extract lab; PDF shell polish
-- `run_case_index_lab.py` includes newer §15 scripts
+## Core
+- Live-facts host path: `live_scene` (weather aliases kept)
+- Classify media: multi-purpose exact-text + live-scene synonyms
+- file-gen HTML example topic-agnostic; unique info-scene filenames
+- Prior: Playwright failover, archive, §15 unit align, greeting/PDF inject
 
-## VPS gate (PASS)
-- Omni combo preflight (hermes/classifier filled)
-- Tn greeting reply (~31s send)
-- Visual weather HCMC PDF (`hcm-weather-forecast.pdf`, no SERP chrome)
-- Archive extract Security `1–4.zip`; remaining suite; OpenBao / refuse (earlier)
+## Note
+Operator paused RULES.md §15 batch runs — remaining work is product hardening, not case-index labs.
 
 ## Merge
-Promote via MR develop → main; VPS update from `main` only.
+MR develop → main; VPS update from `main` only.
