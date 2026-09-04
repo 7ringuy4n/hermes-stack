@@ -201,7 +201,7 @@ def _resolve_media_path(raw: str) -> Path | None:
 
 
 def _html_document(fragment_or_doc: str) -> str:
-    """Ensure a full HTML document with Unicode-friendly base CSS."""
+    """Ensure a full HTML document with Unicode-friendly print-safe CSS."""
     src = (fragment_or_doc or "").strip()
     low = src.lower().lstrip()
     if low.startswith("<!doctype") or low.startswith("<html"):
@@ -211,17 +211,22 @@ def _html_document(fragment_or_doc: str) -> str:
         '<html lang="vi"><head><meta charset="utf-8"/>'
         "<title>Document</title>"
         "<style>"
+        "@page{size:A4;margin:16mm}"
         "html,body{margin:0;padding:0;font-family:'Noto Sans',DejaVu Sans,Arial,sans-serif;"
-        "color:#142033;background:#f4f7fb;}"
-        "main{padding:28px 32px;}"
-        "h1{font-size:28px;margin:0 0 8px;color:#1a3a66;}"
-        "h2{font-size:16px;margin:0 0 18px;color:#5a6a7a;font-weight:600;}"
-        ".hero{width:100%;max-height:280px;object-fit:cover;border-radius:12px;margin:0 0 18px;}"
-        ".cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 20px;}"
-        ".card{background:#fff;border:1px solid #d9e6f5;border-radius:12px;padding:12px 14px;}"
-        ".card .k{font-size:11px;color:#2a6ebd;text-transform:uppercase;letter-spacing:.02em;}"
-        ".card .v{font-size:16px;margin-top:4px;}"
-        "ul{padding-left:18px;} li{margin:4px 0;} p{line-height:1.45;}"
+        "color:#142033;background:#eef3f8;font-size:11pt;}"
+        "main{padding:0 4pt;}"
+        ".band{background:#1a3a66;color:#fff;padding:14pt 16pt;margin:0 0 14pt;border-radius:8pt;}"
+        ".band h1,h1{font-size:20pt;margin:0 0 4pt;color:#fff;page-break-after:avoid;}"
+        "h1{color:#1a3a66;}"
+        "h2{font-size:11pt;margin:0 0 12pt;color:#5a6a7a;font-weight:600;page-break-after:avoid;}"
+        ".hero{width:100%;max-height:260px;object-fit:cover;border-radius:10pt;margin:0 0 12pt;display:block;}"
+        ".cards{display:table;width:100%;border-collapse:separate;border-spacing:8pt;margin:0 0 14pt;"
+        "page-break-inside:avoid;}"
+        ".card{display:table-cell;width:50%;background:#fff;border:1pt solid #d0deed;"
+        "border-radius:8pt;padding:10pt 12pt;vertical-align:top;}"
+        ".card .k{font-size:9pt;color:#2a6ebd;text-transform:uppercase;letter-spacing:.04em;}"
+        ".card .v{font-size:15pt;margin-top:4pt;font-weight:700;}"
+        "ul{padding-left:18pt;} li{margin:4pt 0;} p{line-height:1.5;orphans:3;widows:3;}"
         "</style></head><body><main>"
         f"{src}"
         "</main></body></html>"
@@ -303,6 +308,67 @@ def _write_pdf_pymupdf_story(dest: Path, html: str) -> Path:
     return dest
 
 
+def _plain_body_to_presentation_html(body: str) -> str:
+    """Turn Label: value / title lines into a presentation HTML shell (WeasyPrint-safe)."""
+    title = ""
+    subtitle = ""
+    facts: list[tuple[str, str]] = []
+    prose: list[str] = []
+    for raw in (body or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith(("- ", "• ", "* ")):
+            line = line[2:].strip()
+        if ":" in line and not line.lower().startswith("http"):
+            label, _, value = line.partition(":")
+            label = label.strip()
+            value = value.strip()
+            if label and value and len(label) <= 40:
+                facts.append((label[:40], value[:80]))
+                continue
+        if not title:
+            title = line[:80]
+            continue
+        if not subtitle and len(line) <= 100:
+            subtitle = line
+            continue
+        prose.append(line)
+
+    def esc(s: str) -> str:
+        return (
+            (s or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+
+    parts: list[str] = []
+    if title or subtitle:
+        parts.append('<div class="band">')
+        if title:
+            parts.append(f"<h1>{esc(title)}</h1>")
+        if subtitle:
+            parts.append(f"<h2>{esc(subtitle)}</h2>")
+        parts.append("</div>")
+    # Pair facts into two-column table-rows
+    i = 0
+    while i < len(facts):
+        parts.append('<div class="cards">')
+        for lab, val in facts[i : i + 2]:
+            parts.append(
+                f'<div class="card"><div class="k">{esc(lab)}</div>'
+                f'<div class="v">{esc(val)}</div></div>'
+            )
+        parts.append("</div>")
+        i += 2
+    for p in prose[:12]:
+        parts.append(f"<p>{esc(p)}</p>")
+    if not parts:
+        parts.append("<p> </p>")
+    return "\n".join(parts)
+
+
 def write_pdf(dest: Path, body: str) -> Path:
     """Write PDF from LLM HTML or raw/base64 PDF. No ReportLab page layout."""
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -313,25 +379,15 @@ def write_pdf(dest: Path, body: str) -> Path:
     html = _extract_html(body)
     if html:
         return write_pdf_from_html(dest, html)
-    # Last resort: wrap plain text as a minimal HTML page (not a card template).
-    safe = (
-        (body or "")
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-    paragraphs = []
-    for line in safe.splitlines() or [safe]:
-        if not line.strip():
-            continue
-        paragraphs.append(f"<p>{line}</p>")
-    return write_pdf_from_html(dest, "\n".join(paragraphs) or "<p> </p>")
+    # Last resort: promote plain lines into a presentation HTML shell.
+    return write_pdf_from_html(dest, _plain_body_to_presentation_html(body or ""))
 
 
 def write_pptx_styled(dest: Path, body: str) -> Path:
-    """Markdown-ish body → title + facts/sections PPTX deck."""
+    """Markdown-ish body → title + facts/sections PPTX deck (presentation-ready)."""
     from pptx import Presentation
     from pptx.dml.color import RGBColor
+    from pptx.enum.shapes import MSO_SHAPE
     from pptx.enum.text import PP_ALIGN
     from pptx.util import Inches, Pt
 
@@ -400,9 +456,27 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
             run.font.color.rgb = RGBColor(*color)
             run.font.name = "Calibri"
 
+    def _paint_bg(slide, rgb=(238, 243, 248)) -> None:
+        shape = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, prs.slide_height
+        )
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = RGBColor(*rgb)
+        shape.line.fill.background()
+
+    def _accent_bar(slide) -> None:
+        bar = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(0.22), prs.slide_height
+        )
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = RGBColor(26, 58, 102)
+        bar.line.fill.background()
+
     def _add_bullets(slide, heading: str, items: list[str]) -> None:
+        _paint_bg(slide)
+        _accent_bar(slide)
         h = slide.shapes.add_textbox(Inches(0.7), Inches(0.4), Inches(12), Inches(0.7))
-        _fill_para(h.text_frame.paragraphs[0], heading[:60], size=24, bold=True)
+        _fill_para(h.text_frame.paragraphs[0], heading[:60], size=26, bold=True, color=(26, 58, 102))
         body_box = slide.shapes.add_textbox(Inches(0.7), Inches(1.3), Inches(12), Inches(5.5))
         btf = body_box.text_frame
         btf.word_wrap = True
@@ -410,23 +484,24 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
         for item in items[:12]:
             para = btf.paragraphs[0] if first else btf.add_paragraph()
             first = False
-            _fill_para(para, f"• {item[:120]}", size=18)
+            _fill_para(para, f"• {item[:120]}", size=18, color=(20, 40, 60))
 
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    box = slide.shapes.add_textbox(Inches(0.7), Inches(2.2), Inches(12), Inches(1.2))
+    _paint_bg(slide, (26, 58, 102))
+    box = slide.shapes.add_textbox(Inches(0.9), Inches(2.4), Inches(11.5), Inches(1.4))
     tf = box.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.LEFT
-    _fill_para(p, title, size=36, bold=True)
+    _fill_para(p, title, size=40, bold=True, color=(255, 255, 255))
     if subtitle:
-        sub = slide.shapes.add_textbox(Inches(0.7), Inches(3.5), Inches(12), Inches(0.8))
+        sub = slide.shapes.add_textbox(Inches(0.9), Inches(4.0), Inches(11.5), Inches(0.8))
         _fill_para(
             sub.text_frame.paragraphs[0],
             subtitle,
             size=18,
             bold=False,
-            color=(70, 90, 110),
+            color=(207, 224, 245),
         )
 
     if facts:

@@ -1,6 +1,43 @@
 # 2026-09-04
 
-2 incident(s). Times are UTC+7.
+3 incident(s). Times are UTC+7.
+
+## 07:30 — Concurrent scenic draw misrouted as PDF; weak presentation layouts
+
+### Symptom
+
+Two near-simultaneous user asks (scenic city draw + weather into a presentation PDF) produced two PDFs and no scenic image; one PDF was tiny / wrong content. Office decks still looked sparse.
+
+### Root cause
+
+Classify prompt overlap treated city-draw examples like visual-PDF heroes, so scenic turns became `file_processing`/`pdf`. Concurrent turns inherited sibling format bias. PDF path accepted bare plain text (minimal `<p>` wrap); CSS Grid layouts are weak under WeasyPrint.
+
+### Technical detail
+
+- **Prompt:** `hermes/main/skills/classify/parts/media.txt` — visual presentation docs for pdf|pptx|docx|xlsx|md; draw-without-office-format → SCENE IMAGE.
+- **Host:** `coerce_scenic_misrouted_as_office` in `classify_client.py` (SCENE: without search under office kind → `scene_image`).
+- **Worker:** `office_file._html_document` / `_plain_body_to_presentation_html` / `write_pptx_styled` — print-safe table metrics + stronger PPTX chrome.
+- **Skill:** `file-gen/SKILL.md` — presentation compose for all office kinds.
+- **Lab:** `test/scripts/zalo_tn_concurrent_scenic_weather_pdf.py` — vision/OCR verdict, not assert-only.
+
+### AI decision
+
+Keep disambiguation in classify + structural host coerce on contract markers; never phrase-regex user prose. Fail concurrent lab when two PDFs / zero images or tiny/wrong-city PDF.
+
+### Fix (core)
+
+Prompt + coerce + presentation HTML/PPTX shells + concurrent Tn OCR lab.
+
+### Todo list
+
+- Unit coerce scenic-vs-pdf — done
+- Deploy feature to VPS — done
+- Concurrent Tn inject + vision/OCR rate — scenic PASS; weather PDF SKIP_QUOTA (Omni Hermes 503)
+- MR only after PASS — blocked (no merge)
+
+### Prevent recurrence
+
+Never remap draw-only asks to office formats; never mark PASS without artifact evidence.
 
 ## 07:05 — sync-model-router-skills PermissionError on classify.json
 

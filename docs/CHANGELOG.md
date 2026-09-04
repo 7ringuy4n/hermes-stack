@@ -1,5 +1,12 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-04 07:30 +07 — zalo/office: scenic vs presentation docs; WeasyPrint-safe layout
+
+- Classify media: draw/paint without an office format stays scene image; visual presentation rules cover pdf|pptx|docx|xlsx|md (not PDF-only).
+- Host coerces misrouted `SCENE:` plans that landed on office `output_type` without search back to `scene_image`.
+- Dispatcher PDF/PPTX presentation shell uses print-safe CSS (`display:table` metrics) and stronger PPTX title/metric slides; plain PDF bodies promote to card layout.
+- Concurrent Tn lab: scenic city image + weather presentation PDF evaluated via vision/OCR, not assert-only.
+
 ## 2026-09-04 07:05 +07 — ops: sync-model-router-skills owns bake classify.json
 
 - Root-owned `architect/models/model-router/config/classify.json` blocked operator `tn` updates (`PermissionError`).

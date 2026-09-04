@@ -105,11 +105,67 @@ def test_labeled_scene_still_gates_info_card() -> None:
     assert plan_media_shortcut_gate(plan) == "info_card", plan
 
 
+def test_scenic_misrouted_as_pdf_coerced() -> None:
+    """Classify wrongly put SCENE draw under pdf — host must restore scene_image."""
+    raw = {
+        "ok": True,
+        "task_hint": "file",
+        "task_type": "file_processing",
+        "execution_class": "async",
+        "skill": "media_file",
+        "skill_action": "process_file",
+        "output_type": "pdf",
+        "process_original_message": True,
+        "instructions": [
+            "SCENE: Hanoi Vietnam street-level photorealistic photograph, evening lighting"
+        ],
+        "task_details": [
+            {"task_type": "file_processing", "output_type": "pdf"},
+        ],
+    }
+    plan = normalize_plan(raw, "vẽ hình thành phố hà nội giờ hiện tại", "Asia/Ho_Chi_Minh")
+    assert plan.get("output_type") == "image", plan
+    assert plan_media_shortcut_gate(plan) == "scene_image", plan
+    assert plan_allows_scene_image(plan) is True
+    assert plan.get("process_original_message") is False
+
+
+def test_weather_pdf_with_search_not_coerced_to_image() -> None:
+    raw = {
+        "ok": True,
+        "task_hint": "file",
+        "task_type": "file_processing",
+        "execution_class": "async",
+        "skill": "media_file",
+        "skill_action": "process_file",
+        "output_type": "pdf",
+        "process_original_message": True,
+        "instructions": [
+            "current weather Da Nang",
+            "Thời tiết Đà Nẵng — PDF",
+        ],
+        "task_details": [
+            {"task_type": "search", "output_type": None},
+            {"task_type": "file_processing", "output_type": "pdf"},
+        ],
+    }
+    plan = normalize_plan(
+        raw,
+        "cập nhật thời tiết hiện tại ở Đà Nẵng và vẽ vào file pdf",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan.get("output_type") == "pdf", plan
+    assert plan_allows_scene_image(plan) is False
+    assert plan_media_shortcut_gate(plan) != "scene_image"
+
+
 def main() -> int:
     test_scenic_plan_gate()
     test_pure_media_process_false()
     test_weather_on_image_gate()
     test_labeled_scene_still_gates_info_card()
+    test_scenic_misrouted_as_pdf_coerced()
+    test_weather_pdf_with_search_not_coerced_to_image()
     print("media_shortcut_gate_unit OK")
     return 0
 
