@@ -581,12 +581,13 @@ def ensure_opencode_combo(
     cur_strategy = (existing.get("strategy") or existing.get("comboStrategy") or "").strip() if existing else ""
     good = [mid for mid in ids if _is_opencode_model_id(mid)]
     leftover = [mid for mid in ids if not _is_opencode_model_id(mid)]
+    thin = refill_if_below is not None and len(good) < refill_if_below
+    # setup/update preserve path: never rewrite operator-owned membership or strategy.
+    if setup_only and existing and ids:
+        print(f"==> keep combo {name} (setup-only, operator-owned members n={len(ids)})")
+        return name
     if leftover:
         print(f"==> strip leftover non-OpenCode members from {name}: {leftover[:8]!r}")
-    thin = refill_if_below is not None and len(good) < refill_if_below
-    if setup_only and good and not thin and not leftover:
-        print(f"==> keep combo {name} (setup-only, operator-owned members)")
-        return name
     if good and not thin:
         if leftover or (want_strategy and cur_strategy != want_strategy):
             models = [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(good)]
@@ -899,6 +900,66 @@ def ensure_combo_round_robin(opener) -> None:
     got = settings.get("comboStrategy")
     if got != COMBO_STRATEGY:
         print(f"WARN comboStrategy verify: expected {COMBO_STRATEGY!r}, got {got!r}")
+
+
+def _request_queue_max_wait_ms() -> int:
+    """Omni Bottleneck job expiration (legacy name maxWaitMs). Default 10 minutes.
+
+    Omni ``PATCH /api/settings`` ignores nested resilienceSettings; the durable
+    write path is ``PATCH /api/resilience``. Do not use 0 — Omni treats that as
+    skip-never-queue (immediate drop when the lane is busy).
+    """
+    raw = (
+        os.environ.get("OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS")
+        or os.environ.get("OMNI_REQUEST_QUEUE_MAX_WAIT_MS")
+        or "600000"
+    ).strip()
+    try:
+        val = int(raw)
+    except ValueError:
+        val = 600000
+    # Omni normalize clamps [1, 24h]; keep a safe floor above the old 15s default.
+    return max(60_000, min(val, 24 * 60 * 60 * 1000))
+
+
+def ensure_request_queue_max_wait(opener) -> None:
+    """Raise Omni requestQueue.maxWaitMs so slow free models are not dropped at 15s."""
+    want = _request_queue_max_wait_ms()
+    try:
+        status, body = http_json(opener, "GET", f"{BASE}/api/resilience")
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN resilience GET failed: {e}")
+        return
+    if status not in (200, 201) or not isinstance(body, dict):
+        print(f"WARN resilience GET status={status}")
+        return
+    cur = ((body.get("requestQueue") or {}) if isinstance(body.get("requestQueue"), dict) else {})
+    cur_ms = cur.get("maxWaitMs")
+    try:
+        cur_i = int(cur_ms) if cur_ms is not None else 0
+    except (TypeError, ValueError):
+        cur_i = 0
+    if cur_i >= want:
+        print(f"==> resilience requestQueue.maxWaitMs ok ({cur_i}ms)")
+        return
+    print(f"==> resilience requestQueue.maxWaitMs {cur_i} → {want}")
+    status, body = http_json(
+        opener,
+        "PATCH",
+        f"{BASE}/api/resilience",
+        {"requestQueue": {"maxWaitMs": want}},
+    )
+    if status not in (200, 201):
+        print(f"WARN resilience PATCH failed: {body}")
+        return
+    try:
+        _, verify_body = http_json(opener, "GET", f"{BASE}/api/resilience")
+        got = ((verify_body.get("requestQueue") or {}) if isinstance(verify_body, dict) else {}).get(
+            "maxWaitMs"
+        )
+        print(f"==> resilience requestQueue.maxWaitMs now {got}")
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN resilience verify failed: {e}")
 
 
 def patch_hermes_model_router(key: str, model: str) -> None:
@@ -2212,6 +2273,7 @@ def setup_core() -> int:
     ensure_opencode_provider(opener)
     ensure_pollinations_api_key(env)
     ensure_pollinations_provider(opener, env)
+    ensure_request_queue_max_wait(opener)
     combo = ensure_combo_alias(opener, setup_only=True)
     classify_combo = ensure_classifier_combo(opener, setup_only=True)
     ensure_search_providers(opener)
@@ -2276,6 +2338,7 @@ def run_update() -> int:
     ensure_opencode_provider(opener)
     ensure_pollinations_api_key(env)
     ensure_pollinations_provider(opener, env)
+    ensure_request_queue_max_wait(opener)
     ensure_images_generations_nodes(opener, key)
     ensure_provider_image_models(opener, key)
     # setup_only=True: create missing shell combos only; never refill/replace members.

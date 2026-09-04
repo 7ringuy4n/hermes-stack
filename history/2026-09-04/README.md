@@ -1,13 +1,9 @@
-﻿# 2026-09-04 — live-scene overlays + soft classify (no RULES batch)
+﻿# 2026-09-04
 
-## Core
-- Live-facts host path: `live_scene` (weather aliases kept)
-- Classify media: multi-purpose exact-text + live-scene synonyms
-- file-gen HTML example topic-agnostic; unique info-scene filenames
-- Prior: Playwright failover, archive, §15 unit align, greeting/PDF inject
+## Omni requestQueue maxWaitMs
 
-## Note
-Operator paused RULES.md §15 batch runs — remaining work is product hardening, not case-index labs.
-
-## Merge
-MR develop → main; VPS update from `main` only.
+### Technical detail
+- **Symptom:** Omni drops slow free-model jobs at `maxWaitMs=15000` (Bottleneck execution expiration; legacy name “queue budget”).
+- **Root cause:** Default resilience setting; `/api/settings` does not persist nested `resilienceSettings`.
+- **Fix:** `scripts/main/first-setup-omnirouter.py` → `ensure_request_queue_max_wait` → `PATCH /api/resilience` with `requestQueue.maxWaitMs` (env `OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS`, default `600000`).
+- **Verify:** `GET /api/resilience` shows raised `maxWaitMs`; chat smoke with free members no longer returns the 15s drop string.

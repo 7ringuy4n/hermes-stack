@@ -1,3 +1,8 @@
+## 2026-09-04 15:35 +07 — Omni requestQueue maxWaitMs via /api/resilience
+
+- first-setup / update-omnirouter raises `resilienceSettings.requestQueue.maxWaitMs` (default 600000) through `PATCH /api/resilience` so slow free models are not dropped at the legacy 15s Bottleneck expiration.
+- `/api/settings` ignores nested resilienceSettings; do not use it for this knob. Env: `OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS`.
+
 ## 2026-09-04 15:05 +07 — refill OpenBao compose keys after plaintext scrub
 
 - `run.sh` update / post-up: after `scrub-plaintext-env`, immediately `load-openbao-env` so `OMNIROUTER_API_KEY` / `API_SERVER_KEY` / `GATEWAY_API_KEYS` are not left empty on disk (Omni 401 / compose miss).
