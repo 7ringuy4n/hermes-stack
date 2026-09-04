@@ -1,5 +1,13 @@
 ﻿# 2026-09-04
 
+## Obsolete env key cleanup
+
+### Technical detail
+- **Symptom:** Empty `ADMIN_API_TOKEN` and `WEB_BACKENDS=omni` lingered on VPS after combo-only search / OpenBao scrub.
+- **Root cause:** Scrub cleared secret values but did not delete retired KEY lines.
+- **Fix:** `cleanup-obsolete-env.py` + `OBSOLETE_ENV_KEYS`; scrub + load-openbao; filter OpenBao export; `.env.example` drops `WEB_BACKENDS`.
+- **Verify:** Lab seeds retired pins then asserts they are gone; classifier/Omni smoke still HTTP 200.
+
 ## Omni requestQueue maxWaitMs
 
 ### Technical detail

@@ -23,7 +23,7 @@ SEED_KEYS = (
     "DEEPSEEK_API_KEY",
 )
 
-# Retired keys — removed from KV on each seed/update.
+# Retired secrets — removed from OpenBao KV on each seed/update.
 OBSOLETE_SECRET_KEYS = (
     "FAL_KEY",
     "FLUXAI_API_KEY",
@@ -32,6 +32,29 @@ OBSOLETE_SECRET_KEYS = (
     "IMAGE_OMNI_MODEL",
     "IMAGE_GEN_SIZE",
     "IMAGE_ALLOW_PILLOW",
+    "ADMIN_API_TOKEN",  # legacy alias; Zalo uses ZALO_API_TOKEN / OpenBao
+    "MEM0_API_KEY",
+)
+
+# Retired host .env pins (secret or not) — delete entire KEY= lines on scrub/load.
+# Keep ENABLE_*/WORKER_* install flags; those are still written by run.sh install.
+OBSOLETE_ENV_KEYS = OBSOLETE_SECRET_KEYS + (
+    "WEB_BACKENDS",  # Omni combo web-search only
+    "WEB_SEARCH_COMBO_PATH",
+    "OMNIROUTER_SEARCH_PROVIDERS",
+    "IMAGE_OMNI_MODEL",
+    "OMNIROUTER_IMAGE_MODEL",
+    "IMAGE_GEN_HEAD_MODEL",
+    "IMAGE_LLM_MODEL",
+    "IMAGE_LLM_SIZE",
+    "IMAGE_LLM_PROVIDER",
+    "IMAGE_LLM_BASE_URL",
+    "IMAGE_VENDOR_PROVIDER",
+    "IMAGE_VENDOR_URL",
+    "IMAGE_VENDOR_MODEL",
+    "OLLAMA_HOST",
+    "QWEN_MODEL",
+    "ENABLE_QWEN",
 )
 
 # Compose ${VAR:?} reads ROOT/.env at parse time — refill from KV when empty.
