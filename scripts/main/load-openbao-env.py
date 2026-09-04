@@ -201,6 +201,28 @@ def _cleanup_obsolete_host_env() -> None:
             )
 
 
+def match_export_owner(export_path: Path, data_dir: Path, sudo_user: str = "") -> bool:
+    """Keep generated secret exports writable by the runtime-data owner."""
+    if not hasattr(os, "chown"):
+        return False
+    try:
+        st = data_dir.stat()
+        os.chown(export_path, st.st_uid, st.st_gid)
+        return True
+    except OSError:
+        owner = (sudo_user or "").strip()
+        if not owner:
+            return False
+    try:
+        import pwd
+
+        pw = pwd.getpwnam(owner)
+        os.chown(export_path, pw.pw_uid, pw.pw_gid)
+        return True
+    except (KeyError, OSError, ImportError):
+        return False
+
+
 def main() -> int:
     try:
         _cleanup_obsolete_host_env()
@@ -244,6 +266,11 @@ def main() -> int:
         os.chmod(EXPORT_PATH, 0o600)
     except OSError:
         pass
+    match_export_owner(
+        EXPORT_PATH,
+        DATA_DIR,
+        sudo_user=os.environ.get("SUDO_USER") or "",
+    )
     fill = {
         k: str(data.get(k) or "").strip()
         for k in COMPOSE_HOST_KEYS
