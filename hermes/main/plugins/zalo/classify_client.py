@@ -664,7 +664,7 @@ def _office_body_trivial_for_host_shortcut(plan: dict[str, Any] | None) -> bool:
 
 _LABELED_SCENE_RENDER = frozenset({"labeled-scene", "labeled_scene", "info-card", "info_card", "card", "dashboard"})
 _SCENE_OVERLAY_RENDER = frozenset(
-    {"scene-overlay", "scene_overlay", "weather-scene", "weather_scene", "scenic-overlay"}
+    {"scene-overlay", "scene_overlay", "weather-scene", "weather_scene", "scenic-overlay", "live-scene", "live_scene"}
 )
 _INFO_CARD_RENDER = _LABELED_SCENE_RENDER  # legacy alias
 
@@ -800,7 +800,15 @@ def coerce_scenic_misrouted_as_office(plan: dict[str, Any] | None) -> dict[str, 
     upper = blob.upper()
     if "SCENE:" not in upper:
         return src
-    if any(m in upper for m in ("RENDER: WEATHER-SCENE", "RENDER: LABELED-SCENE", "RENDER: INFO-CARD")):
+    if any(
+        m in upper
+        for m in (
+            "RENDER: WEATHER-SCENE",
+            "RENDER: LIVE-SCENE",
+            "RENDER: LABELED-SCENE",
+            "RENDER: INFO-CARD",
+        )
+    ):
         return src
     # Keep SCENE line(s) as the image instruction; drop office output_type.
     lines = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]

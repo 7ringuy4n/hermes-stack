@@ -246,13 +246,14 @@ def _synthesize_overlay_facts(
     ).strip() or "hermes"
     q = (query or "").strip()[:120]
     system = (
-        "You extract live facts for a small image overlay. "
+        "You extract live facts for a small image overlay from the user query and notes. "
         "Reply with 3 or 4 lines only. Each line MUST be Label: value. "
-        "Use Vietnamese labels when the query is Vietnamese: Nhiệt độ, Độ ẩm, Thời tiết, Gió. "
+        "Choose labels that match the query topic and language (weather, scores, prices, "
+        "rates, or other metrics — do not force a fixed weather-only schema). "
         "Values must come from the notes. Never invent. Never placeholders. "
-        "No markdown, no bullets, no SCENE, no SAFE-FOR-WORK, no extra prose."
+        "No markdown, no bullets, no SCENE, no policy tokens, no extra prose."
     )
-    user = f"Query: {q or 'current weather'}\nNotes:\n{notes}"
+    user = f"Query: {q or 'live facts'}\nNotes:\n{notes}"
     body = json.dumps(
         {
             "model": model,
@@ -453,24 +454,16 @@ def _overlay_header(user_ask: str = "", scene: str = "") -> str:
     """Short badge title — never dump the full user ask or SCENE diffusion prose."""
     del scene
     ask = " ".join((user_ask or "").split())
-    # Long create/update sentences make a bad badge — keep a compact title.
-    if not ask or len(ask) > 28:
-        return "Thời tiết"
-    low = ask.lower()
-    if any(
-        x in low
-        for x in (
-            "cập nhật",
-            "cap nhat",
-            "tạo ",
-            "tao ",
-            "ghi thông",
-            "hình ảnh",
-            "bắt mắt",
-            "không sai",
-        )
-    ):
-        return "Thời tiết"
+    if not ask:
+        return "Facts"
+    # Long create/update sentences make a bad badge — keep a compact topic word.
+    if len(ask) > 28:
+        # Prefer a short leading noun phrase when present; else generic.
+        for token in ask.replace(",", " ").split():
+            t = token.strip()
+            if len(t) >= 3 and t[0].isalpha():
+                return t[:24]
+        return "Facts"
     return ask[:28]
 
 
@@ -480,7 +473,7 @@ def _weather_overlay_lines(
     """Compact lines for Pillow overlay — facts from classify/search only."""
     header = _overlay_header(user_ask=user_ask, scene=scene)
     now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H:%M · %d/%m/%Y")
-    lines = [header or "Thời tiết"]
+    lines = [header or "Facts"]
     for raw in facts or []:
         s = str(raw or "").strip()
         if not s or _skip_structural_junk(s):
@@ -491,7 +484,7 @@ def _weather_overlay_lines(
         lines.append(s[:72])
         if len(lines) >= 5:
             break
-    lines.append(f"Cập nhật: {now}")
+    lines.append(f"Updated: {now}")
     return lines[:6]
 
 
@@ -543,7 +536,7 @@ def _photoreal_scene_prompt(prompt: str) -> str:
 
 
 def _weather_scene_visual_prompt(scene: str, facts: list[str]) -> str:
-    """Weather scenic diffusion — SCENE from classify; facts as atmospheric reference only."""
+    """Live-facts scenic diffusion — SCENE from classify; facts as atmospheric reference only."""
     base = _photoreal_scene_prompt(_strip_diffusion_policy_tokens(scene or ""))
     clean = [
         str(f).strip()
@@ -553,13 +546,13 @@ def _weather_scene_visual_prompt(scene: str, facts: list[str]) -> str:
     extra = ""
     if clean:
         extra = (
-            " Reflect live weather through atmosphere: "
+            " Reflect live conditions through environment and atmosphere: "
             + "; ".join(clean[:4])
             + "."
         )
     return (
         f"{base}{extra} "
-        "Express weather only through sky, clouds, lighting, wet surfaces, and atmosphere. "
+        "Express live conditions only through sky, lighting, environment, and atmosphere. "
         "No readable text, no letters, no signs, no captions, no watermarks, no labels in the image. "
         "No close-up people, not cartoon, not anime, not illustration"
     )
@@ -666,7 +659,13 @@ def _omni_image_quality_ok(blob: bytes, *, size: str) -> bool:
 
 
 def _omni_v1_combo_member_models(base: str, key: str, combo_name: str) -> list[str]:
-    """Ordered /v1/combos members for a combo name (API key auth)."""
+    """Ordered combo members for a combo name (API key auth).
+
+    Omni /v1/combos payloads vary (``data`` list vs ``combos``, ``model`` vs
+    ``fullModel``). Prefer real provider/model ids so /images/generations can
+    target a member directly — combo aliases often report
+    ``No images-capable targets`` even when members work.
+    """
     root = (base or "").rstrip("/")
     if root.endswith("/v1"):
         url = f"{root}/combos"
@@ -683,15 +682,33 @@ def _omni_v1_combo_member_models(base: str, key: str, combo_name: str) -> list[s
         log.warning("omni combos list failed: %s", type(e).__name__)
         return []
     want = (combo_name or "").strip()
-    combo = next((c for c in (data.get("data") or []) if (c.get("name") or "") == want), None)
+    rows = data.get("data") or data.get("combos") or data.get("items") or []
+    if isinstance(data, list):
+        rows = data
+    combo = next(
+        (c for c in rows if isinstance(c, dict) and (c.get("name") or "") == want),
+        None,
+    )
     if not combo:
         return []
     out: list[str] = []
-    for row in combo.get("models") or []:
-        if not isinstance(row, dict):
+    for row in combo.get("models") or combo.get("members") or []:
+        if isinstance(row, str) and row.strip():
+            mid = row.strip()
+        elif isinstance(row, dict):
+            mid = str(
+                row.get("model")
+                or row.get("fullModel")
+                or row.get("id")
+                or row.get("name")
+                or ""
+            ).strip()
+        else:
+            mid = ""
+        # Skip nested combo aliases and blanks.
+        if not mid or "/" not in mid:
             continue
-        mid = str(row.get("model") or "").strip()
-        if mid and mid not in out:
+        if mid not in out:
             out.append(mid)
     return out
 
@@ -709,10 +726,11 @@ def _omni_request_image_blob(
     tried: list[str] = []
     candidates: list[str] = []
     combo = (model or "").strip()
-    if combo and "/" not in combo:
-        candidates.append(combo)
-        if combo_members:
-            candidates.extend(m for m in combo_members if m and m not in candidates)
+    members = [m for m in (combo_members or []) if m and "/" in m]
+    # Prefer concrete members so Omni UI shows Requested Model and so we bypass
+    # broken combo-level "images-capable" gating.
+    if members:
+        candidates.extend(members)
     elif combo:
         candidates.append(combo)
     for candidate in candidates:
@@ -912,7 +930,10 @@ def run_scene_image(
             "real camera photo, natural lighting, wide view, not cartoon, not anime"
         )
     prompt = _photoreal_scene_prompt(scene)
-    fname = f"scene-{str(thread_id)[-8:] or 'zalo'}.webp"
+    # Unique per turn — avoid concurrent scenic jobs overwriting the same path.
+    import uuid
+
+    fname = f"scene-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.webp"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
         return out
@@ -951,7 +972,9 @@ def run_search_then_weather_scene(
     if not facts:
         facts = _synthesize_overlay_facts(search, query=query or user_ask)
     prompt = _weather_scene_visual_prompt(scene, facts)
-    fname = f"weather-scene-{str(thread_id)[-8:] or 'zalo'}.jpg"
+    import uuid
+
+    fname = f"live-scene-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
         overlay = _weather_overlay_lines(facts, scene=scene, user_ask=user_ask)

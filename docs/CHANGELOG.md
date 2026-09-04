@@ -1,5 +1,22 @@
 - Host never final-replies bare-image OCR noise; blocks `_as_try_workflow_submit` → `office_shortcut` when `has_image_attachment` (shortcut lacked `media_urls` guard).
 
+## 2026-09-04 09:40 +07 — router: drop stream_options after forced non-stream
+
+- Router-worker always proxies chat upstream with `stream=false` for error inspection; Hermes often sends `stream_options` with `stream=true`, which then 400s OpenCode/GLM. Drop `stream_options` after forcing non-stream.
+- Image-gen host/dispatcher still resolve concrete combo members; update-omnirouter preserves operator combos.
+
+## 2026-09-04 09:30 +07 — router: drop stream_options on non-stream chat
+
+- OpenCode/GLM members 400 when Hermes sends `stream_options` with `stream=false`; router-worker sanitizes that before Omni.
+- Continues omni/image combo-preserve + member-direct image-gen + multi-purpose media prompt work.
+
+## 2026-09-04 09:00 +07 — omni/image: preserve combos; member-direct image-gen; multi-purpose media prompt
+
+- `update-omnirouter` refreshes providers/ACL only — operator combo membership is never rewritten on update.
+- Scenic/live image-gen resolves concrete combo members for `/images/generations` (Requested Model + bypass broken combo image-capable gating); unique per-turn media filenames.
+- Classify media prompt is multi-purpose English contract (`live-scene` + flexible overlays); Pollinations device-flow helper for missing free API keys; vision catalog trusts `supportsVision` (Kimi and similar are not treated as blind).
+- Concurrent Tn lab default cooldown is 0 (no artificial Omni queue wait).
+
 ## 2026-09-04 07:30 +07 — zalo/office: scenic vs presentation docs; WeasyPrint-safe layout
 
 - Classify media: draw/paint without an office format stays scene image; visual presentation rules cover pdf|pptx|docx|xlsx|md (not PDF-only).

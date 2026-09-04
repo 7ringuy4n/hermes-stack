@@ -2,7 +2,7 @@
 """Concurrent Tn inject: scenic Hanoi image + Da Nang weather PDF (AGENT_RULES §29.2).
 
 Must deliver ONE new image and ONE substantial weather PDF — not two PDFs / zero images.
-Env: ASSISTANT_SSH_* ; ZALO_TEST_USER_ID ; ZALO_TEST_WAIT_S ; ZALO_TEST_COOLDOWN_S
+Env: ASSISTANT_SSH_* ; ZALO_TEST_USER_ID ; ZALO_TEST_WAIT_S ; ZALO_TEST_COOLDOWN_S (default 0 — no artificial Omni queue wait)
 Report: test/reports/run-zalo-tn-concurrent-scenic-pdf/
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().paren
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-concurrent-scenic-pdf"
 TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937").strip()
 WAIT_S = int(os.environ.get("ZALO_TEST_WAIT_S") or "480")
-COOLDOWN_S = int(os.environ.get("ZALO_TEST_COOLDOWN_S") or "120")
+COOLDOWN_S = int(os.environ.get("ZALO_TEST_COOLDOWN_S") or "0")
 GAP_S = int(os.environ.get("ZALO_TEST_INJECT_GAP_S") or "8")
 
 MSG_SCENE = "vẽ hình thành phố hà nội giờ hiện tại"
@@ -124,14 +124,68 @@ def _vision_rate_image(c, img_path: str) -> dict:
     cp = _to_container(img_path)
     remote = f"""
 set -euo pipefail
-docker exec assistant-dispatcher-1 python3 -c "from pathlib import Path; p=Path({cp!r}); print('PATH_EXISTS', p.is_file(), p.stat().st_size if p.is_file() else 0);
+set -a; . /opt/assistant/.env; set +a
+cat > /tmp/rate_vision_img.py <<'PY'
+import base64, json, os, urllib.request, io
+from pathlib import Path
+p = Path({cp!r})
+print("PATH_EXISTS", p.is_file(), p.stat().st_size if p.is_file() else 0)
+if not p.is_file():
+    raise SystemExit(0)
+blob = p.read_bytes()
+mime = "image/jpeg"
 try:
- from vision_ocr import vision_read_path
- q='Describe this image in 3 short lines. Is it a photorealistic outdoor city/place photograph (not a blank page, not a PDF page dump)? Mention city cues if any. Plain text only.'
- text=vision_read_path(str(p), prompt=q) or ''
+    from PIL import Image
+    im = Image.open(io.BytesIO(blob)).convert("RGB")
+    im.thumbnail((1280, 1280))
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", quality=85)
+    blob = buf.getvalue()
 except Exception as e:
- print('VISION_FAIL', type(e).__name__, e); text=''
-print('VISION_BEGIN'); print(text); print('VISION_END')"
+    print("PIL_FALLBACK", type(e).__name__)
+    low = p.suffix.lower()
+    mime = "image/png" if low == ".png" else ("image/webp" if low == ".webp" else "image/jpeg")
+b64 = base64.b64encode(blob).decode("ascii")
+key = (os.environ.get("OMNIROUTER_API_KEY") or "").strip()
+base = (os.environ.get("OMNIROUTER_BASE_URL") or "http://omni-router:20129/v1").rstrip("/")
+model = (os.environ.get("OCR_MODEL") or os.environ.get("OMNIROUTER_VISION_COMBO") or "vision-ocr").strip()
+body = json.dumps({{
+    "model": model,
+    "stream": False,
+    "max_tokens": 220,
+    "messages": [{{
+        "role": "user",
+        "content": [
+            {{"type": "text", "text": "Describe this image in 3 short lines. Is it a photorealistic outdoor city/place photograph (not a blank page, not a PDF page dump)? Mention city cues if any. Plain text only."}},
+            {{"type": "image_url", "image_url": {{"url": "data:" + mime + ";base64," + b64}}}},
+        ],
+    }}],
+}}).encode()
+req = urllib.request.Request(
+    base + "/chat/completions",
+    data=body,
+    method="POST",
+    headers={{"Authorization": "Bearer " + key, "Content-Type": "application/json"}},
+)
+text = ""
+try:
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = json.loads(resp.read().decode() or "{{}}")
+    text = (((data.get("choices") or [{{}}])[0].get("message") or {{}}).get("content") or "").strip()
+except Exception as e:
+    err = ""
+    if hasattr(e, "read"):
+        try:
+            err = e.read().decode("utf-8", "replace")[:240]
+        except Exception:
+            err = ""
+    print("VISION_FAIL", type(e).__name__, getattr(e, "code", None), err)
+print("VISION_BEGIN")
+print(text)
+print("VISION_END")
+PY
+docker cp /tmp/rate_vision_img.py assistant-dispatcher-1:/tmp/rate_vision_img.py
+docker exec -e OMNIROUTER_API_KEY -e OMNIROUTER_BASE_URL=http://omni-router:20129/v1 -e OCR_MODEL -e OMNIROUTER_VISION_COMBO assistant-dispatcher-1 python3 /tmp/rate_vision_img.py
 """
     raw = _clean(sudo_bash(c, remote, timeout=240))
     desc = ""
@@ -140,10 +194,36 @@ print('VISION_BEGIN'); print(text); print('VISION_END')"
     low = (desc or "").lower()
     notes: list[str] = []
     score = 0
-    if any(x in low for x in ("photo", "photograph", "city", "street", "skyline", "building", "hanoi", "hà nội", "ha noi")):
+    if any(
+        x in low
+        for x in (
+            "photo",
+            "photograph",
+            "city",
+            "street",
+            "skyline",
+            "building",
+            "hanoi",
+            "hà nội",
+            "ha noi",
+            "motorbike",
+            "bridge",
+        )
+    ):
         score += 3
         notes.append("city_photo_cues")
-    if any(x in low for x in ("blank", "empty", "pdf page", "document page", "screenshot of text")):
+    # Negated phrases like "not a blank page / PDF dump" must not fail a real photo.
+    check = low
+    for neg in (
+        "not a blank page",
+        "not a blank/pdf page",
+        "not a pdf",
+        "not blank",
+        "not a document",
+        "pdf dump",
+    ):
+        check = check.replace(neg, " ")
+    if any(x in check for x in ("blank page", "empty page", "pdf page dump", "document page", "screenshot of text")):
         notes.append("bad_doc_like")
         score = min(score, 1)
     if "VISION_FAIL" in raw:
@@ -173,7 +253,7 @@ def _rate_pdf(c, pdf_path: str) -> dict:
     cp = _to_container(pdf_path)
     remote = f"""
 set -euo pipefail
-docker exec assistant-dispatcher-1 python3 - <<'PY'
+cat > /tmp/rate_pdf_doc.py <<'PY'
 from pathlib import Path
 p = Path({cp!r})
 print("EXISTS", p.is_file())
@@ -196,6 +276,8 @@ print("PDF_TEXT_BEGIN")
 print(text[:3000])
 print("PDF_TEXT_END")
 PY
+docker cp /tmp/rate_pdf_doc.py assistant-dispatcher-1:/tmp/rate_pdf_doc.py
+docker exec assistant-dispatcher-1 python3 /tmp/rate_pdf_doc.py
 """
     raw = _clean(sudo_bash(c, remote, timeout=120))
     text = ""
@@ -243,7 +325,6 @@ PY
         "raw_tail": raw[-1000:],
     }
 
-
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     c = connect()
@@ -254,8 +335,11 @@ def main() -> int:
         "steps": [],
     }
     try:
-        print(f"[{ts()}] cooldown {COOLDOWN_S}s (OmniRoute queue cushion)", flush=True)
-        time.sleep(COOLDOWN_S)
+        if COOLDOWN_S > 0:
+            print(f"[{ts()}] cooldown {COOLDOWN_S}s (optional)", flush=True)
+            time.sleep(COOLDOWN_S)
+        else:
+            print(f"[{ts()}] no cooldown (ZALO_TEST_COOLDOWN_S=0)", flush=True)
 
         imgs_before = _list_media(c, "*.{jpg,jpeg,webp,png}")
         pdfs_before = _list_media(c, "*.pdf")

@@ -84,6 +84,8 @@ Use `hermes_path` / `/opt/data/media/out/<file>` in PDF HTML `<img src="…">` (
    - **xlsx** — clear metric sheet.
 4. One **`POST /v1/office-file`** with that body and the exact `output_type` / filename extension.
 
+Never `write_file` draft HTML/markdown under `/tmp` (outside `HERMES_WRITE_SAFE_ROOT`). Compose the body in the tool call JSON only and POST office-file so the worker writes `/opt/data/media/out/<file>`.
+
 Do **not** rely on the host search→office shortcut for designed presentation docs — you must compose.
 Never greet, never `/help`, never narrate tools, never mention missing API keys.
 Never silently remap pptx/docx/xlsx → pdf.

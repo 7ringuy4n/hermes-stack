@@ -64,6 +64,9 @@ def sanitize_chat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Deterministic OpenAI body cleanup before upstream."""
     out = dict(payload)
     out["stream"] = bool(out.get("stream"))
+    # OpenCode / GLM reject stream_options unless stream=true (HTTP 400).
+    if not out["stream"]:
+        out.pop("stream_options", None)
     msgs = out.get("messages")
     if isinstance(msgs, list):
         clean: list[dict[str, Any]] = []

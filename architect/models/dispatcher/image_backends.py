@@ -160,11 +160,40 @@ def gen_omni(prompt: str, *, size: Optional[str] = None) -> bytes:
     key = _env("OMNIROUTER_API_KEY")
     if not key:
         raise RuntimeError("OMNIROUTER_API_KEY missing")
+    combo = image_gen_combo()
+    model = combo
+    # Resolve concrete members so Requested Model is populated and combo-level
+    # "No images-capable targets" gating is bypassed when members work directly.
+    try:
+        import json
+        import urllib.request
+
+        root = base.rstrip("/")
+        url = f"{root}/combos" if root.endswith("/v1") else f"{root}/v1/combos"
+        req = urllib.request.Request(
+            url,
+            headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode() or "{}")
+        rows = data.get("data") or data.get("combos") or []
+        entry = next((c for c in rows if isinstance(c, dict) and (c.get("name") or "") == combo), None)
+        for row in (entry or {}).get("models") or (entry or {}).get("members") or []:
+            mid = ""
+            if isinstance(row, str):
+                mid = row.strip()
+            elif isinstance(row, dict):
+                mid = str(row.get("model") or row.get("fullModel") or "").strip()
+            if mid and "/" in mid:
+                model = mid
+                break
+    except Exception:
+        model = combo
     return _gen_openai_images(
         base=base,
         key=key,
         prompt=prompt,
-        model=image_gen_combo(),
+        model=model,
         size=size,
     )
 
