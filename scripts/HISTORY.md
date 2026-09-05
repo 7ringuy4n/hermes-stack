@@ -1,3 +1,7 @@
+## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider timeout
+
+See `history/2026-09-05/README.md` section “Quoted images were analyzed instead of edited”.
+
 ## 2026-09-04 20:10 +07 — scheduled live-scene execution and overlay ownership
 
 See `history/2026-09-04/README.md` sections “Scheduled live-scene intent survives storage and fire” and “One renderer owns live-scene text”.
@@ -2100,7 +2104,7 @@ Always resolve named groups via zalo-context/PG before schedule/create; never sw
 
 ## 2026-08-23 17:05 +07 — video policy: OmniRouter refuse messages
 
-- Dispatcher `video_summary.py`: LLM-written refuse for social video summary + video generation; `/v1/video` blocked; `video-gen` skill aligned.
+- Dispatcher `video_summary.py`: LLM-written policy response for inaccessible social-media content.
 
 ## 2026-08-23 17:00 +07 — Zalo quote: durable bridge overlay (not runtime patch)
 
@@ -5526,3 +5530,18 @@ persisted structural render contract, and let grounded composition author a clea
 background brief plus overlay plan. Treat explicit media/image fields as stronger
 than broad artifact hints. Keep SSE read timeout at three heartbeat intervals so
 half-open connections reconnect. Regression tests cover all four boundaries.
+## 2026-09-05 13:47 +07 — priority media skills and single-deliverable office output
+
+Completed the existing Omni media combo shells through classifier and mounted
+skills, migrated selected combo strategies without changing member order, and
+made visual office assets opt-in with one visible document title. See
+`history/2026-09-05/README.md` for root-cause detail and verification gates.
+
+## 2026-09-05 15:30 +07 — rendered office artifact gate
+
+The Zalo visual-document lab now uses the exact configurable fixture, discovers
+active dispatcher/Hermes instances, rejects new sibling images, and allows the
+long-running office workflow budget. Release evaluation must extract text and
+inspect the rendered pages for scope, source time, language, unsupported copy,
+overflow, and page balance. Injection immediately after a replica restart is
+invalid until the bridge health endpoint reports an active SSE subscriber.

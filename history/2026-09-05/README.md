@@ -1,5 +1,149 @@
 # 2026-09-05
 
+## 16:30 — Quoted images were analyzed instead of edited
+
+### Symptom
+
+An explicit image transformation sent by replying to a Zalo photo was routed as
+image analysis, and a direct edit could fail after 30 seconds even though the
+provider was still producing a valid artifact.
+
+### Root cause
+
+The quote path correctly extracted, downloaded, and staged the original image,
+but the host shortcut rejected every turn containing media. The remaining path
+therefore treated the photo as an analysis attachment. Independently, the image
+provider waits until its artifact is ready before sending response headers,
+exceeding OmniRoute's direct-response default.
+
+### Technical detail
+
+- **Ownership:** an explicit `skill=image-edit`, `skill_action=edit_media`, and
+  `output_type=image` contract consumes the staged quote source on both inline
+  and queued Zalo paths; other image requests still use vision analysis.
+- **Transport:** `OMNIROUTE_DIRECT_HEADERS_TIMEOUT_MS=300000` is separate from
+  `resilienceSettings.requestQueue.maxWaitMs` and covers slow direct image calls.
+- **Lifecycle:** setup removes retired capability aliases and stale combo rows
+  instead of leaving callable legacy shells.
+
+### AI decision
+
+Make the structured classifier result the only intent gate, preserve the quote
+source as data, and let the host own the one edit request and one attachment
+delivery. Keep credentials in OmniRoute and provider details out of prompts.
+
+### Fix (core)
+
+Raised the direct image response-header budget, added the multipart image-edit
+executor to the core Zalo media path, and removed retired capability code and
+configuration across setup, routing, skills, attribution, tests, and docs.
+
+### Todo list
+
+- [x] Verify quoted-media extraction and staged local-path ownership.
+- [x] Verify the multipart edit request and result-only delivery contract.
+- [x] Reproduce and verify a real image artifact through the combo.
+- [x] Remove retired skills, aliases, endpoints, setup state, and tests.
+- [x] Audit the deployed Zalo quote-reply flow and service logs.
+
+### Prevent recurrence
+
+Routing-only responses cannot pass the image-edit lab. A quote test must prove
+source extraction, endpoint completion, artifact validity, and Zalo delivery;
+the release remains blocked if any layer merely asserts success.
+
+The release probe used a deterministic scene with independently recognizable
+objects. The edited artifact remained structurally coherent, contained no
+unwanted text, passed image decoding, and received an independent visual score
+of 8/10 before the outbound Zalo photo event was accepted.
+
+## 13:47 — Media capability shells were still routed to refusal
+
+### Symptom
+
+The image-edit combo existed in setup, but supplied-image transformation requests
+could not reach it because mounted guidance and the host gate treated all image
+attachments as analysis inputs.
+
+### Root cause
+
+The combo layer was added before the classifier schema and mounted skill layer
+were migrated. The host attachment gate did not distinguish analysis from edit
+actions using the classifier contract.
+
+### Technical detail
+
+- **Function:** `hermes/main/plugins/zalo/classify_client.py::plan_allows_image_edit()` owns the structured edit gate.
+- **Fields:** `skill=image-edit`, `skill_action=edit_media`, and `output_type=image` remain executable only with an image source.
+- **Combos:** `hermes` and `image-edit` use `strategy=priority`; member order remains operator-owned.
+
+### AI decision
+
+Complete the image-edit architecture through classifier and reusable skills,
+without adding topic matching or provider-specific prompts.
+
+### Fix (core)
+
+Added the endpoint-owned image-edit skill, expanded the shared classify contract,
+and added a strategy-only migration that keeps exact combo membership and order.
+
+### Todo list
+
+- [x] Inspect the existing image-edit shell and attachment route.
+- [x] Preserve operator members while changing strategy.
+- [x] Add the reusable image-edit contract and classifier enum.
+- [x] Add local regression coverage.
+- [x] Verify the real endpoint and artifact on the authorized lab host.
+
+### Prevent recurrence
+
+Unit coverage distinguishes image editing from image analysis and verifies
+strategy migration does not reorder combo members.
+
+## 13:47 — Visual document wording created an extra media deliverable
+
+### Symptom
+
+A request for one styled office document could also emit a standalone generated
+image, and model-authored HTML could repeat a short subject line immediately
+above a title band containing the same subject.
+
+### Root cause
+
+The file-generation skill required a scenic asset for every visual presentation
+document and lacked a single-visible-title constraint. Classification guidance
+did not state that visual styling verbs remain inside the requested office type.
+
+### Technical detail
+
+- **Function:** `classify.py::assemble_classify_system()` — consumes the corrected external media prompt; no host NLU was added.
+- **Lines:** `hermes/main/skills/classify/parts/media.txt:L7–L16`; `hermes/main/skills/file-gen/SKILL.md:L58–L82`.
+- **Fields:** `output_type=pdf` remains authoritative; `media_generation` is added only for an independently requested or explicitly embedded image.
+
+### AI decision
+
+Correct the owning prompt and skill contracts so every topic and language gets
+the same behavior; do not special-case a place name or weather request.
+
+### Fix (core)
+
+Made embedded visuals opt-in, prohibited separate delivery of document assets,
+required one visible document title, and bound overlay copy to the dominant
+language of the current request with general-audience wording.
+
+### Todo list
+
+- [x] Inspect the supplied PDF and chat screenshots as evidence.
+- [x] Trace office and image routing ownership.
+- [x] Update generic prompt/skill sources.
+- [x] Add request-language and document-title contract tests.
+- [ ] Inspect a regenerated lab PDF and its actual Zalo delivery.
+
+### Prevent recurrence
+
+Regression checks cover office-output precedence, single-title guidance,
+request-language overlays, and the absence of implicit image delivery.
+
 ## Scheduled media plan was lost or weakened between storage and fire
 
 ### Symptom
@@ -207,3 +351,32 @@ graph and verifies the deprecated package is absent.
 
 Vendor refreshes must regenerate npm lockfiles, rebuild distributions, run the
 crypto vector test, and verify the dependency tree before rollout.
+
+## Model-authored office artifacts require rendered-output gates
+
+### Symptom
+
+A fresh-data office request could be split into retrieval and authoring jobs,
+turn an operational instruction into document body text, add an unrequested
+sibling image, or produce a polished-looking file whose language, locality,
+timestamp, scope, units, or pagination was wrong.
+
+### Decision and fix
+
+Keep fresh-data document work in one evidence-owning file job and bypass the
+literal office shortcut when the model must process the original message.
+The classifier instruction and file skill now require dominant-language copy,
+one title, one verified current source, correct timezone semantics,
+locale-appropriate units, exact requested scope, and a pre-delivery layout
+review. The Zalo lab fixture verifies the actual delivered file and rejects a
+separate image artifact.
+
+### Verification result and prevention
+
+Structural routing, single-file delivery, current timestamp handling, and
+language/unit checks passed progressively. The final rendered page still used
+an unreliable card layout and unsupported descriptive interpretations, so the
+release gate remained closed. Future releases must inspect rendered pages and
+their extracted text; a successful API call or file assertion alone is not a
+pass. A bridge injection must also wait for an active SSE subscriber after a
+replica restart.

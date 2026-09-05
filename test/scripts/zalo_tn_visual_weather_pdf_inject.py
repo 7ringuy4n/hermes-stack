@@ -3,7 +3,8 @@
 
 User id default: 233767886566872937.
 Message asks for attractive PDF + city imagery — must NOT dump SERP chrome.
-Env: ASSISTANT_SSH_* ; ZALO_TEST_USER_ID ; ZALO_TEST_WAIT_S (default 240)
+Env: ASSISTANT_SSH_* ; ZALO_TEST_USER_ID ; ZALO_TEST_WAIT_S (default 240);
+ZALO_TEST_MESSAGE (optional exact fixture)
 Report: test/reports/run-zalo-tn-visual-weather-pdf/
 """
 from __future__ import annotations
@@ -27,10 +28,10 @@ ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().paren
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-visual-weather-pdf"
 TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937").strip()
 WAIT_S = int(os.environ.get("ZALO_TEST_WAIT_S") or "240")
-MSG = (
-    "cập nhật dự báo thời tiết hồ chí minh hiện tại và điền vào pdf, "
-    "layout phải thật bắt mắt có hình ảnh thành phố hồ chí minh"
-)
+MSG = (os.environ.get("ZALO_TEST_MESSAGE") or (
+    "cập nhật thời tiết hiện tại ở Đà Nẵng và vẽ vào file pdf, "
+    "giao diện phải bắt mắt và hợp gu người nhìn"
+)).strip()
 
 
 def ts() -> str:
@@ -62,6 +63,15 @@ def main() -> int:
             sudo_bash(c, "ls -1t /data/assistant/media/out/*.pdf 2>/dev/null | head -1 || true")
         ).strip()
         report["pdf_before"] = before
+        image_before = _clean(
+            sudo_bash(
+                c,
+                "find /data/assistant/media/out -maxdepth 1 -type f "
+                "\\( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.webp' \\) "
+                "-printf '%T@ %p\\n' 2>/dev/null | sort -nr | head -1 || true",
+            )
+        ).strip()
+        report["image_before"] = image_before
 
         # Do not pipe JSON through sanitize() — it redacts 127.0.0.1 and breaks curl.
         remote = f"""
@@ -89,8 +99,12 @@ with urllib.request.urlopen(req, timeout=30) as r:
 print("INJECT_OK")
 PY
 NEWPDF=""
+NEWIMAGE=""
 for i in $(seq 1 {WAIT_S}); do
   cand=$(find /data/assistant/media/out -type f -name '*.pdf' -newermt "@$START_EPOCH" 2>/dev/null | head -1 || true)
+  NEWIMAGE=$(find /data/assistant/media/out -maxdepth 1 -type f \
+    \\( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.webp' \\) \
+    -newermt "@$START_EPOCH" 2>/dev/null | head -1 || true)
   if [[ -n "$cand" ]]; then
     NEWPDF="$cand"
     echo "NEW_PDF $cand"
@@ -98,6 +112,9 @@ for i in $(seq 1 {WAIT_S}); do
   fi
   sleep 1
 done
+if [[ -n "$NEWIMAGE" ]]; then
+  echo "UNEXPECTED_NEW_IMAGE $NEWIMAGE"
+fi
 if [[ -z "$NEWPDF" ]]; then
   echo "NO_NEW_PDF"
   ls -1t /data/assistant/media/out/*.pdf 2>/dev/null | head -3 || true
@@ -105,7 +122,8 @@ if [[ -z "$NEWPDF" ]]; then
 fi
 HOST_PDF="$NEWPDF"
 CONT_PDF="${{HOST_PDF/\\/data\\/assistant\\/media/\\/data\\/media}}"
-docker exec -e P="$CONT_PDF" -e P2="$HOST_PDF" assistant-dispatcher-1 python - <<'PY'
+DISPATCHER_ID=$(docker compose -f /opt/assistant/docker/docker-compose.yml ps -q dispatcher | head -1)
+docker exec -i -e P="$CONT_PDF" -e P2="$HOST_PDF" "$DISPATCHER_ID" python - <<'PY'
 import os
 from pathlib import Path
 p = Path(os.environ.get("P") or "")
@@ -128,8 +146,8 @@ PY
         logs = _clean(
             sudo_bash(
                 c,
-                "docker logs --since 8m assistant-hermes-2 2>&1 | tail -n 80; "
-                "docker logs --since 8m assistant-hermes-3 2>&1 | tail -n 80",
+                "for c in $(docker ps --format '{{.Names}}' | grep '^assistant-hermes-'); do "
+                "docker logs --since 8m $c 2>&1 | tail -n 80; done",
                 timeout=60,
             )
         )
@@ -156,6 +174,8 @@ PY
         report["greeting_leak"] = greeting_leak
         new_pdf = "NEW_PDF" in out
         report["new_pdf"] = new_pdf
+        unexpected_image = "UNEXPECTED_NEW_IMAGE" in out
+        report["unexpected_image"] = unexpected_image
 
         out_path = OUT / f"report-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
         out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -168,6 +188,9 @@ PY
             return 1
         if greeting_leak:
             print("FAIL hello/help leak without file delivery", flush=True)
+            return 1
+        if unexpected_image:
+            print("FAIL requested PDF also produced a standalone image", flush=True)
             return 1
         if not new_pdf:
             print("FAIL no new pdf produced (quota/rate-limit → skip)", flush=True)

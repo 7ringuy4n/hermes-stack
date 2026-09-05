@@ -28,7 +28,7 @@ PORT = int(os.environ.get("OMNIROUTER_HOST_PORT", "20129"))
 BASE = f"http://127.0.0.1:{PORT}"
 COMBO_NAME = os.environ.get("OMNIROUTER_DEFAULT_COMBO", "hermes")
 CLASSIFY_COMBO_NAME = os.environ.get("OMNIROUTER_CLASSIFY_COMBO", "classifier")
-COMBO_STRATEGY = os.environ.get("OMNIROUTER_COMBO_STRATEGY", "round-robin")
+COMBO_STRATEGY = os.environ.get("OMNIROUTER_COMBO_STRATEGY", "priority")
 COMBO_STICKY_LIMIT = int(os.environ.get("OMNIROUTER_COMBO_STICKY_LIMIT", "1"))
 # Head-first failover (Omni ``priority``) for media, classify, embed, and search combos.
 FALLBACK_COMBO_STRATEGY = os.environ.get("OMNIROUTER_FALLBACK_COMBO_STRATEGY", "priority")
@@ -37,6 +37,7 @@ VISION_OCR_COMBO_STRATEGY = os.environ.get("OMNIROUTER_VISION_OCR_COMBO_STRATEGY
 CLASSIFIER_COMBO_STRATEGY = os.environ.get("OMNIROUTER_CLASSIFIER_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
 EMBEDDING_COMBO_STRATEGY = os.environ.get("OMNIROUTER_EMBEDDING_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
 WEB_SEARCH_COMBO_STRATEGY = os.environ.get("OMNIROUTER_WEB_SEARCH_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
+HERMES_COMBO_STRATEGY = os.environ.get("OMNIROUTER_HERMES_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY)
 
 OPENCODE_MODELS_URL = "https://opencode.ai/zen/v1/models"
 OPENCODE_FREE_FALLBACK = [
@@ -240,6 +241,21 @@ def drop_probe_combos(opener) -> None:
                 http_json(opener, "DELETE", f"{BASE}/api/combos/{cid}")
             except Exception as e:
                 print(f"WARN delete {name}: {e}")
+
+
+def drop_retired_media_combos(opener) -> None:
+    """Remove stack-retired media capability aliases and their stale membership."""
+    retired = {"video" + "-gen", "video" + "-edit"}
+    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    for combo in data.get("combos") or []:
+        name = str(combo.get("name") or "").strip()
+        combo_id = combo.get("id")
+        if name not in retired or not combo_id:
+            continue
+        status, body = http_json(opener, "DELETE", f"{BASE}/api/combos/{combo_id}")
+        if status not in (200, 204):
+            raise SystemExit(f"retired combo {name} delete failed: {body}")
+        print(f"==> removed retired combo {name}")
 
 
 def _combo_member_count(combo: dict) -> int:
@@ -563,6 +579,7 @@ def ensure_opencode_combo(
     refill_if_below: int | None = None,
     strategy: str = "",
     setup_only: bool = False,
+    enforce_strategy_only: bool = False,
 ) -> str:
     """Fill Omni combo with cloud OpenCode members when empty; keep live oc/opencode/opencode-go.
 
@@ -579,8 +596,26 @@ def ensure_opencode_combo(
     good = [mid for mid in ids if _is_opencode_model_id(mid)]
     leftover = [mid for mid in ids if not _is_opencode_model_id(mid)]
     thin = refill_if_below is not None and len(good) < refill_if_below
-    # setup/update preserve path: never rewrite operator-owned membership or strategy.
+    # setup/update preserve path: never rewrite operator-owned membership. Selected
+    # stack combos may opt into a strategy-only migration while keeping exact order.
     if setup_only and existing and ids:
+        if enforce_strategy_only and cur_strategy != want_strategy:
+            payload = {
+                "name": name,
+                "models": [_combo_model_entry(name, i + 1, mid) for i, mid in enumerate(ids)],
+                "strategy": want_strategy,
+                "description": description,
+            }
+            status, body = http_json(
+                opener, "PUT", f"{BASE}/api/combos/{existing['id']}", payload
+            )
+            if status not in (200, 201):
+                raise SystemExit(f"combo {name} strategy update failed: {body}")
+            print(
+                f"==> combo {name} strategy {cur_strategy!r} -> {want_strategy!r} "
+                f"(members preserved n={len(ids)})"
+            )
+            return name
         print(f"==> keep combo {name} (setup-only, operator-owned members n={len(ids)})")
         return name
     if leftover:
@@ -654,17 +689,17 @@ def ensure_combo_alias(opener, *, setup_only: bool = False) -> str:
     return ensure_opencode_combo(
         opener,
         name=COMBO_NAME,
-        description="Stack chat combo — Omni OpenCode cloud (round-robin)",
+        description="Stack chat combo — Omni OpenCode cloud (priority failover)",
+        strategy=HERMES_COMBO_STRATEGY,
         setup_only=setup_only,
+        enforce_strategy_only=True,
     )
 
 
 def ensure_operator_media_shells(opener, *, setup_only: bool = False) -> None:
-    """Create missing future-media shells without owning their membership."""
+    """Create the image-edit shell without owning its membership."""
     for name, description in (
         ("image-edit", "Image editing — operator-managed endpoint-capable targets"),
-        ("video-gen", "Video generation — operator-managed endpoint-capable targets"),
-        ("video-edit", "Video editing — operator-managed endpoint-capable targets"),
     ):
         ensure_opencode_combo(
             opener,
@@ -673,6 +708,7 @@ def ensure_operator_media_shells(opener, *, setup_only: bool = False) -> None:
             member_limit=5,
             strategy=FALLBACK_COMBO_STRATEGY,
             setup_only=setup_only,
+            enforce_strategy_only=True,
         )
 
 
@@ -1072,8 +1108,6 @@ STACK_API_KEY_COMBOS = (
     "classifier",
     "image-gen",
     "image-edit",
-    "video-gen",
-    "video-edit",
     "vision-ocr",
     "embedding",
     "web-search",
@@ -2293,6 +2327,7 @@ def setup_core() -> int:
     ensure_pollinations_api_key(env, interactive=sys.stdin.isatty())
     ensure_pollinations_provider(opener, env)
     ensure_request_queue_max_wait(opener)
+    drop_retired_media_combos(opener)
     combo = ensure_combo_alias(opener, setup_only=True)
     classify_combo = ensure_classifier_combo(opener, setup_only=True)
     ensure_operator_media_shells(opener, setup_only=True)
@@ -2311,6 +2346,7 @@ def setup_core() -> int:
         ("OMNIROUTER_CLASSIFY_COMBO", classify_combo),
         ("MODEL_ROUTER_CLASSIFY_MODEL", classify_combo),
         ("OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY),
+        ("OMNIROUTER_HERMES_COMBO_STRATEGY", HERMES_COMBO_STRATEGY),
         ("OMNIROUTER_FALLBACK_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY),
         ("OMNIROUTER_VISION_OCR_COMBO_STRATEGY", VISION_OCR_COMBO_STRATEGY),
         ("OMNIROUTER_CLASSIFIER_COMBO_STRATEGY", CLASSIFIER_COMBO_STRATEGY),
@@ -2363,6 +2399,7 @@ def run_update() -> int:
     ensure_pollinations_api_key(env)
     ensure_pollinations_provider(opener, env)
     ensure_request_queue_max_wait(opener)
+    drop_retired_media_combos(opener)
     ensure_images_generations_nodes(opener, key)
     ensure_provider_image_models(opener, key)
     # setup_only=True: create missing shell combos only; never refill/replace members.
@@ -2379,6 +2416,9 @@ def run_update() -> int:
     set_env_key_if_missing(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo, env)
     set_env_key_if_missing(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo, env)
     set_env_key_if_missing(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY, env)
+    set_env_key_if_missing(
+        ROOT / ".env", "OMNIROUTER_HERMES_COMBO_STRATEGY", HERMES_COMBO_STRATEGY, env
+    )
     set_env_key_if_missing(ROOT / ".env", "OMNIROUTER_FALLBACK_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY, env)
     set_env_key_if_missing(
         ROOT / ".env", "OMNIROUTER_VISION_OCR_COMBO_STRATEGY", VISION_OCR_COMBO_STRATEGY, env

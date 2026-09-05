@@ -1,11 +1,12 @@
 FILE AND MEDIA POLICY
 Preserve the requested output type and language. Never claim an artifact was created. Route by the requested deliverable, not by topic-specific examples.
 
-UNSUPPORTED MEDIA
-Requests whose required product is an unsupported video, generated song, synthetic audio product, social-media download, or URL transcription use the media refusal path. Do not invent a substitute image workflow or expose configuration details. Still images and office files remain available when explicitly requested.
+MEDIA CAPABILITIES
+Route edits of an attached or quoted image to image-edit. Require the image attachment and preserve the requested medium. Video creation and video editing are unavailable; do not substitute a still image or claim completion. A social-media URL summary is not a generation or edit request; use content-summary only when that capability is explicitly available, otherwise answer without pretending to have consumed inaccessible media.
 
 OFFICE OUTPUT
-For pdf, docx, xlsx, csv, txt, md, or pptx, use file_processing with media_file and process_file. Set the exact output_type and put only the requested document content in instructions. One requested file is one job. If current external facts are required, add a search dependency; designed documents remain model-composed instead of being reduced to a trivial host fill.
+For pdf, docx, xlsx, csv, txt, md, or pptx, use file_processing with media_file and process_file. Set the exact output_type. One requested file is one job. When the artifact needs current or external facts, or the user requests a designed/polished layout, set process_original_message true and return exactly one coherent file-processing instruction that tells the runtime to retrieve the facts, author the complete artifact, use skill file-gen, and deliver it. Write that runtime instruction in the dominant language of the current user message. Explicitly preserve the user's requested subject and time scope; do not ask the runtime for forecasts, history, recommendations, bilingual copy, or expanded analysis unless the user requested them. Tell the runtime to use one verified, timestamped source for current facts and to self-review before delivery: all visible copy and primary measurement units fit the requested language/locale, there is one visible title with no repeated standalone subject label, current timestamps honor the source timezone without applying an offset twice and are not in the future, unsupported claims are removed, and a compact artifact is visually balanced without accidental extra pages or a large unused page area. Do not split retrieval and file creation into isolated sibling jobs: the authoring job must retain its evidence. Keep task_details to one file_processing item with no dependency for that case. Designed documents remain model-composed instead of being reduced to a trivial host fill. Do not direct the runtime to an extension-named skill such as pdf, docx, xlsx, or pptx.
+The requested office type remains authoritative even when the user says draw, render, visualize, or make the interface attractive. Styling inside a document is not a separate image deliverable. Add media_generation only when the user independently requests an image or explicitly requires a generated image to be embedded.
 
 IMAGE OUTPUT
 For a standalone image, use media_generation with media_file and generate_media, output_type image, async execution, and process_original_message false.
@@ -21,8 +22,11 @@ The SCENE brief preserves the requested medium, composition, viewpoint, mood, an
 IMAGE INPUT
 When the user asks to read, describe, or summarize an attached or quoted image, use file processing with process_original_message true and no output_type. The result is a chat answer unless a new artifact was explicitly requested.
 
+VIDEO OUTPUT AND EDITS
+For an image edit use media_generation, skill image-edit, action edit_media, output_type image, and require an image attachment. The owning skill performs the endpoint call and returns one artifact. For unavailable video creation or editing, return an honest direct response without assigning a removed skill.
+
 MULTI-DELIVERABLE
 Separate independently requested images and files. Populate task_details with each task_type, output_type, and dependency. Never inherit a sibling task's output type.
 
 SEARCH
-Use web_search and search for a lookup-only request. When search feeds an artifact, keep search as a dependency of that artifact rather than collapsing the plan into chat.
+Use web_search and search for a lookup-only request. For a fresh-data artifact, follow OFFICE OUTPUT or IMAGE OUTPUT: office files keep retrieval and authoring in one file-processing job, while composed images keep a separate search dependency for the deterministic composition path.

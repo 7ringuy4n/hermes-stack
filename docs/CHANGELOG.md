@@ -1,3 +1,16 @@
+## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
+
+- Quoted Zalo images now retain their staged source through classification and are edited through the dedicated image endpoint before being returned once.
+- Slow direct image operations receive a five-minute response-header budget independently of the LLM request queue.
+- Retired media-generation aliases, skills, setup entries, and endpoint attribution are removed; setup also clears stale combo rows.
+
+## 2026-09-05 13:47 +07 — priority chat and endpoint-owned media skills
+
+- The default chat combo now uses priority failover, and setup migrates only the strategy of stack-owned chat/media combos while preserving operator member order.
+- Added a result-only image-edit skill backed by its dedicated OmniRoute endpoint.
+- Generated information overlays follow the current request language and prohibit newly introduced abusive copy.
+- Designed office files no longer gain an implicit image deliverable, and document guidance requires a single visible title.
+
 ## 2026-09-05 13:30 +07 — clean first-boot replica rollout
 
 - New Hermes replicas set their passwd home to the writable per-replica directory before the upstream UID remap, preventing a first-start permission failure against read-only shared mounts.
@@ -539,7 +552,7 @@
 ## 2026-08-30 08:00 +07 — Media path: Omni/9Router combos; ComfyUI removed
 
 - Image diffusion no longer uses ComfyUI or paid host image API keys; dispatcher calls OmniRouter `/images/generations` (combo `image-gen`), then 9Router when enabled. OCR vision uses combo `vision-ocr`; embeddings use combo `embedding`.
-- Removed Comfy services/env pins and optional image-vendor keys from `.env.example`. Skills: image-gen, vision-ocr, embedding, multi-purpose; video/music/audio/URL transcripts refuse via video-gen.
+- Removed Comfy services/env pins and optional image-vendor keys from `.env.example`. Skills: image-gen, vision-ocr, embedding, multi-purpose; unavailable media operations use a policy response.
 
 ## 2026-08-29 19:30 +07 — Image backend order: Comfy first, Omni fallback
 
@@ -966,8 +979,8 @@
 
 ## 2026-08-23 17:05 +07 — video policy: OmniRouter refuse (no hardcoded VI)
 
-- `video_summary.py`: social-summary and video-generate refuses call OmniRouter `chat/completions`; fallbacks in `messages/en.json` only when LLM unavailable.
-- `/v1/video` and `/v1/video-policy-refuse` return policy block; `video-gen` skill updated to refuse (like video-summary).
+- `video_summary.py`: social-summary refusals call OmniRouter `chat/completions`; fallbacks in `messages/en.json` only when LLM unavailable.
+- `/v1/video-policy-refuse` returns a policy block for inaccessible URL media and audio operations.
 
 ## 2026-08-23 17:00 +07 — Zalo quote: durable bridge overlay (not runtime patch)
 
@@ -2675,3 +2688,10 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 - OpenBao secrets are loaded into the update process, propagated by controlled consumer recreation, and scrubbed from transient and repository env files afterward.
 - Zalo bridge HTTP/SSE transport is separated from conversation policy, and the vendored Zalo runtime replaces discontinued CryptoJS primitives with Node.js crypto compatibility-tested implementations.
 - Classifier media guidance is language-neutral and purpose-neutral; composed-image layout and typography remain model-designed from grounded content.
+
+## 2026-09-05 15:30 +07 — office-artifact evidence and layout gate
+
+- Strengthened model-authored office instructions to preserve the request's dominant language, subject, time scope, locality, source consistency, and timestamp timezone semantics.
+- Added pre-delivery checks for a single visible title, locale-appropriate units, unsupported interpretations, compact pagination, and visually balanced page use.
+- Added a Zalo lab fixture that rejects unexpected sibling images and discovers active runtime replicas dynamically.
+- Kept the release gate closed after rendered-PDF review exposed unreliable CSS layout and unsupported descriptive copy; no production merge or rollout is implied by these changes.

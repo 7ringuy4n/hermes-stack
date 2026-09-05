@@ -55,19 +55,27 @@ p{line-height:1.55;font-size:11pt;orphans:3;widows:3}
 
 Never emit placeholders like `<value after search>`. Choose labels and language from the user ask (not a fixed weather schema).
 
+Use one visible document title. Do not repeat a location, subject, or short heading as a standalone line above a hero/title band that already names it. The HTML `<title>` metadata does not count as a visible heading.
+
 ### PPTX / DOCX / XLSX / MD (presentation-ready)
 
 For pptx/docx/md: compose markdown the worker understands (`#` title, `##` subtitle, `- Label: value`, short prose). Decks and reports must look presentation-ready — title, metrics, sections — not a chat dump.
 For xlsx: labeled header row + metric rows with filled values only.
 
-Fetch live facts with `web_search` when needed. Never paste search-page chrome into the body.
+Use the dominant language of the current user message for **every visible word**, including titles, headings, labels, conditions, notes, and captions, unless the user explicitly requests another language. Use measurement units customary for that language/locale as the primary display unless the user specifies units; convert sourced values accurately instead of exposing provider-default units. Do not add bilingual translations or duplicate unit systems merely for decoration.
 
-## Visual presentation docs with city / hero photo (pdf|pptx|docx|xlsx|md)
+Fetch live facts with `web_search` when needed. Resolve ambiguous place names against the requested city/region/country before authoring: verify that locality labels and any displayed coordinates/timezone refer to the intended place, retry with a more specific query when they do not, and omit unverified location metadata. For a current snapshot, take measurements from one clearly timestamped current-conditions source; do not merge conflicting values from different providers or timestamps as one observation. Preserve the source timestamp's declared timezone semantics: never label a local timestamp as UTC, never apply a timezone offset twice, and reject or re-query any supposedly current observation that is in the future or is not recent enough for the request.
 
-Applies to **every** presentation-capable office kind the user named — not PDF-only.
+The requested time and subject scope is a hard boundary. If the user requests only a current snapshot, the artifact MUST contain only current observations: forecast tables, future-day sections, travel advice based on forecasts, history, and unrelated indices are prohibited. Include forecasts, history, recommendations, or expanded analysis only when the user asks for them. Never paste search-page chrome into the body. Do not invent causal explanations, event durations, forecasts, or other derived claims; even plausible domain knowledge is excluded unless the user requested analysis and the retrieved evidence directly supports it.
+
+Before the final office-file call, self-review the authored body and correct every violation: one visible title; no standalone repetition of the subject before or after that title; one requested language with locale-appropriate units and no decorative translation; one verified locality and non-future current observation timestamp; one consistent set of current values from the cited source; no unrequested scope; and no unsupported interpretation or advice. Keep a compact snapshot on one page when its content fits; remove decorative overflow, forced page breaks, and footer fragments that would create accidental extra pages. Balance the layout across the chosen page size: do not leave a large unused lower area when resizing the page, increasing useful spacing, or simplifying the layout would produce a deliberate composition.
+
+## Optional embedded visual (pdf|pptx|docx|xlsx|md)
+
+Use a generated visual only when the user explicitly requests an image/photo inside the document. An attractive interface, polished layout, or a verb such as draw/render does not by itself request a separate image artifact.
 
 1. **`web_search`** for live facts (labeled metrics only).
-2. Hero still via dispatcher (Omni keys on the worker — never built-in `image_generation`, never `execute_code`, never read `.env`):
+2. When explicitly requested, create one embeddable still via dispatcher (Omni keys on the worker — never built-in `image_generation`, never `execute_code`, never read `.env`):
 
 ```bash
 curl -sS -X POST http://dispatcher:8090/v1/scenic-still \
@@ -76,6 +84,7 @@ curl -sS -X POST http://dispatcher:8090/v1/scenic-still \
 ```
 
 Use `hermes_path` / `/opt/data/media/out/<file>` in PDF HTML `<img src="…">` (and note the path in pptx/docx bodies when useful). If scenic-still fails, omit the image and still deliver the file. Never mention credentials.
+The still is an internal document asset. Do not send it separately; deliver only the requested office file.
 3. Compose the **kind-specific body** (filled values only):
    - **pdf** — full HTML; WeasyPrint-safe CSS (`@page`, `display:table` metric rows — avoid Grid/Flex-only layouts).
    - **pptx|docx|md** — structured markdown slides/sections with metric bullets.

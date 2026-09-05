@@ -40,7 +40,7 @@ Applies to **every** create/export/send of a file or media asset: images, PDF, D
 | Need | Skill / API |
 |------|-------------|
 | Image | `image-gen` → Omni `POST /v1/images/generations` model `image-gen` (**no** `send_zalo`) |
-| Short video | **`video-gen`** — refused; use **`image-gen`** for stills or policy refuse via `/v1/video-policy-refuse` |
+| Image edit | `image-edit` → OmniRoute combo `image-edit` |
 | Office | `file-gen` / `documents` → `POST /v1/office-file` (create+send; not Hermes pdf skill) |
 | Markdown / text file | `markdown` → then `file-gen` |
 | Facts printed as images on a web page | download image → vision-ocr combo (`vision_read` / model-router) → then answer / `image-gen` |

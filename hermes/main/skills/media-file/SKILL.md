@@ -37,9 +37,9 @@ Hermes → this skill
 1. Result-only after a file (`media-out`).
 2. Output under `/opt/data/media/out/`.
 3. Preserve `thread_id` for delivery.
-4. Video / music / audio / URL transcripts: refuse via `video-gen`.
+4. A supplied-image transformation routes to `image-edit`. Video creation and video editing are unavailable and must not be claimed or substituted.
 5. Complex multi-panel briefs: `multi-purpose` (plan with `hermes`).
 
 ## Related
 
-- `image-gen`, `vision-ocr`, `embedding`, `multi-purpose`, `video-gen`, `file-gen`, `media-out`
+- `image-gen`, `image-edit`, `vision-ocr`, `embedding`, `multi-purpose`, `file-gen`, `media-out`
