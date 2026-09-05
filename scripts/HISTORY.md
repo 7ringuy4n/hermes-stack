@@ -5579,3 +5579,9 @@ of being replaced by a synthetic stream-only JSON object.
 Office HTML guidance now keeps factual content in normal flow, rejects risky
 overlap/clipping techniques, bounds decorative icons, and requires deliberate
 one-page vertical balance plus rendered-output evaluation.
+
+## 2026-09-05 23:40 +07 — office renderers in the media worker
+
+The dispatcher build now includes headless Writer, Calc, and Impress so VPS
+release tests can render DOCX, XLSX, and PPTX outputs before assigning a visual
+verdict.

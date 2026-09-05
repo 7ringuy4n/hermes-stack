@@ -127,7 +127,7 @@ HOST_PDF="$NEWPDF"
 CONT_PDF="${{HOST_PDF/\\/data\\/assistant\\/media/\\/data\\/media}}"
 DISPATCHER_ID=$(docker ps \
   --filter label=com.docker.compose.service=dispatcher \
-  --format '{{.ID}}' | head -1)
+  --format '{{{{.ID}}}}' | head -1)
 if [[ -z "$DISPATCHER_ID" ]]; then
   echo "NO_DISPATCHER_CONTAINER"
   exit 1

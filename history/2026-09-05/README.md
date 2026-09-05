@@ -596,3 +596,18 @@ fixed-height or hidden-overflow text containers, and boundary-straddling icons.
 The author must verify padding, contrast, consistent timezone notation, and
 full-page balance before calling the renderer. Rendered-page vision review—not
 file creation or text extraction—continues to decide the release gate.
+
+## Office packages had no production visual renderer
+
+### Symptom and root cause
+
+DOCX delivery succeeded, but both the production media worker and the local
+artifact runtime lacked LibreOffice. Tests could inspect OOXML structure but
+could not render Word, Calc, or Impress output, violating the visual gate.
+
+### Decision and prevention
+
+The dispatcher image now carries the headless Writer, Calc, and Impress
+components. Release labs convert each generated office package to PDF in the
+same container and inspect every rendered page, slide, or sheet. Structural
+checks remain useful but can no longer substitute for rendering.
