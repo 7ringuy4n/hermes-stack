@@ -36,6 +36,10 @@
 - Model Router preserves non-JSON request bodies byte-for-byte, preventing its
   chat-payload normalizer from replacing multipart image-edit uploads with a
   synthetic JSON body.
+- Office authoring guidance now treats print geometry as a release constraint:
+  content stays in normal flow without negative/absolute offsets, icons remain
+  bounded, primary values cannot use clipped containers, and short one-page
+  layouts must balance their vertical space.
 
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
 

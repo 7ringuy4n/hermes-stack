@@ -20,6 +20,13 @@ topic template. PDF must use authored HTML/CSS; DOCX/PPTX/XLSX use structured
 markdown that the renderer can turn into styled headings, cards/tables, readable
 spacing, and presentation-safe pages/slides/sheets.
 
+For HTML/PDF, keep factual content in normal flow with content-driven heights.
+Never use negative margins, translated offsets, absolute/fixed positioning, or
+hidden overflow on text containers. Keep icons in bounded cells, verify large
+values fit with padding, maintain print-safe contrast, and balance the full page
+instead of leaving an accidental empty lower third. Use one timezone notation
+consistently. These are generic layout invariants, not a topic template.
+
 ## Create + send (required)
 
 Always use Dispatcher (has reportlab/openpyxl baked in). Do **not** use Hermes
