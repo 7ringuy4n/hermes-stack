@@ -78,7 +78,15 @@ TASK_TYPES = (
 )
 RESPONSE_MODES = ("direct", "ack_then_deliver", "confirm")
 ATTACHMENT_TYPES = ("image", "file", "audio", "video")
-SKILLS = ("media_file", "web_search", "schedule", "security", "knowledge")
+SKILLS = (
+    "media_file",
+    "image-edit",
+    "content-summary",
+    "web_search",
+    "schedule",
+    "security",
+    "knowledge",
+)
 # Prefer final answer first; then provider-specific chain-of-thought fields when content is empty.
 MESSAGE_TEXT_KEYS = (
     "content",
@@ -449,7 +457,7 @@ _CLASSIFY_SKIP_TTL_S = float(os.environ.get("CLASSIFY_SKIP_TTL_S") or "300")
 _CLASSIFY_SKIP_HTTP = {400, 401, 403, 404, 429, 502, 503}
 REASONING_EFFORTS = ("low", "medium", "high", "max")
 CLASSIFY_REASONING_EFFORT = "low"
-_OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}
+_OUTPUT_TYPES = {"image", "video", "pdf", "txt", "docx", "xlsx", "csv", "md", "pptx"}
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
 _ATTACH_RECALL_START = "[recent attachments in this chat"

@@ -326,6 +326,10 @@ services:
       - INITIAL_PASSWORD=${OMNIROUTER_INITIAL_PASSWORD:-unused}
       - ENABLE_MEMORY=${OMNIROUTER_ENABLE_MEMORY:-1}
       - MEMORY_ENABLED=${OMNIROUTER_ENABLE_MEMORY:-1}
+      # Image generation/editing providers may not send response headers until
+      # the completed artifact is ready. Keep the direct-media start budget at
+      # five minutes; this is separate from the request-queue maxWaitMs.
+      - OMNIROUTE_DIRECT_HEADERS_TIMEOUT_MS=${OMNIROUTE_DIRECT_HEADERS_TIMEOUT_MS:-300000}
       # Stop Omni background provider connection tests (scheduler latency / noise).
       - OMNIROUTE_DISABLE_CREDENTIAL_HEALTH_CHECK=${OMNIROUTE_DISABLE_CREDENTIAL_HEALTH_CHECK:-true}
     volumes:
@@ -348,8 +352,6 @@ services:
       - IMAGE_EDIT_COMBO=${IMAGE_EDIT_COMBO:-image-edit}
       - EMBED_COMBO=${OMNIROUTER_EMBED_COMBO:-embedding}
       - WEB_SEARCH_COMBO=${WEB_SEARCH_COMBO:-web-search}
-      - VIDEO_GEN_COMBO=${VIDEO_GEN_COMBO:-video-gen}
-      - VIDEO_EDIT_COMBO=${VIDEO_EDIT_COMBO:-video-edit}
     volumes:
       - omni_router_data:/omni-data
     depends_on:

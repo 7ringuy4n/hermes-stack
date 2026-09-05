@@ -9,8 +9,8 @@ message: string; inner work only for create_schedule
 instructions: string array; one entry per distinct job
 attachments_required: bool
 attachment_types: image|file|audio|video array
-skill: media_file|web_search|schedule|security|knowledge or null
-skill_action: create|delete|list|pause|resume|update|run_now|deliver|process_file|generate_media|search|lookup or null
+skill: media_file|image-edit|content-summary|web_search|schedule|security|knowledge or null
+skill_action: create|delete|list|pause|resume|update|run_now|deliver|process_file|generate_media|edit_media|summarize|search|lookup or null
 cadence: once|daily|weekly|monthly|yearly or null
 schedule_form: once_at|once_after|recurring or null
 delay_seconds: integer or null; once_after only
@@ -25,7 +25,7 @@ confirmation_required: bool or null
 schedule_selector: object with id, name, and match; id is always null unless supplied by the host
 target_channel: display-name string or null; null unless the user explicitly names a different destination; references to the current chat or direct message remain null
 schedule_delivery: verbatim|process|transform or null
-output_type: image|pdf|txt|docx|xlsx|csv|md|pptx or null
+output_type: image|video|pdf|txt|docx|xlsx|csv|md|pptx or null
 task_details: array of objects with task_type, output_type, and optional depends_on
 depends_on: zero-based integer array
 uncertain: bool; omit or false when sure

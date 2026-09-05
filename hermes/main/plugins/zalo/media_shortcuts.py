@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import mimetypes
 import os
 import time
 import urllib.error
@@ -928,6 +929,112 @@ def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None
     return None
 
 
+def _multipart_image_edit_body(
+    *, source: Path, prompt: str, model: str, boundary: str
+) -> bytes:
+    """Build one standards-compliant multipart image-edit request body."""
+    chunks: list[bytes] = []
+    for name, value in (("model", model), ("prompt", prompt)):
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode(),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
+                str(value).encode("utf-8"),
+                b"\r\n",
+            ]
+        )
+    mime = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
+    chunks.extend(
+        [
+            f"--{boundary}\r\n".encode(),
+            (
+                'Content-Disposition: form-data; name="image"; '
+                f'filename="{source.name}"\r\n'
+            ).encode("utf-8"),
+            f"Content-Type: {mime}\r\n\r\n".encode(),
+            source.read_bytes(),
+            b"\r\n",
+            f"--{boundary}--\r\n".encode(),
+        ]
+    )
+    return b"".join(chunks)
+
+
+def run_image_edit(
+    instruction: str,
+    source_path: str,
+    thread_id: str = "",
+    thread_type: str = "user",
+    *,
+    classified: bool = False,
+) -> Optional[dict]:
+    """Edit one classifier-owned local image through the image-edit combo."""
+    del thread_type
+    if not classified:
+        return None
+    source = Path(str(source_path or "").strip())
+    prompt = str(instruction or "").strip()
+    if not prompt or not source.is_file():
+        return shortcut_consumed()
+    try:
+        from .omni_env import resolve_env_var, resolve_omni_api_key, resolve_omni_base_url
+    except ImportError:
+        from omni_env import (  # type: ignore
+            resolve_env_var,
+            resolve_omni_api_key,
+            resolve_omni_base_url,
+        )
+    key = resolve_omni_api_key()
+    if not key:
+        log.warning("omni image edit: missing OMNIROUTER_API_KEY")
+        return shortcut_consumed()
+    model = (resolve_env_var("IMAGE_EDIT_COMBO", "image-edit") or "image-edit").strip()
+    base = resolve_omni_base_url().rstrip("/")
+    import uuid
+
+    boundary = "hermes-" + uuid.uuid4().hex
+    body = _multipart_image_edit_body(
+        source=source, prompt=prompt, model=model, boundary=boundary
+    )
+    req = urllib.request.Request(
+        f"{base}/images/edits",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=_omni_image_gen_timeout_s()) as resp:
+            data = json.loads(resp.read().decode("utf-8") or "{}")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("omni image edit failed: %s", type(exc).__name__)
+        return shortcut_consumed()
+    items = data if isinstance(data, list) else (data.get("data") or data.get("images") or [])
+    if not items or not isinstance(items[0], dict):
+        return shortcut_consumed()
+    blob = _omni_decode_image_blob(items[0])
+    if not blob:
+        return shortcut_consumed()
+    suffix = ".png"
+    if blob.startswith(b"\xff\xd8\xff"):
+        suffix = ".jpg"
+    elif blob.startswith(b"RIFF") and blob[8:12] == b"WEBP":
+        suffix = ".webp"
+    filename = f"image-edit-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}{suffix}"
+    for directory in _media_out_candidates():
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            dest = directory / filename
+            dest.write_bytes(blob)
+            return {"ok": True, "file": str(dest), "path": str(dest), "model": model}
+        except OSError:
+            continue
+    return shortcut_consumed()
+
+
 def run_video_policy_refuse(
     user_ask: str,
     plan: dict[str, Any],
@@ -947,7 +1054,6 @@ def run_video_policy_refuse(
     if not plan_is_media_policy_refuse(plan):
         return None
     # Topic from classify contract fields only — not user-phrase NLU.
-    skill = str((plan or {}).get("skill") or "").strip().lower()
     action = str((plan or {}).get("skill_action") or "").strip().lower()
     topic = str((plan or {}).get("refuse_topic") or "").strip().lower()
     if not topic:
@@ -959,8 +1065,6 @@ def run_video_policy_refuse(
             topic = "social_summary"
         elif "transcript" in action:
             topic = "transcript"
-        elif skill in {"video_gen", "video-gen"}:
-            topic = "video_generate"
         else:
             topic = "transcript"
     ask = (user_ask or "").strip()

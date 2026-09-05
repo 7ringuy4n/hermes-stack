@@ -175,7 +175,8 @@ def test_fallback_combo_strategy_constants() -> None:
     assert mod.WEB_SEARCH_COMBO_STRATEGY == "priority"
     assert mod.IMAGE_GEN_COMBO_STRATEGY == "priority"
     assert mod.VISION_OCR_COMBO_STRATEGY == "priority"
-    assert mod.COMBO_STRATEGY == "round-robin"
+    assert mod.HERMES_COMBO_STRATEGY == "priority"
+    assert mod.COMBO_STRATEGY == "priority"
 
 
 def test_image_gen_combo_strategy_is_priority() -> None:
@@ -195,9 +196,76 @@ def test_operator_media_shells_are_non_destructive() -> None:
         mod.ensure_operator_media_shells(object(), setup_only=True)
     finally:
         mod.ensure_opencode_combo = original
-    assert [row["name"] for row in calls] == ["image-edit", "video-gen", "video-edit"]
+    assert [row["name"] for row in calls] == ["image-edit"]
     assert all(row["setup_only"] is True for row in calls)
     assert all(row["strategy"] == "priority" for row in calls)
+    assert all(row["enforce_strategy_only"] is True for row in calls)
+
+
+def test_retired_media_combos_are_deleted() -> None:
+    removed: list[str] = []
+
+    def fake_http(_opener, method, url, body=None, timeout=25):
+        del body, timeout
+        if method == "GET":
+            return 200, {
+                "combos": [
+                    {"id": "keep", "name": "image-edit"},
+                    {"id": "old-gen", "name": "video" + "-gen"},
+                    {"id": "old-edit", "name": "video" + "-edit"},
+                ]
+            }
+        removed.append(url.rsplit("/", 1)[-1])
+        return 204, {}
+
+    original = mod.http_json
+    mod.http_json = fake_http
+    try:
+        mod.drop_retired_media_combos(object())
+    finally:
+        mod.http_json = original
+    assert removed == ["old-gen", "old-edit"]
+
+
+def test_setup_only_strategy_migration_preserves_members() -> None:
+    original_http = getattr(mod, "http_json", None)
+    captured = {}
+
+    def fake_http(opener, method, url, body=None, timeout=25):
+        if url.endswith("/api/combos") and method == "GET":
+            return 200, {
+                "combos": [{
+                    "id": "h1",
+                    "name": "hermes",
+                    "strategy": "round-robin",
+                    "models": [
+                        {"model": "oc/a", "priority": 1},
+                        {"model": "oc/b", "priority": 2},
+                    ],
+                }]
+            }
+        captured["method"] = method
+        captured["body"] = body
+        return 200, {"id": "h1"}
+
+    mod.http_json = fake_http
+    try:
+        mod.ensure_opencode_combo(
+            object(),
+            name="hermes",
+            description="chat",
+            strategy="priority",
+            setup_only=True,
+            enforce_strategy_only=True,
+        )
+    finally:
+        if original_http is not None:
+            mod.http_json = original_http
+        else:
+            del mod.http_json
+    assert captured.get("method") == "PUT"
+    assert captured["body"]["strategy"] == "priority"
+    assert [row["model"] for row in captured["body"]["models"]] == ["oc/a", "oc/b"]
 
 
 def test_put_or_create_combo_strategy_only_keeps_members() -> None:
@@ -307,6 +375,8 @@ def main() -> None:
     test_vision_trusts_catalog_capability_over_incomplete_modalities()
     test_image_gen_combo_strategy_is_priority()
     test_operator_media_shells_are_non_destructive()
+    test_retired_media_combos_are_deleted()
+    test_setup_only_strategy_migration_preserves_members()
     test_put_or_create_combo_strategy_only_keeps_members()
     test_web_search_member_order()
     test_put_or_create_combo_uses_want_strategy()

@@ -85,6 +85,8 @@ For **every tested worker set** verify:
 
 Verify image/media generation behavior.
 
+Video-generation cases default to **480P and 3 seconds**, run **one video at a time**, and must inspect the returned clip rather than treating request acceptance as PASS. A cost-controlled provider probe may use **480P and 1 second** when the case explicitly says it is a temporary model check; restore the original combo membership afterward.
+
 **Required negative test:**
 
 - Disable image-generation/media tools.
@@ -516,6 +518,7 @@ When re-testing a live High/Zalo lab:
 | `test/scripts/media_refuse_unit.py` | video_gen refuse never scene_image |
 | `test/scripts/composed_image_gate_unit.py` | Generic search-to-image protocol gate |
 | `test/scripts/composed_image_overlay_unit.py` | Model-authored design validation and adaptive overlay |
+| `test/scripts/media_capability_skills_unit.py` | Priority media combo skills, video defaults, overlay language, single-title documents |
 
 **Lab scripts (SSH, one case per invocation — AGENT_RULES §17 / §18: explicit permission required):**
 

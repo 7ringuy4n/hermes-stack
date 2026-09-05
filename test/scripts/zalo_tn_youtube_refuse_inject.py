@@ -83,12 +83,12 @@ for i in $(seq 1 {WAIT_S}); do
     find /data/assistant/media/out -type f \\( -name '*.jpg' -o -name '*.jpeg' -o -name '*.webp' -o -name '*.png' \\) -newermt "@$START_EPOCH" 2>/dev/null | head -5
     break
   fi
-  if docker logs assistant-dispatcher-1 --since 3m 2>&1 | grep -Eiq "video_policy|video-policy|refused.: True|topic.: .(transcript|social_summary|video_generate)"; then
+  if docker logs assistant-dispatcher-1 --since 3m 2>&1 | grep -Eiq "video_policy|video-policy|refused.: True|topic.: .(transcript|social_summary)"; then
     REFUSE=1
     echo "DISPATCHER_REFUSE"
     break
   fi
-  if docker logs $(docker ps -q -f name=assistant-hermes | head -1) --since 3m 2>&1 | grep -Eiq "video_policy_refuse|video-gen|video_gen"; then
+  if docker logs $(docker ps -q -f name=assistant-hermes | head -1) --since 3m 2>&1 | grep -Eiq "video_policy_refuse"; then
     REFUSE=1
     echo "HERMES_REFUSE"
     break

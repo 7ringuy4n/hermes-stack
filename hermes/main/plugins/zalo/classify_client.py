@@ -37,7 +37,15 @@ TASK_TYPES = (
 )
 RESPONSE_MODES = ("direct", "ack_then_deliver", "confirm")
 ATTACHMENT_TYPES = ("image", "file", "audio", "video")
-SKILLS = ("media_file", "web_search", "schedule", "security", "knowledge")
+SKILLS = (
+    "media_file",
+    "image-edit",
+    "content-summary",
+    "web_search",
+    "schedule",
+    "security",
+    "knowledge",
+)
 HINT_SKILL = {
     "search": ("web_search", "search"),
     "schedule": ("schedule", "create"),
@@ -76,7 +84,7 @@ HTTP_RETRY_SLEEP_S = 0.0
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
 _ATTACH_RECALL_START = "[recent attachments in this chat"
-_OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md", "pptx"}
+_OUTPUT_TYPES = {"image", "video", "pdf", "txt", "docx", "xlsx", "csv", "md", "pptx"}
 REASONING_EFFORTS = ("low", "medium", "high", "max")
 
 
@@ -466,6 +474,11 @@ def plan_skips_media_shortcut(plan: dict[str, Any] | None) -> bool:
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
         return True
+    # The classify contract uses this bit for evidence-backed or designed
+    # office artifacts that the model must author. Passing their operational
+    # instruction straight to office-file would render the instruction itself.
+    if src.get("process_original_message") is True:
+        return True
     if plan_is_image_analyze_chat(src):
         return True
     hint = str(src.get("task_hint") or "").strip().lower()
@@ -737,17 +750,25 @@ def plan_allows_search_then_composed_image(plan: dict[str, Any] | None) -> bool:
 
 
 def plan_is_media_policy_refuse(plan: dict[str, Any] | None) -> bool:
-    """True when classify mapped the turn to video/music/URL download refuse (not still gen)."""
+    """True only when classify explicitly requests the refusal action."""
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
         return False
-    skill = str(src.get("skill") or "").strip().lower()
     action = str(src.get("skill_action") or "").strip().lower()
-    if skill in {"video_gen", "video-gen"}:
-        return True
-    if "refuse" in action:
-        return True
-    return False
+    return action == "refuse"
+
+
+def plan_allows_image_edit(plan: dict[str, Any] | None) -> bool:
+    """True only for the classifier's explicit supplied-image edit contract."""
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    skill = str(src.get("skill") or "").strip().lower().replace("_", "-")
+    action = str(src.get("skill_action") or "").strip().lower()
+    output_type = _coerce_output_type(src.get("output_type"))
+    return skill == "image-edit" and action == "edit_media" and output_type == "image"
 
 
 def plan_allows_scene_image(plan: dict[str, Any] | None) -> bool:
@@ -1114,6 +1135,8 @@ def plan_media_shortcut_gate(plan: dict[str, Any] | None) -> str:
     """Host media shortcut kind when the adapter must own the turn (no Hermes fallthrough)."""
     if plan_is_media_policy_refuse(plan):
         return "refuse"
+    if plan_allows_image_edit(plan):
+        return "image_edit"
     if plan_allows_office_shortcut(plan) and not plan_skips_media_shortcut(plan):
         return "office"
     if plan_allows_search_then_office(plan):

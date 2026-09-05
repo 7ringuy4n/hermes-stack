@@ -30,6 +30,21 @@ def main() -> int:
     assert "SCHEDULE POLICY" in system
     assert "Never downgrade" in system
     assert "FILE AND MEDIA POLICY" in system
+    assert "VIDEO OUTPUT AND EDITS" in system
+    assert "Styling inside a document is not a separate image deliverable" in system
+    assert "exactly one coherent file-processing instruction" in system
+    assert "dominant language of the current user message" in system
+    assert "preserve the user's requested subject and time scope" in system
+    assert "bilingual copy" in system
+    assert "self-review before delivery" in system
+    assert "one verified, timestamped source" in system
+    assert "no repeated standalone subject label" in system
+    assert "without applying an offset twice" in system
+    assert "are not in the future" in system
+    assert "primary measurement units fit the requested language/locale" in system
+    assert "large unused page area" in system
+    assert "use skill file-gen" in system
+    assert "Do not split retrieval and file creation" in system
     assert "DELIVERY POLICY" in system
     assert "OUTPUT SCHEMA" in system
     assert "schedule_resolution" in system
