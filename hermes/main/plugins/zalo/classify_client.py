@@ -37,7 +37,17 @@ TASK_TYPES = (
 )
 RESPONSE_MODES = ("direct", "ack_then_deliver", "confirm")
 ATTACHMENT_TYPES = ("image", "file", "audio", "video")
-SKILLS = ("media_file", "web_search", "schedule", "security", "knowledge")
+SKILLS = (
+    "media_file",
+    "image-edit",
+    "video-gen",
+    "video-edit",
+    "content-summary",
+    "web_search",
+    "schedule",
+    "security",
+    "knowledge",
+)
 HINT_SKILL = {
     "search": ("web_search", "search"),
     "schedule": ("schedule", "create"),
@@ -76,7 +86,7 @@ HTTP_RETRY_SLEEP_S = 0.0
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
 _ATTACH_RECALL_START = "[recent attachments in this chat"
-_OUTPUT_TYPES = {"image", "pdf", "txt", "docx", "xlsx", "csv", "md", "pptx"}
+_OUTPUT_TYPES = {"image", "video", "pdf", "txt", "docx", "xlsx", "csv", "md", "pptx"}
 REASONING_EFFORTS = ("low", "medium", "high", "max")
 
 
@@ -737,17 +747,12 @@ def plan_allows_search_then_composed_image(plan: dict[str, Any] | None) -> bool:
 
 
 def plan_is_media_policy_refuse(plan: dict[str, Any] | None) -> bool:
-    """True when classify mapped the turn to video/music/URL download refuse (not still gen)."""
+    """True only when classify explicitly requests the refusal action."""
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
         return False
-    skill = str(src.get("skill") or "").strip().lower()
     action = str(src.get("skill_action") or "").strip().lower()
-    if skill in {"video_gen", "video-gen"}:
-        return True
-    if "refuse" in action:
-        return True
-    return False
+    return action == "refuse"
 
 
 def plan_allows_scene_image(plan: dict[str, Any] | None) -> bool:

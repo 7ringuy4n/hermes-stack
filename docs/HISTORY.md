@@ -14,4 +14,5 @@ identities, or ticket-specific wording into documentation.
 
 See `history/2026-09-05/README.md` for the update/watchdog race, transient
 OpenBao secret propagation, retired routing cleanup, dependency replacement,
-scheduled media plan handoff, grounded image composition, and stale Zalo SSE recovery.
+scheduled media plan handoff, grounded image composition, stale Zalo SSE recovery,
+media capability routing, and single-deliverable visual documents.

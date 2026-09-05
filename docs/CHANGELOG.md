@@ -1,3 +1,11 @@
+## 2026-09-05 13:47 +07 — priority chat and endpoint-owned media skills
+
+- The default chat combo now uses priority failover, and setup migrates only the strategy of stack-owned chat/media combos while preserving operator member order.
+- Added result-only image-edit, video-generation, and video-edit skills backed by their dedicated OmniRoute endpoints; classifier enums now preserve video output and edit actions.
+- Generated information overlays follow the current request language and prohibit newly introduced abusive copy.
+- Designed office files no longer gain an implicit image deliverable, and document guidance requires a single visible title.
+- Video-generation tests default to one 480P three-second clip, with an explicit one-second exception for temporary provider-cost probes.
+
 ## 2026-09-05 13:30 +07 — clean first-boot replica rollout
 
 - New Hermes replicas set their passwd home to the writable per-replica directory before the upstream UID remap, preventing a first-start permission failure against read-only shared mounts.

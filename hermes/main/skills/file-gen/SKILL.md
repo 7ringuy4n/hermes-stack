@@ -55,6 +55,8 @@ p{line-height:1.55;font-size:11pt;orphans:3;widows:3}
 
 Never emit placeholders like `<value after search>`. Choose labels and language from the user ask (not a fixed weather schema).
 
+Use one visible document title. Do not repeat a location, subject, or short heading as a standalone line above a hero/title band that already names it. The HTML `<title>` metadata does not count as a visible heading.
+
 ### PPTX / DOCX / XLSX / MD (presentation-ready)
 
 For pptx/docx/md: compose markdown the worker understands (`#` title, `##` subtitle, `- Label: value`, short prose). Decks and reports must look presentation-ready — title, metrics, sections — not a chat dump.
@@ -62,12 +64,12 @@ For xlsx: labeled header row + metric rows with filled values only.
 
 Fetch live facts with `web_search` when needed. Never paste search-page chrome into the body.
 
-## Visual presentation docs with city / hero photo (pdf|pptx|docx|xlsx|md)
+## Optional embedded visual (pdf|pptx|docx|xlsx|md)
 
-Applies to **every** presentation-capable office kind the user named — not PDF-only.
+Use a generated visual only when the user explicitly requests an image/photo inside the document. An attractive interface, polished layout, or a verb such as draw/render does not by itself request a separate image artifact.
 
 1. **`web_search`** for live facts (labeled metrics only).
-2. Hero still via dispatcher (Omni keys on the worker — never built-in `image_generation`, never `execute_code`, never read `.env`):
+2. When explicitly requested, create one embeddable still via dispatcher (Omni keys on the worker — never built-in `image_generation`, never `execute_code`, never read `.env`):
 
 ```bash
 curl -sS -X POST http://dispatcher:8090/v1/scenic-still \
@@ -76,6 +78,7 @@ curl -sS -X POST http://dispatcher:8090/v1/scenic-still \
 ```
 
 Use `hermes_path` / `/opt/data/media/out/<file>` in PDF HTML `<img src="…">` (and note the path in pptx/docx bodies when useful). If scenic-still fails, omit the image and still deliver the file. Never mention credentials.
+The still is an internal document asset. Do not send it separately; deliver only the requested office file.
 3. Compose the **kind-specific body** (filled values only):
    - **pdf** — full HTML; WeasyPrint-safe CSS (`@page`, `display:table` metric rows — avoid Grid/Flex-only layouts).
    - **pptx|docx|md** — structured markdown slides/sections with metric bullets.

@@ -1,45 +1,26 @@
 ---
 name: video-gen
-description: "Refuse video, music, audio generation and YouTube/music/video transcripts. RESULT-ONLY (see media-out)."
+description: "Generate one short video through OmniRoute combo video-gen. RESULT-ONLY (see media-out)."
 ---
 
-# Video / music / audio / transcripts (refused)
+# Short video generation
 
 Follow skill **`media-out`**.
 
-**Policy:** this stack does **not** generate or fetch:
-
-- Synthetic **video** clips
-- **Music** / song generation
-- **Audio** / voice / TTS generation (except stack ASR used internally when enabled)
-- **YouTube / TikTok / Facebook** download, transcript, or summary
-- Music lyrics transcription from URLs
-- Video frame transcription pipelines (manim, ffmpeg encode loops)
-
-Do **not** invent pipelines or call Whisper as a user-facing product.
+Generate exactly one clip with OmniRoute `POST /v1/videos/generations`, model `video-gen`. Preserve the user's subject, motion, framing, style, and safety constraints. Default production requests to 480P and 3 seconds unless the user asks for another supported value. Run one video generation at a time.
 
 ## Required
 
-Ask dispatcher for the refuse message (OmniRouter writes user-facing text):
+Send JSON with `model`, `prompt`, `resolution`, and `duration`. Poll only the operation URL/id returned by the API, honor terminal failure states, download the completed MP4 to `/opt/data/media/out/`, then deliver it once.
 
-```bash
-curl -sS -X POST http://dispatcher:8090/v1/video-policy-refuse \
-  -H 'content-type: application/json' \
-  -d '{"topic":"video_generate","context":"<verbatim user request>","language":"vi"}'
-```
-
-Topics: `video_generate` | `video_summary` | `music_generate` | `audio_generate` | `transcript`
-
-Reply with JSON **`message`** only.
+For cost-controlled lab tests only, override to 480P and 1 second. Never bake a temporary provider model into source or rewrite operator-owned combo members.
 
 ## Alternatives
 
-| Need | Route |
-|------|--------|
-| Still image / infographic | **`image-gen`** or **`multi-purpose`** |
-| Office document | **`file-gen`** |
+Do not use this skill for image edits, video edits, media downloads, URL transcripts, music generation, or audio generation. Do not substitute a still image when video generation fails.
 
 ## Related
 
-- `image-gen` — supported stills
-- `multi-purpose` — complex still layouts
+- `image-edit` — edit a supplied still image
+- `video-edit` — edit a supplied video
+- `media-out` — result-only delivery

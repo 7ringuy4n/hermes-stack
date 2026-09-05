@@ -1,5 +1,94 @@
 # 2026-09-05
 
+## 13:47 — Media capability shells were still routed to refusal
+
+### Symptom
+
+Dedicated media combos existed in setup, but video creation and edit requests
+could not reach them because mounted guidance and the host gate still described
+all video work as unsupported.
+
+### Root cause
+
+The combo layer was added before the classifier schema and mounted skill layer
+were migrated. The host refusal predicate treated a skill name as a refusal
+instead of requiring an explicit refusal action.
+
+### Technical detail
+
+- **Function:** `hermes/main/plugins/zalo/classify_client.py::plan_is_media_policy_refuse()` — any video skill previously returned true.
+- **Lines:** `hermes/main/plugins/zalo/classify_client.py:L40–L90,L749–L760`; `scripts/main/first-setup-omnirouter.py:L31–L45,L565–L690`.
+- **Fields:** `skill_action=generate_media|edit_media` now remains executable; `output_type=video` is retained.
+- **Combos:** `hermes`, `image-edit`, `video-gen`, and `video-edit` use `strategy=priority`; member order remains operator-owned.
+
+### AI decision
+
+Complete the existing combo architecture through classifier and reusable skills,
+instead of adding topic matching or a provider-specific adapter.
+
+### Fix (core)
+
+Added endpoint-owned media skills, expanded the shared classify contract, made
+refusal explicit-action-only, and added a strategy-only migration that keeps
+the exact combo membership and order.
+
+### Todo list
+
+- [x] Inspect existing combo shells and refusal route.
+- [x] Preserve operator members while changing strategy.
+- [x] Add reusable skill contracts and classifier enums.
+- [x] Add local regression coverage.
+- [ ] Verify real endpoints and artifacts on the authorized lab host.
+
+### Prevent recurrence
+
+Unit coverage distinguishes supported video generation from explicit refusal
+and verifies strategy migration does not reorder combo members.
+
+## 13:47 — Visual document wording created an extra media deliverable
+
+### Symptom
+
+A request for one styled office document could also emit a standalone generated
+image, and model-authored HTML could repeat a short subject line immediately
+above a title band containing the same subject.
+
+### Root cause
+
+The file-generation skill required a scenic asset for every visual presentation
+document and lacked a single-visible-title constraint. Classification guidance
+did not state that visual styling verbs remain inside the requested office type.
+
+### Technical detail
+
+- **Function:** `classify.py::assemble_classify_system()` — consumes the corrected external media prompt; no host NLU was added.
+- **Lines:** `hermes/main/skills/classify/parts/media.txt:L7–L16`; `hermes/main/skills/file-gen/SKILL.md:L58–L82`.
+- **Fields:** `output_type=pdf` remains authoritative; `media_generation` is added only for an independently requested or explicitly embedded image.
+
+### AI decision
+
+Correct the owning prompt and skill contracts so every topic and language gets
+the same behavior; do not special-case a place name or weather request.
+
+### Fix (core)
+
+Made embedded visuals opt-in, prohibited separate delivery of document assets,
+required one visible document title, and bound overlay copy to the dominant
+language of the current request with general-audience wording.
+
+### Todo list
+
+- [x] Inspect the supplied PDF and chat screenshots as evidence.
+- [x] Trace office and image routing ownership.
+- [x] Update generic prompt/skill sources.
+- [x] Add request-language and document-title contract tests.
+- [ ] Inspect a regenerated lab PDF and its actual Zalo delivery.
+
+### Prevent recurrence
+
+Regression checks cover office-output precedence, single-title guidance,
+request-language overlays, and the absence of implicit image delivery.
+
 ## Scheduled media plan was lost or weakened between storage and fire
 
 ### Symptom

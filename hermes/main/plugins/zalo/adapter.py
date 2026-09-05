@@ -2858,7 +2858,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 instruction
                 + "\n\nIf this task creates a still image: use skill image-gen "
                 "(diffusion via the image-gen combo; English photorealistic prompt, save under /opt/data/media/out). "
-                "Video/music asks: skill video-gen (policy refuse). User-facing: the file only."
+                "Video generation uses skill video-gen; image/video transformations use image-edit/video-edit. "
+                "User-facing: the file only."
             )
         ctx = job.get("context") if isinstance(job.get("context"), dict) else {}
         tid = str(ctx.get("thread_id") or "")

@@ -28,6 +28,17 @@ def main() -> int:
     assert plan_allows_scene_image(refuse) is False
     assert plan_media_shortcut_gate(refuse) == "refuse"
 
+    supported_video = {
+        "ok": True,
+        "skill": "video-gen",
+        "skill_action": "generate_media",
+        "task_type": "media_generation",
+        "output_type": "video",
+        "instructions": ["Create one short clip"],
+    }
+    assert plan_is_media_policy_refuse(supported_video) is False
+    assert plan_media_shortcut_gate(supported_video) == ""
+
     scenic = {
         "ok": True,
         "skill": "media_file",

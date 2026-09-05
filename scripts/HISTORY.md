@@ -5526,3 +5526,9 @@ persisted structural render contract, and let grounded composition author a clea
 background brief plus overlay plan. Treat explicit media/image fields as stronger
 than broad artifact hints. Keep SSE read timeout at three heartbeat intervals so
 half-open connections reconnect. Regression tests cover all four boundaries.
+## 2026-09-05 13:47 +07 — priority media skills and single-deliverable office output
+
+Completed the existing Omni media combo shells through classifier and mounted
+skills, migrated selected combo strategies without changing member order, and
+made visual office assets opt-in with one visible document title. See
+`history/2026-09-05/README.md` for root-cause detail and verification gates.

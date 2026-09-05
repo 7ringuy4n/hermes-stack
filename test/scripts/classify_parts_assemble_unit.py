@@ -30,6 +30,8 @@ def main() -> int:
     assert "SCHEDULE POLICY" in system
     assert "Never downgrade" in system
     assert "FILE AND MEDIA POLICY" in system
+    assert "VIDEO OUTPUT AND EDITS" in system
+    assert "Styling inside a document is not a separate image deliverable" in system
     assert "DELIVERY POLICY" in system
     assert "OUTPUT SCHEMA" in system
     assert "schedule_resolution" in system

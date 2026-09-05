@@ -1,11 +1,12 @@
 FILE AND MEDIA POLICY
 Preserve the requested output type and language. Never claim an artifact was created. Route by the requested deliverable, not by topic-specific examples.
 
-UNSUPPORTED MEDIA
-Requests whose required product is an unsupported video, generated song, synthetic audio product, social-media download, or URL transcription use the media refusal path. Do not invent a substitute image workflow or expose configuration details. Still images and office files remain available when explicitly requested.
+MEDIA CAPABILITIES
+Route synthetic video creation to video-gen, edits of an attached or quoted image to image-edit, and edits of an attached or quoted video to video-edit. Preserve the requested medium and require the corresponding attachment for edit operations. Do not replace a requested video or edit with a still image. A social-media URL summary is not a generation or edit request; use content-summary only when that capability is explicitly available, otherwise answer without pretending to have consumed inaccessible media.
 
 OFFICE OUTPUT
 For pdf, docx, xlsx, csv, txt, md, or pptx, use file_processing with media_file and process_file. Set the exact output_type and put only the requested document content in instructions. One requested file is one job. If current external facts are required, add a search dependency; designed documents remain model-composed instead of being reduced to a trivial host fill.
+The requested office type remains authoritative even when the user says draw, render, visualize, or make the interface attractive. Styling inside a document is not a separate image deliverable. Add media_generation only when the user independently requests an image or explicitly requires a generated image to be embedded.
 
 IMAGE OUTPUT
 For a standalone image, use media_generation with media_file and generate_media, output_type image, async execution, and process_original_message false.
@@ -20,6 +21,9 @@ The SCENE brief preserves the requested medium, composition, viewpoint, mood, an
 
 IMAGE INPUT
 When the user asks to read, describe, or summarize an attached or quoted image, use file processing with process_original_message true and no output_type. The result is a chat answer unless a new artifact was explicitly requested.
+
+VIDEO OUTPUT AND EDITS
+For a generated video use media_generation, skill video-gen, action generate_media, output_type video, and process_original_message true. For an image edit use media_generation, skill image-edit, action edit_media, output_type image, and require an image attachment. For a video edit use media_generation, skill video-edit, action edit_media, output_type video, and require a video attachment. The owning skill performs the endpoint call and returns one artifact.
 
 MULTI-DELIVERABLE
 Separate independently requested images and files. Populate task_details with each task_type, output_type, and dependency. Never inherit a sibling task's output type.
