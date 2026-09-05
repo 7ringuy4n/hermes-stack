@@ -22,16 +22,19 @@ def note(name: str, ok: bool, detail: str = "") -> None:
 
 def inject(text: str, media=None, mid: str | None = None) -> str:
     payload = {
-        "type": "message",
         "threadId": TN,
         "threadType": "user",
         "senderId": TN,
         "senderName": "Tn",
         "text": text,
-        "messageId": mid or ("suite-" + str(int(time.time() * 1000))),
+        "isSelf": False,
     }
+    # Synthetic message identifiers are not valid Zalo quote targets.  Omit the
+    # field for ordinary injected events; quote-reply has a separate live test
+    # built from an actual Zalo event.
+    if mid:
+        payload["messageId"] = mid
     if media:
-        payload["attachments"] = media
         payload["media"] = media
     event = {"type": "message", "payload": payload}
     req = urllib.request.Request(
@@ -91,9 +94,9 @@ def plugin_logs(since_epoch: float | None = None) -> str:
         return type(e).__name__
 
 
-def wait_zalo_delivery(started: float, *, photo: bool = False, wait_s: int = 150) -> str:
+def wait_zalo_delivery(started: float, *, photo: bool = False, wait_s: int | None = None) -> str:
     marker = "self=true msgType=chat.photo" if photo else "self=true msgType=webchat"
-    deadline = time.time() + wait_s
+    deadline = time.time() + (WAIT if wait_s is None else wait_s)
     while time.time() < deadline:
         journal = plugin_logs(started)
         hits = [line for line in journal.splitlines() if marker in line]
@@ -251,11 +254,7 @@ def main() -> int:
         return 2
     # 1) Scenic image-gen
     t0 = time.time()
-    inject(
-        "vẽ một chú mèo ngồi trên bàn gỗ, ánh sáng tự nhiên, ảnh thật ["
-        + str(int(t0))
-        + "]"
-    )
+    inject("vẽ một chú mèo ngồi trên bàn gỗ, ánh sáng tự nhiên, ảnh thật")
     img = None
     for _ in range(WAIT):
         hits = newest_media({".jpg", ".jpeg", ".webp", ".png"}, t0 - 2)
@@ -341,16 +340,19 @@ def main() -> int:
         dest = inbound / fname
         dest.write_bytes(src.read_bytes())
         t1 = time.time()
-        media = [
-            {
-                "type": "image",
-                "url": f"/opt/data/media/inbound/{TN}/{fname}",
-                "name": fname,
-            }
-        ]
-        inject("đọc / mô tả ảnh này giúp mình [" + str(int(t1)) + "]", media=media)
-        direct = vision_rate(dest, prompt)
+        media = {
+            "kind": "image",
+            "url": f"/opt/data/media/inbound/{TN}/{fname}",
+            "fileName": fname,
+            "ext": dest.suffix.lstrip("."),
+            "mime": "image/png",
+        }
+        inject("đọc / mô tả ảnh này giúp mình", media=media)
+        # Let the user-visible request finish before using the same combo as an
+        # independent evaluator.  The evaluation must not contend with the
+        # capability under test and create its own queue-saturation failure.
         delivery = wait_zalo_delivery(t1)
+        direct = vision_rate(dest, prompt)
         low = direct.lower()
         delivery_low = delivery.lower()
         missing_reply = "chưa nhận được ảnh/file" in delivery_low or "không thấy" in delivery_low
@@ -402,17 +404,14 @@ def main() -> int:
         dest = inbound / fname
         dest.write_bytes(src.read_bytes())
         t2 = time.time()
-        media = [
-            {
-                "type": "file",
-                "url": f"/opt/data/media/inbound/{TN}/{fname}",
-                "name": fname,
-            }
-        ]
-        inject(
-            "đọc nội dung file này và tóm tắt ngắn [" + str(int(t2)) + "]",
-            media=media,
-        )
+        media = {
+            "kind": "file",
+            "url": f"/opt/data/media/inbound/{TN}/{fname}",
+            "fileName": fname,
+            "ext": dest.suffix.lstrip("."),
+            "mime": "application/pdf" if dest.suffix.lower() == ".pdf" else "text/plain",
+        }
+        inject("đọc nội dung file này và tóm tắt ngắn", media=media)
         delivery = wait_zalo_delivery(t2)
         excerpt = ""
         try:
@@ -461,11 +460,7 @@ def main() -> int:
                 f"n={len(results)} answer_len={len(answer)} sample={blob[:120]}",
             )
         search_started = time.time()
-        inject(
-            "tra cứu nhanh: thủ đô của Việt Nam là gì? trả lời một câu ["
-            + str(int(search_started))
-            + "]"
-        )
+        inject("tra cứu nhanh: thủ đô của Việt Nam là gì? trả lời một câu")
         delivery = wait_zalo_delivery(search_started)
         if not delivery:
             checks[-1]["ok"] = False
@@ -474,11 +469,11 @@ def main() -> int:
         note("web_search", False, type(e).__name__)
 
     # 5) Schedule once_after
-    tag = "suite-sched-" + str(int(time.time()))
     schedule_started = time.time()
-    inject(f"nhắc mình uống nước sau 2 phút [{tag}]")
+    inject("nhắc mình uống nước sau 2 phút")
     row_seen = False
     schedule_id = ""
+    fire_text = ""
     detail = ""
     deadline = schedule_started + 150
     while time.time() < deadline:
@@ -487,9 +482,10 @@ def main() -> int:
             for row in rows:
                 blob = json.dumps(row, ensure_ascii=False)
                 low = blob.lower()
-                if tag in blob or ("uống nước" in low and TN in blob):
+                if "uống nước" in low and TN in blob:
                     row_seen = True
                     schedule_id = str(row.get("id") or "") if isinstance(row, dict) else ""
+                    fire_text = str(row.get("fire_text") or "") if isinstance(row, dict) else ""
                     detail = blob[:220]
                     break
             if not detail and rows:
@@ -498,16 +494,20 @@ def main() -> int:
             detail = type(e).__name__
         journal = plugin_logs(schedule_started)
         ack_count = journal.count('content="Đã lưu lịch!"')
-        fire_count = journal.count('content="Nhắc mình uống nước nhé."')
+        fire_count = journal.count('content="' + fire_text + '"') if fire_text else 0
         if row_seen and ack_count == 1 and fire_count == 1:
             break
         time.sleep(2)
     journal = plugin_logs(schedule_started)
     ack_count = journal.count('content="Đã lưu lịch!"')
-    fire_count = journal.count('content="Nhắc mình uống nước nhé."')
+    fire_count = journal.count('content="' + fire_text + '"') if fire_text else 0
     remaining = []
     try:
-        remaining = [row for row in list_schedules() if tag in json.dumps(row, ensure_ascii=False)]
+        remaining = [
+            row
+            for row in list_schedules()
+            if str(row.get("id") or "") == schedule_id
+        ]
     except Exception:
         remaining = ["list_failed"]
     sched_ok = row_seen and ack_count == 1 and fire_count == 1 and not remaining

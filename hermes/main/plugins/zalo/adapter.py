@@ -2126,6 +2126,10 @@ class ZaloAdapter(BasePlatformAdapter):
                 preview=(raw or "")[:120],
                 noise=bool(raw and not reply),
             )
+            # A late file sender from the preceding turn may finish after the
+            # new inbound reset and mark this thread as media-delivered again.
+            # This host-owned response belongs to the current image-read turn.
+            self._as_clear_job_file_sent(str(thread_id))
             try:
                 await self.send(
                     chat_id=str(thread_id),
@@ -2148,6 +2152,9 @@ class ZaloAdapter(BasePlatformAdapter):
             thread_id=thread_id,
             chars=len(reply),
         )
+        # Do not let a racing late-autosend marker from the previous turn mute
+        # the current user-visible analysis response.
+        self._as_clear_job_file_sent(str(thread_id))
         try:
             await self.send(
                 chat_id=str(thread_id),

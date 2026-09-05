@@ -505,3 +505,38 @@ release gate remained closed. Future releases must inspect rendered pages and
 their extracted text; a successful API call or file assertion alone is not a
 pass. A bridge injection must also wait for an active SSE subscriber after a
 replica restart.
+
+## Synthetic quote metadata and concurrent judges distorted delivery tests
+
+### Symptom
+
+Some Zalo capability cases produced correct direct model output but appeared to
+lose the user-visible reply. A delayed reminder fired once but was reclassified
+as a new interactive request instead of delivering its stored notification.
+
+### Root cause
+
+The test harness assigned invented message identifiers, so normal replies tried
+to quote targets that did not exist on Zalo. It also submitted an independent
+vision evaluation while the Zalo vision request was still running against the
+same priority combo. Finally, a correlation tag embedded in reminder prose
+changed the model-owned delivery decision from a simple notification to a
+processed job.
+
+### Decision and fix
+
+Ordinary synthetic events omit message identifiers; real quote behavior remains
+covered by a dedicated test built from a valid Zalo event. User-visible delivery
+completes before the independent model judge runs. Schedule correlation uses the
+created row identifier and its stored fire text without modifying the request.
+Zalo text transport also has a bounded deadline so a stalled quote cannot hold
+the destination lock and block subsequent replies. A host-owned image-analysis
+reply also clears any media-delivery marker that a racing late sender from the
+preceding turn may have restored after the new-turn reset.
+
+### Prevention
+
+Live tests must not add semantic markers to model-classified text, fabricate
+provider-native identifiers, or compete with the capability they are judging.
+They must verify the stored schedule mode and exact fired payload, while timeout
+budgets remain capability-specific.

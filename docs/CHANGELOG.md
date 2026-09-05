@@ -20,6 +20,15 @@
   vision, embeddings, still generation, and image editing; search falls back to
   internal SearXNG. Media callers route through Model Router rather than
   bypassing it, and the retired page-extract ordering variable is removed.
+- Zalo text sends now use a short transport deadline so a stalled quote request
+  cannot retain the per-destination lock for a full minute; attachment uploads
+  keep their longer transfer budget and failed quotes still retry as plain text.
+- Live capability evaluation waits for the user-visible result before invoking
+  a second model as judge, and synthetic events no longer claim invalid quote
+  identifiers or alter the natural-language schedule request with test tags.
+- Image-analysis replies clear a late media-delivery marker immediately before
+  sending, preventing a completed artifact from the preceding turn from muting
+  the next turn's valid text response.
 
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
 

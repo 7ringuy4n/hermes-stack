@@ -1,3 +1,8 @@
+## 2026-09-05 20:45 +07 — bounded Zalo sends and non-interfering live evaluation
+
+See `history/2026-09-05/README.md` section “Synthetic quote metadata and
+concurrent judges distorted delivery tests”.
+
 ## 2026-09-05 19:20 +07 — cold-start OpenBao ordering
 
 See `history/2026-09-05/README.md` section “Clean startup depended on an

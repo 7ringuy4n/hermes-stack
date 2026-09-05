@@ -23,11 +23,20 @@ class ZaloBridgeTransport:
             headers["x-bridge-token"] = self.token
         return headers
 
+    @staticmethod
+    def request_timeout_seconds(path: str) -> int:
+        """Bound destination-lock occupancy by bridge operation type."""
+        if path == "/send-attachment":
+            return 120
+        if path == "/send":
+            return 15
+        return 60
+
     async def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         if not self.base_url:
             return {"error": "no bridge"}
         import aiohttp
-        timeout = aiohttp.ClientTimeout(total=120 if path == "/send-attachment" else 60)
+        timeout = aiohttp.ClientTimeout(total=self.request_timeout_seconds(path))
         try:
             # Outbound calls intentionally do not share the long-lived SSE
             # session; doing so can disconnect the event stream under load.
