@@ -6,6 +6,7 @@ that provider does not claim the capability.
 """
 from __future__ import annotations
 
+import json
 import os
 
 
@@ -16,6 +17,13 @@ CAPABILITY_MODEL_SUFFIX = {
     "image-gen": "IMAGE_MODEL",
     "image-edit": "IMAGE_EDIT_MODEL",
 }
+
+
+def encode_proxy_body(raw: bytes, payload: dict, *, is_json_request: bool) -> bytes:
+    """Serialize JSON requests while preserving opaque media bodies exactly."""
+    if is_json_request:
+        return json.dumps(payload).encode("utf-8")
+    return raw
 
 
 def capability_for_path(path: str, *, has_vision: bool = False) -> str:

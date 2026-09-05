@@ -52,6 +52,7 @@ from websearch import router as websearch_router
 from fallback_providers import (
     capability_for_path,
     configured_fallbacks,
+    encode_proxy_body,
     endpoint_failure_allows_fallback,
     replace_multipart_model,
 )
@@ -431,9 +432,13 @@ async def outbound_endpoint(request: Request) -> dict[str, Any]:
 async def proxy(path: str, request: Request) -> Response:
     raw = await request.body()
     body: dict = {}
+    is_json_request = "application/json" in str(
+        request.headers.get("content-type") or ""
+    ).lower()
     if raw:
         try:
-            body = json.loads(raw.decode("utf-8"))
+            parsed = json.loads(raw.decode("utf-8"))
+            body = parsed if isinstance(parsed, dict) else {}
         except Exception:
             body = {}
 
@@ -470,7 +475,11 @@ async def proxy(path: str, request: Request) -> Response:
             and (model_override or "").strip() == abandon_primary
         ):
             continue
-        payload = _sanitize_upstream_payload(name, dict(body) if body else {})
+        payload = (
+            _sanitize_upstream_payload(name, dict(body))
+            if is_json_request
+            else {}
+        )
         request_headers = dict(headers)
         request_content = raw
         incoming_content_type = str(request.headers.get("content-type") or "")
@@ -535,7 +544,11 @@ async def proxy(path: str, request: Request) -> Response:
                 request.method,
                 url,
                 headers=request_headers,
-                content=json.dumps(payload).encode("utf-8") if payload else request_content,
+                content=encode_proxy_body(
+                    request_content,
+                    payload,
+                    is_json_request=is_json_request,
+                ),
             )
             if is_chat:
                 try:
