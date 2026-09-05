@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Zalo Bridge latency: send a short user line as an allowlisted DM (SSE inject).
 
 Uses POST {bridge}/inject-event so Hermes consumes the same SSE path as a real

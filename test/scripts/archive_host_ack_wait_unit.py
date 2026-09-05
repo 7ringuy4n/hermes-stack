@@ -42,7 +42,11 @@ def main() -> int:
     core = (
         ROOT / "hermes" / "main" / "skills" / "classify" / "parts" / "core.txt"
     ).read_text(encoding="utf-8")
-    assert "spreadsheet/office workbook extracts" in core
+    media = (
+        ROOT / "hermes" / "main" / "skills" / "classify" / "parts" / "media.txt"
+    ).read_text(encoding="utf-8")
+    assert "Read ordinary attachments through the declared media or ingest path" in core
+    assert "For pdf, docx, xlsx, csv, txt, md, or pptx" in media
     print("archive_host_ack_wait_unit OK")
     return 0
 

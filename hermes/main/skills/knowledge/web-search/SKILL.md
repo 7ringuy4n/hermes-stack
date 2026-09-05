@@ -19,7 +19,7 @@ Send **only the final answer** (and a generated file if the user asked for one).
    backends from config; SearXNG cannot extract). If extract fails, stop with a short failure line.
 4. **Page images** — if the useful content is in **images** (tables, posted prices, charts):
    1. Download the image to `/opt/data/media/in/<safe>.jpg` (shared media volume).
-   2. Read via vision-ocr combo (router-worker `POST /v1/chat/completions` model `vision-ocr`, or ingest/dispatcher `vision_read`).
+   2. Read via vision-ocr combo (model-router `POST /v1/chat/completions` model `vision-ocr`, or ingest/dispatcher `vision_read`).
    3. Use the extracted text as the source of truth.
    4. If the user asked for an **image** of that result, call skill `image-gen` (Omni `/images/generations` model `image-gen`) with the facts in the English prompt.
 5. **Answer** — lead with the finding; note date/locale if relevant. No “want me to resend?”.
@@ -30,11 +30,11 @@ When the user asks for lyrics and a recent audio/video attachment (or a quoted m
 
 1. Use that title/artist as the search query immediately.
 2. Do **not** ask “which song?” when the filename or quoted context is clear.
-3. Search via Router Worker `/v1/search` (Omni-backed), then answer with the lyrics (or a short failure if none found).
+3. Search via Model Router `/v1/search` (Omni-backed), then answer with the lyrics (or a short failure if none found).
 
 ## Note
 
-This skill controls **behavior**; execution uses Omni search (via Router Worker) + OCR. Media generation stays on the Media/File worker. See `vendor/tavily/tavily-best-practices`.
+This skill controls **behavior**; execution uses Omni search (via Model Router) + OCR. Media generation stays on the Media/File worker. See `vendor/tavily/tavily-best-practices`.
 
 ## Confidential/internal docs (hard rule)
 

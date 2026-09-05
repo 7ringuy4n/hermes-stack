@@ -1,12 +1,12 @@
-# Case: web search combo (Router Worker)
+# Case: web search combo (Model Router)
 
-Verify `/v1/search` on **router-worker** (`model-router:8096`) proxies to Omni combo **web-search**.
+Verify `/v1/search` on **model-router** (`model-router:8096`) proxies to Omni combo **web-search**.
 
 ## Default path
 
 When `OMNIROUTER_BASE_URL` and `OMNIROUTER_API_KEY` are set:
 
-1. Router Worker posts `{ combo: web-search, query, max_results }` to Omni `POST /v1/search`
+1. Model Router posts `{ combo: web-search, query, max_results }` to Omni `POST /v1/search`
 2. Failover order and provider members are owned in Omni UI (not env `WEB_BACKENDS`)
 3. Response `backend` reports combo name `web-search`
 
@@ -15,7 +15,7 @@ Missing Omni config → 503 controlled error.
 ## Steps (unit/local)
 
 1. Run `python test/scripts/websearch_combo_unit.py`
-2. Run `python test/scripts/web_search_backends_unit.py` (when router-worker is up)
+2. Run `python test/scripts/web_search_backends_unit.py` (when model-router is up)
 3. POST `/v1/search` with `{"query":"weather Ho Chi Minh","max_results":3}`
 4. Record the `backend` and `combo` fields in the JSON response
 

@@ -23,6 +23,6 @@ bash run.sh workers
 | Router | Default |
 |--------|---------|
 | **OmniRouter** | On (`ENABLE_OMNIROUTER=active`) — general / classify / outbound |
-| **9Router** | Off (`ENABLE_9ROUTER=inactive`) — optional coding path |
+| **OmniRoute** | Off (`ENABLE_OMNIROUTER=inactive`) — optional coding path |
 
-First-setup LLM wiring: `bash run.sh first-setup-omnirouter` (and `first-setup-llm` only when 9Router is enabled).
+First-setup LLM wiring: `bash run.sh first-setup-omnirouter` (and `first-setup-llm` only when OmniRoute is enabled).

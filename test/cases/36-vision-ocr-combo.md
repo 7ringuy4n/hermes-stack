@@ -2,7 +2,7 @@
 
 ## Goal
 
-Images and scanned PDF pages are read by **combo vision-ocr** via router-worker
+Images and scanned PDF pages are read by **combo vision-ocr** via model-router
 (`architect/lib/vision_ocr.py` in ingest, jobs, dispatcher, Zalo host). There is
 no separate OCR container, no Paddle/tesseract path.
 

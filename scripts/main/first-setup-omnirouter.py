@@ -3,7 +3,7 @@
 
 Creates login session, Default Key (only when OMNIROUTER_API_KEY missing),
 empty combo shells, and missing .env pins. Does **not** refill combos,
-rewire custom image providers, or restart router-worker.
+rewire custom image providers, or restart model-router.
 
 For repair/sync (combo refill, provider-models, API key ACL):
   bash run.sh update-omnirouter
@@ -65,6 +65,9 @@ def load_env(path: Path) -> dict[str, str]:
             continue
         k, v = s.split("=", 1)
         out[k.strip()] = v.strip().strip('"').strip("'")
+    # run.sh injects OpenBao values into this process. Runtime values override
+    # the scrubbed host file and are never copied back to that file.
+    out.update({key: value for key, value in os.environ.items() if value})
     return out
 
 
@@ -426,8 +429,14 @@ def _patch_pollinations_connection(opener, conn: dict, api_key: str) -> None:
 
 
 def ensure_pollinations_provider(opener, env: dict | None = None) -> dict | None:
-    """Ensure Pollinations image provider (optional API key; anonymous when unset)."""
+    """Ensure the keyed Pollinations image provider when authorization exists."""
     api_key = _pollinations_api_key(env)
+    if not api_key:
+        print(
+            "WARN: Pollinations provider not created without an API key; "
+            "complete first-setup device authorization and retry"
+        )
+        return None
     try:
         _, data = http_json(opener, "GET", f"{BASE}/api/providers")
     except Exception as e:
@@ -440,29 +449,17 @@ def ensure_pollinations_provider(opener, env: dict | None = None) -> dict | None
             if api_key:
                 _patch_pollinations_connection(opener, c, api_key)
             return c if isinstance(c, dict) else None
-    tier = "keyed" if api_key else "anonymous"
-    print(f"==> create Pollinations provider connection ({tier})")
-    payloads: list[dict] = []
-    if api_key:
-        payloads.extend(
-            (
-                {
-                    "provider": "pollinations",
-                    "authType": "apikey",
-                    "name": "pollinations",
-                    "isActive": True,
-                    "apiKey": api_key,
-                },
-                {"provider": "pollinations", "name": "pollinations", "isActive": True, "apiKey": api_key},
-            )
-        )
-    else:
-        payloads.extend(
-            (
-                {"provider": "pollinations", "authType": "none", "name": "pollinations", "isActive": True},
-                {"provider": "pollinations", "name": "pollinations", "isActive": True},
-            )
-        )
+    print("==> create Pollinations provider connection (keyed)")
+    payloads: list[dict] = [
+        {
+            "provider": "pollinations",
+            "authType": "apikey",
+            "name": "pollinations",
+            "isActive": True,
+            "apiKey": api_key,
+        },
+        {"provider": "pollinations", "name": "pollinations", "isActive": True, "apiKey": api_key},
+    ]
     for payload in payloads:
         try:
             status, body = http_json(opener, "POST", f"{BASE}/api/providers", payload)
@@ -501,7 +498,7 @@ def list_oc_models(opener) -> list[str]:
     except Exception as e:
         print(f"WARN /api/models oc scan failed ({e})")
 
-    # 2) Omni/9Router suggested-models helper (when present)
+    # 2) OmniRoute suggested-models helper (when present)
     if not oc:
         q = urllib.parse.urlencode({"url": OPENCODE_MODELS_URL, "type": "opencode-free"})
         try:
@@ -660,6 +657,23 @@ def ensure_combo_alias(opener, *, setup_only: bool = False) -> str:
         description="Stack chat combo — Omni OpenCode cloud (round-robin)",
         setup_only=setup_only,
     )
+
+
+def ensure_operator_media_shells(opener, *, setup_only: bool = False) -> None:
+    """Create missing future-media shells without owning their membership."""
+    for name, description in (
+        ("image-edit", "Image editing — operator-managed endpoint-capable targets"),
+        ("video-gen", "Video generation — operator-managed endpoint-capable targets"),
+        ("video-edit", "Video editing — operator-managed endpoint-capable targets"),
+    ):
+        ensure_opencode_combo(
+            opener,
+            name=name,
+            description=description,
+            member_limit=5,
+            strategy=FALLBACK_COMBO_STRATEGY,
+            setup_only=setup_only,
+        )
 
 
 def _search_connections(opener):
@@ -980,15 +994,15 @@ def patch_hermes_model_router(key: str, model: str) -> None:
 
 
 def recreate_model_router() -> None:
-    print("==> recreate router-worker (model-router)")
-    for name in ("router-worker", "model-router", "assistant-router-worker-1"):
+    print("==> recreate model-router (model-router)")
+    for name in ("model-router", "model-router", "assistant-model-router-1"):
         rc = subprocess.call(
             ["docker", "restart", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         if rc == 0:
             print(f"==> restarted {name}")
             return
-    print("WARN: could not restart router-worker by name — skip recreate")
+    print("WARN: could not restart model-router by name — skip recreate")
 
 
 def enable_omni_memory(opener: urllib.request.OpenerDirector) -> None:
@@ -1057,6 +1071,9 @@ STACK_API_KEY_COMBOS = (
     "hermes",
     "classifier",
     "image-gen",
+    "image-edit",
+    "video-gen",
+    "video-edit",
     "vision-ocr",
     "embedding",
     "web-search",
@@ -1070,9 +1087,7 @@ def _row_has_image_modality(row: dict) -> bool:
     return False
 
 
-_STACK_COMBO_NAMES = frozenset(
-    {"image-gen", "hermes", "classifier", "vision-ocr", "embedding", "web-search"}
-)
+_STACK_COMBO_NAMES = frozenset(STACK_API_KEY_COMBOS)
 
 
 def _row_api_format(row: dict) -> str:
@@ -2260,9 +2275,9 @@ def setup_core() -> int:
     if omni_flag != "active":
         print("SKIP: ENABLE_OMNIROUTER is not active")
         return 0
-    password = env.get("OMNIROUTER_INITIAL_PASSWORD") or env.get("N9ROUTER_INITIAL_PASSWORD") or ""
+    password = env.get("OMNIROUTER_INITIAL_PASSWORD") or ""
     if not password:
-        raise SystemExit("OMNIROUTER_INITIAL_PASSWORD / N9ROUTER_INITIAL_PASSWORD empty")
+        raise SystemExit("OMNIROUTER_INITIAL_PASSWORD empty")
 
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
     key = fetch_default_key(opener, password, env.get("OMNIROUTER_API_KEY", ""))
@@ -2275,11 +2290,12 @@ def setup_core() -> int:
 
     unblock_opencode(opener)
     ensure_opencode_provider(opener)
-    ensure_pollinations_api_key(env)
+    ensure_pollinations_api_key(env, interactive=sys.stdin.isatty())
     ensure_pollinations_provider(opener, env)
     ensure_request_queue_max_wait(opener)
     combo = ensure_combo_alias(opener, setup_only=True)
     classify_combo = ensure_classifier_combo(opener, setup_only=True)
+    ensure_operator_media_shells(opener, setup_only=True)
     ensure_search_providers(opener)
     ensure_web_search_omni_combo(opener, setup_only=True)
     ensure_media_combos(opener, key, env, setup_only=True)
@@ -2333,14 +2349,13 @@ def run_update() -> int:
     if omni_flag != "active":
         print("SKIP: ENABLE_OMNIROUTER is not active")
         return 0
-    password = env.get("OMNIROUTER_INITIAL_PASSWORD") or env.get("N9ROUTER_INITIAL_PASSWORD") or ""
+    password = env.get("OMNIROUTER_INITIAL_PASSWORD") or ""
     if not password:
-        raise SystemExit("OMNIROUTER_INITIAL_PASSWORD / N9ROUTER_INITIAL_PASSWORD empty")
+        raise SystemExit("OMNIROUTER_INITIAL_PASSWORD empty")
 
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
     key = fetch_default_key(opener, password, env.get("OMNIROUTER_API_KEY", ""))
-    set_env_key(ROOT / ".env", "OMNIROUTER_API_KEY", key)
-    print(f"==> wrote OMNIROUTER_API_KEY to {ROOT / '.env'}")
+    print("==> using runtime OMNIROUTER_API_KEY (not persisted to host env)")
 
     # Providers / nodes / catalog wiring only — operator owns combo members in Omni UI.
     unblock_opencode(opener)
@@ -2353,6 +2368,7 @@ def run_update() -> int:
     # setup_only=True: create missing shell combos only; never refill/replace members.
     combo = ensure_combo_alias(opener, setup_only=True)
     classify_combo = ensure_classifier_combo(opener, setup_only=True)
+    ensure_operator_media_shells(opener, setup_only=True)
     ensure_search_providers(opener)
     ensure_web_search_omni_combo(opener, setup_only=True)
     ensure_media_combos(opener, key, env, setup_only=True)
@@ -2389,7 +2405,7 @@ def run_update() -> int:
         "OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS",
         str(_request_queue_max_wait_ms()),
     )
-    # Hermes-facing Router Worker: combo web-search via Omni only (no direct adapter chain).
+    # Hermes-facing Model Router: combo web-search via Omni only (no direct adapter chain).
     _clear_stack_env_keys(
         [
             "OMNIROUTER_SEARCH_PROVIDERS",

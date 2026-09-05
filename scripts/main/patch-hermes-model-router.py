@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Point shared Hermes config at router-worker (OmniRouter default path).
+"""Point shared Hermes config at model-router (OmniRouter default path).
 
 Reads OMNIROUTER_API_KEY / OMNIROUTER_DEFAULT_COMBO from stack .env when present.
 Safe to re-run (idempotent base_url / provider / default patch).
@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("STACK_ROOT", Path(__file__).resolve().parents[2]))
 HERMES_DATA = Path(os.environ.get("HERMES_DATA_DIR", os.environ.get("ASSISTANT_DATA_DIR", "/data/assistant")))
-MODEL_ROUTER_BASE = os.environ.get("HERMES_OPENAI_BASE_URL", "http://router-worker:8096/v1").strip()
+MODEL_ROUTER_BASE = os.environ.get("HERMES_OPENAI_BASE_URL", "http://model-router:8096/v1").strip()
 # Combo alias (OMNIROUTER_DEFAULT_COMBO) — not a vendor model id.
 DEFAULT_COMBO = os.environ.get("OMNIROUTER_DEFAULT_COMBO", "hermes").strip() or "hermes"
 
@@ -198,7 +198,6 @@ def main() -> int:
     key = (
         stack_env.get("OMNIROUTER_API_KEY")
         or stack_env.get("OPENAI_API_KEY")
-        or stack_env.get("N9ROUTER_API_KEY")
         or ""
     ).strip()
     model = stack_env.get("OMNIROUTER_DEFAULT_COMBO", DEFAULT_COMBO).strip() or DEFAULT_COMBO

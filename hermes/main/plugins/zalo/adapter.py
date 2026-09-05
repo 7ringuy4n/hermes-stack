@@ -322,6 +322,7 @@ from attachment import (  # noqa: E402
     workbook_sheet_reply,
     worker_media_path,
 )
+from bridge_transport import ZaloBridgeTransport  # noqa: E402
 
 ATTACHMENT_OCR_TIMEOUT_S = 90.0
 ATTACHMENT_OFFICE_TIMEOUT_S = 45.0
@@ -407,6 +408,7 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             self.bridge_url = ""
         self.bridge_token = os.getenv("ZALO_PLUGIN_TOKEN") or extra.get("bridge_token", "")
+        self._bridge = ZaloBridgeTransport(self.bridge_url, self.bridge_token)
 
         # ── Access control (Telegram-style: empty list = allow everyone) ──────
         # A) ALLOWED_USERS  — uids permitted to command the bot. Empty = all.
@@ -485,10 +487,7 @@ class ZaloAdapter(BasePlatformAdapter):
         return "Zalo"
 
     def _headers(self) -> Dict[str, str]:
-        h = {"Content-Type": "application/json"}
-        if self.bridge_token:
-            h["x-bridge-token"] = self.bridge_token
-        return h
+        return self._bridge.headers()
 
     def _sender_may_designate_home(self, sender_id: str, chat_type: str) -> bool:
         """Who may claim ZALO_HOME_CHANNEL via silent auto-sethome."""
@@ -726,7 +725,10 @@ class ZaloAdapter(BasePlatformAdapter):
                 if self._last_event_id:
                     headers["Last-Event-ID"] = str(self._last_event_id)
 
-                timeout = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=None)
+                # The bridge emits an SSE heartbeat every 15 seconds.  A finite
+                # read deadline detects half-open streams where /health still
+                # reports one client but pushed messages never reach Hermes.
+                timeout = aiohttp.ClientTimeout(total=None, sock_connect=15, sock_read=45)
                 async with self._session.get(
                     f"{self.bridge_url}/events", headers=headers, timeout=timeout
                 ) as resp:
@@ -890,6 +892,28 @@ class ZaloAdapter(BasePlatformAdapter):
         ``!zalo`` admin must not wait behind a stuck media/LLM turn on the same thread.
         """
         tid = str((data or {}).get("threadId") or "")
+        schedule_fire = bool(
+            (data or {}).get("scheduleFire") or (data or {}).get("schedule_fire")
+        )
+        if schedule_fire:
+            stored_plan = (data or {}).get("plan")
+            logger.info(
+                "Zalo: scheduleFire received thread=%s schedule=%s execution=%s plan=%s hint=%s",
+                tid or "?",
+                str((data or {}).get("scheduleId") or "?")[:48],
+                str((data or {}).get("executionId") or "?")[:64],
+                isinstance(stored_plan, dict),
+                str(stored_plan.get("task_hint") or "?")[:24]
+                if isinstance(stored_plan, dict)
+                else "?",
+            )
+            try:
+                # Due work is already isolated by schedule execution identity and
+                # must not miss its due time behind an unrelated chat turn.
+                await self._on_inbound_message(data)
+            except Exception:
+                logger.exception("Zalo: scheduled inbound failed thread=%s", tid or "?")
+            return
         if self._as_inbound_is_admin(data):
             try:
                 await self._on_inbound_message(data)
@@ -1595,6 +1619,7 @@ class ZaloAdapter(BasePlatformAdapter):
         plan: dict | None = None,
         media_urls: list | None = None,
         has_image_attachment: bool = False,
+        schedule_fire: bool = False,
     ) -> bool:
         """Run host-owned media shortcuts. True when the turn was consumed."""
         shortcut_user_text = (user_text or "").strip()
@@ -1675,6 +1700,15 @@ class ZaloAdapter(BasePlatformAdapter):
                     shortcut_user_text, attachments=attach_hint
                 )
             )
+            if schedule_fire and str(early_plan.get("task_hint") or "").lower() == "schedule":
+                # The scheduler already resolved timing and persisted this plan.
+                # At fire time, retain its task details/content but evaluate it
+                # as executable work so it cannot create another schedule or
+                # fall through into split generic-agent jobs.
+                early_plan = dict(early_plan)
+                early_plan["task_hint"] = "tool"
+                early_plan["execution_class"] = "async"
+                early_plan["response_mode"] = "ack_then_deliver"
             if has_image_attachment and plan_is_image_analyze_chat(early_plan, has_image=True):
                 return False
             if has_image_attachment:
@@ -1952,7 +1986,7 @@ class ZaloAdapter(BasePlatformAdapter):
     async def _as_ocr_vision_describe(
         self, local_path: str, *, prompt: str, file_name: str = ""
     ) -> str:
-        """Scene describe via router-worker combo vision-ocr."""
+        """Scene describe via model-router combo vision-ocr."""
         import asyncio
 
         try:
@@ -2182,7 +2216,26 @@ class ZaloAdapter(BasePlatformAdapter):
         if has_image_attachment and plan_is_image_analyze_chat(plan, has_image=True):
             plan = apply_image_analyze_plan_coercion(plan)
         if plan.get("ok") is False:
-            # Omni/classify outages must not dead-end chat. Fall through to Hermes.
+            # A scheduled turn needs typed routing. Never hand an unclassified
+            # scheduled job to the generic agent, where it can duplicate work or
+            # select an unavailable tool path.
+            if schedule_fire:
+                body = self._as_ux_line(
+                    "ZALO_CLASSIFY_FAILED",
+                    ("classify", "failed"),
+                    "Could not classify this request. Please send it again.",
+                    user_text=current,
+                )
+                await self.send(
+                    chat_id=str(thread_id),
+                    content=body,
+                    metadata={
+                        "thread_type": "group" if thread_type == "group" else "user",
+                        "skip_outbound_filter": True,
+                    },
+                )
+                return True
+            # Interactive chat remains fail-open when classify is unavailable.
             logger.info(
                 "[zalo] classify failed error=%s — fall through to Hermes",
                 plan.get("error"),
@@ -2303,6 +2356,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_type=thread_type,
                 bare_text=current,
                 plan=plan,
+                schedule_fire=schedule_fire,
             )
         origin = {
             "platform": "zalo",
@@ -2701,6 +2755,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 bare_text=current,
                 plan=plan,
                 has_image_attachment=has_image_attachment,
+                schedule_fire=schedule_fire,
             )
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
         async_job = plan_is_async(plan) or (
@@ -3278,6 +3333,7 @@ class ZaloAdapter(BasePlatformAdapter):
         rate_over: bool,
         rate_notify: bool,
         event,
+        plan: dict | None = None,
         schedule_fire: bool = False,
         has_image_attachment: bool = False,
     ) -> None:
@@ -3314,6 +3370,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 sender_id=sender_id,
                 sender_name=sender_name,
                 chat_type=chat_type,
+                plan=plan,
                 schedule_fire=schedule_fire,
                 has_image_attachment=has_image_attachment,
             ):
@@ -3351,6 +3408,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 sender_id=sender_id,
                 sender_name=sender_name,
                 chat_type=chat_type,
+                plan=plan,
                 schedule_fire=schedule_fire,
                 has_image_attachment=has_image_attachment,
             ):
@@ -4479,6 +4537,7 @@ class ZaloAdapter(BasePlatformAdapter):
         if (
             bare_early
             and not schedule_fire
+            and not self._as_inbound_queue_enabled()
             and not (isinstance(media, dict) and media.get("url"))
             and "[Attachment text —" not in bare_early
             and "[Attached file:" not in bare_early
@@ -5008,6 +5067,7 @@ class ZaloAdapter(BasePlatformAdapter):
         shortcut_user_text = (user_text_before_attach or bare_text).strip()
         if (
             shortcut_user_text
+            and not queue_on
             and not media_urls
             and "[Attachment text —" not in bare_text
             and "[Attached file:" not in bare_text
@@ -5066,6 +5126,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 rate_over=rate_over,
                 rate_notify=rate_notify,
                 event=event,
+                plan=m.get("plan") if isinstance(m.get("plan"), dict) else None,
                 schedule_fire=bool(m.get("scheduleFire") or m.get("schedule_fire")),
                 has_image_attachment=bool(
                     media_urls
@@ -5284,39 +5345,7 @@ class ZaloAdapter(BasePlatformAdapter):
         return "user"
 
     async def _post(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
-        import aiohttp
-
-        if not self.bridge_url:
-            return {"error": "no bridge"}
-        # Do not share the SSE ClientSession — concurrent GET /events + POST /send
-        # yields aiohttp "Server disconnected".
-        timeout = aiohttp.ClientTimeout(
-            total=120 if path == "/send-attachment" else 60
-        )
-        try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    f"{self.bridge_url}{path}",
-                    data=json.dumps(body),
-                    headers=self._headers(),
-                ) as resp:
-                    try:
-                        data = await resp.json(content_type=None)
-                    except Exception:
-                        text = ""
-                        try:
-                            text = await resp.text()
-                        except Exception:
-                            text = ""
-                        return {"error": f"http {resp.status}: {(text or '')[:180]}"}
-                    if not isinstance(data, dict):
-                        return {"error": f"http {resp.status}: {str(data)[:160]}"}
-                    if resp.status >= 400:
-                        err = str(data.get("error") or data.get("message") or f"http {resp.status}")
-                        data["error"] = err
-                    return data
-        except Exception as e:
-            return {"error": str(e)}
+        return await self._bridge.post(path, body)
 
     def _thread_type_from_chat_id(self, chat_id: str, metadata: Optional[Dict[str, Any]]) -> str:
         if metadata and metadata.get("thread_type") in {"user", "group"}:
@@ -7668,19 +7697,7 @@ class ZaloAdapter(BasePlatformAdapter):
         return await self._post("/poll/create", body)
 
     async def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        import aiohttp
-        if not self._session or self._session.closed:
-            return {"error": "no session"}
-        try:
-            async with self._session.get(
-                f"{self.bridge_url}{path}",
-                params=params or {},
-                headers=self._headers(),
-                timeout=aiohttp.ClientTimeout(total=60),
-            ) as resp:
-                return await resp.json()
-        except Exception as e:
-            return {"error": str(e)}
+        return await self._bridge.get(self._session, path, params)
 
     async def call(self, method: str, *args) -> Dict[str, Any]:
         """Call ANY zca-js API method through the bridge passthrough.

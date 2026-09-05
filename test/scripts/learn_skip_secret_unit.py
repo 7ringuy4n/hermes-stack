@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / "config" / "agent" / "secret-probe.json"
 os.environ["SECRET_PROBE_POLICY"] = str(POLICY)
 
+sys.path.insert(0, str(ROOT / "scripts" / "main"))
 sys.path.insert(0, str(ROOT / "architect" / "security" / "secret-probe"))
 from probe import probe, reload_policy  # noqa: E402
 
@@ -41,10 +42,10 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td:
         data = Path(td)
         openbao = data / ".env.openbao"
-        openbao.write_text("N9ROUTER_API_KEY=secret-value\n", encoding="utf-8")
+        openbao.write_text("OMNIROUTER_API_KEY=secret-value\n", encoding="utf-8")
         root_env = data / "stack.env"
         root_env.write_text(
-            "ENABLE_OPENBAO=1\nN9ROUTER_API_KEY=secret-value\nTZ=Asia/Ho_Chi_Minh\n",
+            "ENABLE_OPENBAO=1\nOMNIROUTER_API_KEY=secret-value\nTZ=Asia/Ho_Chi_Minh\n",
             encoding="utf-8",
         )
         sspec = importlib.util.spec_from_file_location("scrub_unit", scrub_path)

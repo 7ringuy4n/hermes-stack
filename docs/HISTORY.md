@@ -9,3 +9,9 @@ This file is the stable navigation point for project history.
 History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
+
+## 2026-09-05 — update isolation and routing consolidation
+
+See `history/2026-09-05/README.md` for the update/watchdog race, transient
+OpenBao secret propagation, retired routing cleanup, dependency replacement,
+scheduled media plan handoff, grounded image composition, and stale Zalo SSE recovery.

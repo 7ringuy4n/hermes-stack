@@ -47,7 +47,7 @@ print("RESULT PASS_OPENCODE_COMBOS")
 PY
 
 echo "=== router tail ==="
-docker logs router-worker 2>&1 | grep -iE 'Unable to determine|400.*hermes' | tail -5 || true
+docker logs model-router 2>&1 | grep -iE 'Unable to determine|400.*hermes' | tail -5 || true
 echo PREFLIGHT_DONE
 """
 

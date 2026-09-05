@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit: Omni/9Router usage payload coercion for exporter metrics."""
+"""Unit: Omni/OmniRoute usage payload coercion for exporter metrics."""
 from __future__ import annotations
 
 import importlib.util
@@ -7,14 +7,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-APP = ROOT / "architect" / "monitor" / "nine-exporter" / "app.py"
+APP = ROOT / "architect" / "monitor" / "router-exporter" / "app.py"
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("nine_exporter_app", APP)
+    spec = importlib.util.spec_from_file_location("router_exporter_app", APP)
     mod = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
-    sys.modules["nine_exporter_app"] = mod
+    sys.modules["router_exporter_app"] = mod
     spec.loader.exec_module(mod)
     return mod
 

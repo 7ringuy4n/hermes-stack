@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Rolling VPS deploy: backup+verify, sync source, rebuild workflow + gateway + zalo-api, restart Hermes.
 
 Does not destroy the stack. Does not run login-zalo / QR.
@@ -65,7 +65,7 @@ echo "GATEWAY=${ENABLE_API_GATEWAY:-0}"
 echo "=== PS ==="
 docker ps --format '{{.Names}} {{.Status}}' | sort
 echo "=== HEALTH ==="
-curl -sS -m 8 -o /dev/null -w '9router_models:%{http_code}\n' http://127.0.0.1:20128/v1/models || echo 9ROUTER_DOWN
+curl -sS -m 8 -o /dev/null -w 'omni_models:%{http_code}\n' http://127.0.0.1:20129/v1/models || echo OMNI_DOWN
 echo
 curl -sS -m 8 http://127.0.0.1:8080/health || echo TRAEFIK_DOWN
 echo
@@ -225,10 +225,10 @@ profiles=""
 [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles="$profiles --profile clouddrive"
 [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles="$profiles --profile comfy-gpu"
 
-docker compose --project-directory /opt/assistant $files $profiles build workflow router-worker
+docker compose --project-directory /opt/assistant $files $profiles build workflow model-router
 docker rm -f model-router >/dev/null 2>&1 || true
 docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate workflow
-docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate router-worker
+docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate model-router
 if [[ "${ENABLE_SCHEDULE:-0}" == "1" ]]; then
   docker compose --project-directory /opt/assistant $files $profiles build schedule-worker
   docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate schedule-worker
@@ -344,7 +344,7 @@ fi
 # Hermes Agent transcripts live under replica HERMES_HOME (not only Valkey).
 # A huge sessions.json makes a 1-word ping compact + 413 on the LLM hop.
 find /data/assistant/replicas -name sessions.json -not -path '*/home/.cache/*' -print -delete 2>/dev/null || true
-# Hermes chat must go through model-router (compose default). Direct 9router inherits
+# Hermes chat must go through model-router (compose default). Direct omni-router inherits
 # a huge context and returns 413 from the upstream model.
 python3 - <<'PY'
 from pathlib import Path
@@ -352,7 +352,7 @@ import re
 p = Path("/opt/assistant/.env")
 t = p.read_text(encoding="utf-8", errors="replace")
 t2, n = re.subn(
-    r"(?m)^HERMES_OPENAI_BASE_URL=.*9router.*$",
+    r"(?m)^HERMES_OPENAI_BASE_URL=.*omni-router.*$",
     "HERMES_OPENAI_BASE_URL=http://model-router:8096/v1",
     t,
 )
@@ -364,7 +364,7 @@ else:
 cfg = Path("/data/assistant/config.yaml")
 if cfg.is_file():
     raw = cfg.read_text(encoding="utf-8", errors="replace")
-    fixed = raw.replace("http://9router:20128/v1", "http://model-router:8096/v1")
+    fixed = raw.replace("http://omni-router:20129/v1", "http://model-router:8096/v1")
     if fixed != raw:
         cfg.write_text(fixed, encoding="utf-8")
         print("HERMES_CONFIG_YAML_TO_MODEL_ROUTER")
@@ -435,11 +435,11 @@ done
 
 echo "=== POST HEALTH ==="
 ok=1
-n9c=$(curl -sS -m 8 -o /dev/null -w '%{http_code}' http://127.0.0.1:20128/ || echo 000)
-# 9router UI: / is 307, /health is 404, /v1/models is 401 â€” any of these means the process is up
-case "$n9c" in
-  200|307|401|404) echo "9router_http=$n9c" ;;
-  *) echo 9ROUTER_DOWN; ok=0 ;;
+omni_code=$(curl -sS -m 8 -o /dev/null -w '%{http_code}' http://127.0.0.1:20129/ || echo 000)
+# OmniRoute UI may redirect; any known healthy UI/auth status proves the process is up.
+case "$omni_code" in
+  200|307|401|404) echo "omni_http=$omni_code" ;;
+  *) echo OMNI_DOWN; ok=0 ;;
 esac
 curl -fsS -m 8 http://127.0.0.1:8090/health >/dev/null || { echo DISPATCHER_DOWN; ok=0; }
 tr_ok=0
@@ -456,15 +456,15 @@ if [[ "$tr_ok" != "1" ]]; then
 fi
 curl -fsS -m 8 http://127.0.0.1:8108/health >/dev/null || { echo WORKFLOW_DOWN; ok=0; }
 curl -fsS -m 8 http://127.0.0.1:8110/health >/dev/null || { echo SCHEDULE_WORKER_DOWN; ok=0; }
-if [[ "${ENABLE_API_GATEWAY:-0}" == "1" ]]; then
+if [[ "${ENABLE_API_GATEWAY:-0}" == "1" || "${ENABLE_API_GATEWAY:-0}" == "active" ]]; then
   curl -fsS -m 8 http://127.0.0.1:8088/health >/dev/null || { echo GATEWAY_DOWN; ok=0; }
 fi
-if [[ "${ENABLE_ZALO:-0}" == "1" ]]; then
+if [[ "${ENABLE_ZALO:-0}" == "1" || "${ENABLE_ZALO:-0}" == "active" ]]; then
   curl -fsS -m 8 http://127.0.0.1:8100/health >/dev/null || { echo ZALO_API_DOWN; ok=0; }
 fi
-echo -n "hermes_to_9router="
+echo -n "hermes_to_omni-router="
 if [[ -n "$hname" ]]; then
-  docker exec "$hname" python3 -c "import urllib.request; urllib.request.urlopen('http://9router:20128/', timeout=5); print('ok')" 2>/dev/null || { echo fail; ok=0; }
+  docker exec "$hname" python3 -c "import urllib.request; urllib.request.urlopen('http://omni-router:20129/', timeout=5); print('ok')" 2>/dev/null || { echo fail; ok=0; }
 else
   echo fail; ok=0
 fi
@@ -578,7 +578,7 @@ for j in jobs:
     no_agent = j.get("no_agent")
     print(f"expr={expr} prompt_len={len(prompt)} last={last or '-'} no_agent={no_agent}")
 PY
-echo "HERMES_9ROUTER_OK=$ok"
+echo "STACK_ROUTE_OK=$ok"
 echo APPLY_DONE
 """,
             timeout=1800,
@@ -587,10 +587,10 @@ echo APPLY_DONE
             note("apply", "fail", "missing APPLY_DONE")
             write_report()
             return 1
-        if "HERMES_9ROUTER_OK=1" in apply:
-            note("hermes_9router", "pass", "9router health+models and edge probes ok")
+        if "STACK_ROUTE_OK=1" in apply:
+            note("hermes_omni", "pass", "OmniRoute, Model Router, and edge probes ok")
         else:
-            note("hermes_9router", "fail", apply[-500:])
+            note("hermes_omni", "fail", apply[-500:])
         if "PASS workflow vps" in apply:
             note("workflow_vps", "pass", "health + 3-job drain + plan")
         if "PASS migrate" in apply:

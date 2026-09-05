@@ -551,9 +551,7 @@ func injectZalo(sch scheduleRow, text string) error {
 	if threadID == "" {
 		return fmt.Errorf("missing zalo thread")
 	}
-	body, _ := json.Marshal(map[string]any{
-		"type": "message",
-		"payload": map[string]any{
+	payload := map[string]any{
 			"threadId":          threadID,
 			"threadType":        threadType,
 			"senderId":          senderID,
@@ -563,9 +561,22 @@ func injectZalo(sch scheduleRow, text string) error {
 			"scheduleFire":      true,
 			"scheduleDelivery":  delivery,
 			"scheduleId":        sch.ID,
-			"executionId":       strMap(sch.Origin, "execution_id"),
-			"correlationId":     strMap(sch.Origin, "correlation_id"),
-		},
+		"executionId":       strMap(sch.Origin, "execution_id"),
+		"correlationId":     strMap(sch.Origin, "correlation_id"),
+		"messageId":         "schedule:" + sch.ID + ":" + strMap(sch.Origin, "execution_id"),
+	}
+	// The creation-time classifier plan is authoritative for process delivery.
+	// Carry it into the fire event so the adapter does not spend another model
+	// request reclassifying identical work at the due time.
+	if plan, ok := sch.Context["plan"]; ok && plan != nil {
+		// Preserve the decoded JSON value verbatim. Restricting this to one Go
+		// concrete map type can silently drop valid JSON objects loaded through a
+		// different driver representation, forcing an expensive due-time classify.
+		payload["plan"] = plan
+	}
+	body, _ := json.Marshal(map[string]any{
+		"type":    "message",
+		"payload": payload,
 	})
 	req, err := http.NewRequest(http.MethodPost, zaloInject, bytes.NewReader(body))
 	if err != nil {

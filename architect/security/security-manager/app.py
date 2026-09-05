@@ -46,12 +46,11 @@ FAIL_CLOSED = _env_active("SECURITY_FAIL_CLOSED")
 EMBED_UPSTREAM = (
     os.environ.get("LLM_JUDGE_URL")
     or os.environ.get("OPENAI_BASE_URL")
-    or "http://9router:20128/v1"
+    or "http://model-router:8096/v1"
 ).rstrip("/")
 API_KEY = (
     os.environ.get("LLM_JUDGE_KEY")
     or os.environ.get("OPENAI_API_KEY")
-    or os.environ.get("N9ROUTER_API_KEY")
     or ""
 )
 YARA_RULES = os.environ.get("SECURITY_YARA_RULES", "/app/rules/lab.yar")

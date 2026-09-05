@@ -43,7 +43,7 @@ bash scripts/main/sync-model-router-skills.sh
 1. One SoT folder — this skill. One LLM hop.
 2. Host validates enums / protocol only; no keyword NLU for intent. Classify Python does not phrase-scan schedule, delay, or destination.
 3. List/inspect ≠ delete; create schedules need temporal fields; destination names go in `target_channel`.
-4. After editing a part, sync the bake fallback and recreate `router-worker`.
+4. After editing a part, sync the bake fallback and recreate `model-router`.
 
 ## Related
 

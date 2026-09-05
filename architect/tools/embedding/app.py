@@ -1,6 +1,6 @@
 """Embedding + lightweight rerank layer.
 
-Tries OpenAI-compatible upstream (9Router) first. If the upstream has no
+Tries the OpenAI-compatible OmniRoute upstream first. If the upstream has no
 embedding credentials/models, falls back to a local ONNX model so ingest
 and skill learn keep working on Medium/High without paid embed keys.
 """
@@ -15,7 +15,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-UPSTREAM = os.environ.get("EMBED_UPSTREAM", "http://9router:20128/v1").rstrip("/")
+UPSTREAM = os.environ.get("EMBED_UPSTREAM", "http://model-router:8096/v1").rstrip("/")
 API_KEY = os.environ.get("EMBED_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
 MODEL = os.environ.get("EMBED_MODEL", "openai/text-embedding-3-small")
 LOCAL_MODEL = os.environ.get("EMBED_LOCAL_MODEL", "BAAI/bge-small-en-v1.5")

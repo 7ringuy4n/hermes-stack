@@ -46,7 +46,7 @@ Whole system: [03-architecture.md](./03-architecture.md).
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;">memory-manager<br/>context</td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;">knowledge-learn<br/>+ messages UX</td>
     <td style="padding:10px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;width:25%;">chat · research<br/>upload</td>
-    <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;">9Router</td>
+    <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:25%;">OmniRoute</td>
   </tr>
   <tr><td colspan="5" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr>
@@ -267,7 +267,7 @@ Valkey = short-term. Postgres = durable facts.
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:22%;">Qdrant<br/>knowledge</td>
   </tr>
   <tr>
-    <td colspan="5" style="padding:10px;background:#2563eb;color:#fff;text-align:center;">Also: Hermes cite · embedding via 9Router</td>
+    <td colspan="5" style="padding:10px;background:#2563eb;color:#fff;text-align:center;">Also: Hermes cite · embedding via OmniRoute</td>
   </tr>
 </table>
 
@@ -300,7 +300,7 @@ Valkey = short-term. Postgres = durable facts.
   <tr>
     <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:22%;">hermes<br/>+ embedding</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:14px;background:#e8f4ea;border:3px solid #fbbf24;text-align:center;width:36%;"><b>THIS — models</b><br/>9Router · dispatcher</td>
+    <td style="padding:14px;background:#e8f4ea;border:3px solid #fbbf24;text-align:center;width:36%;"><b>THIS — models</b><br/>OmniRoute · dispatcher</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:22%;">LLM providers<br/>web Med+</td>
   </tr>
@@ -312,7 +312,7 @@ Valkey = short-term. Postgres = durable facts.
   <tr>
     <td style="padding:12px;background:#2563eb;color:#fff;text-align:center;width:18%;">Hermes</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:22%;">9Router → Providers</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:22%;">OmniRoute → Providers</td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">+</td>
     <td style="padding:12px;background:#fff8e6;border:1px solid #f0e0b0;text-align:left;width:44%;">
       dispatcher<br/>
@@ -451,7 +451,7 @@ Valkey = short-term. Postgres = durable facts.
   </tr>
 </table>
 
-Grafana **pairs with Prometheus** (`node-exporter` for Hardware panels, `nine-exporter` for 9Router, `stack-exporter` for UP/DOWN). Loki **pairs with Alloy**. OmniRouter **pairs with `omni-exporter`** when metrics are on. Extra usage: Grafana+Prometheus ~1.5 GiB / ~10 GB / ~0.5 vCPU, Loki+Alloy ~1.5 GiB / ~20 GB / ~0.5 vCPU, all optional features **~5 GiB RAM · ~40 GB disk · ~2 vCPU** — [HARDWARE.md](./HARDWARE.md).
+Grafana **pairs with Prometheus** (`node-exporter` for Hardware panels, `omni-exporter` for OmniRoute, `stack-exporter` for UP/DOWN). Loki **pairs with Alloy**. OmniRouter **pairs with `omni-exporter`** when metrics are on. Extra usage: Grafana+Prometheus ~1.5 GiB / ~10 GB / ~0.5 vCPU, Loki+Alloy ~1.5 GiB / ~20 GB / ~0.5 vCPU, all optional features **~5 GiB RAM · ~40 GB disk · ~2 vCPU** — [HARDWARE.md](./HARDWARE.md).
 
 ---
 

@@ -5,7 +5,9 @@
 hermes/data/**
 **/__pycache__/
 **/.cache/
+.pytest_cache/
 *.pyc
+*.pyo
 .DS_Store
 *.pem
 *.key

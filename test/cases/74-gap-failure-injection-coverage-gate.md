@@ -28,7 +28,7 @@ For every production component, require at least:
 | Hermes | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Model Router | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | OmniRouter | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 9Router | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OmniRoute | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Valkey | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | PostgreSQL | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Qdrant | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |

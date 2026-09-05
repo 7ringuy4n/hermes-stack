@@ -216,8 +216,8 @@ def _parse_health_targets(raw: str) -> list[tuple[str, str, str, int, str]]:
             port = int(port_s)
         except ValueError:
             continue
-        kind = "tcp" if name in ("clamav", "redis_via_tcp", "9router") or path == "" else "http"
-        if name in ("redis_via_tcp", "clamav", "9router"):
+        kind = "tcp" if name in ("clamav", "redis_via_tcp") or path == "" else "http"
+        if name in ("redis_via_tcp", "clamav"):
             kind = "tcp"
         if name == "qdrant" and path == "/readyz":
             kind = "http"

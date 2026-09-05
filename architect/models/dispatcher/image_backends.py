@@ -1,6 +1,6 @@
-"""Image generation backends (legacy helper; scenic diffusion is Omni-direct).
+"""Image generation backend helper for OmniRoute.
 
-Diffusion via OmniRouter /images/generations always uses combo IMAGE_GEN_COMBO
+Diffusion via OmniRoute /images/generations always uses combo IMAGE_GEN_COMBO
 (default ``image-gen``) whether Media worker is active or inactive — never the
 chat combo ``hermes`` for still images.
 
@@ -37,8 +37,6 @@ def image_backends() -> list[str]:
     out: list[str] = []
     if backend_available("omni"):
         out.append("omni")
-    if backend_available("n9"):
-        out.append("n9")
     return out
 
 
@@ -49,12 +47,6 @@ def backend_available(name: str) -> bool:
             return False
         base = _env("OMNIROUTER_BASE_URL", default="http://omni-router:20129/v1")
         key = _env("OMNIROUTER_API_KEY")
-        return bool(base and key)
-    if n == "n9":
-        if not env_active("ENABLE_9ROUTER", default="inactive"):
-            return False
-        base = _env("N9ROUTER_BASE_URL", "OPENAI_BASE_URL", default="http://9router:20128/v1")
-        key = _env("N9ROUTER_API_KEY", "OPENAI_API_KEY")
         return bool(base and key)
     if n == "pillow":
         return True
@@ -198,20 +190,6 @@ def gen_omni(prompt: str, *, size: Optional[str] = None) -> bytes:
     )
 
 
-def gen_n9(prompt: str, *, size: Optional[str] = None) -> bytes:
-    base = _env("N9ROUTER_BASE_URL", "OPENAI_BASE_URL", default="http://9router:20128/v1")
-    key = _env("N9ROUTER_API_KEY", "OPENAI_API_KEY")
-    if not key:
-        raise RuntimeError("N9ROUTER_API_KEY missing")
-    return _gen_openai_images(
-        base=base,
-        key=key,
-        prompt=prompt,
-        model=image_gen_combo(),
-        size=size,
-    )
-
-
 def generate_image_bytes(
     prompt: str,
     provider: Optional[str] = None,
@@ -226,9 +204,7 @@ def generate_image_bytes(
     order: list[str] = []
     if provider:
         p = provider.strip().lower()
-        if p in {"9router", "n9router"}:
-            p = "n9"
-        if p in {"omni", "n9"}:
+        if p == "omni":
             order.append(p)
     for b in image_backends():
         if b not in order:
@@ -237,7 +213,7 @@ def generate_image_bytes(
         order.append("pillow")
 
     if not order:
-        raise RuntimeError("no image backends available (configure OmniRouter or 9Router)")
+        raise RuntimeError("no image backends available (configure OmniRoute)")
 
     safe_prompt = _diffusion_safe_prompt(prompt)
     if safe_prompt != (prompt or "").strip():
@@ -254,14 +230,6 @@ def generate_image_bytes(
                     raise RuntimeError(
                         "low-quality image from combo image-gen — "
                         "check Omni combo members or strengthen SCENE prompt via classify/image-gen"
-                    )
-                return blob, image_gen_combo(), errors
-            if b == "n9":
-                blob = gen_n9(safe_prompt, size=size)
-                if _looks_like_low_quality_image(blob, size=size):
-                    raise RuntimeError(
-                        "low-quality image from combo image-gen — "
-                        "check combo members or strengthen SCENE prompt via classify/image-gen"
                     )
                 return blob, image_gen_combo(), errors
             if b == "pillow":

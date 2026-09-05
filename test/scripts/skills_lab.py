@@ -245,10 +245,10 @@ else
 fi
 
 echo "=== FIRST SETUP LLM ==="
-if grep -qE '^N9ROUTER_INITIAL_PASSWORD=.+' .env; then
+if grep -qE '^OMNIROUTER_INITIAL_PASSWORD=.+' .env; then
   bash run.sh first-setup-llm || true
 else
-  echo "WARN first-setup-llm skipped (N9ROUTER_INITIAL_PASSWORD empty)"
+  echo "WARN first-setup-llm skipped (OMNIROUTER_INITIAL_PASSWORD empty)"
 fi
 
 echo "=== RECREATE EMBED+INGEST (local fallback image) ==="

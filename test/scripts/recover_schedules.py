@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Recover Hermes jobs.json, restart replicas, rebuild zalo-api (no destroy)."""
 from __future__ import annotations
 

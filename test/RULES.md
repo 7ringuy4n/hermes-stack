@@ -177,7 +177,7 @@ Test:
 - No policy bypass through fallback/error paths.
 - **Isolation vs LLM judge** (`cases/10-security-isolation-risks.md`): judge default off; `CLEAN` must not allow; prompt-injection excerpt must not become the security boundary.
 - **Container socket:** `docker.sock` must not be mounted on security-manager or zalo-api; `docker-socket-proxy` must not run unless `SECURITY_SANDBOX=1`.
-- OpenBao / 9router / Postgres host publishes stay on loopback (not Traefik).
+- OpenBao / omni-router / Postgres host publishes stay on loopback (not Traefik).
 
 For blocked operations, verify the user receives a **short, safe alert**, not internal logs or security details.
 
@@ -192,7 +192,7 @@ For blocked operations, verify the user receives a **short, safe alert**, not in
 
 Create installation and functional test cases for every optional service, including where applicable:
 
-- `9router`
+- `omni-router`
 - `Omnirouter`
 - Other LLM routers/providers
 - Memory services
@@ -417,7 +417,7 @@ Every capability must include at least one **fail event**, not only success.
 | Zalo media + lịch delivery | Video invalid-param / leftover job | Remuxed mp4 sent; completed job must not claim a later file; media turns result-only (case 28) |
 | Zalo latency SLO | 5 short text pings | FAIL if any sample **> 5s** on localhost (case 17) |
 | Grafana integration | Grafana on → each deployed scrape target | `assistant_service_up` + exporter scrape success (case 20) |
-| Default routers | 9Router always; OmniRouter default 0 | Hermes connected; flag matches container (case 21) |
+| Default routers | OmniRoute always; OmniRouter default 0 | Hermes connected; flag matches container (case 21) |
 | Schedule TZ | 05:58 local → daily 06:00 | Must be **today**, not tomorrow (case 15) |
 | Web search backends | `/v1/search` + `/health` | Record `backend` field (case 18) |
 | File pipeline security | EICAR + matrix | AV inbound vs YARA paths (case 19) |
@@ -468,7 +468,7 @@ When re-testing a live High/Zalo lab:
 | Web search backend chain | `cases/18-web-search-backends.md` |
 | File/OCR/YARA/AV matrix | `cases/19-file-pipeline-security.md` |
 | Grafana component integration | `cases/20-grafana-component-integration.md` |
-| Default 9Router / OmniRouter connected | `cases/21-defaults-routers-connected.md` |
+| Default OmniRoute / OmniRouter connected | `cases/21-defaults-routers-connected.md` |
 | Zalo busy interrupt + multi-task cron | `cases/22-zalo-busy-cron-multi.md` |
 | Zalo inbound FIFO (plenty of requests) | `cases/23-zalo-inbound-queue.md` |
 | Plenty-in-one + same/different-time cron | `cases/24-workflow-multi-cron-channels.md` |

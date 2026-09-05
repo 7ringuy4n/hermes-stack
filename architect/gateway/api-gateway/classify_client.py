@@ -585,7 +585,7 @@ def classify_text(
             return normalize_plan(_planner(blob), blob, tz)
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
-    base = (os.environ.get("MODEL_ROUTER_URL") or "http://router-worker:8096").rstrip("/")
+    base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
     payload = json.dumps(
         {
             "text": blob,
@@ -655,7 +655,7 @@ def classify_outbound(text: str) -> dict[str, Any]:
             return normalize_outbound(_outbound_planner(blob))
         except TypeError:
             return normalize_outbound(_outbound_planner(blob, timezone="Asia/Ho_Chi_Minh"))
-    base = (os.environ.get("MODEL_ROUTER_URL") or "http://router-worker:8096").rstrip("/")
+    base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
     payload = json.dumps({"text": blob}, ensure_ascii=False).encode("utf-8")
     timeout = float(os.environ.get("MODEL_ROUTER_OUTBOUND_TIMEOUT_S") or 30.0)
     try:

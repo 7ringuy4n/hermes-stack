@@ -1,5 +1,5 @@
-﻿# -*- coding: utf-8 -*-
-"""Live defaults vs 9router/OmniRouter connectivity (SSH).
+# -*- coding: utf-8 -*-
+"""Live Model Router and OmniRoute connectivity (SSH).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 Reports: test/reports/run-defaults-routers/ (no host/account)
@@ -47,19 +47,16 @@ def main() -> int:
             c,
             rf"""
 set -euo pipefail
+trap 'rm -f /tmp/def-ping.json' EXIT
 export LC_ALL=C.UTF-8
 cd /opt/assistant
 set -a; . ./.env; set +a
 echo "PROFILE=${{ASSISTANT_PROFILE:-unset}}"
 echo "MODEL_ROUTER=${{ENABLE_MODEL_ROUTER:-1}}"
 echo "OMNI=${{ENABLE_OMNIROUTER:-0}}"
-echo "N9=${{ENABLE_9ROUTER:-0}}"
 echo "GRAFANA=${{ENABLE_GRAFANA:-0}}"
-echo "n9=$(docker inspect -f '{{{{.State.Status}}}}' 9router 2>/dev/null || echo missing)"
 echo "mr=$(docker inspect -f '{{{{.State.Status}}}}' model-router 2>/dev/null || echo missing)"
 echo "omni=$(docker inspect -f '{{{{.State.Status}}}}' omni-router 2>/dev/null || echo missing)"
-echo -n "hermes_to_9router="
-docker exec assistant-hermes-1 python3 -c "import urllib.request; urllib.request.urlopen('http://9router:20128/', timeout=5); print('ok')" 2>/dev/null || echo fail
 echo -n "hermes_to_model_router="
 docker exec assistant-hermes-1 python3 -c "import urllib.request; urllib.request.urlopen('http://model-router:8096/health', timeout=5); print('ok')" 2>/dev/null || echo fail
 echo "mr_health=$(curl -sS -m 5 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:8096/health || echo fail)"
@@ -84,14 +81,6 @@ echo DEFAULTS_LAB_DONE
         if "DEFAULTS_LAB_DONE" not in out:
             note("lab", "FAIL", "missing done marker")
             return 1
-        nine_off = "N9=0" in out or "ENABLE_9ROUTER=0" in out
-        if nine_off:
-            note("9router", "SKIP", "ENABLE_9ROUTER=0 (Omni-only default)")
-        elif "hermes_to_9router=ok" not in out:
-            note("9router", "FAIL", "Hermes cannot reach 9router")
-            fails += 1
-        else:
-            note("9router", "PASS", "Hermes connected")
         if "MODEL_ROUTER=0" in out:
             note("model_router", "RECORD", "flag off (non-default)")
         elif "hermes_to_model_router=ok" not in out:
@@ -99,17 +88,18 @@ echo DEFAULTS_LAB_DONE
             fails += 1
         else:
             note("model_router", "PASS", "connected")
-        omni_flag_on = "OMNI=1" in out
+        omni_flag_on = "OMNI=1" in out or "OMNI=active" in out
         omni_running = "omni=running" in out
         if omni_flag_on != omni_running:
             note("omni_match", "FAIL", "flag vs container mismatch")
             fails += 1
         else:
             note("omni_match", "PASS", "flag matches container")
-        if "OMNI=0" in out:
-            note("omni_default", "RECORD", "live OmniRouter off (matches High default)")
+        if not omni_flag_on:
+            note("omni_default", "FAIL", "live OmniRoute is disabled")
+            fails += 1
         else:
-            note("omni_default", "RECORD", "live OmniRouter on (lab override of default 0)")
+            note("omni_default", "PASS", "live OmniRoute enabled")
         for line in out.splitlines():
             if line.startswith("PING_HTTP="):
                 note("ping", "RECORD", line)

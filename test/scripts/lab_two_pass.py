@@ -196,7 +196,7 @@ cd {REMOTE}
 set -a; . ./.env; set +a || true
 export ASSISTANT_PROFILE="${{ASSISTANT_PROFILE:-high}}"
 bash run.sh down || true
-NAMES="zalo-proxy zalo-api admin-api hermes traefik api-gateway docker-socket-proxy openbao postgres redis qdrant 9router model-router dispatcher memory session ingest embedding ocr jobs searxng comfyui-cpu security-manager siem authz policy-center notify av-gateway clamav"
+NAMES="zalo-proxy zalo-api admin-api hermes traefik api-gateway docker-socket-proxy openbao postgres redis qdrant omni-router model-router dispatcher memory session ingest embedding ocr jobs searxng comfyui-cpu security-manager siem authz policy-center notify av-gateway clamav"
 for n in $NAMES; do docker rm -f "$n" 2>/dev/null || true; done
 docker ps -aq --filter name=assistant | xargs -r docker rm -f || true
 docker ps -aq --filter name=hermes | xargs -r docker rm -f || true

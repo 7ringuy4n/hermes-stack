@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Best-effort export of OmniRouter / 9Router combos + settings into a backup stamp.
+"""Best-effort export of OmniRoute combos and settings into a backup stamp.
 
-SoT for restore remains the Docker volumes (omni_router_data / nine_router_data).
+The source of truth for restore remains the ``omni_router_data`` Docker volume.
 This JSON is for audit/verify and operator visibility after restore.
 """
 from __future__ import annotations
@@ -14,6 +14,17 @@ import urllib.request
 from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Any
+
+
+def env_active(value: str | None, default: str = "0") -> bool:
+    return str(value or default).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+        "active",
+        "enabled",
+    }
 
 
 def load_dotenv(path: Path) -> dict[str, str]:
@@ -121,25 +132,14 @@ def main() -> int:
     env.update({k: v for k, v in os.environ.items() if k.startswith(("OMNI", "N9", "ENABLE_"))})
 
     results: list[dict[str, Any]] = []
-    if str(env.get("ENABLE_OMNIROUTER") or "1").strip() in {"1", "true", "yes", "on"}:
+    if env_active(env.get("ENABLE_OMNIROUTER"), "1"):
         port = env.get("OMNIROUTER_HOST_PORT") or "20129"
-        pw = (
-            env.get("OMNIROUTER_INITIAL_PASSWORD")
-            or env.get("N9ROUTER_INITIAL_PASSWORD")
-            or ""
-        ).strip()
+        pw = (env.get("OMNIROUTER_INITIAL_PASSWORD") or "").strip()
         results.append(
             export_one("omni-router", f"http://127.0.0.1:{port}", pw, out_dir)
         )
     else:
         results.append({"name": "omni-router", "status": "skipped", "note": "ENABLE_OMNIROUTER off"})
-
-    if str(env.get("ENABLE_9ROUTER") or "0").strip() in {"1", "true", "yes", "on"}:
-        port = env.get("N9ROUTER_HOST_PORT") or "20128"
-        pw = (env.get("N9ROUTER_INITIAL_PASSWORD") or "").strip()
-        results.append(export_one("9router", f"http://127.0.0.1:{port}", pw, out_dir))
-    else:
-        results.append({"name": "9router", "status": "skipped", "note": "ENABLE_9ROUTER off"})
 
     summary = {"schema": "assistant-router-export-summary-v1", "results": results}
     (out_dir / "export-summary.json").write_text(

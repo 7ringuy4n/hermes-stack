@@ -5482,3 +5482,47 @@ See `history/2026-09-04/README.md` section “Generic image composition replaces
 ## 2026-09-04 21:04 +07 — update guidance referenced a missing helper
 
 See `history/2026-09-04/README.md` section “Production update guidance points to the real entrypoint”.
+## 2026-09-05 03:30 +07 — update/watchdog lock and transient secret loading
+
+### Symptom
+
+An update could remove enabled optional services or race the watchdog while
+Compose was recreating containers. Secrets scrubbed from disk could also be
+missing from the next consumer recreate.
+
+### Root cause
+
+Several update branches recognized only literal `1`, while the supported value
+is also `active`. The updater and watchdog had no shared exclusion lock, and
+Compose interpolation depended on secrets being written back to repository env.
+
+### Fix and prevention
+
+Use `_env_active` for option decisions, hold the shared stack-maintenance lock
+for update, have stack-watch exit when the lock is held, and export OpenBao's
+mode-0600 transient file into the current shell before Compose. Recreate the
+declared consumers, then scrub both disk locations. Tests must verify rotation
+without printing the rotated value.
+## 2026-09-05 12:45 +07 — scheduled media reclassified or split at fire
+
+### Symptom
+
+A delayed search-to-image request stored successfully but was classified again,
+split into unrelated workflow jobs, or delivered a generated background with
+competing labels. A separate half-open SSE connection could report one client
+while accepting bridge injections that never reached Hermes.
+
+### Root cause
+
+The scheduler copied its plan only for one concrete map representation. Coarse
+classifier hints could override explicit media task types, and the diffusion
+prompt still inherited classifier prose about the overlay. SSE reads had no
+deadline despite a 15-second bridge heartbeat.
+
+### Fix and prevention
+
+Forward the stored plan as an opaque JSON value, execute schedule fires with the
+persisted structural render contract, and let grounded composition author a clean
+background brief plus overlay plan. Treat explicit media/image fields as stronger
+than broad artifact hints. Keep SSE read timeout at three heartbeat intervals so
+half-open connections reconnect. Regression tests cover all four boundaries.

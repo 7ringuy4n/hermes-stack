@@ -1,4 +1,4 @@
-﻿---
+---
 name: docx-tools-local
 description: "ADVANCED local docx tooling only. Do NOT use for chat create-and-send (Zalo/Telegram) — use skill file-gen / Dispatcher POST /v1/office-file. Never pip/uv install reportlab/pypdf/openpyxl/python-docx in the agent."
 version: 1.1.0

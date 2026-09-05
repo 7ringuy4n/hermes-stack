@@ -2,6 +2,7 @@
 """Unit: model-authored content and design are validated before adaptive rendering."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -14,6 +15,8 @@ sys.path.insert(0, str(DISPATCHER))
 from media_shortcuts import (  # noqa: E402
     _image_prompt_assets,
     _json_object,
+    _omni_overlay_plan_model,
+    _omni_overlay_plan_timeout_s,
     _overlay_payload,
     _safe_overlay_design,
     _scene_visual_prompt,
@@ -24,6 +27,13 @@ OUT = ROOT / "scripts" / "temp" / "composed_image_overlay_unit"
 
 
 def main() -> int:
+    assert _omni_overlay_plan_timeout_s() == 120
+    assert _omni_overlay_plan_model() == "classifier"
+    os.environ["OMNIROUTER_CLASSIFY_COMBO"] = "structured-planner"
+    try:
+        assert _omni_overlay_plan_model() == "structured-planner"
+    finally:
+        os.environ.pop("OMNIROUTER_CLASSIFY_COMBO", None)
     assets = _image_prompt_assets()
     assert assets.get("composition_system")
     assert "weather" not in str(assets.get("composition_system")).lower()
@@ -53,6 +63,12 @@ def main() -> int:
     assert "photorealistic" not in prompt.lower()
     assert "negative space" in prompt.lower()
     assert "readable text" in prompt.lower()
+    assert "background plate only" in prompt.lower()
+    assert "devices" in prompt.lower()
+    assert "plain gradient" in prompt.lower()
+    assert "requested subject" in prompt.lower()
+    assert "time-sensitive" in str(assets.get("composition_system"))
+    assert "background_scene" in str(assets.get("composition_system"))
 
     from PIL import Image
 

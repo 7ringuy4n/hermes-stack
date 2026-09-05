@@ -1,3 +1,12 @@
+## 2026-09-05 12:45 +07 — grounded composition and resilient scheduled media
+
+- Stored schedule plans now survive the scheduler handoff and execute directly at fire time without a second classification or compound-workflow split.
+- Equivalent image contracts remain executable when a provider emits coarse `file` hints or flattens child task types, using structural render fields rather than topic phrases.
+- Grounded composition planning now owns both overlay content/design and the clean background brief; live facts, scene conditions, language, typography, and timestamps adapt to the request without fixed subject templates.
+- Composed-image backgrounds exclude competing factual text and empty UI surfaces while preserving the requested subject, medium, mood, and viewpoint.
+- Zalo SSE reads use a heartbeat-aware deadline so half-open streams reconnect instead of remaining falsely healthy while inbound messages disappear.
+- Stack-owned image, embedding, search, and video endpoints now restore the requested combo alias in OmniRoute call logs while retaining the resolved provider model separately.
+
 ## 2026-09-04 20:10 +07 — scheduled live-scene execution and clean overlays
 
 - Classify now treats outer timing as authoritative, preserves search→media work as one `process` schedule, emits an English overlay heading, and uses a bounded low-reasoning classifier budget.
@@ -2653,3 +2662,11 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 ## 2026-09-04 21:04 +07 — correct production update guidance
 
 - Replaced a stale reference to a nonexistent remote-update helper with the repository's backup-first `run.sh update` workflow from a verified `main` checkout.
+## 2026-09-05 03:30 +07 — routing, secret lifecycle, and bridge hardening
+
+- Consolidated runtime model traffic on OmniRoute and renamed the internal task-aware service to `model-router`; removed the retired router and local audio-transcription paths.
+- Setup preserves operator-owned combo membership while creating missing media capability shells, recognizing catalog-declared multimodal models, and offering Pollinations device authorization on an interactive first setup.
+- Stack updates and the watchdog now share a maintenance lock, interpret active/inactive flags consistently, and avoid unrelated restarts during long-running requests.
+- OpenBao secrets are loaded into the update process, propagated by controlled consumer recreation, and scrubbed from transient and repository env files afterward.
+- Zalo bridge HTTP/SSE transport is separated from conversation policy, and the vendored Zalo runtime replaces discontinued CryptoJS primitives with Node.js crypto compatibility-tested implementations.
+- Classifier media guidance is language-neutral and purpose-neutral; composed-image layout and typography remain model-designed from grounded content.

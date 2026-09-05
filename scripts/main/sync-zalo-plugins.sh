@@ -43,7 +43,7 @@ if [[ -d "${HERMES_SHARED_DATA}/replicas" ]]; then
   zalo_log "overlay zalo plugins into Hermes replica dirs"
 fi
 
-if docker info >/dev/null 2>&1; then
+if [[ "${SYNC_ZALO_RESTART:-1}" == "1" ]] && docker info >/dev/null 2>&1; then
   mapfile -t hermes < <(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^assistant-hermes-' || true)
   if [[ ${#hermes[@]} -gt 0 ]]; then
     zalo_log "restart Hermes replicas after plugin sync (${#hermes[@]})"
@@ -51,6 +51,8 @@ if docker info >/dev/null 2>&1; then
   for c in "${hermes[@]}"; do
     docker restart "$c" >/dev/null 2>&1 || true
   done
+elif [[ "${SYNC_ZALO_RESTART:-1}" != "1" ]]; then
+  zalo_log "skip Hermes restart; caller will recreate the selected services"
 fi
 
 echo "OK: zalo plugins synced"
