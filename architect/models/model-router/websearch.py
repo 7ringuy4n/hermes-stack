@@ -244,9 +244,42 @@ async def _searxng_search(query: str, max_results: int) -> dict[str, Any]:
         )
         if len(rows) >= n:
             break
+    answer = data.get("answer") or None
+    if not rows:
+        for item in data.get("infoboxes") or []:
+            if not isinstance(item, dict):
+                continue
+            urls = item.get("urls") or []
+            first_url = urls[0] if isinstance(urls, list) and urls else {}
+            if not isinstance(first_url, dict):
+                first_url = {}
+            content = item.get("content") or item.get("infobox") or ""
+            title = item.get("title") or first_url.get("title") or query
+            url = first_url.get("url") or ""
+            if not content and not url:
+                continue
+            rows.append(
+                {
+                    "title": title,
+                    "url": url,
+                    "content": str(content)[:SNIPPET_CHARS],
+                    "provider": "searxng",
+                }
+            )
+            if len(rows) >= n:
+                break
+    if not rows and answer:
+        rows.append(
+            {
+                "title": query,
+                "url": "",
+                "content": str(answer)[:SNIPPET_CHARS],
+                "provider": "searxng",
+            }
+        )
     if not rows:
         raise RuntimeError("SearXNG fallback returned no results")
-    return {"backend": "searxng", "answer": None, "results": rows}
+    return {"backend": "searxng", "answer": answer, "results": rows}
 
 
 async def _tavily_extract(url: str) -> dict[str, Any]:

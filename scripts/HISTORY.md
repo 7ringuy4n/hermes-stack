@@ -5559,3 +5559,11 @@ invalid until the bridge health endpoint reports an active SSE subscriber.
 
 See `history/2026-09-05/README.md` section “Filesystem Zalo owner election
 required replica restarts”.
+
+## 2026-09-05 22:30 +07 — live outage fallback verification
+
+An OmniRoute stop test exposed two silent fallback gaps: numeric enabled values
+did not activate local embeddings, and SearXNG infobox-only responses were
+dropped. Core services now normalize the documented flag forms and preserve
+knowledge-panel search records. Future outage gates must exercise live service
+endpoints with OmniRoute stopped.

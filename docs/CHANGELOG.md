@@ -29,6 +29,10 @@
 - Image-analysis replies clear a late media-delivery marker immediately before
   sending, preventing a completed artifact from the preceding turn from muting
   the next turn's valid text response.
+- Local embedding fallback recognizes the same boolean values accepted by
+  Compose and remains available during an OmniRoute outage. SearXNG fallback
+  preserves useful answer and infobox records when public engines return no
+  ordinary result rows.
 
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
 
