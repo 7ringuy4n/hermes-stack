@@ -5591,4 +5591,5 @@ verdict.
 The shared Office renderer now strips inline Markdown chrome and converts pipe
 tables into native Word and spreadsheet cells. Spreadsheet output also adds a
 chart when a table exposes a usable numeric series; tests reject regressions
-that leak source markers into delivered documents.
+that leak source markers into delivered documents. Word preserves source block
+order and explicitly resets heading indents for reliable LibreOffice rendering.

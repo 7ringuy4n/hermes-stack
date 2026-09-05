@@ -627,4 +627,6 @@ The Office renderer now removes lightweight inline authoring markers and parses
 conventional pipe tables without locale- or topic-specific rules. Word writes
 native styled tables; spreadsheets preserve table cells and add a chart when a
 numeric series is available. Regression checks inspect package content for both
-native structure and absence of raw authoring chrome.
+native structure and absence of raw authoring chrome. Word block emission stays
+in source order, preventing a table from moving away from its authored section,
+and compact print-safe type avoids clipped headings and poorly balanced pages.

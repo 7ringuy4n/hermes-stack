@@ -495,8 +495,7 @@ def write_docx_styled(dest: Path, body: str) -> Path:
     from docx.oxml.ns import qn
     from docx.shared import Cm, Pt, RGBColor
 
-    title, subtitle, facts, sections, prose = _structured_content(body)
-    authored_tables = _markdown_tables(body)
+    title, _subtitle, _facts, _sections, _prose = _structured_content(body)
     doc = Document()
     section = doc.sections[0]
     section.top_margin = Cm(1.8)
@@ -506,20 +505,23 @@ def write_docx_styled(dest: Path, body: str) -> Path:
 
     normal = doc.styles["Normal"]
     normal.font.name = "Inter"
-    normal.font.size = Pt(10.5)
+    normal.font.size = Pt(9.5)
     normal.font.color.rgb = RGBColor(30, 45, 62)
-    normal.paragraph_format.space_after = Pt(6)
-    normal.paragraph_format.line_spacing = 1.15
+    normal.paragraph_format.space_after = Pt(4)
+    normal.paragraph_format.line_spacing = 1.05
     for style_name, size, color in (
-        ("Title", 28, RGBColor(18, 67, 112)),
-        ("Heading 1", 17, RGBColor(18, 67, 112)),
-        ("Heading 2", 13, RGBColor(37, 112, 170)),
+        ("Title", 23, RGBColor(18, 67, 112)),
+        ("Heading 1", 15, RGBColor(18, 67, 112)),
+        ("Heading 2", 12, RGBColor(37, 112, 170)),
     ):
         style = doc.styles[style_name]
         style.font.name = "Inter"
         style.font.size = Pt(size)
         style.font.color.rgb = color
         style.font.bold = True
+        style.paragraph_format.left_indent = Cm(0)
+        style.paragraph_format.right_indent = Cm(0)
+        style.paragraph_format.keep_with_next = True
 
     accent = doc.add_table(rows=1, cols=1)
     accent.autofit = False
@@ -533,52 +535,69 @@ def write_docx_styled(dest: Path, body: str) -> Path:
 
     p = doc.add_paragraph(style="Title")
     p.paragraph_format.space_before = Pt(10)
+    p.paragraph_format.left_indent = Cm(0)
+    p.paragraph_format.right_indent = Cm(0)
     p.add_run(title)
-    if subtitle:
-        p = doc.add_paragraph()
-        p.paragraph_format.space_after = Pt(12)
-        run = p.add_run(subtitle)
-        run.font.name = "Inter"
-        run.font.size = Pt(11)
-        run.font.color.rgb = RGBColor(84, 105, 126)
 
-    if facts:
-        table = doc.add_table(rows=0, cols=2)
-        table.style = "Light Shading Accent 1"
-        for label, value in facts:
-            cells = table.add_row().cells
-            cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-            cells[1].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-            left = cells[0].paragraphs[0]
-            right = cells[1].paragraphs[0]
-            lrun = left.add_run(label)
-            lrun.bold = True
-            lrun.font.color.rgb = RGBColor(37, 112, 170)
-            right.add_run(value)
-        doc.add_paragraph()
-
-    for rows in authored_tables:
-        column_count = max(len(row) for row in rows)
-        table = doc.add_table(rows=0, cols=column_count)
-        table.style = "Light Shading Accent 1"
-        for row_index, values in enumerate(rows):
-            cells = table.add_row().cells
-            for column_index in range(column_count):
-                value = values[column_index] if column_index < len(values) else ""
-                cells[column_index].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-                paragraph = cells[column_index].paragraphs[0]
-                run = paragraph.add_run(value)
-                if row_index == 0:
-                    run.bold = True
-                    run.font.color.rgb = RGBColor(18, 67, 112)
-        doc.add_paragraph()
-
-    for text in prose:
-        doc.add_paragraph(text)
-    for heading, rows in sections:
-        doc.add_heading(heading, level=1)
-        for row in rows:
-            doc.add_paragraph(row, style="List Bullet")
+    lines = (body or "").splitlines()
+    index = 0
+    title_consumed = False
+    while index < len(lines):
+        raw = lines[index].strip()
+        line = _clean_inline_markdown(raw)
+        index += 1
+        if not line or _skip_structural_junk(line):
+            continue
+        if line.startswith("|") and line.endswith("|") and line.count("|") >= 2:
+            rows: list[list[str]] = []
+            while True:
+                cells = [_clean_inline_markdown(cell) for cell in line[1:-1].split("|")]
+                compact = "".join(cells).replace("-", "").replace(":", "").replace(" ", "")
+                if compact:
+                    rows.append(cells)
+                if index >= len(lines):
+                    break
+                candidate = lines[index].strip()
+                if not (candidate.startswith("|") and candidate.endswith("|") and candidate.count("|") >= 2):
+                    break
+                line = candidate
+                index += 1
+            if rows:
+                column_count = max(len(row) for row in rows)
+                table = doc.add_table(rows=0, cols=column_count)
+                table.style = "Light Shading Accent 1"
+                for row_index, values in enumerate(rows):
+                    cells = table.add_row().cells
+                    for column_index in range(column_count):
+                        value = values[column_index] if column_index < len(values) else ""
+                        cells[column_index].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                        paragraph = cells[column_index].paragraphs[0]
+                        paragraph.paragraph_format.space_after = Pt(1)
+                        run = paragraph.add_run(value)
+                        run.font.size = Pt(9)
+                        if row_index == 0:
+                            run.bold = True
+                            run.font.color.rgb = RGBColor(18, 67, 112)
+                doc.add_paragraph()
+            continue
+        if line.startswith("#"):
+            level = 0
+            while level < len(line) and line[level] == "#":
+                level += 1
+            value = line[level:].strip()
+            if level == 1 and not title_consumed and value == title:
+                title_consumed = True
+                continue
+            if value:
+                doc.add_heading(value, level=1 if level <= 2 else 2)
+            continue
+        if line.startswith(("- ", "* ", "• ")):
+            doc.add_paragraph(line[2:].strip(), style="List Bullet")
+            continue
+        if not title_consumed and line == title:
+            title_consumed = True
+            continue
+        doc.add_paragraph(line)
 
     footer = section.footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
