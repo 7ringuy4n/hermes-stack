@@ -1,4 +1,4 @@
-﻿# models / dispatcher
+# models / dispatcher
 
 ## System architecture
 
@@ -6,7 +6,7 @@
 |--|--|
 | **Sits between** | Hermes / skills ↔ media backends |
 | **Owns** | image, office-file, media helpers, mode suggestion |
-| **Does not own** | LLM completions (Model Router) or web search (Router Worker `/v1/search`) |
+| **Does not own** | LLM completions (Model Router) or web search (Model Router `/v1/search`) |
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
@@ -20,7 +20,7 @@
 
 ## Purpose
 
-Media/File worker HTTP service: image generation, office-file create, media download/convert helpers, and soft mode suggestions. Web search is on the Router Worker (`model-router`), not here. Container: `dispatcher`.
+Media/File worker HTTP service: image generation, office-file create, media download/convert helpers, and soft mode suggestions. Web search is on the Model Router (`model-router`), not here. Container: `dispatcher`.
 
 ## Main functions
 

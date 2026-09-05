@@ -4,7 +4,7 @@
 #
 # Hardening (2026-08-16):
 #   - BOOT_GRACE_S: skip heals shortly after host boot (avoids false downs)
-#   - Do NOT restart Hermes on failed probes (only 9router/dispatcher + bad ctrs)
+#   - Do NOT restart Hermes on failed probes (only the failed service + bad containers)
 #   - COMPOSE_PROJECT_NAME defaults can be overridden (lab: nighthawk-lab)
 set -euo pipefail
 
@@ -30,6 +30,7 @@ else
   _data_root="/data/assistant"
 fi
 STATE_DIR="${_data_root}/watch"
+MAINTENANCE_LOCK="${STATE_DIR}/stack-maintenance.lock"
 COOLDOWN_FILE="${STATE_DIR}/stack-watch.cooldown"
 FAIL_COUNT_FILE="${STATE_DIR}/stack-watch.fail_count"
 DEGRADED_FILE="${STATE_DIR}/stack-watch.degraded"
@@ -52,6 +53,14 @@ if [[ ! -w "$STATE_DIR" ]]; then
     || true
 fi
 log() { echo "$(date -Is) stack-watch: $*"; }
+
+skip_during_maintenance() {
+  exec 9>"$MAINTENANCE_LOCK"
+  if ! flock -n 9; then
+    log "maintenance active — skip heal cycle"
+    exit 0
+  fi
+}
 
 in_cooldown() {
   local sec="${1:-60}"
@@ -220,26 +229,25 @@ component_running() {
   $SUDO docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$1"
 }
 
-# 9router /v1/models is 401 without a key (process up). curl -f treated that as DOWN
-# and restarted 9router on every stack-watch tick.
-probe_9router() {
-  local url="http://127.0.0.1:${N9ROUTER_HOST_PORT:-20128}/v1/models"
+# OmniRoute /v1/models may reject an unauthenticated health probe while healthy.
+probe_omnirouter() {
+  local url="http://127.0.0.1:${OMNIROUTER_HOST_PORT:-20129}/v1/models"
   local code
   code="$(curl -sS -m 4 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || echo 000)"
   case "$code" in
     200|401|307) return 0 ;;
   esac
-  log "DOWN 9router ${url} http=${code}"
+  log "DOWN omni-router ${url} http=${code}"
   return 1
 }
 
 heal_by_health() {
   local failed=0
   FAILED_NAMES=""
-  # Only probe optional components this stack actually runs: a disabled 9Router
-  # used to fail every tick, and the heal then bounced dispatcher every 2 min.
-  if _env_active "${ENABLE_9ROUTER:-}" || component_running 9router; then
-    probe_9router || { failed=1; mark_failed 9router; }
+  # Probe only components this stack actually runs so disabled services never
+  # trigger a heal cycle.
+  if _env_active "${ENABLE_OMNIROUTER:-}" || component_running omni-router; then
+    probe_omnirouter || { failed=1; mark_failed omni-router; }
   fi
   if [[ "${ENABLE_MEDIA_FILE:-inactive}" == "active" || "${WORKER_MEDIA_FILE:-inactive}" == "active" ]] || component_running dispatcher; then
     probe dispatcher "http://127.0.0.1:${DISPATCHER_PORT:-8090}/health" \
@@ -308,7 +316,7 @@ heal_by_health() {
       ensure_core_up
       restart_bad_containers
       # Restart only what actually failed its own probe. A blanket restart of
-      # 9router/dispatcher killed in-flight OCR and media jobs on every tick.
+      # Blanket restarts previously killed in-flight OCR and media jobs.
       local name
       for name in ${FAILED_NAMES}; do
         log "restart ${name} (probe failed)"
@@ -355,6 +363,7 @@ ensure_media_writable() {
 
 main() {
   cd "$ROOT"
+  skip_during_maintenance
   if boot_grace_active; then
     log "boot grace (${BOOT_GRACE_S}s) — skip heals (uptime still warming)"
     exit 0

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""After Hermes + 9Router are ready: if hermes/main/skills is not empty, sync skill/docs → learn.
+"""After Hermes and model routing are ready, sync bundled skill/docs into learning.
 
 All profiles. Silent (no chat spam).
 - Skills stay mounted for Hermes (compose bind).
@@ -32,10 +32,8 @@ HERMES_SETUP = _hermes / "setup"
 DATA_DIR = Path(os.environ.get("ASSISTANT_DATA_DIR") or os.environ.get("HERMES_DATA_DIR") or "/data/assistant")
 DOCS_ROOT = Path(os.environ.get("LEARN_DOCS_HOST") or (DATA_DIR / "docs"))
 
-N9_PORT = int(os.environ.get("N9ROUTER_HOST_PORT", "20128"))
 OMNI_PORT = int(os.environ.get("OMNIROUTER_HOST_PORT", "20129"))
 ROUTER_PORT = int(os.environ.get("MODEL_ROUTER_HOST_PORT", "8096"))
-ENABLE_9ROUTER = (os.environ.get("ENABLE_9ROUTER") or "0").strip().lower() in {"1", "true", "yes", "on"}
 ENABLE_OMNI = (os.environ.get("ENABLE_OMNIROUTER") or "1").strip().lower() in {"1", "true", "yes", "on"}
 HERMES_PORT = int(os.environ.get("HERMES_DASHBOARD_PORT", "29119"))
 TRAEFIK_PORT = int(os.environ.get("TRAEFIK_HOST_PORT", "8080"))
@@ -161,16 +159,14 @@ def main() -> int:
 
     print(f"skills found: {len(skill_dirs)} under {SKILLS_DIR}", flush=True)
 
-    # Prefer Router Worker / OmniRouter; 9Router only when ENABLE_9ROUTER=active
+    # Prefer the model-router health surface, then OmniRoute directly.
     llm_ok = False
     if wait_ready("model-router", f"http://127.0.0.1:{ROUTER_PORT}/health", tries=20):
         llm_ok = True
     elif ENABLE_OMNI and wait_ready("omni-router", f"http://127.0.0.1:{OMNI_PORT}/", tries=15):
         llm_ok = True
-    elif ENABLE_9ROUTER and wait_ready("9router", f"http://127.0.0.1:{N9_PORT}/", tries=15):
-        llm_ok = True
     if not llm_ok:
-        print("FAIL no LLM router ready (model-router / omni / 9router)", file=sys.stderr)
+        print("FAIL no LLM router ready (model-router / omni)", file=sys.stderr)
         return 1
     # Hermes×1 publishes dashboard; replicas>1 use gateway/traefik health
     hermes_urls = []

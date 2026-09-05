@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """High fail-events: EICAR AV, concurrency ramp until fail, Hermes/Zalo auto-heal.
 
 Leaves High running. Reports omit host/account.
@@ -175,11 +175,11 @@ def ramp_until_fail(c) -> None:
 set -euo pipefail
 export LC_ALL=C.UTF-8
 set -a
-source <(grep -E '^(N9ROUTER_API_KEY)=' /data/assistant/.env | sed 's/\r$//')
+source <(grep -E '^(OMNIROUTER_API_KEY)=' /data/assistant/.env | sed 's/\r$//')
 set +a
 python3 - <<'PY'
 import json, os, time, urllib.request, concurrent.futures
-key = os.environ.get("N9ROUTER_API_KEY", "")
+key = os.environ.get("OMNIROUTER_API_KEY", "")
 url = "http://127.0.0.1:8096/v1/chat/completions"
 
 def one(i, n):

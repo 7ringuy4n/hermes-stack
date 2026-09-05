@@ -20,9 +20,9 @@ LEARN_LIST_LIMIT=5
 
 ## Core (always on)
 
-postgres, Valkey (`valkey`), qdrant, memory, session, embedding, ingest, **router-worker (Model Router)**, hermes, backup/restore, Traefik local, API Gateway, inbound Valkey queue.
+postgres, Valkey (`valkey`), qdrant, memory, session, embedding, ingest, **model-router (Model Router)**, hermes, backup/restore, Traefik local, API Gateway, inbound Valkey queue.
 
-**OmniRouter** is the default LLM path (`ENABLE_OMNIROUTER=active`). **9Router** is optional (`ENABLE_9ROUTER=inactive`).
+**OmniRoute** is the default LLM path (`ENABLE_OMNIROUTER=active`).
 
 Dispatcher (search / image / office HTTP) belongs to the **Media|File Worker** — it is not core.
 
@@ -60,7 +60,6 @@ Worker-bundled flags when active:
 
 ```env
 ENABLE_OMNIROUTER=active
-ENABLE_9ROUTER=inactive
 OMNIROUTER_DEFAULT_COMBO=hermes
 HERMES_DEFAULT_MODEL=hermes
 ENABLE_TRAEFIK=active
@@ -96,7 +95,6 @@ Do **not** use `add-components ENABLE_TRAEFIK=inactive` (blocked by `run.sh`).
 | Shown | Change with | Apply on running host |
 |-------|-------------|------------------------|
 | `OMNI=1` | `ENABLE_OMNIROUTER=active` in section C | `add-components … --update` |
-| `N9=0` | `ENABLE_9ROUTER=active` + `N9ROUTER_INITIAL_PASSWORD` | `add-components … --update` then `first-setup-llm` |
 | `REPLICAS=1` | `HERMES_REPLICAS=2` | `add-components HERMES_REPLICAS=2 --update` |
 | `QUEUE=1` | `ZALO_INBOUND_QUEUE=0` | `add-components ZALO_INBOUND_QUEUE=0 --update` |
 

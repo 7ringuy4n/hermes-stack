@@ -279,13 +279,22 @@ apt-get -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold in
 }
 
 zalo_install_plugin_package() {
-  if command -v hermes-zalo-plugin >/dev/null 2>&1; then
+  local vendor_plugin="${ZALO_COMMON_ROOT}/vendor/hermes-zalo-plugin"
+  local vendor_zca="${ZALO_COMMON_ROOT}/vendor/zca-js"
+  local package_source="hermes-zalo-plugin"
+  if [[ -f "${vendor_plugin}/package.json" && -f "${vendor_zca}/dist/index.js" ]]; then
+    package_source="$vendor_plugin"
+    zalo_log "install vendored Zalo runtime dependencies"
+    (cd "$vendor_zca" && npm ci --omit=dev --ignore-scripts)
+    (cd "$vendor_plugin" && npm ci --omit=dev --ignore-scripts)
+  elif command -v hermes-zalo-plugin >/dev/null 2>&1; then
     zalo_install_bridge_overlays || true
     return 0
   fi
-  zalo_log "npm install -g hermes-zalo-plugin (upstream: cuongdev)"
+  zalo_log "npm install -g ${package_source} (vendored source preferred)"
   if [[ -n "${ASSISTANT_SUDO_PASSWORD:-}" ]]; then
-    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S env DEBIAN_FRONTEND=noninteractive npm install -g hermes-zalo-plugin || {
+    printf '%s\n' "$ASSISTANT_SUDO_PASSWORD" | sudo -S env DEBIAN_FRONTEND=noninteractive npm install -g "$package_source" || {
+      [[ "$package_source" == "$vendor_plugin" ]] && return 1
       local tmp
       tmp="$(mktemp -d)"
       git clone --depth 1 "$ZALO_REPO_URL" "${tmp}/p"
@@ -294,7 +303,8 @@ zalo_install_plugin_package() {
     }
   else
     zalo_sudo_hint
-    $ZALO_SUDO env DEBIAN_FRONTEND=noninteractive npm install -g hermes-zalo-plugin || {
+    $ZALO_SUDO env DEBIAN_FRONTEND=noninteractive npm install -g "$package_source" || {
+      [[ "$package_source" == "$vendor_plugin" ]] && return 1
       local tmp
       tmp="$(mktemp -d)"
       git clone --depth 1 "$ZALO_REPO_URL" "${tmp}/p"

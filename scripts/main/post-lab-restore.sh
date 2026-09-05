@@ -81,9 +81,9 @@ if ! curl -fsS -m 120 -X POST http://127.0.0.1:8096/v1/chat/completions \
   fail=1
 fi
 
-log "5) Hermes + router-worker tail (abnormal)"
+log "5) Hermes + model-router tail (abnormal)"
 docker logs --tail 30 assistant-hermes-1 2>&1 | grep -iE 'error|deception_hide|crash' || echo "hermes: no critical tail"
-docker logs --tail 20 router-worker 2>&1 | grep -iE 'Unable to determine|failover' | tail -5 || true
+docker logs --tail 20 model-router 2>&1 | grep -iE 'Unable to determine|failover' | tail -5 || true
 
 if [[ "$fail" -eq 0 ]]; then
   echo "POST_LAB_RESTORE_OK"

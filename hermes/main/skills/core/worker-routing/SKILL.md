@@ -10,11 +10,11 @@ Hermes receives structured JSON from the model-router `/v1/classify` hop (or equ
 | `task_hint` | `skill` | `skill_action` | Worker / next step |
 |---|---|---|---|
 | `normal` | `null` | `null` | Hermes via model-router chat combo (`ack_then_deliver`). No host instant reply. |
-| `search` | `web_search` | `search` | **Web Search skill** → Router Worker `POST /v1/search` → Omni (Tavily → Firecrawl → SearXNG). |
+| `search` | `web_search` | `search` | **Web Search skill** → Model Router `POST /v1/search` → Omni (Tavily → Firecrawl → SearXNG). |
 | `file` / `tool` (media) | `media_file` | `process_file`, `process_image`, `generate_media`, `create_file` | **Media/File skill** → media worker / **vision-ocr** combo / ingest extract for office / **create-and-send office via `file-gen` → Dispatcher `/v1/office-file`**. When Media worker is inactive, use router combo **`hermes`**. Never local docx/terminal forensics for chat attachment reads. |
 | `schedule` | `schedule` | `create` | **Schedule skill** → Go schedule worker (`SCHEDULE_URL`). Store inner `fire_text` only. |
 | `knowledge` | `knowledge` | `lookup` | Knowledge catalog (top 5). Not live web search. |
-| `coding` | `null` or coding skills | — | Router worker → 9router (coding path). Gateway skips rate limit on coding paths. |
+| `coding` | `null` or coding skills | — | Router worker → omni-router (coding path). Gateway skips rate limit on coding paths. |
 
 ## Execution modes
 

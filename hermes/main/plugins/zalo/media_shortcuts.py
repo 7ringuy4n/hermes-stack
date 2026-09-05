@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Dispatcher HTTP for classified office-file jobs (and search→office).
 
 Intent lives in classify JSON. This module does not phrase-scan user prose.
@@ -49,7 +49,7 @@ def dispatcher_url() -> str:
 
 
 def model_router_url() -> str:
-    return (os.getenv("ROUTER_WORKER_URL") or os.getenv("MODEL_ROUTER_URL") or "http://router-worker:8096").rstrip("/")
+    return (os.getenv("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
 
 
 def _post(path: str, body: dict, timeout: float = 60.0, *, base: str = "") -> Dict[str, Any]:
@@ -82,6 +82,11 @@ def run_web_search(query: str, max_results: int = 6) -> Optional[dict]:
         return None
     if isinstance(out, dict) and (out.get("results") or out.get("answer") is not None):
         return out
+    log.warning(
+        "web search returned no usable result backend=%r error=%r",
+        (out or {}).get("backend") if isinstance(out, dict) else None,
+        (out or {}).get("error") if isinstance(out, dict) else None,
+    )
     return None
 
 
@@ -260,6 +265,24 @@ def _json_object(text: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _omni_overlay_plan_timeout_s() -> int:
+    """Allow normal router queueing without an unbounded Zalo turn."""
+    raw = (os.getenv("OMNI_OVERLAY_PLAN_TIMEOUT_S") or "120").strip()
+    try:
+        return max(30, min(int(raw), 180))
+    except ValueError:
+        return 120
+
+
+def _omni_overlay_plan_model() -> str:
+    """Return the configured priority combo for short structured planning."""
+    return (
+        os.getenv("OMNIROUTER_CLASSIFY_COMBO")
+        or os.getenv("MODEL_ROUTER_CLASSIFY_MODEL")
+        or "classifier"
+    ).strip() or "classifier"
+
+
 def _synthesize_overlay_plan(
     search: dict[str, Any] | None,
     *,
@@ -284,11 +307,11 @@ def _synthesize_overlay_plan(
     key = resolve_omni_api_key()
     if not base or not key:
         return {}
-    model = (
-        os.getenv("OMNIROUTER_DEFAULT_COMBO")
-        or os.getenv("HERMES_CHAT_COMBO")
-        or "hermes"
-    ).strip() or "hermes"
+    # This is a short, schema-constrained planning call, so use the same
+    # priority combo as intent classification.  The general chat combo may be
+    # round-robin and can select a slow conversational model, which needlessly
+    # holds the Zalo delivery path before image generation even starts.
+    model = _omni_overlay_plan_model()
     user = user_template.replace("{query}", (query or "").strip()[:240])
     user = user.replace("{instruction}", (instruction or "").strip()[:1200])
     user = user.replace("{notes}", notes)
@@ -316,7 +339,7 @@ def _synthesize_overlay_plan(
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=35) as resp:
+        with urllib.request.urlopen(req, timeout=_omni_overlay_plan_timeout_s()) as resp:
             data = json.loads(resp.read().decode("utf-8") or "{}")
     except Exception as e:  # noqa: BLE001
         log.warning("overlay fact synthesize failed: %s", type(e).__name__)
@@ -355,6 +378,7 @@ def _synthesize_overlay_plan(
         if len(facts) >= 4:
             break
     title = " ".join(str(parsed.get("title") or "").split())[:64]
+    background_scene = " ".join(str(parsed.get("background_scene") or "").split())[:1200]
     if not facts:
         log.warning("overlay plan synthesize empty model=%r", model)
         return {}
@@ -363,6 +387,7 @@ def _synthesize_overlay_plan(
         "facts": facts,
         "design": _safe_overlay_design(parsed.get("design")),
         "include_timestamp": bool(parsed.get("include_timestamp", True)),
+        "background_scene": background_scene,
     }
 
 
@@ -464,7 +489,15 @@ def run_search_then_office(
     query = plan_search_query(plan, user_ask)
     file_ins = plan_file_instruction(plan, user_ask)
     kind = (output_type or "").strip().lower() or plan_search_then_office_output(plan) or "pdf"
-    search = run_web_search(query or user_ask)
+    search_query = query or user_ask
+    search = run_web_search(search_query)
+    if not search:
+        # A combo can transiently exhaust one free backend while still returning
+        # an HTTP-success envelope. Retry once without sleeping; use the complete
+        # request as the fallback query when the classifier supplied a narrower
+        # query. The web-search combo retains ownership of provider failover.
+        fallback_query = user_ask if user_ask.strip() != search_query.strip() else search_query
+        search = run_web_search(fallback_query)
     prompt = build_office_body_from_search(
         file_instruction=file_ins or user_ask,
         user_ask=user_ask,
@@ -1026,7 +1059,10 @@ def run_search_then_composed_image(
     )
     if not composition:
         return shortcut_consumed()
-    prompt = _scene_visual_prompt(scene, composed=True)
+    # Grounded composition owns both overlay design and the clean background
+    # brief.  Fall back to the classifier scene only for older model responses.
+    visual_scene = str(composition.get("background_scene") or "").strip() or scene
+    prompt = _scene_visual_prompt(visual_scene, composed=True)
     import uuid
 
     fname = f"composed-image-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.jpg"

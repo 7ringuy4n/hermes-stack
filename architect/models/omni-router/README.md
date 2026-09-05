@@ -6,7 +6,7 @@
 |--|--|
 | **Sits between** | Model Router ↔ general LLM providers |
 | **Owns** | Optional general-task OpenAI-compatible gateway |
-| **Does not own** | Coding-preferred path (9router) |
+| **Does not own** | Coding-preferred path (omni-router) |
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
@@ -24,15 +24,15 @@ Separate OpenAI-compatible LLM gateway for **general / non-coding** tasks. Used 
 
 ## Defaults
 
-- Image: `${OMNIROUTER_IMAGE:-diegosouzapw/omniroute:latest}` (separate from 9router)
+- Image: `${OMNIROUTER_IMAGE:-diegosouzapw/omniroute:latest}` (separate from omni-router)
 - Port: host `127.0.0.1:${OMNIROUTER_HOST_PORT:-20129}:20129`
-- Combo: OpenCode Free + all its models (same *style* as 9router `hermes` combo) via `scripts/main/first-setup-omnirouter.sh`
+- Combo: OpenCode Free + all its models (same *style* as omni-router `hermes` combo) via `scripts/main/first-setup-omnirouter.sh`
 
 ## Routing
 
-| Both up | Coding → 9router · Other → OmniRouter |
+| Both up | Coding → omni-router · Other → OmniRouter |
 | Only OmniRouter | Coding + other → OmniRouter · then direct LLM pool |
-| Only 9router | All → 9router · then pool |
+| Only omni-router | All → omni-router · then pool |
 
 ## Enable
 

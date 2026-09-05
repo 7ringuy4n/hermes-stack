@@ -529,10 +529,10 @@ assistant_restore_openbao() {
 }
 
 assistant_backup_routers() {
-  # OmniRouter / 9Router combo+provider SoT = named volumes; also export JSON for audit.
+  # OmniRoute combo/provider source of truth is its named volume; also export JSON for audit.
   local dir="$1" v envf
   $SUDO mkdir -p "${dir}/routers"
-  for v in omni_router_data nine_router_data; do
+  for v in omni_router_data; do
     if [[ -n "$(as_volume "$v")" ]]; then
       as_tar_volume "$v" "${dir}/routers/${v}.tgz" || assistant_backup_fail "router volume tar ${v}"
     fi
@@ -541,10 +541,9 @@ assistant_backup_routers() {
   {
     echo "# Router flags snapshot (non-secret names; secrets remain in env.sealed / OpenBao)"
     for k in \
-      ENABLE_OMNIROUTER ENABLE_9ROUTER ENABLE_MODEL_ROUTER \
-      OMNIROUTER_DEFAULT_COMBO N9ROUTER_DEFAULT_COMBO \
-      OMNIROUTER_COMBO_STRATEGY N9ROUTER_COMBO_STRATEGY \
-      OMNIROUTER_HOST_PORT N9ROUTER_HOST_PORT \
+      ENABLE_OMNIROUTER ENABLE_MODEL_ROUTER \
+      OMNIROUTER_DEFAULT_COMBO OMNIROUTER_COMBO_STRATEGY \
+      OMNIROUTER_HOST_PORT \
       OMNIROUTER_ENABLE_MEMORY OMNIROUTER_FAILOVER_MODELS OMNIROUTER_ROTATE_ATTEMPTS
     do
       if [[ -n "${!k:-}" ]]; then
@@ -562,8 +561,8 @@ assistant_backup_routers() {
 
 assistant_restore_routers() {
   local dir="$1" v
-  docker stop omni-router 9router 2>/dev/null || true
-  for v in omni_router_data nine_router_data; do
+  docker stop omni-router 2>/dev/null || true
+  for v in omni_router_data; do
     if [[ -f "${dir}/routers/${v}.tgz" ]]; then
       as_untar_volume "$v" "${dir}/routers/${v}.tgz" || assistant_backup_fail "router volume restore ${v}"
     elif [[ -f "${dir}/volumes/${v}.tgz" ]]; then
@@ -675,7 +674,7 @@ assistant_restore_schedules() {
 assistant_backup_volumes() {
   local dir="$1" v
   $SUDO mkdir -p "${dir}/volumes"
-  # Monitor / edge volumes. Omni + 9Router volumes live under component "routers".
+  # Monitor / edge volumes. OmniRoute data lives under component "routers".
   for v in grafana_data loki_data prometheus_data alloy_data traefik_letsencrypt; do
     if [[ -n "$(as_volume "$v")" ]]; then
       as_tar_volume "$v" "${dir}/volumes/${v}.tgz" || assistant_backup_fail "volume tar ${v}"
@@ -728,7 +727,7 @@ assistant_restore_openvpn() {
 
 # Order: dump stores while running, then host files.
 ASSISTANT_BACKUP_ORDER=(config postgres qdrant valkey hermes openbao routers zalo schedules volumes clouddrive openvpn)
-# Restore stores before generate/deploy; schedules last. Routers (Omni/9Router volumes) before hermes.
+# Restore stores before generate/deploy; schedules last. OmniRoute data before Hermes.
 ASSISTANT_RESTORE_ORDER=(config postgres qdrant valkey volumes routers hermes openbao zalo clouddrive openvpn schedules)
 
 assistant_backup_all() {

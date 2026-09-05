@@ -10,7 +10,7 @@
 
 Self-hosted **Hermes Agent** stack with memory, knowledge ingest, optional workers
 (Schedule, Media|File, Notify, Message/Zalo, Security, Monitor), and ops tooling.
-**OmniRouter** is the default LLM path; **9Router** is optional.
+**OmniRoute** is the LLM provider plane; the internal **Model Router** applies task-aware routing.
 
 This repository is the **product source of truth**. Runtime data stays on the host
 (`ASSISTANT_DATA_DIR`, default `/data/assistant`). Never commit `.env`.
@@ -25,7 +25,7 @@ This repository is the **product source of truth**. Runtime data stays on the ho
 You need a Linux host with Docker and Compose, Git, and SSH. If that is new:
 
 1. Install Docker with the script in [Quick start](#quick-start-core) (or your distro docs).
-2. Start **core only** (all `WORKER_*=inactive`) — Hermes + OmniRouter + edge.
+2. Start **core only** (all `WORKER_*=inactive`) — Hermes + OmniRoute + edge.
 3. Open the dashboard through an SSH tunnel (ports stay on localhost for safety).
 4. Read [docs/00-workers.md](./docs/00-workers.md) before enabling optional workers.
 
@@ -42,7 +42,7 @@ Full doc map: **[docs/README.md](./docs/README.md)** · Architecture: **[docs/03
 | Alerts to SMS/email/Zalo | `WORKER_NOTIFY=active` | Notification Worker |
 | Lab/enterprise controls (ACL, SIEM, secrets) | `WORKER_SECURITY=active` | OpenBao / authz / SIEM overlay |
 | Dashboards | `WORKER_MONITOR=active` | Grafana / Loki / Prometheus |
-| Coding vs general model split | Model Router + Omni (default) / 9Router optional | [docs/06-model-routing.md](./docs/06-model-routing.md) |
+| Task-aware model selection | Model Router + OmniRoute combos | [docs/06-model-routing.md](./docs/06-model-routing.md) |
 
 ## High-level architecture
 
@@ -53,7 +53,7 @@ Full doc map: **[docs/README.md](./docs/README.md)** · Architecture: **[docs/03
   <tr><td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr><td colspan="3" style="padding:14px;background:#2563eb;color:#fff;text-align:center;font-weight:700;">hermes — Agent · skills · plugins (×1 or ×2 on one node)</td></tr>
   <tr><td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
-  <tr><td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">model-router — general → OmniRouter (default) · coding → 9Router (optional)</td></tr>
+  <tr><td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">model-router — task-aware proxy → OmniRoute combos and explicit fallbacks</td></tr>
   <tr><td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr>
     <td style="width:34%;padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;vertical-align:top;"><b>Platform</b><br/>memory · session · ingest<br/>Media\|File: dispatcher / OCR / jobs</td>
@@ -206,7 +206,7 @@ Admin (exactly one user): after login, DM the bot `!zalo claim`, then
 | [docs/03-architecture.md](./docs/03-architecture.md) | System architecture (HTML panels) |
 | [docs/04-component-flows.md](./docs/04-component-flows.md) | Per-component flows |
 | [docs/05-edge-networking.md](./docs/05-edge-networking.md) | Traefik / Gateway / OpenVPN |
-| [docs/06-model-routing.md](./docs/06-model-routing.md) | Model Router / 9router / OmniRouter |
+| [docs/06-model-routing.md](./docs/06-model-routing.md) | Model Router / omni-router / OmniRouter |
 | [docs/MULTI_NODE.md](./docs/MULTI_NODE.md) | Hermes×2 vs true HA / SPOFs |
 | [architect/README.md](./architect/README.md) | Platform layer index + design links |
 | [architect/backup-restore/README.md](./architect/backup-restore/README.md) | DR commands + tested round-trip |

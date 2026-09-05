@@ -1,6 +1,6 @@
 """HTTP client for model-router POST /v1/classify (Zalo classify skill).
 
-Prompt SoT: hermes/main/skills/classify/classify.json — loaded by router-worker.
+Prompt SoT: hermes/main/skills/classify/classify.json — loaded by model-router.
 This module validates/normalizes the JSON protocol only. Do not add Vietnamese NLU.
 Keep schema enums in sync with model-router classify.py.
 """
@@ -68,9 +68,11 @@ LIFECYCLE_TASK_TYPES = (
     "run_schedule",
 )
 LIFECYCLE_ACTIONS = ("pause", "resume", "update", "run_now", "run")
-DEFAULT_TIMEOUT_S = 45.0
-HTTP_ATTEMPTS = 2
-HTTP_RETRY_SLEEP_S = 4.0
+DEFAULT_TIMEOUT_S = 120.0
+# model-router already owns provider/combo failover. A second host request adds
+# duplicate queue pressure and can execute the same scheduled turn twice.
+HTTP_ATTEMPTS = 1
+HTTP_RETRY_SLEEP_S = 0.0
 _PRIOR_START = "[prior conversation]"
 _PRIOR_END = "[/prior conversation]"
 _ATTACH_RECALL_START = "[recent attachments in this chat"
@@ -81,9 +83,8 @@ REASONING_EFFORTS = ("low", "medium", "high", "max")
 def router_worker_url() -> str:
     """Router-worker HTTP base (legacy MODEL_ROUTER_URL still honored)."""
     return (
-        os.environ.get("ROUTER_WORKER_URL")
-        or os.environ.get("MODEL_ROUTER_URL")
-        or "http://router-worker:8096"
+        os.environ.get("MODEL_ROUTER_URL")
+        or "http://model-router:8096"
     ).rstrip("/")
 
 
@@ -548,13 +549,29 @@ def _plan_has_search(src: dict[str, Any]) -> bool:
 
 
 def _plan_has_media_generation(src: dict[str, Any]) -> bool:
-    return "media_generation" in _plan_types(src)
+    if "media_generation" in _plan_types(src):
+        return True
+    # The classifier's render protocol is the authoritative media contract.
+    # Some providers flatten scheduled child task types to ``chat`` even while
+    # preserving output_type=image plus SCENE/RENDER.  Accept that structural
+    # contract so a persisted schedule can execute without reclassification.
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    return (
+        _coerce_output_type(src.get("output_type")) == "image"
+        and _instruction_blob_has_image_contract(parts)
+    )
 
 
 def _plan_has_file_processing(src: dict[str, Any]) -> bool:
-    if str(src.get("task_hint") or "").strip().lower() == "file":
+    types = _plan_types(src)
+    if "file_processing" in types:
         return True
-    return "file_processing" in _plan_types(src)
+    # ``task_hint=file`` is the broad artifact channel and some providers use
+    # it for still-image generation.  Explicit image/media contracts outrank
+    # that coarse hint; otherwise valid search→image plans fall into workflow.
+    if "media_generation" in types or _coerce_output_type(src.get("output_type")) == "image":
+        return False
+    return str(src.get("task_hint") or "").strip().lower() == "file"
 
 
 def plan_search_then_office_output(plan: dict[str, Any] | None) -> str:

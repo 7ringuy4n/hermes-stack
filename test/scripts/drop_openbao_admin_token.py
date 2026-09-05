@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Re-seed OpenBao without legacy ADMIN_API_TOKEN."""
 from __future__ import annotations
 

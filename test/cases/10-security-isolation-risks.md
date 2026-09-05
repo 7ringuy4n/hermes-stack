@@ -16,7 +16,7 @@ Happy-path health is not enough.
 
 - `TRAEFIK_MODE=local`; Traefik and Gateway published on loopback only.
 - OpenBao published on loopback only (container may listen `0.0.0.0` internally).
-- No Traefik route to OpenBao / 9router / Postgres.
+- No Traefik route to OpenBao / omni-router / Postgres.
 - Host `:29119` absent when `HERMES_REPLICAS≠1` (use Gateway/Traefik).
 
 ## LLM not the boundary

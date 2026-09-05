@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Remote stack deploy helper (lab).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
@@ -9,7 +9,7 @@ Optional flags (0/1, default 0 unless noted): ENABLE_ZALO, ENABLE_ANTIVIRUS,
   Grafana=1 pairs Prometheus on (unless ENABLE_PROMETHEUS is set).
   Loki=1 pairs Alloy on (unless ENABLE_ALLOY is set).
 Optional secret (host .env only, never logged): TAVILY_API_KEY.
-Notify stays on for component lab alerting. OmniRouter defaults **on** (set ENABLE_OMNIROUTER=0 to force 9router-only general chat).
+Notify stays on for component lab alerting. OmniRouter defaults **on** (set ENABLE_OMNIROUTER=0 to force omni-router-only general chat).
 Does not write secrets into test/reports. Does not run Zalo QR login.
 """
 from __future__ import annotations
@@ -281,7 +281,7 @@ if ! grep -qE '^ZALO_API_TOKEN=.+' .env && ! grep -qE '^ADMIN_API_TOKEN=.+' .env
   upsert ADMIN_API_TOKEN "$TOK"
 fi
 if ! grep -qE '^OMNIROUTER_INITIAL_PASSWORD=.+' .env; then
-  N9PW=$(grep -E '^N9ROUTER_INITIAL_PASSWORD=' .env | cut -d= -f2- || true)
+  N9PW=$(grep -E '^OMNIROUTER_INITIAL_PASSWORD=' .env | cut -d= -f2- || true)
   if [[ -n "$N9PW" ]]; then upsert OMNIROUTER_INITIAL_PASSWORD "$N9PW"; fi
 fi
 if [[ "{sandbox}" == "1" ]]; then
@@ -289,9 +289,9 @@ if [[ "{sandbox}" == "1" ]]; then
 fi
 
 echo "=== CLEAR OLD FILES ==="
-rm -rf /tmp/assistant /tmp/9r-*.json /tmp/assistant.env.new 2>/dev/null || true
+rm -rf /tmp/assistant /tmp/assistant.env.new 2>/dev/null || true
 rm -f /tmp/assistant-sync.tgz 2>/dev/null || true
-docker rm -f grafana prometheus loki alloy nine-exporter node-exporter stack-exporter omni-exporter 2>/dev/null || true
+docker rm -f grafana prometheus loki alloy omni-exporter node-exporter stack-exporter omni-exporter 2>/dev/null || true
 mkdir -p /data/assistant/docs /data/assistant/backups /data/assistant/media/out
 chown -R 1000:1000 /data/assistant || true
 if [[ -f /tmp/hermes-skills.tgz ]]; then
@@ -430,7 +430,7 @@ fi
 
 echo "=== CLEAN SOURCE / TEMP ==="
 rm -f /tmp/assistant-sync.tgz /tmp/hermes-skills.tgz /tmp/assistant.env.new
-rm -rf /tmp/assistant /tmp/9r-*.json
+rm -rf /tmp/assistant
 find {REMOTE} -type d -name __pycache__ -prune -exec rm -rf {{}} + 2>/dev/null || true
 docker builder prune -af >/dev/null 2>&1 || true
 docker image prune -f >/dev/null 2>&1 || true
@@ -462,7 +462,7 @@ keys = [
     "HERMES_DASHBOARD_PASSWORD",
     "GRAFANA_ADMIN_USER",
     "GRAFANA_ADMIN_PASSWORD",
-    "N9ROUTER_INITIAL_PASSWORD",
+    "OMNIROUTER_INITIAL_PASSWORD",
     "OMNIROUTER_INITIAL_PASSWORD",
     "OPENBAO_DEV_ROOT_TOKEN",
 ]
@@ -475,7 +475,7 @@ PY
 
 echo "=== POST CONNECT ==="
 n9c=$(curl -sS -m 8 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:20128/ || echo 000)
-echo "9router_http=$n9c"
+echo "omni-router_http=$n9c"
 tr_ok=0
 for i in $(seq 1 12); do
   if curl -fsS -m 8 http://127.0.0.1:8080/health >/dev/null 2>&1; then tr_ok=1; break; fi

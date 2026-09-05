@@ -75,7 +75,7 @@ services:
       - HERMES_WORKFLOW_WAIT_S=${HERMES_WORKFLOW_WAIT_S:-20}
       - HERMES_API_URL=${HERMES_API_URL:-http://hermes:8642/v1/chat/completions}
       - API_SERVER_KEY=${API_SERVER_KEY:-}
-      - MODEL_ROUTER_URL=${ROUTER_WORKER_URL:-${MODEL_ROUTER_URL:-http://router-worker:8096}}
+      - MODEL_ROUTER_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
       - LANG=C.UTF-8
       - LC_ALL=C.UTF-8

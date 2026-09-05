@@ -1,10 +1,10 @@
 # hermes/main/setup/
 
-Optional **inbox** for extra docs packs to index after Hermes + 9Router are ready.
+Optional **inbox** for extra docs packs to index after Hermes + OmniRoute are ready.
 
 `scripts/main/post-ready-learn.py` (called by `run.sh up` / `update`) will:
 
-1. Wait for 9Router + Hermes + ingest.
+1. Wait for OmniRoute + Hermes + ingest.
 2. If `hermes/main/skills/` has real skills (`SKILL.md`, not only `_example`):
    - Mirror skill markdown into `$ASSISTANT_DATA_DIR/docs/skills/`
    - Mirror this folder into `$ASSISTANT_DATA_DIR/docs/setup/`

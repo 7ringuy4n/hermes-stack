@@ -271,7 +271,7 @@ while time.time() < deadline:
     if inbound_ms is not None:
         try:
             rw = subprocess.check_output(
-                ["docker", "logs", "--since", "2m", "router-worker"],
+                ["docker", "logs", "--since", "2m", "model-router"],
                 stderr=subprocess.STDOUT,
                 text=True,
                 errors="replace",

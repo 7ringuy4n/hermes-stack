@@ -4,7 +4,7 @@ Read the current `# DECISION` before any external action.
 If VPS testing or rollout is not authorized, do not access the VPS.
 If VPS testing is authorized, copy only the intended core-fix changes, apply
 them without merging first, restart affected services, and monitor the
-Hermes, Zalo, OmniRouter, and router-worker logs.
+Hermes, Zalo, OmniRouter, and model-router logs.
 Run the strongest authorized smoke test using representative cases.
 Observe the actual response or artifact, not just process/HTTP success.
 Verify classification, execution, response content, and regressions.

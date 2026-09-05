@@ -1,4 +1,4 @@
-"""Read images and scanned PDFs via router-worker combo vision-ocr."""
+"""Read images and scanned PDFs via model-router combo vision-ocr."""
 from __future__ import annotations
 
 import base64
@@ -19,7 +19,6 @@ from vision_refuse import llm_refused, vision_chunk_usable, vision_text_echoes_p
 API_KEY = (
     os.environ.get("OPENAI_API_KEY")
     or os.environ.get("OMNIROUTER_API_KEY")
-    or os.environ.get("N9ROUTER_API_KEY")
     or os.environ.get("OCR_API_KEY")
     or ""
 ).strip()
@@ -30,7 +29,7 @@ def _chat_base() -> str:
         os.environ.get("HERMES_OPENAI_BASE_URL")
         or os.environ.get("OPENAI_BASE_URL")
         or os.environ.get("MODEL_ROUTER_URL")
-        or "http://router-worker:8096"
+        or "http://model-router:8096"
     ).rstrip("/")
     if not raw.endswith("/v1"):
         raw = f"{raw}/v1"
@@ -264,7 +263,6 @@ def _vision_chat(
     key = (
         os.environ.get("OPENAI_API_KEY")
         or os.environ.get("OMNIROUTER_API_KEY")
-        or os.environ.get("N9ROUTER_API_KEY")
         or os.environ.get("OCR_API_KEY")
         or ""
     ).strip()

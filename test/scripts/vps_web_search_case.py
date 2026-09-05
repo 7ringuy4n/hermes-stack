@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Case 18: probe Router Worker web search combo on VPS (SSH).
+"""Case 18: probe Model Router web search combo on VPS (SSH).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 """

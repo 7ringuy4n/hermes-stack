@@ -1,4 +1,4 @@
-"""Web search for Router Worker (Hermes-facing).
+"""Web search for Model Router (Hermes-facing).
 
 Skill path: Hermes web-search → POST model-router /v1/search → OmniRoute
 ``POST /v1/search`` with combo ``web-search`` (operator-owned members + failover in Omni UI).
@@ -111,7 +111,6 @@ def _omni_search_url() -> str:
 def _omni_api_key() -> str:
     return (
         os.environ.get("OMNIROUTER_API_KEY")
-        or os.environ.get("N9ROUTER_API_KEY")
         or ""
     ).strip()
 

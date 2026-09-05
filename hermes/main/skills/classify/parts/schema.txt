@@ -23,12 +23,9 @@ reference_time_source: schedule_request_received_at or null
 schedule_resolution: clear|needs_confirmation|ambiguous|invalid or null
 confirmation_required: bool or null
 schedule_selector: object with id, name, and match; id is always null unless supplied by the host
-target_channel: display-name string or null
+target_channel: display-name string or null; null unless the user explicitly names a different destination; references to the current chat or direct message remain null
 schedule_delivery: verbatim|process|transform or null
 output_type: image|pdf|txt|docx|xlsx|csv|md|pptx or null
-poster_n: integer or null
-poster_phrase: string or null
-poster_bw: bool or null
 task_details: array of objects with task_type, output_type, and optional depends_on
 depends_on: zero-based integer array
 uncertain: bool; omit or false when sure

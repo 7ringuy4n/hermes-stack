@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Sync SOUL.md + answering skill to VPS and restart Hermes."""
 from __future__ import annotations
 

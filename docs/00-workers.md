@@ -2,7 +2,7 @@
 
 Optional workers are **inactive** until you install them. They are **not** in `.env.example` — use `bash run.sh install`.
 
-Core (always on): Hermes, Memory, Router Worker, Traefik local, API Gateway, Valkey queue, watchdog.
+Core (always on): Hermes, Memory, Model Router, Traefik local, API Gateway, Valkey queue, watchdog.
 
 Runtime data stays on the host (`ASSISTANT_DATA_DIR`, default `/data/assistant`).
 
@@ -91,10 +91,10 @@ bash run.sh uninstall gateway          # turn API Gateway off
 bash run.sh install traefik            # turn back on
 ```
 
-Runtime / core flags (Omni, 9Router, inbound queue) — use `add-components` then **`update`** on a running host:
+Runtime / core flags (Omni, OmniRoute, inbound queue) — use `add-components` then **`update`** on a running host:
 
 ```bash
-bash run.sh add-components ENABLE_9ROUTER=active --update
+bash run.sh add-components ENABLE_OMNIROUTER=active --update
 bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
 ```
 

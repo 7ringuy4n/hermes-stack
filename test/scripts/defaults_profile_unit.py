@@ -65,11 +65,11 @@ def main() -> int:
         fails += 1
     else:
         print("PASS schedule-worker compose profile")
-    if "container_name: router-worker" not in compose:
-        print("FAIL router-worker rename missing")
+    if "container_name: model-router" not in compose:
+        print("FAIL model-router rename missing")
         fails += 1
     else:
-        print("PASS router-worker container name")
+        print("PASS model-router container name")
     # classify.json may set max_tokens for the classify chat call (not Hermes outbound).
     if '"timeout_s"' not in classify:
         print("FAIL classify.json missing timeout_s")

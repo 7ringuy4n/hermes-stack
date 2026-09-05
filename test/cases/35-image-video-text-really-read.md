@@ -15,7 +15,7 @@ the watchdog must not bounce the media worker while a job is running.
 3. Video: `POST dispatcher:8090/v1/media/text` on an mp4 that has on-screen text →
    `frames_read > 0` and the on-screen string appears in `text`.
 4. Audio with speech: same endpoint on an mp3 → non-empty `## Transcript`. A clip with no
-   speech (tone only) must answer `ok: false` with `whisper returned empty transcript`,
+   audio-only media must return HTTP 415 because embedded speech transcription is not installed,
    not an invented summary.
 5. Watchdog: `journalctl -u assistant-stack-watch.service --since '-6 min'` while the media
    calls run, then `docker inspect -f '{{.RestartCount}}' dispatcher`.

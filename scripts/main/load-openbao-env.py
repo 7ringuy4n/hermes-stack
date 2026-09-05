@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Load OpenBao KV secret/assistant/api-keys into ASSISTANT_DATA_DIR/.env.openbao.
+"""Load OpenBao KV secrets into a transient runtime env file.
 
-Compose mounts this via env_file on hermes. Fills empty compose-required keys in
-ROOT/.env from the same KV so docker compose can interpolate after env scrub.
+The shell caller imports this file into its process environment for Compose.
+Secrets are never written back into the repository ``.env``.
 
   python3 scripts/main/load-openbao-env.py
 """
@@ -14,7 +14,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from openbao_common import COMPOSE_HOST_KEYS, OBSOLETE_ENV_KEYS, OPENBAO_SECRET_PATH
+from openbao_common import OBSOLETE_ENV_KEYS, OPENBAO_SECRET_PATH
 
 ROOT = Path(os.environ.get("STACK_ROOT") or Path(__file__).resolve().parents[2])
 ENV_PATH = ROOT / ".env"
@@ -77,52 +77,6 @@ def load_dotenv(path: Path) -> dict[str, str]:
         if k.strip():
             out[k.strip()] = v.strip().strip("'").strip('"')
     return out
-
-
-def upsert_env_keys(path: Path, updates: dict[str, str]) -> int:
-    """Fill empty compose-required keys in ROOT/.env. Never overwrite non-empty values."""
-    if not updates:
-        return 0
-    repair_literal_newlines(path)
-    lines: list[str] = []
-    if path.is_file():
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    have = {k.casefold() for k in updates}
-    seen: set[str] = set()
-    out: list[str] = []
-    changed = 0
-    for line in lines:
-        raw = line.strip()
-        if not raw or raw.startswith("#") or "=" not in line:
-            out.append(line)
-            continue
-        key, _, val = line.partition("=")
-        k = key.strip()
-        kf = k.casefold()
-        if kf not in have:
-            out.append(line)
-            continue
-        seen.add(kf)
-        cur = str(val).strip().strip("'").strip('"')
-        want = updates[k] if k in updates else next(v for kk, v in updates.items() if kk.casefold() == kf)
-        if cur and not cur.startswith("CHANGE_ME"):
-            out.append(line)
-            continue
-        out.append(f"{k}={want}")
-        changed += 1
-    for k, v in updates.items():
-        if k.casefold() in seen:
-            continue
-        out.append(f"{k}={v}")
-        changed += 1
-    if changed:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-    return changed
 
 
 def recover_root_token_from_container() -> str:
@@ -271,13 +225,7 @@ def main() -> int:
         DATA_DIR,
         sudo_user=os.environ.get("SUDO_USER") or "",
     )
-    fill = {
-        k: str(data.get(k) or "").strip()
-        for k in COMPOSE_HOST_KEYS
-        if str(data.get(k) or "").strip()
-    }
-    n_fill = upsert_env_keys(ENV_PATH, fill)
-    print(f"OK: {len(lines)} keys → {EXPORT_PATH}; filled {n_fill} compose host key(s) in {ENV_PATH}")
+    print(f"OK: {len(lines)} keys → transient {EXPORT_PATH}; repository .env unchanged")
     return 0
 
 

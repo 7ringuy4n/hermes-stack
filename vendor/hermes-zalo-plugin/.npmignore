@@ -1,0 +1,12 @@
+# Belt-and-suspenders: package.json "files" already whitelists what ships.
+# This .npmignore is a second layer so secrets/runtime data can never be packed.
+data/
+.hermes-zalo/
+credentials.json
+*.log
+qr*.png
+zalo-qr.png
+*.tgz
+.DS_Store
+.github/
+.gitignore

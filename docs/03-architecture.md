@@ -30,7 +30,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
     <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
   </tr>
   <tr>
-    <td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">router-worker — OmniRouter default · 9Router optional · classify path</td>
+    <td colspan="3" style="padding:12px;background:#4338ca;color:#fff;text-align:center;font-weight:700;">model-router — OmniRouter default · OmniRoute optional · classify path</td>
   </tr>
   <tr>
     <td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td>
@@ -38,7 +38,7 @@ Ops: [02-components-and-commands.md](./02-components-and-commands.md) · Workers
   <tr>
     <td style="width:34%;padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;vertical-align:top;">
       <div style="font-weight:700;margin-bottom:6px;">Core (always on)</div>
-      memory · session · ingest · embed<br/>router-worker · Omni · backup<br/>Traefik local · API Gateway · Valkey
+      memory · session · ingest · embed<br/>model-router · Omni · backup<br/>Traefik local · API Gateway · Valkey
     </td>
     <td style="width:33%;padding:12px;background:#fff8e6;border:1px solid #f0e0b0;vertical-align:top;">
       <div style="font-weight:700;margin-bottom:6px;">Media · Schedule</div>
@@ -96,7 +96,7 @@ bash run.sh workers                                    # confirm
 
 | Worker | Adds |
 |--------|------|
-| **Core** | Hermes, memory, session, ingest, embed, router-worker, Omni, backup, Traefik local, API Gateway, Valkey queue |
+| **Core** | Hermes, memory, session, ingest, embed, model-router, Omni, backup, Traefik local, API Gateway, Valkey queue |
 | **schedule** | Go schedule-worker (timed outbound) |
 | **media** | Dispatcher, OCR, Jobs, Comfy CPU, SearXNG, office file-gen, compact @ 00:00 |
 | **security** / **openbao** | security-manager, authz, SIEM, policy, OpenBao (+ AV via `antivirus`) |
@@ -125,7 +125,7 @@ Sizing extras: [HARDWARE.md](./HARDWARE.md). Catalog: `bash run.sh install list`
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">session<br/><small>Valkey</small></td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">memory-manager<br/><small>Postgres</small></td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:20%;">ingest<br/><small>cite opt</small></td>
-    <td style="padding:10px;background:#4338ca;color:#fff;border:1px solid #312e81;text-align:center;width:20%;">router-worker<br/><small>Omni default</small></td>
+    <td style="padding:10px;background:#4338ca;color:#fff;border:1px solid #312e81;text-align:center;width:20%;">model-router<br/><small>Omni default</small></td>
     <td style="padding:10px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:20%;">Qdrant<br/><small>knowledge</small></td>
   </tr>
 </table>
@@ -145,7 +145,7 @@ Sizing extras: [HARDWARE.md](./HARDWARE.md). Catalog: `bash run.sh install list`
     <tr style="background:#fafafa;"><td style="padding:10px 12px;">2</td><td style="padding:10px 12px;">Hermes → session</td><td style="padding:10px 12px;">short-term turns (Valkey)</td></tr>
     <tr><td style="padding:10px 12px;">3</td><td style="padding:10px 12px;">Hermes → memory-manager</td><td style="padding:10px 12px;">budgeted context</td></tr>
     <tr style="background:#fafafa;"><td style="padding:10px 12px;">4</td><td style="padding:10px 12px;">Hermes → ingest <small>(opt)</small></td><td style="padding:10px 12px;">list or search knowledge (top 5)</td></tr>
-    <tr><td style="padding:10px 12px;">5</td><td style="padding:10px 12px;">Hermes → router-worker</td><td style="padding:10px 12px;">Omni (default) / optional 9Router → answer</td></tr>
+    <tr><td style="padding:10px 12px;">5</td><td style="padding:10px 12px;">Hermes → model-router</td><td style="padding:10px 12px;">Omni (default) / optional OmniRoute → answer</td></tr>
     <tr style="background:#fafafa;"><td style="padding:10px 12px;">6</td><td style="padding:10px 12px;">Hermes → User</td><td style="padding:10px 12px;">one short reply</td></tr>
     <tr><td style="padding:10px 12px;">7</td><td style="padding:10px 12px;">Hermes → memory-manager</td><td style="padding:10px 12px;">async remember</td></tr>
   </tbody>

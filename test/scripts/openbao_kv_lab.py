@@ -52,11 +52,11 @@ def main() -> int:
 set -euo pipefail
 cd /opt/assistant
 python3 - <<'PY'
-import json, os, sys, urllib.request
+import json, os, subprocess, sys, urllib.request
 from pathlib import Path
 
 sys.path.insert(0, "/opt/assistant/scripts/main")
-from openbao_common import COMPOSE_HOST_KEYS, ENV_SCRUB_KEYS, SEED_KEYS
+from openbao_common import ENV_SCRUB_KEYS, SEED_KEYS
 
 ROOT = Path("/opt/assistant")
 ENV = ROOT / ".env"
@@ -127,6 +127,8 @@ note("seed_list_pollinations", "POLLINATIONS_API_KEY" in SEED_KEYS)
 # Update marker key then verify read-back
 data2 = dict(data)
 data2["LAB_OPENBAO_MARKER"] = MARKER
+original_tavily = data2.get("TAVILY_API_KEY")
+data2["TAVILY_API_KEY"] = MARKER
 kv_put(data2)
 got = kv_get()
 note("update_propagate", got.get("LAB_OPENBAO_MARKER") == MARKER, "marker roundtrip")
@@ -142,11 +144,7 @@ rc = scrub.main()
 note("scrub_rc", rc == 0, f"rc={rc}")
 note("scrub_export_gone", not EXPORT.is_file(), str(EXPORT))
 env_after = load_env(ENV)
-# Compose host keys should be empty after scrub (values wiped)
-empty_hosts = [
-    k for k in COMPOSE_HOST_KEYS
-    if k in ENV_SCRUB_KEYS and not str(env_after.get(k) or "").strip()
-]
+empty_hosts = [k for k in ENV_SCRUB_KEYS if not str(env_after.get(k) or "").strip()]
 note("scrub_host_keys_empty", len(empty_hosts) >= 1, f"empty={len(empty_hosts)}")
 note("token_kept", bool(str(env_after.get("OPENBAO_DEV_ROOT_TOKEN") or "").strip()))
 
@@ -160,23 +158,54 @@ rc2 = loadbao.main()
 note("load_rc", rc2 == 0, f"rc={rc2}")
 note("load_export_back", EXPORT.is_file())
 env_fill = load_env(ENV)
-filled = [
-    k for k in COMPOSE_HOST_KEYS
-    if str(env_fill.get(k) or "").strip() and not str(env_fill.get(k) or "").startswith("CHANGE_ME")
-]
-note("load_compose_fill", "OMNIROUTER_API_KEY" in filled or len(filled) >= 1, f"filled={len(filled)}")
+runtime_fill = load_env(EXPORT)
+note("load_repo_env_unchanged", not str(env_fill.get("TAVILY_API_KEY") or "").strip())
+note("load_runtime_rotation", runtime_fill.get("TAVILY_API_KEY") == MARKER)
+
+# The sync command must import the transient export into Compose, recreate the
+# consumers, and scrub both disk copies afterward.
+sync = subprocess.run(
+    ["bash", "run.sh", "sync-openbao-env"],
+    cwd=ROOT,
+    capture_output=True,
+    text=True,
+    timeout=420,
+)
+note("sync_rc", sync.returncode == 0, f"rc={sync.returncode}")
+inspect = subprocess.run(
+    ["docker", "inspect", "model-router", "--format", "{{json .Config.Env}}"],
+    capture_output=True,
+    text=True,
+    timeout=30,
+)
+try:
+    router_env = json.loads(inspect.stdout or "[]")
+except Exception:
+    router_env = []
+note("consumer_fetched_rotated_key", f"TAVILY_API_KEY={MARKER}" in router_env)
+note("sync_scrub_export_gone", not EXPORT.is_file())
+note("sync_repo_env_clean", not str(load_env(ENV).get("TAVILY_API_KEY") or "").strip())
 
 # Drop lab marker from KV (cleanup)
 final = kv_get()
 final.pop("LAB_OPENBAO_MARKER", None)
+if original_tavily is None:
+    final.pop("TAVILY_API_KEY", None)
+else:
+    final["TAVILY_API_KEY"] = original_tavily
 kv_put(final)
 note("cleanup_marker", "LAB_OPENBAO_MARKER" not in kv_get())
 
 # Final scrub proves plaintext is gone; then restore compose fill for ops continuity.
-scrub.main()
+restore = subprocess.run(
+    ["bash", "run.sh", "sync-openbao-env"],
+    cwd=ROOT,
+    capture_output=True,
+    text=True,
+    timeout=420,
+)
+note("ops_restore_sync", restore.returncode == 0, f"rc={restore.returncode}")
 note("final_scrub_export_gone", not EXPORT.is_file())
-rc3 = loadbao.main()
-note("ops_restore_load", rc3 == 0)
 
 ok = all(x["ok"] for x in checks)
 print("VERDICT", "PASS" if ok else "FAIL")
@@ -186,7 +215,7 @@ PY
 """
     # Pass marker without embedding secrets in local logs
     remote = f"export OPENBAO_LAB_MARKER={MARKER!r}\n" + remote
-    out = _clean(sudo_bash(c, remote, timeout=180))
+    out = _clean(sudo_bash(c, remote, timeout=600))
     (OUT / "remote.txt").write_text(out, encoding="utf-8")
     print(out)
     verdict = "PASS" if "VERDICT PASS" in out else "FAIL"

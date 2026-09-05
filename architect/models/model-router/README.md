@@ -4,7 +4,7 @@
 
 | | |
 |--|--|
-| **Sits between** | Hermes ↔ 9router / OmniRouter / fallback pool |
+| **Sits between** | Hermes ↔ OmniRoute / explicit fallback pool |
 | **Owns** | Hybrid task class + provider health + clear `no_model_available` |
 | **Does not own** | Skill definitions (Hermes) or tool HTTP (dispatcher) |
 
@@ -14,7 +14,7 @@
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:14px;background:#2563eb;color:#fff;text-align:center;border:3px solid #fbbf24;width:36%;"><b>model-router</b></td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">9router · Omni · fallback</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">OmniRoute · explicit fallback</td>
   </tr>
 </table>
 
@@ -43,16 +43,15 @@ Bake fallbacks: `config/*.json` via `scripts/main/sync-model-router-skills.sh` (
 
 | Task | Preferred | Then |
 |------|-----------|------|
-| coding | 9router (if healthy) | OmniRouter if only that exists → OpenAI fallback (if keyed) |
-| normal / schedule / tool / search / file / unknown | OmniRouter (if `ENABLE_OMNIROUTER=active` and healthy) | 9router → fallbacks |
-| normal / schedule / tool / search / file / unknown | OmniRouter (if `ENABLE_OMNIROUTER=active` and healthy) | 9router → fallbacks |
+| coding | OmniRoute chat combo | explicit OpenAI-compatible fallback (if configured) |
+| normal / schedule / tool / search / file / unknown | OmniRoute task combo | explicit OpenAI-compatible fallback (if configured) |
 
 Missing API keys skip that provider. If nothing works → JSON error `no_model_available` (message in `messages/en.json`).
 
 ## Enable
 
 - `ENABLE_MODEL_ROUTER=active` (default)
-- `ENABLE_OMNIROUTER=inactive|1` (optional separate OmniRouter image)
+- `ENABLE_OMNIROUTER=active` (normal installation)
 - Hermes: `HERMES_OPENAI_BASE_URL=http://model-router:8096/v1`
 
 ## Timeouts

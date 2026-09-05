@@ -159,7 +159,7 @@
       },
       "targets": [
         {
-          "expr": "{job=\"docker\", container=~\"hermes|9router|omni-router|model-router|dispatcher|security-manager|ocr|ingest|memory|embedding|zalo-api|openbao\"} |~ \"(?i)error|fail|panic|exception|402|429|5[0-9]{2}\"",
+          "expr": "{job=\"docker\", container=~\"hermes|omni-router|model-router|dispatcher|security-manager|ocr|ingest|memory|embedding|zalo-api|openbao\"} |~ \"(?i)error|fail|panic|exception|402|429|5[0-9]{2}\"",
           "refId": "A"
         }
       ],

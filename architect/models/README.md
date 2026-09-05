@@ -5,7 +5,7 @@
 | | |
 |--|--|
 | **Sits between** | Hermes ↔ LLM providers / tool HTTP |
-| **Owns** | Model Router, 9router, optional OmniRouter, dispatcher (search/media helpers) |
+| **Owns** | Model Router, omni-router, optional OmniRouter, dispatcher (search/media helpers) |
 | **Does not own** | Hermes skills (those live under `hermes/main/skills`) |
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -14,13 +14,15 @@
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
     <td style="padding:14px;background:#2563eb;color:#fff;text-align:center;border:3px solid #fbbf24;width:36%;"><b>model-router · dispatcher</b></td>
     <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">9router / Omni · web backends</td>
+    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">omni-router / Omni · web backends</td>
   </tr>
 </table>
 
 ## Purpose
 
-Model gateway and tool bus: **Model Router** (task_hint → providers), **9Router** / optional **OmniRouter**, and **dispatcher** (web search, media helpers). Hermes talks here instead of hardcoding vendors in skills. Security is **Secret Probe**, not a task type.
+Model gateway and tool bus: **Model Router** (task_hint → providers), **OmniRoute** / optional **OmniRouter**, and **dispatcher** (web search, media helpers). Hermes talks here instead of hardcoding vendors in skills. Security is **Secret Probe**, not a task type.
+
+`omni-attribution/` completes missing call-log attribution for stack-owned non-chat OmniRoute endpoints. It is isolated from routing and never changes providers, combo definitions, or combo membership.
 
 ## Profile
 
@@ -28,14 +30,14 @@ Model gateway and tool bus: **Model Router** (task_hint → providers), **9Route
 |---|---|---|---|
 | model-router | Must (default on) | Must | Must |
 | dispatcher | Must (web backends empty) | Must + Tavily→Firecrawl→SearXNG | Same |
-| 9router | Must | Must | Must |
+| omni-router | Must | Must | Must |
 | OmniRouter | Off | Optional | Optional (`ENABLE_OMNIROUTER`; pairs with `omni-exporter` when metrics are on) |
 
 ## Sub-packages
 
 | Package | Function |
 |---|---|
-| [model-router/](./model-router/README.md) | Hybrid task class → 9router / Omni / fallback |
+| [model-router/](./model-router/README.md) | Hybrid task class → omni-router / Omni / fallback |
 | [omni-router/](./omni-router/README.md) | Optional general-task router (separate image) |
 | [dispatcher/](./dispatcher/README.md) | Media helpers; points Hermes to model-router for `/v1/search` |
 
@@ -45,20 +47,20 @@ Model gateway and tool bus: **Model Router** (task_hint → providers), **9Route
 Hermes needs a completion
     → INPUT Secret Probe (BLOCK stops)
     → model-router task_hint
-        → coding  → 9router (when up)
-        → normal / others → OmniRouter (if enabled) else 9router / pool
+        → coding  → omni-router (when up)
+        → normal / others → OmniRouter (if enabled) else omni-router / pool
         → clear no_model_available if nothing left
     → OUTPUT Secret Probe
 
 Hermes / skill needs web search (Medium+)
-    → model-router /v1/search  (Router Worker combo "websearch")
+    → model-router /v1/search  (Model Router combo "websearch")
     → Omni combo web-search (operator failover in Omni UI)
       (default tavily → searxng)
     → extract via WEB_EXTRACT_BACKENDS / config (not SearXNG)
 ```
 
 **Note:** OmniRouter does **not** host web search. Its combos are LLM models only.
-SearXNG is a sibling container called by Router Worker, not an OmniRouter plugin.
+SearXNG is a sibling container called by Model Router, not an OmniRouter plugin.
 
 On **Low**, do not use dispatcher for internet answers to knowledge questions — knowledge stays in ingest/Qdrant.
 

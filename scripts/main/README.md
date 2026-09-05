@@ -8,8 +8,8 @@ Committed with the repo. Invoked by `run.sh` and first-setup docs.
 | `install-component.sh` | Resolve `run.sh install` / `uninstall` short names → `WORKER_*` / `ENABLE_*` |
 | `first-setup-omnirouter.py` | **Default** — OmniRoute key + chat combo `hermes` + classify combo `classifier` |
 | `first-setup-omnirouter.sh` | Thin wrapper |
-| `first-setup-9router-hermes.py` | Optional — only when `ENABLE_9ROUTER=active` |
-| `first-setup-9router-hermes.sh` | Thin wrapper |
+| `first-setup-omni-router-hermes.py` | Optional — only when `ENABLE_OMNIROUTER=active` |
+| `first-setup-omni-router-hermes.sh` | Thin wrapper |
 | `first-setup-openbao.py` | Seed OpenBao KV when Security/OpenBao worker is active |
 | `setup-zalo.sh` | Install Zalo bridge + adapter after core ready |
 | `login-zalo.sh` | Manual QR login (last step) |
