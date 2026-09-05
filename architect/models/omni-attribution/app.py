@@ -25,8 +25,6 @@ def endpoint_combos() -> dict[str, str]:
         "/v1/images/edits": os.environ.get("IMAGE_EDIT_COMBO") or "image-edit",
         "/v1/embeddings": os.environ.get("EMBED_COMBO") or "embedding",
         "/v1/search": os.environ.get("WEB_SEARCH_COMBO") or "web-search",
-        "/v1/videos/generations": os.environ.get("VIDEO_GEN_COMBO") or "video-gen",
-        "/v1/videos/edits": os.environ.get("VIDEO_EDIT_COMBO") or "video-edit",
     }
     return {path: combo.strip() for path, combo in configured.items() if combo.strip()}
 

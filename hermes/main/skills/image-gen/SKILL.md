@@ -52,4 +52,4 @@ Only `/opt/data/media/out/<safe-slug>.*` (webp/png/jpg).
 
 ## Related
 
-- `multi-purpose`, `vision-ocr`, `video-gen`, `file-gen`
+- `multi-purpose`, `vision-ocr`, `file-gen`

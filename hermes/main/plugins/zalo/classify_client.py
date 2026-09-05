@@ -40,8 +40,6 @@ ATTACHMENT_TYPES = ("image", "file", "audio", "video")
 SKILLS = (
     "media_file",
     "image-edit",
-    "video-gen",
-    "video-edit",
     "content-summary",
     "web_search",
     "schedule",
@@ -760,6 +758,19 @@ def plan_is_media_policy_refuse(plan: dict[str, Any] | None) -> bool:
     return action == "refuse"
 
 
+def plan_allows_image_edit(plan: dict[str, Any] | None) -> bool:
+    """True only for the classifier's explicit supplied-image edit contract."""
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    skill = str(src.get("skill") or "").strip().lower().replace("_", "-")
+    action = str(src.get("skill_action") or "").strip().lower()
+    output_type = _coerce_output_type(src.get("output_type"))
+    return skill == "image-edit" and action == "edit_media" and output_type == "image"
+
+
 def plan_allows_scene_image(plan: dict[str, Any] | None) -> bool:
     """Pure scenic image — diffusion only, no live-data search sibling."""
     src = plan if isinstance(plan, dict) else {}
@@ -1124,6 +1135,8 @@ def plan_media_shortcut_gate(plan: dict[str, Any] | None) -> str:
     """Host media shortcut kind when the adapter must own the turn (no Hermes fallthrough)."""
     if plan_is_media_policy_refuse(plan):
         return "refuse"
+    if plan_allows_image_edit(plan):
+        return "image_edit"
     if plan_allows_office_shortcut(plan) and not plan_skips_media_shortcut(plan):
         return "office"
     if plan_allows_search_then_office(plan):

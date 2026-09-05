@@ -1,3 +1,7 @@
+## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider timeout
+
+See `history/2026-09-05/README.md` section “Quoted images were analyzed instead of edited”.
+
 ## 2026-09-04 20:10 +07 — scheduled live-scene execution and overlay ownership
 
 See `history/2026-09-04/README.md` sections “Scheduled live-scene intent survives storage and fire” and “One renderer owns live-scene text”.
@@ -2100,7 +2104,7 @@ Always resolve named groups via zalo-context/PG before schedule/create; never sw
 
 ## 2026-08-23 17:05 +07 — video policy: OmniRouter refuse messages
 
-- Dispatcher `video_summary.py`: LLM-written refuse for social video summary + video generation; `/v1/video` blocked; `video-gen` skill aligned.
+- Dispatcher `video_summary.py`: LLM-written policy response for inaccessible social-media content.
 
 ## 2026-08-23 17:00 +07 — Zalo quote: durable bridge overlay (not runtime patch)
 

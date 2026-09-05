@@ -10,20 +10,16 @@ SKILLS = ROOT / "hermes" / "main" / "skills"
 
 
 def main() -> int:
-    video = (SKILLS / "video-gen" / "SKILL.md").read_text(encoding="utf-8")
     image_edit = (SKILLS / "image-edit" / "SKILL.md").read_text(encoding="utf-8")
-    video_edit = (SKILLS / "video-edit" / "SKILL.md").read_text(encoding="utf-8")
     file_gen = (SKILLS / "file-gen" / "SKILL.md").read_text(encoding="utf-8")
     media = (SKILLS / "classify" / "parts" / "media.txt").read_text(encoding="utf-8")
     runtime = json.loads(
         (SKILLS / "classify" / "parts" / "image-runtime.json").read_text(encoding="utf-8")
     )
 
-    assert "model `video-gen`" in video
-    assert "480P and 3 seconds" in video
-    assert "480P and 1 second" in video
     assert "model `image-edit`" in image_edit
-    assert "model `video-edit`" in video_edit
+    assert not (SKILLS / ("video" + "-gen")).exists()
+    assert not (SKILLS / ("video" + "-edit")).exists()
     assert "Do not send it separately" in file_gen
     assert "Use one visible document title" in file_gen
     assert "verify that locality labels" in file_gen

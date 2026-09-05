@@ -1627,8 +1627,7 @@ class ZaloAdapter(BasePlatformAdapter):
         urls = list(media_urls or [])
         if (
             not shortcut_user_text
-            or urls
-            or has_image_attachment
+            or (urls and not has_image_attachment)
             or "[Attachment text —" in bare
             or "[Attached file:" in bare
             or "[Attached image:" in bare
@@ -1638,6 +1637,7 @@ class ZaloAdapter(BasePlatformAdapter):
             from .classify_client import (
                 classify_text_async,
                 plan_allows_office_shortcut,
+                plan_allows_image_edit,
                 plan_allows_poster_shortcut,
                 plan_allows_scene_image,
                 plan_allows_search_then_composed_image,
@@ -1653,6 +1653,7 @@ class ZaloAdapter(BasePlatformAdapter):
             from .media_shortcuts import (
                 media_fail_line,
                 run_office_create,
+                run_image_edit,
                 run_scene_image,
                 run_search_then_composed_image,
                 run_search_then_office,
@@ -1665,6 +1666,7 @@ class ZaloAdapter(BasePlatformAdapter):
             from classify_client import (  # type: ignore
                 classify_text_async,
                 plan_allows_office_shortcut,
+                plan_allows_image_edit,
                 plan_allows_poster_shortcut,
                 plan_allows_scene_image,
                 plan_allows_search_then_composed_image,
@@ -1680,6 +1682,7 @@ class ZaloAdapter(BasePlatformAdapter):
             from media_shortcuts import (  # type: ignore
                 media_fail_line,
                 run_office_create,
+                run_image_edit,
                 run_scene_image,
                 run_search_then_composed_image,
                 run_search_then_office,
@@ -1709,9 +1712,16 @@ class ZaloAdapter(BasePlatformAdapter):
                 early_plan["task_hint"] = "tool"
                 early_plan["execution_class"] = "async"
                 early_plan["response_mode"] = "ack_then_deliver"
-            if has_image_attachment and plan_is_image_analyze_chat(early_plan, has_image=True):
+            edit_plan = plan_allows_image_edit(early_plan)
+            # Pre-queue workflow probes do not own attachment paths. Defer the
+            # explicit edit unchanged until the queued turn supplies its staged
+            # source; never reinterpret a missing-source edit as generation.
+            if edit_plan and (not has_image_attachment or not urls):
                 return False
-            if has_image_attachment:
+            is_image_edit = has_image_attachment and edit_plan
+            if has_image_attachment and not is_image_edit and plan_is_image_analyze_chat(early_plan, has_image=True):
+                return False
+            if has_image_attachment and not is_image_edit:
                 early_plan = apply_image_analyze_plan_coercion(early_plan)
             shortcut_gate = plan_media_shortcut_gate(early_plan)
             inner = ""
@@ -1719,7 +1729,18 @@ class ZaloAdapter(BasePlatformAdapter):
             if isinstance(ins, list) and ins:
                 inner = str(ins[0] or "").strip()
             work = inner or shortcut_user_text
-            if plan_is_media_policy_refuse(early_plan):
+            if is_image_edit and urls:
+                shortcut = await asyncio.to_thread(
+                    run_image_edit,
+                    work,
+                    str(urls[0]),
+                    str(thread_id),
+                    str(thread_type),
+                    classified=True,
+                )
+                if shortcut_ok(shortcut):
+                    self._as_flow("image_edit_shortcut", thread_id=thread_id, file=shortcut.get("file"))
+            elif plan_is_media_policy_refuse(early_plan):
                 shortcut = await asyncio.to_thread(
                     run_video_policy_refuse,
                     shortcut_user_text,
@@ -2858,7 +2879,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 instruction
                 + "\n\nIf this task creates a still image: use skill image-gen "
                 "(diffusion via the image-gen combo; English photorealistic prompt, save under /opt/data/media/out). "
-                "Video generation uses skill video-gen; image/video transformations use image-edit/video-edit. "
+                "A supplied-image transformation uses skill image-edit. "
                 "User-facing: the file only."
             )
         ctx = job.get("context") if isinstance(job.get("context"), dict) else {}
@@ -3662,19 +3683,21 @@ class ZaloAdapter(BasePlatformAdapter):
                         await self._as_gate_announce(tid, thread_type, block_msg)
                     return
                 bare_q = str(event.text or "").strip()
-                if bare_q and not list(event.media_urls or []):
-                    if await self._as_run_host_media_shortcut(
-                        user_text=bare_q,
-                        thread_id=tid,
-                        thread_type=thread_type,
-                        bare_text=bare_q,
-                    ):
-                        return
                 has_image = self._as_has_image_attachment(
                     list(event.media_urls or []),
                     media_types=list(event.media_types or []),
                     message_type=event.message_type,
                 )
+                if bare_q:
+                    if await self._as_run_host_media_shortcut(
+                        user_text=bare_q,
+                        thread_id=tid,
+                        thread_type=thread_type,
+                        bare_text=bare_q,
+                        media_urls=list(event.media_urls or []),
+                        has_image_attachment=has_image,
+                    ):
+                        return
                 if has_image and list(event.media_urls or []):
                     if await self._as_try_image_analyze_vision_reply(
                         text=str(event.text or ""),
@@ -5069,7 +5092,6 @@ class ZaloAdapter(BasePlatformAdapter):
         if (
             shortcut_user_text
             and not queue_on
-            and not media_urls
             and "[Attachment text —" not in bare_text
             and "[Attached file:" not in bare_text
         ):
@@ -5078,6 +5100,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_id=str(thread_id),
                 thread_type=str(thread_type),
                 bare_text=bare_text,
+                media_urls=media_urls,
+                has_image_attachment=attach_is_image,
             ):
                 return
 

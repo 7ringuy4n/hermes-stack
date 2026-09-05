@@ -6,6 +6,5 @@
   "web_extract_disabled": "Web extract is unavailable (no search backends configured).",
   "prompt_required": "A prompt is required.",
   "media_gen_failed": "Could not generate media. Try a simpler request or try again later.",
-  "social_summary_refuse_fallback": "I can't access or summarize YouTube, TikTok, or Facebook content here. Please watch on their app, then ask me for technical or document help.",
-  "video_generate_refuse_fallback": "This stack doesn't generate video clips. I can help with a still image or an office file instead."
+  "social_summary_refuse_fallback": "I can't access or summarize YouTube, TikTok, or Facebook content here. Please watch on their app, then ask me for technical or document help."
 }

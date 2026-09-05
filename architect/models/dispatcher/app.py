@@ -23,7 +23,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from image_backends import image_backends
-from video_summary import health_fields, omni_refuse_message, policy_block_response, register_video_summary
+from video_summary import health_fields, register_video_summary
 
 app = FastAPI(title="assistant dispatcher", version="1.1.0")
 log = logging.getLogger("dispatcher")
@@ -189,17 +189,6 @@ class ImageReq(BaseModel):
     overlay: Optional[list[str]] = None  # short fact lines already fetched by the agent
     overlay_corner: Optional[str] = None
     overlay_design: Optional[dict[str, Any]] = None
-
-
-class VideoReq(BaseModel):
-    """Short H.264 clip from a still (dispatcher default — not Hermes-invented tools)."""
-    prompt: Optional[str] = None
-    image: Optional[str] = None  # existing file under media/out
-    filename: Optional[str] = None
-    seconds: float = 4.0
-    overlay: Optional[list[str]] = None
-    refine: bool = False
-    provider: Optional[str] = None
 
 
 @app.get("/health")
@@ -815,14 +804,6 @@ def image_overlay(req: ImageReq) -> dict[str, Any]:
                 req.thread_id, req.thread_type, dest, req.caption or ""
             )
     return result
-
-
-@app.post("/v1/video")
-def video_generate(req: VideoReq) -> dict[str, Any]:
-    """Video generation blocked — same policy as video-summary; OmniRouter writes refuse text."""
-    ctx = (req.prompt or req.image or req.filename or "").strip()
-    message, meta = omni_refuse_message(topic="video_generate", context=ctx)
-    return policy_block_response(reason="video_policy", message=message, meta=meta)
 
 
 class RemuxReq(BaseModel):

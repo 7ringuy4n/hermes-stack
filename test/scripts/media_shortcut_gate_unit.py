@@ -248,7 +248,10 @@ def main() -> int:
     assert adapter_source.count(
         ') and (schedule_fire or plan.get("task_hint") != "schedule")'
     ) == 2
-    assert "shortcut_user_text\n            and not queue_on\n            and not media_urls" in adapter_source
+    assert "media_urls=media_urls" in adapter_source
+    assert "has_image_attachment=attach_is_image" in adapter_source
+    assert "media_urls=list(event.media_urls or [])" in adapter_source
+    assert "if edit_plan and (not has_image_attachment or not urls):" in adapter_source
     assert 'plan=m.get("plan") if isinstance(m.get("plan"), dict) else None' in adapter_source
     assert 'early_plan["task_hint"] = "tool"' in adapter_source
     assert adapter_source.count("schedule_fire=schedule_fire,") >= 4

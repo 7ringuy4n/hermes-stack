@@ -1,10 +1,15 @@
+## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
+
+- Quoted Zalo images now retain their staged source through classification and are edited through the dedicated image endpoint before being returned once.
+- Slow direct image operations receive a five-minute response-header budget independently of the LLM request queue.
+- Retired media-generation aliases, skills, setup entries, and endpoint attribution are removed; setup also clears stale combo rows.
+
 ## 2026-09-05 13:47 +07 — priority chat and endpoint-owned media skills
 
 - The default chat combo now uses priority failover, and setup migrates only the strategy of stack-owned chat/media combos while preserving operator member order.
-- Added result-only image-edit, video-generation, and video-edit skills backed by their dedicated OmniRoute endpoints; classifier enums now preserve video output and edit actions.
+- Added a result-only image-edit skill backed by its dedicated OmniRoute endpoint.
 - Generated information overlays follow the current request language and prohibit newly introduced abusive copy.
 - Designed office files no longer gain an implicit image deliverable, and document guidance requires a single visible title.
-- Video-generation tests default to one 480P three-second clip, with an explicit one-second exception for temporary provider-cost probes.
 
 ## 2026-09-05 13:30 +07 — clean first-boot replica rollout
 
@@ -547,7 +552,7 @@
 ## 2026-08-30 08:00 +07 — Media path: Omni/9Router combos; ComfyUI removed
 
 - Image diffusion no longer uses ComfyUI or paid host image API keys; dispatcher calls OmniRouter `/images/generations` (combo `image-gen`), then 9Router when enabled. OCR vision uses combo `vision-ocr`; embeddings use combo `embedding`.
-- Removed Comfy services/env pins and optional image-vendor keys from `.env.example`. Skills: image-gen, vision-ocr, embedding, multi-purpose; video/music/audio/URL transcripts refuse via video-gen.
+- Removed Comfy services/env pins and optional image-vendor keys from `.env.example`. Skills: image-gen, vision-ocr, embedding, multi-purpose; unavailable media operations use a policy response.
 
 ## 2026-08-29 19:30 +07 — Image backend order: Comfy first, Omni fallback
 
@@ -974,8 +979,8 @@
 
 ## 2026-08-23 17:05 +07 — video policy: OmniRouter refuse (no hardcoded VI)
 
-- `video_summary.py`: social-summary and video-generate refuses call OmniRouter `chat/completions`; fallbacks in `messages/en.json` only when LLM unavailable.
-- `/v1/video` and `/v1/video-policy-refuse` return policy block; `video-gen` skill updated to refuse (like video-summary).
+- `video_summary.py`: social-summary refusals call OmniRouter `chat/completions`; fallbacks in `messages/en.json` only when LLM unavailable.
+- `/v1/video-policy-refuse` returns a policy block for inaccessible URL media and audio operations.
 
 ## 2026-08-23 17:00 +07 — Zalo quote: durable bridge overlay (not runtime patch)
 

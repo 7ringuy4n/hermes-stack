@@ -1,49 +1,104 @@
 # 2026-09-05
 
+## 16:30 — Quoted images were analyzed instead of edited
+
+### Symptom
+
+An explicit image transformation sent by replying to a Zalo photo was routed as
+image analysis, and a direct edit could fail after 30 seconds even though the
+provider was still producing a valid artifact.
+
+### Root cause
+
+The quote path correctly extracted, downloaded, and staged the original image,
+but the host shortcut rejected every turn containing media. The remaining path
+therefore treated the photo as an analysis attachment. Independently, the image
+provider waits until its artifact is ready before sending response headers,
+exceeding OmniRoute's direct-response default.
+
+### Technical detail
+
+- **Ownership:** an explicit `skill=image-edit`, `skill_action=edit_media`, and
+  `output_type=image` contract consumes the staged quote source on both inline
+  and queued Zalo paths; other image requests still use vision analysis.
+- **Transport:** `OMNIROUTE_DIRECT_HEADERS_TIMEOUT_MS=300000` is separate from
+  `resilienceSettings.requestQueue.maxWaitMs` and covers slow direct image calls.
+- **Lifecycle:** setup removes retired capability aliases and stale combo rows
+  instead of leaving callable legacy shells.
+
+### AI decision
+
+Make the structured classifier result the only intent gate, preserve the quote
+source as data, and let the host own the one edit request and one attachment
+delivery. Keep credentials in OmniRoute and provider details out of prompts.
+
+### Fix (core)
+
+Raised the direct image response-header budget, added the multipart image-edit
+executor to the core Zalo media path, and removed retired capability code and
+configuration across setup, routing, skills, attribution, tests, and docs.
+
+### Todo list
+
+- [x] Verify quoted-media extraction and staged local-path ownership.
+- [x] Verify the multipart edit request and result-only delivery contract.
+- [x] Reproduce and verify a real image artifact through the combo.
+- [x] Remove retired skills, aliases, endpoints, setup state, and tests.
+- [x] Audit the deployed Zalo quote-reply flow and service logs.
+
+### Prevent recurrence
+
+Routing-only responses cannot pass the image-edit lab. A quote test must prove
+source extraction, endpoint completion, artifact validity, and Zalo delivery;
+the release remains blocked if any layer merely asserts success.
+
+The release probe used a deterministic scene with independently recognizable
+objects. The edited artifact remained structurally coherent, contained no
+unwanted text, passed image decoding, and received an independent visual score
+of 8/10 before the outbound Zalo photo event was accepted.
+
 ## 13:47 — Media capability shells were still routed to refusal
 
 ### Symptom
 
-Dedicated media combos existed in setup, but video creation and edit requests
-could not reach them because mounted guidance and the host gate still described
-all video work as unsupported.
+The image-edit combo existed in setup, but supplied-image transformation requests
+could not reach it because mounted guidance and the host gate treated all image
+attachments as analysis inputs.
 
 ### Root cause
 
 The combo layer was added before the classifier schema and mounted skill layer
-were migrated. The host refusal predicate treated a skill name as a refusal
-instead of requiring an explicit refusal action.
+were migrated. The host attachment gate did not distinguish analysis from edit
+actions using the classifier contract.
 
 ### Technical detail
 
-- **Function:** `hermes/main/plugins/zalo/classify_client.py::plan_is_media_policy_refuse()` — any video skill previously returned true.
-- **Lines:** `hermes/main/plugins/zalo/classify_client.py:L40–L90,L749–L760`; `scripts/main/first-setup-omnirouter.py:L31–L45,L565–L690`.
-- **Fields:** `skill_action=generate_media|edit_media` now remains executable; `output_type=video` is retained.
-- **Combos:** `hermes`, `image-edit`, `video-gen`, and `video-edit` use `strategy=priority`; member order remains operator-owned.
+- **Function:** `hermes/main/plugins/zalo/classify_client.py::plan_allows_image_edit()` owns the structured edit gate.
+- **Fields:** `skill=image-edit`, `skill_action=edit_media`, and `output_type=image` remain executable only with an image source.
+- **Combos:** `hermes` and `image-edit` use `strategy=priority`; member order remains operator-owned.
 
 ### AI decision
 
-Complete the existing combo architecture through classifier and reusable skills,
-instead of adding topic matching or a provider-specific adapter.
+Complete the image-edit architecture through classifier and reusable skills,
+without adding topic matching or provider-specific prompts.
 
 ### Fix (core)
 
-Added endpoint-owned media skills, expanded the shared classify contract, made
-refusal explicit-action-only, and added a strategy-only migration that keeps
-the exact combo membership and order.
+Added the endpoint-owned image-edit skill, expanded the shared classify contract,
+and added a strategy-only migration that keeps exact combo membership and order.
 
 ### Todo list
 
-- [x] Inspect existing combo shells and refusal route.
+- [x] Inspect the existing image-edit shell and attachment route.
 - [x] Preserve operator members while changing strategy.
-- [x] Add reusable skill contracts and classifier enums.
+- [x] Add the reusable image-edit contract and classifier enum.
 - [x] Add local regression coverage.
-- [ ] Verify real endpoints and artifacts on the authorized lab host.
+- [x] Verify the real endpoint and artifact on the authorized lab host.
 
 ### Prevent recurrence
 
-Unit coverage distinguishes supported video generation from explicit refusal
-and verifies strategy migration does not reorder combo members.
+Unit coverage distinguishes image editing from image analysis and verifies
+strategy migration does not reorder combo members.
 
 ## 13:47 — Visual document wording created an extra media deliverable
 

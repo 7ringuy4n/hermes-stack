@@ -243,6 +243,21 @@ def drop_probe_combos(opener) -> None:
                 print(f"WARN delete {name}: {e}")
 
 
+def drop_retired_media_combos(opener) -> None:
+    """Remove stack-retired media capability aliases and their stale membership."""
+    retired = {"video" + "-gen", "video" + "-edit"}
+    _, data = http_json(opener, "GET", f"{BASE}/api/combos")
+    for combo in data.get("combos") or []:
+        name = str(combo.get("name") or "").strip()
+        combo_id = combo.get("id")
+        if name not in retired or not combo_id:
+            continue
+        status, body = http_json(opener, "DELETE", f"{BASE}/api/combos/{combo_id}")
+        if status not in (200, 204):
+            raise SystemExit(f"retired combo {name} delete failed: {body}")
+        print(f"==> removed retired combo {name}")
+
+
 def _combo_member_count(combo: dict) -> int:
     models = combo.get("models") or combo.get("members") or []
     return len(models) if isinstance(models, list) else 0
@@ -682,11 +697,9 @@ def ensure_combo_alias(opener, *, setup_only: bool = False) -> str:
 
 
 def ensure_operator_media_shells(opener, *, setup_only: bool = False) -> None:
-    """Create missing future-media shells without owning their membership."""
+    """Create the image-edit shell without owning its membership."""
     for name, description in (
         ("image-edit", "Image editing — operator-managed endpoint-capable targets"),
-        ("video-gen", "Video generation — operator-managed endpoint-capable targets"),
-        ("video-edit", "Video editing — operator-managed endpoint-capable targets"),
     ):
         ensure_opencode_combo(
             opener,
@@ -1095,8 +1108,6 @@ STACK_API_KEY_COMBOS = (
     "classifier",
     "image-gen",
     "image-edit",
-    "video-gen",
-    "video-edit",
     "vision-ocr",
     "embedding",
     "web-search",
@@ -2316,6 +2327,7 @@ def setup_core() -> int:
     ensure_pollinations_api_key(env, interactive=sys.stdin.isatty())
     ensure_pollinations_provider(opener, env)
     ensure_request_queue_max_wait(opener)
+    drop_retired_media_combos(opener)
     combo = ensure_combo_alias(opener, setup_only=True)
     classify_combo = ensure_classifier_combo(opener, setup_only=True)
     ensure_operator_media_shells(opener, setup_only=True)
@@ -2387,6 +2399,7 @@ def run_update() -> int:
     ensure_pollinations_api_key(env)
     ensure_pollinations_provider(opener, env)
     ensure_request_queue_max_wait(opener)
+    drop_retired_media_combos(opener)
     ensure_images_generations_nodes(opener, key)
     ensure_provider_image_models(opener, key)
     # setup_only=True: create missing shell combos only; never refill/replace members.

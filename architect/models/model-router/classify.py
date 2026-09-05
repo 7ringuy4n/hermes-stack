@@ -81,8 +81,6 @@ ATTACHMENT_TYPES = ("image", "file", "audio", "video")
 SKILLS = (
     "media_file",
     "image-edit",
-    "video-gen",
-    "video-edit",
     "content-summary",
     "web_search",
     "schedule",

@@ -22,7 +22,7 @@ available grounded material.
 
 Follow **`media-out`**: result file or final answer only — no process chatter.
 
-Use `video-gen`, `image-edit`, or `video-edit` only when the current deliverable explicitly requires that medium; do not add media siblings merely to decorate an office file.
+Use `image-edit` only when the current deliverable explicitly requires a supplied image transformation; do not add media siblings merely to decorate an office file.
 
 ## Related
 

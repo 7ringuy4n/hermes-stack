@@ -9,7 +9,7 @@ message: string; inner work only for create_schedule
 instructions: string array; one entry per distinct job
 attachments_required: bool
 attachment_types: image|file|audio|video array
-skill: media_file|image-edit|video-gen|video-edit|content-summary|web_search|schedule|security|knowledge or null
+skill: media_file|image-edit|content-summary|web_search|schedule|security|knowledge or null
 skill_action: create|delete|list|pause|resume|update|run_now|deliver|process_file|generate_media|edit_media|summarize|search|lookup or null
 cadence: once|daily|weekly|monthly|yearly or null
 schedule_form: once_at|once_after|recurring or null

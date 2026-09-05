@@ -1,4 +1,4 @@
-"""Social video links and video generation — policy blocks; refuse text via OmniRouter."""
+"""Policy responses for inaccessible social-media and audio content."""
 from __future__ import annotations
 
 import json
@@ -16,13 +16,6 @@ _REFUSE_SYSTEM: dict[str, str] = {
         "from YouTube, TikTok, or Facebook. Policy: you must not fetch or summarize that platform content. "
         "Write a polite refusal in the user's language (Vietnamese unless the request is clearly English). "
         "Say they should watch on the native app, then ask you for technical or document help. "
-        "Output ONLY the user-facing message — no quotes, labels, or markdown headings."
-    ),
-    "video_generate": (
-        "You are Hermes assistant. The user asked to generate or create a video clip on this stack. "
-        "Policy: this deployment does not generate synthetic videos. "
-        "Write a polite refusal in the user's language (Vietnamese unless clearly English). "
-        "Suggest a still image (infographic/poster) or an office document instead when relevant. "
         "Output ONLY the user-facing message — no quotes, labels, or markdown headings."
     ),
     "music_generate": (
@@ -163,7 +156,7 @@ class VideoSummaryReq(BaseModel):
 
 
 class VideoPolicyRefuseReq(BaseModel):
-    topic: str = "video_generate"
+    topic: str = "transcript"
     language: Optional[str] = None
     context: str = ""
 
@@ -183,10 +176,10 @@ def register_video_summary(app: FastAPI) -> None:
 
     @app.post("/v1/video-policy-refuse")
     def video_policy_refuse(req: VideoPolicyRefuseReq) -> dict[str, Any]:
-        """Policy refuse for video-gen skill (and other blocked video intents)."""
-        topic = (req.topic or "video_generate").strip() or "video_generate"
+        """Policy response for unavailable URL-media or audio operations."""
+        topic = (req.topic or "transcript").strip() or "transcript"
         if topic not in _REFUSE_SYSTEM:
-            topic = "video_generate"
+            topic = "transcript"
         message, meta = omni_refuse_message(
             topic=topic,
             context=req.context,
@@ -199,7 +192,6 @@ def health_fields(_media_dir: Path) -> dict[str, Any]:
     return {
         "video_summary": False,
         "video_summary_policy": True,
-        "video_generate_policy": True,
         "youtube_cookies": False,
         "youtube_proxy": False,
     }

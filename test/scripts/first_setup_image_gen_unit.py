@@ -196,10 +196,35 @@ def test_operator_media_shells_are_non_destructive() -> None:
         mod.ensure_operator_media_shells(object(), setup_only=True)
     finally:
         mod.ensure_opencode_combo = original
-    assert [row["name"] for row in calls] == ["image-edit", "video-gen", "video-edit"]
+    assert [row["name"] for row in calls] == ["image-edit"]
     assert all(row["setup_only"] is True for row in calls)
     assert all(row["strategy"] == "priority" for row in calls)
     assert all(row["enforce_strategy_only"] is True for row in calls)
+
+
+def test_retired_media_combos_are_deleted() -> None:
+    removed: list[str] = []
+
+    def fake_http(_opener, method, url, body=None, timeout=25):
+        del body, timeout
+        if method == "GET":
+            return 200, {
+                "combos": [
+                    {"id": "keep", "name": "image-edit"},
+                    {"id": "old-gen", "name": "video" + "-gen"},
+                    {"id": "old-edit", "name": "video" + "-edit"},
+                ]
+            }
+        removed.append(url.rsplit("/", 1)[-1])
+        return 204, {}
+
+    original = mod.http_json
+    mod.http_json = fake_http
+    try:
+        mod.drop_retired_media_combos(object())
+    finally:
+        mod.http_json = original
+    assert removed == ["old-gen", "old-edit"]
 
 
 def test_setup_only_strategy_migration_preserves_members() -> None:
@@ -350,6 +375,7 @@ def main() -> None:
     test_vision_trusts_catalog_capability_over_incomplete_modalities()
     test_image_gen_combo_strategy_is_priority()
     test_operator_media_shells_are_non_destructive()
+    test_retired_media_combos_are_deleted()
     test_setup_only_strategy_migration_preserves_members()
     test_put_or_create_combo_strategy_only_keeps_members()
     test_web_search_member_order()

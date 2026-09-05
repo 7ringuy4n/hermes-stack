@@ -14,5 +14,4 @@ Do not reinterpret an edit as text-to-image generation. Do not overwrite the sou
 ## Related
 
 - `image-gen` — create a new still
-- `video-edit` — edit a supplied video
 - `media-out` — result-only delivery
