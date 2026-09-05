@@ -148,6 +148,26 @@ field. The worker never writes provider or combo configuration.
 Endpoint attribution tests verify both identities independently, and rollout
 checks query live call logs after the reconciliation worker starts.
 
+## A fresh replica recovered only after one restart
+
+### Symptom
+
+The upstream UID remap treated the shared data root as the account home and
+encountered read-only bind mounts. A new replica failed its first bootstrap,
+then succeeded on restart after the UID change had partially persisted.
+
+### Decision and fix
+
+The replica entrypoint changes the account home to its writable per-replica
+directory before chaining into the upstream s6 bootstrap. The classifier bake
+is also regenerated from its prompt-part source so update does not dirty git.
+
+### Prevention
+
+A bootstrap regression test enforces ordering of the account-home handoff, and
+release verification checks restart counts plus repository cleanliness after a
+fresh rolling update.
+
 ## Retired routing and audio paths accumulated operational ambiguity
 
 ### Symptom
