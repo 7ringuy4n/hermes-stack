@@ -46,7 +46,8 @@
 - Office renderers now consume conventional inline emphasis and pipe tables as
   structure instead of printing authoring markers. Word emits native tables,
   while spreadsheets retain authored rows and add a chart when a usable numeric
-  series is present.
+  series is present. Word also preserves authored block order and uses compact,
+  print-safe typography so tables do not detach from their section headings.
 
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
 
