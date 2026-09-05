@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
 from classify_client import (  # noqa: E402
     normalize_plan,
+    plan_allows_office_shortcut,
     plan_media_shortcut_gate,
     plan_allows_scene_image,
 )
@@ -201,6 +202,30 @@ def test_weather_pdf_with_search_not_coerced_to_image() -> None:
     assert plan_media_shortcut_gate(plan) != "scene_image"
 
 
+def test_model_authored_office_instruction_never_becomes_document_body() -> None:
+    plan = normalize_plan(
+        {
+            "ok": True,
+            "task_hint": "file",
+            "task_type": "file_processing",
+            "execution_class": "async",
+            "skill": "media_file",
+            "skill_action": "process_file",
+            "output_type": "pdf",
+            "process_original_message": True,
+            "instructions": [
+                "Retrieve current facts, author the complete PDF with skill file-gen, and deliver it."
+            ],
+            "task_details": [
+                {"task_type": "file_processing", "output_type": "pdf", "depends_on": []}
+            ],
+        },
+        "create a polished current briefing PDF",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_allows_office_shortcut(plan) is False
+
+
 def main() -> int:
     test_scenic_plan_gate()
     test_pure_media_process_false()
@@ -210,6 +235,7 @@ def main() -> int:
     test_scheduled_render_contract_survives_flattened_child_types()
     test_scenic_misrouted_as_pdf_coerced()
     test_weather_pdf_with_search_not_coerced_to_image()
+    test_model_authored_office_instruction_never_becomes_document_body()
     adapter_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(
         encoding="utf-8"
     )

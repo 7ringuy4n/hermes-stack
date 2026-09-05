@@ -296,3 +296,32 @@ graph and verifies the deprecated package is absent.
 
 Vendor refreshes must regenerate npm lockfiles, rebuild distributions, run the
 crypto vector test, and verify the dependency tree before rollout.
+
+## Model-authored office artifacts require rendered-output gates
+
+### Symptom
+
+A fresh-data office request could be split into retrieval and authoring jobs,
+turn an operational instruction into document body text, add an unrequested
+sibling image, or produce a polished-looking file whose language, locality,
+timestamp, scope, units, or pagination was wrong.
+
+### Decision and fix
+
+Keep fresh-data document work in one evidence-owning file job and bypass the
+literal office shortcut when the model must process the original message.
+The classifier instruction and file skill now require dominant-language copy,
+one title, one verified current source, correct timezone semantics,
+locale-appropriate units, exact requested scope, and a pre-delivery layout
+review. The Zalo lab fixture verifies the actual delivered file and rejects a
+separate image artifact.
+
+### Verification result and prevention
+
+Structural routing, single-file delivery, current timestamp handling, and
+language/unit checks passed progressively. The final rendered page still used
+an unreliable card layout and unsupported descriptive interpretations, so the
+release gate remained closed. Future releases must inspect rendered pages and
+their extracted text; a successful API call or file assertion alone is not a
+pass. A bridge injection must also wait for an active SSE subscriber after a
+replica restart.

@@ -2683,3 +2683,10 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 - OpenBao secrets are loaded into the update process, propagated by controlled consumer recreation, and scrubbed from transient and repository env files afterward.
 - Zalo bridge HTTP/SSE transport is separated from conversation policy, and the vendored Zalo runtime replaces discontinued CryptoJS primitives with Node.js crypto compatibility-tested implementations.
 - Classifier media guidance is language-neutral and purpose-neutral; composed-image layout and typography remain model-designed from grounded content.
+
+## 2026-09-05 15:30 +07 — office-artifact evidence and layout gate
+
+- Strengthened model-authored office instructions to preserve the request's dominant language, subject, time scope, locality, source consistency, and timestamp timezone semantics.
+- Added pre-delivery checks for a single visible title, locale-appropriate units, unsupported interpretations, compact pagination, and visually balanced page use.
+- Added a Zalo lab fixture that rejects unexpected sibling images and discovers active runtime replicas dynamically.
+- Kept the release gate closed after rendered-PDF review exposed unreliable CSS layout and unsupported descriptive copy; no production merge or rollout is implied by these changes.

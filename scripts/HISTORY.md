@@ -5532,3 +5532,12 @@ Completed the existing Omni media combo shells through classifier and mounted
 skills, migrated selected combo strategies without changing member order, and
 made visual office assets opt-in with one visible document title. See
 `history/2026-09-05/README.md` for root-cause detail and verification gates.
+
+## 2026-09-05 15:30 +07 — rendered office artifact gate
+
+The Zalo visual-document lab now uses the exact configurable fixture, discovers
+active dispatcher/Hermes instances, rejects new sibling images, and allows the
+long-running office workflow budget. Release evaluation must extract text and
+inspect the rendered pages for scope, source time, language, unsupported copy,
+overflow, and page balance. Injection immediately after a replica restart is
+invalid until the bridge health endpoint reports an active SSE subscriber.

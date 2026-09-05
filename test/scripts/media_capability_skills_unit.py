@@ -26,6 +26,20 @@ def main() -> int:
     assert "model `video-edit`" in video_edit
     assert "Do not send it separately" in file_gen
     assert "Use one visible document title" in file_gen
+    assert "verify that locality labels" in file_gen
+    assert "dominant language of the current user message" in file_gen
+    assert "every visible word" in file_gen
+    assert "Do not add bilingual translations" in file_gen
+    assert "do not merge conflicting values" in file_gen
+    assert "requested time and subject scope is a hard boundary" in file_gen
+    assert "forecast tables" in file_gen and "are prohibited" in file_gen
+    assert "Do not invent causal explanations" in file_gen
+    assert "Before the final office-file call, self-review" in file_gen
+    assert "Keep a compact snapshot on one page" in file_gen
+    assert "never apply a timezone offset twice" in file_gen
+    assert "supposedly current observation that is in the future" in file_gen
+    assert "measurement units customary for that language/locale" in file_gen
+    assert "do not leave a large unused lower area" in file_gen
     assert "Styling inside a document is not a separate image deliverable" in media
     system = runtime["composition_system"]
     assert "dominant language of the current Request message" in system

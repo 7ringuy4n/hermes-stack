@@ -476,6 +476,11 @@ def plan_skips_media_shortcut(plan: dict[str, Any] | None) -> bool:
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
         return True
+    # The classify contract uses this bit for evidence-backed or designed
+    # office artifacts that the model must author. Passing their operational
+    # instruction straight to office-file would render the instruction itself.
+    if src.get("process_original_message") is True:
+        return True
     if plan_is_image_analyze_chat(src):
         return True
     hint = str(src.get("task_hint") or "").strip().lower()

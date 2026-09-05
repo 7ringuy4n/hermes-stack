@@ -7,7 +7,7 @@ description: "Edit one supplied video through OmniRoute combo video-edit. RESULT
 
 Follow skill **`media-out`**. Require one accessible source video. Preserve timing, audio, framing, and unrequested regions unless the user explicitly asks to change them.
 
-Call OmniRoute `POST /v1/videos/edits` with combo model `video-edit`, the source video, and the requested transformation. Run one video operation at a time, poll only the returned operation, save the completed MP4 under `/opt/data/media/out/`, and deliver it once.
+Call OmniRoute `POST /v1/videos/generations` with combo model `video-edit`, the source video, and the requested transformation. OmniRoute exposes generation and editing models through this single video endpoint. Run one video operation at a time, poll only the returned operation, save the completed MP4 under `/opt/data/media/out/`, and deliver it once.
 
 Default generated test outputs to 480P. Do not overwrite the source, invent a local ffmpeg transformation as a substitute for the model edit, or expose credentials/provider details.
 
