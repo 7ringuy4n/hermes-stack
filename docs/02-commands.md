@@ -77,7 +77,7 @@ bash scripts/main/setup-zalo.sh            # QR first, then zalo-api + adapter (
 bash scripts/main/login-zalo.sh            # re-login when stack already up
 ```
 
-`first-setup-llm` is **optional** and only used when `ENABLE_9ROUTER=active`.
+`first-setup-llm` is **optional** and only used when `ENABLE_OMNIROUTER=active`.
 
 ---
 
@@ -133,7 +133,7 @@ Runtime flags on a **running** host — `add-components` + `--update` (not plain
 
 ```bash
 bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
-bash run.sh add-components ENABLE_9ROUTER=active --update
+bash run.sh add-components ENABLE_OMNIROUTER=active --update
 ```
 
 Do **not** disable edge with raw flags:

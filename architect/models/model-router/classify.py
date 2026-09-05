@@ -413,7 +413,7 @@ def _coerce_delay_seconds(raw: Any) -> int | None:
 
 def _default_chat_combo_alias() -> str:
     """Chat/outbound combo alias (``hermes`` by default — not a vendor model id)."""
-    for key in ("OMNIROUTER_DEFAULT_COMBO", "N9ROUTER_DEFAULT_COMBO"):
+    for key in ("OMNIROUTER_DEFAULT_COMBO",):
         val = (os.environ.get(key) or "").strip()
         if val:
             return val

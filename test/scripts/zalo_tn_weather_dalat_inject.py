@@ -255,7 +255,7 @@ def main() -> int:
                 "docker logs --since 25m $(docker ps -qf name=assistant-hermes | head -1) 2>&1 | "
                 "grep -Ei 'dalat|đà lạt|weather-scene|shutdown_watchdog|exit.?75|classify|search_weather|"
                 "maxWaitMs|rate.?limit|499|HTTPError' | tail -n 80 || true; "
-                "docker logs --since 25m $(docker ps -qf name=router-worker | head -1) 2>&1 | "
+                "docker logs --since 25m $(docker ps -qf name=model-router | head -1) 2>&1 | "
                 "grep -Ei 'classify|fallback|ReadTimeout|ok via' | tail -n 40 || true",
             )
         )

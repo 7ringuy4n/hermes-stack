@@ -5,12 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 libffi8 \
       shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
-COPY models/dispatcher/requirements.txt models/dispatcher/requirements-whisper.txt ./
+COPY models/dispatcher/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-ARG INSTALL_WHISPER=0
-RUN if [ "$INSTALL_WHISPER" = "1" ]; then \
-      pip install --no-cache-dir -r requirements-whisper.txt; \
-    fi
 COPY lib/vision_ocr.py lib/vision_refuse.py ./
 COPY models/dispatcher/app.py models/dispatcher/video_summary.py models/dispatcher/office_file.py models/dispatcher/image_backends.py models/dispatcher/text_poster.py models/dispatcher/video_clip.py models/dispatcher/fonts.py models/dispatcher/overlay.py models/dispatcher/env_flags.py ./
 COPY models/dispatcher/fonts ./fonts

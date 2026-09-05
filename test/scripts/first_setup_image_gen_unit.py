@@ -146,14 +146,15 @@ def test_wired_custom_provider_image_ids() -> None:
         mod._custom_models_by_provider = orig_custom
 
 
-def test_vision_rejects_blind_supports_vision_flag() -> None:
-    blind = {
-        "fullModel": "oc/qwen3.7-plus",
+def test_vision_trusts_catalog_capability_over_incomplete_modalities() -> None:
+    kimi = {
+        "fullModel": "ai-box/kimi-k3",
         "supportsVision": True,
         "supportedEndpoints": ["chat"],
         "modalities": ["text"],
-        "provider": "oc",
+        "provider": "ai-box",
     }
+    kimi_code = {**kimi, "fullModel": "ai-box/kimi-k2.7-code"}
     capable = {
         "fullModel": "oc/mimo-v2.5-free",
         "supportsVision": True,
@@ -162,7 +163,8 @@ def test_vision_rejects_blind_supports_vision_flag() -> None:
         "capabilities": {"vision": True},
         "provider": "oc",
     }
-    assert mod._is_vision_capable_model_row(blind) is False
+    assert mod._is_vision_capable_model_row(kimi) is True
+    assert mod._is_vision_capable_model_row(kimi_code) is True
     assert mod._is_vision_capable_model_row(capable) is True
 
 
@@ -178,6 +180,24 @@ def test_fallback_combo_strategy_constants() -> None:
 
 def test_image_gen_combo_strategy_is_priority() -> None:
     test_fallback_combo_strategy_constants()
+
+
+def test_operator_media_shells_are_non_destructive() -> None:
+    calls: list[dict] = []
+    original = mod.ensure_opencode_combo
+
+    def fake_ensure(opener, **kwargs):
+        calls.append(kwargs)
+        return kwargs["name"]
+
+    mod.ensure_opencode_combo = fake_ensure
+    try:
+        mod.ensure_operator_media_shells(object(), setup_only=True)
+    finally:
+        mod.ensure_opencode_combo = original
+    assert [row["name"] for row in calls] == ["image-edit", "video-gen", "video-edit"]
+    assert all(row["setup_only"] is True for row in calls)
+    assert all(row["strategy"] == "priority" for row in calls)
 
 
 def test_put_or_create_combo_strategy_only_keeps_members() -> None:
@@ -284,8 +304,9 @@ def main() -> None:
     test_rank_prefers_images_generations_metadata()
     test_connection_model_helpers()
     test_wired_custom_provider_image_ids()
-    test_vision_rejects_blind_supports_vision_flag()
+    test_vision_trusts_catalog_capability_over_incomplete_modalities()
     test_image_gen_combo_strategy_is_priority()
+    test_operator_media_shells_are_non_destructive()
     test_put_or_create_combo_strategy_only_keeps_members()
     test_web_search_member_order()
     test_put_or_create_combo_uses_want_strategy()

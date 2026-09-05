@@ -105,6 +105,48 @@ def test_another_subject_uses_same_composed_gate() -> None:
     assert plan_media_shortcut_gate(plan) == "composed_image", plan
 
 
+def test_file_hint_does_not_override_explicit_image_contract() -> None:
+    raw = {
+        "ok": True,
+        "task_hint": "file",
+        "task_type": "media_generation",
+        "execution_class": "async",
+        "skill": "media_file",
+        "skill_action": "generate_media",
+        "output_type": "image",
+        "instructions": [
+            "Obtain current public information for the requested subject.",
+            "RENDER: composed-image\nSCENE: adaptive scenic background with negative space.",
+        ],
+        "task_details": [
+            {"task_type": "search"},
+            {"task_type": "media_generation", "output_type": "image", "depends_on": [0]},
+        ],
+    }
+    plan = normalize_plan(raw, "grounded information image", "Asia/Ho_Chi_Minh")
+    assert plan_media_shortcut_gate(plan) == "composed_image", plan
+
+
+def test_scheduled_render_contract_survives_flattened_child_types() -> None:
+    """A provider may label child tasks chat; the render contract remains executable."""
+    raw = {
+        "ok": True,
+        "task_hint": "tool",
+        "task_type": "create_schedule",
+        "output_type": "image",
+        "instructions": [
+            "Obtain current public information for the requested subject.",
+            "RENDER: composed-image\nSCENE: adaptive editorial illustration with clear text space.",
+        ],
+        "task_details": [
+            {"task_type": "chat"},
+            {"task_type": "chat"},
+        ],
+    }
+    plan = normalize_plan(raw, "scheduled information image", "Asia/Ho_Chi_Minh")
+    assert plan_media_shortcut_gate(plan) == "composed_image", plan
+
+
 def test_scenic_misrouted_as_pdf_coerced() -> None:
     """Classify wrongly put SCENE draw under pdf — host must restore scene_image."""
     raw = {
@@ -163,7 +205,9 @@ def main() -> int:
     test_scenic_plan_gate()
     test_pure_media_process_false()
     test_grounded_information_image_gate()
+    test_file_hint_does_not_override_explicit_image_contract()
     test_another_subject_uses_same_composed_gate()
+    test_scheduled_render_contract_survives_flattened_child_types()
     test_scenic_misrouted_as_pdf_coerced()
     test_weather_pdf_with_search_not_coerced_to_image()
     adapter_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(
@@ -178,7 +222,27 @@ def main() -> int:
     assert adapter_source.count(
         ') and (schedule_fire or plan.get("task_hint") != "schedule")'
     ) == 2
+    assert "shortcut_user_text\n            and not queue_on\n            and not media_urls" in adapter_source
+    assert 'plan=m.get("plan") if isinstance(m.get("plan"), dict) else None' in adapter_source
+    assert 'early_plan["task_hint"] = "tool"' in adapter_source
+    assert adapter_source.count("schedule_fire=schedule_fire,") >= 4
     assert "creation plan must continue" in adapter_source
+    assert "if schedule_fire:" in adapter_source
+    assert "Zalo: scheduleFire received thread=%s schedule=%s execution=%s plan=%s hint=%s" in adapter_source
+    assert "and not self._as_inbound_queue_enabled()" in adapter_source
+    assert "sock_connect=15, sock_read=45" in adapter_source
+    assert '("classify", "failed")' in adapter_source
+    classify_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "classify_client.py").read_text(
+        encoding="utf-8"
+    )
+    assert "DEFAULT_TIMEOUT_S = 120.0" in classify_source
+    assert "HTTP_ATTEMPTS = 1" in classify_source
+    schedule_source = (ROOT / "architect" / "schedule-worker" / "main.go").read_text(
+        encoding="utf-8"
+    )
+    assert 'if plan, ok := sch.Context["plan"]; ok && plan != nil' in schedule_source
+    assert 'payload["plan"] = plan' in schedule_source
+    assert '"messageId":         "schedule:" + sch.ID' in schedule_source
     print("media_shortcut_gate_unit OK")
     return 0
 

@@ -36,7 +36,8 @@ def main() -> None:
     assert cc.OUTBOUND_ACTION_MAP["drop"] == "drop"
 
     core = (ROOT / "hermes" / "main" / "skills" / "classify" / "parts" / "core.txt").read_text(encoding="utf-8")
-    assert "PRIVACY IN FIELDS" in core
+    assert "PRIVACY" in core
+    assert "Never place internal identifiers, server paths, credentials" in core
     ob = (ROOT / "hermes" / "main" / "skills" / "outbound" / "outbound.json").read_text(encoding="utf-8")
     assert "chat/thread" in ob.lower() or "thread" in ob.lower()
     print("outbound_privacy_unit OK")

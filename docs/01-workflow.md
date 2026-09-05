@@ -22,7 +22,7 @@ Console / IDE / optional social-app
         ├─ Knowledge — Ingest + Embedding → Qdrant knowledge_chunks
         │     auto-learn 00:00 (no approve); list/find top 5 + rest count
         ├─ Session
-        ├─ Router Worker (model-router) → OmniRouter (default) · 9Router optional
+        ├─ Model Router (model-router) → OmniRouter (default) · OmniRoute optional
         └─ Tool bus only when Media worker is active (dispatcher / OCR / Jobs / SearXNG)
         │
         ▼

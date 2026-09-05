@@ -1,0 +1,77 @@
+name: Publish to npm
+
+# Publishes on version tags (v*). Authenticates with an npm access token
+# (NPM_TOKEN secret) and attaches build provenance via GitHub OIDC, so every
+# release is cryptographically attested to this repo + workflow — yet the first
+# publish works with no npmjs-side pre-configuration (unlike tokenless OIDC,
+# which can't bootstrap a package that doesn't exist yet).
+#
+# ONE-TIME SETUP:
+#   1. npmjs.com → Account → Access Tokens → Generate New Token →
+#      "Granular Access Token". Scope: Packages = Read and write
+#      (limit to "hermes-zalo-plugin" once it exists). Copy the npm_… value.
+#   2. GitHub → this repo → Settings → Secrets and variables → Actions →
+#      New repository secret:  Name = NPM_TOKEN  Value = <the token>.
+#   3. Release:  npm version patch && git push --follow-tags
+#      The v* tag fires this workflow, which builds, checks, and publishes.
+#
+# MIGRATING TO TOKENLESS OIDC (optional, after v1.0.0 exists on npm):
+#   - npmjs.com → the package → Settings → Trusted Publisher → GitHub Actions:
+#       repo = cuongdev/hermes-zalo-plugin, workflow = publish.yml
+#   - Bump runner to Node 24 (Trusted Publishing needs npm >= 11.5.1), drop the
+#     NODE_AUTH_TOKEN env below, and delete the NPM_TOKEN secret.
+on:
+  push:
+    tags:
+      - "v*"
+
+# A tag is immutable, but guard against overlapping re-runs publishing twice.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write # provenance attestation (works alongside token auth)
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22" # ships npm 10.x — supports --provenance (npm >= 9.5)
+          registry-url: "https://registry.npmjs.org"
+
+      - run: npm ci
+
+      - name: Syntax check
+        run: |
+          for f in server.js zaloClient.js permissions.js paths.js login.mjs install.mjs uninstall.mjs bin/cli.mjs scripts/postinstall.mjs; do
+            node --check "$f"
+          done
+
+      - name: Verify tag matches package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::git tag v$tag does not match package.json version $pkg — bump with 'npm version' so they agree"
+            exit 1
+          fi
+          echo "✓ tag v$tag matches package.json"
+
+      - name: Verify package contents (no secrets)
+        run: |
+          npm pack --dry-run 2>&1 | tee /tmp/pack.txt
+          if grep -Eq "credentials\.json|\.env|data/" /tmp/pack.txt; then
+            echo "::error::package would ship sensitive files"; exit 1
+          fi
+          echo "✓ pack contents clean"
+
+      - name: Publish (with provenance)
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

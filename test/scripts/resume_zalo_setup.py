@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Sync source and finish Zalo setup after partial deploy_high (no destroy)."""
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ bash run.sh check-security
 echo "=== ROUTER ==="
 set +e
 set -a; . ./.env; set +a
-curl -fsS -m 10 -H "Authorization: Bearer ${{N9ROUTER_API_KEY:-}}" http://127.0.0.1:20128/v1/models | head -c 200; echo
+curl -fsS -m 10 -H "Authorization: Bearer ${{OMNIROUTER_API_KEY:-}}" http://127.0.0.1:20128/v1/models | head -c 200; echo
 router_rc=$?
 set -e
 echo ROUTER_RC=$router_rc
@@ -58,7 +58,7 @@ for line in Path("/opt/assistant/.env").read_text(encoding="utf-8", errors="repl
         continue
     k, v = s.split("=", 1)
     env[k.strip()] = v.strip().strip('"').strip("'")
-for k in ("HERMES_DASHBOARD_USER", "HERMES_DASHBOARD_PASSWORD", "GRAFANA_ADMIN_USER", "GRAFANA_ADMIN_PASSWORD", "N9ROUTER_INITIAL_PASSWORD"):
+for k in ("HERMES_DASHBOARD_USER", "HERMES_DASHBOARD_PASSWORD", "GRAFANA_ADMIN_USER", "GRAFANA_ADMIN_PASSWORD", "OMNIROUTER_INITIAL_PASSWORD"):
     print(f"{{k}}={{env.get(k, '')}}")
 PY
 echo RESUME_DONE

@@ -26,7 +26,7 @@ Sizes below assume Docker + Compose on a clean Ubuntu 24.04 host, models routed 
 
 | Setup | Min (boot / light use) | Comfortable (daily use) | Notes |
 |---------|------------------------|-------------------------|-------|
-| **Core only** | **2 vCPU · 4 GiB · 40 GB** | 2 vCPU · 8 GiB · 80 GB | Hermes×1, memory, Valkey, ingest/embed, router-worker + Omni |
+| **Core only** | **2 vCPU · 4 GiB · 40 GB** | 2 vCPU · 8 GiB · 80 GB | Hermes×1, memory, Valkey, ingest/embed, model-router + Omni |
 | **Core + media** | **2 vCPU · 8 GiB · 80 GB** | **4 vCPU · 16 GiB · 120 GB** | + SearXNG, OCR, jobs, ComfyUI CPU |
 | **Core + media + security + message** (monitor **off**) | **4 vCPU · 8 GiB · 100 GB** | **4 vCPU · 16 GiB · 200 GB** | + OpenBao, authz, SIEM, zalo-api; Hermes×2 typical |
 | **Above + monitor + all optionals** | **6 vCPU · 16 GiB · 140 GB** | **8 vCPU · 32 GiB · 250 GB** | Base set + **~5 GiB RAM · ~40 GB disk · ~2 vCPU** |
@@ -39,7 +39,7 @@ Approximate **idle/typical** extras on top of a media+security+message host with
 
 | Enable | Starts together (paired) | Extra RAM | Extra disk | Extra CPU |
 |--------|--------------------------|-----------|------------|-----------|
-| **Monitor** (`install monitor` → Grafana + Prometheus) | Prometheus + exporters (`node-exporter`, `stack-exporter`; `nine-exporter` only if 9Router on) | **~1.5 GiB** | **~10 GB** (Prom TSDB 15d + Grafana) | **~0.5 vCPU** |
+| **Monitor** (`install monitor` → Grafana + Prometheus) | Prometheus + exporters (`node-exporter`, `stack-exporter`; `omni-exporter` only if OmniRoute on) | **~1.5 GiB** | **~10 GB** (Prom TSDB 15d + Grafana) | **~0.5 vCPU** |
 | **Prometheus** only | Same exporters (no Grafana UI) | **~0.8 GiB** | **~8 GB** (TSDB) | **~0.3 vCPU** |
 | **Loki + Alloy** (bundled in monitor) | Loki and Alloy always together | **~1.5 GiB** | **~20 GB** (log chunks; grows with traffic) | **~0.5 vCPU** |
 | **OmniRouter** (core default) | **`omni-exporter`** when Prometheus/Grafana is also on | **~0.4 GiB** | **~1 GB** | **~0.2 vCPU** |
@@ -61,7 +61,7 @@ Do not enable Grafana without Prometheus: `run.sh` starts Prometheus (and Hardwa
 
 | Component | Exporter | When it starts |
 |-----------|----------|----------------|
-| 9Router | `nine-exporter` | 9Router **and** Prometheus/Grafana |
+| OmniRoute | `omni-exporter` | OmniRoute **and** Prometheus/Grafana |
 | OmniRouter | `omni-exporter` | OmniRouter **and** Prometheus/Grafana |
 | Host hardware (Grafana CPU/RAM panels) | `node-exporter` | Prometheus or Grafana |
 | Stack health (`assistant_service_up`) | `stack-exporter` | Prometheus or Grafana |

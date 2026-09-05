@@ -86,7 +86,7 @@ compose() {
   if _env_active "${ENABLE_SECURITY:-}" || _env_active "${ENABLE_MONITOR:-}" || _env_active "${ENABLE_NOTIFY:-}" || _env_active "${ENABLE_OPENBAO:-}" || _env_active "${ENABLE_SIEM:-}" || _env_active "${ENABLE_AUTHZ:-}" || _env_active "${ENABLE_CLOUDDRIVE:-}" || _env_active "${ENABLE_ANTIVIRUS:-}" || _env_active "${SECURITY_SANDBOX:-}"; then
     files+=(-f "$ROOT/docker/docker-compose.security.yml")
   fi
-  # Media GPU profile removed — image gen is Omni/9Router only.
+  # Media GPU profile removed — image generation is routed through OmniRoute.
   _env_active "${ENABLE_ZALO:-}" && profiles+=(--profile zalo)
   _env_active "${ENABLE_NOTIFY:-}" && profiles+=(--profile notify)
   _env_active "${ENABLE_OPENBAO:-}" && profiles+=(--profile openbao)
@@ -107,9 +107,6 @@ compose() {
   fi
   if _env_active "${ENABLE_OMNIROUTER:-}"; then
     profiles+=(--profile omnirouter)
-  fi
-  if _env_active "${ENABLE_9ROUTER:-}"; then
-    profiles+=(--profile 9router)
   fi
   if _env_active "${ENABLE_TRAEFIK:-}"; then
     case "${TRAEFIK_ACME_ENABLED:-0}" in
@@ -206,13 +203,13 @@ do_backup_first() {
 do_stop_disabled_optionals() {
   # Compose --remove-orphans does not drop containers started under a --profile that is now off.
   local -a extra=()
-  if [[ "${ENABLE_NOTIFY:-0}" != "1" ]]; then
+  if ! _env_active "${ENABLE_NOTIFY:-}"; then
     extra+=(notify alert-watch)
   fi
   if ! _env_active "${ENABLE_OPENBAO:-}"; then
     extra+=(openbao)
   fi
-  if [[ "${ENABLE_SECURITY:-0}" != "1" ]]; then
+  if ! _env_active "${ENABLE_SECURITY:-}"; then
     extra+=(security-manager authz siem policy-center)
   fi
   if [[ "${ENABLE_ANTIVIRUS:-0}" != "1" ]]; then
@@ -520,11 +517,31 @@ do_update() {
   #   bash run.sh update schedule-worker zalo-api
   #   bash run.sh update all
   local services=("$@")
+  local maintenance_dir="${ASSISTANT_DATA_DIR:-/data/assistant}/watch"
+  if ! mkdir -p "$maintenance_dir" 2>/dev/null; then
+    sudo mkdir -p "$maintenance_dir"
+  fi
+  if [[ ! -w "$maintenance_dir" ]]; then
+    sudo chown "$(id -u):$(id -g)" "$maintenance_dir"
+  fi
+  exec 9>"${maintenance_dir}/stack-maintenance.lock"
+  echo "==> acquire stack maintenance lock"
+  flock 9
   if [[ ${#services[@]} -eq 0 || " ${services[*]} " == *" all "* ]]; then
     services=()
   fi
 
-  do_backup_first "update" || return 1
+  # Backup exporters need the same runtime-only OpenBao credentials as Compose.
+  # Load them before the restore point is created, and never leave the export
+  # behind when verification aborts the update.
+  if ! do_load_openbao_env_for_compose; then
+    do_scrub_plaintext_env
+    return 1
+  fi
+  if ! do_backup_first "update"; then
+    do_scrub_plaintext_env
+    return 1
+  fi
   echo "==> update from current source"
   if [[ -d "${ROOT}/.git" ]]; then
     echo "==> git HEAD: $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
@@ -536,8 +553,20 @@ do_update() {
   elif [[ -f "${SCRIPTS_DIR}/sync-classify-skill.sh" ]]; then
     bash "${SCRIPTS_DIR}/sync-classify-skill.sh" || echo "WARN: sync-classify-skill failed"
   fi
-  if [[ -f "${SCRIPTS_DIR}/sync-zalo-plugins.sh" ]]; then
-    bash "${SCRIPTS_DIR}/sync-zalo-plugins.sh" || echo "WARN: sync-zalo-plugins failed"
+  local sync_zalo=1
+  if [[ ${#services[@]} -gt 0 ]]; then
+    sync_zalo=0
+    local service
+    for service in "${services[@]}"; do
+      if [[ "$service" == "hermes" || "$service" == "zalo-api" ]]; then
+        sync_zalo=1
+      fi
+    done
+  fi
+  if [[ "$sync_zalo" == "1" && -f "${SCRIPTS_DIR}/sync-zalo-plugins.sh" ]]; then
+    SYNC_ZALO_RESTART=0 bash "${SCRIPTS_DIR}/sync-zalo-plugins.sh" || echo "WARN: sync-zalo-plugins failed"
+  elif [[ ${#services[@]} -gt 0 ]]; then
+    echo "==> skip Zalo plugin sync for unrelated component update"
   fi
 
   assistant_profile_summary
@@ -545,7 +574,6 @@ do_update() {
   if [[ ${#services[@]} -gt 0 ]]; then
     echo "==> component update: ${services[*]}"
     echo "==> pull selected images (best-effort)"
-    do_load_openbao_env_for_compose
     compose pull "${services[@]}" || true
     ensure_hermes_media_dirs
     # Scoped recreate — never docker compose down; never touch postgres unless requested.
@@ -556,17 +584,17 @@ do_update() {
           continue
         fi
       fi
-      echo "==> up --no-deps --build $svc"
-      compose up -d --no-deps --build "$svc" || return $?
+      echo "==> up --no-deps --build --force-recreate $svc"
+      compose up -d --no-deps --build --force-recreate "$svc" || return $?
     done
     do_stop_disabled_optionals
     compose ps
+    do_scrub_plaintext_env
     echo "OK: component update complete (${services[*]})"
     return 0
   fi
 
   echo "==> pull vendor images (best-effort)"
-  do_load_openbao_env_for_compose
   compose pull || true
 
   echo "==> rebuild + recreate"
@@ -586,9 +614,6 @@ do_update() {
     do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
   fi
   do_scrub_plaintext_env
-  # Scrub clears COMPOSE_HOST_KEYS in ROOT/.env and deletes .env.openbao; refill
-  # immediately so the next compose recreate / host probes still authenticate.
-  do_load_openbao_env_for_compose || true
 
   # Omni recreate resets resilienceDefaults (maxWaitMs=15s). Re-apply without rewriting
   # operator combo members (update-omnirouter uses setup_only for membership).
@@ -597,13 +622,19 @@ do_update() {
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
     python3 "${SCRIPTS_DIR}/update-omnirouter.py" \
       || echo "WARN: update-omnirouter failed — re-run: bash run.sh update-omnirouter"
+    do_scrub_plaintext_env
   fi
 
   echo "==> disk cleanup"
-  docker builder prune -af >/dev/null 2>&1 || true
-  docker image prune -af >/dev/null 2>&1 || true
+  if _env_active "${UPDATE_AGGRESSIVE_PRUNE:-inactive}"; then
+    echo "==> aggressive Docker cache/image prune (explicit opt-in)"
+    docker builder prune -af >/dev/null 2>&1 || true
+    docker image prune -af >/dev/null 2>&1 || true
+  else
+    echo "==> keep Docker build cache and rollback images"
+  fi
   docker container prune -f >/dev/null 2>&1 || true
-  rm -rf /tmp/assistant /tmp/assistant-low.tgz /tmp/9r-*.json 2>/dev/null || true
+  rm -rf /tmp/assistant /tmp/assistant-low.tgz 2>/dev/null || true
   df -h / 2>/dev/null | tail -1 || true
 
   ensure_profile_timers
@@ -637,19 +668,33 @@ do_scrub_plaintext_env() {
 }
 
 do_load_openbao_env_for_compose() {
-  # Compose ${VAR:?} and hermes env_file need KV export before up|update.
+  # Compose ${VAR:?} needs secrets in this process, never persisted in ROOT/.env.
   _env_active "${ENABLE_OPENBAO:-}" || return 0
   [[ -f "${SCRIPTS_DIR}/load-openbao-env.py" ]] || return 0
   echo "==> load OpenBao env for compose"
   export STACK_ROOT="${STACK_ROOT:-$ROOT}"
   export ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-/data/assistant}"
   export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$ASSISTANT_DATA_DIR}"
-  python3 "${SCRIPTS_DIR}/load-openbao-env.py" \
-    || echo "WARN: load-openbao-env failed — re-run: bash run.sh load-openbao-env"
+  if ! python3 "${SCRIPTS_DIR}/load-openbao-env.py"; then
+    echo "WARN: load-openbao-env failed — re-run: bash run.sh load-openbao-env"
+    return 1
+  fi
+  local export_path="${ASSISTANT_DATA_DIR}/.env.openbao"
+  local line key value
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" && "$line" != \#* && "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    case "$key" in
+      [A-Za-z_][A-Za-z0-9_]*) export "$key=$value" ;;
+      *) echo "WARN: skip invalid OpenBao env key" >&2 ;;
+    esac
+  done < "$export_path"
+  echo "OK: OpenBao secrets loaded into runtime environment"
 }
 
 do_post_ready_learn() {
-  # All profiles: after Hermes + 9Router ready, if hermes/main/skills not empty → learn skill|docs
+  # All profiles: after Hermes and OmniRoute are ready, learn bundled skills/docs.
   echo "==> post-ready learn (skills|docs)"
   export STACK_ROOT="${STACK_ROOT:-$ROOT}"
   export ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-/data/assistant}"
@@ -673,15 +718,6 @@ do_post_up_hooks() {
   if _env_active "${ENABLE_OPENBAO:-}"; then
     do_load_openbao_env_for_compose || true
   fi
-  if _env_active "${ENABLE_9ROUTER:-}" && [[ -n "${N9ROUTER_INITIAL_PASSWORD:-}" ]]; then
-    echo "==> first-setup-llm (9Router key + hermes combo)"
-    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
-    export HERMES_DATA_DIR="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
-    python3 "${SCRIPTS_DIR}/first-setup-9router-hermes.py" \
-      || echo "WARN: first-setup-llm failed — re-run: bash run.sh first-setup-llm"
-  elif _env_active "${ENABLE_9ROUTER:-}"; then
-    echo "WARN: N9ROUTER_INITIAL_PASSWORD empty — skip 9Router first-setup"
-  fi
   if _env_active "${ENABLE_OMNIROUTER:-}"; then
     echo "==> first-setup-omnirouter (hermes/classifier ← Omni OpenCode cloud)"
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
@@ -692,7 +728,6 @@ do_post_up_hooks() {
     do_first_setup_openbao || echo "WARN: OpenBao seed failed — re-run: bash run.sh first-setup-openbao"
   fi
   do_scrub_plaintext_env
-  do_load_openbao_env_for_compose || true
   do_post_ready_learn
   do_zalo_setup_hint
 }
@@ -1013,12 +1048,11 @@ Timers:
 First setup:
   install-docker [user]   # if docker missing; default = SSH login user (not a hardcoded name)
   first-setup-omnirouter  # OmniRoute Default Key → hermes/classifier OpenCode cloud
-  first-setup-llm         # 9Router Default Key → combo hermes (only when ENABLE_9ROUTER=active)
 
 Security overlay:
   first-setup-openbao     # seed/merge API keys → OpenBao KV (:8200); core default on up|update
   load-openbao-env        # pull KV → .env.openbao + fill compose keys in .env
-  sync-openbao-env        # load-openbao-env + recreate hermes/router-worker after KV edit
+  sync-openbao-env        # load-openbao-env + recreate hermes/model-router after KV edit
   check-security          # smoke OpenBao / Grafana / AV / authz / …
   backup-sync-clouddrive  # when ENABLE_CLOUDDRIVE=active
 
@@ -1094,18 +1128,14 @@ case "$cmd" in
     fi
     sudo bash "${SCRIPTS_DIR}/install-docker.sh" "${_docker_user}"
     ;;
-  first-setup-llm|setup-llm)
-    export STACK_ROOT="${STACK_ROOT:-$ROOT}"
-    export HERMES_DATA_DIR="${HERMES_DATA_DIR:-/data/assistant}"
-    python3 "${SCRIPTS_DIR}/first-setup-9router-hermes.py"
-    if _env_active "${ENABLE_OMNIROUTER:-}"; then
-      python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py"
-    fi
-    do_post_ready_learn
-    ;;
   first-setup-omnirouter|setup-omnirouter)
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
+    do_load_openbao_env_for_compose || true
     python3 "${SCRIPTS_DIR}/first-setup-omnirouter.py"
+    if _env_active "${ENABLE_OPENBAO:-}"; then
+      do_first_setup_openbao || echo "WARN: OpenBao seed failed after OmniRoute setup"
+      do_scrub_plaintext_env
+    fi
     ;;
   update-omnirouter|sync-omnirouter)
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"
@@ -1124,10 +1154,11 @@ case "$cmd" in
   sync-openbao-env)
     need_security sync-openbao-env || exit 1
     do_load_openbao_env_for_compose
-    echo "==> recreate hermes + router-worker + omni-router (pick up KV changes)"
-    compose up -d --no-deps --build hermes router-worker omni-router 2>/dev/null \
-      || compose up -d --no-deps hermes router-worker omni-router \
+    echo "==> recreate hermes + model-router + omni-router (pick up KV changes)"
+    compose up -d --no-deps --build hermes model-router omni-router 2>/dev/null \
+      || compose up -d --no-deps hermes model-router omni-router \
       || echo "WARN: sync-openbao-env partial — run: bash run.sh update hermes"
+    do_scrub_plaintext_env
     ;;
   setup-zalo)
     export STACK_ROOT="${STACK_ROOT:-$ROOT}"

@@ -25,7 +25,7 @@ Probe:
 
 - Hermes;
 - OmniRouter;
-- 9Router;
+- OmniRoute;
 - Postgres;
 - Qdrant;
 - Valkey;

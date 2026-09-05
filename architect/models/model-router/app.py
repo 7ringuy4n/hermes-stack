@@ -6,8 +6,7 @@ Routing:
   3. POST /v1/classify uses an LLM and returns structured JSON.
 
 Providers:
-  coding  → 9router (if healthy) else OmniRouter if only that exists → fallback pool
-  general / classify / outbound → OmniRouter (default) else 9router → fallback pool
+  all routed tasks → OmniRouter → explicitly configured fallback pool
 
 Missing API keys skip that provider. If nothing works → JSON error `no_model_available` (message in `messages/en.json`).
 Admin-editable messages: messages/en.json
@@ -54,7 +53,6 @@ from websearch import router as websearch_router
 ROOT = Path(__file__).resolve().parent
 MESSAGES_PATH = Path(os.environ.get("MODEL_ROUTER_MESSAGES", str(ROOT / "messages" / "en.json")))
 
-N9_BASE = os.environ.get("N9ROUTER_BASE_URL", "http://9router:20128/v1").rstrip("/")
 OMNI_BASE = os.environ.get("OMNIROUTER_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
 ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "active").strip().lower() in {
     "1",
@@ -63,15 +61,7 @@ ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "active").strip().lower() in {
     "on",
     "active",
 }
-ENABLE_9ROUTER = os.environ.get("ENABLE_9ROUTER", "inactive").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
-    "active",
-}
-N9_KEY = (os.environ.get("N9ROUTER_API_KEY") or "").strip()
-OMNI_KEY = (os.environ.get("OMNIROUTER_API_KEY") or os.environ.get("N9ROUTER_API_KEY") or "").strip()
+OMNI_KEY = (os.environ.get("OMNIROUTER_API_KEY") or "").strip()
 OMNI_DEFAULT_MODEL = (
     os.environ.get("OMNIROUTER_DEFAULT_COMBO") or os.environ.get("MODEL_ROUTER_OUTBOUND_MODEL") or "hermes"
 ).strip() or "hermes"
@@ -204,7 +194,7 @@ def _load_json(path: Path, default: dict) -> dict:
 MESSAGES = _load_json(
     MESSAGES_PATH,
     {
-        "no_model_available": "No model available. Configure 9router, OmniRouter, Ollama, or a fallback provider.",
+        "no_model_available": "No model available. Configure OmniRouter or an explicit fallback provider.",
         "upstream_error": "Upstream model provider error.",
         "health_ok": "ok",
     },
@@ -258,7 +248,6 @@ TASK_ALIASES = {
     "chat": "normal",
 }
 # SECRET is never a task_hint — security_status lives on Secret Probe.
-PROVIDER_CODING = {"coding"}
 
 
 def _normalize_hint(raw: str) -> str | None:
@@ -305,27 +294,12 @@ def _auth_headers(key: str) -> dict[str, str]:
 async def _candidates(task: str, *, prefer_omni: bool | None = None) -> list[tuple[str, str, dict[str, str], Optional[str]]]:
     """Return ordered (name, base_url, headers, default_model_override)."""
     out: list[tuple[str, str, dict[str, str], Optional[str]]] = []
-    n9_ok = (
-        ENABLE_9ROUTER
-        and N9_BASE
-        and await _probe("9router", N9_BASE, _auth_headers(N9_KEY))
-    )
     omni_ok = False
     if ENABLE_OMNI and OMNI_BASE:
         omni_ok = await _probe("omni", OMNI_BASE, _auth_headers(OMNI_KEY))
 
-    coding = task in PROVIDER_CODING
-    use_omni_first = (not coding) if prefer_omni is None else prefer_omni
-    if coding or not use_omni_first:
-        if n9_ok:
-            out.append(("9router", N9_BASE, _auth_headers(N9_KEY), None))
-        if omni_ok:
-            out.append(("omni-router", OMNI_BASE, _auth_headers(OMNI_KEY), None))
-    else:
-        if omni_ok:
-            out.append(("omni-router", OMNI_BASE, _auth_headers(OMNI_KEY), None))
-        if n9_ok:
-            out.append(("9router", N9_BASE, _auth_headers(N9_KEY), None))
+    if omni_ok:
+        out.append(("omni-router", OMNI_BASE, _auth_headers(OMNI_KEY), None))
 
     if FALLBACK_OPENAI and FALLBACK_OPENAI_KEY:
         out.append(
@@ -359,16 +333,14 @@ async def _shutdown() -> None:
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
-    n9 = await _probe("9router", N9_BASE, _auth_headers(N9_KEY)) if N9_BASE else False
     omni = False
     if ENABLE_OMNI:
         omni = await _probe("omni", OMNI_BASE, _auth_headers(OMNI_KEY))
     ollama = await _probe_ollama() if OLLAMA_BASE else False
     return {
         "ok": True,
-        "service": "router-worker",
+        "service": "model-router",
         "status": MESSAGES.get("health_ok", "ok"),
-        "nine_router": n9,
         "omni_router": omni,
         "ollama": ollama,
         "ollama_configured": bool(OLLAMA_BASE),

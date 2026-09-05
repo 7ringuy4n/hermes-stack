@@ -1,5 +1,5 @@
-﻿# -*- coding: utf-8 -*-
-"""Post-deploy health: Hermes, 9router, Traefik, Zalo â€” no host/secrets in output."""
+# -*- coding: utf-8 -*-
+"""Post-deploy health: Hermes, omni-router, Traefik, Zalo â€” no host/secrets in output."""
 from __future__ import annotations
 
 import io
@@ -30,11 +30,11 @@ echo "zalo_api=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8
 echo "traefik=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health || echo fail)"
 echo "dispatcher=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8090/health || echo fail)"
 echo "model_router=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8096/health || echo fail)"
-echo "9router_root=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:20128/ || echo fail)"
-echo "9router_models=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:20128/v1/models || echo fail)"
-# From Hermes container to 9router on docker network
-echo -n "hermes_to_9router="
-docker exec -e "N9ROUTER_API_KEY=${N9ROUTER_API_KEY}" "${cid}" python3 -c "import os,urllib.request; k=os.environ.get('N9ROUTER_API_KEY',''); req=urllib.request.Request('http://9router:20128/v1/models', headers={'Authorization':'Bearer '+k}); urllib.request.urlopen(req, timeout=5); print('ok')" 2>/dev/null || echo fail
+echo "omni-router_root=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:20128/ || echo fail)"
+echo "omni-router_models=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:20128/v1/models || echo fail)"
+# From Hermes container to omni-router on docker network
+echo -n "hermes_to_omni-router="
+docker exec -e "OMNIROUTER_API_KEY=${OMNIROUTER_API_KEY}" "${cid}" python3 -c "import os,urllib.request; k=os.environ.get('OMNIROUTER_API_KEY',''); req=urllib.request.Request('http://omni-router:20129/v1/models', headers={'Authorization':'Bearer '+k}); urllib.request.urlopen(req, timeout=5); print('ok')" 2>/dev/null || echo fail
 echo -n "hermes_to_model_router="
 docker exec "${cid}" python3 -c "import urllib.request; urllib.request.urlopen('http://model-router:8096/health', timeout=5); print('ok')" 2>/dev/null || echo fail
 test -f /opt/assistant/hermes/main/plugins/zalo/multi_request.py && echo files_multi=ok || echo files_multi=missing

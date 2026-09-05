@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: "Search the public web via Omni combo web-search. Hermes calls Router Worker which proxies to OmniRoute search with combo failover owned in Omni UI."
+description: "Search the public web via Omni combo web-search. Hermes calls Model Router which proxies to OmniRoute search with combo failover owned in Omni UI."
 ---
 
 # Web search skill
@@ -9,15 +9,15 @@ Stack:
 
 ```text
 Hermes native tool web_search (toolset web)
-  → Router Worker GET …/v1/searxng-compat (Omni-backed shim)
+  → Model Router GET …/v1/searxng-compat (Omni-backed shim)
 OR skill/HTTP (combo web-search):
-Hermes → Router Worker POST /v1/search
+Hermes → Model Router POST /v1/search
       → OmniRoute POST /v1/search `{ combo: web-search }`
       → operator members + failover in Omni UI (Tavily, Firecrawl, SearXNG, …)
 ```
 
 Prefer the **native `web_search` tool**. On this stack Hermes `SEARXNG_URL`
-points at Router Worker `…/v1/searxng-compat` (Omni-backed). Fallback HTTP:
+points at Model Router `…/v1/searxng-compat` (Omni-backed). Fallback HTTP:
 `POST http://model-router:8096/v1/search`.
 
 **Combo `web-search`** owns search routing. Omni UI owns the **search combo**

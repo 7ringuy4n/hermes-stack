@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Point omni-router at OMNIROUTER_IMAGE (OmniRoute) and recreate it."""
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ def http_json(opener, method, url, body=None):
         return resp.status, json.loads(raw.decode() or "{}") if raw else {}
 
 env = load_env("/opt/assistant/.env")
-pw = env.get("OMNIROUTER_INITIAL_PASSWORD") or env.get("N9ROUTER_INITIAL_PASSWORD") or ""
+pw = env.get("OMNIROUTER_INITIAL_PASSWORD") or env.get("OMNIROUTER_INITIAL_PASSWORD") or ""
 base = "http://127.0.0.1:20129"
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
 for _ in range(30):

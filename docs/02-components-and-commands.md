@@ -17,7 +17,7 @@ bash run.sh <command>
 |------|--------|
 | **Product** | Hermes Agent + Memory. Social apps (Zalo / Telegram / HTTP) are optional. |
 | **Knob** | Optional workers via `bash run.sh install …` (`WORKER_*=active\|inactive`) |
-| **Core** | Always on — Hermes, memory, router-worker, Omni, Traefik local, API Gateway, Valkey |
+| **Core** | Always on — Hermes, memory, model-router, Omni, Traefik local, API Gateway, Valkey |
 | **Auto-learn** | 00:00 → Qdrant (no approve). **Not** the same as compact. |
 | **Compact** | 00:00 when **Media** worker is active — slim skills / memory |
 | **Backups** | `/data/assistant/backups` · optional CloudDrive (`install clouddrive`) |
@@ -30,9 +30,9 @@ Legacy `ASSISTANT_PROFILE=low|medium|high` and `switch-profile` are removed — 
 
 | Area | Core | schedule | media | security / openbao | notify | monitor | message / zalo |
 |------|:----:|:--------:|:-----:|:------------------:|:------:|:-------:|:---------------:|
-| Hermes + Memory + router-worker | Yes | — | — | — | — | — | — |
+| Hermes + Memory + model-router | Yes | — | — | — | — | — | — |
 | OmniRouter (default LLM) | Yes | — | — | — | — | — | — |
-| 9Router | Opt (`ENABLE_9ROUTER=active`) | — | — | — | — | — | — |
+| OmniRoute | Opt (`ENABLE_OMNIROUTER=active`) | — | — | — | — | — | — |
 | Traefik local / API Gateway | Yes | — | — | — | — | — | — |
 | schedule-worker | — | Yes | — | — | — | — | — |
 | Dispatcher / OCR / Jobs / SearXNG / Comfy / office | — | — | Yes | — | — | — | — |
@@ -70,7 +70,7 @@ Full name catalog: `bash run.sh install list`.
 | `backup-sync-clouddrive` | When CloudDrive installed |
 | `channel-status` | Social-app flags |
 | `first-setup-omnirouter` | Omni combo wiring (safe re-run) |
-| `first-setup-llm` | Only when `ENABLE_9ROUTER=active` |
+| `first-setup-llm` | Only when `ENABLE_OMNIROUTER=active` |
 | `first-setup-openbao` / `load-openbao-env` | OpenBao seed + env load |
 
 Detail: [02-commands.md](./02-commands.md).
@@ -107,7 +107,7 @@ bash run.sh check-media
 ### Runtime flags on a live host
 
 ```bash
-bash run.sh add-components ENABLE_9ROUTER=active --update
+bash run.sh add-components ENABLE_OMNIROUTER=active --update
 bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
 ```
 

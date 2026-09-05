@@ -13,7 +13,7 @@ Lab scripts that need a Zalo user must inject as allowlisted **Tn** via bridge /
 | 44 | 44-gap-poison-job-permanently-failing-job.md | Poison Job / Permanently Failing Job |
 | 45 | 45-gap-retry-storm-backoff.md | Retry Storm / Backoff |
 | 46 | 46-gap-malformed-llm-response-matrix.md | Malformed LLM Response Matrix |
-| 47 | 47-gap-omnirouter-9router-combo-failure.md | OmniRouter / 9Router Combo Failure |
+| 47 | 47-gap-omniroute-combo-failure.md | OmniRoute Combo Failure |
 | 48 | 48-gap-valkey-failure-session-consistency.md | Valkey Failure / Session Consistency |
 | 49 | 49-gap-postgresql-failure-memory-write-race.md | PostgreSQL Failure / Memory Write Race |
 | 50 | 50-gap-qdrant-failure-knowledge-consistency.md | Qdrant Failure / Knowledge Consistency |

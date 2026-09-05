@@ -556,14 +556,14 @@
       },
       "targets": [
         {
-          "expr": "clamp_max((max(n9router_scrape_success) or max(omnirouter_scrape_success) or vector(0)), 1)",
+          "expr": "clamp_max((max(omnirouter_scrape_success) or max(omnirouter_scrape_success) or vector(0)), 1)",
           "legendFormat": "router-exporter",
           "refId": "A"
         }
       ],
       "title": "router-exporter scrape",
       "type": "stat",
-      "description": "9Router when ENABLE_9ROUTER=active; else OmniRouter omni-exporter."
+      "description": "OmniRoute exporter health."
     },
     {
       "datasource": {
@@ -1233,7 +1233,7 @@
         "y": 50
       },
       "id": 102,
-      "title": "9Router LLM quota / usage",
+      "title": "OmniRoute LLM quota / usage",
       "type": "row"
     },
     {
@@ -1265,7 +1265,7 @@
       },
       "targets": [
         {
-          "expr": "n9router_requests_total",
+          "expr": "omnirouter_requests_total",
           "legendFormat": "requests",
           "refId": "A"
         }
@@ -1302,7 +1302,7 @@
       },
       "targets": [
         {
-          "expr": "rate(n9router_requests_total[5m])",
+          "expr": "rate(omnirouter_requests_total[5m])",
           "legendFormat": "llm/s",
           "refId": "A"
         }
@@ -1340,7 +1340,7 @@
       },
       "targets": [
         {
-          "expr": "n9router_cost_usd_total",
+          "expr": "omnirouter_cost_usd_total",
           "legendFormat": "cost",
           "refId": "A"
         }
@@ -1377,7 +1377,7 @@
       },
       "targets": [
         {
-          "expr": "n9router_prompt_tokens_total",
+          "expr": "omnirouter_prompt_tokens_total",
           "legendFormat": "prompt",
           "refId": "A"
         }
@@ -1414,7 +1414,7 @@
       },
       "targets": [
         {
-          "expr": "n9router_completion_tokens_total",
+          "expr": "omnirouter_completion_tokens_total",
           "legendFormat": "completion",
           "refId": "A"
         }
@@ -1478,14 +1478,14 @@
       },
       "targets": [
         {
-          "expr": "clamp_max((max(n9router_scrape_success) or vector(0)), 1)",
+          "expr": "clamp_max((max(omnirouter_scrape_success) or vector(0)), 1)",
           "legendFormat": "scrape",
           "refId": "A"
         }
       ],
-      "title": "9Router scrape",
+      "title": "OmniRoute scrape",
       "type": "stat",
-      "description": "Expected 0 when ENABLE_9ROUTER=inactive; use router-exporter / Omni panels."
+      "description": "OmniRoute exporter health."
     },
     {
       "datasource": {
@@ -1518,7 +1518,7 @@
       },
       "targets": [
         {
-          "expr": "rate(n9router_provider_requests_total[5m])",
+          "expr": "rate(omnirouter_provider_requests_total[5m])",
           "legendFormat": "{{provider}}",
           "refId": "A"
         }
@@ -1560,7 +1560,7 @@
       },
       "targets": [
         {
-          "expr": "topk(8, rate(n9router_model_requests_total[5m]))",
+          "expr": "topk(8, rate(omnirouter_model_requests_total[5m]))",
           "legendFormat": "{{model}}",
           "refId": "A"
         }
@@ -1675,21 +1675,21 @@
       },
       "targets": [
         {
-          "expr": "n9router_provider_active",
+          "expr": "omnirouter_provider_active",
           "format": "table",
           "instant": true,
           "legendFormat": "active",
           "refId": "A"
         },
         {
-          "expr": "n9router_provider_has_error",
+          "expr": "omnirouter_provider_has_error",
           "format": "table",
           "instant": true,
           "legendFormat": "error",
           "refId": "B"
         },
         {
-          "expr": "n9router_provider_expires_unix",
+          "expr": "omnirouter_provider_expires_unix",
           "format": "table",
           "instant": true,
           "legendFormat": "expires",

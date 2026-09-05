@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-_KEY_NAMES = ("OMNIROUTER_API_KEY", "OPENAI_API_KEY", "N9ROUTER_API_KEY")
+_KEY_NAMES = ("OMNIROUTER_API_KEY", "OPENAI_API_KEY")
 
 
 def _expand_literal_newlines(text: str) -> str:

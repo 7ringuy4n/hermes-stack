@@ -1,6 +1,6 @@
 ---
 name: embedding
-description: "Embeddings for memory/knowledge compact via embedding service using combo embedding (Omni /embeddings, then 9Router)."
+description: "Embeddings for memory/knowledge compact via embedding service using combo embedding (Omni /embeddings, then OmniRoute)."
 ---
 
 # Embedding
@@ -12,10 +12,10 @@ Used by ingest, memory compact, and knowledge optimize — not a user-facing cha
 Upstream:
 
 1. OmniRouter `POST /v1/embeddings` with `model=embedding` (`EMBED_MODEL`)
-2. 9Router OpenAI-compatible embeddings when Omni unavailable and 9Router is enabled
+2. OmniRoute OpenAI-compatible embeddings when Omni unavailable and OmniRoute is enabled
 3. Local ONNX fallback only when `EMBED_LOCAL_FALLBACK=1`
 
-Hermes must **not** invent embedding vectors, call external embed HTTP, or ask the user for OpenAI embed keys. Operators fill combo **`embedding`** members in OmniRouter / 9Router UI.
+Hermes must **not** invent embedding vectors, call external embed HTTP, or ask the user for OpenAI embed keys. Operators fill combo **`embedding`** members in OmniRouter / OmniRoute UI.
 
 ## Related
 

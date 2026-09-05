@@ -3,8 +3,6 @@ from __future__ import annotations
 
 # Copied from .env → OpenBao on seed/update (non-empty, not CHANGE_ME).
 SEED_KEYS = (
-    "N9ROUTER_API_KEY",
-    "N9ROUTER_INITIAL_PASSWORD",
     "OMNIROUTER_API_KEY",
     "OMNIROUTER_INITIAL_PASSWORD",
     "API_SERVER_KEY",
@@ -25,6 +23,8 @@ SEED_KEYS = (
 
 # Retired secrets — removed from OpenBao KV on each seed/update.
 OBSOLETE_SECRET_KEYS = (
+    "N9ROUTER_API_KEY",
+    "N9ROUTER_INITIAL_PASSWORD",
     "FAL_KEY",
     "FLUXAI_API_KEY",
     "IMAGE_LLM_API_KEY",
@@ -39,6 +39,20 @@ OBSOLETE_SECRET_KEYS = (
 # Retired host .env pins (secret or not) — delete entire KEY= lines on scrub/load.
 # Keep ENABLE_*/WORKER_* install flags; those are still written by run.sh install.
 OBSOLETE_ENV_KEYS = OBSOLETE_SECRET_KEYS + (
+    "ENABLE_9ROUTER",
+    "N9ROUTER_BASE_URL",
+    "N9ROUTER_HOST_PORT",
+    "N9ROUTER_IMAGE",
+    "N9ROUTER_DEFAULT_COMBO",
+    "N9ROUTER_COMBO_STRATEGY",
+    "N9ROUTER_COMBO_STICKY_LIMIT",
+    "N9ROUTER_IMAGE_COMBO",
+    "N9ROUTER_VISION_COMBO",
+    "N9ROUTER_EMBED_COMBO",
+    "ROUTER_WORKER_URL",
+    "WHISPER_ENABLED",
+    "WHISPER_MODEL",
+    "WHISPER_CACHE_DIR",
     "WEB_BACKENDS",  # Omni combo web-search only
     "WEB_SEARCH_COMBO_PATH",
     "OMNIROUTER_SEARCH_PROVIDERS",
@@ -65,8 +79,6 @@ COMPOSE_HOST_KEYS = (
     "API_SERVER_KEY",
     "OMNIROUTER_API_KEY",
     "OMNIROUTER_INITIAL_PASSWORD",
-    "N9ROUTER_API_KEY",
-    "N9ROUTER_INITIAL_PASSWORD",
     "GATEWAY_API_KEYS",
 )
 

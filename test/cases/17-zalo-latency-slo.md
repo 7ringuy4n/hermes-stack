@@ -15,7 +15,7 @@ Detect slow paths on the **Zalo / Hermes / queue** side. A **simple text** reply
 
 1. Run `python test/scripts/zalo_user_latency.py` (Zalo Bridge `POST /inject-event` as the allowlisted user named `ZALO_TEST_USER_NAME`, default display name `Tn`; text `ZALO_LATENCY_TEXT` default `hi`). Do **not** bypass the bridge with Traefik `/v1/chat/completions`.
 2. Record inject → inbound log → `Zalo: send ok` ms. Bridge `sseClients` must stay `1`.
-3. If send is **> 5s**, inspect Hermes / router-worker / OmniRouter logs for quota (`429`, `quota`, `rate limit`) or free-model failover (`switch`, `failover`, `no healthy`, `trying next`). Those are **not** SLO failures.
+3. If send is **> 5s**, inspect Hermes / model-router / OmniRouter logs for quota (`429`, `quota`, `rate limit`) or free-model failover (`switch`, `failover`, `no healthy`, `trying next`). Those are **not** SLO failures.
 4. Optional extra: `python test/scripts/zalo_latency_lab.py` for Traefik-only comparison (not the Zalo path).
 
 ## Pass criteria
@@ -40,7 +40,7 @@ If any sample **> 5s** without those causes: **FAIL** (Valkey lock, Hermes queue
 ## Improvement checklist (when FAIL)
 
 - [ ] Classify hop (`classify.json` timeout, `MODEL_ROUTER_CLASSIFY_TIMEOUT_S`)
-- [ ] router-worker / OmniRouter health (quota vs real hang)
+- [ ] model-router / OmniRouter health (quota vs real hang)
 - [ ] Valkey session lock contention
 - [ ] stack-watch not restarting Hermes mid-turn
 - [ ] Zalo inflight cap (`HERMES_MAX_ANSWERING`)

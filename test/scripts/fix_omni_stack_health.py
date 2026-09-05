@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Point stack-exporter OmniRoute probe at GET / (no /health)."""
 from __future__ import annotations
 

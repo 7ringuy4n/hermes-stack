@@ -16,6 +16,15 @@ sys.path.insert(0, str(ROOT / "architect" / "workflow"))
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 sys.path.insert(0, str(ROOT / "architect" / "gateway" / "api-gateway"))
 sys.path.insert(0, str(ROOT / "test" / "scripts"))
+# multi_request must resolve the adapter's classify client, not the gateway's
+# same-named module. Keep the service boundary deterministic for this unit.
+sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
+
+# Pin the adapter module before workflow imports load another same-named
+# service client into sys.modules.
+import classify_client as zalo_classify_client  # noqa: E402
+
+assert hasattr(zalo_classify_client, "strip_prior_for_classify")
 
 from manager import WorkflowManager, next_daily_cron  # noqa: E402
 from plan import extract_cron_expr, plan_instructions  # noqa: E402

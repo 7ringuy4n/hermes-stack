@@ -1,6 +1,6 @@
-"""assistant Media/File worker — media download, convert, image/video, ASR, OCR text.
+"""assistant Media/File worker — media download, convert, image/video, OCR text.
 
-Web search moved to the Router Worker (`model-router /v1/search`) so vendor HTTP
+Web search moved to the Model Router (`model-router /v1/search`) so vendor HTTP
 never competes with media work here. Heavy endpoints stay sync (threadpool);
 `/health` is async so probes cannot flap while media jobs run.
 """
@@ -11,7 +11,6 @@ import logging
 import os
 import shutil
 import subprocess
-import threading
 import time
 import uuid
 from pathlib import Path
@@ -95,7 +94,7 @@ async def _time_workflow(request: Request, call_next):
 
 @app.api_route("/openai/v1/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def openai_proxy(path: str, request: Request):
-    """Time Hermes LLM calls (chat/completions start→end) then forward to 9router."""
+    """Time Hermes LLM calls, then forward to OmniRoute."""
     import json as _json
 
     t0 = time.time()
@@ -146,12 +145,12 @@ async def openai_proxy(path: str, request: Request):
 MEDIA_DIR = Path(os.environ.get("MEDIA_CACHE_DIR", "/data/media"))
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Web search lives on the Router Worker (model-router /v1/search) so the media
+# Web search lives on the Model Router (model-router /v1/search) so the media
 # worker never blocks on vendor HTTP. Kept only to advertise the route.
 WEB_SEARCH_URL = (
     os.environ.get("WEB_SEARCH_URL")
     or os.environ.get("MODEL_ROUTER_URL")
-    or "http://router-worker:8096"
+    or "http://model-router:8096"
 ).rstrip("/")
 
 
@@ -215,15 +214,13 @@ async def health() -> dict[str, Any]:
                 or os.environ.get("DEEPSEEK_OCR_API_KEY")
                 or ""
             ),
-            "n9router": bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("N9ROUTER_API_KEY") or ""),
+            "omniroute": bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("OMNIROUTER_API_KEY") or ""),
         },
         "media_dir": str(MEDIA_DIR),
         "image_backends": image_backends(),
         "image_gen_combo": os.environ.get("IMAGE_GEN_COMBO") or "image-gen",
         "image_provider": os.environ.get("IMAGE_PROVIDER", ""),
         "zalo_bridge": bool(os.environ.get("ZALO_BRIDGE_URL", "").strip()),
-        "whisper_model": os.environ.get("WHISPER_MODEL", "tiny"),
-        "whisper_enabled": os.environ.get("WHISPER_ENABLED", "1") != "0",
         **health_fields(MEDIA_DIR),
     }
 
@@ -246,47 +243,7 @@ def mode_switch(req: ModeReq) -> dict[str, Any]:
 
 
 
-class TranscribeReq(BaseModel):
-    """Transcribe a local media file under MEDIA_DIR."""
-
-    path: str
-    language: Optional[str] = None
-
-
-
-_whisper_model = None
-_whisper_lock = threading.Lock()
-
-
-def _whisper_transcribe(path: Path, language: Optional[str] = None) -> str:
-    if os.environ.get("WHISPER_ENABLED", "1") == "0":
-        raise RuntimeError("WHISPER_ENABLED=0")
-    global _whisper_model
-    model_name = os.environ.get("WHISPER_MODEL", "tiny")
-    with _whisper_lock:
-        if _whisper_model is None:
-            from faster_whisper import WhisperModel
-
-            _whisper_model = WhisperModel(
-                model_name,
-                device=os.environ.get("WHISPER_DEVICE", "cpu"),
-                compute_type=os.environ.get("WHISPER_COMPUTE", "int8"),
-            )
-        model = _whisper_model
-    segments, _info = model.transcribe(
-        str(path),
-        language=language or None,
-        vad_filter=True,
-        beam_size=1,
-    )
-    parts = [seg.text.strip() for seg in segments if seg.text and seg.text.strip()]
-    text = " ".join(" ".join(parts).split()).strip()
-    if not text:
-        raise RuntimeError("whisper returned empty transcript")
-    return text
-
-
-register_video_summary(app, MEDIA_DIR, _whisper_transcribe)
+register_video_summary(app)
 
 
 @app.post("/v1/media")
@@ -336,31 +293,13 @@ def media_download(req: MediaReq) -> dict[str, Any]:
         raise HTTPException(502, str(e)) from e
 
 
-@app.post("/v1/transcribe")
-def transcribe(req: TranscribeReq) -> dict[str, Any]:
-    """ASR a local file under MEDIA_DIR."""
-    src = Path(req.path)
-    if not src.is_file():
-        raise HTTPException(400, f"path not found: {req.path}")
-    try:
-        src.resolve().relative_to(MEDIA_DIR.resolve())
-    except ValueError as e:
-        raise HTTPException(400, "path must be under media cache") from e
-    try:
-        text = _whisper_transcribe(src, req.language)
-        return {"ok": True, "source": "whisper", "transcript": text, "file": str(src)}
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, str(e)) from e
-
-
 VIDEO_TEXT_EXTS = {".mp4", ".webm", ".mov", ".m4v", ".mkv", ".avi"}
-AUDIO_TEXT_EXTS = {".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".flac"}
 MEDIA_TEXT_FRAMES = int(os.environ.get("MEDIA_TEXT_FRAMES", "4"))
 MEDIA_TEXT_FRAME_TIMEOUT_S = float(os.environ.get("MEDIA_TEXT_FRAME_TIMEOUT_S", "40"))
 
 
 class MediaTextReq(BaseModel):
-    """Readable text for audio/video so the agent can summarize before replying."""
+    """Readable on-screen text from a local video under MEDIA_DIR."""
 
     path: str
     language: Optional[str] = None
@@ -434,19 +373,13 @@ def _vision_file(path: Path, prompt: str = "Extract all visible text as markdown
 
 @app.post("/v1/media/text")
 def media_text(req: MediaTextReq) -> dict[str, Any]:
-    """Transcript (audio track) + on-screen text (keyframe OCR) for one media file."""
+    """Extract on-screen text with keyframe OCR from one local video file."""
     src = Path(req.path)
     if not src.is_file():
         raise HTTPException(400, f"path not found: {req.path}")
     ext = src.suffix.lower()
-    if ext not in VIDEO_TEXT_EXTS | AUDIO_TEXT_EXTS:
+    if ext not in VIDEO_TEXT_EXTS:
         raise HTTPException(415, f"unsupported media type: {ext or 'unknown'}")
-    transcript = ""
-    transcript_error = ""
-    try:
-        transcript = _whisper_transcribe(src, req.language)
-    except Exception as e:  # noqa: BLE001 — ASR is optional (WHISPER_ENABLED)
-        transcript_error = str(e)[:200]
     frame_text: list[str] = []
     frames_read = 0
     if ext in VIDEO_TEXT_EXTS:
@@ -465,20 +398,15 @@ def media_text(req: MediaTextReq) -> dict[str, Any]:
                 keyframes[0].parent.rmdir()
             except OSError:
                 pass
-    parts: list[str] = []
-    if transcript:
-        parts.append(f"## Transcript\n{transcript}")
-    if frame_text:
-        parts.append("## On-screen text\n" + "\n\n".join(frame_text))
-    text = "\n\n".join(parts).strip()
+    text = ("## On-screen text\n" + "\n\n".join(frame_text)).strip() if frame_text else ""
     return {
         "ok": bool(text),
         "file": str(src),
         "text": text,
-        "transcript": transcript,
+        "transcript": "",
         "frames_read": frames_read,
         "frames_with_text": len(frame_text),
-        "error": transcript_error if not text else "",
+        "error": "no visible text found" if not text else "",
     }
 
 _SEND_FILE_OK = {

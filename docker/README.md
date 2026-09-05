@@ -6,7 +6,7 @@ Compose YAML lives here so the repo root stays clean. **`run.sh` always passes
 
 | File | Role |
 |------|------|
-| `docker-compose.yml` | Core + optional profiles (schedule, zalo, omnirouter, 9router, …) |
+| `docker-compose.yml` | Core + optional profiles (schedule, zalo, omnirouter, …) |
 | `docker-compose.media.yml` | Media / File Worker overlay (dispatcher, OCR, Jobs, SearXNG, Comfy, …) |
 | `docker-compose.security.yml` | Security / Notify / Monitor overlay (`security` profile for OpenBao/authz/…) |
 | `docker-compose.edge.yml` | Traefik / API Gateway / OpenVPN |
@@ -20,7 +20,6 @@ Compose YAML lives here so the repo root stays clean. **`run.sh` always passes
 | `media` | `WORKER_MEDIA_FILE=active` |
 | `zalo` | `ENABLE_ZALO=active` (Message worker) — **both** `zalo-proxy` and `zalo-api` |
 | `omnirouter` | `ENABLE_OMNIROUTER=active` (**default**) |
-| `9router` | `ENABLE_9ROUTER=active` (**optional**, off by default) |
 | `notify` | `WORKER_NOTIFY=active` / `ENABLE_NOTIFY=active` |
 | `security` | `WORKER_SECURITY=active` / `ENABLE_SECURITY=active` (openbao, security-manager, authz, siem, policy-center) |
 | `grafana` / `prometheus` / `loki` / `alloy` | Monitor worker / matching `ENABLE_*` |
@@ -36,7 +35,6 @@ Example — Schedule + Media|File + Notify + Message:
 # WORKER_MESSAGE=active
 # ENABLE_ZALO=active
 # ENABLE_OMNIROUTER=active
-# ENABLE_9ROUTER=inactive
 bash run.sh up
 ```
 

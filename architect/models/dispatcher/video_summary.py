@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import httpx
 from fastapi import FastAPI
@@ -90,7 +90,6 @@ def omni_refuse_message(
     oa_key = (
         os.environ.get("OPENAI_API_KEY")
         or os.environ.get("OMNIROUTER_API_KEY")
-        or os.environ.get("N9ROUTER_API_KEY")
         or ""
     ).strip()
     oa_model = (
@@ -169,12 +168,7 @@ class VideoPolicyRefuseReq(BaseModel):
     context: str = ""
 
 
-def register_video_summary(
-    app: FastAPI,
-    media_dir: Path,
-    whisper_transcribe: Callable[..., str],
-) -> None:
-    del media_dir, whisper_transcribe
+def register_video_summary(app: FastAPI) -> None:
 
     @app.post("/v1/video-summary")
     def video_summary(req: VideoSummaryReq) -> dict[str, Any]:

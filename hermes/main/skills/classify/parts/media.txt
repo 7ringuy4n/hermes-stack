@@ -16,10 +16,7 @@ The image instruction is a compact English visual brief. Put the render protocol
 
 Use composed-image for any subject when facts, labels, summaries, rankings, instructions, or other grounded information must appear with the image. Add a search task before media_generation only when external or current data is required. Never invent live values during classification. Do not emit topic-specific panel names, fixed metric lists, fixed typography, fixed colors, fixed placement, or literal overlay copy. The runtime composition model chooses the title, supported facts, emphasis, typography, palette, density, and placement from the request and source material; the renderer validates and applies that design.
 
-The SCENE brief preserves the requested medium, composition, viewpoint, mood, and constraints. Do not force photography when the user requests another medium. Do not burn information text into diffusion pixels for composed-image.
-
-EXACT TEXT IMAGE
-When exact repeated glyphs are the deliverable, populate poster_n, poster_phrase, and poster_bw. Preserve the requested characters and count. This deterministic contract is distinct from semantic information composition.
+The SCENE brief preserves the requested medium, composition, viewpoint, mood, and constraints. Do not force photography when the user requests another medium. For composed-image, describe a background plate with clear negative space for the later factual layer. Unless the user explicitly requests one as subject matter, exclude devices, screens, dashboards, signs, documents, charts, interface panels, and other text-bearing objects. Never ask diffusion to render readable facts, text, letters, digits, measurements, labels, logos, timestamps, or watermarks.
 
 IMAGE INPUT
 When the user asks to read, describe, or summarize an attached or quoted image, use file processing with process_original_message true and no output_type. The result is a chat answer unless a new artifact was explicitly requested.

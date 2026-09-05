@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Probe Router Worker web search combo (local HTTP, no SSH)."""
+"""Probe Model Router web search combo (local HTTP, no SSH)."""
 from __future__ import annotations
 
 import json
@@ -27,7 +27,7 @@ def main() -> int:
     try:
         health = get_json("/health")
     except Exception as e:
-        print(f"SKIP router-worker not reachable at {BASE}: {e}")
+        print(f"SKIP model-router not reachable at {BASE}: {e}")
         return 0
     backends = health.get("web_backends") or []
     combo = health.get("web_combo") or "web-search"

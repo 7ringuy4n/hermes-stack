@@ -34,7 +34,7 @@ Document and media **tooling** around Hermes: embed text, ingest into Qdrant kno
 | Package | Function |
 |---|---|
 | [ingest/](./ingest/README.md) | Learn submit, auto-learn, list/search knowledge, chunk/embed/upsert |
-| [embedding/](./embedding/README.md) | Embedding HTTP facade → 9Router / upstream |
+| [embedding/](./embedding/README.md) | Embedding HTTP facade → OmniRoute / upstream |
 | [ocr/](./ocr/README.md) | PDF/image text extraction |
 | [jobs/](./jobs/README.md) | RQ/Valkey workers for long OCR/ingest tasks |
 

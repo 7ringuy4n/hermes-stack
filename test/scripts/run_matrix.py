@@ -282,11 +282,11 @@ set -euo pipefail
 export LC_ALL=C.UTF-8
 cd /opt/assistant
 set -a
-source <(grep -E '^(N9ROUTER_API_KEY)=' /data/assistant/.env | sed 's/\r$//')
+source <(grep -E '^(OMNIROUTER_API_KEY)=' /data/assistant/.env | sed 's/\r$//')
 set +a
 python3 - <<'PY'
 import json, os, time, urllib.request, concurrent.futures, pathlib
-key = os.environ.get("N9ROUTER_API_KEY", "")
+key = os.environ.get("OMNIROUTER_API_KEY", "")
 base_job = "http://127.0.0.1:8104/v1/enqueue"
 chat = "http://127.0.0.1:8096/v1/chat/completions"
 fx = pathlib.Path("/tmp/r2_fixtures")

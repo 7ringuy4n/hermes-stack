@@ -17,7 +17,7 @@ Test each independently:
 - Qdrant
 - model-router
 - OmniRouter
-- 9Router
+- OmniRoute
 - workflow
 - dispatcher
 - OCR

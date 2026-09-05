@@ -180,7 +180,7 @@
           "refId": "A"
         }
       ],
-      "title": "5 · LLM / Hermes / 9Router",
+      "title": "5 · LLM / Hermes / OmniRoute",
       "type": "logs"
     },
     {
@@ -211,7 +211,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (container) (count_over_time({job=\"docker\", container=~\"security-manager|ocr|ingest|embedding|memory|hermes|9router|omni-router|model-router\"} [$__interval]))",
+          "expr": "sum by (container) (count_over_time({job=\"docker\", container=~\"security-manager|ocr|ingest|embedding|memory|hermes|omni-router|model-router\"} [$__interval]))",
           "legendFormat": "{{container}}",
           "refId": "A"
         }

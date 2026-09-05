@@ -1,4 +1,4 @@
-# Case: default router flags — OmniRouter default, 9Router optional
+# Case: default router flags — OmniRouter default, OmniRoute optional
 
 Check **component defaults** vs **live** `.env`, then prove Hermes can reach the routers that should be on.
 
@@ -6,29 +6,29 @@ Check **component defaults** vs **live** `.env`, then prove Hermes can reach the
 
 | Item | Default |
 |------|---------|
-| 9Router | **off by default** (`ENABLE_9ROUTER=0`) |
-| Router Worker (`ENABLE_MODEL_ROUTER`) | **1** (container `router-worker`, DNS alias `model-router`) |
+| OmniRoute | **off by default** (`ENABLE_OMNIROUTER=0`) |
+| Model Router (`ENABLE_MODEL_ROUTER`) | **1** (container `model-router`, DNS alias `model-router`) |
 | `ENABLE_OMNIROUTER` | **1** |
 | Schedule / media / security / notify / message / monitor | **0** |
 | `ENABLE_GRAFANA` / Prometheus / Loki | **0** |
 | Hermes `OPENAI_BASE_URL` | `http://model-router:8096/v1` |
 
-Lab helper `test/scripts/deploy_high.py` is legacy; use `WORKER_*` / `ENABLE_*` on the host `.env`. Set `ENABLE_OMNIROUTER=0` only when a lab must force a non-default path, and enable `ENABLE_9ROUTER=1` if coding / fallback depends on it.
+Lab helper `test/scripts/deploy_high.py` is legacy; use `WORKER_*` / `ENABLE_*` on the host `.env`. Set `ENABLE_OMNIROUTER=0` only when a lab must force a non-default path, and enable `ENABLE_OMNIROUTER=1` if coding / fallback depends on it.
 
 ## Connectivity
 
 ```text
 Hermes → INPUT Secret Probe → task_hint (explicit or default normal)
        → POST /v1/classify when schedule/multi-task intercept needs structure
-       → router-worker → OmniRouter (general, if enabled) / 9router (coding + failover)
+       → model-router → OmniRouter (general, if enabled) / omni-router (coding + failover)
 ```
 
 | Flag live | Must be true |
 |-----------|----------------|
-| always | `router-worker` `/health` 200; Hermes can open `http://model-router:8096/health` |
-| `ENABLE_MODEL_ROUTER=1` (default) | `router-worker` `/health` 200; Hermes can open `http://model-router:8096/health` |
-| `ENABLE_OMNIROUTER=1` | `omni-router` GET `/` 2xx/3xx; router-worker config points at it |
-| `ENABLE_9ROUTER=1` | `9router` container running; Hermes replica can open `http://9router:20128/` |
+| always | `model-router` `/health` 200; Hermes can open `http://model-router:8096/health` |
+| `ENABLE_MODEL_ROUTER=1` (default) | `model-router` `/health` 200; Hermes can open `http://model-router:8096/health` |
+| `ENABLE_OMNIROUTER=1` | `omni-router` GET `/` 2xx/3xx; model-router config points at it |
+| `ENABLE_OMNIROUTER=1` | `omni-router` container running; Hermes replica can open `http://omni-router:20129/` |
 | `ENABLE_OMNIROUTER=0` | `omni-router` **absent**; only valid if the intended alternate router path is enabled and tested |
 
 ## Steps
@@ -41,7 +41,7 @@ Hermes → INPUT Secret Probe → task_hint (explicit or default normal)
 2. Compare to the table above — **RECORD** mismatches (lab overrides are OK if labelled).
 3. Hermes→model-router probe.
 4. OmniRouter present **iff** `ENABLE_OMNIROUTER=1`.
-5. 9Router present **iff** `ENABLE_9ROUTER=1`.
+5. OmniRoute present **iff** `ENABLE_OMNIROUTER=1`.
 6. Optional: one short `model-router` chat ping; if latency **> 5s** on localhost, mark **SLOW** (case 17).
 
 ## Pass criteria
@@ -49,12 +49,12 @@ Hermes → INPUT Secret Probe → task_hint (explicit or default normal)
 - Unit: worker defaults match the table
 - Model-router healthy when default 1
 - OmniRouter container matches the live flag
-- 9Router container matches the live flag
+- OmniRoute container matches the live flag
 - Simple chat does not crash when the chosen router path is disabled or switched intentionally
 
 ## Fail events
 
 - Hermes cannot reach model-router
-- `ENABLE_9ROUTER=0` but docs/tests still assume it is always on
+- `ENABLE_OMNIROUTER=0` but docs/tests still assume it is always on
 - `ENABLE_OMNIROUTER=0` but the alternate route is not enabled / not working
 - `ENABLE_OMNIROUTER=1` but Grafana `omnirouter_scrape_success==0` (case 20)

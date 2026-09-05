@@ -9,7 +9,7 @@ When the user asks for a **structured multi-part visual** (infographic with seve
 
 1. **Plan** with the default chat combo **`hermes`**
    - OmniRouter: `POST /v1/chat/completions` `model=hermes`
-   - 9Router: same when enabled
+   - OmniRoute: same when enabled
 2. **Deliver** using stack tools — never invent matplotlib/HTML screenshots:
    - Grounded information on a generated background → classifier `RENDER: composed-image`, Omni `image-gen`, then the model-authored `/v1/overlay` design
    - Pure visual with no information layer → Omni `/images/generations` model `image-gen`

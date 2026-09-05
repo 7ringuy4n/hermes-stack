@@ -4,7 +4,7 @@
 Watches:
   - Lab service health (same targets as stack-exporter) → DOWN / recovered
   - Host CPU / RAM / disk via node-exporter → over threshold
-  - 9Router provider errors / 429 / quota signals
+  - OmniRoute availability / 429 / quota signals
 
 Stdlib only. Cooldown per alert key to avoid spam.
 """
@@ -39,11 +39,8 @@ CHECK_INTERVAL = float(os.environ.get("CHECK_INTERVAL", "60"))
 COOLDOWN = float(os.environ.get("ALERT_COOLDOWN_SECONDS", "1800"))
 NOTIFY_URL = os.environ.get("NOTIFY_URL", "http://notify:8092").rstrip("/")
 NODE_EXPORTER = (os.environ.get("NODE_EXPORTER_URL") or "").strip().rstrip("/")
-N9ROUTER_URL = _abs_http_base(os.environ.get("N9ROUTER_URL", ""), "http://9router:20128")
 OMNIROUTER_URL = _abs_http_base(os.environ.get("OMNIROUTER_URL", ""), "http://omni-router:20129")
-N9ROUTER_PASSWORD = os.environ.get("N9ROUTER_PASSWORD", "")
-N9ROUTER_API_KEY = os.environ.get("N9ROUTER_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
-ENABLE_9ROUTER = _flag("ENABLE_9ROUTER", "0")
+OMNIROUTER_API_KEY = os.environ.get("OMNIROUTER_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
 ENABLE_OMNIROUTER = _flag("ENABLE_OMNIROUTER", "1")
 
 CPU_PCT = float(os.environ.get("ALERT_CPU_PCT", "90"))
@@ -65,7 +62,6 @@ HEALTH_TARGETS = os.environ.get(
     "memory-manager=memory-manager:8095/health,"
     "zalo-api=zalo-api:8100/health,"
     "clamav=clamav:3310,"
-    "9router_via_tcp=9router:20128,"
     # Hermes gateway often binds 8642 on loopback only; dashboard 9119 is on the docker network.
     "hermes=hermes:9119/,"
     "postgres_via_tcp=postgres:5432",
@@ -78,8 +74,6 @@ _QUOTA_RE = re.compile(
 
 _last_fire: dict[str, float] = {}
 _prev_up: dict[str, bool] = {}
-_cookie = ""
-_cookie_at = 0.0
 _status: dict[str, Any] = {"ok": True, "last_check": 0, "alerts": []}
 
 
@@ -190,7 +184,7 @@ def _parse_health_targets(raw: str) -> list[tuple[str, str, str, int, str]]:
         except ValueError:
             continue
         kind = "tcp" if name.endswith("_via_tcp") or name == "clamav" or path == "" else "http"
-        if name in ("clamav", "redis_via_tcp", "postgres_via_tcp", "9router_via_tcp"):
+        if name in ("clamav", "redis_via_tcp", "postgres_via_tcp"):
             kind = "tcp"
         out.append((name, kind, host, port, path or "/"))
     return out
@@ -341,87 +335,14 @@ def check_resources() -> None:
             )
 
 
-def _n9_login() -> str:
-    global _cookie, _cookie_at
-    if not N9ROUTER_PASSWORD:
-        raise RuntimeError("N9ROUTER_PASSWORD empty")
-    body = json.dumps({"password": N9ROUTER_PASSWORD}).encode()
-    req = urllib.request.Request(
-        f"{N9ROUTER_URL}/api/auth/login",
-        data=body,
-        headers={"content-type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        raw = resp.headers.get("Set-Cookie") or ""
-        token = raw.split(";")[0].strip()
-        if not token.startswith("auth_token="):
-            raise RuntimeError(f"login missing cookie: {raw!r}")
-        _cookie = token
-        _cookie_at = time.time()
-        return _cookie
-
-
-def _n9_get(path: str) -> Any:
-    global _cookie
-    if not _cookie or (time.time() - _cookie_at) > 20 * 3600:
-        _n9_login()
-    req = urllib.request.Request(
-        f"{N9ROUTER_URL}{path}",
-        headers={"Cookie": _cookie, "Accept": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
-            _n9_login()
-            req = urllib.request.Request(
-                f"{N9ROUTER_URL}{path}",
-                headers={"Cookie": _cookie, "Accept": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                return json.loads(resp.read().decode())
-        raise
-
-
 def check_llm_quota() -> None:
-    # 1) Provider dashboard errors — 9Router UI only (skip when optional 9Router is off)
-    if ENABLE_9ROUTER and N9ROUTER_PASSWORD and N9ROUTER_URL.startswith("http"):
-        try:
-            providers = _n9_get("/api/providers")
-            for conn in providers.get("connections") or []:
-                err = str(conn.get("lastError") or "")
-                name = str(conn.get("name") or conn.get("provider") or conn.get("id") or "?")
-                provider = str(conn.get("provider") or "?")
-                if err and _QUOTA_RE.search(err):
-                    _fire(
-                        f"llm_quota:{provider}:{name}",
-                        f"LLM quota/429: {provider}",
-                        f"Provider {provider} ({name}) lastError:\n{err[:800]}",
-                        "critical",
-                    )
-                elif err:
-                    print(
-                        f"[alert-watch] llm skip notify ({provider}/{name}): {err[:240]}",
-                        flush=True,
-                    )
-        except Exception as e:
-            print(f"[alert-watch] 9Router /api/providers skip: {e}", flush=True)
-
-    # 2) Lightweight probe: models list on the active OpenAI-compatible router
-    probe = ""
-    if ENABLE_9ROUTER and N9ROUTER_URL.startswith("http"):
-        probe = N9ROUTER_URL
-    elif ENABLE_OMNIROUTER and OMNIROUTER_URL.startswith("http"):
-        probe = OMNIROUTER_URL
-    if not probe:
+    if not ENABLE_OMNIROUTER or not OMNIROUTER_URL.startswith("http"):
         return
     headers = {"Accept": "application/json"}
-    if N9ROUTER_API_KEY:
-        headers["Authorization"] = f"Bearer {N9ROUTER_API_KEY}"
+    if OMNIROUTER_API_KEY:
+        headers["Authorization"] = f"Bearer {OMNIROUTER_API_KEY}"
     try:
-        req = urllib.request.Request(f"{probe}/v1/models", headers=headers)
+        req = urllib.request.Request(f"{OMNIROUTER_URL}/v1/models", headers=headers)
         with urllib.request.urlopen(req, timeout=15) as resp:
             _ = resp.read()
     except urllib.error.HTTPError as e:
@@ -434,7 +355,7 @@ def check_llm_quota() -> None:
             _fire(
                 "llm_http_429",
                 "LLM HTTP 429 / quota",
-                f"GET {probe}/v1/models → {e.code}\n{body}",
+                f"GET {OMNIROUTER_URL}/v1/models → {e.code}\n{body}",
                 "critical",
             )
         else:

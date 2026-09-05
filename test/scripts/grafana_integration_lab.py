@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Grafana integration lab (SSH). Skip when ENABLE_GRAFANA=0.
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
@@ -54,10 +54,13 @@ echo "PROMETHEUS=${ENABLE_PROMETHEUS:-0}"
 echo "OMNI=${ENABLE_OMNIROUTER:-0}"
 echo "AV=${ENABLE_ANTIVIRUS:-0}"
 echo "ZALO=${ENABLE_ZALO:-0}"
-if [[ "${ENABLE_GRAFANA:-0}" != "1" && "${ENABLE_PROMETHEUS:-0}" != "1" ]]; then
+case "${ENABLE_GRAFANA:-0}:${ENABLE_PROMETHEUS:-0}" in
+  active:*|1:*|*:active|*:1) ;;
+  *)
   echo SKIP_GRAFANA_OFF
   exit 0
-fi
+  ;;
+esac
 echo "grafana_health=$(curl -sS -m 8 -o /dev/null -w '%{http_code}' http://127.0.0.1:23000/api/health || echo fail)"
 curl -sS -m 8 http://127.0.0.1:23000/api/health || true
 echo
@@ -79,15 +82,7 @@ for line in t.splitlines():
     if line.startswith("assistant_service_up"):
         print(line)
 '
-echo '=== NINE ==='
-docker exec nine-exporter python -c '
-import urllib.request
-t=urllib.request.urlopen("http://127.0.0.1:9101/metrics", timeout=8).read().decode()
-for line in t.splitlines():
-    if line.startswith("n9router_scrape_success"):
-        print(line)
-' 2>/dev/null || echo NINE_ABSENT
-if [[ "${ENABLE_OMNIROUTER:-0}" == "1" ]]; then
+if [[ "${ENABLE_OMNIROUTER:-0}" == "1" || "${ENABLE_OMNIROUTER:-0}" == "active" ]]; then
   echo '=== OMNI ==='
   docker exec omni-exporter python -c '
 import urllib.request
@@ -136,15 +131,6 @@ echo GRAFANA_LAB_DONE
             fails += 1
         else:
             note("service_up", "PASS", "expected services up")
-        if "n9router_scrape_success 1" not in out.replace(" ", " ") and 'n9router_scrape_success 1' not in out:
-            # metric may be `n9router_scrape_success 1.0`
-            if "n9router_scrape_success" in out and " 1" in out:
-                note("nine", "PASS", "scrape success")
-            else:
-                note("nine", "FAIL", "9router scrape not 1")
-                fails += 1
-        else:
-            note("nine", "PASS", "scrape success")
         if "OMNI=1" in out and "omnirouter_scrape_success" in out:
             if "omnirouter_scrape_success 0" in out:
                 note("omni", "FAIL", "omni scrape 0")

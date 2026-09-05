@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Worker activation. Core is always on: Hermes, Memory, Router Worker, Traefik local, watchdog.
+# Worker activation. Core is always on: Hermes, Memory, Model Router, Traefik local, watchdog.
 # Optional workers are inactive unless WORKER_*=active (or ENABLE_*=active; legacy 1 still accepted via migrate).
 # Bundled ENABLE_* for a worker live with that worker — not in default setup.
 set -euo pipefail
@@ -15,7 +15,7 @@ assistant_migrate_enable_active() {
   # Canonical on/off for feature toggles: active | inactive (never 1/0).
   local k v
   for k in \
-    ENABLE_OMNIROUTER ENABLE_9ROUTER ENABLE_JOBS ENABLE_SEARXNG \
+    ENABLE_OMNIROUTER ENABLE_JOBS ENABLE_SEARXNG \
     ENABLE_ZALO ENABLE_TELEGRAM ENABLE_SECURITY ENABLE_NOTIFY ENABLE_MONITOR \
     ENABLE_SCHEDULE ENABLE_MEDIA_FILE ENABLE_MESSAGE ENABLE_GRAFANA \
     ENABLE_PROMETHEUS ENABLE_LOKI ENABLE_ALLOY ENABLE_ANTIVIRUS ENABLE_AUTHZ \
@@ -23,7 +23,7 @@ assistant_migrate_enable_active() {
     ENABLE_API_GATEWAY ENABLE_MODEL_ROUTER ENABLE_CLOUDDRIVE ENABLE_OPENVPN \
     ENABLE_LOG_ARCHIVE OFFICE_FILE_GEN OMNIROUTER_ENABLE_MEMORY \
     ENABLE_LLM_JUDGE SECURITY_SANDBOX SECURITY_YARA SECURITY_FAIL_CLOSED \
-    SECURITY_LLM_JUDGE IMAGE_ALLOW_PILLOW WHISPER_ENABLED ZALO_INBOUND_QUEUE \
+    SECURITY_LLM_JUDGE IMAGE_ALLOW_PILLOW ZALO_INBOUND_QUEUE \
     ZALO_HISTORY_POSTGRES TRAEFIK_ACME_ENABLED ENABLE_QWEN ENABLE_QWEN_THINKING
   do
     v="$(eval "printf '%s' \"\${${k}:-}\"")"
@@ -83,7 +83,7 @@ assistant_workers_apply() {
     export ENABLE_JOBS="${ENABLE_JOBS:-active}"
     export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-active}"
     export ENABLE_SEARXNG="${ENABLE_SEARXNG:-active}"
-    # Web search runs on router-worker via Omni combo web-search only
+    # Web search runs on model-router via Omni combo web-search only
     [[ -n "${IMAGE_GEN_COMBO:-}" ]] || export IMAGE_GEN_COMBO=image-gen
     [[ -n "${OCR_MODEL:-}" ]] || export OCR_MODEL=vision-ocr
     [[ -n "${EMBED_MODEL:-}" ]] || export EMBED_MODEL=embedding
@@ -174,7 +174,6 @@ assistant_workers_apply() {
   export ENABLE_API_GATEWAY="${ENABLE_API_GATEWAY:-active}"
   export TRAEFIK_MODE="${TRAEFIK_MODE:-local}"
   export TRAEFIK_ACME_ENABLED="${TRAEFIK_ACME_ENABLED:-inactive}"
-  export ENABLE_9ROUTER="${ENABLE_9ROUTER:-inactive}"
   export ENABLE_OMNIROUTER="${ENABLE_OMNIROUTER:-active}"
   export OMNIROUTER_ENABLE_MEMORY="${OMNIROUTER_ENABLE_MEMORY:-active}"
   export ENABLE_MODEL_ROUTER="${ENABLE_MODEL_ROUTER:-active}"
@@ -185,10 +184,6 @@ assistant_workers_apply() {
   export ZALO_INBOUND_QUEUE="${ZALO_INBOUND_QUEUE:-active}"
   export GATEWAY_SKIP_RL_PATHS="${GATEWAY_SKIP_RL_PATHS:-/coding,/v1/coding,/skills/coding,/schedule,/v1/schedule,/skills/schedule,/v1/schedules}"
   export VALKEY_URL="${VALKEY_URL:-redis://valkey:6379/0}"
-
-  if ! _env_active "${ENABLE_9ROUTER:-}"; then
-    export N9ROUTER_BASE_URL=""
-  fi
 
   if _env_active "${SECURITY_SANDBOX:-}"; then
     export SECURITY_DOCKER_HOST="${SECURITY_DOCKER_HOST:-tcp://docker-socket-proxy:2375}"
@@ -202,8 +197,10 @@ assistant_workers_apply() {
   export GATEWAY_TRUST_FORWARDED="${GATEWAY_TRUST_FORWARDED:-inactive}"
   export GATEWAY_RL_FAIL_CLOSED="${GATEWAY_RL_FAIL_CLOSED:-active}"
   if _env_active "${ENABLE_API_GATEWAY:-}" && _env_active "${GATEWAY_REQUIRE_AUTH:-}"; then
-    if [[ -z "${GATEWAY_API_KEYS:-}" ]]; then
+    if [[ -z "${GATEWAY_API_KEYS:-}" ]] && ! _env_active "${ENABLE_OPENBAO:-}"; then
       echo "WARN: ENABLE_API_GATEWAY=active but GATEWAY_API_KEYS is empty — gateway will refuse to start until keys are set (or GATEWAY_REQUIRE_AUTH=inactive for isolated lab)." >&2
+    elif [[ -z "${GATEWAY_API_KEYS:-}" ]]; then
+      echo "INFO: GATEWAY_API_KEYS will be loaded from OpenBao for runtime use." >&2
     fi
   fi
 }
@@ -229,9 +226,6 @@ assistant_append_monitor_profiles() {
   if [[ "$want_prom" == "1" ]] && _env_active "${ENABLE_OMNIROUTER:-}"; then
     _amp_profiles+=(--profile omni-exporter)
   fi
-  if [[ "$want_prom" == "1" ]] && _env_active "${ENABLE_9ROUTER:-}"; then
-    _amp_profiles+=(--profile nine-exporter)
-  fi
 }
 
 assistant_disabled_monitor_containers() {
@@ -247,9 +241,6 @@ assistant_disabled_monitor_containers() {
     echo prometheus
     echo node-exporter
     echo stack-exporter
-  fi
-  if [[ "$want_prom" != "1" ]] || ! _env_active "${ENABLE_9ROUTER:-}"; then
-    echo nine-exporter
   fi
   if [[ "$want_loki" != "1" ]]; then
     echo loki
@@ -298,7 +289,7 @@ assistant_worker_legacy_container_names() {
     media) printf '%s\n' searxng jobs jobs-worker dispatcher ;;
     security) printf '%s\n' openbao security-manager authz siem policy-center docker-socket-proxy ;;
     notify) printf '%s\n' notify alert-watch ;;
-    monitor) printf '%s\n' grafana prometheus loki alloy omni-exporter nine-exporter node-exporter stack-exporter ;;
+    monitor) printf '%s\n' grafana prometheus loki alloy omni-exporter node-exporter stack-exporter ;;
     antivirus) printf '%s\n' clamav av-gateway ;;
     message|zalo) printf '%s\n' zalo-proxy zalo-api ;;
     clouddrive) printf '%s\n' clouddrive-sync ;;
@@ -399,7 +390,7 @@ assistant_remove_stale_worker_containers() {
 
 assistant_workers_summary() {
   echo "workers SCHEDULE=${WORKER_SCHEDULE} MEDIA_FILE=${WORKER_MEDIA_FILE} SECURITY=${WORKER_SECURITY} NOTIFY=${WORKER_NOTIFY} MESSAGE=${WORKER_MESSAGE} MONITOR=${WORKER_MONITOR}"
-  echo "core TRAEFIK=${ENABLE_TRAEFIK:-1} GATEWAY=${ENABLE_API_GATEWAY:-1} OMNI=${ENABLE_OMNIROUTER:-1} N9=${ENABLE_9ROUTER:-0} ROUTER=${ENABLE_MODEL_ROUTER:-1} REPLICAS=${HERMES_REPLICAS:-1} QUEUE=${ZALO_INBOUND_QUEUE:-1}"
+  echo "core TRAEFIK=${ENABLE_TRAEFIK:-1} GATEWAY=${ENABLE_API_GATEWAY:-1} OMNI=${ENABLE_OMNIROUTER:-1} ROUTER=${ENABLE_MODEL_ROUTER:-1} REPLICAS=${HERMES_REPLICAS:-1} QUEUE=${ZALO_INBOUND_QUEUE:-1}"
   echo "ASSISTANT_DATA_DIR=${ASSISTANT_DATA_DIR:-/data/assistant}"
   echo "BACKUP_DIR=${BACKUP_DIR:-/data/assistant/backups}"
   echo "TRAEFIK_MODE=${TRAEFIK_MODE:-local} TRAEFIK_ACME=${TRAEFIK_ACME_ENABLED:-0}"
@@ -446,7 +437,6 @@ ENABLE_MEDIA_FILE=${ENABLE_MEDIA_FILE:-inactive}
 ENABLE_MESSAGE=${ENABLE_MESSAGE:-0}
 ENABLE_MONITOR=${ENABLE_MONITOR:-0}
 ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-1}
-ENABLE_9ROUTER=${ENABLE_9ROUTER:-0}
 OMNIROUTER_ENABLE_MEMORY=${OMNIROUTER_ENABLE_MEMORY:-1}
 WEB_SEARCH_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
 ENABLE_MODEL_ROUTER=${ENABLE_MODEL_ROUTER:-1}
@@ -464,7 +454,7 @@ EOF
 
 assistant_option_key_ok() {
   case "$1" in
-    WORKER_SCHEDULE|WORKER_MEDIA_FILE|WORKER_SECURITY|WORKER_NOTIFY|WORKER_MESSAGE|WORKER_MONITOR|HERMES_REPLICAS|TRAEFIK_MODE|TRAEFIK_ACME_ENABLED|ENABLE_TRAEFIK|ENABLE_API_GATEWAY|ENABLE_SEARXNG|ENABLE_JOBS|OFFICE_FILE_GEN|WEB_SEARCH_MAX_RESULTS|IMAGE_GEN_COMBO|ENABLE_GRAFANA|ENABLE_LOKI|ENABLE_PROMETHEUS|ENABLE_ALLOY|ENABLE_CLOUDDRIVE|ENABLE_OPENBAO|ENABLE_OPENBAO_AGENT|ENABLE_ANTIVIRUS|ENABLE_SECURITY|ENABLE_NOTIFY|ENABLE_SIEM|ENABLE_POLICY|ENABLE_AUTHZ|ENABLE_ZALO|ENABLE_TELEGRAM|ENABLE_OPENVPN|ENABLE_OMNIROUTER|ENABLE_9ROUTER|OMNIROUTER_FAILOVER_MODELS|OMNIROUTER_ROTATE_ATTEMPTS|OMNIROUTER_ENABLE_MEMORY|ENABLE_MODEL_ROUTER|ENABLE_LOG_ARCHIVE|ENABLE_SCHEDULE|ENABLE_MEDIA_FILE|ENABLE_MESSAGE|ENABLE_MONITOR|SECURITY_SANDBOX|SECURITY_LLM_JUDGE|ENABLE_LLM_JUDGE|SECURITY_YARA|SECURITY_FAIL_CLOSED|IMAGE_GEN_COMBO|OCR_MODEL|EMBED_MODEL|VALKEY_URL|ZALO_INBOUND_QUEUE)
+    WORKER_SCHEDULE|WORKER_MEDIA_FILE|WORKER_SECURITY|WORKER_NOTIFY|WORKER_MESSAGE|WORKER_MONITOR|HERMES_REPLICAS|TRAEFIK_MODE|TRAEFIK_ACME_ENABLED|ENABLE_TRAEFIK|ENABLE_API_GATEWAY|ENABLE_SEARXNG|ENABLE_JOBS|OFFICE_FILE_GEN|WEB_SEARCH_MAX_RESULTS|IMAGE_GEN_COMBO|ENABLE_GRAFANA|ENABLE_LOKI|ENABLE_PROMETHEUS|ENABLE_ALLOY|ENABLE_CLOUDDRIVE|ENABLE_OPENBAO|ENABLE_OPENBAO_AGENT|ENABLE_ANTIVIRUS|ENABLE_SECURITY|ENABLE_NOTIFY|ENABLE_SIEM|ENABLE_POLICY|ENABLE_AUTHZ|ENABLE_ZALO|ENABLE_TELEGRAM|ENABLE_OPENVPN|ENABLE_OMNIROUTER|OMNIROUTER_FAILOVER_MODELS|OMNIROUTER_ROTATE_ATTEMPTS|OMNIROUTER_ENABLE_MEMORY|ENABLE_MODEL_ROUTER|ENABLE_LOG_ARCHIVE|ENABLE_SCHEDULE|ENABLE_MEDIA_FILE|ENABLE_MESSAGE|ENABLE_MONITOR|SECURITY_SANDBOX|SECURITY_LLM_JUDGE|ENABLE_LLM_JUDGE|SECURITY_YARA|SECURITY_FAIL_CLOSED|IMAGE_GEN_COMBO|OCR_MODEL|EMBED_MODEL|VALKEY_URL|ZALO_INBOUND_QUEUE)
       return 0
       ;;
     *)
