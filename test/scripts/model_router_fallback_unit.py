@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
 from fallback_providers import (  # noqa: E402
     capability_for_path,
     configured_fallbacks,
+    encode_proxy_body,
     endpoint_failure_allows_fallback,
     replace_multipart_model,
 )
@@ -53,6 +54,8 @@ def main() -> int:
     )
     assert b"\r\nprovider/edit-model\r\n" in replaced
     assert b"\x00image-edit\xff" in replaced
+    assert encode_proxy_body(source, {"stream": False}, is_json_request=False) == source
+    assert encode_proxy_body(source, {"stream": False}, is_json_request=True) == b'{"stream": false}'
     assert endpoint_failure_allows_fallback(
         400, b'No images-capable targets in combo "image-gen"', "image-gen"
     )

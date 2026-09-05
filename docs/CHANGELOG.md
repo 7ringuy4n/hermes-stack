@@ -33,6 +33,9 @@
   Compose and remains available during an OmniRoute outage. SearXNG fallback
   preserves useful answer and infobox records when public engines return no
   ordinary result rows.
+- Model Router preserves non-JSON request bodies byte-for-byte, preventing its
+  chat-payload normalizer from replacing multipart image-edit uploads with a
+  synthetic JSON body.
 
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
 

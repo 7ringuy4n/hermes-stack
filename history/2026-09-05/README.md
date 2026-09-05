@@ -563,3 +563,19 @@ normalization retains ordinary results first before adapting answer and infobox
 content to the internal result contract. Outage tests must stop OmniRoute and
 exercise the live search and embedding endpoints rather than inferring fallback
 availability from configuration alone.
+
+## Multipart media requests were normalized as empty chat JSON
+
+### Symptom
+
+Quoted-image editing resolved and classified the source but OmniRoute rejected
+the forwarded upload as invalid form data.
+
+### Root cause and fix
+
+Model Router correctly failed JSON decoding for multipart bytes, then ran an
+empty map through the chat normalizer. The normalizer added a stream field,
+making that map truthy and causing the proxy to send JSON under the original
+multipart content type. Request serialization is now selected from the actual
+content type: JSON is normalized, while multipart bytes and their boundary are
+preserved unchanged. Live quoted-image editing remains the release gate.

@@ -5567,3 +5567,9 @@ did not activate local embeddings, and SearXNG infobox-only responses were
 dropped. Core services now normalize the documented flag forms and preserve
 knowledge-panel search records. Future outage gates must exercise live service
 endpoints with OmniRoute stopped.
+
+## 2026-09-05 22:55 +07 — preserve multipart media through Model Router
+
+The generic proxy no longer feeds non-JSON bodies through chat normalization.
+Multipart image-edit uploads retain their original bytes and boundary instead
+of being replaced by a synthetic stream-only JSON object.
