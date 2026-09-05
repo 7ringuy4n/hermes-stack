@@ -11,11 +11,11 @@ Used by ingest, memory compact, and knowledge optimize — not a user-facing cha
 
 Upstream:
 
-1. OmniRouter `POST /v1/embeddings` with `model=embedding` (`EMBED_MODEL`)
-2. OmniRoute OpenAI-compatible embeddings when Omni unavailable and OmniRoute is enabled
-3. Local ONNX fallback only when `EMBED_LOCAL_FALLBACK=1`
+1. OmniRoute `POST /v1/embeddings` with `model=embedding` (`EMBED_MODEL`)
+2. Model Router tries each operator-declared embedding-capable provider when OmniRoute is unavailable
+3. Local ONNX fallback only when `EMBED_LOCAL_FALLBACK=active`
 
-Hermes must **not** invent embedding vectors, call external embed HTTP, or ask the user for OpenAI embed keys. Operators fill combo **`embedding`** members in OmniRouter / OmniRoute UI.
+Hermes must **not** invent embedding vectors, call external embed HTTP, or ask the user for OpenAI embed keys. Operators fill combo **`embedding`** members in the OmniRoute UI.
 
 ## Related
 

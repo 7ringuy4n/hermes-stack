@@ -10,11 +10,12 @@ History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
 
-## 2026-09-05 — update isolation and routing consolidation
+## 2026-09-05 — update isolation, routing consolidation, and Zalo HA
 
 See `history/2026-09-05/README.md` for the update/watchdog race, transient
 OpenBao secret propagation, retired routing cleanup, dependency replacement,
 scheduled media plan handoff, grounded image composition, stale Zalo SSE recovery,
 image-edit routing, quoted-media ownership, slow-provider resilience,
 single-deliverable visual documents, and the
-model-authored office-artifact release gate.
+model-authored office-artifact release gate, and Traefik-routed Zalo ownership
+with renewable Valkey failover.

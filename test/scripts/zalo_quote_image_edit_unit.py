@@ -78,6 +78,7 @@ def main() -> int:
             os.environ["HERMES_SHARED_DATA"] = root
             os.environ["OMNIROUTER_API_KEY"] = "unit-secret"
             os.environ["OMNIROUTER_BASE_URL"] = "http://omni-router:20129/v1"
+            os.environ["MODEL_ROUTER_BASE_URL"] = "http://model-router:8096/v1"
             os.environ["IMAGE_EDIT_COMBO"] = "image-edit"
             with patch("urllib.request.urlopen", side_effect=fake_urlopen):
                 result = run_image_edit(
@@ -94,7 +95,7 @@ def main() -> int:
         assert output.read_bytes() == edited
 
     body = bytes(captured["body"])
-    assert captured["url"] == "http://omni-router:20129/v1/images/edits"
+    assert captured["url"] == "http://model-router:8096/v1/images/edits"
     assert b'name="model"' in body and b"image-edit" in body
     assert b'name="prompt"' in body
     assert b'name="image"; filename="quoted.png"' in body

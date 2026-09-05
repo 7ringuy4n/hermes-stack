@@ -19,7 +19,7 @@ if hasattr(sys.stdout, "buffer"):
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 DOCS = Path(os.environ.get("ASSISTANT_TEST_DOCS") or (ROOT.parent / "test docs" / "Security"))
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-archive-extract"
-TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937").strip()
+TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
 
 SAMPLES = ["1.zip", "2.zip", "3.zip", "4.zip"]
 
@@ -44,6 +44,9 @@ def _clean(text: str) -> str:
 
 
 def main() -> int:
+    if not TN_ID:
+        print("ERROR: ZALO_TEST_USER_ID is required", file=sys.stderr)
+        return 2
     OUT.mkdir(parents=True, exist_ok=True)
     missing = [n for n in SAMPLES if not (DOCS / n).is_file()]
     if missing:

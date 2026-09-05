@@ -1,4 +1,4 @@
-# Case: default router flags — OmniRouter default, OmniRoute optional
+# Case: default router flags — OmniRoute through compatibility settings
 
 Check **component defaults** vs **live** `.env`, then prove Hermes can reach the routers that should be on.
 
@@ -6,7 +6,7 @@ Check **component defaults** vs **live** `.env`, then prove Hermes can reach the
 
 | Item | Default |
 |------|---------|
-| OmniRoute | **off by default** (`ENABLE_OMNIROUTER=0`) |
+| OmniRoute | **on by default** through the compatibility flag (`ENABLE_OMNIROUTER=active`) |
 | Model Router (`ENABLE_MODEL_ROUTER`) | **1** (container `model-router`, DNS alias `model-router`) |
 | `ENABLE_OMNIROUTER` | **1** |
 | Schedule / media / security / notify / message / monitor | **0** |
@@ -20,12 +20,11 @@ Lab helper `test/scripts/deploy_high.py` is legacy; use `WORKER_*` / `ENABLE_*` 
 ```text
 Hermes → INPUT Secret Probe → task_hint (explicit or default normal)
        → POST /v1/classify when schedule/multi-task intercept needs structure
-       → model-router → OmniRouter (general, if enabled) / omni-router (coding + failover)
+       → model-router → OmniRoute named combo
 ```
 
 | Flag live | Must be true |
 |-----------|----------------|
-| always | `model-router` `/health` 200; Hermes can open `http://model-router:8096/health` |
 | `ENABLE_MODEL_ROUTER=1` (default) | `model-router` `/health` 200; Hermes can open `http://model-router:8096/health` |
 | `ENABLE_OMNIROUTER=1` | `omni-router` GET `/` 2xx/3xx; model-router config points at it |
 | `ENABLE_OMNIROUTER=1` | `omni-router` container running; Hermes replica can open `http://omni-router:20129/` |
@@ -40,16 +39,14 @@ Hermes → INPUT Secret Probe → task_hint (explicit or default normal)
 1. Dump live flags (no secrets).
 2. Compare to the table above — **RECORD** mismatches (lab overrides are OK if labelled).
 3. Hermes→model-router probe.
-4. OmniRouter present **iff** `ENABLE_OMNIROUTER=1`.
-5. OmniRoute present **iff** `ENABLE_OMNIROUTER=1`.
-6. Optional: one short `model-router` chat ping; if latency **> 5s** on localhost, mark **SLOW** (case 17).
+4. OmniRoute is present **iff** the compatibility flag `ENABLE_OMNIROUTER` is active.
+5. Optional: one short `model-router` chat ping; if latency **> 5s** on localhost, mark **SLOW** (case 17).
 
 ## Pass criteria
 
 - Unit: worker defaults match the table
 - Model-router healthy when default 1
-- OmniRouter container matches the live flag
-- OmniRoute container matches the live flag
+- OmniRoute container matches the live compatibility flag
 - Simple chat does not crash when the chosen router path is disabled or switched intentionally
 
 ## Fail events

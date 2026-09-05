@@ -300,12 +300,12 @@ def _synthesize_overlay_plan(
     if not system or not user_template:
         return {}
     try:
-        from .omni_env import resolve_omni_api_key, resolve_omni_base_url
+        from .omni_env import resolve_media_router_api_key, resolve_media_router_base_url
     except ImportError:
-        from omni_env import resolve_omni_api_key, resolve_omni_base_url  # type: ignore
+        from omni_env import resolve_media_router_api_key, resolve_media_router_base_url  # type: ignore
 
-    base = resolve_omni_base_url()
-    key = resolve_omni_api_key()
+    base = resolve_media_router_base_url()
+    key = resolve_media_router_api_key()
     if not base or not key:
         return {}
     # This is a short, schema-constrained planning call, so use the same
@@ -322,6 +322,7 @@ def _synthesize_overlay_plan(
             "stream": False,
             "temperature": 0,
             "max_tokens": 420,
+            "metadata": {"task_hint": "file", "task_type": "file_processing"},
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -883,14 +884,14 @@ def _media_out_candidates() -> list:
 
 
 def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None:
-    """Scenic diffusion via OmniRouter combo image-gen (not dispatcher /v1/image)."""
+    """Scenic diffusion via OmniRoute combo image-gen (not dispatcher /v1/image)."""
     try:
-        from .omni_env import resolve_omni_api_key, resolve_omni_base_url
+        from .omni_env import resolve_media_router_api_key, resolve_media_router_base_url
     except ImportError:
-        from omni_env import resolve_omni_api_key, resolve_omni_base_url  # type: ignore
+        from omni_env import resolve_media_router_api_key, resolve_media_router_base_url  # type: ignore
 
-    base = resolve_omni_base_url()
-    key = resolve_omni_api_key()
+    base = resolve_media_router_base_url()
+    key = resolve_media_router_api_key()
     if not key:
         log.warning("omni generate: missing OMNIROUTER_API_KEY")
         return None
@@ -977,19 +978,19 @@ def run_image_edit(
     if not prompt or not source.is_file():
         return shortcut_consumed()
     try:
-        from .omni_env import resolve_env_var, resolve_omni_api_key, resolve_omni_base_url
+        from .omni_env import resolve_env_var, resolve_media_router_api_key, resolve_media_router_base_url
     except ImportError:
         from omni_env import (  # type: ignore
             resolve_env_var,
-            resolve_omni_api_key,
-            resolve_omni_base_url,
+            resolve_media_router_api_key,
+            resolve_media_router_base_url,
         )
-    key = resolve_omni_api_key()
+    key = resolve_media_router_api_key()
     if not key:
         log.warning("omni image edit: missing OMNIROUTER_API_KEY")
         return shortcut_consumed()
     model = (resolve_env_var("IMAGE_EDIT_COMBO", "image-edit") or "image-edit").strip()
-    base = resolve_omni_base_url().rstrip("/")
+    base = resolve_media_router_base_url().rstrip("/")
     import uuid
 
     boundary = "hermes-" + uuid.uuid4().hex

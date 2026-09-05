@@ -20,11 +20,11 @@
 
 ## Purpose
 
-Document and media **tooling** around Hermes: embed text, ingest into Qdrant knowledge, OCR (Medium+), and async Jobs workers (Medium+).
+Document and media **tooling** around Hermes: embed text, ingest into Qdrant knowledge, vision analysis through the `vision-ocr` combo, and optional async Jobs workers.
 
 ## Profile
 
-| Package | Low | Medium | High |
+| Package | Core | Media worker | Security worker |
 |---|---|---|---|
 | ingest, embedding | Must | Must | Must |
 | ocr, jobs | Off | On | On |
@@ -45,7 +45,7 @@ Document and media **tooling** around Hermes: embed text, ingest into Qdrant kno
 | Document RAG | Qdrant `knowledge_chunks` | Manuals, PDFs, specs |
 | Chat LTM | Memory Manager / Postgres | User preferences / facts |
 
-**List/find/cite:** top **5** results + count of the rest. If empty: say no information — **no guessing, no internet** on Low.
+**List/find/cite:** top **5** results + count of the rest. If empty: say no information and do not guess; web retrieval is a separate capability.
 
 **Auto-learn @ 00:00:** promote eligible files into Qdrant without admin approve (`LEARN_REQUIRE_APPROVE=0`).
 

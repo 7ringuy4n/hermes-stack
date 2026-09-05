@@ -11,11 +11,11 @@ Zalo destination (when `channels` includes `zalo`):
 3. Else sole uid in `ZALO_ADMIN_USERS_FILE` (`zalo_admin_users.txt`)
 4. Else first id in `ZALO_ADMIN_USERS`
 
-The admin file is mounted read-only from `HERMES_DATA_DIR`. Empty override is the normal High lab case: alerts follow the current Zalo admin.
+The admin file is mounted read-only from `HERMES_DATA_DIR`. With an empty override, alerts follow the current Zalo admin.
 
 ## Profile
 
-High.
+Optional notification worker.
 
 ## Main functions
 

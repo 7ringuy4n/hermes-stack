@@ -14,6 +14,7 @@ OR skill/HTTP (combo web-search):
 Hermes → Model Router POST /v1/search
       → OmniRoute POST /v1/search `{ combo: web-search }`
       → operator members + failover in Omni UI (Tavily, Firecrawl, SearXNG, …)
+      → internal SearXNG when OmniRoute is unavailable
 ```
 
 Prefer the **native `web_search` tool**. On this stack Hermes `SEARXNG_URL`
@@ -42,7 +43,8 @@ members and provider connections. Do **not** call Omni chat
 | `scripts/main/first-setup-omnirouter.py` | Ensures SearXNG connection, blocks `ollama-search`, verifies combo on API key ACL |
 | `MODEL_ROUTER_WEB_SEARCH_COMBO` | Router combo name (default `web-search`) |
 | `WEB_SEARCH_PROVIDER_TIMEOUT_S` | Per-request HTTP timeout (default 20s) |
-| `WEB_EXTRACT_BACKENDS` | Extract order (`tavily,firecrawl`) |
+| Page extraction | Uses available OpenBao-backed Tavily/Firecrawl credentials without an env ordering pin. |
+| `FALLBACK_SEARXNG_URL` | Search-only fallback after OmniRoute. |
 | `OMNIROUTER_API_KEY` / `OMNIROUTER_BASE_URL` | Required for search |
 
 ## Do
@@ -53,5 +55,5 @@ members and provider connections. Do **not** call Omni chat
 
 ## Don't
 
-1. Do not bypass Omni combo search with direct provider calls from Hermes.
+1. Do not bypass Model Router with direct provider calls from Hermes.
 2. Do not use SearXNG for page extract.

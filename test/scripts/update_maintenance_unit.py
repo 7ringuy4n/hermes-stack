@@ -16,8 +16,22 @@ def main() -> int:
         "update repairs lock ownership": 'sudo chown "$(id -u):$(id -g)" "$maintenance_dir"' in run,
         "Omni repair is followed by secret scrub": "update-omnirouter failed" in run
         and run.find("do_scrub_plaintext_env", run.find("update-omnirouter failed")) > 0,
-        "OpenBao secrets load before verified update backup": run.find("do_load_openbao_env_for_compose")
+        "OpenBao secrets load before verified update backup": run.find("do_prepare_openbao_env_for_compose", run.find("do_update()"))
         < run.find('do_backup_first "update"'),
+        "cold deploy bootstraps OpenBao before secret load": "do_bootstrap_openbao_for_secret_load" in run
+        and "openbao-bootstrap-unused" in run
+        and "do_restore_openbao_latest_for_cold_start" in run
+        and "seed first-install credentials" in run
+        and run.find("do_prepare_openbao_env_for_compose", run.find('case "$cmd" in'))
+        < run.find("compose up -d --remove-orphans", run.find('case "$cmd" in')),
+        "obsolete env cleanup precedes initial env import": run.find('cleanup-obsolete-env.py')
+        < run.find('source "${ROOT}/architect/backup-restore/lib/load-defaults.sh"'),
+        "OpenBao backup uses discovered container and token": 'docker exec "$c" sh -lc' in (
+            ROOT / "architect/backup-restore/lib/backup.sh"
+        ).read_text(encoding="utf-8")
+        and 'BAO_TOKEN="$BAO_DEV_ROOT_TOKEN_ID"' in (
+            ROOT / "architect/backup-restore/lib/backup.sh"
+        ).read_text(encoding="utf-8"),
         "failed update backup scrubs transient secrets": 'if ! do_backup_first "update"; then\n    do_scrub_plaintext_env' in run,
         "routine update retains Docker rollback cache": 'UPDATE_AGGRESSIVE_PRUNE:-inactive' in run,
         "unrelated component update skips Zalo restart": 'skip Zalo plugin sync for unrelated component update' in run,

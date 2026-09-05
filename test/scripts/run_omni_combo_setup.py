@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Upload OmniRouter first-setup and run it on the VPS."""
+"""Upload OmniRoute first-setup and run it on the VPS."""
 from __future__ import annotations
 
 import sys

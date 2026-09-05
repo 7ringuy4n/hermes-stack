@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Resolve OmniRouter API key/base URL for host media shortcuts (no shell probes)."""
+"""Resolve OmniRoute API key/base URL for host media shortcuts (no shell probes)."""
 from __future__ import annotations
 
 import os
@@ -83,6 +83,19 @@ def resolve_omni_base_url() -> str:
         if val:
             return val.rstrip("/")
     return "http://omni-router:20129/v1"
+
+
+def resolve_media_router_base_url() -> str:
+    """Route media through Model Router so endpoint-aware fallbacks remain available."""
+    val = (os.getenv("MODEL_ROUTER_BASE_URL") or "").strip()
+    if val:
+        return val.rstrip("/")
+    return "http://model-router:8096/v1"
+
+
+def resolve_media_router_api_key() -> str:
+    """Internal Model Router accepts a placeholder; upstream keys stay server-side."""
+    return resolve_omni_api_key() or "internal"
 
 
 def resolve_env_var(name: str, default: str = "") -> str:

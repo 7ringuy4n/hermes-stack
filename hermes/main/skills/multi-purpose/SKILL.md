@@ -8,7 +8,7 @@ description: "Complex multi-part creative briefs (infographic layout, multi-pane
 When the user asks for a **structured multi-part visual** (infographic with several panels, icons, metrics, bilingual captions, layout constraints) — not a single scenic photo:
 
 1. **Plan** with the default chat combo **`hermes`**
-   - OmniRouter: `POST /v1/chat/completions` `model=hermes`
+   - OmniRoute: `POST /v1/chat/completions` `model=hermes`
    - OmniRoute: same when enabled
 2. **Deliver** using stack tools — never invent matplotlib/HTML screenshots:
    - Grounded information on a generated background → classifier `RENDER: composed-image`, Omni `image-gen`, then the model-authored `/v1/overlay` design

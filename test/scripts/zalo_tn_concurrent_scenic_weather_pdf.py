@@ -23,7 +23,7 @@ if hasattr(sys.stdout, "buffer"):
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-concurrent-scenic-pdf"
-TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937").strip()
+TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
 WAIT_S = int(os.environ.get("ZALO_TEST_WAIT_S") or "480")
 COOLDOWN_S = int(os.environ.get("ZALO_TEST_COOLDOWN_S") or "0")
 GAP_S = int(os.environ.get("ZALO_TEST_INJECT_GAP_S") or "8")
@@ -326,6 +326,9 @@ docker exec assistant-dispatcher-1 python3 /tmp/rate_pdf_doc.py
     }
 
 def main() -> int:
+    if not TN_ID:
+        print("ERROR: ZALO_TEST_USER_ID is required", file=sys.stderr)
+        return 2
     OUT.mkdir(parents=True, exist_ok=True)
     c = connect()
     report: dict = {

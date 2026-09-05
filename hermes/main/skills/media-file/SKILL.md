@@ -9,10 +9,10 @@ Forced stack policy:
 
 ```text
 IF Media/File Worker ACTIVE:
-  still-image diffusion → OmniRouter /images/generations model image-gen
+  still-image diffusion → OmniRoute /images/generations model image-gen
   vision / office → vision-ocr combo (ingest/jobs/dispatcher/Zalo) + dispatcher office-file
 ELSE:
-  still-image diffusion → OmniRouter /images/generations model image-gen (same combo)
+  still-image diffusion → OmniRoute /images/generations model image-gen (same combo)
   vision / chat fallback → Omni/OmniRoute combo hermes
   unsupported → explicit failure (never pretend success)
 ```
@@ -28,7 +28,7 @@ Hermes → this skill
 
 | skill_action | Active worker | Inactive worker |
 |---|---|---|
-| `generate_media` | OmniRouter `POST /v1/images/generations` model `image-gen` (skill HD `size`) | Same: Omni `model=image-gen` (never `hermes` for stills) |
+| `generate_media` | OmniRoute `POST /v1/images/generations` model `image-gen` (skill HD `size`) | Same: `model=image-gen` (never `hermes` for stills) |
 | `process_file` / `process_image` | ingest/dispatcher vision-ocr combo | Omni/OmniRoute multimodal `hermes` |
 | `create_file` | `file-gen` / office via dispatcher | fail unless local office tools exist |
 

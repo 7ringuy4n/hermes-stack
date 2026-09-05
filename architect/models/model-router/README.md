@@ -1,10 +1,10 @@
-# Model Router (v0.5.0)
+# Model Router (v0.6.0)
 
 ## System architecture
 
 | | |
 |--|--|
-| **Sits between** | Hermes ↔ OmniRoute / explicit fallback pool |
+| **Sits between** | Hermes/workers ↔ OmniRoute / explicit fallback pool |
 | **Owns** | Hybrid task class + provider health + clear `no_model_available` |
 | **Does not own** | Skill definitions (Hermes) or tool HTTP (dispatcher) |
 
@@ -43,10 +43,20 @@ Bake fallbacks: `config/*.json` via `scripts/main/sync-model-router-skills.sh` (
 
 | Task | Preferred | Then |
 |------|-----------|------|
-| coding | OmniRoute chat combo | explicit OpenAI-compatible fallback (if configured) |
-| normal / schedule / tool / search / file / unknown | OmniRoute task combo | explicit OpenAI-compatible fallback (if configured) |
+| Chat, classify, office content | OmniRoute chat combo | capability-declared compatible provider, then optional Ollama |
+| Vision | OmniRoute `vision-ocr` | provider with an explicit vision model |
+| Embedding | OmniRoute `embedding` | provider with an explicit embedding model, then embedding-service local fallback |
+| Still generation/editing | OmniRoute media combo | provider with an explicit image/image-edit model |
+| Web search | OmniRoute `web-search` | internal SearXNG fallback |
 
 Missing API keys skip that provider. If nothing works → JSON error `no_model_available` (message in `messages/en.json`).
+
+Direct provider priority is `MODEL_ROUTER_FALLBACK_PROVIDER_ORDER`. Each entry
+requires `<PROVIDER>_API_BASE`, its OpenBao-backed `<PROVIDER>_API_KEY`, and a
+capability model such as `<PROVIDER>_CHAT_MODEL`, `_VISION_MODEL`,
+`_EMBEDDING_MODEL`, `_IMAGE_MODEL`, or `_IMAGE_EDIT_MODEL`. Model Router does
+not pretend a chat-only model can serve another endpoint. Native provider APIs
+must be placed behind an OpenAI-compatible adapter before they are listed.
 
 ## Enable
 

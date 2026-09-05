@@ -136,7 +136,7 @@ def _error_text(data: Any) -> str:
 def chat_body_should_failover(status: int, data: Any) -> bool:
     """True when the upstream chat response must not be returned to Hermes.
 
-    OmniRouter often returns HTTP 200 with an error payload (or a paid-model
+    OmniRoute may return HTTP 200 with an error payload (or a paid-model
     subscription refuse). Streaming that through leaves Hermes with a 403 and
     no Zalo reply — failover must happen here instead.
     """

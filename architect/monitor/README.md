@@ -6,7 +6,7 @@
 |--|--|
 | **Sits beside** | All stack services (scrape / log ship) |
 | **Owns** | Grafana, Prometheus, Loki/Alloy, paired exporters, alert-watch |
-| **Does not own** | Chat path — Low/Medium/High run without monitor |
+| **Does not own** | Chat path — the stack runs without the monitor worker |
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
@@ -20,18 +20,18 @@
 
 ## Purpose
 
-Observability for High: metrics, logs, dashboards. Access via **localhost or SSH tunnel** (or edge when Traefik/OpenVPN is enabled).
+Optional observability worker: metrics, logs, dashboards. Access via **localhost or SSH tunnel** (or edge when Traefik/OpenVPN is enabled).
 
 ## Profile
 
-High optional. Flags are independent combos:
+Optional. Flags are independent combinations:
 
 | Flag | Starts together |
 |------|-----------------|
 | `ENABLE_GRAFANA=active` | Grafana + **Prometheus** + `omni-exporter` + `node-exporter` (Hardware panels) + `stack-exporter` |
 | `ENABLE_PROMETHEUS=active` | Prometheus + the same exporters (no Grafana UI) |
 | `ENABLE_LOKI=active` or `ENABLE_ALLOY=active` | **Loki + Alloy** |
-| `ENABLE_OMNIROUTER=active` + Prometheus/Grafana | OmniRouter + **`omni-exporter`** |
+| `ENABLE_OMNIROUTER=active` + Prometheus/Grafana | OmniRoute + **`omni-exporter`** |
 
 Extra usage: Grafana+Prometheus **~1.5 GiB · ~10 GB · ~0.5 vCPU**, Loki+Alloy **~1.5 GiB · ~20 GB · ~0.5 vCPU**, all optional features **~5 GiB RAM · ~40 GB disk · ~2 vCPU**. See [docs/HARDWARE.md](../../docs/HARDWARE.md).
 
@@ -55,11 +55,11 @@ Paired exporters expose /metrics
     → Grafana dashboards on 127.0.0.1:23000
 ```
 
-Do not require monitor to run Low chat.
+Do not require the monitor worker for chat.
 
 ## Tests
 
-When Grafana (or Prometheus-only) is on, run case **20** (`test/scripts/grafana_integration_lab.py`, SSH) and local `grafana_pairing_unit.py`. OmniRoute is always-on: stack-exporter probes it over **TCP** (UI `/health` is 404). OmniRouter scrape is required only if `ENABLE_OMNIROUTER=active`.
+When Grafana (or Prometheus-only) is on, run case **20** (`test/scripts/grafana_integration_lab.py`, SSH) and local `grafana_pairing_unit.py`. Stack-exporter probes OmniRoute over **TCP** (UI `/health` is 404). OmniRoute scrape is required only if `ENABLE_OMNIROUTER=active`.
 
 ## Related
 

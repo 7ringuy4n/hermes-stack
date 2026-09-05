@@ -5,7 +5,7 @@
 | | |
 |--|--|
 | **Sits between** | Hermes / skills ↔ media backends |
-| **Owns** | image, office-file, media helpers, mode suggestion |
+| **Owns** | office-file, media helpers, and asynchronous job support |
 | **Does not own** | LLM completions (Model Router) or web search (Model Router `/v1/search`) |
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -20,7 +20,7 @@
 
 ## Purpose
 
-Media/File worker HTTP service: image generation, office-file create, media download/convert helpers, and soft mode suggestions. Web search is on the Model Router (`model-router`), not here. Container: `dispatcher`.
+Media/File worker HTTP service: office-file creation, media download/convert helpers, and soft mode suggestions. Image generation/editing and web search use named OmniRoute combos, not dispatcher provider logic. Container: `dispatcher`.
 
 ## Main functions
 
@@ -29,7 +29,7 @@ Media/File worker HTTP service: image generation, office-file create, media down
 | `POST /v1/scenic-still` | Generate a still through the configured image combo |
 | `POST /v1/overlay` | Apply a validated adaptive information design to an existing image |
 | `POST /v1/text-poster` | Render exact requested glyphs deterministically |
-| `POST /v1/office-file` | Create txt/csv/md/xlsx/docx/**pdf**/pptx when `OFFICE_FILE_GEN=active` (LLM HTML or raw PDF → WeasyPrint/PyMuPDF) |
+| `POST /v1/office-file` | Create txt/csv/md/xlsx/docx/**pdf**/pptx when `OFFICE_FILE_GEN=active`; structured styling preserves the requested format and visual QA follows generation |
 | `POST /v1/media` | Media download / convert helpers |
 | `POST /v1/mode` | Soft mode suggestion from text/media flags |
 | Health | `/health` for monitors |

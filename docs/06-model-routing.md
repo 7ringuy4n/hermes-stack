@@ -1,73 +1,101 @@
-# Model routing & OmniRouter (v0.5.0)
+# Model routing and OmniRoute
 
-## Goal
+## Responsibilities
 
-Keep Hermes answering when a preferred LLM path fails. **task_hint** selects the pipeline; **Secret Probe** decides whether processing is allowed.
+`model-router` is the internal task-aware OpenAI-compatible proxy. It
+normalizes requests, carries attribution headers, invokes classification, and
+selects a named capability. **OmniRoute** owns provider accounts, combo
+membership, priority/fallback strategy, request history, and provider health.
 
 ```text
-Hermes → INPUT Secret Probe → task_hint → model-router
-  NORMAL / CODING / UNKNOWN → OmniRoute combo or explicit fallback
-  SCHEDULE → Schedule Manager (workflow) — not model-router state
-  TOOL / SEARCH / FILE → dedicated pipelines
-  UNKNOWN → LLM with context
-         → OUTPUT Secret Probe → user
+caller → model-router → OmniRoute named combo → provider member
 ```
 
-## Classification (hybrid)
+When OmniRoute is unhealthy or intentionally inactive, Model Router continues
+only through explicitly configured capability-compatible providers. Chat,
+vision, embeddings, still generation, and image edits have separate model
+declarations; web search uses the internal SearXNG fallback. Office files use
+the chat/content fallback and remain rendered by Dispatcher. A provider is
+never assumed to support an endpoint from its name.
 
-1. `X-Task-Type` (`normal|schedule|coding|tool|search|file|unknown`; aliases `general`→`normal`)
-2. Hermes `metadata.task_hint` / `task_type`
-3. Default → **normal** (fast path). Never `SECRET` as a task type.
-4. Multi-task / schedule intercept: `POST /v1/classify` (LLM JSON). Prompt SoT: Hermes skill [`hermes/main/skills/classify/`](../hermes/main/skills/classify/) — `classify.json` envelope plus `parts/` assembled into one system string (one hop). Related SoTs: [`outbound`](../hermes/main/skills/outbound/outbound.json), [`web-search`](../hermes/main/skills/web-search/SKILL.md). Bake fallbacks under `architect/models/model-router/config/` via `scripts/main/sync-model-router-skills.sh`.
-   Fast Dispatcher fields on the same JSON: `execution_class` (`interactive`|`async`|`schedule`), `task_type`, `response_mode` (`ack_then_deliver`|`confirm`; never `direct`).
-   All user-facing answers route through model-router workers (Hermes chat combo, web_search, media_file, schedule). Classify only structures work — it never replies to the user.
-   Zalo inbound always classifies purpose through this skill contract before routing.
+The names `omnirouter`, `OMNIROUTER_*`, and `first-setup-omnirouter` remain in
+compose and scripts as compatibility interfaces. They refer to OmniRoute; no
+second OmniRouter or 9Router service is supported.
 
-Do not classify user prose with split/join/regex/keyword lists in application code.
+## Active combo contract
 
-## Flags
+All managed combos use `priority`. Setup may ensure a combo exists and may
+repair required metadata, but update must preserve operator-managed provider
+order and membership.
 
-| Flag | Default | Meaning |
-|------|---------|---------|
-| `ENABLE_MODEL_ROUTER` | 1 | Run model-router; Hermes `OPENAI_BASE_URL` points here |
-| `ENABLE_OMNIROUTER` | active | Start OmniRoute (compose profile `omnirouter`). When Grafana/Prometheus is on, **`omni-exporter` starts with it**. |
-| `OMNIROUTER_IMAGE` | `diegosouzapw/omniroute:latest` | OmniRoute container image |
-| `HERMES_REPLICAS` | 1 | One-node scale only; multi-node = docs |
+| Combo | Purpose | Typical API path |
+|---|---|---|
+| `hermes` | Interactive chat and user-facing prose | `/v1/chat/completions` |
+| `classifier` | Structured classify result | `/v1/chat/completions` |
+| `web-search` | Web retrieval providers | combo-specific compatible path |
+| `image-gen` | New still images | `/v1/images/generations` |
+| `vision-ocr` | Natural image/document analysis | `/v1/chat/completions` with media |
+| `embedding` | Knowledge and memory vectors | `/v1/embeddings` |
+| `image-edit` | Edit an attached or reply-quoted image | image edit compatible path |
 
-Hermes must always reach **model-router**, and normal installs keep **OmniRoute** active. Tests: [test/cases/21-defaults-routers-connected.md](../test/cases/21-defaults-routers-connected.md). Grafana pairing: [test/cases/20-grafana-component-integration.md](../test/cases/20-grafana-component-integration.md).
+`video-gen` and `video-edit` are deliberately absent. Do not restore their
+skills, combos, routes, or tests without a separately verified provider and an
+explicit product decision.
 
-### Combo aliases (`hermes` chat, `classifier` classify)
+## Classification
 
-There is no standalone vendor model id `hermes` or `classifier` — both are **combo aliases**.
+Classification uses one LLM hop and one JSON contract. Prompt source of truth:
 
-| Who | What to set |
-|-----|-------------|
-| Hermes Agent `model.default` | chat combo (`OMNIROUTER_DEFAULT_COMBO`, default `hermes`) |
-| `MODEL_ROUTER_OUTBOUND_MODEL` | same chat combo |
-| `MODEL_ROUTER_CLASSIFY_MODEL` / `OMNIROUTER_CLASSIFY_COMBO` | classify combo (default `classifier`) |
-| OmniRoute Combos UI | Chat members for `hermes` are operator-managed; **`classifier` is filled with all OpenCode Free `oc/*` models by `first-setup-omnirouter`** |
+- `hermes/main/skills/classify/classify.json`
+- `hermes/main/skills/classify/parts/*.md`
 
-`first-setup-omnirouter` ensures:
-- chat combo **name** `hermes` exists (does not overwrite chat members)
-- classify combo **`classifier`** exists and is updated with the current OpenCode Free catalog
+The parts must remain English, general-purpose, and future-safe. Do not embed
+request-specific examples such as a fixed poster, city, weather scene, or
+Vietnamese phrase in application code. The current message language controls
+user-visible generated text; safety and profanity constraints apply in that
+language.
 
-If Omni logs show **PROVIDER=HERMES** and **503**, the chat combo was not resolved. Add working members in the Combos UI (and connect providers), then retry.
+The classifier structures work; it does not answer the user. Deterministic
+host code validates the returned schema and dispatches the selected skill.
 
-**Health:** `GET /v1/models` without an API key returns **401** while omni-router is up (UI `/` is **307**). Stack-watch treats 200/401/307 as healthy — do not use `curl -f` on that URL or every heal tick will restart omni-router.
+## Setup and update behavior
 
-## Memory (unchanged story)
+`bash run.sh first-setup-omnirouter` is setup-only. It initializes the
+OmniRoute API/access path and required combo shells. It must not send user test
+messages. `bash run.sh update` repairs stack wiring while preserving current
+providers, AI Box accounts, combo members, order, and strategy.
 
-| Store | Role |
-|-------|------|
-| Valkey | Short-term session (`conversation_active:*`) + locks + RQ |
-| Postgres | Durable facts |
-| Qdrant | Knowledge (rebuildable) |
+Use OmniRoute UI/API for manual provider changes. A configuration change is
+valid only after an export/backup and a diff proving unrelated combos were not
+modified.
 
-Mem0 is removed.
+## Health and timeouts
 
-## Related
+- `/v1/models` may return `401` when the service is healthy but the caller is
+  unauthenticated. UI `/` may redirect. Health checks accept the documented
+  status set instead of treating either as a crash.
+- Queue-budget errors are saturation signals, not upstream timeouts. Do not
+  hide them with test sleeps. Record queue wait, provider latency, and outcome.
+- Image generation/editing may take up to five minutes; chat/classification
+  uses shorter operation-specific deadlines.
+- Free/quota-limited provider cases are `SKIP` only with captured provider
+  evidence. Functional failures must never be relabeled `PASS`.
 
-- [architect/models/model-router/README.md](../architect/models/model-router/README.md)
-- [architect/models/omni-router/README.md](../architect/models/omni-router/README.md)
-- [docs/MULTI_NODE.md](./MULTI_NODE.md)
-- [docs/HARDWARE.md](./HARDWARE.md) — extra usage (~0.4 GiB / ~1 GB / ~0.2 vCPU OmniRouter; Grafana+Prometheus ~1.5 GiB / ~10 GB / ~0.5 vCPU)
+## Configuration
+
+| Setting | Meaning |
+|---|---|
+| `ENABLE_MODEL_ROUTER=active` | Run the internal proxy. |
+| `ENABLE_OMNIROUTER=active` | Run OmniRoute via the compatibility profile. |
+| `OMNIROUTER_DEFAULT_COMBO=hermes` | Default chat combo. |
+| `OMNIROUTER_CLASSIFY_COMBO=classifier` | Classify combo. |
+| `IMAGE_GEN_COMBO=image-gen` | Still-image generation combo. |
+| `VISION_OCR_COMBO=vision-ocr` | Image/document analysis combo. |
+| `EMBEDDING_MODEL=embedding` | Embedding combo alias. |
+| `HERMES_REPLICAS=1` | Single-host Hermes replica count. |
+| `MODEL_ROUTER_FALLBACK_PROVIDER_ORDER` | Priority list of explicitly configured compatible provider profiles. |
+| `<PROVIDER>_*_MODEL` | Per-capability model; the matching API key is held in OpenBao. |
+| `FALLBACK_SEARXNG_URL` | Search fallback used after/unavailable OmniRoute. |
+
+See [architect/models/model-router/README.md](../architect/models/model-router/README.md)
+and [config/DEFAULTS.md](./config/DEFAULTS.md).

@@ -12,9 +12,19 @@ export STACK_ROOT="${STACK_ROOT:-$ROOT}"
 export SCRIPTS_DIR="${SCRIPTS_DIR:-$ROOT/scripts/main}"
 export HERMES_DIR="${HERMES_DIR:-$ROOT/hermes/main}"
 
+# Normalize retired keys and exact legacy internal routes before importing the
+# host environment. Later cleanup during OpenBao load is still defense in depth,
+# but it is too late to change values already exported into this shell.
+if [[ -f "${SCRIPTS_DIR}/cleanup-obsolete-env.py" ]]; then
+  STACK_ROOT="$ROOT" python3 "${SCRIPTS_DIR}/cleanup-obsolete-env.py"
+fi
+
 # shellcheck source=architect/backup-restore/lib/load-defaults.sh
 source "${ROOT}/architect/backup-restore/lib/load-defaults.sh"
 load_env_with_defaults
+if [[ -f "${SCRIPTS_DIR}/migrate-openbao-token.py" ]]; then
+  python3 "${SCRIPTS_DIR}/migrate-openbao-token.py"
+fi
 
 # shellcheck source=architect/backup-restore/lib/workers.sh
 source "${ROOT}/architect/backup-restore/lib/workers.sh"
@@ -534,7 +544,7 @@ do_update() {
   # Backup exporters need the same runtime-only OpenBao credentials as Compose.
   # Load them before the restore point is created, and never leave the export
   # behind when verification aborts the update.
-  if ! do_load_openbao_env_for_compose; then
+  if ! do_prepare_openbao_env_for_compose; then
     do_scrub_plaintext_env
     return 1
   fi
@@ -655,6 +665,7 @@ do_first_setup_openbao() {
   # Re-export KV → data dir so compose env_file (hermes) picks up secrets after UI edits / re-seed.
   python3 "${SCRIPTS_DIR}/load-openbao-env.py" \
     || echo "WARN: load-openbao-env failed — re-run: bash run.sh load-openbao-env"
+  echo "OpenBao token access (root-only): sudo cat ${OPENBAO_TOKEN_FILE:-${ASSISTANT_DATA_DIR}/openbao/root-token}"
 }
 
 do_scrub_plaintext_env() {
@@ -691,6 +702,63 @@ do_load_openbao_env_for_compose() {
     esac
   done < "$export_path"
   echo "OK: OpenBao secrets loaded into runtime environment"
+}
+
+do_bootstrap_openbao_for_secret_load() {
+  # After a clean `destroy`, Compose cannot parse the complete project until
+  # secret-backed required variables are loaded, while OpenBao cannot be
+  # started through that project without values for those variables. Start
+  # only OpenBao with non-functional parse sentinels; no application service
+  # consumes them. The real values are loaded from KV before the full up.
+  _env_active "${ENABLE_OPENBAO:-}" || return 1
+  echo "==> cold-start OpenBao before loading secret-backed compose values"
+  (
+    export MEMORY_DB_PASSWORD="${MEMORY_DB_PASSWORD:-openbao-bootstrap-unused}"
+    export HERMES_DASHBOARD_PASSWORD="${HERMES_DASHBOARD_PASSWORD:-openbao-bootstrap-unused}"
+    export HERMES_DASHBOARD_SECRET="${HERMES_DASHBOARD_SECRET:-openbao-bootstrap-unused}"
+    export API_SERVER_KEY="${API_SERVER_KEY:-openbao-bootstrap-unused}"
+    compose up -d --no-deps openbao
+  )
+}
+
+do_restore_openbao_latest_for_cold_start() {
+  local backup_dir="${BACKUP_DIR:-/data/assistant/backups}"
+  local stamp kv attempt
+  stamp="$(cat "${backup_dir}/LATEST" 2>/dev/null || true)"
+  kv="${backup_dir}/${stamp}/openbao/kv-assistant-api-keys.json"
+  if [[ -z "$stamp" || ! -f "$kv" ]]; then
+    echo "ERROR: no latest OpenBao KV backup is available for cold startup" >&2
+    return 1
+  fi
+  for attempt in $(seq 1 30); do
+    if curl -fsS -m 2 "http://127.0.0.1:${OPENBAO_PORT:-8200}/v1/sys/health" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  echo "==> restore OpenBao KV from verified latest backup stamp=${stamp}"
+  ROOT="$ROOT" python3 "${ROOT}/architect/backup-restore/lib/restore_openbao_kv.py" "$kv"
+}
+
+do_prepare_openbao_env_for_compose() {
+  _env_active "${ENABLE_OPENBAO:-}" || return 0
+  if do_load_openbao_env_for_compose; then
+    return 0
+  fi
+  do_bootstrap_openbao_for_secret_load || return 1
+  if ! do_restore_openbao_latest_for_cold_start; then
+    echo "==> no usable cold-start KV backup; seed first-install credentials"
+    do_first_setup_openbao || return 1
+  fi
+  local attempt
+  for attempt in $(seq 1 30); do
+    if do_load_openbao_env_for_compose; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "ERROR: OpenBao did not become ready for secret loading" >&2
+  return 1
 }
 
 do_post_ready_learn() {
@@ -1070,7 +1138,7 @@ case "$cmd" in
     assistant_profile_summary
     ensure_hermes_media_dirs
     do_remove_stale_worker_containers
-    do_load_openbao_env_for_compose
+    do_prepare_openbao_env_for_compose
     compose up -d --remove-orphans
     do_stop_disabled_optionals
     if [[ -f "${SCRIPTS_DIR}/hermes-cron-share.sh" ]]; then
@@ -1153,7 +1221,7 @@ case "$cmd" in
     ;;
   sync-openbao-env)
     need_security sync-openbao-env || exit 1
-    do_load_openbao_env_for_compose
+    do_prepare_openbao_env_for_compose
     echo "==> recreate hermes + model-router + omni-router (pick up KV changes)"
     compose up -d --no-deps --build hermes model-router omni-router 2>/dev/null \
       || compose up -d --no-deps hermes model-router omni-router \

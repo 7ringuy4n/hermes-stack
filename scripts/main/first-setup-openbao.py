@@ -2,8 +2,8 @@
 """First-setup / update: seed API keys from .env into OpenBao KV.
 
 SoT after seed: OpenBao at secret/assistant/api-keys (UI :8200).
-Host .env keeps flags + OPENBAO_DEV_ROOT_TOKEN only; compose-required keys are
-re-filled from KV by load-openbao-env before each up|update.
+The bootstrap token lives in a protected external token file. Compose-required
+credentials are re-filled from KV by load-openbao-env before each up|update.
 
 Usage:
   python3 scripts/main/first-setup-openbao.py          # core: seed missing + merge updates
@@ -20,7 +20,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from openbao_common import OBSOLETE_SECRET_KEYS, OPENBAO_SECRET_PATH, SEED_KEYS
+from openbao_common import (
+    OBSOLETE_SECRET_KEYS,
+    OPENBAO_SECRET_PATH,
+    SEED_KEYS,
+    is_secret_env_name,
+)
 
 ROOT = Path(os.environ.get("STACK_ROOT") or Path(__file__).resolve().parents[2])
 ENV_PATH = ROOT / ".env"
@@ -110,7 +115,9 @@ def purge_obsolete(token: str, current: dict[str, str]) -> dict[str, str]:
 
 def collect_seed_payload(env: dict[str, str]) -> dict[str, str]:
     payload: dict[str, str] = {}
-    for key in SEED_KEYS:
+    dynamic_keys = {key for key in env if is_secret_env_name(key)}
+    dynamic_keys.update(key for key in os.environ if is_secret_env_name(key))
+    for key in sorted(set(SEED_KEYS) | dynamic_keys):
         val = (os.environ.get(key) or env.get(key) or "").strip()
         if val and not val.startswith("CHANGE_ME"):
             payload[key] = val
@@ -131,9 +138,14 @@ def export_openbao_file(data: dict[str, str]) -> None:
 def run_seed(*, update: bool = False) -> int:
     del update  # merge is always on — flag kept for CLI symmetry with other first-setup scripts
     env = load_dotenv(ENV_PATH)
+    token_path = Path(
+        os.environ.get("OPENBAO_TOKEN_FILE") or DATA_DIR / "openbao" / "root-token"
+    )
     token = BAO_TOKEN or env.get("OPENBAO_DEV_ROOT_TOKEN", "")
+    if not token and token_path.is_file():
+        token = token_path.read_text(encoding="utf-8", errors="replace").strip()
     if not token or token.startswith("CHANGE_ME"):
-        print("ERROR: set OPENBAO_DEV_ROOT_TOKEN in .env (OpenBao root token)", file=sys.stderr)
+        print("ERROR: initialize the protected OpenBao bootstrap token file", file=sys.stderr)
         return 1
 
     wait_ready(token)
@@ -164,7 +176,8 @@ def run_seed(*, update: bool = False) -> int:
     port = os.environ.get("OPENBAO_PORT", "8200")
     print(
         f"UI:  http://127.0.0.1:{port}  → Secrets → secret/ → assistant/api-keys\n"
-        f"     (token = OPENBAO_DEV_ROOT_TOKEN; -dev store is wiped on OpenBao restart "
+        f"     Token access (root-only): sudo cat {token_path}\n"
+        f"     (-dev store is wiped on OpenBao restart "
         f"— re-run: bash run.sh first-setup-openbao)",
         flush=True,
     )

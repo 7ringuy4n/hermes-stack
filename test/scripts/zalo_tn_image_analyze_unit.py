@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Unit: Zalo Tn image-analyze path — stage, resolve, classify, vision body (no VPS).
-
-Simulates user Tn (233767886566872937) sending a captioned photo via the Zalo plugin.
-"""
+"""Unit: Zalo image-analyze path — stage, resolve, classify, vision body (no VPS)."""
 from __future__ import annotations
 
 import base64
@@ -32,7 +29,7 @@ from classify_client import (  # noqa: E402
 )
 from vision_ocr import resolve_media_path  # noqa: E402
 
-TN_THREAD = "233767886566872937"
+TN_THREAD = "test-thread"
 CAPTION = "hình gì đây"
 
 # Valid 1x1 JPEG (works for path/b64 pipeline tests).

@@ -1,5 +1,5 @@
 # assistant — core stack. Plain container names (hermes, valkey, â€¦).
-# Optional workers: compose profiles + WORKER_*=active (schedule, zalo, omnirouter, â€¦).
+# Optional workers: compose profiles + WORKER_*=active (schedule, Zalo, OmniRoute, etc.).
 # Media overlay: docker-compose.media.yml. Security/notify overlay: docker-compose.security.yml.
 name: assistant
 
@@ -267,11 +267,14 @@ services:
       - "127.0.0.1:${DISPATCHER_PORT:-8090}:8090"
     networks: [internal]
 
-  # Task-aware LLM proxy; OmniRouter is the single routing control plane.
+  # Task-aware LLM proxy; OmniRoute is the single routing control plane.
   model-router:
     build: ./architect/models/model-router
     container_name: model-router
     restart: unless-stopped
+    env_file:
+      - path: ${ASSISTANT_DATA_DIR:-/data/assistant}/.env.openbao
+        required: false
     environment:
       - OMNIROUTER_BASE_URL=${OMNIROUTER_BASE_URL:-http://omni-router:20129/v1}
       - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-active}
@@ -279,6 +282,37 @@ services:
       - FALLBACK_OPENAI_BASE_URL=${FALLBACK_OPENAI_BASE_URL:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - FALLBACK_OPENAI_MODEL=${FALLBACK_OPENAI_MODEL:-gpt-4o-mini}
+      - MODEL_ROUTER_FALLBACK_PROVIDER_ORDER=${MODEL_ROUTER_FALLBACK_PROVIDER_ORDER:-}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
+      - OPENAI_CHAT_MODEL=${OPENAI_CHAT_MODEL:-}
+      - OPENAI_VISION_MODEL=${OPENAI_VISION_MODEL:-}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-}
+      - OPENAI_IMAGE_MODEL=${OPENAI_IMAGE_MODEL:-}
+      - OPENAI_IMAGE_EDIT_MODEL=${OPENAI_IMAGE_EDIT_MODEL:-}
+      - XAI_API_BASE=${XAI_API_BASE:-}
+      - XAI_CHAT_MODEL=${XAI_CHAT_MODEL:-}
+      - XAI_VISION_MODEL=${XAI_VISION_MODEL:-}
+      - XAI_EMBEDDING_MODEL=${XAI_EMBEDDING_MODEL:-}
+      - XAI_IMAGE_MODEL=${XAI_IMAGE_MODEL:-}
+      - XAI_IMAGE_EDIT_MODEL=${XAI_IMAGE_EDIT_MODEL:-}
+      - ANTHROPIC_API_BASE=${ANTHROPIC_API_BASE:-}
+      - ANTHROPIC_CHAT_MODEL=${ANTHROPIC_CHAT_MODEL:-}
+      - ANTHROPIC_VISION_MODEL=${ANTHROPIC_VISION_MODEL:-}
+      - ANTHROPIC_EMBEDDING_MODEL=${ANTHROPIC_EMBEDDING_MODEL:-}
+      - ANTHROPIC_IMAGE_MODEL=${ANTHROPIC_IMAGE_MODEL:-}
+      - ANTHROPIC_IMAGE_EDIT_MODEL=${ANTHROPIC_IMAGE_EDIT_MODEL:-}
+      - DEEPSEEK_API_BASE=${DEEPSEEK_API_BASE:-}
+      - DEEPSEEK_CHAT_MODEL=${DEEPSEEK_CHAT_MODEL:-}
+      - DEEPSEEK_VISION_MODEL=${DEEPSEEK_VISION_MODEL:-}
+      - DEEPSEEK_EMBEDDING_MODEL=${DEEPSEEK_EMBEDDING_MODEL:-}
+      - DEEPSEEK_IMAGE_MODEL=${DEEPSEEK_IMAGE_MODEL:-}
+      - DEEPSEEK_IMAGE_EDIT_MODEL=${DEEPSEEK_IMAGE_EDIT_MODEL:-}
+      - QWEN_API_BASE=${QWEN_API_BASE:-}
+      - QWEN_CHAT_MODEL=${QWEN_CHAT_MODEL:-}
+      - QWEN_VISION_MODEL=${QWEN_VISION_MODEL:-}
+      - QWEN_EMBEDDING_MODEL=${QWEN_EMBEDDING_MODEL:-}
+      - QWEN_IMAGE_MODEL=${QWEN_IMAGE_MODEL:-}
+      - QWEN_IMAGE_EDIT_MODEL=${QWEN_IMAGE_EDIT_MODEL:-}
       - MODEL_ROUTER_TIMEOUT_S=${MODEL_ROUTER_TIMEOUT_S:-180}
       # Chat combo = hermes. Classify combo = classifier (OpenCode oc/* via first-setup).
       - OMNIROUTER_DEFAULT_COMBO=${OMNIROUTER_DEFAULT_COMBO:-hermes}
@@ -295,7 +329,7 @@ services:
       - MODEL_ROUTER_OUTBOUND=${MODEL_ROUTER_OUTBOUND:-/opt/data/skills/outbound/outbound.json}
       - MODEL_ROUTER_PORT=8096
       - WEB_SEARCH_PROVIDER_TIMEOUT_S=${WEB_SEARCH_PROVIDER_TIMEOUT_S:-30}
-      - WEB_EXTRACT_BACKENDS=${WEB_EXTRACT_BACKENDS:-tavily,firecrawl}
+      - FALLBACK_SEARXNG_URL=${FALLBACK_SEARXNG_URL:-http://searxng:8080}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
       - WEB_SEARCH_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
@@ -311,7 +345,7 @@ services:
       internal:
         aliases: []
 
-  # Optional OmniRouter — ENABLE_OMNIROUTER=active (compose profile omnirouter)
+  # OmniRoute — ENABLE_OMNIROUTER=active (compatibility profile name: omnirouter)
   # Dedicated OmniRoute image. Override with OMNIROUTER_IMAGE in .env.
   omni-router:
     profiles: ["omnirouter"]
@@ -440,10 +474,12 @@ services:
       - WEB_SEARCH_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
       - ZALO_ATTACHMENT_CONTEXT_TTL_S=${ZALO_ATTACHMENT_CONTEXT_TTL_S:-86400}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
-      # Zalo (used when ENABLE_ZALO=active + host bridge + zalo-proxy profile)
-      # Only replica hermes-1 keeps ZALO_PLUGIN_URL (see hermes-replica-entry.sh).
-      - ZALO_PLUGIN_URL=${ZALO_PLUGIN_URL:-http://host.docker.internal:8787}
+      # Zalo (used when ENABLE_ZALO=active). All replicas load the adapter;
+      # Traefik fronts zalo-proxy and a Valkey lease elects one SSE owner.
+      - ZALO_PLUGIN_URL=${ZALO_PLUGIN_URL:-http://traefik:8081/zalo-bridge}
       - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
+      - ZALO_OWNER_LEASE_KEY=${ZALO_OWNER_LEASE_KEY:-zalo:bridge:owner}
+      - ZALO_OWNER_LEASE_TTL_S=${ZALO_OWNER_LEASE_TTL_S:-45}
       - ZALO_GROUP_MODE=${ZALO_GROUP_MODE:-mention}
       - ZALO_ALLOWED_THREADS=${ZALO_ALLOWED_THREADS:-}
       - ZALO_HOME_CHANNEL=${ZALO_HOME_CHANNEL:-}
@@ -463,7 +499,6 @@ services:
       - ZALO_API_URL=${ZALO_API_URL:-http://zalo-api:8100}
       - ZALO_API_TOKEN=${ZALO_API_TOKEN:-}
       - ADMIN_API_URL=${ADMIN_API_URL:-http://zalo-api:8100}
-      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
       - GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-true}
       - HERMES_REPLICAS=${HERMES_REPLICAS:-1}
       - SECRET_PROBE_POLICY=/opt/data/secret-probe.json
@@ -504,7 +539,6 @@ services:
     restart: unless-stopped
     environment:
       - ZALO_API_TOKEN=${ZALO_API_TOKEN:-}
-      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
       - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
       - ZALO_ADMIN_USERS_FILE=/data/assistant/zalo_admin_users.txt
       - ZALO_ALLOWED_THREADS_FILE=/data/assistant/zalo_allowed_threads.txt
@@ -512,7 +546,7 @@ services:
       - ZALO_ALLOWED_USERS_FILE=/data/assistant/zalo_allowed_users.txt
       - ZALO_USERS_MODE_FILE=/data/assistant/zalo_users_mode.txt
       - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
-      - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://host.docker.internal:8787}
+      - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://traefik:8081/zalo-bridge}
       - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
       - AUTHZ_URL=${AUTHZ_URL:-http://authz:8097}
       - NOTIFY_URL=${NOTIFY_URL:-http://notify:8092}

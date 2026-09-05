@@ -5,7 +5,7 @@ Uses zalo-api POST /v1/zalo/chat when available; falls back to Hermes health-onl
 if token/API missing (records SKIP). Never opens a second Zalo SSE client.
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
-Optional: ZALO_API_TOKEN / ADMIN_API_TOKEN, ZALO_CONCURRENT_MAX (default 24)
+Optional: ZALO_API_TOKEN, ZALO_CONCURRENT_MAX (default 24)
 Reports: test/reports/run-zalo-concurrent/ (no host/account)
 """
 from __future__ import annotations
@@ -93,7 +93,7 @@ def fire_burst(c, n: int, tag: str) -> dict:
 set -euo pipefail
 cd /opt/assistant
 set -a; . ./.env; set +a
-TOK="${{ZALO_API_TOKEN:-${{ADMIN_API_TOKEN:-}}}}"
+TOK="${{ZALO_API_TOKEN:-}}"
 PORT="${{ZALO_API_PORT:-8100}}"
 if [[ -z "$TOK" ]]; then
   echo 'RESULT:{{"status":"SKIP","reason":"no_zalo_api_token"}}'

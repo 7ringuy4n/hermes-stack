@@ -1,3 +1,8 @@
+## 2026-09-05 19:20 +07 — cold-start OpenBao ordering
+
+See `history/2026-09-05/README.md` section “Clean startup depended on an
+already-running secret service”.
+
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider timeout
 
 See `history/2026-09-05/README.md` section “Quoted images were analyzed instead of edited”.
@@ -5545,3 +5550,7 @@ long-running office workflow budget. Release evaluation must extract text and
 inspect the rendered pages for scope, source time, language, unsupported copy,
 overflow, and page balance. Injection immediately after a replica restart is
 invalid until the bridge health endpoint reports an active SSE subscriber.
+## 2026-09-05 18:10 +07 — Zalo owner failover without replica restart
+
+See `history/2026-09-05/README.md` section “Filesystem Zalo owner election
+required replica restarts”.

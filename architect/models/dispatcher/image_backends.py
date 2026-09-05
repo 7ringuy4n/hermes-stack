@@ -1,6 +1,6 @@
-"""Image generation backend helper for OmniRoute.
+"""Image generation backend helper for the capability router.
 
-Diffusion via OmniRoute /images/generations always uses combo IMAGE_GEN_COMBO
+Diffusion via Model Router /images/generations prefers combo IMAGE_GEN_COMBO
 (default ``image-gen``) whether Media worker is active or inactive — never the
 chat combo ``hermes`` for still images.
 
@@ -16,9 +16,6 @@ import os
 from typing import Any, Optional
 
 import httpx
-
-from env_flags import env_active, env_inactive
-
 
 def _env(*keys: str, default: str = "") -> str:
     for k in keys:
@@ -43,10 +40,8 @@ def image_backends() -> list[str]:
 def backend_available(name: str) -> bool:
     n = (name or "").strip().lower()
     if n == "omni":
-        if env_inactive("ENABLE_OMNIROUTER", default="active"):
-            return False
-        base = _env("OMNIROUTER_BASE_URL", default="http://omni-router:20129/v1")
-        key = _env("OMNIROUTER_API_KEY")
+        base = _env("MODEL_ROUTER_BASE_URL", default="http://model-router:8096/v1")
+        key = _env("OMNIROUTER_API_KEY", default="internal")
         return bool(base and key)
     if n == "pillow":
         return True
@@ -148,10 +143,8 @@ def _gen_openai_images(
 
 
 def gen_omni(prompt: str, *, size: Optional[str] = None) -> bytes:
-    base = _env("OMNIROUTER_BASE_URL", default="http://omni-router:20129/v1")
-    key = _env("OMNIROUTER_API_KEY")
-    if not key:
-        raise RuntimeError("OMNIROUTER_API_KEY missing")
+    base = _env("MODEL_ROUTER_BASE_URL", default="http://model-router:8096/v1")
+    key = _env("OMNIROUTER_API_KEY", default="internal")
     combo = image_gen_combo()
     model = combo
     # Resolve concrete members so Requested Model is populated and combo-level

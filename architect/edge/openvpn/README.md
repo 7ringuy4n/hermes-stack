@@ -2,7 +2,7 @@
 
 ## Purpose
 
-**OpenVPN** gives administrators a private path into the host/stack from **any OS** (Windows, macOS, Linux, Android, iOS). Public traffic must not reach Postgres, Qdrant, Valkey, Docker, or admin UIs — including OmniRouter.
+**OpenVPN** gives administrators a private path into the host/stack from **any OS** (Windows, macOS, Linux, Android, iOS). Public traffic must not reach Postgres, Qdrant, Valkey, Docker, or admin UIs — including OmniRoute.
 
 ## Enable
 
@@ -20,9 +20,9 @@ Compose profile `openvpn` starts a stub container. **You must initialize PKI/con
 | 2 | Generate CA + server certs (image docs / `ovpn_genconfig` + `ovpn_initpki`) |
 | 3 | Set `ENABLE_OPENVPN=active` and `bash run.sh up` |
 | 4 | Issue `.ovpn` client profiles; import in any OpenVPN-compatible client |
-| 5 | Connect VPN, then reach OmniRouter / Gateway on the VPN host address |
+| 5 | Connect VPN, then reach OmniRoute / Gateway on the VPN host address |
 
-## OmniRouter from any OS (via OpenVPN)
+## OmniRoute from any OS (via OpenVPN)
 
 Omni UI/API defaults to **localhost-only** publish (`OMNIROUTER_BIND=127.0.0.1`, port `20129`).
 

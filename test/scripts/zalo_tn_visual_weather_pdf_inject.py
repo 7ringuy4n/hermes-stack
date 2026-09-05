@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Inject visual weather PDF turn for Zalo user Tn (VPS lab).
 
-User id default: 233767886566872937.
+The target user id is required through ``ZALO_TEST_USER_ID``.
 Message asks for attractive PDF + city imagery — must NOT dump SERP chrome.
 Env: ASSISTANT_SSH_* ; ZALO_TEST_USER_ID ; ZALO_TEST_WAIT_S (default 240);
 ZALO_TEST_MESSAGE (optional exact fixture)
@@ -26,7 +26,7 @@ if hasattr(sys.stdout, "buffer"):
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-visual-weather-pdf"
-TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937").strip()
+TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
 WAIT_S = int(os.environ.get("ZALO_TEST_WAIT_S") or "240")
 MSG = (os.environ.get("ZALO_TEST_MESSAGE") or (
     "cập nhật thời tiết hiện tại ở Đà Nẵng và vẽ vào file pdf, "
@@ -54,6 +54,9 @@ def _clean(text: str) -> str:
 
 
 def main() -> int:
+    if not TN_ID:
+        print("ERROR: ZALO_TEST_USER_ID is required", file=sys.stderr)
+        return 2
     OUT.mkdir(parents=True, exist_ok=True)
     c = connect()
     marker = f"lab-visual-weather-pdf-{int(time.time())}"

@@ -1,5 +1,130 @@
 # 2026-09-05
 
+## 20:15 — Direct fallbacks were chat-shaped regardless of endpoint
+
+### Symptom
+
+Model Router could use one explicit chat fallback after OmniRoute became
+unavailable, but embeddings and image endpoints inherited a chat model, image
+editing lost multipart metadata, and web search had no independent fallback.
+Host media shortcuts also bypassed Model Router and therefore never reached its
+fallback pool.
+
+### Root cause
+
+Fallback selection was provider-wide instead of capability-specific. The proxy
+assumed JSON request bodies, while image edits are multipart. Search routing was
+correctly combo-owned but had no local continuity path.
+
+### Fix (core)
+
+Direct providers are now opt-in priority profiles with separate chat, vision,
+embedding, image, and image-edit model declarations. Their credentials are
+loaded from OpenBao. Multipart image edits retain the original file bytes while
+only the model field is replaced for a compatible fallback. Host and Dispatcher
+still generation call Model Router, and web search uses internal SearXNG after
+OmniRoute failure. Missing capability declarations skip a provider instead of
+guessing support.
+
+### Prevent recurrence
+
+Fallback tests must disable OmniRoute and exercise the real endpoint shape.
+Never infer media capability from a provider or model name, and never route a
+non-chat endpoint through a generic chat-model setting.
+
+## 19:20 — Clean startup depended on an already-running secret service
+
+### Symptom
+
+After a verified `destroy`, `run.sh up` attempted to load OpenBao KV values
+before recreating OpenBao. Required Compose variables were therefore absent and
+the clean deployment could not start.
+
+### Root cause
+
+The normal update path assumed the secret service was already running. A full
+container removal exposed the circular dependency between Compose interpolation
+and loading the values held in OpenBao.
+
+The backup path also discovered the Compose container correctly but executed
+the export against a literal service name that did not exist. It replaced that
+failure with a note file, so structural verification reported a false success.
+
+### Fix (core)
+
+Cold startup creates only OpenBao with non-functional parsing sentinels for
+application-only required variables, waits until KV loading succeeds, imports
+the real values into the current process, and only then creates the full stack.
+The sentinels are neither persisted as secrets nor consumed by an application
+container.
+
+OpenBao backup now uses the discovered container name, validates that the KV
+payload is non-empty, and fails the backup gate otherwise. Cold startup restores
+that verified KV export before importing Compose values.
+
+Credential-bearing environment names are centralized in the OpenBao seed and
+scrub registry. The root bootstrap exception is generated in a mode-600 file
+outside `.env`, backed up with the OpenBao component, and loaded only into the
+deployment process.
+
+Environment cleanup now runs before the deployment shell imports `.env`. This
+ensures an exact legacy internal route is both rewritten on disk and absent from
+the Compose process that creates new containers.
+
+### Prevent recurrence
+
+The clean-deploy gate must begin from zero project containers and verify the
+secret bootstrap before testing higher-level capabilities.
+
+## 18:10 — Filesystem Zalo owner election required replica restarts
+
+### Symptom
+
+Scaled Hermes could process ordinary HTTP traffic, but only the replica chosen
+at container startup loaded Zalo. A dead owner left a shared filesystem marker,
+and recovery restarted every Hermes replica, interrupting unrelated turns.
+
+### Root cause
+
+Zalo ownership was coupled to entrypoint-time filesystem state and local DNS
+checks. Standby adapters were disabled, the bridge bypassed the edge load
+balancer, and the watcher treated a missing SSE client as a reason to bounce the
+whole agent set.
+
+The first shared-lease implementation returned a failed connection from a
+standby replica. The gateway did not retry that startup connection, leaving the
+standby process healthy but unable to acquire an expired owner lease.
+
+### Fix (core)
+
+All replicas now load the adapter against an internal-only Traefik bridge route.
+A renewable Valkey lease uses atomic acquire and owner-checked renew/release;
+only the lease holder opens SSE. Message IDs remain deduplicated and queued in
+Valkey per conversation. Watcher recovery clears the scoped lease and restarts
+the proxy without restarting healthy Hermes replicas. Exact legacy bridge URLs
+are migrated while operator-custom URLs are preserved.
+
+A standby now remains inside the adapter lifecycle and periodically contends
+for the lease. Promotion proceeds directly into bridge health validation and
+SSE startup; it does not require the gateway or container supervisor to retry
+the platform connection.
+
+### Verification
+
+- Static topology and lease protocol units cover routing, lease ownership,
+  removal of the filesystem election, and legacy URL migration.
+- Live release verification must stop the current owner, observe bounded
+  standby acquisition, and prove no duplicate or cross-thread delivery.
+- One-versus-two-replica results must separate local queue/agent time from
+  provider time; a small run is not a general capacity claim.
+
+### Prevent recurrence
+
+Singleton channel ownership must use a renewable shared lease, never replica
+startup order or a persistent marker. Health recovery is scoped to the failed
+hop and cannot restart the full agent pool for provider latency or queue
+saturation.
+
 ## 16:30 — Quoted images were analyzed instead of edited
 
 ### Symptom

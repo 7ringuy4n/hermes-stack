@@ -192,7 +192,7 @@ sleep {WAIT_S}
 echo '=== hermes logs ==='
 for h in $(docker ps --format '{{{{.Names}}}}' | grep hermes); do
   echo "-- $h"
-  docker logs --since 4m "$h" 2>&1 | grep -Ei 'Permission denied|/opt/data/media|dual-{tag}|SSE|zalo_owner|crash' | tail -50 || true
+  docker logs --since 4m "$h" 2>&1 | grep -Ei 'Permission denied|/opt/data/media|dual-{tag}|SSE|owner lease|crash' | tail -50 || true
 done
 echo HERMES_COUNT=$(docker ps -q --filter name=hermes | wc -l | tr -d ' ')
 curl -fsS -m 8 http://127.0.0.1:8787/health || true

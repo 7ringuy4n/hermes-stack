@@ -10,7 +10,7 @@ Controlled API for Zalo identity and delivery routing. **Do not** run SQL.
 
 ## Base
 
-`ZALO_API_URL` (default `http://zalo-api:8100`) + bearer `ZALO_API_TOKEN` / `ADMIN_API_TOKEN`.
+`ZALO_API_URL` (default `http://zalo-api:8100`) + bearer `ZALO_API_TOKEN`.
 
 ## Operations
 

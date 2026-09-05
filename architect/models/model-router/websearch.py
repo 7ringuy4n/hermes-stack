@@ -63,16 +63,7 @@ def _provider_timeout_s() -> float:
     return _env_timeout("WEB_SEARCH_PROVIDER_TIMEOUT_S", 20.0, 5.0, 45.0)
 
 
-def _split_csv(raw: str | None) -> list[str]:
-    if raw is None:
-        return []
-    return [b.strip().lower() for b in raw.split(",") if b.strip()]
-
-
 def _combo_extract() -> list[str]:
-    env = os.environ.get("WEB_EXTRACT_BACKENDS")
-    if env is not None:
-        return [b for b in _split_csv(env) if b in _EXTRACT_ADAPTERS]
     return ["tavily", "firecrawl"]
 
 
@@ -119,15 +110,25 @@ def _omni_configured() -> bool:
     return bool(_omni_search_url() and _omni_api_key())
 
 
+def _searxng_url() -> str:
+    return (os.environ.get("FALLBACK_SEARXNG_URL") or "").strip().rstrip("/")
+
+
 def search_order(preferred: Optional[str] = None) -> list[str]:
-    """Omni combo only when OMNIROUTER_* is configured."""
-    if not _omni_configured():
-        return []
+    """Omni combo first, then the explicitly configured local search fallback."""
+    order: list[str] = []
+    if _omni_configured():
+        order.append("omni")
+    if _searxng_url():
+        order.append("searxng")
     if preferred:
         p = preferred.strip().lower()
-        if p not in {"", "omni", _web_search_combo_name()}:
+        if p in {"", _web_search_combo_name()}:
+            return order
+        if p not in order:
             return []
-    return ["omni"]
+        return [p] + [name for name in order if name != p]
+    return order
 
 
 def health_fields() -> dict[str, Any]:
@@ -139,6 +140,7 @@ def health_fields() -> dict[str, Any]:
         "web_extract_backends": _combo_extract(),
         "web_keys": {name: bool(_key(name)) for name in ("tavily", "firecrawl")},
         "omni_search": _omni_configured(),
+        "fallback_searxng": bool(_searxng_url()),
     }
 
 
@@ -216,6 +218,37 @@ async def _omni_search(query: str, max_results: int) -> dict[str, Any]:
     raise RuntimeError(f"combo {combo} returned no results")
 
 
+async def _searxng_search(query: str, max_results: int) -> dict[str, Any]:
+    base = _searxng_url()
+    if not base:
+        raise RuntimeError("SearXNG fallback is not configured")
+    n = max(1, min(int(max_results or _combo_max_results()), SEARCH_RESULT_CAP))
+    async with httpx.AsyncClient(timeout=_provider_timeout_s()) as client:
+        response = await client.get(
+            f"{base}/search",
+            params={"q": query, "format": "json"},
+        )
+        response.raise_for_status()
+        data = response.json()
+    rows = []
+    for item in data.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "title": item.get("title") or "",
+                "url": item.get("url") or "",
+                "content": (item.get("content") or "")[:SNIPPET_CHARS],
+                "provider": "searxng",
+            }
+        )
+        if len(rows) >= n:
+            break
+    if not rows:
+        raise RuntimeError("SearXNG fallback returned no results")
+    return {"backend": "searxng", "answer": None, "results": rows}
+
+
 async def _tavily_extract(url: str) -> dict[str, Any]:
     key = _key("tavily")
     if not key:
@@ -247,10 +280,11 @@ async def _firecrawl_extract(url: str) -> dict[str, Any]:
 def backends_next() -> dict[str, str]:
     order = search_order()
     combo = _web_search_combo_name()
+    backend = combo if order and order[0] == "omni" else (order[0] if order else "")
     return {
         "combo": combo,
-        "backend": combo if order else "",
-        "order": combo if order else "",
+        "backend": backend,
+        "order": ",".join(combo if name == "omni" else name for name in order),
     }
 
 
@@ -264,16 +298,24 @@ async def search(req: SearchReq) -> dict[str, Any]:
         )
     n = max(1, min(int(req.max_results or _combo_max_results()), SEARCH_RESULT_CAP))
     combo = _web_search_combo_name()
-    try:
-        hit = await _omni_search(req.query, n)
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001 — surface Omni failure to caller
-        raise HTTPException(502, {"error": "omni search failed", "detail": str(e)}) from e
+    hit: dict[str, Any] | None = None
+    errors: list[str] = []
+    for backend in order:
+        try:
+            hit = (
+                await _omni_search(req.query, n)
+                if backend == "omni"
+                else await _searxng_search(req.query, n)
+            )
+            break
+        except Exception as exc:  # noqa: BLE001 - continue through explicit fallbacks
+            errors.append(f"{backend}:{type(exc).__name__}")
+    if hit is None:
+        raise HTTPException(502, {"error": "search providers failed", "detail": errors})
     rows = hit.get("results") if isinstance(hit.get("results"), list) else []
     return {
-        "combo": combo,
-        "backend": combo,
+        "combo": combo if str(hit.get("backend")) != "searxng" else "",
+        "backend": hit.get("backend") or combo,
         "answer": hit.get("answer"),
         "results": rows[:n],
     }

@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """Inject captioned image for Zalo user Tn via bridge /inject-event (VPS lab).
 
-Default user id: 233767886566872937 (Tn DM thread). Places a real JPEG under
+The required ``ZALO_TEST_USER_ID`` selects the authorized DM thread. Places a real JPEG under
 /opt/data/media/inbound/{threadId}/ inside Hermes, injects local-path media
 (same shape as quote-reply / staged inbound), expects vision host reply — not
 "Không mô tả được ảnh — gửi lại giúp mình."
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
-Optional: ZALO_TEST_USER_ID (default 233767886566872937), ZALO_TEST_USER_NAME (Tn),
+Required: ZALO_TEST_USER_ID. Optional: ZALO_TEST_USER_NAME (Tn),
           ZALO_IMAGE_CAPTION (default "hình gì đây"), ZALO_IMAGE_WAIT_S (120)
 Report: test/reports/run-zalo-tn-image-analyze/
 """
@@ -29,7 +29,7 @@ if hasattr(sys.stdout, "buffer"):
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-image-analyze"
-TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937").strip()
+TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
 WANT_NAME = (os.environ.get("ZALO_TEST_USER_NAME") or "Tn").strip()
 CAPTION = (os.environ.get("ZALO_IMAGE_CAPTION") or "hình gì đây").strip() or "hình gì đây"
 WAIT_S = int(os.environ.get("ZALO_IMAGE_WAIT_S") or "120")
@@ -42,6 +42,9 @@ def ts() -> str:
 
 
 def main() -> int:
+    if not TN_ID:
+        print("ERROR: ZALO_TEST_USER_ID is required", file=sys.stderr)
+        return 2
     OUT.mkdir(parents=True, exist_ok=True)
     c = connect()
     try:

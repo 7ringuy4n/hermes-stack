@@ -6,8 +6,8 @@ Compose YAML lives here so the repo root stays clean. **`run.sh` always passes
 
 | File | Role |
 |------|------|
-| `docker-compose.yml` | Core + optional profiles (schedule, zalo, omnirouter, …) |
-| `docker-compose.media.yml` | Media / File Worker overlay (dispatcher, OCR, Jobs, SearXNG, Comfy, …) |
+| `docker-compose.yml` | Core + optional profiles (schedule, Zalo, OmniRoute compatibility profile, etc.) |
+| `docker-compose.media.yml` | Media / File Worker overlay (dispatcher, Jobs, and SearXNG); OCR and image generation use OmniRoute combos. |
 | `docker-compose.security.yml` | Security / Notify / Monitor overlay (`security` profile for OpenBao/authz/…) |
 | `docker-compose.edge.yml` | Traefik / API Gateway / OpenVPN |
 | `docker-compose.hermes-hostports.yml` | Host `:28642` / `:29119` when `HERMES_REPLICAS=1` |

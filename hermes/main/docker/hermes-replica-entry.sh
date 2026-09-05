@@ -1,7 +1,8 @@
 #!/bin/sh
 # Per-replica HERMES_HOME so docker compose --scale hermes=N does not fight gateway.lock.
 # Shared volume remains /opt/data; each replica uses /opt/data/replicas/<hostname>/.
-# Singleton messaging (Zalo): exactly one replica keeps ZALO_PLUGIN_URL when scaled.
+# Zalo HA: every replica loads the adapter; a renewable Valkey lease elects the
+# single bridge/SSE owner. Traefik fronts the bridge path.
 set -eu
 
 SHARED="${HERMES_SHARED_DATA:-/opt/data}"
@@ -93,9 +94,6 @@ use_local_empty_cron() {
   chmod 664 "${local_cron}/jobs.json" 2>/dev/null || true
 }
 
-# Non-owner replicas must not load gateway.platforms.zalo / zalo-platform from the
-# shared config.yaml — clearing ZALO_PLUGIN_URL alone still ERROR-spams adapter
-# creation and can confuse stack-watch health.
 ensure_shared_config_link() {
   cfg="${HERMES_HOME}/config.yaml"
   src="${SHARED}/config.yaml"
@@ -105,88 +103,6 @@ ensure_shared_config_link() {
   fi
   rm -f "$cfg" 2>/dev/null || true
   ln -sfn "$src" "$cfg"
-}
-
-disable_local_zalo_gateway() {
-  cfg="${HERMES_HOME}/config.yaml"
-  src="${SHARED}/config.yaml"
-  [ -f "$src" ] || return 0
-  if [ -L "$cfg" ] || [ ! -e "$cfg" ]; then
-    rm -f "$cfg" 2>/dev/null || true
-    cp -a "$src" "$cfg" 2>/dev/null || return 0
-  fi
-  uid="${HERMES_UID:-1000}"
-  gid="${HERMES_GID:-1000}"
-  chown "${uid}:${gid}" "$cfg" 2>/dev/null || true
-  chmod u+rw "$cfg" 2>/dev/null || true
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "$cfg" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-text = path.read_text(encoding="utf-8", errors="replace")
-lines = text.splitlines()
-out = []
-i = 0
-in_plugins_enabled = False
-plugins_indent = -1
-changed = False
-while i < len(lines):
-    line = lines[i]
-    stripped = line.strip()
-    # Only gateway.platforms.zalo.enabled (indent under platforms)
-    if stripped == "zalo:" and i + 1 < len(lines):
-        nxt = lines[i + 1]
-        if nxt.strip().startswith("enabled:"):
-            # Require parent chain: look back for platforms: then gateway:
-            indent_z = len(line) - len(line.lstrip(" "))
-            parent_ok = False
-            for j in range(i - 1, -1, -1):
-                s = lines[j].strip()
-                if not s or s.startswith("#"):
-                    continue
-                ind = len(lines[j]) - len(lines[j].lstrip(" "))
-                if ind < indent_z and s == "platforms:":
-                    parent_ok = True
-                    break
-                if ind < indent_z:
-                    break
-            if parent_ok:
-                indent = nxt[: len(nxt) - len(nxt.lstrip(" "))]
-                out.append(line)
-                out.append(f"{indent}enabled: false")
-                changed = True
-                i += 2
-                continue
-    if stripped == "enabled:" and i > 0 and lines[i - 1].strip() == "plugins:":
-        in_plugins_enabled = True
-        plugins_indent = len(line) - len(line.lstrip(" "))
-        out.append(line)
-        i += 1
-        continue
-    if in_plugins_enabled:
-        cur_indent = len(line) - len(line.lstrip(" ")) if line.strip() else plugins_indent + 2
-        if stripped and not stripped.startswith("-") and cur_indent <= plugins_indent:
-            in_plugins_enabled = False
-        elif stripped in {"- zalo-platform", "- 'zalo-platform'", '- "zalo-platform"'}:
-            changed = True
-            i += 1
-            continue
-    out.append(line)
-    i += 1
-if changed:
-    path.write_text("\n".join(out) + ("\n" if text.endswith("\n") else ""), encoding="utf-8")
-    print(f"==> local config: disabled gateway zalo + removed zalo-platform plugin ({path})")
-else:
-    print(f"==> local config: zalo already disabled or absent ({path})")
-PY
-  else
-    # Best-effort without Python (keep gateway usable; may still warn).
-    sed -i '/^[[:space:]]*zalo:$/,/^[[:space:]]*[^[:space:]#]/{s/^\([[:space:]]*enabled:\).*/\1 false/;}' "$cfg" 2>/dev/null || true
-    sed -i '/^[[:space:]]*- zalo-platform$/d' "$cfg" 2>/dev/null || true
-    echo "==> local config: sed-disabled zalo platform (${cfg})"
-  fi
 }
 
 link_shared config.yaml
@@ -264,12 +180,9 @@ resolve_cname() {
 CNAME="$(resolve_cname || true)"
 CNAME="${CNAME:-$RID}"
 
-# Only one replica attaches to Zalo (avoid double SSE).
-# Do NOT treat bare service DNS "hermes" as owner — every scaled replica shares that alias.
+# Built-in Hermes cron remains singleton; Zalo ownership is independent and is
+# elected by the adapter's Valkey lease.
 REPLICAS="${HERMES_REPLICAS:-1}"
-keep_zalo=0
-LOCKDIR="${SHARED}/zalo_owner.lock"
-OWNER="${SHARED}/zalo_owner"
 
 is_named_primary() {
   case "$1" in
@@ -278,61 +191,19 @@ is_named_primary() {
   return 1
 }
 
-claim_zalo_lock() {
-  if mkdir "${LOCKDIR}" 2>/dev/null; then
-    printf '%s\n' "${RID}" > "${OWNER}"
-    return 0
-  fi
-  if [ -f "${OWNER}" ] && [ "$(cat "${OWNER}" 2>/dev/null)" = "${RID}" ]; then
-    return 0
-  fi
-  # Stale reclaim: previous owner container id is gone from Docker DNS.
-  if [ -f "${OWNER}" ]; then
-    old="$(cat "${OWNER}" 2>/dev/null || true)"
-    if [ -n "${old}" ] && [ "${old}" != "${RID}" ] && ! getent hosts "${old}" >/dev/null 2>&1; then
-      rm -rf "${LOCKDIR}" "${OWNER}" 2>/dev/null || true
-      if mkdir "${LOCKDIR}" 2>/dev/null; then
-        printf '%s\n' "${RID}" > "${OWNER}"
-        return 0
-      fi
-    fi
-  fi
-  return 1
-}
-
-# Drop stale owner before election (dead container id leaves orphan lock).
-if [ -f "${OWNER}" ]; then
-  old="$(cat "${OWNER}" 2>/dev/null || true)"
-  if [ -n "${old}" ] && [ "${old}" != "${RID}" ] && ! getent hosts "${old}" >/dev/null 2>&1; then
-    rm -rf "${LOCKDIR}" "${OWNER}" 2>/dev/null || true
-  fi
-fi
-
 case "${REPLICAS}" in
   ""|1)
-    keep_zalo=1
+    use_shared_cron
     ;;
   *)
     if is_named_primary "${CNAME}" || is_named_primary "${RID}"; then
-      keep_zalo=1
-      # Still record ownership so other replicas see a live owner id.
-      mkdir "${LOCKDIR}" 2>/dev/null || true
-      printf '%s\n' "${RID}" > "${OWNER}" 2>/dev/null || true
-    elif claim_zalo_lock; then
-      keep_zalo=1
+      use_shared_cron
+    else
+      use_local_empty_cron
     fi
     ;;
 esac
-
-if [ "$keep_zalo" != "1" ]; then
-  export ZALO_PLUGIN_URL=""
-  export ZALO_PLUGIN_TOKEN=""
-  use_local_empty_cron
-  disable_local_zalo_gateway
-else
-  use_shared_cron
-  ensure_shared_config_link
-fi
+ensure_shared_config_link
 
 echo "==> hermes replica home=${HERMES_HOME} (shared=${SHARED}) host=${RID} cname=${CNAME} replicas=${REPLICAS} zalo_url=${ZALO_PLUGIN_URL:-<disabled>}"
 

@@ -30,7 +30,6 @@ import asyncio
 import json
 import logging
 import os
-import socket
 import sys
 import time
 from datetime import datetime, timezone
@@ -48,77 +47,14 @@ for _zalo_dir in (_ZALO_PLUGIN_DIR, _ZALO_SHARED_PLUGIN):
 
 
 def _replica_id() -> str:
-    return (os.getenv("HOSTNAME") or socket.gethostname() or "").strip()
+    return (os.getenv("HOSTNAME") or "hermes").strip()
 
 
-def _try_claim_zalo_owner(shared: str, rid: str) -> bool:
-    """Atomic mkdir lock + owner file (same contract as hermes-replica-entry.sh)."""
-    lockdir = Path(shared) / "zalo_owner.lock"
-    owner_path = Path(shared) / "zalo_owner"
+def _replica_count() -> int:
     try:
-        lockdir.mkdir()
-        owner_path.write_text(rid + "\n", encoding="utf-8")
-        return True
-    except FileExistsError:
-        try:
-            current = owner_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            return False
-        if current == rid:
-            return True
-        # Stale: previous owner hostname no longer resolves on the Docker network.
-        try:
-            socket.getaddrinfo(current, None)
-            return False
-        except OSError:
-            try:
-                if lockdir.exists():
-                    # Best-effort steal (race-safe enough for 2 replicas).
-                    for child in lockdir.iterdir():
-                        child.unlink(missing_ok=True)
-                    lockdir.rmdir()
-                owner_path.unlink(missing_ok=True)
-            except OSError:
-                return False
-            try:
-                lockdir.mkdir()
-                owner_path.write_text(rid + "\n", encoding="utf-8")
-                return True
-            except FileExistsError:
-                return False
-
-
-def _is_zalo_owner_replica() -> bool:
-    """When Hermes is scaled, only the elected owner may attach to the bridge.
-
-    Compose injects ZALO_PLUGIN_URL into every replica; s6 may restore that env
-    after entrypoint clears it. Ownership is recorded by hermes-replica-entry.sh
-    at HERMES_SHARED_DATA/zalo_owner (hostname of the winner).
-    """
-    try:
-        replicas = int(os.getenv("HERMES_REPLICAS") or "1")
+        return max(1, int(os.getenv("HERMES_REPLICAS") or "1"))
     except ValueError:
-        replicas = 1
-    if replicas <= 1:
-        return True
-    shared = (os.getenv("HERMES_SHARED_DATA") or "/opt/data").rstrip("/")
-    rid = _replica_id()
-    if not rid:
-        return False
-    owner_path = Path(shared) / "zalo_owner"
-    try:
-        owner = owner_path.read_text(encoding="utf-8").strip()
-    except OSError:
-        owner = ""
-    if owner == rid:
-        return True
-    if owner:
-        try:
-            socket.getaddrinfo(owner, None)
-            return False
-        except OSError:
-            return _try_claim_zalo_owner(shared, rid)
-    return _try_claim_zalo_owner(shared, rid)
+        return 1
 
 logger = logging.getLogger(__name__)
 
@@ -395,18 +331,12 @@ class ZaloAdapter(BasePlatformAdapter):
 
         extra = getattr(config, "extra", {}) or {}
 
-        # Empty ZALO_PLUGIN_URL means explicitly disabled (scaled non-owner replicas).
-        # Do not fall back to a default bridge URL — that caused dual SSE on Hermes×2.
+        # Every replica keeps the routed bridge URL. A renewable Valkey lease,
+        # acquired in connect(), elects the one active SSE owner.
         if "ZALO_PLUGIN_URL" in os.environ:
             self.bridge_url = (os.environ.get("ZALO_PLUGIN_URL") or "").strip().rstrip("/")
         else:
             self.bridge_url = str(extra.get("bridge_url") or "").strip().rstrip("/")
-        if self.bridge_url and not _is_zalo_owner_replica():
-            logger.info(
-                "Zalo: skipping bridge on non-owner replica host=%s",
-                _replica_id(),
-            )
-            self.bridge_url = ""
         self.bridge_token = os.getenv("ZALO_PLUGIN_TOKEN") or extra.get("bridge_token", "")
         self._bridge = ZaloBridgeTransport(self.bridge_url, self.bridge_token)
 
@@ -464,6 +394,8 @@ class ZaloAdapter(BasePlatformAdapter):
 
         self._session = None  # aiohttp.ClientSession
         self._sse_task: Optional[asyncio.Task] = None
+        self._owner_lease = None
+        self._owner_lease_task: Optional[asyncio.Task] = None
         self._stop = False
         self._last_event_id = 0
         # Silent auto-sethome (mirrors Yuanbao): stop gateway "📬 No home channel" spam.
@@ -564,9 +496,44 @@ class ZaloAdapter(BasePlatformAdapter):
         if not self.bridge_url:
             self._set_fatal_error("config_missing", "ZALO_PLUGIN_URL must be set", retryable=False)
             return False
+        self._stop = False
+        if _replica_count() > 1:
+            from owner_lease import ValkeyLease
+
+            lease = self._owner_lease or ValkeyLease.from_env(_replica_id())
+            standby_logged = False
+            while not self._stop:
+                try:
+                    owned = (
+                        await lease.renew()
+                        if self._owner_lease is not None
+                        else await lease.acquire()
+                    )
+                    if owned:
+                        self._owner_lease = lease
+                        if standby_logged:
+                            logger.info("Zalo: standby acquired the bridge owner lease")
+                        break
+                    self._owner_lease = None
+                    if not standby_logged:
+                        logger.info("Zalo: bridge owner lease held by another replica; standing by")
+                        standby_logged = True
+                except Exception as exc:
+                    self._owner_lease = None
+                    self._set_fatal_error("owner_lease_unavailable", str(exc), retryable=True)
+                    if not standby_logged:
+                        logger.warning(
+                            "Zalo: owner lease unavailable; retrying in standby — %s",
+                            type(exc).__name__,
+                        )
+                        standby_logged = True
+                await asyncio.sleep(max(2, min(5, lease.ttl_s // 3)))
+            if self._stop:
+                return False
         try:
             import aiohttp  # noqa
         except ImportError:
+            await self._release_owner_lease()
             self._set_fatal_error(
                 "dependency_missing",
                 "aiohttp is required for the Zalo adapter (pip install aiohttp)",
@@ -576,7 +543,6 @@ class ZaloAdapter(BasePlatformAdapter):
 
         import aiohttp
 
-        self._stop = False
         self._session = aiohttp.ClientSession()
 
         # Probe bridge health and login state.
@@ -588,6 +554,7 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception as e:
             logger.error("Zalo: cannot reach bridge at %s — %s", self.bridge_url, e)
             await self._close_session()
+            await self._release_owner_lease()
             self._set_fatal_error("bridge_unreachable", f"Bridge unreachable: {e}", retryable=True)
             return False
 
@@ -599,6 +566,7 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             logger.error("Zalo: %s", msg)
             await self._close_session()
+            await self._release_owner_lease()
             self._set_fatal_error("not_logged_in", msg, retryable=True)
             return False
 
@@ -626,6 +594,8 @@ class ZaloAdapter(BasePlatformAdapter):
         # Start the SSE inbound loop.
         self._sse_task = asyncio.create_task(self._sse_loop())
         self._as_workflow_task = asyncio.create_task(self._as_workflow_worker())
+        if self._owner_lease is not None:
+            self._owner_lease_task = asyncio.create_task(self._owner_lease_loop())
         self._mark_connected()
         logger.info("Zalo: connected to bridge %s (ownId=%s)", self.bridge_url, self._own_id)
         return True
@@ -633,6 +603,13 @@ class ZaloAdapter(BasePlatformAdapter):
     async def disconnect(self) -> None:
         self._stop = True
         self._mark_disconnected()
+        current = asyncio.current_task()
+        if self._owner_lease_task and self._owner_lease_task is not current and not self._owner_lease_task.done():
+            self._owner_lease_task.cancel()
+            try:
+                await self._owner_lease_task
+            except asyncio.CancelledError:
+                pass
         if self._sse_task and not self._sse_task.done():
             self._sse_task.cancel()
             try:
@@ -651,6 +628,37 @@ class ZaloAdapter(BasePlatformAdapter):
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
         await self._close_session()
+        await self._release_owner_lease()
+
+    async def _release_owner_lease(self) -> None:
+        if self._owner_lease is None:
+            return
+        try:
+            await self._owner_lease.release()
+        except Exception as exc:
+            logger.warning("Zalo: owner lease release failed — %s", type(exc).__name__)
+        self._owner_lease = None
+
+    async def _owner_lease_loop(self) -> None:
+        lease = self._owner_lease
+        if lease is None:
+            return
+        interval = max(5, lease.ttl_s // 3)
+        try:
+            while not self._stop:
+                await asyncio.sleep(interval)
+                if await lease.renew():
+                    continue
+                logger.error("Zalo: owner lease lost; closing bridge session")
+                self._mark_disconnected()
+                await self._close_session()
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Zalo: owner lease renewal failed — %s", type(exc).__name__)
+            self._mark_disconnected()
+            await self._close_session()
 
     async def _close_session(self) -> None:
         if self._session and not self._session.closed:
@@ -1128,11 +1136,7 @@ class ZaloAdapter(BasePlatformAdapter):
             or os.getenv("ADMIN_API_URL")  # legacy alias
             or "http://zalo-api:8100"
         ).rstrip("/")
-        token = (
-            os.getenv("ZALO_API_TOKEN")
-            or os.getenv("ADMIN_API_TOKEN")  # legacy alias
-            or ""
-        ).strip()
+        token = (os.getenv("ZALO_API_TOKEN") or "").strip()
         headers = {"Content-Type": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -7753,15 +7757,11 @@ def check_requirements() -> bool:
         import aiohttp  # noqa
     except ImportError:
         return False
-    if not _is_zalo_owner_replica():
-        return False
     return bool((os.getenv("ZALO_PLUGIN_URL") or "").strip())
 
 
 def validate_config(config) -> bool:
     extra = getattr(config, "extra", {}) or {}
-    if not _is_zalo_owner_replica():
-        return False
     if "ZALO_PLUGIN_URL" in os.environ:
         return bool((os.environ.get("ZALO_PLUGIN_URL") or "").strip())
     return bool(extra.get("bridge_url"))

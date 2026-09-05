@@ -387,6 +387,239 @@ def write_pdf(dest: Path, body: str) -> Path:
     return write_pdf_from_html(dest, _plain_body_to_presentation_html(body or ""))
 
 
+def _structured_content(body: str) -> tuple[str, str, list[tuple[str, str]], list[tuple[str, list[str]]], list[str]]:
+    """Parse a general markdown-ish document without topic or language rules."""
+    title = ""
+    subtitle = ""
+    facts: list[tuple[str, str]] = []
+    sections: list[tuple[str, list[str]]] = []
+    prose: list[str] = []
+    section_name = ""
+    section_rows: list[str] = []
+
+    def flush() -> None:
+        nonlocal section_name, section_rows
+        if section_name or section_rows:
+            sections.append((section_name or "Details", list(section_rows)))
+        section_name = ""
+        section_rows = []
+
+    for raw in (body or "").splitlines():
+        line = raw.strip()
+        if not line or _skip_structural_junk(line):
+            continue
+        if line.startswith("#"):
+            count = 0
+            while count < len(line) and line[count] == "#":
+                count += 1
+            value = line[count:].strip()
+            if count == 1 and value and not title:
+                title = value[:120]
+            elif count == 2 and value and not subtitle and not sections:
+                subtitle = value[:180]
+            elif value:
+                flush()
+                section_name = value[:120]
+            continue
+        if line.startswith(("- ", "* ", "• ")):
+            value = line[2:].strip()
+            if section_name:
+                section_rows.append(value)
+            elif ":" in value:
+                label, _, fact = value.partition(":")
+                if label.strip() and fact.strip() and len(label.strip()) <= 60:
+                    facts.append((label.strip(), fact.strip()))
+                else:
+                    prose.append(value)
+            else:
+                prose.append(value)
+            continue
+        if ":" in line and not line.lower().startswith(("http://", "https://")):
+            label, _, fact = line.partition(":")
+            if label.strip() and fact.strip() and len(label.strip()) <= 60:
+                facts.append((label.strip(), fact.strip()))
+                continue
+        if section_name:
+            section_rows.append(line)
+        elif not title:
+            title = line[:120]
+        elif not subtitle and len(line) <= 180:
+            subtitle = line
+        else:
+            prose.append(line)
+    flush()
+    return title or "Document", subtitle, facts, sections, prose
+
+
+def write_docx_styled(dest: Path, body: str) -> Path:
+    """Create a readable, structured Word report from general authored content."""
+    from docx import Document
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt, RGBColor
+
+    title, subtitle, facts, sections, prose = _structured_content(body)
+    doc = Document()
+    section = doc.sections[0]
+    section.top_margin = Cm(1.8)
+    section.bottom_margin = Cm(1.6)
+    section.left_margin = Cm(1.9)
+    section.right_margin = Cm(1.9)
+
+    normal = doc.styles["Normal"]
+    normal.font.name = "Inter"
+    normal.font.size = Pt(10.5)
+    normal.font.color.rgb = RGBColor(30, 45, 62)
+    normal.paragraph_format.space_after = Pt(6)
+    normal.paragraph_format.line_spacing = 1.15
+    for style_name, size, color in (
+        ("Title", 28, RGBColor(18, 67, 112)),
+        ("Heading 1", 17, RGBColor(18, 67, 112)),
+        ("Heading 2", 13, RGBColor(37, 112, 170)),
+    ):
+        style = doc.styles[style_name]
+        style.font.name = "Inter"
+        style.font.size = Pt(size)
+        style.font.color.rgb = color
+        style.font.bold = True
+
+    accent = doc.add_table(rows=1, cols=1)
+    accent.autofit = False
+    accent.columns[0].width = Cm(16.8)
+    cell = accent.cell(0, 0)
+    shade = OxmlElement("w:shd")
+    shade.set(qn("w:fill"), "1B5E8F")
+    cell._tc.get_or_add_tcPr().append(shade)
+    cell.text = " "
+    cell.paragraphs[0].paragraph_format.space_after = Pt(0)
+
+    p = doc.add_paragraph(style="Title")
+    p.paragraph_format.space_before = Pt(10)
+    p.add_run(title)
+    if subtitle:
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(12)
+        run = p.add_run(subtitle)
+        run.font.name = "Inter"
+        run.font.size = Pt(11)
+        run.font.color.rgb = RGBColor(84, 105, 126)
+
+    if facts:
+        table = doc.add_table(rows=0, cols=2)
+        table.style = "Light Shading Accent 1"
+        for label, value in facts:
+            cells = table.add_row().cells
+            cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            cells[1].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            left = cells[0].paragraphs[0]
+            right = cells[1].paragraphs[0]
+            lrun = left.add_run(label)
+            lrun.bold = True
+            lrun.font.color.rgb = RGBColor(37, 112, 170)
+            right.add_run(value)
+        doc.add_paragraph()
+
+    for text in prose:
+        doc.add_paragraph(text)
+    for heading, rows in sections:
+        doc.add_heading(heading, level=1)
+        for row in rows:
+            doc.add_paragraph(row, style="List Bullet")
+
+    footer = section.footer.paragraphs[0]
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    footer.add_run("•")
+    doc.save(dest)
+    return dest
+
+
+def write_xlsx_styled(dest: Path, body: str) -> Path:
+    """Create a presentation-ready workbook with a structured overview sheet."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    title, subtitle, facts, sections, prose = _structured_content(body)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Overview"
+    navy = "174A73"
+    blue = "2A78B8"
+    pale = "EAF2F8"
+    ink = "182B3A"
+    white = "FFFFFF"
+    thin = Side(style="thin", color="C8D8E6")
+
+    ws.merge_cells("A1:D1")
+    ws["A1"] = title
+    ws["A1"].font = Font(name="Inter", size=22, bold=True, color=white)
+    ws["A1"].fill = PatternFill("solid", fgColor=navy)
+    ws["A1"].alignment = Alignment(vertical="center")
+    ws.row_dimensions[1].height = 42
+    row = 2
+    if subtitle:
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+        cell = ws.cell(row, 1, subtitle)
+        cell.font = Font(name="Inter", size=11, color="526A7E")
+        cell.alignment = Alignment(wrap_text=True, vertical="center")
+        ws.row_dimensions[row].height = 30
+        row += 2
+    else:
+        row += 1
+
+    for label, value in facts:
+        ws.cell(row, 1, label)
+        ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=4)
+        ws.cell(row, 2, value)
+        for col in range(1, 5):
+            cell = ws.cell(row, col)
+            cell.fill = PatternFill("solid", fgColor=pale if row % 2 else white)
+            cell.border = Border(bottom=thin)
+            cell.alignment = Alignment(wrap_text=True, vertical="center")
+            cell.font = Font(name="Inter", size=10.5, color=ink, bold=col == 1)
+        ws.cell(row, 1).font = Font(name="Inter", size=10.5, bold=True, color=blue)
+        ws.row_dimensions[row].height = 28
+        row += 1
+
+    if prose:
+        row += 1
+        for text in prose:
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+            cell = ws.cell(row, 1, text)
+            cell.font = Font(name="Inter", size=10.5, color=ink)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            ws.row_dimensions[row].height = 34
+            row += 1
+    for heading, rows in sections:
+        row += 1
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+        cell = ws.cell(row, 1, heading)
+        cell.fill = PatternFill("solid", fgColor=blue)
+        cell.font = Font(name="Inter", size=13, bold=True, color=white)
+        cell.alignment = Alignment(vertical="center")
+        ws.row_dimensions[row].height = 26
+        row += 1
+        for value in rows:
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+            cell = ws.cell(row, 1, f"• {value}")
+            cell.font = Font(name="Inter", size=10.5, color=ink)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            cell.border = Border(bottom=thin)
+            ws.row_dimensions[row].height = 30
+            row += 1
+
+    for column, width in {"A": 25, "B": 24, "C": 24, "D": 24}.items():
+        ws.column_dimensions[column].width = width
+    ws.freeze_panes = "A3"
+    ws.sheet_view.showGridLines = False
+    ws.print_title_rows = "1:2"
+    ws.page_setup.fitToWidth = 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    wb.save(dest)
+    return dest
+
+
 def write_pptx_styled(dest: Path, body: str) -> Path:
     """Markdown-ish body → title + facts/sections PPTX deck (presentation-ready)."""
     from pptx import Presentation
@@ -458,7 +691,7 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
             run.font.size = Pt(size)
             run.font.bold = bold
             run.font.color.rgb = RGBColor(*color)
-            run.font.name = "Calibri"
+            run.font.name = "Inter"
 
     def _paint_bg(slide, rgb=(238, 243, 248)) -> None:
         shape = slide.shapes.add_shape(
@@ -530,55 +763,13 @@ def write_office(dest: Path, ext: str, body: str) -> Path:
         dest.write_text(data, encoding="utf-8")
         return dest
     if ext == ".xlsx":
-        try:
-            from openpyxl import Workbook
-
-            wb = Workbook()
-            ws = wb.active
-            for i, line in enumerate((body.splitlines() or [body]), start=1):
-                ws.cell(row=i, column=1, value=line)
-            wb.save(dest)
-            return dest
-        except Exception as e:  # noqa: BLE001
-            log.warning("xlsx write failed, fallback csv: %s", e)
-            dest = dest.with_suffix(".csv")
-            dest.write_text(body + "\n", encoding="utf-8")
-            return dest
+        return write_xlsx_styled(dest, body)
     if ext == ".docx":
-        try:
-            from docx import Document
-
-            doc = Document()
-            for line in body.splitlines() or [body]:
-                doc.add_paragraph(line)
-            doc.save(dest)
-            return dest
-        except Exception as e:  # noqa: BLE001
-            log.warning("docx write failed, fallback txt: %s", e)
-            dest = dest.with_suffix(".txt")
-            dest.write_text(body + "\n", encoding="utf-8")
-            return dest
+        return write_docx_styled(dest, body)
     if ext == ".pdf":
-        try:
-            return write_pdf(dest, body)
-        except Exception as e:  # noqa: BLE001
-            log.warning("pdf write failed, fallback txt: %s", type(e).__name__)
-            dest = dest.with_suffix(".txt")
-            dest.write_text(body + "\n", encoding="utf-8")
-            return dest
+        return write_pdf(dest, body)
     if ext == ".pptx":
-        try:
-            return write_pptx_styled(dest, body)
-        except Exception as e:  # noqa: BLE001
-            log.warning("pptx write failed, fallback pdf: %s", type(e).__name__)
-            dest = dest.with_suffix(".pdf")
-            try:
-                return write_pdf(dest, body)
-            except Exception as e2:  # noqa: BLE001
-                log.warning("pptx→pdf fallback failed: %s", type(e2).__name__)
-                dest = dest.with_suffix(".txt")
-                dest.write_text(body + "\n", encoding="utf-8")
-                return dest
+        return write_pptx_styled(dest, body)
     dest.write_text(body + "\n", encoding="utf-8")
     return dest
 

@@ -26,8 +26,8 @@ Protect the stack from risky files: antivirus (opt-in), YARA/static limits, opti
 
 | Profile | State |
 |---|---|
-| Low / Medium | Off |
-| High | security-manager (YARA) + optional SIEM; AV / sandbox / LLM judge off unless opted in |
+| Security worker inactive | Security services off |
+| Security worker active | security-manager (YARA) + optional SIEM; AV / sandbox / LLM judge off unless opted in |
 
 ## Sub-packages
 
@@ -35,10 +35,10 @@ Protect the stack from risky files: antivirus (opt-in), YARA/static limits, opti
 |---|---|
 | [av-gateway/](./av-gateway/README.md) | Scan files (ClamAV) before OCR/ingest |
 | [security-manager/](./security-manager/README.md) | Type/size limits, YARA/rules, risk decision |
-| [siem/](./siem/README.md) | Security event intake / forward (High) |
+| [siem/](./siem/README.md) | Security event intake / forward |
 | [secret-probe/](./secret-probe/README.md) | Input/output security gate (`SAFE`/`BLOCKED`/`REVIEW`) |
 
-## How it works (High, inbound file)
+## How it works (security worker, inbound file)
 
 ```text
 File from social-app or upload

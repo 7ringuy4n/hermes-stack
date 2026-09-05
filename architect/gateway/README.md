@@ -6,7 +6,7 @@
 |--|--|
 | **Sits between** | LAN / SSH clients ↔ Traefik (or Hermes) |
 | **Owns** | Global Valkey rate limits, optional API-key gate, proxy |
-| **Does not own** | Zalo SSE path; High authz ACL |
+| **Does not own** | Zalo SSE path; optional security-worker authz ACL |
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
@@ -49,7 +49,7 @@ GATEWAY_UPSTREAM_URL=http://traefik:80
 ## What this does **not** do
 
 - Does **not** sit in front of Zalo SSE (bridge → proxy → Hermes stays internal).
-- Does **not** replace High authz; auth can be added later as another component.
+- Does **not** replace the optional authz component.
 - Does **not** run OCR/coding workers — only HTTP front door.
 
 ## Env (non-secret defaults)

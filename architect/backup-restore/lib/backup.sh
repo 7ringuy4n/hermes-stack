@@ -480,18 +480,38 @@ assistant_restore_hermes() {
 }
 
 assistant_backup_openbao() {
-  local dir="$1"
+  local dir="$1" c kv
   $SUDO mkdir -p "${dir}/openbao"
-  if [[ -n "$(assistant_container openbao)" ]]; then
-    docker exec openbao bao kv get -format=json secret/assistant/api-keys \
-      > "${dir}/openbao/kv-assistant-api-keys.json" 2>/dev/null \
-      || docker exec openbao vault kv get -format=json secret/assistant/api-keys \
-      > "${dir}/openbao/kv-assistant-api-keys.json" 2>/dev/null \
-      || echo '{"note":"openbao -dev KV export skipped"}' > "${dir}/openbao/kv-assistant-api-keys.json"
+  c="$(assistant_container openbao || true)"
+  kv="${dir}/openbao/kv-assistant-api-keys.json"
+  if [[ -n "$c" ]]; then
+    if ! docker exec "$c" sh -lc 'BAO_TOKEN="$BAO_DEV_ROOT_TOKEN_ID" bao kv get -format=json secret/assistant/api-keys' > "$kv" 2>/dev/null \
+      && ! docker exec "$c" sh -lc 'VAULT_TOKEN="$BAO_DEV_ROOT_TOKEN_ID" vault kv get -format=json secret/assistant/api-keys' > "$kv" 2>/dev/null; then
+      assistant_backup_fail "OpenBao KV export failed from ${c}"
+      return 1
+    fi
+    python3 - "$kv" <<'PY'
+import json
+import sys
+
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+data = doc.get("data") or {}
+payload = data.get("data") if isinstance(data, dict) else None
+if not isinstance(payload, dict) or not payload:
+    raise SystemExit("OpenBao backup payload is empty")
+print(f"OpenBao backup keys={len(payload)}")
+PY
+  else
+    assistant_backup_fail "OpenBao is enabled but no running container was found"
+    return 1
   fi
   if [[ -f "${HERMES_DATA_DIR}/.env.openbao" ]]; then
     $SUDO cp -a "${HERMES_DATA_DIR}/.env.openbao" "${dir}/openbao/env.openbao"
     $SUDO chmod 600 "${dir}/openbao/env.openbao"
+  fi
+  if [[ -f "${OPENBAO_TOKEN_FILE:-${HERMES_DATA_DIR}/openbao/root-token}" ]]; then
+    $SUDO cp -a "${OPENBAO_TOKEN_FILE:-${HERMES_DATA_DIR}/openbao/root-token}" "${dir}/openbao/root-token"
+    $SUDO chmod 600 "${dir}/openbao/root-token"
   fi
 }
 
@@ -500,6 +520,11 @@ assistant_restore_openbao() {
   if [[ -f "${dir}/openbao/env.openbao" ]]; then
     $SUDO cp -a "${dir}/openbao/env.openbao" "${HERMES_DATA_DIR}/.env.openbao"
     $SUDO chmod 600 "${HERMES_DATA_DIR}/.env.openbao"
+  fi
+  if [[ -f "${dir}/openbao/root-token" ]]; then
+    $SUDO mkdir -p "$(dirname "${OPENBAO_TOKEN_FILE:-${HERMES_DATA_DIR}/openbao/root-token}")"
+    $SUDO cp -a "${dir}/openbao/root-token" "${OPENBAO_TOKEN_FILE:-${HERMES_DATA_DIR}/openbao/root-token}"
+    $SUDO chmod 600 "${OPENBAO_TOKEN_FILE:-${HERMES_DATA_DIR}/openbao/root-token}"
   fi
   # OpenBao -dev is in-memory; ensure container is up before KV import.
   if [[ -f "$kv" ]]; then

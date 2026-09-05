@@ -27,7 +27,7 @@ For every production component, require at least:
 |---|---|---|---|---|---|---|---|
 | Hermes | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Model Router | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| OmniRouter | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OmniRoute | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | OmniRoute | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Valkey | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | PostgreSQL | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
