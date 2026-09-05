@@ -111,6 +111,39 @@ def _skip_structural_junk(line: str) -> bool:
     return False
 
 
+def _clean_inline_markdown(value: str) -> str:
+    """Remove lightweight authoring markers before writing Office XML."""
+    text = value or ""
+    for marker in ("**", "__", "`"):
+        text = text.replace(marker, "")
+    return text.strip()
+
+
+def _markdown_tables(body: str) -> list[list[list[str]]]:
+    """Collect conventional pipe tables without interpreting prose or locale."""
+    tables: list[list[list[str]]] = []
+    current: list[list[str]] = []
+
+    def flush() -> None:
+        nonlocal current
+        if len(current) >= 2:
+            tables.append(current)
+        current = []
+
+    for raw in (body or "").splitlines():
+        line = raw.strip()
+        if not (line.startswith("|") and line.endswith("|") and line.count("|") >= 2):
+            flush()
+            continue
+        cells = [_clean_inline_markdown(cell) for cell in line[1:-1].split("|")]
+        compact = "".join(cells).replace("-", "").replace(":", "").replace(" ", "")
+        if not compact:
+            continue
+        current.append(cells)
+    flush()
+    return tables
+
+
 def _looks_like_pdf_bytes(data: bytes) -> bool:
     return bool(data) and data.lstrip().startswith(b"%PDF")
 
@@ -405,8 +438,10 @@ def _structured_content(body: str) -> tuple[str, str, list[tuple[str, str]], lis
         section_rows = []
 
     for raw in (body or "").splitlines():
-        line = raw.strip()
+        line = _clean_inline_markdown(raw.strip())
         if not line or _skip_structural_junk(line):
+            continue
+        if line.startswith("|") and line.endswith("|"):
             continue
         if line.startswith("#"):
             count = 0
@@ -461,6 +496,7 @@ def write_docx_styled(dest: Path, body: str) -> Path:
     from docx.shared import Cm, Pt, RGBColor
 
     title, subtitle, facts, sections, prose = _structured_content(body)
+    authored_tables = _markdown_tables(body)
     doc = Document()
     section = doc.sections[0]
     section.top_margin = Cm(1.8)
@@ -521,6 +557,22 @@ def write_docx_styled(dest: Path, body: str) -> Path:
             right.add_run(value)
         doc.add_paragraph()
 
+    for rows in authored_tables:
+        column_count = max(len(row) for row in rows)
+        table = doc.add_table(rows=0, cols=column_count)
+        table.style = "Light Shading Accent 1"
+        for row_index, values in enumerate(rows):
+            cells = table.add_row().cells
+            for column_index in range(column_count):
+                value = values[column_index] if column_index < len(values) else ""
+                cells[column_index].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                paragraph = cells[column_index].paragraphs[0]
+                run = paragraph.add_run(value)
+                if row_index == 0:
+                    run.bold = True
+                    run.font.color.rgb = RGBColor(18, 67, 112)
+        doc.add_paragraph()
+
     for text in prose:
         doc.add_paragraph(text)
     for heading, rows in sections:
@@ -538,9 +590,11 @@ def write_docx_styled(dest: Path, body: str) -> Path:
 def write_xlsx_styled(dest: Path, body: str) -> Path:
     """Create a presentation-ready workbook with a structured overview sheet."""
     from openpyxl import Workbook
+    from openpyxl.chart import BarChart, Reference
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
     title, subtitle, facts, sections, prose = _structured_content(body)
+    authored_tables = _markdown_tables(body)
     wb = Workbook()
     ws = wb.active
     ws.title = "Overview"
@@ -582,6 +636,27 @@ def write_xlsx_styled(dest: Path, body: str) -> Path:
         ws.row_dimensions[row].height = 28
         row += 1
 
+    chart_source: tuple[int, int, int] | None = None
+    for rows in authored_tables:
+        row += 1
+        table_start = row
+        column_count = min(max(len(values) for values in rows), 12)
+        for row_index, values in enumerate(rows):
+            for column_index in range(column_count):
+                value = values[column_index] if column_index < len(values) else ""
+                cell = ws.cell(row, column_index + 1, value)
+                cell.alignment = Alignment(wrap_text=True, vertical="center")
+                cell.border = Border(bottom=thin)
+                if row_index == 0:
+                    cell.fill = PatternFill("solid", fgColor=blue)
+                    cell.font = Font(name="Inter", size=10.5, bold=True, color=white)
+                else:
+                    cell.font = Font(name="Inter", size=10.5, color=ink)
+            ws.row_dimensions[row].height = 28
+            row += 1
+        if len(rows) >= 3 and column_count >= 2:
+            chart_source = (table_start, row - 1, column_count)
+
     if prose:
         row += 1
         for text in prose:
@@ -616,6 +691,31 @@ def write_xlsx_styled(dest: Path, body: str) -> Path:
     ws.print_title_rows = "1:2"
     ws.page_setup.fitToWidth = 1
     ws.sheet_properties.pageSetUpPr.fitToPage = True
+    if chart_source:
+        header_row, last_row, last_column = chart_source
+        numeric_column = 0
+        for column in range(last_column, 1, -1):
+            numeric = 0
+            for row_index in range(header_row + 1, last_row + 1):
+                raw = str(ws.cell(row_index, column).value or "").strip()
+                cleaned = "".join(ch for ch in raw if ch.isdigit() or ch in ".,-")
+                if cleaned and any(ch.isdigit() for ch in cleaned):
+                    numeric += 1
+            if numeric >= 2:
+                numeric_column = column
+                break
+        if numeric_column:
+            chart = BarChart()
+            chart.type = "col"
+            chart.style = 10
+            chart.title = str(ws.cell(header_row, numeric_column).value or "Overview")
+            chart.height = 7
+            chart.width = 12
+            data = Reference(ws, min_col=numeric_column, min_row=header_row, max_row=last_row)
+            categories = Reference(ws, min_col=1, min_row=header_row + 1, max_row=last_row)
+            chart.add_data(data, titles_from_data=True)
+            chart.set_categories(categories)
+            ws.add_chart(chart, f"F{header_row}")
     wb.save(dest)
     return dest
 
@@ -644,7 +744,7 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
         cur_bullets = []
 
     for raw in (body or "").splitlines():
-        line = raw.strip()
+        line = _clean_inline_markdown(raw.strip())
         if not line:
             continue
         low = line.lower()

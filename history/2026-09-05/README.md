@@ -611,3 +611,20 @@ The dispatcher image now carries the headless Writer, Calc, and Impress
 components. Release labs convert each generated office package to PDF in the
 same container and inspect every rendered page, slide, or sheet. Structural
 checks remain useful but can no longer substitute for rendering.
+
+## Markdown authoring syntax leaked into delivered Office files
+
+### Symptom and root cause
+
+Rendered Word output exposed inline emphasis markers and pipe-table source.
+The shared renderer understood headings and bullets but treated other common
+Markdown constructs as plain paragraphs, so a valid authored body became an
+unfinished-looking document.
+
+### Decision and prevention
+
+The Office renderer now removes lightweight inline authoring markers and parses
+conventional pipe tables without locale- or topic-specific rules. Word writes
+native styled tables; spreadsheets preserve table cells and add a chart when a
+numeric series is available. Regression checks inspect package content for both
+native structure and absence of raw authoring chrome.
