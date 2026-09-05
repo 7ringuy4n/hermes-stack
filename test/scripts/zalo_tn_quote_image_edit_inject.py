@@ -18,7 +18,7 @@ if hasattr(sys.stdout, "buffer"):
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-quote-image-edit"
-TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937").strip()
+TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
 TN_NAME = (os.environ.get("ZALO_TEST_USER_NAME") or "Tn").strip()
 INSTRUCTION = (
     os.environ.get("ZALO_IMAGE_EDIT_INSTRUCTION")
@@ -32,6 +32,9 @@ def ts() -> str:
 
 
 def main() -> int:
+    if not TN_ID:
+        print("ERROR: ZALO_TEST_USER_ID is required", file=sys.stderr)
+        return 2
     OUT.mkdir(parents=True, exist_ok=True)
     client = connect()
     try:

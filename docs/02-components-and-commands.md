@@ -1,94 +1,69 @@
-# 02 — Components & commands
+# 02 — Components and commands
 
-**Before anything else:** set the **host OS timezone** (`sudo timedatectl set-timezone Asia/Ho_Chi_Minh` or your region), then copy `.env.example` → `.env` and set every `CHANGE_ME` secret. Never commit `.env` (gitignored); only `.env.example` placeholders belong in the repo.
+## Deployed component map
+
+| Layer | Current components |
+|---|---|
+| Agent | Hermes replicas, skills, per-replica runtime homes |
+| Request routing | model-router → OmniRoute priority combos; omni-attribution |
+| State | PostgreSQL, Valkey, Qdrant, `/data/assistant` |
+| Knowledge | ingest → embedding combo → Qdrant |
+| Edge | Traefik and API Gateway in local/VPN mode by default |
+| Schedule worker | schedule-worker and timed Zalo delivery |
+| Media/File worker | dispatcher, jobs, jobs-worker, SearXNG |
+| Message worker | zalo-proxy, zalo-api, host Zalo bridge |
+| Security worker | OpenBao, security-manager, authz, SIEM, policy; optional AV |
+| Monitor worker | Prometheus, Grafana, Loki, Alloy |
+| Notify worker | notify and alert-watch |
+
+Image generation, image edit, vision analysis, web search, and embedding are
+named OmniRoute combo capabilities. They are not local OCR/Comfy/video
+containers. `video-gen` and `video-edit` are not supported.
+
+## Command matrix
+
+Run all commands from the repository root.
+
+| Command | Effect |
+|---|---|
+| `bash run.sh up` | Start/reconcile core and enabled workers. |
+| `bash run.sh down` | Stop compose services without deleting data. |
+| `bash run.sh destroy` | Back up and verify, then remove this project's containers and networks; keep volumes and `/data/assistant`. |
+| `bash run.sh update` | Back up and verify, rebuild/reconcile, preserve OmniRoute combo configuration, and clean supported retired env keys. |
+| `bash run.sh ps` / `logs [service]` | Inspect runtime state/logs. |
+| `bash run.sh workers` | Show effective worker and core flags. |
+| `bash run.sh install NAME…` | Enable workers after backup/verification. |
+| `bash run.sh uninstall NAME…` | Disable workers after backup/verification. |
+| `bash run.sh backup` / `verify` / `restore` | Disaster-recovery stamp lifecycle. |
+| `bash run.sh auto-learn` / `learn-status` | Knowledge indexing. |
+| `bash run.sh compact` / `optimize-memory` | Knowledge/memory maintenance using embedding. |
+| `bash run.sh install-timers` | Install host timers and enabled-worker watches. |
+| `bash run.sh first-setup-omnirouter` | Setup-only OmniRoute initialization; no user test traffic. |
+| `bash run.sh first-setup-openbao` | Initialize OpenBao and supported secrets. |
+
+`switch-profile` and tier profiles are retired. `update-omnirouter` and
+`sync-omnirouter` are compatibility command names for OmniRoute maintenance.
+
+## Safe clean-deploy sequence
 
 ```bash
 cd /opt/assistant
-bash run.sh <command>
-```
-
-**Runtime:** Optional workers use `bash run.sh install <name>` (not keys in `.env.example`). See [00-workers.md](./00-workers.md), [config/DEFAULTS.md](./config/DEFAULTS.md), and [02-commands.md](./02-commands.md).
-
----
-
-## Overview
-
-| Item | Detail |
-|------|--------|
-| **Product** | Hermes Agent + Memory. Social apps (Zalo / Telegram / HTTP) are optional. |
-| **Knob** | Optional workers via `bash run.sh install …` (`WORKER_*=active\|inactive`) |
-| **Core** | Always on — Hermes, memory, model-router, Omni, Traefik local, API Gateway, Valkey |
-| **Auto-learn** | 00:00 → Qdrant (no approve). **Not** the same as compact. |
-| **Compact** | 00:00 when **Media** worker is active — slim skills / memory |
-| **Backups** | `/data/assistant/backups` · optional CloudDrive (`install clouddrive`) |
-
-Legacy `ASSISTANT_PROFILE=low|medium|high` and `switch-profile` are removed — see [00-profiles.md](./00-profiles.md).
-
----
-
-## Components by worker
-
-| Area | Core | schedule | media | security / openbao | notify | monitor | message / zalo |
-|------|:----:|:--------:|:-----:|:------------------:|:------:|:-------:|:---------------:|
-| Hermes + Memory + model-router | Yes | — | — | — | — | — | — |
-| OmniRouter (default LLM) | Yes | — | — | — | — | — | — |
-| OmniRoute | Opt (`ENABLE_OMNIROUTER=active`) | — | — | — | — | — | — |
-| Traefik local / API Gateway | Yes | — | — | — | — | — | — |
-| schedule-worker | — | Yes | — | — | — | — | — |
-| Dispatcher / OCR / Jobs / SearXNG / Comfy / office | — | — | Yes | — | — | — | — |
-| OpenBao / authz / SIEM / policy | — | — | — | Yes | — | — | — |
-| Antivirus (ClamAV) | — | — | — | Opt (`antivirus`) | — | — | — |
-| notify + alert-watch | — | — | — | — | Yes | — | — |
-| Grafana / Prometheus / Loki / Alloy | — | — | — | — | — | Yes | — |
-| zalo-proxy + zalo-api | — | — | — | — | — | — | Yes |
-| CloudDrive mirror | — | — | — | — | — | — | Opt (`clouddrive`) |
-| OpenVPN | — | — | — | — | — | — | Opt (`openvpn`) |
-
-Full name catalog: `bash run.sh install list`.
-
----
-
-## Commands (quick matrix)
-
-| Command | What it does |
-|---|---|
-| `up` / `down` / `ps` / `logs` | Compose lifecycle |
-| `destroy` | Backup+verify, then remove this project's containers + networks (volumes/data kept) |
-| `update` | Backup+verify, rebuild stack, refresh router bootstrap, prune disk |
-| `workers` / `profile` | Show worker activation + core flags |
-| `install NAME…` | Short name → `.env` (backup+verify, then `up`) |
-| `uninstall NAME…` | Deactivate by short name |
-| `install list` | Show install name catalog |
-| `add-components KEY=VAL…` | Write `.env`, then `up` (or `--update` on running host) |
-| `switch-profile <…>` | Removed — fails with a worker hint |
-| `backup` / `restore` / `verify` / `migrate` | DR stamp lifecycle |
-| `auto-learn` / `learn-status` | Knowledge ingest |
-| `compact` / `optimize-memory` | Memory housekeeping (**media** worker) |
-| `check-media` | Dispatcher / OCR / Jobs / SearXNG smoke (**media**) |
-| `check-security` | Security stack smoke |
-| `install-timers` | systemd timers |
-| `backup-sync-clouddrive` | When CloudDrive installed |
-| `channel-status` | Social-app flags |
-| `first-setup-omnirouter` | Omni combo wiring (safe re-run) |
-| `first-setup-llm` | Only when `ENABLE_OMNIROUTER=active` |
-| `first-setup-openbao` / `load-openbao-env` | OpenBao seed + env load |
-
-Detail: [02-commands.md](./02-commands.md).
-
----
-
-## Worker quick examples
-
-### Core only
-
-```bash
+bash run.sh backup
+bash run.sh verify
+bash run.sh workers
+bash run.sh destroy
 bash run.sh up
-bash run.sh backup && bash run.sh verify
-bash run.sh auto-learn
-sudo bash run.sh install-timers
+bash run.sh ps
 ```
 
-### Typical production set
+`destroy` is intentionally not a data wipe. A true empty-data disaster-recovery
+exercise is a separate destructive procedure and requires an independently
+verified backup, exact project-volume targets, and explicit authorization.
+
+After `up`, verify OmniRoute/config and Zalo ownership before sending any test
+traffic. First-setup is setup-only; tests follow [test/RULES.md](../test/RULES.md).
+
+## Typical worker set
 
 ```bash
 bash run.sh install schedule media security notify message monitor
@@ -97,55 +72,5 @@ bash run.sh check-media
 bash run.sh check-security
 ```
 
-### Media only
-
-```bash
-bash run.sh install media
-bash run.sh check-media
-```
-
-### Runtime flags on a live host
-
-```bash
-bash run.sh add-components ENABLE_OMNIROUTER=active --update
-bash run.sh add-components ZALO_INBOUND_QUEUE=0 --update
-```
-
-Prefer `install` / `uninstall` for workers; use `add-components … --update` for core router / queue flags.
-
----
-
-## I want to… → command
-
-| Goal | Command |
-|------|---------|
-| Start / stop stack | `up` / `down` / `ps` / `logs` |
-| Wipe containers + networks (keep data) | `destroy` then `up` |
-| Save / recover / move server | `backup` → `verify` → `restore` or `migrate` |
-| Index documents into knowledge | `auto-learn` (+ `learn-status`) |
-| Tidy memory (media worker) | `compact` or `optimize-memory` |
-| Schedule midnight jobs | `sudo bash run.sh install-timers` |
-| Sync backup to Drive | `install clouddrive` then `backup-sync-clouddrive` |
-| Attach Zalo | `install message` then `bash scripts/main/setup-zalo.sh` |
-| See worker state | `bash run.sh workers` |
-
----
-
-## Paths
-
-| Role | Path |
-|------|------|
-| Code (VPS) | `/opt/assistant` |
-| Code (dev) | this clone (e.g. `D:\Onedrive\Work\hermes-stack`) |
-| Live data | `/data/assistant` |
-| Backups | `/data/assistant/backups` |
-| CloudDrive mirror | `/data/clouddrive` |
-
----
-
-## Related
-
-- [00-workers.md](./00-workers.md) — install catalog  
-- [00-profiles.md](./00-profiles.md) — legacy profile note  
-- [02-commands.md](./02-commands.md) — commands-only detail  
-- [architect/README.md](../architect/README.md) · [hermes/README.md](../hermes/README.md)
+See [00-workers.md](./00-workers.md), [02-commands.md](./02-commands.md), and
+[config/DEFAULTS.md](./config/DEFAULTS.md).

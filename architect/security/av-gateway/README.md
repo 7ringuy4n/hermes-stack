@@ -6,7 +6,7 @@ HTTP gateway in front of ClamAV (and similar). Scans uploaded or inbound files a
 
 ## Profile
 
-High (`ENABLE_ANTIVIRUS=active`).
+Optional antivirus component (`ENABLE_ANTIVIRUS=active`).
 
 ## Main functions
 

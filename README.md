@@ -119,7 +119,7 @@ bash run.sh first-setup-omnirouter
 bash run.sh ps
 ```
 
-Tunnel Hermes / OmniRouter / Traefik:
+Tunnel Hermes / OmniRoute / Traefik:
 
 ```bash
 ssh -L 29119:127.0.0.1:29119 -L 20129:127.0.0.1:20129 -L 8080:127.0.0.1:8080 USER@HOST
@@ -139,8 +139,8 @@ Defaults (non-secret): [docs/config/DEFAULTS.md](./docs/config/DEFAULTS.md) · C
 
 | Worker | Adds | Choose when |
 |--------|------|-------------|
-| *(none — core)* | Hermes, Model Router, OmniRouter, Traefik/Gateway, Valkey, Postgres, Qdrant | Smallest useful stack |
-| **Media\|File** | Dispatcher, OCR, Jobs, SearXNG, Comfy CPU | Documents + web + async work |
+| *(none — core)* | Hermes, Model Router, OmniRoute, Traefik/Gateway, Valkey, Postgres, Qdrant | Smallest useful stack |
+| **Media\|File** | Dispatcher, Jobs, jobs-worker, SearXNG | Documents + web + async work |
 | **Schedule** | Schedule Worker clock | Timed deliveries |
 | **Message** | zalo-proxy + zalo-api (Zalo) | Chat from Zalo |
 | **Notification** | notify + alert-watch | Ops alerts |
@@ -162,7 +162,7 @@ Self-heal timers (`assistant-stack-watch`, `assistant-zalo-watch`) restart exite
 
 | Component | Today | Note |
 |-----------|-------|------|
-| Hermes | ×2 on **one** node (High) | Load only — not multi-node HA |
+| Hermes | ×2 on **one** node when `HERMES_REPLICAS=2` | Load only — not multi-node HA |
 | Zalo SSE | **One** owner lock | Never two SSE clients; QR only if `sessionDead` |
 | Valkey / Postgres / Qdrant / Traefik | Single instance | **SPOFs** — see [docs/MULTI_NODE.md](./docs/MULTI_NODE.md) |
 | Jobs workers | Scale out | Shared Valkey RQ queue |
@@ -192,7 +192,7 @@ Admin (exactly one user): after login, DM the bot `!zalo claim`, then
 | [`architect/`](./architect/README.md) | microservices (dispatcher, memory, ingest, backup-restore, …) |
 | [`hermes/main/`](./hermes/README.md) | skills, plugins, messages |
 | [`config/`](./config/) | Grafana, Alloy, Loki |
-| [`docs/`](./docs/README.md) | profiles, workflow, commands, hardware, routing |
+| [`docs/`](./docs/README.md) | workers, workflow, commands, hardware, routing |
 | [`scripts/main/`](./scripts/main/) | install, first-setup, Zalo, watches |
 
 ## Documentation
@@ -200,13 +200,13 @@ Admin (exactly one user): after login, DM the bot `!zalo claim`, then
 | Doc | Contents |
 |-----|----------|
 | [docs/README.md](./docs/README.md) | Full doc index |
-| [docs/HARDWARE.md](./docs/HARDWARE.md) | Tested lab + extra RAM/disk/CPU when Grafana/Prometheus/Loki/OmniRouter are on |
+| [docs/HARDWARE.md](./docs/HARDWARE.md) | Tested lab + extra RAM/disk/CPU when Grafana/Prometheus/Loki/OmniRoute are on |
 | [docs/00-workers.md](./docs/00-workers.md) | Workers + Traefik modes |
 | [docs/02-commands.md](./docs/02-commands.md) | `run.sh` commands |
 | [docs/03-architecture.md](./docs/03-architecture.md) | System architecture (HTML panels) |
 | [docs/04-component-flows.md](./docs/04-component-flows.md) | Per-component flows |
 | [docs/05-edge-networking.md](./docs/05-edge-networking.md) | Traefik / Gateway / OpenVPN |
-| [docs/06-model-routing.md](./docs/06-model-routing.md) | Model Router / omni-router / OmniRouter |
+| [docs/06-model-routing.md](./docs/06-model-routing.md) | Model Router / OmniRoute combos |
 | [docs/MULTI_NODE.md](./docs/MULTI_NODE.md) | Hermes×2 vs true HA / SPOFs |
 | [architect/README.md](./architect/README.md) | Platform layer index + design links |
 | [architect/backup-restore/README.md](./architect/backup-restore/README.md) | DR commands + tested round-trip |

@@ -1,5 +1,5 @@
 # Dynamic routes — Hermes chat LB (HTTP, no TLS)
-# Upstream `hermes` service DNS load-balances across HERMES_REPLICAS (Medium/High default 2).
+# Upstream `hermes` service DNS load-balances across HERMES_REPLICAS.
 http:
   routers:
     hermes-gw:
@@ -8,12 +8,35 @@ http:
         - web
       service: hermes-gw
       priority: 1
+    zalo-bridge:
+      rule: "PathPrefix(`/zalo-bridge`)"
+      entryPoints:
+        - zalo-internal
+      service: zalo-bridge
+      middlewares:
+        - zalo-strip-prefix
+      priority: 100
+
+  middlewares:
+    zalo-strip-prefix:
+      stripPrefix:
+        prefixes:
+          - "/zalo-bridge"
 
   services:
     hermes-gw:
       loadBalancer:
         servers:
           - url: "http://hermes:8642"
+        healthCheck:
+          path: "/health"
+          interval: "15s"
+          timeout: "5s"
+        passHostHeader: true
+    zalo-bridge:
+      loadBalancer:
+        servers:
+          - url: "http://zalo-proxy:8787"
         healthCheck:
           path: "/health"
           interval: "15s"

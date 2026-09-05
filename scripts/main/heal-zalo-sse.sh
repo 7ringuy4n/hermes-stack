@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Heal Zalo SSE after restore / owner-lock drift (component: ENABLE_ZALO=active).
-# Clears stale zalo_owner election files, restarts zalo-proxy + Hermes replicas
-# so exactly one replica can re-attach SSE.
+# Heal Zalo SSE after restore / owner-lease drift (component: ENABLE_ZALO=active).
+# Clears only the dedicated Valkey lease and restarts the proxy. Standby Hermes
+# replicas acquire the lease without a replica-wide restart.
 #
 # Called automatically by setup-zalo.sh / login-zalo.sh after QR success.
 # Re-run manually anytime Hermes loses bridge (sseClients: 0):
@@ -15,8 +15,8 @@ ROOT="${STACK_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 [[ -f "${ROOT}/.env" ]] && set -a && source <(tr -d '\r' < "${ROOT}/.env") && set +a
 [[ -f /data/assistant/.env ]] && set -a && source <(tr -d '\r' < /data/assistant/.env) && set +a
 
-DATA="${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}"
 PROXY_CTR="${ZALO_PROXY_CONTAINER:-zalo-proxy}"
+LEASE_KEY="${ZALO_OWNER_LEASE_KEY:-zalo:bridge:owner}"
 if [[ "$(id -u)" -ne 0 ]]; then SUDO=sudo; else SUDO=; fi
 
 log() { echo "$(date -Is) heal-zalo-sse: $*"; }
@@ -39,22 +39,13 @@ case "${ENABLE_ZALO:-inactive}" in
     ;;
 esac
 
-log "clear stale Zalo owner lock under ${DATA}"
-$SUDO rm -rf "${DATA}/zalo_owner" "${DATA}/zalo_owner.lock" 2>/dev/null || true
+log "clear stale Zalo owner lease ${LEASE_KEY}"
+docker_cmd exec valkey valkey-cli DEL "$LEASE_KEY" >/dev/null 2>&1 || true
 
 # Compose proxy (High) — preferred over host systemd bridge units
 if docker_cmd ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$PROXY_CTR"; then
   log "restart ${PROXY_CTR}"
   docker_cmd restart "$PROXY_CTR" >/dev/null 2>&1 || true
-fi
-
-ids="$(docker_cmd ps -aq --filter "name=hermes" 2>/dev/null || true)"
-if [[ -n "$ids" ]]; then
-  log "restart Hermes replicas for fresh Zalo owner election"
-  # shellcheck disable=SC2086
-  docker_cmd restart $ids >/dev/null 2>&1 || true
-else
-  log "WARN: no hermes containers found"
 fi
 
 sleep 5

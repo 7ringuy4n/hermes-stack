@@ -719,7 +719,7 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             "error": "diffusion_moved_to_omni",
             "detail": (
                 "POST /v1/image no longer runs diffusion. "
-                "Use OmniRouter POST /v1/images/generations with model image-gen. "
+                "Use OmniRoute POST /v1/images/generations with model image-gen. "
                 "Pillow mode remaining: mode=text-poster (alias /v1/text-poster)."
             ),
         },

@@ -9,7 +9,7 @@ Optional flags (0/1, default 0 unless noted): ENABLE_ZALO, ENABLE_ANTIVIRUS,
   Grafana=1 pairs Prometheus on (unless ENABLE_PROMETHEUS is set).
   Loki=1 pairs Alloy on (unless ENABLE_ALLOY is set).
 Optional secret (host .env only, never logged): TAVILY_API_KEY.
-Notify stays on for component lab alerting. OmniRouter defaults **on** (set ENABLE_OMNIROUTER=0 to force omni-router-only general chat).
+Notify stays on for component lab alerting. OmniRoute defaults on through the compatibility `ENABLE_OMNIROUTER` flag.
 Does not write secrets into test/reports. Does not run Zalo QR login.
 """
 from __future__ import annotations
@@ -275,10 +275,9 @@ fill_if_empty GATEWAY_API_KEYS "$(rand)"
 fill_if_empty API_SERVER_KEY "$(rand)"
 fill_if_empty HERMES_DASHBOARD_USER admin
 fill_if_empty GRAFANA_ADMIN_USER admin
-if ! grep -qE '^ZALO_API_TOKEN=.+' .env && ! grep -qE '^ADMIN_API_TOKEN=.+' .env; then
+if ! grep -qE '^ZALO_API_TOKEN=.+' .env; then
   TOK=$(rand)
   upsert ZALO_API_TOKEN "$TOK"
-  upsert ADMIN_API_TOKEN "$TOK"
 fi
 if ! grep -qE '^OMNIROUTER_INITIAL_PASSWORD=.+' .env; then
   N9PW=$(grep -E '^OMNIROUTER_INITIAL_PASSWORD=' .env | cut -d= -f2- || true)

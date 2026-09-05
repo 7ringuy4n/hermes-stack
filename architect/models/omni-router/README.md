@@ -1,45 +1,21 @@
-# OmniRouter (optional, v0.5.0)
+# OmniRoute integration
 
-## System architecture
+The directory and environment prefix retain `omni-router` / `OMNIROUTER_*` for
+upgrade compatibility. The deployed product is **OmniRoute**.
 
-| | |
-|--|--|
-| **Sits between** | Model Router ↔ general LLM providers |
-| **Owns** | Optional general-task OpenAI-compatible gateway |
-| **Does not own** | Coding-preferred path (omni-router) |
+| Property | Value |
+|---|---|
+| Upstream caller | model-router and stack-owned direct capability clients |
+| Downstream | provider accounts selected by named priority combos |
+| Image | `${OMNIROUTER_IMAGE:-diegosouzapw/omniroute:latest}` |
+| Host UI/API bind | `127.0.0.1:${OMNIROUTER_HOST_PORT:-20129}` by default |
+| Compose profile | `omnirouter` (compatibility name) |
+| Persistent state | `omni_router_data` plus backup export |
 
-<table style="width:100%;border-collapse:collapse;font-size:13px;">
-  <tr>
-    <td style="padding:12px;background:#f5f5f5;border:1px solid #ddd;text-align:center;width:28%;">model-router</td>
-    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:14px;background:#2563eb;color:#fff;text-align:center;border:3px solid #fbbf24;width:36%;"><b>OmniRouter</b></td>
-    <td style="padding:8px;background:#eee;text-align:center;width:4%;">→</td>
-    <td style="padding:12px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;width:28%;">LLM providers</td>
-  </tr>
-</table>
+`scripts/main/first-setup-omnirouter.py` is setup-only and idempotent. It may
+create required combo shells but must preserve operator-managed AI Box/provider
+members, order, and strategy on updates.
 
-## Purpose
-
-Separate OpenAI-compatible LLM gateway for **general / non-coding** tasks. Used by the Model Router when `ENABLE_OMNIROUTER=active`.
-
-## Defaults
-
-- Image: `${OMNIROUTER_IMAGE:-diegosouzapw/omniroute:latest}` (separate from omni-router)
-- Port: host `127.0.0.1:${OMNIROUTER_HOST_PORT:-20129}:20129`
-- Combo: OpenCode Free + all its models (same *style* as omni-router `hermes` combo) via `scripts/main/first-setup-omnirouter.sh`
-
-## Routing
-
-| Both up | Coding → omni-router · Other → OmniRouter |
-| Only OmniRouter | Coding + other → OmniRouter · then direct LLM pool |
-| Only omni-router | All → omni-router · then pool |
-
-## Enable
-
-```bash
-ENABLE_OMNIROUTER=active
-OMNIROUTER_IMAGE=diegosouzapw/omniroute:latest
-OMNIROUTER_INITIAL_PASSWORD=...
-```
-
-Component uses compose profile `omnirouter`. When Prometheus or Grafana is on, **`omni-exporter` starts with OmniRouter** (`omnirouter_*` metrics). Extra usage ~0.4 GiB RAM · ~1 GB disk · ~0.2 vCPU — [docs/HARDWARE.md](../../docs/HARDWARE.md).
+The active combo contract is documented in
+[docs/06-model-routing.md](../../../docs/06-model-routing.md). Monitoring uses
+`omni-exporter` when Prometheus/Grafana is enabled.

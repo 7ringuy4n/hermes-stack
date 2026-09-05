@@ -15,7 +15,7 @@ import os
 import sys
 from pathlib import Path
 
-from openbao_common import ENV_SCRUB_KEYS, OBSOLETE_ENV_KEYS
+from openbao_common import ENV_SCRUB_KEYS, OBSOLETE_ENV_KEYS, is_secret_env_name
 
 ROOT = Path(os.environ.get("STACK_ROOT") or Path(__file__).resolve().parents[2])
 ENV_PATH = ROOT / ".env"
@@ -39,7 +39,9 @@ def _scrub_env_file(path: Path) -> int:
             continue
         key, _, val = line.partition("=")
         k = key.strip()
-        if k.casefold() in want and str(val).strip() and not str(val).strip().startswith("CHANGE_ME"):
+        if (
+            k.casefold() in want or is_secret_env_name(k)
+        ) and str(val).strip() and not str(val).strip().startswith("CHANGE_ME"):
             lines_out.append(f"{k}=")
             changed += 1
         else:

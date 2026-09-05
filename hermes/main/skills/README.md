@@ -11,7 +11,7 @@
 | **Coding** | `coding/*` + `coding/SKILL.md` router | Debug, review, security, git, testing |
 | **Communication** | `communication/*` | Email, chat tone, translation, **friendly-response** (default), **vi-people-terms** (Vietnamese people/gender) |
 | **Documents** | `file-gen` / `documents` (create+send via Dispatcher); advanced local `*-tools-local` only | |
-| **Web** | `web-search`, `searxng*` (compat shim) | OmniRouter combo `web-search`; skill SoT `web-search/SKILL.md` |
+| **Web** | `web-search`, `searxng*` (compat shim) | OmniRoute combo `web-search`; skill SoT `web-search/SKILL.md` |
 | **Core routing** | `core/worker-routing` | Classifier JSON → skill → worker table |
 | **Schedule** | `schedule` | Go schedule worker (SQLite). Hermes does not tick cron. |
 | **Classify** | `classify` | Inbound purpose JSON. Envelope `classify.json` + `parts/*.txt` assembled into one hop. |

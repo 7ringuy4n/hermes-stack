@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""First-setup OmniRouter (OmniRoute) — core install only.
+"""First-setup OmniRoute — core install only (compatibility command name).
 
 Creates login session, Default Key (only when OMNIROUTER_API_KEY missing),
 empty combo shells, and missing .env pins. Does **not** refill combos,

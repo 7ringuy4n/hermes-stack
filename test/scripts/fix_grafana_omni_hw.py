@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Fix OmniRouter scrape 404 and add node-exporter for hardware panels."""
+"""Fix OmniRoute scrape 404 and add node-exporter for hardware panels."""
 from __future__ import annotations
 
 import sys

@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Stores and evaluates additional policies (tool allowlists, content rules) beyond basic workspace ACL. Used on High when `ENABLE_POLICY=active`.
+Stores and evaluates additional policies (tool allowlists, content rules) beyond basic workspace ACL when `ENABLE_POLICY=active`.
 
 ## Profile
 
-High optional.
+Optional security-worker component.
 
 ## Main functions
 

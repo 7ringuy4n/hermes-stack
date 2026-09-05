@@ -80,7 +80,7 @@ def load_dotenv(path: Path) -> dict[str, str]:
 
 
 def recover_root_token_from_container() -> str:
-    """If host .env lost OPENBAO_DEV_ROOT_TOKEN, recover from the -dev container env."""
+    """Recover the bootstrap token from a running development container."""
     import subprocess
 
     try:
@@ -110,27 +110,15 @@ def recover_root_token_from_container() -> str:
 
 
 def persist_root_token(token: str) -> None:
-    if not token or not ENV_PATH.parent.is_dir():
+    """Persist the bootstrap exception outside repository and transient env files."""
+    if not token:
         return
-    repair_literal_newlines(ENV_PATH)
-    lines: list[str] = []
-    if ENV_PATH.is_file():
-        lines = ENV_PATH.read_text(encoding="utf-8", errors="replace").splitlines()
-    out: list[str] = []
-    seen = False
-    for line in lines:
-        if line.startswith("OPENBAO_DEV_ROOT_TOKEN="):
-            out.append(f"OPENBAO_DEV_ROOT_TOKEN={token}")
-            seen = True
-        else:
-            out.append(line)
-    if not seen:
-        out.append(f"OPENBAO_DEV_ROOT_TOKEN={token}")
-    ENV_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
-    try:
-        os.chmod(ENV_PATH, 0o600)
-    except OSError:
-        pass
+    token_path = Path(
+        os.environ.get("OPENBAO_TOKEN_FILE") or DATA_DIR / "openbao" / "root-token"
+    )
+    token_path.parent.mkdir(parents=True, exist_ok=True)
+    token_path.write_text(token + "\n", encoding="utf-8")
+    os.chmod(token_path, 0o600)
 
 
 def _cleanup_obsolete_host_env() -> None:
@@ -183,15 +171,20 @@ def main() -> int:
     except Exception as e:  # noqa: BLE001
         print(f"WARN: obsolete env cleanup skipped: {e}", file=sys.stderr)
     env = load_dotenv(ENV_PATH)
+    token_path = Path(
+        os.environ.get("OPENBAO_TOKEN_FILE") or DATA_DIR / "openbao" / "root-token"
+    )
     token = (os.environ.get("OPENBAO_DEV_ROOT_TOKEN") or env.get("OPENBAO_DEV_ROOT_TOKEN") or "").strip()
+    if not token and token_path.is_file():
+        token = token_path.read_text(encoding="utf-8", errors="replace").strip()
     if not token or token.startswith("CHANGE_ME"):
         recovered = recover_root_token_from_container()
         if recovered:
             persist_root_token(recovered)
             token = recovered
-            print("OK: recovered OPENBAO_DEV_ROOT_TOKEN from openbao container", flush=True)
+            print("OK: recovered OpenBao bootstrap token into protected token file", flush=True)
     if not token or token.startswith("CHANGE_ME"):
-        print("ERROR: OPENBAO_DEV_ROOT_TOKEN missing", file=sys.stderr)
+        print("ERROR: OpenBao bootstrap token missing", file=sys.stderr)
         return 1
     req = urllib.request.Request(
         f"{BAO_ADDR}/v1/{SECRET_PATH.lstrip('/')}",

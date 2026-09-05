@@ -431,10 +431,9 @@ Environment=ZALO_PLUGIN_HOST=${ZALO_HOST_BIND}
 Environment=ZALO_PLUGIN_PORT=${ZALO_PORT}
 Environment=ZALO_DISPATCHER_URL=http://127.0.0.1:8090
 Environment=ZALO_API_URL=http://127.0.0.1:${api_port}
-Environment=ZALO_API_TOKEN=${ZALO_API_TOKEN:-${ADMIN_API_TOKEN:-}}
+Environment=ZALO_API_TOKEN=${ZALO_API_TOKEN:-}
 Environment=ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
 Environment=ADMIN_API_URL=http://127.0.0.1:${api_port}
-Environment=ADMIN_API_TOKEN=${ZALO_API_TOKEN:-${ADMIN_API_TOKEN:-}}
 EOF
 
   local bin
@@ -593,7 +592,7 @@ zalo_teardown_failed_qr() {
 }
 
 zalo_wait_core_for_qr() {
-  zalo_log "wait for core services (model-router + OmniRouter — zalo-api not required yet)"
+  zalo_log "wait for core services (model-router + OmniRoute — zalo-api not required yet)"
   local tries=60 i=0
   local router_ok=0 omni_ok=0
   local model_port="${MODEL_ROUTER_PORT:-8096}"
@@ -621,7 +620,7 @@ zalo_wait_core_for_qr() {
     sleep 5
     echo "  waiting (${i}/${tries}) router=${router_ok} omni=${omni_ok}…"
   done
-  echo "ERROR: core not ready for QR (need model-router + OmniRouter when enabled)" >&2
+  echo "ERROR: core not ready for QR (need model-router + OmniRoute when enabled)" >&2
   return 1
 }
 

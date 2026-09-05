@@ -18,7 +18,7 @@ if hasattr(sys.stdout, "buffer"):
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-weather-danang"
-TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937").strip()
+TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
 WAIT_S = int(os.environ.get("ZALO_TEST_WAIT_S") or "420")
 COOLDOWN_S = int(os.environ.get("ZALO_TEST_COOLDOWN_S") or "90")
 
@@ -160,6 +160,9 @@ print('OCR_BEGIN'); print(text); print('OCR_END')"
 
 
 def main() -> int:
+    if not TN_ID:
+        print("ERROR: ZALO_TEST_USER_ID is required", file=sys.stderr)
+        return 2
     OUT.mkdir(parents=True, exist_ok=True)
     c = connect()
     report: dict = {"ts": ts(), "user": TN_ID, "msg": MSG, "steps": []}

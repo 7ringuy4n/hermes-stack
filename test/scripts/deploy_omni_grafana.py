@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Deploy OmniRouter Grafana exporter + dashboards to the VPS."""
+"""Deploy OmniRoute Grafana exporter + dashboards to the VPS."""
 from __future__ import annotations
 
 import sys

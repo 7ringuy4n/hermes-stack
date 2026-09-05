@@ -20,13 +20,13 @@
 
 ## Purpose
 
-Optional **chat front-ends** that sit in front of Hermes. A social app is **not** a profile. Low can run with only Hermes console / IDE; attach Zalo, Telegram, or HTTP when you want messaging platforms.
+Optional **chat front-ends** that sit in front of Hermes. Attach Zalo, Telegram, or HTTP when needed; they are workers/components, not product tiers.
 
 ## Profile
 
 | Pack | When |
 |---|---|
-| None | Low default |
+| None | Core console/HTTP only |
 | `ENABLE_ZALO=active` / Telegram / HTTP | Explicit attach |
 
 ## Sub-packages
@@ -59,5 +59,5 @@ User on Zalo/Telegram/HTTP
 ## Related
 
 - [hermes/main/plugins](../../hermes/main/plugins/README.md)  
-- [notification](../notification/README.md) — High admin DMs  
+- [notification](../notification/README.md) — optional admin DMs
 - [zalo-api](../zalo-api/README.md) — Zalo channel admin HTTP

@@ -211,10 +211,7 @@ wire_env() {
       echo "${k}=${v}" | $ZALO_SUDO tee -a "$local_env" >/dev/null
     fi
   }
-  local bridge="http://host.docker.internal:${ZALO_PORT}"
-  if [[ "${HERMES_REPLICAS:-1}" != "1" ]]; then
-    bridge="http://zalo-proxy:${ZALO_PORT}"
-  fi
+  local bridge="http://traefik:8081/zalo-bridge"
   upsert_local ZALO_PLUGIN_URL "$bridge"
   upsert_local ZALO_BRIDGE_URL "$bridge"
   upsert_local ZALO_GROUP_MODE "${ZALO_GROUP_MODE:-mention}"
@@ -223,6 +220,7 @@ wire_env() {
   zalo_env_upsert WORKER_MESSAGE active
   zalo_env_upsert ENABLE_ZALO 1
   zalo_env_upsert ZALO_PLUGIN_URL "$bridge"
+  zalo_env_upsert ZALO_BRIDGE_URL "$bridge"
   $ZALO_SUDO mkdir -p "${HERMES_SHARED_DATA}/channels" "${HERMES_SHARED_DATA}/media/inbound" "${HERMES_SHARED_DATA}/media/out"
   $ZALO_SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" \
     "$local_env" "${HERMES_SHARED_DATA}/media" 2>/dev/null || true

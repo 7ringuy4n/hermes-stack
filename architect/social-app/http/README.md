@@ -6,7 +6,7 @@ Generic HTTP / webhook channel so IDEs, custom UIs, or third-party chat can POST
 
 ## Profile
 
-Optional. Useful for Low when chatting from IDE or an editor plugin.
+Optional. Useful when chatting from an IDE or editor plugin.
 
 ## Typical API shape (target)
 

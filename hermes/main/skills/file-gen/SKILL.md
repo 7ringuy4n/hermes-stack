@@ -77,11 +77,9 @@ Use a generated visual only when the user explicitly requests an image/photo ins
 1. **`web_search`** for live facts (labeled metrics only).
 2. When explicitly requested, create one embeddable still via dispatcher (Omni keys on the worker — never built-in `image_generation`, never `execute_code`, never read `.env`):
 
-```bash
-curl -sS -X POST http://dispatcher:8090/v1/scenic-still \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt":"Photorealistic photograph of Ho Chi Minh City skyline, real camera photo, natural lighting, highly detailed, not cartoon, not anime","filename":"hcm-hero.jpg","size":"1280x720"}'
-```
+Call `POST http://dispatcher:8090/v1/scenic-still` with the model-authored visual
+brief, a safe filename, and the requested size. Do not copy a fixed subject,
+place, medium, camera style, or layout from skill text.
 
 Use `hermes_path` / `/opt/data/media/out/<file>` in PDF HTML `<img src="…">` (and note the path in pptx/docx bodies when useful). If scenic-still fails, omit the image and still deliver the file. Never mention credentials.
 The still is an internal document asset. Do not send it separately; deliver only the requested office file.
@@ -121,6 +119,10 @@ For PPTX: markdown body, `output_type=pptx`, filename ending `.pptx`.
 Requires Media|File worker with `OFFICE_FILE_GEN=active`. Success: `"ok":true` and
 Zalo receives the file (empty caption). User-facing text per **media-out**:
 **file only**.
+
+Dispatcher renders the file locally. Content generation reaches Model Router,
+which prefers the OmniRoute chat combo and may use an explicitly configured
+chat-compatible provider when OmniRoute is unavailable.
 
 ## Fallback (txt/md only)
 

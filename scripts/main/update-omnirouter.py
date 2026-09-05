@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repair/sync OmniRouter combos, providers, and media wiring.
+"""Repair/sync OmniRoute combos, providers, and media wiring.
 
 Use after catalog changes, custom image providers, or combo drift.
 Does NOT mint a new API key when OMNIROUTER_API_KEY is already set.

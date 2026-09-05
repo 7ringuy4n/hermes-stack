@@ -6,7 +6,7 @@ Stub for a Telegram Bot API channel pack. Same contract as Zalo: normalize inbou
 
 ## Profile
 
-Optional attach only (not Low Must).
+Optional message-channel attachment.
 
 ## Status
 

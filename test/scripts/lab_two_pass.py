@@ -151,10 +151,9 @@ if ! grep -qE '^GATEWAY_API_KEYS=.+' .env; then
   upsert GATEWAY_API_KEYS "$KEY"
   echo "SET_GATEWAY_API_KEYS=1"
 fi
-if ! grep -qE '^ZALO_API_TOKEN=.+' .env && ! grep -qE '^ADMIN_API_TOKEN=.+' .env; then
+if ! grep -qE '^ZALO_API_TOKEN=.+' .env; then
   TOK=$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')
   upsert ZALO_API_TOKEN "$TOK"
-  upsert ADMIN_API_TOKEN "$TOK"
   echo "SET_ZALO_API_TOKEN=1"
 fi
 # Point Hermes at zalo-api

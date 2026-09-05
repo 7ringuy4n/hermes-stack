@@ -13,7 +13,7 @@ English operations docs for the **assistant** stack.
 | [03-architecture.md](./03-architecture.md) | Architecture |
 | [04-component-flows.md](./04-component-flows.md) | Per-component flows |
 | [05-edge-networking.md](./05-edge-networking.md) | Traefik / API Gateway / OpenVPN (optional) |
-| [06-model-routing.md](./06-model-routing.md) | Model Router / OmniRouter (default) / OmniRoute (optional) |
+| [06-model-routing.md](./06-model-routing.md) | Model Router / OmniRoute combos and compatibility names |
 | [MULTI_NODE.md](./MULTI_NODE.md) | Hermes×2 vs true HA; store SPOFs |
 | [SECURITY.md](./SECURITY.md) | Isolation vs LLM heuristic; VPN-only edge |
 | [AGENT_RULES.md](../AGENT_RULES.md) | Operator / agent hard rules (SoT) |

@@ -2,7 +2,9 @@
 
 Optional workers are **inactive** until you install them. They are **not** in `.env.example` — use `bash run.sh install`.
 
-Core (always on): Hermes, Memory, Model Router, Traefik local, API Gateway, Valkey queue, watchdog.
+Core (always on): Hermes, memory/session/workflow, PostgreSQL, Valkey,
+Qdrant, embedding, ingest, Model Router, OmniRoute, attribution, Traefik local,
+API Gateway, and watchdog.
 
 Runtime data stays on the host (`ASSISTANT_DATA_DIR`, default `/data/assistant`).
 
@@ -11,7 +13,7 @@ Optional workers use **compose-scoped container names** (no global `container_na
 | Worker | `run.sh install` | What starts |
 |--------|------------------|-------------|
 | **Schedule** | `schedule` | Schedule worker (Postgres via `DATABASE_URL`; SQLite only if DSN unset) |
-| **Media** | `media` | Dispatcher, OCR, Jobs, Comfy CPU, SearXNG (bundled) |
+| **Media** | `media` | Dispatcher, Jobs, jobs-worker, and SearXNG (bundled) |
 | **Security** | `security` | security-manager, authz, SIEM, policy-center + OpenBao |
 | **OpenBao only** | `openbao` | Same as `security` + `ENABLE_OPENBAO=active` |
 | **Notification** | `notify` | notify + alert-watch (does **not** start Security core) |
@@ -22,7 +24,7 @@ Attachable extras (also via `install`):
 
 | Name | Command | Notes |
 |------|---------|-------|
-| OCR / Jobs / SearXNG | `ocr`, `jobs`, `searxng` | Usually covered by `install media` |
+| Jobs / SearXNG | `jobs`, `searxng` | Usually covered by `install media` |
 | Grafana / Prometheus / Loki | `grafana`, `prometheus`, `loki`, `alloy` | Usually covered by `install monitor` |
 | Antivirus | `antivirus` | ClamAV + av-gateway profile |
 | CloudDrive mirror | `clouddrive` | Backup sync to rclone remote |
@@ -91,7 +93,9 @@ bash run.sh uninstall gateway          # turn API Gateway off
 bash run.sh install traefik            # turn back on
 ```
 
-Runtime / core flags (Omni, OmniRoute, inbound queue) — use `add-components` then **`update`** on a running host:
+Runtime/core flags (OmniRoute and inbound queue) — use `add-components` then
+**`update`** on a running host. The `OMNIROUTER_*` spelling is retained for
+compatibility and does not represent a second router:
 
 ```bash
 bash run.sh add-components ENABLE_OMNIROUTER=active --update

@@ -6,7 +6,7 @@ Routing:
   3. POST /v1/classify uses an LLM and returns structured JSON.
 
 Providers:
-  all routed tasks → OmniRouter → explicitly configured fallback pool
+  all routed tasks → OmniRoute combo → explicitly configured fallback pool
 
 Missing API keys skip that provider. If nothing works → JSON error `no_model_available` (message in `messages/en.json`).
 Admin-editable messages: messages/en.json
@@ -49,6 +49,12 @@ from chat_norm import (  # noqa: E402
 from route_expand import direct_ollama_allowed, expand_chat_candidates, upstream_url
 from websearch import health_fields as websearch_health
 from websearch import router as websearch_router
+from fallback_providers import (
+    capability_for_path,
+    configured_fallbacks,
+    endpoint_failure_allows_fallback,
+    replace_multipart_model,
+)
 
 ROOT = Path(__file__).resolve().parent
 MESSAGES_PATH = Path(os.environ.get("MODEL_ROUTER_MESSAGES", str(ROOT / "messages" / "en.json")))
@@ -177,7 +183,7 @@ def _expand_chat_candidates(
         has_tools=has_tools,
     )
 
-app = FastAPI(title="assistant-model-router", version="0.5.0")
+app = FastAPI(title="assistant-model-router", version="0.6.0")
 # Web search combo must be registered before the OpenAI proxy catch-all below.
 app.include_router(websearch_router)
 _http: httpx.AsyncClient | None = None
@@ -194,7 +200,7 @@ def _load_json(path: Path, default: dict) -> dict:
 MESSAGES = _load_json(
     MESSAGES_PATH,
     {
-        "no_model_available": "No model available. Configure OmniRouter or an explicit fallback provider.",
+        "no_model_available": "No model available. Configure OmniRoute or an explicit fallback provider.",
         "upstream_error": "Upstream model provider error.",
         "health_ok": "ok",
     },
@@ -291,7 +297,12 @@ def _auth_headers(key: str) -> dict[str, str]:
     return h
 
 
-async def _candidates(task: str, *, prefer_omni: bool | None = None) -> list[tuple[str, str, dict[str, str], Optional[str]]]:
+async def _candidates(
+    task: str,
+    *,
+    prefer_omni: bool | None = None,
+    capability: str = "chat",
+) -> list[tuple[str, str, dict[str, str], Optional[str]]]:
     """Return ordered (name, base_url, headers, default_model_override)."""
     out: list[tuple[str, str, dict[str, str], Optional[str]]] = []
     omni_ok = False
@@ -301,7 +312,10 @@ async def _candidates(task: str, *, prefer_omni: bool | None = None) -> list[tup
     if omni_ok:
         out.append(("omni-router", OMNI_BASE, _auth_headers(OMNI_KEY), None))
 
-    if FALLBACK_OPENAI and FALLBACK_OPENAI_KEY:
+    for name, base, key, model in configured_fallbacks(capability):
+        out.append((f"fallback-{name}", base, _auth_headers(key), model))
+
+    if capability == "chat" and FALLBACK_OPENAI and FALLBACK_OPENAI_KEY:
         out.append(
             (
                 "openai-fallback",
@@ -310,7 +324,7 @@ async def _candidates(task: str, *, prefer_omni: bool | None = None) -> list[tup
                 FALLBACK_OPENAI_MODEL,
             )
         )
-    if OLLAMA_BASE and await _probe_ollama():
+    if capability == "chat" and OLLAMA_BASE and await _probe_ollama():
         if direct_ollama_allowed(task=task, enable_omni=ENABLE_OMNI, omni_ok=omni_ok):
             out.append(("ollama", f"{OLLAMA_BASE}/v1", {}, OLLAMA_MODEL))
     return out
@@ -425,7 +439,9 @@ async def proxy(path: str, request: Request) -> Response:
 
     is_chat = path.rstrip("/").endswith("chat/completions") or path == "chat/completions"
     task = _classify(request, body) if is_chat or body else "normal"
-    candidates = await _candidates(task)
+    has_vision = _payload_has_vision(body) if isinstance(body, dict) else False
+    capability = capability_for_path(path, has_vision=has_vision)
+    candidates = await _candidates(task, capability=capability)
     if not candidates:
         return JSONResponse(
             status_code=503,
@@ -433,7 +449,6 @@ async def proxy(path: str, request: Request) -> Response:
         )
 
     want_stream = bool(body.get("stream")) if isinstance(body, dict) else False
-    has_vision = _payload_has_vision(body) if isinstance(body, dict) else False
     if is_chat:
         candidates = _expand_chat_candidates(
             candidates,
@@ -456,6 +471,15 @@ async def proxy(path: str, request: Request) -> Response:
         ):
             continue
         payload = _sanitize_upstream_payload(name, dict(body) if body else {})
+        request_headers = dict(headers)
+        request_content = raw
+        incoming_content_type = str(request.headers.get("content-type") or "")
+        if not body and raw and incoming_content_type:
+            request_headers["Content-Type"] = incoming_content_type
+            if capability == "image-edit" and model_override:
+                request_content = replace_multipart_model(
+                    raw, incoming_content_type, model_override
+                )
         if is_chat:
             payload = _apply_reasoning_effort(payload, task)
         # Always call chat upstream non-stream so we can inspect error bodies
@@ -510,8 +534,8 @@ async def proxy(path: str, request: Request) -> Response:
             upstream = await _client().request(
                 request.method,
                 url,
-                headers=headers,
-                content=json.dumps(payload).encode("utf-8") if payload else raw,
+                headers=request_headers,
+                content=json.dumps(payload).encode("utf-8") if payload else request_content,
             )
             if is_chat:
                 try:
@@ -563,7 +587,9 @@ async def proxy(path: str, request: Request) -> Response:
                     )
                 return JSONResponse(content=norm, status_code=200, headers=headers_out)
 
-            if _failover_status(upstream.status_code):
+            if endpoint_failure_allows_fallback(
+                upstream.status_code, upstream.content, capability
+            ):
                 last_err = f"{name}:{upstream.status_code}"
                 continue
             return Response(

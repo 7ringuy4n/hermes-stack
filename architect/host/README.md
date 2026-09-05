@@ -41,7 +41,7 @@ Host-level setup for the assistant stack: OS prep, Docker, directories under `/d
 |---|---|
 | `/opt/assistant` | Code / compose (`STACK_ROOT`) |
 | `/data/assistant` | Hermes data, media, skills mount target |
-| `/data/assistant/backups` | Local DR stamps (Low/Medium) |
+| `/data/assistant/backups` | Local verified DR stamps |
 
 ## How it works
 
@@ -49,7 +49,7 @@ Host-level setup for the assistant stack: OS prep, Docker, directories under `/d
 2. Copies `.env.example` → `.env` and sets secrets.
 3. Creates `/data/assistant` (and backups dir) with correct ownership for the Hermes UID.
 4. Runs `bash run.sh up` which starts Must containers.
-5. (Later) systemd timers for **auto-learn** and (Medium+) **compact** call ops scripts under `backup-restore/`.
+5. Host systemd timers for **auto-learn** and enabled-worker **compact** call ops scripts under `backup-restore/`.
 
 ## Inputs / outputs
 

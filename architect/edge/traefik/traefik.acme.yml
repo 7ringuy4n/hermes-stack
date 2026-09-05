@@ -17,6 +17,8 @@ entryPoints:
           permanent: true
   websecure:
     address: ":443"
+  zalo-internal:
+    address: ":8081"
 
 certificatesResolvers:
   letsencrypt:

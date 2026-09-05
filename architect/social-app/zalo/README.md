@@ -8,15 +8,15 @@ Detachable Zalo channel: receive messages, fetch media, send replies, and (optio
 
 Host bridge and original adapter design: **[hermes-zalo-plugin](https://github.com/cuongdev/hermes-zalo-plugin)** by **Cường Tuấn Nguyễn** ([cuongdev](https://github.com/cuongdev)), MIT License.
 
-Assistant **reuses** that project and **optimizes** attach for the current workflow (profile-ready install, `zalo-proxy`, manual login last). See `hermes/main/plugins/zalo/ATTRIBUTION.md`.
+Assistant **reuses** that project and integrates it through `zalo-proxy`, an internal Traefik route, a Valkey owner lease, and manual login last. See `hermes/main/plugins/zalo/ATTRIBUTION.md`.
 
 ## Profile
 
-Off by default. Attach with `ENABLE_ZALO=active`. Not part of Low Must.
+Off by default. Attach with `ENABLE_ZALO=active` or `bash run.sh install message`.
 
 ## Install order
 
-1. Stack for current `ASSISTANT_PROFILE` is up and healthy.
+1. Core stack and Traefik are up and healthy.
 2. `bash scripts/main/setup-zalo.sh` — bridge + adapter + proxy (no login).
 3. Operator runs **`bash scripts/main/login-zalo.sh`** (QR) — never automated in deploy.
 

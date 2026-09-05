@@ -40,7 +40,7 @@ def expand_chat_candidates(
 ) -> list[tuple[str, str, dict[str, str], Optional[str]]]:
     """Build ordered upstream hops for chat/completions.
 
-    OmniRouter combos (e.g. ``hermes``) round-robin free members. Retrying the
+    OmniRoute combos (e.g. ``hermes``) may fall back across members. Retrying the
     same combo id several times lets alive free models answer before we switch
     to explicit failover ids such as ``auto/best-free``.
 

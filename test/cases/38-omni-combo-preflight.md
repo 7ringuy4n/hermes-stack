@@ -1,6 +1,6 @@
 # Case: Omni combo preflight (hermes + classifier)
 
-Verify OmniRouter `hermes` / `classifier` combos have members before Zalo
+Verify OmniRoute `hermes` / `classifier` combos have members before Zalo
 reply tests (case 32) or manual chat.
 
 ## Goal

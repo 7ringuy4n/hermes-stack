@@ -67,5 +67,10 @@ load_env_with_defaults() {
   HERMES_DATA_DIR="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR}}"
   STACK_ROOT="${STACK_ROOT:-/opt/assistant}"
   BACKUP_DIR="${BACKUP_DIR:-/data/assistant/backups}"
+  OPENBAO_TOKEN_FILE="${OPENBAO_TOKEN_FILE:-${ASSISTANT_DATA_DIR}/openbao/root-token}"
+  if [[ -f "$OPENBAO_TOKEN_FILE" ]]; then
+    OPENBAO_DEV_ROOT_TOKEN="$(tr -d '\r\n' < "$OPENBAO_TOKEN_FILE")"
+  fi
   export DOMAIN ASSISTANT_DATA_DIR HERMES_DATA_DIR STACK_ROOT BACKUP_DIR
+  export OPENBAO_TOKEN_FILE OPENBAO_DEV_ROOT_TOKEN
 }

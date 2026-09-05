@@ -69,7 +69,7 @@ def omni_refuse_message(
     context: str = "",
     language: Optional[str] = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Ask OmniRouter (Hermes combo) to write the user-facing refuse message."""
+    """Ask OmniRoute (Hermes combo) to write the user-facing refuse message."""
     meta: dict[str, Any] = {"refused": True, "topic": topic, "via_llm": False}
     system = _REFUSE_SYSTEM.get(topic) or _REFUSE_SYSTEM["social_summary"]
     lang_hint = f"\nPreferred reply language code: {language}" if language else ""
@@ -165,7 +165,7 @@ def register_video_summary(app: FastAPI) -> None:
 
     @app.post("/v1/video-summary")
     def video_summary(req: VideoSummaryReq) -> dict[str, Any]:
-        """Do not scrape YouTube / TikTok / Facebook — OmniRouter writes the refuse text."""
+        """Do not scrape YouTube / TikTok / Facebook — OmniRoute writes the refuse text."""
         ctx = (req.context or req.url or "").strip()
         message, meta = omni_refuse_message(
             topic="social_summary",

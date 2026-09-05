@@ -77,7 +77,10 @@ def load_env(path):
     return out
 
 env = load_env(ENV)
+token_file = Path(os.environ.get("OPENBAO_TOKEN_FILE") or "/data/assistant/openbao/root-token")
 token = (os.environ.get("OPENBAO_DEV_ROOT_TOKEN") or env.get("OPENBAO_DEV_ROOT_TOKEN") or "").strip()
+if not token and token_file.is_file():
+    token = token_file.read_text(encoding="utf-8", errors="replace").strip()
 addr = (os.environ.get("OPENBAO_ADDR") or "http://127.0.0.1:8200").rstrip("/")
 path = "secret/data/assistant/api-keys"
 checks = []
@@ -87,7 +90,7 @@ def note(name, ok, detail=""):
     print(("PASS" if ok else "FAIL"), name, detail[:120])
 
 if not token or token.startswith("CHANGE_ME"):
-    note("token", False, "OPENBAO_DEV_ROOT_TOKEN missing")
+    note("token", False, "OpenBao bootstrap token missing")
     print(json.dumps({"checks": checks}))
     raise SystemExit(2)
 
@@ -146,7 +149,7 @@ note("scrub_export_gone", not EXPORT.is_file(), str(EXPORT))
 env_after = load_env(ENV)
 empty_hosts = [k for k in ENV_SCRUB_KEYS if not str(env_after.get(k) or "").strip()]
 note("scrub_host_keys_empty", len(empty_hosts) >= 1, f"empty={len(empty_hosts)}")
-note("token_kept", bool(str(env_after.get("OPENBAO_DEV_ROOT_TOKEN") or "").strip()))
+note("token_external", token_file.is_file() and "OPENBAO_DEV_ROOT_TOKEN" not in env_after)
 
 # Load refill
 spec2 = importlib.util.spec_from_file_location(

@@ -62,6 +62,16 @@ def extract_kv_payload(doc: dict) -> dict[str, str]:
     return out
 
 
+def load_backup_payload(path: Path) -> dict[str, str]:
+    """Read a normal KV JSON export or a historical transient env export."""
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError:
+        return {k: v for k, v in load_dotenv(path).items() if str(v).strip()}
+    return extract_kv_payload(doc)
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print("usage: restore_openbao_kv.py <kv-export.json>", file=sys.stderr)
@@ -70,21 +80,22 @@ def main() -> int:
     if not kv_path.is_file():
         print(f"ERROR: missing {kv_path}", file=sys.stderr)
         return 1
-    try:
-        doc = json.loads(kv_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        print(f"ERROR: invalid JSON in {kv_path}: {e}", file=sys.stderr)
-        return 1
-    payload = extract_kv_payload(doc)
+    payload = load_backup_payload(kv_path)
     if not payload:
-        print(f"WARN: no KV keys in {kv_path} — skip import", flush=True)
-        return 0
+        print(f"ERROR: no recoverable KV keys in {kv_path}", file=sys.stderr)
+        return 1
 
     root = Path(os.environ.get("ROOT") or "/opt/assistant")
     env = load_dotenv(root / ".env")
+    token_file = Path(
+        os.environ.get("OPENBAO_TOKEN_FILE")
+        or os.environ.get("ASSISTANT_DATA_DIR", "/data/assistant") + "/openbao/root-token"
+    )
     token = (os.environ.get("OPENBAO_DEV_ROOT_TOKEN") or env.get("OPENBAO_DEV_ROOT_TOKEN") or "").strip()
+    if not token and token_file.is_file():
+        token = token_file.read_text(encoding="utf-8", errors="replace").strip()
     if not token or token.startswith("CHANGE_ME"):
-        print("ERROR: OPENBAO_DEV_ROOT_TOKEN missing in .env", file=sys.stderr)
+        print("ERROR: OpenBao bootstrap token missing", file=sys.stderr)
         return 1
     addr = (os.environ.get("OPENBAO_ADDR") or env.get("OPENBAO_ADDR") or "http://127.0.0.1:8200").rstrip("/")
     secret_path = os.environ.get("OPENBAO_SECRET_PATH") or env.get("OPENBAO_SECRET_PATH") or "secret/data/assistant/api-keys"

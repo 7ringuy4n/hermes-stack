@@ -825,10 +825,9 @@ Before finishing:
 
 For installation/deployment tasks, verify all services.
 
-Hermes must connect to:
-
--   **OmniRouter** by default;
--   **9Router** when that optional component is enabled.
+Hermes must connect to **model-router**, which routes named capabilities through
+the deployed **OmniRoute** control plane. Compatibility names such as
+`OMNIROUTER_*` do not authorize a second router. 9Router is retired.
 
 ------------------------------------------------------------------------
 

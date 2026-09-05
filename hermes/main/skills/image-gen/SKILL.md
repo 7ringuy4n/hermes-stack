@@ -1,6 +1,6 @@
 ---
 name: image-gen
-description: "Generate still images via OmniRouter combo image-gen. Host owns scenic-only delivery; Hermes uses this skill only when classify keeps process_original_message true (mixed deliverables)."
+description: "Generate still images through Model Router, preferring OmniRoute combo image-gen and capability-compatible fallbacks. Host owns scenic-only delivery; Hermes uses this skill only when classify keeps process_original_message true (mixed deliverables)."
 ---
 
 # Image generation
@@ -17,11 +17,11 @@ When classify sets **`process_original_message false`** for a pure scenic ask (S
 
 If you still need diffusion for a **mixed** turn (image + file in one bubble), call **dispatcher** `POST http://dispatcher:8090/v1/scenic-still` (JSON `prompt`, `filename`, `size`) — the worker holds Omni keys. Never bash one-liners, never secret scans, never the built-in `image_generation` tool, never `execute_code`.
 
-## Diffusion (OmniRouter combo image-gen)
+## Diffusion (capability router → OmniRoute combo image-gen)
 
-Call **OmniRouter** with combo name **`image-gen`** always (Media worker active **or** inactive; never `model=hermes` for still diffusion, never ComfyUI, never dispatcher `/v1/image`):
+Call the internal **Model Router** with requested combo name **`image-gen`** always (Media worker active **or** inactive; never `model=hermes` for still diffusion, never a local image engine, never dispatcher `/v1/image`). It prefers OmniRoute and may use only an operator-declared image-capable fallback:
 
-- Endpoint: `POST {OMNIROUTER_BASE_URL}/images/generations` (default `http://omni-router:20129/v1/images/generations`)
+- Endpoint: `POST http://model-router:8096/v1/images/generations`
 - Auth: `Authorization: Bearer $OPENAI_API_KEY` (same as `OMNIROUTER_API_KEY`)
 - Body: `model` = `image-gen` (or `$IMAGE_GEN_COMBO` when set), English `prompt`, `n=1`, HD `size` `"1280x720"` (16:9) unless the user asks otherwise
 - Decode `data[0].b64_json` (or fetch `url`) and write under `/opt/data/media/out/<safe-slug>.webp` (or `.png` / `.jpg`)
@@ -32,7 +32,7 @@ Omni may return a **top-level JSON array** of `{b64_json|url}` (not always `{"da
 
 **Visual prompts (any user language):** Prefer the classifier's English `SCENE:` line. Preserve the user's requested subject, medium, viewpoint, mood, composition, and constraints; do not replace them with a fixed photographic style or location template. For `RENDER: composed-image`, generate only the background and reserve readable negative space. The editable prompt policy in `skills/classify/parts/image-runtime.json` supplies generic generation and composition instructions; application code must not embed replacement prompt prose.
 
-On Omni failure: one **media-out** failure line only. When the ask was primarily a **PDF/office file**, finish via **`file-gen`**.
+On complete provider failure: one **media-out** failure line only. When the ask was primarily a **PDF/office file**, finish via **`file-gen`**.
 
 ## Local Pillow modes (not Omni diffusion)
 

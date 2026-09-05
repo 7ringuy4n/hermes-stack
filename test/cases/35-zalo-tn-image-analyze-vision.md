@@ -1,6 +1,6 @@
 # Case: Zalo Tn image analyze via vision-ocr (inject)
 
-Simulate user **Tn** (`233767886566872937`) sending a captioned photo through the
+Simulate the authorized user (`ZALO_TEST_USER_ID`) sending a captioned photo through the
 Zalo bridge (`POST /inject-event`), same path as a real phone message.
 
 ## Goal
@@ -25,7 +25,7 @@ Catch regressions where image-analyze replies with
 
 | Check | Pass |
 |-------|------|
-| Unit stage/resolve for thread `233767886566872937` | yes |
+| Unit stage/resolve for a synthetic test thread | yes |
 | Inject creates `/opt/data/media/inbound/{id}/tn_image_probe.jpg` | yes |
 | Hermes logs `attach_vision_read` or `attach_image_vision_reply` | yes |
 | Outbound Zalo send within 120s | yes |

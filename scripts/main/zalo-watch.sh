@@ -4,10 +4,8 @@
 #
 # Signals:
 #   - bridge /health unreachable → restart host Zalo unit and/or zalo-proxy
-#   - loggedIn but sseClients==0 → after miss limit: clear zalo_owner lock,
-#     restart zalo-proxy + Hermes (required after backup/restore when owner
-#     file points at a dead container id). Cooldown avoids restart storms.
-#   - ZALO_WATCH_RESTART_HERMES=0 disables Hermes bounce (bridge/proxy only)
+#   - loggedIn but sseClients==0 → after miss limit: clear the Valkey lease and
+#     restart zalo-proxy. A standby Hermes replica acquires without a mass bounce.
 set -euo pipefail
 export LC_ALL="${LC_ALL:-C.UTF-8}"
 export LANG="${LANG:-C.UTF-8}"
@@ -35,8 +33,6 @@ COOLDOWN_FILE="${STATE_DIR}/zalo-watch.cooldown"
 SSE_MISS_LIMIT="${ZALO_WATCH_SSE_MISS:-8}"
 SSE_COOLDOWN_S="${ZALO_WATCH_SSE_COOLDOWN:-900}"
 BRIDGE_COOLDOWN_S="${ZALO_WATCH_BRIDGE_COOLDOWN:-90}"
-# Default ON: sse=0 after restore is almost always a dead Zalo owner lock / Hermes
-RESTART_HERMES="${ZALO_WATCH_RESTART_HERMES:-1}"
 CLEAR_OWNER="${ZALO_WATCH_CLEAR_OWNER:-1}"
 PROXY_CTR="${ZALO_PROXY_CONTAINER:-zalo-proxy}"
 HEAL_SCRIPT="${ROOT}/scripts/main/heal-zalo-sse.sh"
@@ -106,8 +102,9 @@ clear_owner_lock() {
     1|true|TRUE|yes|YES) ;;
     *) return 0 ;;
   esac
-  log "clear stale zalo_owner under ${_data_root}"
-  $SUDO rm -rf "${_data_root}/zalo_owner" "${_data_root}/zalo_owner.lock" 2>/dev/null || true
+  local lease_key="${ZALO_OWNER_LEASE_KEY:-zalo:bridge:owner}"
+  log "clear stale Zalo owner lease ${lease_key}"
+  $SUDO docker exec valkey valkey-cli DEL "$lease_key" >/dev/null 2>&1 || true
 }
 
 restart_bridge() {
@@ -129,19 +126,6 @@ restart_bridge() {
   sleep 3
 }
 
-restart_hermes() {
-  log "restart Hermes replicas for Zalo SSE re-attach"
-  local ids
-  ids="$($SUDO docker ps -aq --filter "name=hermes" 2>/dev/null || true)"
-  if [[ -n "$ids" ]]; then
-    # shellcheck disable=SC2086
-    $SUDO docker restart $ids >/dev/null 2>&1 || true
-  else
-    $SUDO docker restart "${HERMES_CONTAINER:-hermes}" 2>/dev/null || true
-  fi
-  sleep 5
-}
-
 heal_sse_zero() {
   if [[ -x "$HEAL_SCRIPT" ]] || [[ -f "$HEAL_SCRIPT" ]]; then
     log "run heal-zalo-sse.sh"
@@ -150,15 +134,7 @@ heal_sse_zero() {
   fi
   clear_owner_lock
   restart_bridge
-  case "${RESTART_HERMES}" in
-    1|true|TRUE|yes|YES)
-      sleep 2
-      restart_hermes
-      ;;
-    *)
-      log "sse=0: owner cleared + bridge restarted (set ZALO_WATCH_RESTART_HERMES=1 to bounce Hermes)"
-      ;;
-  esac
+  log "sse=0: lease cleared + bridge restarted; a standby replica will acquire"
 }
 
 health_json() {

@@ -6,7 +6,7 @@ Document ingestion and knowledge API: accept text/files, chunk, embed, upsert in
 
 ## Profile
 
-Must (all profiles).
+Core, always enabled.
 
 ## Main functions
 
@@ -23,8 +23,8 @@ Must (all profiles).
 
 ```text
 File or text
-  → (High: security-manager isolation — YARA/static/limits; AV if ENABLE_ANTIVIRUS=active)
-  → extract text (OCR on Medium+ if needed)
+  → (when enabled: security-manager isolation — YARA/static/limits; AV if ENABLE_ANTIVIRUS=active)
+  → extract text (vision-ocr combo when visual analysis is needed)
   → chunk → embedding → Qdrant knowledge_chunks
   → later: list/search → Hermes skill answers
 ```

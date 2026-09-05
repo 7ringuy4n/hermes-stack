@@ -1,3 +1,26 @@
+## 2026-09-05 19:20 +07 — cold-start secret recovery
+
+- Clean startup now creates OpenBao before importing secret-backed Compose
+  values when all stack containers have been removed but data volumes remain.
+- Bootstrap-only parse sentinels are scoped to the OpenBao container creation;
+  application services start only after their real KV values are loaded.
+- OpenBao backup now executes against the discovered Compose container and
+  rejects empty KV exports instead of recording a false successful component.
+- Credential-like environment values now share the OpenBao registry and are
+  scrubbed from `.env`; the self-unlocking token is generated and retained only
+  in a protected external file.
+- Obsolete environment routes are normalized before the shell imports `.env`,
+  preventing a clean deploy from using a corrected file with stale in-process
+  values.
+- Zalo standby replicas now continue lease acquisition in-process, so owner
+  loss promotes a healthy replica without depending on a container restart.
+- Credential-shaped environment values are discovered generically during
+  OpenBao seed/scrub; first setup prints the protected token-file access command.
+- Model Router now selects direct fallbacks by endpoint capability for chat,
+  vision, embeddings, still generation, and image editing; search falls back to
+  internal SearXNG. Media callers route through Model Router rather than
+  bypassing it, and the retired page-extract ordering variable is removed.
+
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
 
 - Quoted Zalo images now retain their staged source through classification and are edited through the dedicated image endpoint before being returned once.
@@ -2695,3 +2718,15 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 - Added pre-delivery checks for a single visible title, locale-appropriate units, unsupported interpretations, compact pagination, and visually balanced page use.
 - Added a Zalo lab fixture that rejects unexpected sibling images and discovers active runtime replicas dynamically.
 - Kept the release gate closed after rendered-PDF review exposed unreliable CSS layout and unsupported descriptive copy; no production merge or rollout is implied by these changes.
+## 2026-09-05 18:10 +07 — Traefik-routed Zalo replica failover
+
+- Zalo bridge traffic now uses a private Traefik entrypoint and a renewable,
+  owner-safe Valkey lease so a standby Hermes replica can take over without a
+  replica-wide restart.
+- The inbound queue retains cross-replica message-id deduplication and
+  per-conversation ordering; watcher recovery clears only the scoped lease and
+  bridge proxy.
+- Current architecture, operations, scaling, and release-test documentation is
+  consolidated around OmniRoute priority combos and worker-based deployment;
+  retired router, tier, local OCR/image-engine, video, and secret-alias paths
+  are removed from active behavior.

@@ -36,7 +36,7 @@ Hermes API numbered lists can stay sequential + aggregated (one HTTP response). 
 | `POST /v1/schedules/tick` | Fire due schedules now (also runs every ~2s in-process) |
 | `POST /v1/workflows/{id}/wait` | Wait briefly for terminal workflow state |
 
-This service is available on all profiles. It is used by:
+This core service is available on every worker configuration. It is used by:
 
 - Zalo compound lists and `!zalo schedule`
 - direct Hermes API chat requests routed through the API gateway

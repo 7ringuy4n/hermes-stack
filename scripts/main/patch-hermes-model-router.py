@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Point shared Hermes config at model-router (OmniRouter default path).
+"""Point shared Hermes config at model-router (OmniRoute path).
 
 Reads OMNIROUTER_API_KEY / OMNIROUTER_DEFAULT_COMBO from stack .env when present.
 Safe to re-run (idempotent base_url / provider / default patch).

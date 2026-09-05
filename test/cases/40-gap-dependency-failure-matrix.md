@@ -16,7 +16,7 @@ Test each independently:
 - PostgreSQL
 - Qdrant
 - model-router
-- OmniRouter
+- OmniRoute
 - OmniRoute
 - workflow
 - dispatcher

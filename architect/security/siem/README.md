@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Collect security-relevant events (authz deny, AV block, secret-probe hit) for operators. v1 may be a thin forwarder or API; expand without blocking Low chat path.
+Collect security-relevant events (authz deny, AV block, secret-probe hit) for operators. Keep this optional path from blocking core chat.
 
 ## Profile
 
-High (`ENABLE_SIEM=active`).
+Optional SIEM component (`ENABLE_SIEM=active`).
 
 ## Main functions
 
