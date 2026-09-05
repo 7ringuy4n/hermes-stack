@@ -122,33 +122,19 @@ elif [ -d "$_src_skills" ] && [ -d "$_dst_skills" ]; then
   # cp -n would leave stale image-gen / media-out after a rolling deploy.
   cp -a "$_src_skills"/. "$_dst_skills"/ 2>/dev/null || true
 fi
-# Drop Hermes category clones of office skills. They re-registered as name:pdf|docx|xlsx
-# alongside SoT copies → skill_view collisions → reportlab/pip tool loops → Omni spam
-# and fake "file sent" replies with nothing in media/out. Chat create uses file-gen.
+# Advanced local Office toolkits are repository references, not chat runtime
+# skills. If copied into a replica, Hermes also creates categorized clones and
+# registers each folder basename, producing ambiguous pdf/docx/xlsx lookups.
+# Chat creation is exclusively file-gen -> Dispatcher, so exclude every local
+# toolkit copy from the runtime skill tree before Hermes starts.
 if [ -d "$_dst_skills" ]; then
   for _cat in productivity documents; do
     for _n in pdf docx xlsx; do
       rm -rf "${_dst_skills}/${_cat}/${_n}" 2>/dev/null || true
     done
   done
-  # Force SoT office skills (renamed frontmatter) over any stale replica copy.
   for _n in pdf docx xlsx; do
-    if [ -d "${_src_skills}/${_n}" ]; then
-      mkdir -p "${_dst_skills}/${_n}"
-      cp -a "${_src_skills}/${_n}/." "${_dst_skills}/${_n}/" 2>/dev/null || true
-    fi
-    if [ -d "${_src_skills}/official/${_n}" ]; then
-      mkdir -p "${_dst_skills}/official/${_n}"
-      cp -a "${_src_skills}/official/${_n}/." "${_dst_skills}/official/${_n}/" 2>/dev/null || true
-    fi
-  done
-  # Last resort: rewrite any leftover reserved frontmatter names under skills/.
-  find "${_dst_skills}" -type f -name SKILL.md 2>/dev/null | while read -r _sk; do
-    sed -i \
-      -e 's/^name: pdf$/name: pdf-tools-local/' \
-      -e 's/^name: docx$/name: docx-tools-local/' \
-      -e 's/^name: xlsx$/name: xlsx-tools-local/' \
-      "$_sk" 2>/dev/null || true
+    rm -rf "${_dst_skills}/${_n}" "${_dst_skills}/official/${_n}" 2>/dev/null || true
   done
 fi
 link_shared messages

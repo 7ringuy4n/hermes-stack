@@ -630,3 +630,20 @@ numeric series is available. Regression checks inspect package content for both
 native structure and absence of raw authoring chrome. Word block emission stays
 in source order, preventing a table from moving away from its authored section,
 and compact print-safe type avoids clipped headings and poorly balanced pages.
+
+## Runtime rebuilt categorized Office-skill collisions after startup
+
+### Symptom and root cause
+
+A live Word request succeeded only after Hermes first attempted an ambiguous
+`docx` lookup. Startup renamed or removed known category clones, but retained
+repository-only local toolkits; Hermes categorized those again after startup
+and registered three folders under the same short name.
+
+### Decision and prevention
+
+Replica startup now excludes all advanced local PDF, Word, and spreadsheet
+toolkits from the chat runtime tree, including root, official, productivity,
+and documents copies. The source toolkits remain in the repository for local
+maintenance, while chat artifact creation has one authoritative path:
+`file-gen` to Dispatcher.

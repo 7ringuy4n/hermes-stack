@@ -49,10 +49,10 @@ def main() -> int:
         return 1
     entry = ROOT / "hermes" / "main" / "docker" / "hermes-replica-entry.sh"
     sh = entry.read_text(encoding="utf-8", errors="replace")
-    if "productivity" not in sh or "rm -rf" not in sh:
-        print("FAIL entrypoint must purge productivity office clones", file=sys.stderr)
+    if "productivity" not in sh or '"${_dst_skills}/${_n}"' not in sh or "rm -rf" not in sh:
+        print("FAIL entrypoint must exclude local office toolkits and clones", file=sys.stderr)
         return 1
-    print("OK office skill names unique; file-gen uses office-file; entry purges clones")
+    print("OK office skill names unique; file-gen uses office-file; runtime excludes local toolkits")
     return 0
 
 
