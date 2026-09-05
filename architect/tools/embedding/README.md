@@ -14,7 +14,7 @@ Must — container `embedding`.
 |---|---|
 | Embed batch | Used by ingest upsert and `/v1/search` |
 | Upstream | OpenAI-compatible OmniRoute when `EMBED_API_KEY` / `OMNIROUTER_API_KEY` is set |
-| Local fallback | ONNX `BAAI/bge-small-en-v1.5` when upstream has no embedding credentials/models (`EMBED_LOCAL_FALLBACK=1`, default) |
+| Local fallback | ONNX `BAAI/bge-small-en-v1.5` when upstream is unavailable or has no embedding credentials/models (`EMBED_LOCAL_FALLBACK=1`, default) |
 
 ## Env
 

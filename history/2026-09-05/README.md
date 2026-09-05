@@ -540,3 +540,26 @@ Live tests must not add semantic markers to model-classified text, fabricate
 provider-native identifiers, or compete with the capability they are judging.
 They must verify the stored schedule mode and exact fired payload, while timeout
 budgets remain capability-specific.
+
+## Fallback configuration and response-shape drift disabled local recovery
+
+### Symptom
+
+Embedding stopped when OmniRoute was unavailable even though local fallback was
+enabled, while SearXNG returned useful knowledge records that Model Router
+reported as an empty search.
+
+### Root cause
+
+Compose used a numeric enabled value but the embedding service accepted only one
+word form. SearXNG can place knowledge-panel content in `infoboxes` or `answer`
+instead of its normal `results` array when individual public engines are
+rate-limited.
+
+### Decision and prevention
+
+Shared operational flags accept the documented boolean forms, and SearXNG
+normalization retains ordinary results first before adapting answer and infobox
+content to the internal result contract. Outage tests must stop OmniRoute and
+exercise the live search and embedding endpoints rather than inferring fallback
+availability from configuration alone.
