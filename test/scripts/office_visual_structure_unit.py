@@ -48,6 +48,10 @@ def main() -> int:
             "pptx has multiple slides": len(deck.slides) >= 2,
             "pptx uses widescreen": deck.slide_width > deck.slide_height,
             "formats preserved": all(path.suffix in {".docx", ".xlsx", ".pptx"} for path in (docx_path, xlsx_path, pptx_path)),
+            "dispatcher ships office renderers": all(
+                package in (ROOT / "architect/models/dispatcher/Dockerfile").read_text(encoding="utf-8")
+                for package in ("libreoffice-writer", "libreoffice-calc", "libreoffice-impress")
+            ),
         }
     for name, ok in checks.items():
         print(("PASS" if ok else "FAIL"), name)

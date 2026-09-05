@@ -20,7 +20,7 @@
 
 ## Purpose
 
-Media/File worker HTTP service: office-file creation, media download/convert helpers, and soft mode suggestions. Image generation/editing and web search use named OmniRoute combos, not dispatcher provider logic. Container: `dispatcher`.
+Media/File worker HTTP service: office-file creation, media download/convert helpers, and soft mode suggestions. The image includes headless Writer, Calc, and Impress so generated DOCX/XLSX/PPTX artifacts can be rendered to PDF for visual release checks in the same controlled environment. Image generation/editing and web search use named OmniRoute combos, not dispatcher provider logic. Container: `dispatcher`.
 
 ## Main functions
 

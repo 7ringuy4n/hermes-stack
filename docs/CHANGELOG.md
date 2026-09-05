@@ -40,6 +40,9 @@
   content stays in normal flow without negative/absolute offsets, icons remain
   bounded, primary values cannot use clipped containers, and short one-page
   layouts must balance their vertical space.
+- The dispatcher image now includes headless Writer, Calc, and Impress, making
+  visual rendering of generated DOCX, XLSX, and PPTX files available in the
+  release environment instead of relying on package-structure checks.
 
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
 
