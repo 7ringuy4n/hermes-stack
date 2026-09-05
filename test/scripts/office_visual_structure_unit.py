@@ -18,6 +18,12 @@ BODY = """# Quarterly overview
 
 Context for the reporting period.
 
+**Owner:** Operations
+
+| Work item | Owner | Status |
+|---|---|---|
+| Review | Team lead | Ready |
+
 ### Highlights
 - Stable delivery
 - Clear ownership
@@ -42,9 +48,18 @@ def main() -> int:
         checks = {
             "docx has styled title": any(p.style.name == "Title" and p.text for p in doc.paragraphs),
             "docx has fact table": len(doc.tables) >= 2,
+            "docx renders authored table": any(len(table.columns) == 3 for table in doc.tables),
+            "docx strips markdown chrome": not any(
+                marker in paragraph.text
+                for marker in ("**", "|---|", "| Work item |")
+                for paragraph in doc.paragraphs
+            ),
             "xlsx title is merged": "A1:D1" in {str(rng) for rng in ws.merged_cells.ranges},
             "xlsx grid hidden": ws.sheet_view.showGridLines is False,
             "xlsx useful widths": ws.column_dimensions["A"].width >= 20,
+            "xlsx renders authored table": ws.max_column >= 4 and any(
+                cell.value == "Work item" for row in ws.iter_rows() for cell in row
+            ),
             "pptx has multiple slides": len(deck.slides) >= 2,
             "pptx uses widescreen": deck.slide_width > deck.slide_height,
             "formats preserved": all(path.suffix in {".docx", ".xlsx", ".pptx"} for path in (docx_path, xlsx_path, pptx_path)),

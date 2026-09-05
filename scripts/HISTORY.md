@@ -5585,3 +5585,10 @@ one-page vertical balance plus rendered-output evaluation.
 The dispatcher build now includes headless Writer, Calc, and Impress so VPS
 release tests can render DOCX, XLSX, and PPTX outputs before assigning a visual
 verdict.
+
+## 2026-09-05 23:55 +07 — native Office tables from authored Markdown
+
+The shared Office renderer now strips inline Markdown chrome and converts pipe
+tables into native Word and spreadsheet cells. Spreadsheet output also adds a
+chart when a table exposes a usable numeric series; tests reject regressions
+that leak source markers into delivered documents.

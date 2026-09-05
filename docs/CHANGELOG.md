@@ -43,6 +43,10 @@
 - The dispatcher image now includes headless Writer, Calc, and Impress, making
   visual rendering of generated DOCX, XLSX, and PPTX files available in the
   release environment instead of relying on package-structure checks.
+- Office renderers now consume conventional inline emphasis and pipe tables as
+  structure instead of printing authoring markers. Word emits native tables,
+  while spreadsheets retain authored rows and add a chart when a usable numeric
+  series is present.
 
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
 
