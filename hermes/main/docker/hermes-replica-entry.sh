@@ -7,6 +7,18 @@ set -eu
 SHARED="${HERMES_SHARED_DATA:-/opt/data}"
 RID="$(hostname)"
 export HERMES_HOME="${SHARED}/replicas/${RID}"
+
+# The upstream s6 bootstrap remaps the hermes UID with usermod. Its image-level
+# passwd home is /opt/data, which also contains read-only bind mounts in this
+# stack; usermod recursively touching that shared root can fail on first boot
+# and leave the container to recover only after a restart. Point the passwd
+# entry at this writable replica home before the upstream remap runs.
+if [ "$(id -u)" = "0" ] && command -v usermod >/dev/null 2>&1; then
+  passwd_home="$(getent passwd hermes 2>/dev/null | cut -d: -f6 || true)"
+  if [ -n "$passwd_home" ] && [ "$passwd_home" != "$HERMES_HOME" ]; then
+    usermod -d "$HERMES_HOME" hermes
+  fi
+fi
 mkdir -p "${HERMES_HOME}"
 
 # Shared media dirs must stay writable by Hermes UID across restarts/replicas.

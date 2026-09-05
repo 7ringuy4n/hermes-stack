@@ -1,3 +1,8 @@
+## 2026-09-05 13:30 +07 — clean first-boot replica rollout
+
+- New Hermes replicas set their passwd home to the writable per-replica directory before the upstream UID remap, preventing a first-start permission failure against read-only shared mounts.
+- The checked-in classifier bake is regenerated from its prompt-part source so routine updates leave the release checkout clean.
+
 ## 2026-09-05 12:45 +07 — grounded composition and resilient scheduled media
 
 - Stored schedule plans now survive the scheduler handoff and execute directly at fire time without a second classification or compound-workflow split.
