@@ -579,3 +579,20 @@ making that map truthy and causing the proxy to send JSON under the original
 multipart content type. Request serialization is now selected from the actual
 content type: JSON is normalized, while multipart bytes and their boundary are
 preserved unchanged. Live quoted-image editing remains the release gate.
+
+## Attractive markup still produced clipped factual content
+
+### Symptom
+
+A current-data PDF was delivered with correct Vietnamese facts but clipped its
+primary value, placed an icon across a card boundary, and left a large unused
+lower region.
+
+### Decision and prevention
+
+Document authoring now treats normal-flow print geometry as mandatory. Generic
+rules prohibit negative/translated/absolute positioning for factual content,
+fixed-height or hidden-overflow text containers, and boundary-straddling icons.
+The author must verify padding, contrast, consistent timezone notation, and
+full-page balance before calling the renderer. Rendered-page vision review—not
+file creation or text extraction—continues to decide the release gate.

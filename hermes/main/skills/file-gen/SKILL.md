@@ -57,6 +57,22 @@ Never emit placeholders like `<value after search>`. Choose labels and language 
 
 Use one visible document title. Do not repeat a location, subject, or short heading as a standalone line above a hero/title band that already names it. The HTML `<title>` metadata does not count as a visible heading.
 
+Treat print geometry as a release constraint, not decoration. Keep all factual
+text in normal document flow. Do not use negative margins, translated offsets,
+absolute/fixed positioning, fixed-height text containers, or `overflow:hidden`
+around headings, values, labels, tables, or footers. Use `box-sizing:border-box`,
+content-driven heights, and explicit internal padding. Icons and decorative
+shapes must occupy their own bounded cell and must not cross a text container's
+edge. A footer belongs at the visual bottom of the composition; if the content
+is short, deliberately distribute vertical spacing or choose a smaller page
+size instead of leaving an accidental empty lower third.
+
+Before sending the HTML, audit it top-to-bottom as if no element may overlap
+another: the first and last visible glyph must remain inside page margins; every
+large value must fit its parent at the declared font size; labels must meet
+print contrast; and the same timezone notation must be used everywhere. Remove
+any risky positioning rule rather than hoping the renderer will clip it safely.
+
 ### PPTX / DOCX / XLSX / MD (presentation-ready)
 
 For pptx/docx/md: compose markdown the worker understands (`#` title, `##` subtitle, `- Label: value`, short prose). Decks and reports must look presentation-ready — title, metrics, sections — not a chat dump.
@@ -68,7 +84,7 @@ Fetch live facts with `web_search` when needed. Resolve ambiguous place names ag
 
 The requested time and subject scope is a hard boundary. If the user requests only a current snapshot, the artifact MUST contain only current observations: forecast tables, future-day sections, travel advice based on forecasts, history, and unrelated indices are prohibited. Include forecasts, history, recommendations, or expanded analysis only when the user asks for them. Never paste search-page chrome into the body. Do not invent causal explanations, event durations, forecasts, or other derived claims; even plausible domain knowledge is excluded unless the user requested analysis and the retrieved evidence directly supports it.
 
-Before the final office-file call, self-review the authored body and correct every violation: one visible title; no standalone repetition of the subject before or after that title; one requested language with locale-appropriate units and no decorative translation; one verified locality and non-future current observation timestamp; one consistent set of current values from the cited source; no unrequested scope; and no unsupported interpretation or advice. Keep a compact snapshot on one page when its content fits; remove decorative overflow, forced page breaks, and footer fragments that would create accidental extra pages. Balance the layout across the chosen page size: do not leave a large unused lower area when resizing the page, increasing useful spacing, or simplifying the layout would produce a deliberate composition.
+Before the final office-file call, self-review the authored body and correct every violation: one visible title; no standalone repetition of the subject before or after that title; one requested language with locale-appropriate units and no decorative translation; one verified locality and non-future current observation timestamp; one consistent set of current values from the cited source; no unrequested scope; no unsupported interpretation or advice; and no negative/absolute/translated positioning of content. Keep a compact snapshot on one page when its content fits; remove decorative overflow, forced page breaks, and footer fragments that would create accidental extra pages. Balance the layout across the chosen page size: do not leave a large unused lower area when resizing the page, increasing useful spacing, or simplifying the layout would produce a deliberate composition.
 
 ## Optional embedded visual (pdf|pptx|docx|xlsx|md)
 

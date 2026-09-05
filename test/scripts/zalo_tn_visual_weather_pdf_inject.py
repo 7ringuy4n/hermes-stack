@@ -125,7 +125,13 @@ if [[ -z "$NEWPDF" ]]; then
 fi
 HOST_PDF="$NEWPDF"
 CONT_PDF="${{HOST_PDF/\\/data\\/assistant\\/media/\\/data\\/media}}"
-DISPATCHER_ID=$(docker compose -f /opt/assistant/docker/docker-compose.yml ps -q dispatcher | head -1)
+DISPATCHER_ID=$(docker ps \
+  --filter label=com.docker.compose.service=dispatcher \
+  --format '{{.ID}}' | head -1)
+if [[ -z "$DISPATCHER_ID" ]]; then
+  echo "NO_DISPATCHER_CONTAINER"
+  exit 1
+fi
 docker exec -i -e P="$CONT_PDF" -e P2="$HOST_PDF" "$DISPATCHER_ID" python - <<'PY'
 import os
 from pathlib import Path
