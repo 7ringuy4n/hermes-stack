@@ -48,6 +48,9 @@
   while spreadsheets retain authored rows and add a chart when a usable numeric
   series is present. Word also preserves authored block order and uses compact,
   print-safe typography so tables do not detach from their section headings.
+- Replica startup now excludes repository-only PDF, Word, and spreadsheet
+  toolkits from the chat skill registry. File creation continues through the
+  single `file-gen` route, preventing categorized clones and ambiguous lookups.
 
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
 

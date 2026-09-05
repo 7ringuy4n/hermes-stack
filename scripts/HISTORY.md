@@ -5593,3 +5593,9 @@ tables into native Word and spreadsheet cells. Spreadsheet output also adds a
 chart when a table exposes a usable numeric series; tests reject regressions
 that leak source markers into delivered documents. Word preserves source block
 order and explicitly resets heading indents for reliable LibreOffice rendering.
+
+## 2026-09-06 00:10 +07 — exclude repository-only Office skills at runtime
+
+Hermes replicas no longer register local PDF, Word, or spreadsheet maintenance
+toolkits. Removing every root and categorized runtime copy prevents late skill
+cloning from recreating ambiguous lookups; chat creation remains on `file-gen`.
