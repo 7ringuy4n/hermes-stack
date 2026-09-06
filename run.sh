@@ -496,6 +496,13 @@ do_destroy() {
   if [[ "${existing:-0}" -eq 0 ]]; then
     echo "==> no project containers — skip backup before destroy (clean / first-setup host)"
   else
+    # A prior up/update deliberately scrubs transient secret exports. Reload
+    # them before both the router configuration export and Compose parsing.
+    # If OpenBao cannot supply them, do not enter the destructive path.
+    do_prepare_openbao_env_for_compose || {
+      echo "ERROR: cannot load OpenBao secrets — abort destroy" >&2
+      return 1
+    }
     do_backup_first "destroy" || return 1
   fi
   echo "==> destroy stack project=${project} (containers + networks; volumes kept)"

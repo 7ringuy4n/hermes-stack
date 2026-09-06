@@ -1,5 +1,8 @@
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
+- Reload OpenBao-backed runtime secrets before destructive stack teardown and
+  reject lifecycle backups whose enabled OmniRoute provider/combo inventory
+  could not be exported.
 - Renamed the task-aware proxy to `router-worker` across its source directory,
   Compose service/DNS name, `ROUTER_WORKER_*` environment contract, health
   identity, scripts, monitoring, skills, docs, and tests. Upgrade cleanup

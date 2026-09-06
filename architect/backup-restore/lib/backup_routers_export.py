@@ -146,8 +146,11 @@ def main() -> int:
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     print(json.dumps(summary, ensure_ascii=False))
-    # Best-effort: never fail the whole backup for API export issues (volumes are SoT).
-    return 0
+    # A destructive lifecycle gate needs both recoverable volume state and a
+    # readable provider/combo inventory. Do not silently accept an incomplete
+    # export when OmniRoute is enabled.
+    incomplete = [item for item in results if item.get("status") != "ok"]
+    return 1 if env_active(env.get("ENABLE_OMNIROUTER"), "1") and incomplete else 0
 
 
 if __name__ == "__main__":

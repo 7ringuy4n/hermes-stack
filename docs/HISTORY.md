@@ -15,7 +15,9 @@ identities, or ticket-specific wording into documentation.
 See `history/2026-09-06/README.md` for the durable note boundary, semantic
 active-turn cancellation, healthy Zalo standby behavior, and OpenBao-backed
 retention defaults. The same record covers the atomic task-aware proxy rename
-to Router Worker and its upgrade cleanup boundary.
+to Router Worker and its upgrade cleanup boundary. It also records the verified
+teardown requirement: transient OpenBao values are reloaded before backup and
+Compose parsing, and an incomplete OmniRoute inventory blocks destruction.
 
 ## 2026-09-05 — update isolation, routing consolidation, and Zalo HA
 
