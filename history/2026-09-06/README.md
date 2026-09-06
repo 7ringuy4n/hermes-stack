@@ -10,6 +10,10 @@ is skipped or fails now fails the pre-change backup gate; the named volume is
 still the recovery source of truth, while the JSON inventory is required audit
 evidence.
 
+The live media suite also uses process-unique evaluator files and removes each
+host temporary file after transfer, preventing ownership collisions between
+ordinary and privileged test runs.
+
 ## Task-aware proxy identity
 
 **Symptom:** one service had a generic model-routing name even though its role
