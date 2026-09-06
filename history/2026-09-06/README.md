@@ -259,6 +259,12 @@ semantic cancellation check before acquiring the conversation lock. Ordinary
 messages still take the lock and preserve FIFO behavior. The unit contract
 requires the cancellation call to occur before `async with lock`.
 
+The active registry covers the guarded handler from before lock acquisition
+through classification, media staging, workflow submission, and queue handoff.
+This also gives fail-open execution a cancellable owner and records its terminal
+`cancelled` event. A transient Valkey gate initialization failure is retried
+after a bounded backoff rather than disabling queues for the replica lifetime.
+
 ### Verification
 
 - [x] Reproduce with a live long-running request followed by a stop message.

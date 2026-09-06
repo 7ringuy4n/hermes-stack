@@ -21,6 +21,8 @@ the distinct leased Zalo owner/queue path.
 
 Active request control is evaluated ahead of the per-conversation inbound
 lock when a turn is running, allowing stop messages to interrupt that turn.
+The active owner now begins at guarded inbound admission rather than only after
+queue admission, covering classification, staging, and fail-open execution.
 
 ## 2026-09-05 19:20 +07 — cold-start OpenBao ordering
 
