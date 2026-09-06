@@ -1,5 +1,10 @@
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
+- Renamed the task-aware proxy to `router-worker` across its source directory,
+  Compose service/DNS name, `ROUTER_WORKER_*` environment contract, health
+  identity, scripts, monitoring, skills, docs, and tests. Upgrade cleanup
+  removes only the retired project container and migrates exact old default
+  route values without overwriting operator-owned endpoints.
 - Added multipurpose dated/undated notes with per-DM/per-group scopes,
   PostgreSQL date/full-text indexes, deduplication, and immutable mutation audit.
 - Added file-based classifier contracts and host execution for note CRUD;

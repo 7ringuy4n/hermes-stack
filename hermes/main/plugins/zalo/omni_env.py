@@ -86,15 +86,15 @@ def resolve_omni_base_url() -> str:
 
 
 def resolve_media_router_base_url() -> str:
-    """Route media through Model Router so endpoint-aware fallbacks remain available."""
-    val = (os.getenv("MODEL_ROUTER_BASE_URL") or "").strip()
+    """Route media through Router Worker so endpoint-aware fallbacks remain available."""
+    val = (os.getenv("ROUTER_WORKER_BASE_URL") or "").strip()
     if val:
         return val.rstrip("/")
-    return "http://model-router:8096/v1"
+    return "http://router-worker:8096/v1"
 
 
 def resolve_media_router_api_key() -> str:
-    """Internal Model Router accepts a placeholder; upstream keys stay server-side."""
+    """Internal Router Worker accepts a placeholder; upstream keys stay server-side."""
     return resolve_omni_api_key() or "internal"
 
 

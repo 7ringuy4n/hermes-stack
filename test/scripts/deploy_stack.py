@@ -247,7 +247,7 @@ upsert ENABLE_SECURITY 1
 upsert ENABLE_SIEM 1
 upsert ENABLE_POLICY 1
 upsert ENABLE_AUTHZ 1
-upsert ENABLE_MODEL_ROUTER 1
+upsert ENABLE_ROUTER_WORKER 1
 upsert ENABLE_NOTIFY 1
 upsert ENABLE_OMNIROUTER {omni}
 upsert OMNIROUTER_IMAGE diegosouzapw/omniroute:latest

@@ -35,7 +35,7 @@ curl -fsS -m 10 -H "Authorization: Bearer ${OMNIROUTER_API_KEY}" http://127.0.0.
   | python3 -c 'import sys,json; m=json.load(sys.stdin); d=m.get("data",[]); print("models_ok", len(d), (d[0].get("id") if d else ""))'
 docker exec "$h2" sh -lc 'echo OMNIROUTER_SET=$([ -n "$OMNIROUTER_API_KEY" ] && echo 1 || echo 0); echo OPENAI_SET=$([ -n "$OPENAI_API_KEY" ] && echo 1 || echo 0); echo OPENAI_BASE=$OPENAI_BASE_URL'
 set +e
-docker exec "$h2" python3 -c "import os,urllib.request; k=os.environ.get('OPENAI_API_KEY') or os.environ.get('OMNIROUTER_API_KEY') or ''; base=(os.environ.get('OPENAI_BASE_URL') or 'http://model-router:8096/v1').rstrip('/'); url=base+'/models'; req=urllib.request.Request(url, headers={'Authorization':'Bearer '+k});
+docker exec "$h2" python3 -c "import os,urllib.request; k=os.environ.get('OPENAI_API_KEY') or os.environ.get('OMNIROUTER_API_KEY') or ''; base=(os.environ.get('OPENAI_BASE_URL') or 'http://router-worker:8096/v1').rstrip('/'); url=base+'/models'; req=urllib.request.Request(url, headers={'Authorization':'Bearer '+k});
 try:
  r=urllib.request.urlopen(req, timeout=8); print('hermes2_llm', r.status, url)
 except Exception as e:

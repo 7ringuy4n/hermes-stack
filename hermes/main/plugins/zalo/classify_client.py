@@ -1,8 +1,8 @@
-"""HTTP client for model-router POST /v1/classify (Zalo classify skill).
+"""HTTP client for router-worker POST /v1/classify (Zalo classify skill).
 
-Prompt SoT: hermes/main/skills/classify/classify.json — loaded by model-router.
+Prompt SoT: hermes/main/skills/classify/classify.json — loaded by router-worker.
 This module validates/normalizes the JSON protocol only. Do not add Vietnamese NLU.
-Keep schema enums in sync with model-router classify.py.
+Keep schema enums in sync with router-worker classify.py.
 """
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ LIFECYCLE_TASK_TYPES = (
 )
 LIFECYCLE_ACTIONS = ("pause", "resume", "update", "run_now", "run")
 DEFAULT_TIMEOUT_S = 120.0
-# model-router already owns provider/combo failover. A second host request adds
+# router-worker already owns provider/combo failover. A second host request adds
 # duplicate queue pressure and can execute the same scheduled turn twice.
 HTTP_ATTEMPTS = 1
 HTTP_RETRY_SLEEP_S = 0.0
@@ -96,11 +96,8 @@ REASONING_EFFORTS = ("low", "medium", "high", "max")
 
 
 def router_worker_url() -> str:
-    """Router-worker HTTP base (legacy MODEL_ROUTER_URL still honored)."""
-    return (
-        os.environ.get("MODEL_ROUTER_URL")
-        or "http://model-router:8096"
-    ).rstrip("/")
+    """Return the canonical Router Worker HTTP base."""
+    return (os.environ.get("ROUTER_WORKER_URL") or "http://router-worker:8096").rstrip("/")
 
 
 def _coerce_reasoning_effort(raw: Any) -> str | None:
@@ -135,7 +132,7 @@ def infer_reasoning_effort(hint: str, task_type: str, execution_class: str) -> s
 
 
 def strip_prior_for_classify(text: str) -> str:
-    """Current user ask only — drop Valkey hydrate wrappers (keep in sync with model-router)."""
+    """Current user ask only — drop Valkey hydrate wrappers (keep in sync with router-worker)."""
     blob = text or ""
     while True:
         low = blob.lower()
@@ -1648,7 +1645,7 @@ def classify_text(
         },
         ensure_ascii=False,
     ).encode("utf-8")
-    timeout = float(os.environ.get("MODEL_ROUTER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
+    timeout = float(os.environ.get("ROUTER_WORKER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
     last_error = "classify_unavailable"
     for attempt in range(HTTP_ATTEMPTS):
         req = urllib.request.Request(
@@ -1738,7 +1735,7 @@ def classify_outbound(text: str) -> dict[str, Any]:
             return normalize_outbound(_outbound_planner(blob, timezone="Asia/Ho_Chi_Minh"))
     base = router_worker_url()
     payload = json.dumps({"text": blob}, ensure_ascii=False).encode("utf-8")
-    timeout = float(os.environ.get("MODEL_ROUTER_OUTBOUND_TIMEOUT_S") or 30.0)
+    timeout = float(os.environ.get("ROUTER_WORKER_OUTBOUND_TIMEOUT_S") or 30.0)
     try:
         req = urllib.request.Request(
             base + "/v1/outbound",

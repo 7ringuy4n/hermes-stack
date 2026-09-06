@@ -4,7 +4,7 @@
 
 ```text
 edge/Zalo → queue → Hermes → session + memory context
-                           → model-router → OmniRoute `hermes`
+                           → router-worker → OmniRoute `hermes`
                            → final reply → session/memory append
 ```
 
@@ -13,7 +13,7 @@ edge/Zalo → queue → Hermes → session + memory context
 ```text
 current user message + attachment metadata
         → assembled classify prompt
-        → model-router → OmniRoute `classifier`
+        → router-worker → OmniRoute `classifier`
         → schema validation
         → deterministic skill/workflow selection
 ```

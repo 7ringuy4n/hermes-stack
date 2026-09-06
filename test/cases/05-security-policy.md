@@ -9,4 +9,4 @@
   Never classify `SECRET` as a task type. Blocked input must not reach LLM, schedule,
   tools, memory, or queues. Refuse copy from `ux.json` / gateway messages — no secret text
   in Notify or logs.
-- Input probe before Model Router / Schedule Manager. Output probe before the user.
+- Input probe before Router Worker / Schedule Manager. Output probe before the user.

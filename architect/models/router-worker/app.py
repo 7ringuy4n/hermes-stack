@@ -1,4 +1,4 @@
-"""Model Router — task-aware LLM proxy (v0.5.0).
+"""Router Worker — task-aware LLM proxy (v0.5.0).
 
 Routing:
   1. Explicit client tag: X-Task-Type / body.metadata.task_hint
@@ -11,7 +11,7 @@ Providers:
 Missing API keys skip that provider. If nothing works → JSON error `no_model_available` (message in `messages/en.json`).
 Admin-editable messages: messages/en.json
 Classify / outbound / web-search combo SoT: hermes/main/skills/{classify,outbound,web-search}/…
-Runtime: /opt/data/skills/… when mounted; else config/*.json bake fallback (sync-model-router-skills.sh).
+Runtime: /opt/data/skills/… when mounted; else config/*.json bake fallback (sync-router-worker-skills.sh).
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ from fallback_providers import (
 )
 
 ROOT = Path(__file__).resolve().parent
-MESSAGES_PATH = Path(os.environ.get("MODEL_ROUTER_MESSAGES", str(ROOT / "messages" / "en.json")))
+MESSAGES_PATH = Path(os.environ.get("ROUTER_WORKER_MESSAGES", str(ROOT / "messages" / "en.json")))
 
 OMNI_BASE = os.environ.get("OMNIROUTER_BASE_URL", "http://omni-router:20129/v1").rstrip("/")
 ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "active").strip().lower() in {
@@ -70,7 +70,7 @@ ENABLE_OMNI = os.environ.get("ENABLE_OMNIROUTER", "active").strip().lower() in {
 }
 OMNI_KEY = (os.environ.get("OMNIROUTER_API_KEY") or "").strip()
 OMNI_DEFAULT_MODEL = (
-    os.environ.get("OMNIROUTER_DEFAULT_COMBO") or os.environ.get("MODEL_ROUTER_OUTBOUND_MODEL") or "hermes"
+    os.environ.get("OMNIROUTER_DEFAULT_COMBO") or os.environ.get("ROUTER_WORKER_OUTBOUND_MODEL") or "hermes"
 ).strip() or "hermes"
 # After blocked/slow Omni members, try these free-safe ids (combo or model).
 OMNI_FAILOVER_MODELS = [
@@ -109,9 +109,9 @@ FALLBACK_OPENAI = (os.environ.get("FALLBACK_OPENAI_BASE_URL") or "").rstrip("/")
 FALLBACK_OPENAI_KEY = (os.environ.get("OPENAI_API_KEY") or "").strip()
 FALLBACK_OPENAI_MODEL = os.environ.get("FALLBACK_OPENAI_MODEL", "gpt-4o-mini")
 # Free Omni models can be slow; give them room before rotating.
-TIMEOUT_S = float(os.environ.get("MODEL_ROUTER_TIMEOUT_S", "180"))
-HEALTH_TTL_S = float(os.environ.get("MODEL_ROUTER_HEALTH_TTL_S", "15"))
-LISTEN_PORT = int(os.environ.get("MODEL_ROUTER_PORT", "8096"))
+TIMEOUT_S = float(os.environ.get("ROUTER_WORKER_TIMEOUT_S", "180"))
+HEALTH_TTL_S = float(os.environ.get("ROUTER_WORKER_HEALTH_TTL_S", "15"))
+LISTEN_PORT = int(os.environ.get("ROUTER_WORKER_PORT", "8096"))
 # Retry next provider on these (413 payload, 429 rate, auth, 5xx).
 FAILOVER_HTTP = {401, 403, 413, 429}
 
@@ -184,7 +184,7 @@ def _expand_chat_candidates(
         has_tools=has_tools,
     )
 
-app = FastAPI(title="assistant-model-router", version="0.6.0")
+app = FastAPI(title="assistant-router-worker", version="0.6.0")
 # Web search combo must be registered before the OpenAI proxy catch-all below.
 app.include_router(websearch_router)
 _http: httpx.AsyncClient | None = None
@@ -354,7 +354,7 @@ async def health() -> dict[str, Any]:
     ollama = await _probe_ollama() if OLLAMA_BASE else False
     return {
         "ok": True,
-        "service": "model-router",
+        "service": "router-worker",
         "status": MESSAGES.get("health_ok", "ok"),
         "omni_router": omni,
         "ollama": ollama,
@@ -526,7 +526,7 @@ async def proxy(path: str, request: Request) -> Response:
                         content=raw_body,
                         status_code=upstream.status_code,
                         media_type=upstream.headers.get("content-type", "application/json"),
-                        headers={"x-model-router-provider": name, "x-model-router-task": task},
+                        headers={"x-router-worker-provider": name, "x-router-worker-task": task},
                     )
 
                 async def gen():
@@ -587,9 +587,9 @@ async def proxy(path: str, request: Request) -> Response:
                     last_err = f"{name}:bad_chat_json"
                     continue
                 headers_out = {
-                    "x-model-router-provider": name,
-                    "x-model-router-task": task,
-                    "x-model-router-model": str(payload.get("model") or ""),
+                    "x-router-worker-provider": name,
+                    "x-router-worker-task": task,
+                    "x-router-worker-model": str(payload.get("model") or ""),
                 }
                 if want_stream:
                     return StreamingResponse(
@@ -609,7 +609,7 @@ async def proxy(path: str, request: Request) -> Response:
                 content=upstream.content,
                 status_code=upstream.status_code,
                 media_type=upstream.headers.get("content-type", "application/json"),
-                headers={"x-model-router-provider": name, "x-model-router-task": task},
+                headers={"x-router-worker-provider": name, "x-router-worker-task": task},
             )
         except Exception as e:
             last_err = f"{name}:{e}"

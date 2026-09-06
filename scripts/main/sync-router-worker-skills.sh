@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Sync model-router prompt/config SoT from Hermes skills → bake fallback under
-# architect/models/model-router/config/ (Docker image COPY).
+# Sync router-worker prompt/config SoT from Hermes skills → bake fallback under
+# architect/models/router-worker/config/ (Docker image COPY).
 # Classify bake is assembled from skills/classify/parts (one system string, one hop).
 #
 # Ownership: a prior root/sudo sync can leave classify.json root-owned while the
@@ -8,11 +8,11 @@
 # temp file and restore ownership to match the destination directory.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-DST_DIR="$ROOT/architect/models/model-router/config"
+DST_DIR="$ROOT/architect/models/router-worker/config"
 mkdir -p "$DST_DIR"
 
 if [[ "$(id -u)" -ne 0 ]] || [[ -w "$DST_DIR" ]]; then
-  exec python3 "$ROOT/scripts/main/sync_model_router_skills.py"
+  exec python3 "$ROOT/scripts/main/sync_router_worker_skills.py"
 fi
 
 _dst_owner() {

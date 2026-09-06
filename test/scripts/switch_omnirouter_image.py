@@ -115,7 +115,7 @@ PY
 set -a
 . ./.env
 set +a
-docker compose --project-directory /opt/assistant -f /opt/assistant/docker/docker-compose.yml up -d --no-deps --force-recreate model-router
+docker compose --project-directory /opt/assistant -f /opt/assistant/docker/docker-compose.yml up -d --no-deps --force-recreate router-worker
 docker inspect omni-router --format '{{.Config.Image}}'
 echo OMNI_SWITCH_DONE
 """

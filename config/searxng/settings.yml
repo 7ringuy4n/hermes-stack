@@ -1,6 +1,6 @@
 # SearXNG — Medium+ web search (mounted read-only into searxng container)
-# Omni UI Search provider (first-setup) plus the Model Router adapter.
-# Hermes default path: model-router → Omni combo web-search via POST /v1/search.
+# Omni UI Search provider (first-setup) plus the Router Worker adapter.
+# Hermes default path: router-worker → Omni combo web-search via POST /v1/search.
 use_default_settings: true
 
 general:

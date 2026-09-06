@@ -4,12 +4,12 @@
 
 | Owns | Does not own |
 |---|---|
-| model-router request normalization/routing | Hermes skill policy/prompt content |
+| router-worker request normalization/routing | Hermes skill policy/prompt content |
 | OmniRoute lifecycle and attribution integration | Operator provider credentials/membership decisions |
 | dispatcher and asynchronous jobs | Persistent conversation/knowledge data |
 
 ```text
-Hermes/workers → model-router → OmniRoute priority combo → provider
+Hermes/workers → router-worker → OmniRoute priority combo → provider
                          └────→ dispatcher/jobs when a tool workflow needs it
 ```
 
@@ -20,7 +20,7 @@ OmniRoute calls. It does not mutate providers, combos, order, or strategy.
 
 | Package | Function |
 |---|---|
-| [model-router/](./model-router/README.md) | OpenAI-compatible internal proxy, classify endpoint, task/correlation metadata |
+| [router-worker/](./router-worker/README.md) | OpenAI-compatible internal proxy, classify endpoint, task/correlation metadata |
 | [omni-router/](./omni-router/README.md) | OmniRoute deployment/integration (directory name retained for compatibility) |
 | [omni-attribution/](./omni-attribution/README.md) | Requested-combo attribution completion |
 | [dispatcher/](./dispatcher/README.md) | Search/media/job helpers; not an LLM provider router |

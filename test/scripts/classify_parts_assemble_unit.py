@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
+sys.path.insert(0, str(ROOT / "architect" / "models" / "router-worker"))
 
 from classify import (  # noqa: E402
     CLASSIFY_REASONING_EFFORT,
@@ -61,7 +61,7 @@ def main() -> int:
     assert "{local_now}" in tmpl, tmpl
     assert str(CFG_PATH).replace("\\", "/").endswith("skills/classify/classify.json"), CFG_PATH
     classify_source = (
-        ROOT / "architect" / "models" / "model-router" / "classify.py"
+        ROOT / "architect" / "models" / "router-worker" / "classify.py"
     ).read_text(encoding="utf-8")
     assert 'system = "Return JSON with' not in classify_source
 

@@ -557,9 +557,9 @@ do_update() {
     echo "==> git HEAD: $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
     echo "    (run git pull yourself before update if you want remote changes)"
   fi
-  # Model-router prompt/config SoT lives in Hermes skills; keep bake fallback identical.
-  if [[ -f "${SCRIPTS_DIR}/sync-model-router-skills.sh" ]]; then
-    bash "${SCRIPTS_DIR}/sync-model-router-skills.sh" || echo "WARN: sync-model-router-skills failed"
+  # Router Worker prompt/config SoT lives in Hermes skills; keep bake fallback identical.
+  if [[ -f "${SCRIPTS_DIR}/sync-router-worker-skills.sh" ]]; then
+    bash "${SCRIPTS_DIR}/sync-router-worker-skills.sh" || echo "WARN: sync-router-worker-skills failed"
   elif [[ -f "${SCRIPTS_DIR}/sync-classify-skill.sh" ]]; then
     bash "${SCRIPTS_DIR}/sync-classify-skill.sh" || echo "WARN: sync-classify-skill failed"
   fi
@@ -586,6 +586,12 @@ do_update() {
     echo "==> pull selected images (best-effort)"
     compose pull "${services[@]}" || true
     ensure_hermes_media_dirs
+    for svc in "${services[@]}"; do
+      if [[ "$svc" == "router-worker" ]]; then
+        do_remove_stale_worker_containers
+        break
+      fi
+    done
     # Scoped recreate — never docker compose down; never touch postgres unless requested.
     for svc in "${services[@]}"; do
       if [[ "$svc" == "postgres" ]]; then
@@ -1120,7 +1126,7 @@ First setup:
 Security overlay:
   first-setup-openbao     # seed/merge API keys → OpenBao KV (:8200); core default on up|update
   load-openbao-env        # pull KV → .env.openbao + fill compose keys in .env
-  sync-openbao-env        # load-openbao-env + recreate hermes/model-router after KV edit
+  sync-openbao-env        # load-openbao-env + recreate hermes/router-worker after KV edit
   check-security          # smoke OpenBao / Grafana / AV / authz / …
   backup-sync-clouddrive  # when ENABLE_CLOUDDRIVE=active
 
@@ -1234,9 +1240,9 @@ case "$cmd" in
   sync-openbao-env)
     need_security sync-openbao-env || exit 1
     do_prepare_openbao_env_for_compose
-    echo "==> recreate hermes + model-router + omni-router (pick up KV changes)"
-    compose up -d --no-deps --build hermes model-router omni-router 2>/dev/null \
-      || compose up -d --no-deps hermes model-router omni-router \
+    echo "==> recreate hermes + router-worker + omni-router (pick up KV changes)"
+    compose up -d --no-deps --build hermes router-worker omni-router 2>/dev/null \
+      || compose up -d --no-deps hermes router-worker omni-router \
       || echo "WARN: sync-openbao-env partial — run: bash run.sh update hermes"
     do_scrub_plaintext_env
     ;;

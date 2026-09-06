@@ -15,7 +15,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-UPSTREAM = os.environ.get("EMBED_UPSTREAM", "http://model-router:8096/v1").rstrip("/")
+UPSTREAM = os.environ.get("EMBED_UPSTREAM", "http://router-worker:8096/v1").rstrip("/")
 API_KEY = os.environ.get("EMBED_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
 MODEL = os.environ.get("EMBED_MODEL", "openai/text-embedding-3-small")
 LOCAL_MODEL = os.environ.get("EMBED_LOCAL_MODEL", "BAAI/bge-small-en-v1.5")

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Probe Model Router web search combo (local HTTP, no SSH)."""
+"""Probe Router Worker web search combo (local HTTP, no SSH)."""
 from __future__ import annotations
 
 import json
@@ -8,7 +8,7 @@ import sys
 import urllib.error
 import urllib.request
 
-BASE = os.environ.get("MODEL_ROUTER_URL", "http://127.0.0.1:8096").rstrip("/")
+BASE = os.environ.get("ROUTER_WORKER_URL", "http://127.0.0.1:8096").rstrip("/")
 
 
 def get_json(path: str, method: str = "GET", body: dict | None = None) -> dict:
@@ -27,7 +27,7 @@ def main() -> int:
     try:
         health = get_json("/health")
     except Exception as e:
-        print(f"SKIP model-router not reachable at {BASE}: {e}")
+        print(f"SKIP router-worker not reachable at {BASE}: {e}")
         return 0
     backends = health.get("web_backends") or []
     combo = health.get("web_combo") or "web-search"

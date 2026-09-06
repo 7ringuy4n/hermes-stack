@@ -2035,7 +2035,7 @@ class ZaloAdapter(BasePlatformAdapter):
     async def _as_ocr_vision_describe(
         self, local_path: str, *, prompt: str, file_name: str = ""
     ) -> str:
-        """Scene describe via model-router combo vision-ocr."""
+        """Scene describe via router-worker combo vision-ocr."""
         import asyncio
 
         try:

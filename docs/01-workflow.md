@@ -14,7 +14,7 @@ Hermes console / Zalo bridge → proxy → Traefik
         classify contract
               │
               ▼
- model-router → OmniRoute combo
+ router-worker → OmniRoute combo
               │
    ┌──────────┼──────────────┬─────────────┬─────────────┐
    ▼          ▼              ▼             ▼             ▼
@@ -62,7 +62,7 @@ part of the current architecture.
 ## Core and optional workers
 
 Core services are PostgreSQL, Valkey, Qdrant, memory, session, workflow,
-embedding, ingest, model-router, OmniRoute, omni-attribution, Hermes, Traefik,
+embedding, ingest, router-worker, OmniRoute, omni-attribution, Hermes, Traefik,
 and API Gateway.
 
 | Worker | Adds |

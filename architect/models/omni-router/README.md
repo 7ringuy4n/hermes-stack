@@ -5,7 +5,7 @@ upgrade compatibility. The deployed product is **OmniRoute**.
 
 | Property | Value |
 |---|---|
-| Upstream caller | model-router and stack-owned direct capability clients |
+| Upstream caller | router-worker and stack-owned direct capability clients |
 | Downstream | provider accounts selected by named priority combos |
 | Image | `${OMNIROUTER_IMAGE:-diegosouzapw/omniroute:latest}` |
 | Host UI/API bind | `127.0.0.1:${OMNIROUTER_HOST_PORT:-20129}` by default |

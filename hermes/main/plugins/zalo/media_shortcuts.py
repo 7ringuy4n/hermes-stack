@@ -49,8 +49,8 @@ def dispatcher_url() -> str:
     return (os.getenv("DISPATCHER_URL") or "http://dispatcher:8090").rstrip("/")
 
 
-def model_router_url() -> str:
-    return (os.getenv("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+def router_worker_url() -> str:
+    return (os.getenv("ROUTER_WORKER_URL") or "http://router-worker:8096").rstrip("/")
 
 
 def _post(path: str, body: dict, timeout: float = 60.0, *, base: str = "") -> Dict[str, Any]:
@@ -67,7 +67,7 @@ def _post(path: str, body: dict, timeout: float = 60.0, *, base: str = "") -> Di
 
 
 def run_web_search(query: str, max_results: int = 6) -> Optional[dict]:
-    """POST model-router /v1/search. Returns payload or None."""
+    """POST router-worker /v1/search. Returns payload or None."""
     q = (query or "").strip()
     if not q:
         return None
@@ -76,7 +76,7 @@ def run_web_search(query: str, max_results: int = 6) -> Optional[dict]:
             "/v1/search",
             {"query": q, "max_results": max(1, min(int(max_results), 8))},
             timeout=45.0,
-            base=model_router_url(),
+            base=router_worker_url(),
         )
     except Exception as e:  # noqa: BLE001
         log.warning("search_then_office search failed: %s", type(e).__name__)
@@ -279,7 +279,7 @@ def _omni_overlay_plan_model() -> str:
     """Return the configured priority combo for short structured planning."""
     return (
         os.getenv("OMNIROUTER_CLASSIFY_COMBO")
-        or os.getenv("MODEL_ROUTER_CLASSIFY_MODEL")
+        or os.getenv("ROUTER_WORKER_CLASSIFY_MODEL")
         or "classifier"
     ).strip() or "classifier"
 

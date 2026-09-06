@@ -31,11 +31,11 @@ DEPLOY_MODE=local
 ## Core
 
 The core compose graph contains PostgreSQL, Valkey, Qdrant, memory, session,
-workflow, embedding, ingest, model-router, OmniRoute, omni-attribution, Hermes,
+workflow, embedding, ingest, router-worker, OmniRoute, omni-attribution, Hermes,
 Traefik, and API Gateway. Backup/restore is a host lifecycle responsibility.
 
 ```env
-ENABLE_MODEL_ROUTER=active
+ENABLE_ROUTER_WORKER=active
 ENABLE_OMNIROUTER=active
 OMNIROUTER_DEFAULT_COMBO=hermes
 OMNIROUTER_CLASSIFY_COMBO=classifier

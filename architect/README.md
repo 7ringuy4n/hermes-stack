@@ -10,7 +10,7 @@ Platform layers around Hermes. Each subfolder has a **System architecture** sect
     <td style="padding:8px;background:#eee;text-align:center;">→</td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;">memory</td>
     <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;">tools</td>
-    <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;">models<br/><small>model-router</small></td>
+    <td style="padding:10px;background:#e8f4ea;border:1px solid #c5e0c8;text-align:center;">models<br/><small>router-worker</small></td>
     <td style="padding:10px;background:#fff8e6;border:1px solid #f0e0b0;text-align:center;">social-app</td>
   </tr>
   <tr>
@@ -26,7 +26,7 @@ Platform layers around Hermes. Each subfolder has a **System architecture** sect
 | security | [security/README.md](./security/README.md) | Security / OpenBao worker |
 | memory | [memory/README.md](./memory/README.md) | core |
 | tools | [tools/README.md](./tools/README.md) | core (+ OCR/Jobs via Media worker) |
-| models | [models/README.md](./models/README.md) | core (model-router; Omni default) |
+| models | [models/README.md](./models/README.md) | core (router-worker; Omni default) |
 | notification | [notification/README.md](./notification/README.md) | Notify worker |
 | zalo-api | [zalo-api/README.md](./zalo-api/README.md) | Message worker (`install message` / `zalo`) |
 | backup-restore | [backup-restore/README.md](./backup-restore/README.md) | core |

@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-APP = ROOT / "architect" / "models" / "model-router" / "websearch.py"
+APP = ROOT / "architect" / "models" / "router-worker" / "websearch.py"
 
 
 class Response:

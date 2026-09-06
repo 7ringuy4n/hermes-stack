@@ -10,10 +10,10 @@
 Sync:
 
 ```bash
-bash scripts/main/sync-model-router-skills.sh
+bash scripts/main/sync-router-worker-skills.sh
 ```
 
-Runtime (`model-router`) mounts `./hermes/main/skills` → `/opt/data/skills` and assembles classify parts at load. Bake `classify.json` is self-contained for image COPY.
+Runtime (`router-worker`) mounts `./hermes/main/skills` → `/opt/data/skills` and assembles classify parts at load. Bake `classify.json` is self-contained for image COPY.
 
 Web search combo **web-search** is configured in Omni UI; skill docs live in [`hermes/main/skills/web-search/SKILL.md`](../../../../hermes/main/skills/web-search/SKILL.md).
 

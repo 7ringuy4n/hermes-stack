@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit: endpoint-aware model-router provider fallbacks."""
+"""Unit: endpoint-aware router-worker provider fallbacks."""
 from __future__ import annotations
 
 import os
@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
+sys.path.insert(0, str(ROOT / "architect" / "models" / "router-worker"))
 
 from fallback_providers import (  # noqa: E402
     capability_for_path,
@@ -26,7 +26,7 @@ def main() -> int:
     assert capability_for_path("v1/images/generations") == "image-gen"
     assert capability_for_path("v1/images/edits") == "image-edit"
     env = {
-        "MODEL_ROUTER_FALLBACK_PROVIDER_ORDER": "deepseek,qwen,deepseek",
+        "ROUTER_WORKER_FALLBACK_PROVIDER_ORDER": "deepseek,qwen,deepseek",
         "DEEPSEEK_API_BASE": "https://compat.example/v1",
         "DEEPSEEK_API_KEY": "redacted",
         "DEEPSEEK_CHAT_MODEL": "chat-model",
@@ -60,7 +60,7 @@ def main() -> int:
         400, b'No images-capable targets in combo "image-gen"', "image-gen"
     )
     assert not endpoint_failure_allows_fallback(400, b"invalid prompt", "image-gen")
-    print("OK model-router endpoint-aware fallbacks")
+    print("OK router-worker endpoint-aware fallbacks")
     return 0
 
 

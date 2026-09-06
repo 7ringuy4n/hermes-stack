@@ -5,7 +5,7 @@
 | Layer | Current components |
 |---|---|
 | Agent | Hermes replicas, skills, per-replica runtime homes |
-| Request routing | model-router → OmniRoute priority combos; omni-attribution |
+| Request routing | router-worker → OmniRoute priority combos; omni-attribution |
 | State | PostgreSQL, Valkey, Qdrant, `/data/assistant` |
 | Knowledge | ingest → embedding combo → Qdrant |
 | Edge | Traefik and API Gateway in local/VPN mode by default |

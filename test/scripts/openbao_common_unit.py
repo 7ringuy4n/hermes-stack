@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "main"))
 from openbao_common import (  # noqa: E402
     COMPOSE_HOST_KEYS,
     ENV_SCRUB_KEYS,
+    OBSOLETE_ENV_KEYS,
     OBSOLETE_SECRET_KEYS,
     RUNTIME_DEFAULTS,
     SEED_KEYS,
@@ -40,6 +41,13 @@ _migrate_spec = importlib.util.spec_from_file_location(
 assert _migrate_spec and _migrate_spec.loader
 migrate_openbao_token = importlib.util.module_from_spec(_migrate_spec)
 _migrate_spec.loader.exec_module(migrate_openbao_token)
+_cleanup_spec = importlib.util.spec_from_file_location(
+    "cleanup_obsolete_env",
+    ROOT / "scripts" / "main" / "cleanup-obsolete-env.py",
+)
+assert _cleanup_spec and _cleanup_spec.loader
+cleanup_obsolete_env = importlib.util.module_from_spec(_cleanup_spec)
+_cleanup_spec.loader.exec_module(cleanup_obsolete_env)
 
 
 def main() -> int:
@@ -60,6 +68,8 @@ def main() -> int:
     assert not is_secret_env_name("OPENBAO_DEV_ROOT_TOKEN")
     assert not is_secret_env_name("HERMES_REPLICAS")
     assert "FAL_KEY" in OBSOLETE_SECRET_KEYS
+    assert "MODEL_ROUTER_URL" in OBSOLETE_ENV_KEYS
+    assert "ROUTER_WORKER_URL" not in OBSOLETE_ENV_KEYS
     # Merge semantics (mirror first-setup-openbao)
     existing = {"OMNIROUTER_API_KEY": "old", "TAVILY_API_KEY": "keep"}
     incoming = {"OMNIROUTER_API_KEY": "new"}
@@ -103,6 +113,23 @@ def main() -> int:
         assert "OPENBAO_DEV_ROOT_TOKEN" not in source_env.read_text(encoding="utf-8")
         if migrate_openbao_token.os.name == "posix":
             assert token_path.stat().st_mode & 0o777 == 0o600
+
+        route_env = data_dir / "route.env"
+        route_env.write_text(
+            "MODEL_ROUTER_URL=http://model-router:8096\n"
+            "HERMES_OPENAI_BASE_URL=http://model-router:8096/v1\n"
+            "WEB_SEARCH_URL=https://operator.example/search\n",
+            encoding="utf-8",
+        )
+        assert cleanup_obsolete_env.remove_obsolete_keys(route_env, OBSOLETE_ENV_KEYS) == [
+            "MODEL_ROUTER_URL"
+        ]
+        assert cleanup_obsolete_env.migrate_supported_values(route_env) == [
+            "HERMES_OPENAI_BASE_URL"
+        ]
+        migrated_text = route_env.read_text(encoding="utf-8")
+        assert "HERMES_OPENAI_BASE_URL=http://router-worker:8096/v1" in migrated_text
+        assert "WEB_SEARCH_URL=https://operator.example/search" in migrated_text
     print("OK openbao_common unit")
     return 0
 

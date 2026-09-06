@@ -29,14 +29,14 @@ echo "hermes_name=$(docker inspect -f '{{.Name}}' "${cid}" 2>/dev/null | tr -d /
 echo "zalo_api=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8100/health || echo fail)"
 echo "traefik=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health || echo fail)"
 echo "dispatcher=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8090/health || echo fail)"
-echo "model_router=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8096/health || echo fail)"
+echo "router_worker=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:8096/health || echo fail)"
 echo "omni-router_root=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:20128/ || echo fail)"
 echo "omni-router_models=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:20128/v1/models || echo fail)"
 # From Hermes container to omni-router on docker network
 echo -n "hermes_to_omni-router="
 docker exec -e "OMNIROUTER_API_KEY=${OMNIROUTER_API_KEY}" "${cid}" python3 -c "import os,urllib.request; k=os.environ.get('OMNIROUTER_API_KEY',''); req=urllib.request.Request('http://omni-router:20129/v1/models', headers={'Authorization':'Bearer '+k}); urllib.request.urlopen(req, timeout=5); print('ok')" 2>/dev/null || echo fail
-echo -n "hermes_to_model_router="
-docker exec "${cid}" python3 -c "import urllib.request; urllib.request.urlopen('http://model-router:8096/health', timeout=5); print('ok')" 2>/dev/null || echo fail
+echo -n "hermes_to_router_worker="
+docker exec "${cid}" python3 -c "import urllib.request; urllib.request.urlopen('http://router-worker:8096/health', timeout=5); print('ok')" 2>/dev/null || echo fail
 test -f /opt/assistant/hermes/main/plugins/zalo/multi_request.py && echo files_multi=ok || echo files_multi=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/inbound_queue.py && echo files_queue=ok || echo files_queue=missing
 test -f /opt/assistant/architect/tools/schedule_tz.py && echo files_tz=ok || echo files_tz=missing

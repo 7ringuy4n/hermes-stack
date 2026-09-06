@@ -176,7 +176,7 @@ sync = subprocess.run(
 )
 note("sync_rc", sync.returncode == 0, f"rc={sync.returncode}")
 inspect = subprocess.run(
-    ["docker", "inspect", "model-router", "--format", "{{json .Config.Env}}"],
+    ["docker", "inspect", "router-worker", "--format", "{{json .Config.Env}}"],
     capture_output=True,
     text=True,
     timeout=30,

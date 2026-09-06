@@ -10,7 +10,7 @@ membership or strategy.
 
 - Snapshot all combo membership and strategies before the test.
 - Make one test-only member unavailable without editing the saved production combo.
-- Send a request through the normal Model Router path.
+- Send a request through the normal Router Worker path.
 - Require either a successful later target or a bounded, explicit all-targets-failed response.
 - Confirm the combo snapshot is byte-for-byte equivalent after cleanup.
 - Confirm stack-watch did not restart unrelated services during the request.

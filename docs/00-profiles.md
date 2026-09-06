@@ -20,7 +20,7 @@ for upgrade compatibility; they do not enable a second router.
 
 | Setting | Current meaning |
 |---|---|
-| `ENABLE_MODEL_ROUTER=active` | Run the task-aware compatibility proxy used by Hermes and workers. |
+| `ENABLE_ROUTER_WORKER=active` | Run the task-aware compatibility proxy used by Hermes and workers. |
 | `ENABLE_OMNIROUTER=active` | Run OmniRoute using the compatibility compose profile `omnirouter`. |
 | `OMNIROUTER_*` | OmniRoute URL, token, combo, image, and data-volume settings. |
 | `first-setup-omnirouter` | Idempotently initialize OmniRoute without replacing operator-managed combo members. |

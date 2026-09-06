@@ -18,7 +18,7 @@ import notes_client  # noqa: E402
 
 def _load_router_classify():
     sys.modules.setdefault("httpx", types.SimpleNamespace())
-    path = ROOT / "architect" / "models" / "model-router" / "classify.py"
+    path = ROOT / "architect" / "models" / "router-worker" / "classify.py"
     spec = importlib.util.spec_from_file_location("router_classify_notes_unit", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)

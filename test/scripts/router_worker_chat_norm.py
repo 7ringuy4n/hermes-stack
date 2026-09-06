@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Unit tests for model-router OpenAI chat JSON normalize."""
+"""Unit tests for router-worker OpenAI chat JSON normalize."""
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
+sys.path.insert(0, str(ROOT / "architect" / "models" / "router-worker"))
 
 from chat_norm import (  # noqa: E402
     chat_abandon_primary_rotates,

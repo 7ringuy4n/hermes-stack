@@ -19,7 +19,7 @@ Committed with the repo. Invoked by `run.sh` and first-setup docs.
 | `seed-zalo-admin-from-postgres.sh` | Lab/post-restore admin seed helper |
 | `patch_zalo_bridge_inject.py` | Bridge inject + media proxy (heal / zalo-watch / setup) |
 | `zalo-bridge/` | Durable host bridge overlays (`zaloClient.js`, `markdownToZalo.js`) installed by `zalo-common.sh` |
-| `patch-hermes-model-router.py` | Hermes→router wiring used by setup / first-setup |
+| `patch-hermes-router-worker.py` | Hermes→router wiring used by setup / first-setup |
 | `stack-watch.sh` | Health / auto-heal timer |
 | `log-archive.sh` | Log retention timer target |
 | `check-media.sh` / `check-security.sh` | Smoke checks (`run.sh check-*`) |
