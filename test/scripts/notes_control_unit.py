@@ -107,6 +107,10 @@ def main() -> int:
     assert "Control-plane cancellation bypasses rate limits and FIFO admission" in adapter_source
     assert "except asyncio.CancelledError:" in adapter_source
     assert "self._as_active_turn_tasks" in adapter_source
+    note_branch = adapter_source.split("if plan_is_note(plan) and not schedule_fire:", 1)[1]
+    note_branch = note_branch.split("if plan_is_immediate_deliver", 1)[0]
+    assert 'str(plan.get("message")' not in note_branch
+    assert '"ZALO_NOTES_SAVED_MSG"' in note_branch
     print("OK notes/control unit")
     return 0
 

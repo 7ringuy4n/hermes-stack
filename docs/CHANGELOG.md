@@ -2797,3 +2797,8 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
   consolidated around OmniRoute priority combos and worker-based deployment;
   retired router, tier, local OCR/image-engine, video, and secret-alias paths
   are removed from active behavior.
+
+## 2026-09-06 09:15 +07 — deterministic note confirmations
+
+- Successful note mutations now render the validated localized result instead
+  of trusting classifier free-form confirmation text.
