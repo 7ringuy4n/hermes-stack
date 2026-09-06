@@ -439,7 +439,10 @@ Persistent=true
 WantedBy=timers.target
 EOF
     $sudo systemctl daemon-reload
-    $sudo systemctl enable --now assistant-zalo-watch.timer
+    $sudo systemctl enable assistant-zalo-watch.timer
+    # Reloading a unit does not re-arm an already active/elapsed timer. Restart
+    # it so upgrades adopt the new activation-relative schedule immediately.
+    $sudo systemctl restart assistant-zalo-watch.timer
   else
     $sudo systemctl disable --now assistant-zalo-watch.timer >/dev/null 2>&1 || true
   fi
