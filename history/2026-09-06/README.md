@@ -1,5 +1,57 @@
 # 2026-09-06 — scoped notes, cancellation, and HA liveness
 
+## Late media crossed Zalo turn boundaries
+
+### Symptom
+
+A plain text request could receive an artifact produced by an earlier request,
+then lose its correct text response because the adapter believed media had
+already completed the current request.
+
+### Root cause
+
+Artifact discovery had no initialized per-turn clock, so it used a broad
+fallback window. The delivery marker was a set keyed only by conversation;
+a cancelled late sender could restore that marker after the next inbound reset.
+
+### Technical detail
+
+- **Functions:** `adapter.py::_as_autosend_turn_files()`,
+  `adapter.py::_as_begin_turn()`, and
+  `adapter.py::_as_job_already_sent_file()` now share one captured turn token.
+- **Lines:** `hermes/main/plugins/zalo/adapter.py:L3291-L3363` owns turn state;
+  `L6042-L6208` captures the token before asynchronous delivery.
+- **Fields:** `_as_tclock[thread_id].t0` changes from absent to the processed
+  turn start; `_as_job_file_sent` changes from `set[thread_id]` to
+  `dict[thread_id, turn_token]`.
+- **Route:** Zalo inbound queue to Hermes response autosend; no provider or
+  OmniRoute combo membership is changed.
+
+### AI decision
+
+The fix establishes artifact ownership at the turn boundary. Clearing a
+thread-wide flag again would leave the same race, and a VPS-only cleanup would
+not protect fresh installs.
+
+### Fix (core)
+
+Queued, direct, and workflow turns now initialize a real wall-clock boundary
+and increment a destination-local token. Async media senders retain the token
+captured at discovery; a completion from an older token cannot mute the current
+turn.
+
+### Todo list
+
+- [x] Reproduce from Hermes and Zalo delivery logs.
+- [x] Replace thread-scoped delivery state with turn-scoped state.
+- [x] Add old-turn completion and cross-thread regression cases.
+- [ ] Verify sequential and concurrent delivery through the live Zalo bridge.
+
+### Prevent recurrence
+
+`test/scripts/zalo_turn_media_isolation_unit.py` covers current-turn media,
+next-turn reset, a late old-token completion, and independent destinations.
+
 ## Verified teardown after secret scrubbing
 
 A clean-deployment gate exposed that successful runtime startup deliberately

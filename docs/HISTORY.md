@@ -18,6 +18,8 @@ retention defaults. The same record covers the atomic task-aware proxy rename
 to Router Worker and its upgrade cleanup boundary. It also records the verified
 teardown requirement: transient OpenBao values are reloaded before backup and
 Compose parsing, and an incomplete OmniRoute inventory blocks destruction.
+The Zalo autosender now uses a real per-turn clock and token, preventing a late
+artifact from one request from leaking into or muting a later request.
 
 ## 2026-09-05 — update isolation, routing consolidation, and Zalo HA
 

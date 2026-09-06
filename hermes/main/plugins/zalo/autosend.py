@@ -9,8 +9,43 @@ IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 VIDEO_EXTS = (".mp4", ".webm", ".mov", ".m4v", ".mkv")
 ZALO_VIDEO_SUFFIX = ".zalo.mp4"
 # Zalo rejects a whitespace-only caption on document attachments
-# ("Tham số không hợp lệ"). Omit the caption instead of padding it.
+# (localized "invalid parameter"). Omit the caption instead of padding it.
 ATTACH_CAPTION_FALLBACK = ""
+
+
+def begin_turn_state(
+    tokens: dict[str, int],
+    clocks: dict[str, dict[str, float]],
+    sent: dict[str, int],
+    thread_id: str,
+    when: float,
+) -> int:
+    """Advance one destination turn and clear only that turn's media marker."""
+    tid = str(thread_id or "")
+    if not tid:
+        return 0
+    token = int(tokens.get(tid) or 0) + 1
+    tokens[tid] = token
+    clocks[tid] = {"t0": float(when), "token": float(token)}
+    sent.pop(tid, None)
+    return token
+
+
+def mark_media_sent(sent: dict[str, int], thread_id: str, turn_token: int) -> None:
+    """Record media delivery against the token captured when sending began."""
+    tid = str(thread_id or "")
+    token = int(turn_token or 0)
+    if tid and token > 0:
+        sent[tid] = token
+
+
+def media_sent_in_turn(
+    sent: dict[str, int], thread_id: str, current_token: int
+) -> bool:
+    """Return true only for media delivered by the current destination turn."""
+    tid = str(thread_id or "")
+    token = int(current_token or 0)
+    return bool(tid and token > 0 and int(sent.get(tid) or 0) == token)
 
 
 def _bridge_catalog() -> dict:
@@ -37,7 +72,7 @@ def file_in_send_window(
     would look "old" on part 3 if we only compared to part_t0. seq_t0 is the
     first part's start so later parts can still attach an unsent file.
 
-    ceiling: isolated lịch jobs set this when the job ends so a leftover watch
+    ceiling: isolated schedule jobs set this when the job ends so a leftover watch
     cannot claim a later job's file.
     """
     try:

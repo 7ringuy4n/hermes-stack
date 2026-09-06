@@ -1,5 +1,8 @@
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
+- Scoped Zalo artifact discovery and delivery markers to a processed-turn
+  token. A late artifact sender from an earlier turn can no longer attach an
+  old file to a later request or suppress that request's text response.
 - Reload OpenBao-backed runtime secrets before destructive stack teardown and
   reject lifecycle backups whose enabled OmniRoute provider/combo inventory
   could not be exported.
