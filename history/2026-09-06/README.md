@@ -584,3 +584,34 @@ a nested release worktree without embedding a workstation path.
 Offline contracts lock acknowledgement ordering and nested-worktree fixture
 resolution. Live concurrency and failover gates require the durable delivery
 row, queue drainage, restored replica count, and one elected SSE owner.
+
+## Queue acknowledgement preceded background agent completion
+
+### Symptom
+
+Two simultaneous conversations were admitted and one reply was delivered, but
+the other ended at `processing`. The queue appeared empty even though Hermes
+logged a later final response, and the elected owner missed a lease renewal
+during the overlap.
+
+### Root cause
+
+The gateway's `handle_message` method launches agent work in the background and
+returns immediately. The adapter treated that return plus a short file grace
+period as completion, acknowledged the inflight row, and allowed another
+conversation to overlap shared gateway execution state.
+
+### Decision and core fix
+
+The elected Zalo owner now serializes agent execution while retaining separate
+durable per-conversation FIFO queues. After launch, it waits for the matching
+gateway session to become idle, pulses the queue-worker lease during the wait,
+performs late-file delivery, and only then acknowledges the claimed row. A
+bounded turn timeout still releases failed work with explicit user feedback.
+
+### Prevention
+
+The delivery contract requires the owner execution lock and terminal session
+wait to occur before queue acknowledgement. The live DM/group test injects both
+requests together and requires one acknowledged result in each original
+conversation with no crossed content.

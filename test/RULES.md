@@ -197,6 +197,10 @@ Also run one DM request and one request in the named three-member test group at
 the same instant. Resolve the group by display name at runtime, verify its
 membership through durable channel state, and require each result to return to
 its originating conversation. Numeric identities must remain runtime-only.
+The elected owner may serialize gateway agent execution when the underlying
+gateway state is not concurrency-safe, but it must retain both durable claims,
+pulse worker ownership while waiting, acknowledge only after terminal session
+completion, and deliver both within their operation deadlines.
 
 ## 6. Stability observation
 

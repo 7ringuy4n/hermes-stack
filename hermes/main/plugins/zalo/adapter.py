@@ -414,6 +414,11 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_compound_defer_ack: set[str] = set()
         self._as_compound_thread_type: Dict[str, str] = {}
         self._as_compound_seq_t0: Dict[str, float] = {}
+        # BasePlatformAdapter launches an agent in shared gateway state and
+        # returns before that background session finishes. Keep one Zalo agent
+        # turn active per elected owner; per-thread FIFO still accepts other
+        # conversations durably while they wait for this execution boundary.
+        self._as_agent_turn_lock = asyncio.Lock()
         # Media delivery state is scoped to one processed turn, not a chat.
         # A monotonically increasing local token prevents a cancelled late
         # autosender from muting the next response for the same destination.
@@ -4215,47 +4220,59 @@ class ZaloAdapter(BasePlatformAdapter):
         turn_timeout = self._as_queue_turn_timeout_s()
         try:
             async def _run_turn() -> None:
-                blocked, block_msg = await self._as_security_message_gate(
-                    text=str(event.text or ""),
-                    thread_id=tid,
-                    user_id=sender_id,
-                    correlation_id=str(event.message_id or ""),
-                )
-                if blocked:
-                    if block_msg:
-                        await self._as_gate_announce(tid, thread_type, block_msg)
-                    return
-                bare_q = str(event.text or "").strip()
-                queued_plan = item.get("plan") if isinstance(item.get("plan"), dict) else None
-                has_image = self._as_has_image_attachment(
-                    list(event.media_urls or []),
-                    media_types=list(event.media_types or []),
-                    message_type=event.message_type,
-                )
-                if bare_q:
-                    if await self._as_run_host_media_shortcut(
-                        user_text=bare_q,
-                        thread_id=tid,
-                        thread_type=thread_type,
-                        bare_text=bare_q,
-                        plan=queued_plan,
-                        media_urls=list(event.media_urls or []),
-                        has_image_attachment=has_image,
-                    ):
-                        return
-                if has_image and list(event.media_urls or []):
-                    if await self._as_try_image_analyze_vision_reply(
+                async with self._as_agent_turn_lock:
+                    blocked, block_msg = await self._as_security_message_gate(
                         text=str(event.text or ""),
                         thread_id=tid,
-                        thread_type=thread_type,
-                        media_urls=list(event.media_urls or []),
-                        has_image_attachment=True,
-                        plan=queued_plan,
-                    ):
+                        user_id=sender_id,
+                        correlation_id=str(event.message_id or ""),
+                    )
+                    if blocked:
+                        if block_msg:
+                            await self._as_gate_announce(tid, thread_type, block_msg)
                         return
-                await self.handle_message(event)
-                await self._as_autosend_late_files(tid, thread_type)
-                await self._as_compound_wait_part(tid)
+                    bare_q = str(event.text or "").strip()
+                    queued_plan = item.get("plan") if isinstance(item.get("plan"), dict) else None
+                    has_image = self._as_has_image_attachment(
+                        list(event.media_urls or []),
+                        media_types=list(event.media_types or []),
+                        message_type=event.message_type,
+                    )
+                    if bare_q:
+                        if await self._as_run_host_media_shortcut(
+                            user_text=bare_q,
+                            thread_id=tid,
+                            thread_type=thread_type,
+                            bare_text=bare_q,
+                            plan=queued_plan,
+                            media_urls=list(event.media_urls or []),
+                            has_image_attachment=has_image,
+                        ):
+                            return
+                    if has_image and list(event.media_urls or []):
+                        if await self._as_try_image_analyze_vision_reply(
+                            text=str(event.text or ""),
+                            thread_id=tid,
+                            thread_type=thread_type,
+                            media_urls=list(event.media_urls or []),
+                            has_image_attachment=True,
+                            plan=queued_plan,
+                        ):
+                            return
+                    await self.handle_message(event)
+
+                    def _pulse() -> None:
+                        store.worker_touch(tid, worker_ttl)
+
+                    idle = await self._as_wait_thread_idle(
+                        tid,
+                        pulse=_pulse,
+                        arm_first=True,
+                    )
+                    if not idle:
+                        raise TimeoutError("Zalo agent session did not become idle")
+                    await self._as_autosend_late_files(tid, thread_type)
+                    await self._as_compound_wait_part(tid)
 
             turn_task = asyncio.create_task(_run_turn())
             self._as_active_turn_tasks[tid] = turn_task

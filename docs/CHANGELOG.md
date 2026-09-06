@@ -4,6 +4,11 @@
   acknowledges the send. HA and conversation-isolation labs now use this
   durable acknowledgement instead of relying on optional self-message journal
   echoes.
+- Keep a claimed Zalo queue item until its background Hermes session reaches a
+  terminal idle state. Agent execution is serialized per elected owner because
+  the shared gateway session state is not safe for overlapping DM/group turns;
+  other conversations remain durably queued rather than being acknowledged
+  early or losing a reply.
 - Resolve external release fixtures from both normal repositories and nested
   worktrees, while preserving the explicit fixture-directory override.
 - Corrected the media smoke gate and retained lab scripts to check the current
