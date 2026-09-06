@@ -5,7 +5,8 @@
   and per-conversation Valkey FIFO processing by that owner.
 - Consolidated Grafana provisioning under the host-mounted
   `config/monitor/grafana` source of truth and added dashboard identity checks
-  so duplicate UIDs, titles, or provisioning trees fail locally.
+  so duplicate UIDs, titles, or provisioning trees fail locally. Empty standard
+  alerting/plugin provisioning directories prevent misleading startup errors.
 - Scoped Zalo artifact discovery and delivery markers to a processed-turn
   token. A late artifact sender from an earlier turn can no longer attach an
   old file to a later request or suppress that request's text response.
