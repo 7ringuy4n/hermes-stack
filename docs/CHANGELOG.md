@@ -16,6 +16,9 @@
 - Reload and re-scrub the transient OpenBao export around component-change
   backups, so repeated add/remove operations can still capture OmniRoute
   configuration after an earlier update removed plaintext exports.
+- Apply component option changes to both `.env` and the current lifecycle
+  process before Compose runs, preventing an update from reusing the previous
+  replica count or worker state.
 - Use collision-safe temporary evaluator files in the VPS media capability
   suite and remove them immediately after transfer.
 - Renamed the task-aware proxy to `router-worker` across its source directory,

@@ -981,7 +981,10 @@ do_remove_components() {
   local stamp
   stamp="$(cat "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null || true)"
   for arg in "${pairs[@]}"; do
-    env_upsert "${arg%%=*}" "${arg#*=}"
+    k="${arg%%=*}"
+    v="${arg#*=}"
+    env_upsert "$k" "$v"
+    export "$k=$v"
   done
   echo "OK: wrote ${pairs[*]} (stamp=${stamp})"
   _apply_component_change "$stamp" "$noup" "$doupdate"
@@ -1101,7 +1104,10 @@ do_add_components() {
   local stamp
   stamp="$(cat "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null || true)"
   for arg in "${pairs[@]}"; do
-    env_upsert "${arg%%=*}" "${arg#*=}"
+    k="${arg%%=*}"
+    v="${arg#*=}"
+    env_upsert "$k" "$v"
+    export "$k=$v"
   done
   echo "OK: wrote ${pairs[*]} (stamp=${stamp})"
   _apply_component_change "$stamp" "$noup" "$doupdate"
