@@ -12,6 +12,9 @@
   either its synthetic marker or a timestamp-correlated, semantically valid
   web response. Marker compliance remains visible as a separate assertion and
   no longer turns a delivered, sourced answer into a false transport failure.
+- Completed DM-only HA release verification with one and two Hermes replicas,
+  including quote-based image editing, a paired web result, visual scoring,
+  queue drainage, lease ownership, resource observation, and restart checks.
 - Documented the deployed hybrid availability model: active-active Hermes HTTP
   behind Traefik, one active Zalo SSE owner elected by a renewable Valkey lease,
   and per-conversation Valkey FIFO processing by that owner.
