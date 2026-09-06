@@ -989,14 +989,57 @@ class ZaloAdapter(BasePlatformAdapter):
         if tid and lock is None:
             lock = asyncio.Lock()
             locks[tid] = lock
+        current_task = asyncio.current_task()
+        registered_active = bool(
+            tid
+            and current_task is not None
+            and (
+                self._as_active_turn_tasks.get(tid) is None
+                or self._as_active_turn_tasks[tid].done()
+            )
+        )
+        if registered_active:
+            self._as_active_turn_tasks[tid] = current_task
+            self._as_active_turn_message_ids[tid] = str(
+                (data or {}).get("messageId") or (data or {}).get("msgId") or ""
+            )
         try:
             if lock is not None:
                 async with lock:
                     await self._on_inbound_message(data)
             else:
                 await self._on_inbound_message(data)
+        except asyncio.CancelledError:
+            if registered_active:
+                logger.info(
+                    "Zalo: guarded active request cancelled thread=%s message=%s",
+                    tid,
+                    self._as_active_turn_message_ids.get(tid, ""),
+                )
+                try:
+                    from .queue_history import record as history_record
+                except ImportError:
+                    from queue_history import record as history_record  # type: ignore
+                history_record(
+                    thread_id=tid,
+                    thread_type=(
+                        "group"
+                        if str((data or {}).get("threadType") or "user") == "group"
+                        else "user"
+                    ),
+                    message_id=self._as_active_turn_message_ids.get(tid, ""),
+                    event="cancelled",
+                    role="system",
+                    content="",
+                    task_hint="control",
+                )
+            raise
         except Exception:
             logger.exception("Zalo: inbound message failed thread=%s", tid or "?")
+        finally:
+            if registered_active and self._as_active_turn_tasks.get(tid) is current_task:
+                self._as_active_turn_tasks.pop(tid, None)
+                self._as_active_turn_message_ids.pop(tid, None)
 
     async def _on_session_dead(self, data: Dict[str, Any]) -> None:
         """Zalo session ended (logout / kicked / cookie expired)."""
@@ -1267,6 +1310,13 @@ class ZaloAdapter(BasePlatformAdapter):
     def _as_gate_store(self):  # ASSISTANT_RATE_LIMIT_v4
         """Valkey gate store (rate + answering). None = fail-open."""
         st = getattr(self, "_as_gate_store_obj", False)
+        if st is None:
+            import time
+
+            failed_at = float(getattr(self, "_as_gate_store_failed_at", 0.0) or 0.0)
+            if time.monotonic() - failed_at < 5.0:
+                return None
+            st = False
         if st is not False:
             return st
         try:
@@ -1277,8 +1327,12 @@ class ZaloAdapter(BasePlatformAdapter):
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             self._as_gate_store_obj = mod.GateStore.from_env()
-        except Exception:
+        except Exception as exc:
+            import time
+
+            logger.warning("Zalo: Valkey gate unavailable; fail-open retry scheduled — %s", type(exc).__name__)
             self._as_gate_store_obj = None
+            self._as_gate_store_failed_at = time.monotonic()
         return self._as_gate_store_obj
 
     def _zalo_rate_limit_cfg(self):  # ASSISTANT_RATE_LIMIT_v4
@@ -3802,6 +3856,8 @@ class ZaloAdapter(BasePlatformAdapter):
         """Classify and cancel the active local turn before normal queue admission."""
         active = self._as_active_turn_tasks.get(str(thread_id))
         if active is None or active.done() or not str(text or "").strip():
+            return False
+        if active is asyncio.current_task():
             return False
         try:
             from .classify_client import classify_text_async, plan_is_cancel_task

@@ -109,6 +109,10 @@ def main() -> int:
     guarded = adapter_source.split("async def _on_inbound_guarded", 1)[1]
     guarded = guarded.split("async def _on_session_dead", 1)[0]
     assert guarded.index("await self._as_try_cancel_active_request") < guarded.index("async with lock")
+    assert "registered_active" in guarded
+    assert 'event="cancelled"' in guarded
+    assert "active is asyncio.current_task()" in adapter_source
+    assert "Valkey gate unavailable; fail-open retry scheduled" in adapter_source
     assert "except asyncio.CancelledError:" in adapter_source
     assert "self._as_active_turn_tasks" in adapter_source
     note_branch = adapter_source.split("if plan_is_note(plan) and not schedule_fire:", 1)[1]
