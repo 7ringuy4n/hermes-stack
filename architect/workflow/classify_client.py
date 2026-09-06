@@ -1,4 +1,4 @@
-"""HTTP client for model-router POST /v1/classify.
+"""HTTP client for router-worker POST /v1/classify.
 
 Application code consumes structured JSON only. Tests may inject set_planner.
 Keep in sync with gateway and Zalo copies.
@@ -443,9 +443,9 @@ def classify_text(text: str, *, timezone: str = "Asia/Ho_Chi_Minh") -> dict[str,
             return normalize_plan(_planner(blob), blob, tz)
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
-    base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+    base = (os.environ.get("ROUTER_WORKER_URL") or "http://router-worker:8096").rstrip("/")
     payload = json.dumps({"text": blob, "timezone": tz}, ensure_ascii=False).encode("utf-8")
-    timeout = float(os.environ.get("MODEL_ROUTER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
+    timeout = float(os.environ.get("ROUTER_WORKER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
     last_error = "classify_unavailable"
     for _attempt in range(HTTP_ATTEMPTS):
         req = urllib.request.Request(
@@ -504,9 +504,9 @@ def classify_outbound(text: str) -> dict[str, Any]:
             return normalize_outbound(_outbound_planner(blob))
         except TypeError:
             return normalize_outbound(_outbound_planner(blob, timezone="Asia/Ho_Chi_Minh"))
-    base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+    base = (os.environ.get("ROUTER_WORKER_URL") or "http://router-worker:8096").rstrip("/")
     payload = json.dumps({"text": blob}, ensure_ascii=False).encode("utf-8")
-    timeout = float(os.environ.get("MODEL_ROUTER_OUTBOUND_TIMEOUT_S") or 30.0)
+    timeout = float(os.environ.get("ROUTER_WORKER_OUTBOUND_TIMEOUT_S") or 30.0)
     try:
         req = urllib.request.Request(
             base + "/v1/outbound",

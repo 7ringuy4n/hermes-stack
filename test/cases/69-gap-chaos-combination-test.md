@@ -19,7 +19,7 @@ While:
 
 perform:
 
-1. restart model-router;
+1. restart router-worker;
 2. disconnect Valkey for 10 seconds;
 3. delay OCR;
 4. restart workflow;

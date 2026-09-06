@@ -67,6 +67,7 @@ def make_item(
     media_types: Optional[List[str]] = None,
     message_type: str = "TEXT",
     schedule_fire: bool = False,
+    plan: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return {
         "kind": kind,
@@ -81,6 +82,7 @@ def make_item(
         "media_types": list(media_types or []),
         "message_type": str(message_type or "TEXT"),
         "schedule_fire": bool(schedule_fire),
+        "plan": dict(plan) if isinstance(plan, dict) else None,
     }
 
 

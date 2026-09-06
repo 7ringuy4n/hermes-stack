@@ -8,7 +8,7 @@ Emits a user-safe refusal string on block.
 
 ## Profile
 
-High (`ENABLE_SECURITY=active`). Defaults: YARA on; AV, sandbox, and LLM judge **off**.
+Security worker (`ENABLE_SECURITY=active`). Defaults: YARA on; AV, sandbox, and LLM judge **off**.
 
 ## Main functions
 

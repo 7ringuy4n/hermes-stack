@@ -49,8 +49,8 @@ def dispatcher_url() -> str:
     return (os.getenv("DISPATCHER_URL") or "http://dispatcher:8090").rstrip("/")
 
 
-def model_router_url() -> str:
-    return (os.getenv("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+def router_worker_url() -> str:
+    return (os.getenv("ROUTER_WORKER_URL") or "http://router-worker:8096").rstrip("/")
 
 
 def _post(path: str, body: dict, timeout: float = 60.0, *, base: str = "") -> Dict[str, Any]:
@@ -67,7 +67,7 @@ def _post(path: str, body: dict, timeout: float = 60.0, *, base: str = "") -> Di
 
 
 def run_web_search(query: str, max_results: int = 6) -> Optional[dict]:
-    """POST model-router /v1/search. Returns payload or None."""
+    """POST router-worker /v1/search. Returns payload or None."""
     q = (query or "").strip()
     if not q:
         return None
@@ -76,7 +76,7 @@ def run_web_search(query: str, max_results: int = 6) -> Optional[dict]:
             "/v1/search",
             {"query": q, "max_results": max(1, min(int(max_results), 8))},
             timeout=45.0,
-            base=model_router_url(),
+            base=router_worker_url(),
         )
     except Exception as e:  # noqa: BLE001
         log.warning("search_then_office search failed: %s", type(e).__name__)
@@ -279,7 +279,7 @@ def _omni_overlay_plan_model() -> str:
     """Return the configured priority combo for short structured planning."""
     return (
         os.getenv("OMNIROUTER_CLASSIFY_COMBO")
-        or os.getenv("MODEL_ROUTER_CLASSIFY_MODEL")
+        or os.getenv("ROUTER_WORKER_CLASSIFY_MODEL")
         or "classifier"
     ).strip() or "classifier"
 
@@ -300,12 +300,12 @@ def _synthesize_overlay_plan(
     if not system or not user_template:
         return {}
     try:
-        from .omni_env import resolve_omni_api_key, resolve_omni_base_url
+        from .omni_env import resolve_media_router_api_key, resolve_media_router_base_url
     except ImportError:
-        from omni_env import resolve_omni_api_key, resolve_omni_base_url  # type: ignore
+        from omni_env import resolve_media_router_api_key, resolve_media_router_base_url  # type: ignore
 
-    base = resolve_omni_base_url()
-    key = resolve_omni_api_key()
+    base = resolve_media_router_base_url()
+    key = resolve_media_router_api_key()
     if not base or not key:
         return {}
     # This is a short, schema-constrained planning call, so use the same
@@ -322,6 +322,7 @@ def _synthesize_overlay_plan(
             "stream": False,
             "temperature": 0,
             "max_tokens": 420,
+            "metadata": {"task_hint": "file", "task_type": "file_processing"},
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -450,6 +451,9 @@ def run_office_create(
         "thread_id": str(thread_id),
         "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
         "caption": "",
+        # Delivery remains in the cancellable adapter task. Dispatcher writes
+        # the artifact only, so a stopped request cannot send a late file.
+        "send_zalo": False,
     }
     if (output_type or "").strip():
         body["output_type"] = output_type.strip().lower()
@@ -883,14 +887,14 @@ def _media_out_candidates() -> list:
 
 
 def _omni_generate_still(prompt: str, *, filename: str) -> dict[str, Any] | None:
-    """Scenic diffusion via OmniRouter combo image-gen (not dispatcher /v1/image)."""
+    """Scenic diffusion via OmniRoute combo image-gen (not dispatcher /v1/image)."""
     try:
-        from .omni_env import resolve_omni_api_key, resolve_omni_base_url
+        from .omni_env import resolve_media_router_api_key, resolve_media_router_base_url
     except ImportError:
-        from omni_env import resolve_omni_api_key, resolve_omni_base_url  # type: ignore
+        from omni_env import resolve_media_router_api_key, resolve_media_router_base_url  # type: ignore
 
-    base = resolve_omni_base_url()
-    key = resolve_omni_api_key()
+    base = resolve_media_router_base_url()
+    key = resolve_media_router_api_key()
     if not key:
         log.warning("omni generate: missing OMNIROUTER_API_KEY")
         return None
@@ -977,19 +981,19 @@ def run_image_edit(
     if not prompt or not source.is_file():
         return shortcut_consumed()
     try:
-        from .omni_env import resolve_env_var, resolve_omni_api_key, resolve_omni_base_url
+        from .omni_env import resolve_env_var, resolve_media_router_api_key, resolve_media_router_base_url
     except ImportError:
         from omni_env import (  # type: ignore
             resolve_env_var,
-            resolve_omni_api_key,
-            resolve_omni_base_url,
+            resolve_media_router_api_key,
+            resolve_media_router_base_url,
         )
-    key = resolve_omni_api_key()
+    key = resolve_media_router_api_key()
     if not key:
         log.warning("omni image edit: missing OMNIROUTER_API_KEY")
         return shortcut_consumed()
     model = (resolve_env_var("IMAGE_EDIT_COMBO", "image-edit") or "image-edit").strip()
-    base = resolve_omni_base_url().rstrip("/")
+    base = resolve_media_router_base_url().rstrip("/")
     import uuid
 
     boundary = "hermes-" + uuid.uuid4().hex

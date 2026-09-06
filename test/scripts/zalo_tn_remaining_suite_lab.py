@@ -5,7 +5,7 @@
 Uses samples from local ``../test docs`` (OCR + Security). Rates with Omni vision /
 ingest extract (AGENT_RULES §29.2).
 
-Env: ASSISTANT_SSH_*, optional ZALO_TEST_USER_ID, ZALO_SUITE_WAIT_S, ASSISTANT_TEST_DOCS
+Env: ASSISTANT_SSH_*, required ZALO_TEST_USER_ID; optional ZALO_SUITE_WAIT_S, ASSISTANT_TEST_DOCS
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().paren
 DOCS = Path(os.environ.get("ASSISTANT_TEST_DOCS") or (ROOT.parent / "test docs"))
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-remaining-suite"
 REMOTE_PY = Path(__file__).resolve().parent / "zalo_tn_remaining_suite_remote.py"
-TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937").strip()
+TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
 WAIT_S = int(os.environ.get("ZALO_SUITE_WAIT_S") or "360")
 
 SAMPLES = [
@@ -57,6 +57,9 @@ def _clean(text: str) -> str:
 
 
 def main() -> int:
+    if not TN_ID:
+        print("ERROR: ZALO_TEST_USER_ID is required", file=sys.stderr)
+        return 2
     OUT.mkdir(parents=True, exist_ok=True)
     missing = [a for a, _ in SAMPLES if not (DOCS / a).is_file()]
     if missing:

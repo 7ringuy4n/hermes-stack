@@ -13,7 +13,7 @@ Production target (see `referrence/hermes-production-scalability-architecture.md
 1. **API Gateway** — controlled HTTP entry, shared Valkey rate limits  
 2. **Traefik** — load balance Hermes chat replicas  
 3. **OpenVPN** — private admin access  
-4. **Zalo** — local bridge only (does **not** use the Gateway)
+4. **Zalo** — local bridge through Traefik's internal route (does **not** use the API Gateway)
 
 Heavy OCR/image work stays on **dispatcher workers** (async + timeouts) so Hermes does not hang on long jobs.
 
@@ -112,7 +112,8 @@ GATEWAY_UPSTREAM_URL=http://traefik:80
 | Messages | Edit `architect/gateway/api-gateway/messages/en.json` (UTF-8) — no hardcoded operator strings in logic |
 | Timeout | `GATEWAY_PROXY_TIMEOUT_S` bounds how long Gateway waits (helps ISSUE: long hang) |
 
-**Zalo:** bridge `:8787` → `zalo-proxy` → Hermes on the Docker network. Do **not** send Zalo SSE through the API Gateway.
+**Zalo:** bridge `:8787` → `zalo-proxy` → Traefik `/zalo-bridge` → the
+Valkey-elected Hermes owner. Do **not** send Zalo SSE through the API Gateway.
 
 **Coding:** no rate-limit on coding skill paths (product MUST). Other HTTP still uses global Valkey RL.
 
@@ -131,7 +132,7 @@ GATEWAY_UPSTREAM_URL=http://traefik:80
 
 Initialize PKI before expecting a healthy VPN. Steps: `architect/edge/openvpn/README.md`.
 
-**OmniRouter over VPN:** default publish is `OMNIROUTER_BIND=127.0.0.1:20129`. From Windows/macOS/Linux after VPN connect, prefer `ssh -L 20129:127.0.0.1:20129` then open `http://127.0.0.1:20129`. Optional: `OMNIROUTER_BIND=0.0.0.0` **only** with firewall limited to the VPN subnet. Set `OMNIROUTE_DISABLE_CREDENTIAL_HEALTH_CHECK=true` to stop Omni connection-test spam.
+**OmniRoute over VPN:** default publish is `OMNIROUTER_BIND=127.0.0.1:20129` (compatibility setting). From Windows/macOS/Linux after VPN connect, prefer `ssh -L 20129:127.0.0.1:20129` then open `http://127.0.0.1:20129`. Optional: bind to `0.0.0.0` **only** with firewall limited to the VPN subnet. Set `OMNIROUTE_DISABLE_CREDENTIAL_HEALTH_CHECK=true` to stop credential connection-test noise.
 
 ---
 

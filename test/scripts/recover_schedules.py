@@ -80,7 +80,7 @@ for line in Path("/opt/assistant/.env").read_text(encoding="utf-8", errors="repl
         continue
     k, v = s.split("=", 1)
     env[k.strip()] = v.strip().strip('"').strip("'")
-tok = env.get("ZALO_API_TOKEN") or env.get("ADMIN_API_TOKEN") or ""
+tok = env.get("ZALO_API_TOKEN") or ""
 admin = ""
 p = Path("/data/assistant/zalo_admin_users.txt")
 if p.is_file():

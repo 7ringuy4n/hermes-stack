@@ -1,6 +1,6 @@
 # Case: Omni combo preflight (hermes + classifier)
 
-Verify OmniRouter `hermes` / `classifier` combos have members before Zalo
+Verify OmniRoute `hermes` / `classifier` combos have members before Zalo
 reply tests (case 32) or manual chat.
 
 ## Goal
@@ -9,7 +9,7 @@ Catch silent “no response” when chat/classify combo aliases are empty.
 
 ## Preconditions
 
-- Stack up with `ENABLE_OMNIROUTER=1`, `model-router` healthy
+- Stack up with `ENABLE_OMNIROUTER=1`, `router-worker` healthy
 - first-setup-omnirouter has filled both combos with OpenCode `oc/*`
 
 ## Steps
@@ -27,7 +27,7 @@ Catch silent “no response” when chat/classify combo aliases are empty.
 
 ## Fail events
 
-- Omni DB missing / model-router down
+- Omni DB missing / router-worker down
 - Combos still empty after first-setup
 - Router logs show repeated 400 for model `hermes` while combos claim non-empty
 

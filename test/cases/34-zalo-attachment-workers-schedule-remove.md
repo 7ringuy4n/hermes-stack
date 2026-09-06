@@ -28,7 +28,7 @@ that text, compound requests fan out, and admins can bulk-remove schedules.
    - `!zalo schedule remove 1 3 5`, `!zalo schedule remove 1-3`
    - `!zalo schedule remove group <group name>` and `… group <group name> 1-2`
    - `!zalo schedule remove all`
-7. `POST /v1/search` on `model-router:8096` answers; the same path on `dispatcher:8090` is gone.
+7. `POST /v1/search` on `router-worker:8096` answers; the same path on `dispatcher:8090` is gone.
 
 ## Pass criteria
 

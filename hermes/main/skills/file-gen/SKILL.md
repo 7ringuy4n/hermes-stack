@@ -57,6 +57,22 @@ Never emit placeholders like `<value after search>`. Choose labels and language 
 
 Use one visible document title. Do not repeat a location, subject, or short heading as a standalone line above a hero/title band that already names it. The HTML `<title>` metadata does not count as a visible heading.
 
+Treat print geometry as a release constraint, not decoration. Keep all factual
+text in normal document flow. Do not use negative margins, translated offsets,
+absolute/fixed positioning, fixed-height text containers, or `overflow:hidden`
+around headings, values, labels, tables, or footers. Use `box-sizing:border-box`,
+content-driven heights, and explicit internal padding. Icons and decorative
+shapes must occupy their own bounded cell and must not cross a text container's
+edge. A footer belongs at the visual bottom of the composition; if the content
+is short, deliberately distribute vertical spacing or choose a smaller page
+size instead of leaving an accidental empty lower third.
+
+Before sending the HTML, audit it top-to-bottom as if no element may overlap
+another: the first and last visible glyph must remain inside page margins; every
+large value must fit its parent at the declared font size; labels must meet
+print contrast; and the same timezone notation must be used everywhere. Remove
+any risky positioning rule rather than hoping the renderer will clip it safely.
+
 ### PPTX / DOCX / XLSX / MD (presentation-ready)
 
 For pptx/docx/md: compose markdown the worker understands (`#` title, `##` subtitle, `- Label: value`, short prose). Decks and reports must look presentation-ready — title, metrics, sections — not a chat dump.
@@ -68,7 +84,7 @@ Fetch live facts with `web_search` when needed. Resolve ambiguous place names ag
 
 The requested time and subject scope is a hard boundary. If the user requests only a current snapshot, the artifact MUST contain only current observations: forecast tables, future-day sections, travel advice based on forecasts, history, and unrelated indices are prohibited. Include forecasts, history, recommendations, or expanded analysis only when the user asks for them. Never paste search-page chrome into the body. Do not invent causal explanations, event durations, forecasts, or other derived claims; even plausible domain knowledge is excluded unless the user requested analysis and the retrieved evidence directly supports it.
 
-Before the final office-file call, self-review the authored body and correct every violation: one visible title; no standalone repetition of the subject before or after that title; one requested language with locale-appropriate units and no decorative translation; one verified locality and non-future current observation timestamp; one consistent set of current values from the cited source; no unrequested scope; and no unsupported interpretation or advice. Keep a compact snapshot on one page when its content fits; remove decorative overflow, forced page breaks, and footer fragments that would create accidental extra pages. Balance the layout across the chosen page size: do not leave a large unused lower area when resizing the page, increasing useful spacing, or simplifying the layout would produce a deliberate composition.
+Before the final office-file call, self-review the authored body and correct every violation: one visible title; no standalone repetition of the subject before or after that title; one requested language with locale-appropriate units and no decorative translation; one verified locality and non-future current observation timestamp; one consistent set of current values from the cited source; no unrequested scope; no unsupported interpretation or advice; and no negative/absolute/translated positioning of content. Keep a compact snapshot on one page when its content fits; remove decorative overflow, forced page breaks, and footer fragments that would create accidental extra pages. Balance the layout across the chosen page size: do not leave a large unused lower area when resizing the page, increasing useful spacing, or simplifying the layout would produce a deliberate composition.
 
 ## Optional embedded visual (pdf|pptx|docx|xlsx|md)
 
@@ -77,11 +93,9 @@ Use a generated visual only when the user explicitly requests an image/photo ins
 1. **`web_search`** for live facts (labeled metrics only).
 2. When explicitly requested, create one embeddable still via dispatcher (Omni keys on the worker — never built-in `image_generation`, never `execute_code`, never read `.env`):
 
-```bash
-curl -sS -X POST http://dispatcher:8090/v1/scenic-still \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt":"Photorealistic photograph of Ho Chi Minh City skyline, real camera photo, natural lighting, highly detailed, not cartoon, not anime","filename":"hcm-hero.jpg","size":"1280x720"}'
-```
+Call `POST http://dispatcher:8090/v1/scenic-still` with the model-authored visual
+brief, a safe filename, and the requested size. Do not copy a fixed subject,
+place, medium, camera style, or layout from skill text.
 
 Use `hermes_path` / `/opt/data/media/out/<file>` in PDF HTML `<img src="…">` (and note the path in pptx/docx bodies when useful). If scenic-still fails, omit the image and still deliver the file. Never mention credentials.
 The still is an internal document asset. Do not send it separately; deliver only the requested office file.
@@ -121,6 +135,10 @@ For PPTX: markdown body, `output_type=pptx`, filename ending `.pptx`.
 Requires Media|File worker with `OFFICE_FILE_GEN=active`. Success: `"ok":true` and
 Zalo receives the file (empty caption). User-facing text per **media-out**:
 **file only**.
+
+Dispatcher renders the file locally. Content generation reaches Router Worker,
+which prefers the OmniRoute chat combo and may use an explicitly configured
+chat-compatible provider when OmniRoute is unavailable.
 
 ## Fallback (txt/md only)
 

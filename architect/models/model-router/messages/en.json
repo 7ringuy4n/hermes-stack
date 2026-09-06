@@ -1,5 +1,0 @@
-{
-  "no_model_available": "No model available. Configure OmniRouter or an explicit fallback provider API key.",
-  "upstream_error": "Upstream model provider error.",
-  "health_ok": "ok"
-}

@@ -25,7 +25,7 @@ def _api_base() -> str:
 
 
 def _token() -> str:
-    return (os.getenv("ZALO_API_TOKEN") or os.getenv("ADMIN_API_TOKEN") or "").strip()
+    return (os.getenv("ZALO_API_TOKEN") or "").strip()
 
 
 def record(

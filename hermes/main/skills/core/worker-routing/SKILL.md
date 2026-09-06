@@ -5,12 +5,12 @@ description: "Route classifier JSON to the correct worker skill. LLM classifies;
 
 # Worker routing (classifier → skill → worker)
 
-Hermes receives structured JSON from the model-router `/v1/classify` hop (or equivalent). **Do not** infer intent from keywords. Read the JSON fields and follow this table.
+Hermes receives structured JSON from the router-worker `/v1/classify` hop (or equivalent). **Do not** infer intent from keywords. Read the JSON fields and follow this table.
 
 | `task_hint` | `skill` | `skill_action` | Worker / next step |
 |---|---|---|---|
-| `normal` | `null` | `null` | Hermes via model-router chat combo (`ack_then_deliver`). No host instant reply. |
-| `search` | `web_search` | `search` | **Web Search skill** → Model Router `POST /v1/search` → Omni (Tavily → Firecrawl → SearXNG). |
+| `normal` | `null` | `null` | Hermes via router-worker chat combo (`ack_then_deliver`). No host instant reply. |
+| `search` | `web_search` | `search` | **Web Search skill** → Router Worker `POST /v1/search` → Omni (Tavily → Firecrawl → SearXNG). |
 | `file` / `tool` (media) | `media_file` | `process_file`, `process_image`, `generate_media`, `create_file` | **Media/File skill** → media worker / **vision-ocr** combo / ingest extract for office / **create-and-send office via `file-gen` → Dispatcher `/v1/office-file`**. When Media worker is inactive, use router combo **`hermes`**. Never local docx/terminal forensics for chat attachment reads. |
 | `schedule` | `schedule` | `create` | **Schedule skill** → Go schedule worker (`SCHEDULE_URL`). Store inner `fire_text` only. |
 | `knowledge` | `knowledge` | `lookup` | Knowledge catalog (top 5). Not live web search. |
@@ -20,7 +20,7 @@ Hermes receives structured JSON from the model-router `/v1/classify` hop (or equ
 
 | `execution_class` | `response_mode` | Hermes behavior |
 |---|---|---|
-| `interactive` | `ack_then_deliver` | Route through model-router; Hermes chat combo produces the reply. |
+| `interactive` | `ack_then_deliver` | Route through router-worker; Hermes chat combo produces the reply. |
 | `async` | `ack_then_deliver` | Workflow / worker job; deliver when done. |
 | `schedule` | `confirm` | Confirm lịch once; worker fires inner message later. |
 
@@ -59,4 +59,4 @@ If a required worker is disabled, say so in one line — do not invent a local s
 ## Related skills
 
 - `schedule`, `web-search`, `media-file`, `security`, `core/scheduling`
-- Classifier contract: `hermes/main/skills/classify/` (parts assembled into one hop; model-router loads it)
+- Classifier contract: `hermes/main/skills/classify/` (parts assembled into one hop; router-worker loads it)

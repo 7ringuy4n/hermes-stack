@@ -7,7 +7,7 @@ Verify live weather PPTX create and city photo with compact Vietnamese overlay
 
 ## Steps
 
-1. Inject as Tn (`233767886566872937`) via `test/scripts/zalo_tn_weather_overlay_pptx_inject.py`.
+1. Inject as the authorized `ZALO_TEST_USER_ID` via `test/scripts/zalo_tn_weather_overlay_pptx_inject.py`.
 2. Message A: create PPTX with current Vung Tau weather facts.
 3. Message B: update HCM weather and write facts on HCM photo at bottom-left.
 

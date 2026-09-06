@@ -251,6 +251,19 @@ def main() -> int:
     assert "media_urls=media_urls" in adapter_source
     assert "has_image_attachment=attach_is_image" in adapter_source
     assert "media_urls=list(event.media_urls or [])" in adapter_source
+    assert "media_urls=list(media_urls or [])" in adapter_source
+    assert adapter_source.count("media_urls=media_urls,") >= 2
+    assert 'plan=queued_plan,' in adapter_source
+    assert adapter_source.count("plan=plan,") >= 4
+    assert '"plan": dict(plan) if isinstance(plan, dict) else None' in (
+        ROOT / "hermes" / "main" / "plugins" / "zalo" / "inbound_queue.py"
+    ).read_text(encoding="utf-8")
+    image_edit_handoff = (
+        'if has_image_attachment and plan_media_shortcut_gate(plan) == "image_edit":'
+    )
+    image_fallthrough = "if has_image_attachment:\n            ins_parts ="
+    assert image_edit_handoff in adapter_source
+    assert adapter_source.index(image_edit_handoff) < adapter_source.index(image_fallthrough)
     assert "if edit_plan and (not has_image_attachment or not urls):" in adapter_source
     assert 'plan=m.get("plan") if isinstance(m.get("plan"), dict) else None' in adapter_source
     assert 'early_plan["task_hint"] = "tool"' in adapter_source
@@ -261,6 +274,12 @@ def main() -> int:
     assert "and not self._as_inbound_queue_enabled()" in adapter_source
     assert "sock_connect=15, sock_read=45" in adapter_source
     assert '("classify", "failed")' in adapter_source
+    assert "image_claimed = self._as_autosend_file_claim(img_path, str(thread_id))" in adapter_source
+    direct_send = adapter_source.index("image_claimed = self._as_autosend_file_claim")
+    direct_metadata = adapter_source.index(
+        'meta = {"as_skip_autosend": True, "as_claimed": True}', direct_send
+    )
+    assert direct_send < direct_metadata
     classify_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "classify_client.py").read_text(
         encoding="utf-8"
     )

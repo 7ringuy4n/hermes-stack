@@ -1,6 +1,6 @@
 """assistant Media/File worker — media download, convert, image/video, OCR text.
 
-Web search moved to the Model Router (`model-router /v1/search`) so vendor HTTP
+Web search moved to the Router Worker (`router-worker /v1/search`) so vendor HTTP
 never competes with media work here. Heavy endpoints stay sync (threadpool);
 `/health` is async so probes cannot flap while media jobs run.
 """
@@ -145,12 +145,12 @@ async def openai_proxy(path: str, request: Request):
 MEDIA_DIR = Path(os.environ.get("MEDIA_CACHE_DIR", "/data/media"))
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Web search lives on the Model Router (model-router /v1/search) so the media
+# Web search lives on the Router Worker (router-worker /v1/search) so the media
 # worker never blocks on vendor HTTP. Kept only to advertise the route.
 WEB_SEARCH_URL = (
     os.environ.get("WEB_SEARCH_URL")
-    or os.environ.get("MODEL_ROUTER_URL")
-    or "http://model-router:8096"
+    or os.environ.get("ROUTER_WORKER_URL")
+    or "http://router-worker:8096"
 ).rstrip("/")
 
 
@@ -224,7 +224,7 @@ def mode_switch(req: ModeReq) -> dict[str, Any]:
         m = "upload" if req.has_media else "chat"
     hints = {
         "chat": "Use skill chat + common-rules.",
-        "research": "Use skill research; web via model-router /v1/search.",
+        "research": "Use skill research; web via router-worker /v1/search.",
         "upload": "Use skill upload/vision/ocr; media already local or via /v1/media.",
         "code": "Use skill code; short snippets.",
     }
@@ -719,7 +719,7 @@ def image_generate(req: ImageReq) -> dict[str, Any]:
             "error": "diffusion_moved_to_omni",
             "detail": (
                 "POST /v1/image no longer runs diffusion. "
-                "Use OmniRouter POST /v1/images/generations with model image-gen. "
+                "Use OmniRoute POST /v1/images/generations with model image-gen. "
                 "Pillow mode remaining: mode=text-poster (alias /v1/text-poster)."
             ),
         },

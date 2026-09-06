@@ -12,9 +12,19 @@ export STACK_ROOT="${STACK_ROOT:-$ROOT}"
 export SCRIPTS_DIR="${SCRIPTS_DIR:-$ROOT/scripts/main}"
 export HERMES_DIR="${HERMES_DIR:-$ROOT/hermes/main}"
 
+# Normalize retired keys and exact legacy internal routes before importing the
+# host environment. Later cleanup during OpenBao load is still defense in depth,
+# but it is too late to change values already exported into this shell.
+if [[ -f "${SCRIPTS_DIR}/cleanup-obsolete-env.py" ]]; then
+  STACK_ROOT="$ROOT" python3 "${SCRIPTS_DIR}/cleanup-obsolete-env.py"
+fi
+
 # shellcheck source=architect/backup-restore/lib/load-defaults.sh
 source "${ROOT}/architect/backup-restore/lib/load-defaults.sh"
 load_env_with_defaults
+if [[ -f "${SCRIPTS_DIR}/migrate-openbao-token.py" ]]; then
+  python3 "${SCRIPTS_DIR}/migrate-openbao-token.py"
+fi
 
 # shellcheck source=architect/backup-restore/lib/workers.sh
 source "${ROOT}/architect/backup-restore/lib/workers.sh"
@@ -418,7 +428,10 @@ EOF
 [Unit]
 Description=Assistant Zalo self-heal every 1 min
 [Timer]
-OnBootSec=1min
+# Anchor the first run to timer activation. OnBootSec can already be in the
+# past when this unit is installed, leaving a newly enabled timer "elapsed"
+# with no service activation from which OnUnitActiveSec can recur.
+OnActiveSec=1min
 OnUnitActiveSec=1min
 AccuracySec=15s
 Persistent=true
@@ -426,7 +439,10 @@ Persistent=true
 WantedBy=timers.target
 EOF
     $sudo systemctl daemon-reload
-    $sudo systemctl enable --now assistant-zalo-watch.timer
+    $sudo systemctl enable assistant-zalo-watch.timer
+    # Reloading a unit does not re-arm an already active/elapsed timer. Restart
+    # it so upgrades adopt the new activation-relative schedule immediately.
+    $sudo systemctl restart assistant-zalo-watch.timer
   else
     $sudo systemctl disable --now assistant-zalo-watch.timer >/dev/null 2>&1 || true
   fi
@@ -480,6 +496,13 @@ do_destroy() {
   if [[ "${existing:-0}" -eq 0 ]]; then
     echo "==> no project containers — skip backup before destroy (clean / first-setup host)"
   else
+    # A prior up/update deliberately scrubs transient secret exports. Reload
+    # them before both the router configuration export and Compose parsing.
+    # If OpenBao cannot supply them, do not enter the destructive path.
+    do_prepare_openbao_env_for_compose || {
+      echo "ERROR: cannot load OpenBao secrets — abort destroy" >&2
+      return 1
+    }
     do_backup_first "destroy" || return 1
   fi
   echo "==> destroy stack project=${project} (containers + networks; volumes kept)"
@@ -534,7 +557,7 @@ do_update() {
   # Backup exporters need the same runtime-only OpenBao credentials as Compose.
   # Load them before the restore point is created, and never leave the export
   # behind when verification aborts the update.
-  if ! do_load_openbao_env_for_compose; then
+  if ! do_prepare_openbao_env_for_compose; then
     do_scrub_plaintext_env
     return 1
   fi
@@ -547,9 +570,9 @@ do_update() {
     echo "==> git HEAD: $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
     echo "    (run git pull yourself before update if you want remote changes)"
   fi
-  # Model-router prompt/config SoT lives in Hermes skills; keep bake fallback identical.
-  if [[ -f "${SCRIPTS_DIR}/sync-model-router-skills.sh" ]]; then
-    bash "${SCRIPTS_DIR}/sync-model-router-skills.sh" || echo "WARN: sync-model-router-skills failed"
+  # Router Worker prompt/config SoT lives in Hermes skills; keep bake fallback identical.
+  if [[ -f "${SCRIPTS_DIR}/sync-router-worker-skills.sh" ]]; then
+    bash "${SCRIPTS_DIR}/sync-router-worker-skills.sh" || echo "WARN: sync-router-worker-skills failed"
   elif [[ -f "${SCRIPTS_DIR}/sync-classify-skill.sh" ]]; then
     bash "${SCRIPTS_DIR}/sync-classify-skill.sh" || echo "WARN: sync-classify-skill failed"
   fi
@@ -576,6 +599,12 @@ do_update() {
     echo "==> pull selected images (best-effort)"
     compose pull "${services[@]}" || true
     ensure_hermes_media_dirs
+    for svc in "${services[@]}"; do
+      if [[ "$svc" == "router-worker" ]]; then
+        do_remove_stale_worker_containers
+        break
+      fi
+    done
     # Scoped recreate — never docker compose down; never touch postgres unless requested.
     for svc in "${services[@]}"; do
       if [[ "$svc" == "postgres" ]]; then
@@ -655,6 +684,7 @@ do_first_setup_openbao() {
   # Re-export KV → data dir so compose env_file (hermes) picks up secrets after UI edits / re-seed.
   python3 "${SCRIPTS_DIR}/load-openbao-env.py" \
     || echo "WARN: load-openbao-env failed — re-run: bash run.sh load-openbao-env"
+  echo "OpenBao token access (root-only): sudo cat ${OPENBAO_TOKEN_FILE:-${ASSISTANT_DATA_DIR}/openbao/root-token}"
 }
 
 do_scrub_plaintext_env() {
@@ -691,6 +721,63 @@ do_load_openbao_env_for_compose() {
     esac
   done < "$export_path"
   echo "OK: OpenBao secrets loaded into runtime environment"
+}
+
+do_bootstrap_openbao_for_secret_load() {
+  # After a clean `destroy`, Compose cannot parse the complete project until
+  # secret-backed required variables are loaded, while OpenBao cannot be
+  # started through that project without values for those variables. Start
+  # only OpenBao with non-functional parse sentinels; no application service
+  # consumes them. The real values are loaded from KV before the full up.
+  _env_active "${ENABLE_OPENBAO:-}" || return 1
+  echo "==> cold-start OpenBao before loading secret-backed compose values"
+  (
+    export MEMORY_DB_PASSWORD="${MEMORY_DB_PASSWORD:-openbao-bootstrap-unused}"
+    export HERMES_DASHBOARD_PASSWORD="${HERMES_DASHBOARD_PASSWORD:-openbao-bootstrap-unused}"
+    export HERMES_DASHBOARD_SECRET="${HERMES_DASHBOARD_SECRET:-openbao-bootstrap-unused}"
+    export API_SERVER_KEY="${API_SERVER_KEY:-openbao-bootstrap-unused}"
+    compose up -d --no-deps openbao
+  )
+}
+
+do_restore_openbao_latest_for_cold_start() {
+  local backup_dir="${BACKUP_DIR:-/data/assistant/backups}"
+  local stamp kv attempt
+  stamp="$(cat "${backup_dir}/LATEST" 2>/dev/null || true)"
+  kv="${backup_dir}/${stamp}/openbao/kv-assistant-api-keys.json"
+  if [[ -z "$stamp" || ! -f "$kv" ]]; then
+    echo "ERROR: no latest OpenBao KV backup is available for cold startup" >&2
+    return 1
+  fi
+  for attempt in $(seq 1 30); do
+    if curl -fsS -m 2 "http://127.0.0.1:${OPENBAO_PORT:-8200}/v1/sys/health" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  echo "==> restore OpenBao KV from verified latest backup stamp=${stamp}"
+  ROOT="$ROOT" python3 "${ROOT}/architect/backup-restore/lib/restore_openbao_kv.py" "$kv"
+}
+
+do_prepare_openbao_env_for_compose() {
+  _env_active "${ENABLE_OPENBAO:-}" || return 0
+  if do_load_openbao_env_for_compose; then
+    return 0
+  fi
+  do_bootstrap_openbao_for_secret_load || return 1
+  if ! do_restore_openbao_latest_for_cold_start; then
+    echo "==> no usable cold-start KV backup; seed first-install credentials"
+    do_first_setup_openbao || return 1
+  fi
+  local attempt
+  for attempt in $(seq 1 30); do
+    if do_load_openbao_env_for_compose; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "ERROR: OpenBao did not become ready for secret loading" >&2
+  return 1
 }
 
 do_post_ready_learn() {
@@ -799,7 +886,17 @@ do_archive_before_change() {
     echo "==> no project containers — skip backup before ${reason} (clean / first-setup host)"
     return 0
   fi
-  do_backup_first "$reason"
+  # A previous lifecycle command scrubs the transient OpenBao export after
+  # Compose consumes it. Reload secrets for this command's router export, then
+  # scrub again even when backup or verification fails.
+  if ! do_prepare_openbao_env_for_compose; then
+    echo "ERROR: cannot load OpenBao secrets — abort ${reason}" >&2
+    return 1
+  fi
+  local backup_status=0
+  do_backup_first "$reason" || backup_status=$?
+  do_scrub_plaintext_env
+  return "$backup_status"
 }
 
 do_switch_profile() {
@@ -884,7 +981,10 @@ do_remove_components() {
   local stamp
   stamp="$(cat "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null || true)"
   for arg in "${pairs[@]}"; do
-    env_upsert "${arg%%=*}" "${arg#*=}"
+    k="${arg%%=*}"
+    v="${arg#*=}"
+    env_upsert "$k" "$v"
+    export "$k=$v"
   done
   echo "OK: wrote ${pairs[*]} (stamp=${stamp})"
   _apply_component_change "$stamp" "$noup" "$doupdate"
@@ -1004,7 +1104,10 @@ do_add_components() {
   local stamp
   stamp="$(cat "${BACKUP_DIR:-/data/assistant/backups}/PRE_CHANGE" 2>/dev/null || true)"
   for arg in "${pairs[@]}"; do
-    env_upsert "${arg%%=*}" "${arg#*=}"
+    k="${arg%%=*}"
+    v="${arg#*=}"
+    env_upsert "$k" "$v"
+    export "$k=$v"
   done
   echo "OK: wrote ${pairs[*]} (stamp=${stamp})"
   _apply_component_change "$stamp" "$noup" "$doupdate"
@@ -1052,7 +1155,7 @@ First setup:
 Security overlay:
   first-setup-openbao     # seed/merge API keys → OpenBao KV (:8200); core default on up|update
   load-openbao-env        # pull KV → .env.openbao + fill compose keys in .env
-  sync-openbao-env        # load-openbao-env + recreate hermes/model-router after KV edit
+  sync-openbao-env        # load-openbao-env + recreate hermes/router-worker after KV edit
   check-security          # smoke OpenBao / Grafana / AV / authz / …
   backup-sync-clouddrive  # when ENABLE_CLOUDDRIVE=active
 
@@ -1070,7 +1173,7 @@ case "$cmd" in
     assistant_profile_summary
     ensure_hermes_media_dirs
     do_remove_stale_worker_containers
-    do_load_openbao_env_for_compose
+    do_prepare_openbao_env_for_compose
     compose up -d --remove-orphans
     do_stop_disabled_optionals
     if [[ -f "${SCRIPTS_DIR}/hermes-cron-share.sh" ]]; then
@@ -1094,7 +1197,13 @@ case "$cmd" in
   add-components|enable-components|install-workers) do_add_components "$@" ;;
   remove-components|disable-components|remove-workers) do_remove_components "$@" ;;
   update) do_update "$@" ;;
-  backup) ops backup "$@" ;;
+  backup)
+    do_prepare_openbao_env_for_compose
+    _backup_status=0
+    ops backup "$@" || _backup_status=$?
+    do_scrub_plaintext_env
+    exit "$_backup_status"
+    ;;
   restore) ops restore "$@" ;;
   verify) ops verify "$@" ;;
   migrate) ops migrate "$@" ;;
@@ -1103,7 +1212,13 @@ case "$cmd" in
   post-ready-learn|learn-skills)
     do_post_ready_learn
     ;;
-  compact) do_compact ;;
+  compact)
+    do_prepare_openbao_env_for_compose
+    _compact_status=0
+    do_compact || _compact_status=$?
+    do_scrub_plaintext_env
+    exit "$_compact_status"
+    ;;
   optimize-memory|optimize) do_optimize_memory ;;
   check-media|smoke-media)
     need_media check-media || exit 1
@@ -1153,10 +1268,10 @@ case "$cmd" in
     ;;
   sync-openbao-env)
     need_security sync-openbao-env || exit 1
-    do_load_openbao_env_for_compose
-    echo "==> recreate hermes + model-router + omni-router (pick up KV changes)"
-    compose up -d --no-deps --build hermes model-router omni-router 2>/dev/null \
-      || compose up -d --no-deps hermes model-router omni-router \
+    do_prepare_openbao_env_for_compose
+    echo "==> recreate hermes + router-worker + omni-router (pick up KV changes)"
+    compose up -d --no-deps --build hermes router-worker omni-router 2>/dev/null \
+      || compose up -d --no-deps hermes router-worker omni-router \
       || echo "WARN: sync-openbao-env partial — run: bash run.sh update hermes"
     do_scrub_plaintext_env
     ;;

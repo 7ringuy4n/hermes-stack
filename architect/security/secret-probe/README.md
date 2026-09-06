@@ -1,6 +1,6 @@
 # secret-probe
 
-Security gate **independent from** `task_hint`. Model Router never classifies `SECRET`.
+Security gate **independent from** `task_hint`. Router Worker never classifies `SECRET`.
 
 ## Statuses
 

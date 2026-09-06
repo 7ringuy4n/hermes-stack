@@ -192,7 +192,7 @@ sleep {WAIT_S}
 echo '=== hermes logs ==='
 for h in $(docker ps --format '{{{{.Names}}}}' | grep hermes); do
   echo "-- $h"
-  docker logs --since 4m "$h" 2>&1 | grep -Ei 'Permission denied|/opt/data/media|dual-{tag}|SSE|zalo_owner|crash' | tail -50 || true
+  docker logs --since 4m "$h" 2>&1 | grep -Ei 'Permission denied|/opt/data/media|dual-{tag}|SSE|owner lease|crash' | tail -50 || true
 done
 echo HERMES_COUNT=$(docker ps -q --filter name=hermes | wc -l | tr -d ' ')
 curl -fsS -m 8 http://127.0.0.1:8787/health || true
@@ -200,7 +200,7 @@ for h in $(docker ps --format '{{{{.Names}}}}' | grep hermes); do
   docker exec "$h" sh -c 'touch /opt/data/media/inbound/_dual_w /opt/data/media/out/_dual_w && rm -f /opt/data/media/inbound/_dual_w /opt/data/media/out/_dual_w && echo media_ok' || echo media_fail
 done
 # abnormal scan siblings
-docker logs --since 10m model-router 2>&1 | grep -Ei 'error|fail|403|empty content' | tail -20 || true
+docker logs --since 10m router-worker 2>&1 | grep -Ei 'error|fail|403|empty content' | tail -20 || true
 docker logs --since 10m zalo-api 2>&1 | grep -Ei 'error|fail|traceback' | tail -15 || true
 """,
         timeout=WAIT_S + 180,

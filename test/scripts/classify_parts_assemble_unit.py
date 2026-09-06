@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
+sys.path.insert(0, str(ROOT / "architect" / "models" / "router-worker"))
 
 from classify import (  # noqa: E402
     CLASSIFY_REASONING_EFFORT,
@@ -49,7 +49,15 @@ def main() -> int:
     assert "OUTPUT SCHEMA" in system
     assert "schedule_resolution" in system
     assert "schedule_request_received_at" in system
-    assert env.get("parts") == ["core", "schedule", "media", "delivery", "schema"]
+    assert env.get("parts") == [
+        "core",
+        "schedule",
+        "media",
+        "notes",
+        "control",
+        "delivery",
+        "schema",
+    ]
     assert len(env.get("priority_rules") or []) >= 5
     assert int(env.get("timeout_s") or 0) <= 60, env.get("timeout_s")
     assert int(env.get("retry") or 99) <= 1, env.get("retry")
@@ -61,7 +69,7 @@ def main() -> int:
     assert "{local_now}" in tmpl, tmpl
     assert str(CFG_PATH).replace("\\", "/").endswith("skills/classify/classify.json"), CFG_PATH
     classify_source = (
-        ROOT / "architect" / "models" / "model-router" / "classify.py"
+        ROOT / "architect" / "models" / "router-worker" / "classify.py"
     ).read_text(encoding="utf-8")
     assert 'system = "Return JSON with' not in classify_source
 

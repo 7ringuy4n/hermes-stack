@@ -7,6 +7,8 @@ api:
 entryPoints:
   web:
     address: ":80"
+  zalo-internal:
+    address: ":8081"
 
 providers:
   file:

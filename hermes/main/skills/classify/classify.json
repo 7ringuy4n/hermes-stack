@@ -10,6 +10,6 @@
     "Classification has no live-data tools. Never invent current values, approximate facts, citations, or completed results.",
     "When grounded information must be composed with a generated image, use the generic composed-image render contract. Describe the requested scene without choosing fixed topic panels, fact labels, typography, colors, or placement; the runtime composition model owns those design decisions."
   ],
-  "parts": ["core", "schedule", "media", "delivery", "schema"],
+  "parts": ["core", "schedule", "media", "notes", "control", "delivery", "schema"],
   "user_template": "Timezone: {timezone}\nLocal now: {local_now}\nThread: {thread}\nAttachments: {attachments}\nQuoted: {quoted}\nMessage:\n{text}"
 }

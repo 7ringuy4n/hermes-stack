@@ -1,3 +1,34 @@
+## 2026-09-05 20:45 +07 — bounded Zalo sends and non-interfering live evaluation
+
+See `history/2026-09-05/README.md` section “Synthetic quote metadata and
+concurrent judges distorted delivery tests”.
+
+## 2026-09-06 — notes, cancellation, and standby liveness
+
+See `history/2026-09-06/README.md`. Durable note CRUD now uses scoped indexed
+PostgreSQL records and audit rows; cancellation is classified before queue
+admission; standby lease acquisition no longer blocks gateway connection; and
+daily retention values initialize from OpenBao. The task-aware proxy is now
+consistently named Router Worker across scripts and runtime; upgrade cleanup
+removes the exact retired Compose container and stale default route settings.
+The same record includes the turn-scoped media-delivery fix for concurrent Zalo
+requests.
+
+Grafana provisioning is now canonical under `config/monitor/grafana`; the
+pairing unit validates unique dashboard identities and rejects a mirrored
+architecture-tree copy. Architecture docs describe HTTP replica selection and
+the distinct leased Zalo owner/queue path.
+
+Active request control is evaluated ahead of the per-conversation inbound
+lock when a turn is running, allowing stop messages to interrupt that turn.
+The active owner now begins at guarded inbound admission rather than only after
+queue admission, covering classification, staging, and fail-open execution.
+
+## 2026-09-05 19:20 +07 — cold-start OpenBao ordering
+
+See `history/2026-09-05/README.md` section “Clean startup depended on an
+already-running secret service”.
+
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider timeout
 
 See `history/2026-09-05/README.md` section “Quoted images were analyzed instead of edited”.
@@ -5545,3 +5576,56 @@ long-running office workflow budget. Release evaluation must extract text and
 inspect the rendered pages for scope, source time, language, unsupported copy,
 overflow, and page balance. Injection immediately after a replica restart is
 invalid until the bridge health endpoint reports an active SSE subscriber.
+## 2026-09-05 18:10 +07 — Zalo owner failover without replica restart
+
+See `history/2026-09-05/README.md` section “Filesystem Zalo owner election
+required replica restarts”.
+
+## 2026-09-05 22:30 +07 — live outage fallback verification
+
+An OmniRoute stop test exposed two silent fallback gaps: numeric enabled values
+did not activate local embeddings, and SearXNG infobox-only responses were
+dropped. Core services now normalize the documented flag forms and preserve
+knowledge-panel search records. Future outage gates must exercise live service
+endpoints with OmniRoute stopped.
+
+## 2026-09-05 22:55 +07 — preserve multipart media through Model Router
+
+The generic proxy no longer feeds non-JSON bodies through chat normalization.
+Multipart image-edit uploads retain their original bytes and boundary instead
+of being replaced by a synthetic stream-only JSON object.
+
+## 2026-09-05 23:25 +07 — print-safe office authoring constraints
+
+Office HTML guidance now keeps factual content in normal flow, rejects risky
+overlap/clipping techniques, bounds decorative icons, and requires deliberate
+one-page vertical balance plus rendered-output evaluation.
+
+## 2026-09-05 23:40 +07 — office renderers in the media worker
+
+The dispatcher build now includes headless Writer, Calc, and Impress so VPS
+release tests can render DOCX, XLSX, and PPTX outputs before assigning a visual
+verdict.
+
+## 2026-09-05 23:55 +07 — native Office tables from authored Markdown
+
+The shared Office renderer now strips inline Markdown chrome and converts pipe
+tables into native Word and spreadsheet cells. Spreadsheet output also adds a
+chart when a table exposes a usable numeric series; tests reject regressions
+that leak source markers into delivered documents. Word preserves source block
+order and explicitly resets heading indents for reliable LibreOffice rendering.
+
+## 2026-09-06 00:10 +07 — exclude repository-only Office skills at runtime
+
+Hermes replicas no longer register local PDF, Word, or spreadsheet maintenance
+toolkits. Removing every root and categorized runtime copy prevents late skill
+cloning from recreating ambiguous lookups; chat creation remains on `file-gen`.
+
+## 2026-09-06 09:15 +07 — note confirmation result boundary
+
+- Note mutations now confirm the validated operation result rather than
+  replaying classifier free-form text; see `history/2026-09-06/README.md`.
+- Classifier note bodies now remain stable across identical create requests so
+  the existing content dedupe boundary can operate deterministically.
+- Compose cleanup now keys duplicates by service and container-number slot,
+  preventing unrelated component updates from collapsing Hermes HA replicas.

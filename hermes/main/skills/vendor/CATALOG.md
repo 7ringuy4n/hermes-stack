@@ -12,6 +12,6 @@
 
 **Not vendored:** Anthropic `canvas-design` (art-first; bad for exact text posters). Kodus/VoltAgent awesome lists are catalogs only � see `docs/hermes_skill_sources.txt` (plan) for curation targets.
 
-Prefer dispatcher `http://model-router:8096/v1/search|extract|image` over inventing tool flows.
+Prefer dispatcher `http://router-worker:8096/v1/search|extract|image` over inventing tool flows.
 
 Live-matched media packs live under `hermes/temp/skills/vendor/` (gitignored).

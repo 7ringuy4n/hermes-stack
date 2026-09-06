@@ -24,7 +24,7 @@ Everything that makes the agent **remember** across a turn and across days: shor
 
 ## Profile
 
-**Must (all profiles).** Always on in Low.
+Core, always enabled.
 
 ## Sub-packages
 

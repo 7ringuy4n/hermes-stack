@@ -20,23 +20,23 @@
 
 ## Purpose
 
-Identity, workspace membership, roles, and policy evaluation **before** the agent runs privileged tools or RAG on protected knowledge. Default deny for workspace access on High.
+Identity, workspace membership, roles, and policy evaluation **before** the agent runs privileged tools or RAG on protected knowledge. Default deny when the security/authz worker is enabled.
 
 ## Profile
 
 | Profile | State |
 |---|---|
-| Low / Medium | Off (no authz gate on every chat turn) |
-| High | On — `ENABLE_AUTHZ=active`, optional `ENABLE_POLICY=active` |
+| Security/authz worker inactive | No authz gate on every chat turn |
+| Security/authz worker active | `ENABLE_AUTHZ=active`, optional `ENABLE_POLICY=active` |
 
 ## Sub-packages
 
 | Package | Function |
 |---|---|
 | [authz/](./authz/README.md) | Authorize principal + workspace; ACL tables in Postgres |
-| [policy-center/](./policy-center/README.md) | Extra policy rules / evaluations (High) |
+| [policy-center/](./policy-center/README.md) | Extra policy rules / evaluations |
 
-## How it works (High)
+## How it works (security/authz enabled)
 
 ```text
 Inbound message
@@ -48,7 +48,7 @@ Inbound message
     → DENY  → stop (no RAG, no tools)
 ```
 
-## Default admin (High setup)
+## Default admin setup
 
 - Create non-deletable **admin** user in the secret store / `.env` (never print password into chat).
 - Admins join group/role **`admin`**; new users default role **`user`**.

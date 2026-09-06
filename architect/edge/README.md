@@ -6,7 +6,7 @@
 |--|--|
 | **Sits between** | Operators / LAN clients ↔ Hermes |
 | **Owns** | Traefik LB, API Gateway (Valkey RL), optional OpenVPN |
-| **Does not own** | Zalo SSE (host bridge → zalo-proxy → Hermes) |
+| **Does not own** | Zalo account session or SSE ownership; it provides the internal bridge route used by Hermes |
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
@@ -46,9 +46,14 @@ Merged via `docker-compose.edge.yml` when any flag is on (`run.sh up`). Set `ENA
 ```text
 LAN / SSH tunnel    →  API Gateway (Valkey RL) → Traefik → Hermes ×1|×2
 OpenVPN (optional)  →  same Gateway path
-Zalo (local)        →  host bridge → zalo-proxy → Hermes   (bypass Gateway)
+Zalo (local)        →  host bridge → zalo-proxy → Traefik internal route
+                                            → Valkey-elected Hermes SSE owner
 Coding skill path   →  no Gateway rate-limit (MUST)
 ```
+
+The Zalo path bypasses the API Gateway, not Traefik. Traefik provides a stable
+`/zalo-bridge` endpoint to every replica; the renewable Valkey lease ensures
+that only one replica opens the event stream.
 
 Heavy OCR/image work stays on **jobs / dispatcher** (async + timeouts), not inside Hermes.
 

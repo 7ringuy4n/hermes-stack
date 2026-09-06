@@ -14,7 +14,7 @@ Must — container `memory`.
 |---|---|
 | `POST /v1/context` | Given user text (+ flags), return mode hints, skills list, budgeted memories |
 | `POST /v1/remember` | Persist a durable fact/event (async from agent) |
-| Compact hook | Medium+ midnight compact may slim stale rows (silent) |
+| Compact hook | Enabled maintenance timer may slim stale rows (silent) |
 
 ## Memory kinds (conceptual)
 

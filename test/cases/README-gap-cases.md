@@ -33,7 +33,7 @@ Lab scripts that need a Zalo user must inject as allowlisted **Tn** via bridge /
 | 64 | 64-gap-prompt-injection-through-every-data-boundary.md | Prompt Injection Through Every Data Boundary |
 | 65 | 65-gap-cross-user-cross-thread-isolation.md | Cross-User / Cross-Thread Isolation |
 | 66 | 66-gap-session-reset-stale-session-recovery.md | Session Reset / Stale Session Recovery |
-| 67 | 67-gap-model-router-edge-backpressure.md | Model Router / Edge Backpressure |
+| 67 | 67-gap-router-worker-edge-backpressure.md | Router Worker / Edge Backpressure |
 | 68 | 68-gap-long-running-soak-test.md | Long-Running Soak Test |
 | 69 | 69-gap-chaos-combination-test.md | Chaos Combination Test |
 | 70 | 70-gap-recovery-after-full-dependency-restart.md | Recovery After Full Dependency Restart |

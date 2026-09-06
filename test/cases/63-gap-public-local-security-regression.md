@@ -24,7 +24,7 @@ Test:
 Probe:
 
 - Hermes;
-- OmniRouter;
+- OmniRoute;
 - OmniRoute;
 - Postgres;
 - Qdrant;

@@ -13,6 +13,33 @@ from pathlib import Path
 
 from openbao_common import OBSOLETE_ENV_KEYS
 
+ZALO_TRAEFIK_URL = "http://traefik:8081/zalo-bridge"
+ROUTER_WORKER_URL = "http://router-worker:8096"
+LEGACY_ZALO_URLS = {
+    "http://host.docker.internal:8787",
+    "http://zalo-proxy:8787",
+}
+LEGACY_ROUTER_URLS = {
+    "HERMES_OPENAI_BASE_URL": {
+        "http://model-router:8096/v1",
+    },
+    "OPENAI_BASE_URL": {
+        "http://model-router:8096/v1",
+    },
+    "SEARXNG_URL": {
+        "http://model-router:8096/v1/searxng-compat",
+    },
+    "HERMES_SEARXNG_URL": {
+        "http://model-router:8096/v1/searxng-compat",
+    },
+    "WEB_SEARCH_URL": {
+        "http://model-router:8096",
+    },
+    "EMBED_UPSTREAM": {
+        "http://model-router:8096/v1",
+    },
+}
+
 ROOT = Path(os.environ.get("STACK_ROOT") or Path(__file__).resolve().parents[2])
 ENV_PATH = ROOT / ".env"
 DATA_DIR = Path(
@@ -49,6 +76,36 @@ def remove_obsolete_keys(path: Path, keys: tuple[str, ...] | list[str]) -> list[
     return removed
 
 
+def migrate_supported_values(path: Path) -> list[str]:
+    """Migrate only exact retired stack defaults; preserve operator URLs."""
+    if not path.is_file():
+        return []
+    changed: list[str] = []
+    output: list[str] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        key, sep, value = line.partition("=")
+        name = key.strip()
+        current = value.strip().strip('"').strip("'") if sep else ""
+        if name in {"ZALO_PLUGIN_URL", "ZALO_BRIDGE_URL"} and current in LEGACY_ZALO_URLS:
+            output.append(f"{name}={ZALO_TRAEFIK_URL}")
+            changed.append(name)
+        elif name in LEGACY_ROUTER_URLS and current in LEGACY_ROUTER_URLS[name]:
+            suffix = "/v1/searxng-compat" if name in {"SEARXNG_URL", "HERMES_SEARXNG_URL"} else ""
+            if name in {"HERMES_OPENAI_BASE_URL", "OPENAI_BASE_URL", "EMBED_UPSTREAM"}:
+                suffix = "/v1"
+            output.append(f"{name}={ROUTER_WORKER_URL}{suffix}")
+            changed.append(name)
+        else:
+            output.append(line)
+    if changed:
+        path.write_text("\n".join(output) + "\n", encoding="utf-8")
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    return changed
+
+
 def main() -> int:
     paths = [ENV_PATH, DATA_DIR / ".env"]
     total = 0
@@ -57,6 +114,10 @@ def main() -> int:
         if gone:
             total += len(gone)
             print(f"OK: removed {len(gone)} obsolete key(s) from {p}: {', '.join(sorted(set(gone)))}")
+        migrated = migrate_supported_values(p)
+        if migrated:
+            total += len(migrated)
+            print(f"OK: migrated {len(migrated)} supported route setting(s) in {p}: {', '.join(sorted(set(migrated)))}")
     if total == 0:
         print("OK: no obsolete env keys to remove")
     return 0

@@ -19,7 +19,7 @@ Verify the entire stack can recover after a host-level Docker restart.
    - Valkey;
    - Qdrant;
    - workflow;
-   - model-router;
+   - router-worker;
    - workers;
    - Hermes;
    - Zalo.

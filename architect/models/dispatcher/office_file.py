@@ -51,6 +51,7 @@ class OfficeFileReq(_PydanticBase):
     caption: str = ""
     filename: Optional[str] = None
     output_type: Optional[str] = None
+    send_zalo: bool = True
 
 
 def _enabled() -> bool:
@@ -109,6 +110,39 @@ def _skip_structural_junk(line: str) -> bool:
         if not core:
             return True
     return False
+
+
+def _clean_inline_markdown(value: str) -> str:
+    """Remove lightweight authoring markers before writing Office XML."""
+    text = value or ""
+    for marker in ("**", "__", "`"):
+        text = text.replace(marker, "")
+    return text.strip()
+
+
+def _markdown_tables(body: str) -> list[list[list[str]]]:
+    """Collect conventional pipe tables without interpreting prose or locale."""
+    tables: list[list[list[str]]] = []
+    current: list[list[str]] = []
+
+    def flush() -> None:
+        nonlocal current
+        if len(current) >= 2:
+            tables.append(current)
+        current = []
+
+    for raw in (body or "").splitlines():
+        line = raw.strip()
+        if not (line.startswith("|") and line.endswith("|") and line.count("|") >= 2):
+            flush()
+            continue
+        cells = [_clean_inline_markdown(cell) for cell in line[1:-1].split("|")]
+        compact = "".join(cells).replace("-", "").replace(":", "").replace(" ", "")
+        if not compact:
+            continue
+        current.append(cells)
+    flush()
+    return tables
 
 
 def _looks_like_pdf_bytes(data: bytes) -> bool:
@@ -387,6 +421,325 @@ def write_pdf(dest: Path, body: str) -> Path:
     return write_pdf_from_html(dest, _plain_body_to_presentation_html(body or ""))
 
 
+def _structured_content(body: str) -> tuple[str, str, list[tuple[str, str]], list[tuple[str, list[str]]], list[str]]:
+    """Parse a general markdown-ish document without topic or language rules."""
+    title = ""
+    subtitle = ""
+    facts: list[tuple[str, str]] = []
+    sections: list[tuple[str, list[str]]] = []
+    prose: list[str] = []
+    section_name = ""
+    section_rows: list[str] = []
+
+    def flush() -> None:
+        nonlocal section_name, section_rows
+        if section_name or section_rows:
+            sections.append((section_name or "Details", list(section_rows)))
+        section_name = ""
+        section_rows = []
+
+    for raw in (body or "").splitlines():
+        line = _clean_inline_markdown(raw.strip())
+        if not line or _skip_structural_junk(line):
+            continue
+        if line.startswith("|") and line.endswith("|"):
+            continue
+        if line.startswith("#"):
+            count = 0
+            while count < len(line) and line[count] == "#":
+                count += 1
+            value = line[count:].strip()
+            if count == 1 and value and not title:
+                title = value[:120]
+            elif count == 2 and value and not subtitle and not sections:
+                subtitle = value[:180]
+            elif value:
+                flush()
+                section_name = value[:120]
+            continue
+        if line.startswith(("- ", "* ", "• ")):
+            value = line[2:].strip()
+            if section_name:
+                section_rows.append(value)
+            elif ":" in value:
+                label, _, fact = value.partition(":")
+                if label.strip() and fact.strip() and len(label.strip()) <= 60:
+                    facts.append((label.strip(), fact.strip()))
+                else:
+                    prose.append(value)
+            else:
+                prose.append(value)
+            continue
+        if ":" in line and not line.lower().startswith(("http://", "https://")):
+            label, _, fact = line.partition(":")
+            if label.strip() and fact.strip() and len(label.strip()) <= 60:
+                facts.append((label.strip(), fact.strip()))
+                continue
+        if section_name:
+            section_rows.append(line)
+        elif not title:
+            title = line[:120]
+        elif not subtitle and len(line) <= 180:
+            subtitle = line
+        else:
+            prose.append(line)
+    flush()
+    return title or "Document", subtitle, facts, sections, prose
+
+
+def write_docx_styled(dest: Path, body: str) -> Path:
+    """Create a readable, structured Word report from general authored content."""
+    from docx import Document
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Cm, Pt, RGBColor
+
+    title, _subtitle, _facts, _sections, _prose = _structured_content(body)
+    doc = Document()
+    section = doc.sections[0]
+    section.top_margin = Cm(1.8)
+    section.bottom_margin = Cm(1.6)
+    section.left_margin = Cm(1.9)
+    section.right_margin = Cm(1.9)
+
+    normal = doc.styles["Normal"]
+    normal.font.name = "Inter"
+    normal.font.size = Pt(9.5)
+    normal.font.color.rgb = RGBColor(30, 45, 62)
+    normal.paragraph_format.space_after = Pt(4)
+    normal.paragraph_format.line_spacing = 1.05
+    for style_name, size, color in (
+        ("Title", 23, RGBColor(18, 67, 112)),
+        ("Heading 1", 15, RGBColor(18, 67, 112)),
+        ("Heading 2", 12, RGBColor(37, 112, 170)),
+    ):
+        style = doc.styles[style_name]
+        style.font.name = "Inter"
+        style.font.size = Pt(size)
+        style.font.color.rgb = color
+        style.font.bold = True
+        style.paragraph_format.left_indent = Cm(0)
+        style.paragraph_format.right_indent = Cm(0)
+        style.paragraph_format.keep_with_next = True
+
+    accent = doc.add_table(rows=1, cols=1)
+    accent.autofit = False
+    accent.columns[0].width = Cm(16.8)
+    cell = accent.cell(0, 0)
+    shade = OxmlElement("w:shd")
+    shade.set(qn("w:fill"), "1B5E8F")
+    cell._tc.get_or_add_tcPr().append(shade)
+    cell.text = " "
+    cell.paragraphs[0].paragraph_format.space_after = Pt(0)
+
+    p = doc.add_paragraph(style="Title")
+    p.paragraph_format.space_before = Pt(10)
+    p.paragraph_format.left_indent = Cm(0)
+    p.paragraph_format.right_indent = Cm(0)
+    p.add_run(title)
+
+    lines = (body or "").splitlines()
+    index = 0
+    title_consumed = False
+    while index < len(lines):
+        raw = lines[index].strip()
+        line = _clean_inline_markdown(raw)
+        index += 1
+        if not line or _skip_structural_junk(line):
+            continue
+        if line.startswith("|") and line.endswith("|") and line.count("|") >= 2:
+            rows: list[list[str]] = []
+            while True:
+                cells = [_clean_inline_markdown(cell) for cell in line[1:-1].split("|")]
+                compact = "".join(cells).replace("-", "").replace(":", "").replace(" ", "")
+                if compact:
+                    rows.append(cells)
+                if index >= len(lines):
+                    break
+                candidate = lines[index].strip()
+                if not (candidate.startswith("|") and candidate.endswith("|") and candidate.count("|") >= 2):
+                    break
+                line = candidate
+                index += 1
+            if rows:
+                column_count = max(len(row) for row in rows)
+                table = doc.add_table(rows=0, cols=column_count)
+                table.style = "Light Shading Accent 1"
+                for row_index, values in enumerate(rows):
+                    cells = table.add_row().cells
+                    for column_index in range(column_count):
+                        value = values[column_index] if column_index < len(values) else ""
+                        cells[column_index].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                        paragraph = cells[column_index].paragraphs[0]
+                        paragraph.paragraph_format.space_after = Pt(1)
+                        run = paragraph.add_run(value)
+                        run.font.size = Pt(9)
+                        if row_index == 0:
+                            run.bold = True
+                            run.font.color.rgb = RGBColor(18, 67, 112)
+                doc.add_paragraph()
+            continue
+        if line.startswith("#"):
+            level = 0
+            while level < len(line) and line[level] == "#":
+                level += 1
+            value = line[level:].strip()
+            if level == 1 and not title_consumed and value == title:
+                title_consumed = True
+                continue
+            if value:
+                doc.add_heading(value, level=1 if level <= 2 else 2)
+            continue
+        if line.startswith(("- ", "* ", "• ")):
+            doc.add_paragraph(line[2:].strip(), style="List Bullet")
+            continue
+        if not title_consumed and line == title:
+            title_consumed = True
+            continue
+        doc.add_paragraph(line)
+
+    footer = section.footer.paragraphs[0]
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    footer.add_run("•")
+    doc.save(dest)
+    return dest
+
+
+def write_xlsx_styled(dest: Path, body: str) -> Path:
+    """Create a presentation-ready workbook with a structured overview sheet."""
+    from openpyxl import Workbook
+    from openpyxl.chart import BarChart, Reference
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    title, subtitle, facts, sections, prose = _structured_content(body)
+    authored_tables = _markdown_tables(body)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Overview"
+    navy = "174A73"
+    blue = "2A78B8"
+    pale = "EAF2F8"
+    ink = "182B3A"
+    white = "FFFFFF"
+    thin = Side(style="thin", color="C8D8E6")
+
+    ws.merge_cells("A1:D1")
+    ws["A1"] = title
+    ws["A1"].font = Font(name="Inter", size=22, bold=True, color=white)
+    ws["A1"].fill = PatternFill("solid", fgColor=navy)
+    ws["A1"].alignment = Alignment(vertical="center")
+    ws.row_dimensions[1].height = 42
+    row = 2
+    if subtitle:
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+        cell = ws.cell(row, 1, subtitle)
+        cell.font = Font(name="Inter", size=11, color="526A7E")
+        cell.alignment = Alignment(wrap_text=True, vertical="center")
+        ws.row_dimensions[row].height = 30
+        row += 2
+    else:
+        row += 1
+
+    for label, value in facts:
+        ws.cell(row, 1, label)
+        ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=4)
+        ws.cell(row, 2, value)
+        for col in range(1, 5):
+            cell = ws.cell(row, col)
+            cell.fill = PatternFill("solid", fgColor=pale if row % 2 else white)
+            cell.border = Border(bottom=thin)
+            cell.alignment = Alignment(wrap_text=True, vertical="center")
+            cell.font = Font(name="Inter", size=10.5, color=ink, bold=col == 1)
+        ws.cell(row, 1).font = Font(name="Inter", size=10.5, bold=True, color=blue)
+        ws.row_dimensions[row].height = 28
+        row += 1
+
+    chart_source: tuple[int, int, int] | None = None
+    for rows in authored_tables:
+        row += 1
+        table_start = row
+        column_count = min(max(len(values) for values in rows), 12)
+        for row_index, values in enumerate(rows):
+            for column_index in range(column_count):
+                value = values[column_index] if column_index < len(values) else ""
+                cell = ws.cell(row, column_index + 1, value)
+                cell.alignment = Alignment(wrap_text=True, vertical="center")
+                cell.border = Border(bottom=thin)
+                if row_index == 0:
+                    cell.fill = PatternFill("solid", fgColor=blue)
+                    cell.font = Font(name="Inter", size=10.5, bold=True, color=white)
+                else:
+                    cell.font = Font(name="Inter", size=10.5, color=ink)
+            ws.row_dimensions[row].height = 28
+            row += 1
+        if len(rows) >= 3 and column_count >= 2:
+            chart_source = (table_start, row - 1, column_count)
+
+    if prose:
+        row += 1
+        for text in prose:
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+            cell = ws.cell(row, 1, text)
+            cell.font = Font(name="Inter", size=10.5, color=ink)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            ws.row_dimensions[row].height = 34
+            row += 1
+    for heading, rows in sections:
+        row += 1
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+        cell = ws.cell(row, 1, heading)
+        cell.fill = PatternFill("solid", fgColor=blue)
+        cell.font = Font(name="Inter", size=13, bold=True, color=white)
+        cell.alignment = Alignment(vertical="center")
+        ws.row_dimensions[row].height = 26
+        row += 1
+        for value in rows:
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+            cell = ws.cell(row, 1, f"• {value}")
+            cell.font = Font(name="Inter", size=10.5, color=ink)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            cell.border = Border(bottom=thin)
+            ws.row_dimensions[row].height = 30
+            row += 1
+
+    for column, width in {"A": 25, "B": 24, "C": 24, "D": 24}.items():
+        ws.column_dimensions[column].width = width
+    ws.freeze_panes = "A3"
+    ws.sheet_view.showGridLines = False
+    ws.print_title_rows = "1:2"
+    ws.page_setup.fitToWidth = 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    if chart_source:
+        header_row, last_row, last_column = chart_source
+        numeric_column = 0
+        for column in range(last_column, 1, -1):
+            numeric = 0
+            for row_index in range(header_row + 1, last_row + 1):
+                raw = str(ws.cell(row_index, column).value or "").strip()
+                cleaned = "".join(ch for ch in raw if ch.isdigit() or ch in ".,-")
+                if cleaned and any(ch.isdigit() for ch in cleaned):
+                    numeric += 1
+            if numeric >= 2:
+                numeric_column = column
+                break
+        if numeric_column:
+            chart = BarChart()
+            chart.type = "col"
+            chart.style = 10
+            chart.title = str(ws.cell(header_row, numeric_column).value or "Overview")
+            chart.height = 7
+            chart.width = 12
+            data = Reference(ws, min_col=numeric_column, min_row=header_row, max_row=last_row)
+            categories = Reference(ws, min_col=1, min_row=header_row + 1, max_row=last_row)
+            chart.add_data(data, titles_from_data=True)
+            chart.set_categories(categories)
+            ws.add_chart(chart, f"F{header_row}")
+    wb.save(dest)
+    return dest
+
+
 def write_pptx_styled(dest: Path, body: str) -> Path:
     """Markdown-ish body → title + facts/sections PPTX deck (presentation-ready)."""
     from pptx import Presentation
@@ -411,7 +764,7 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
         cur_bullets = []
 
     for raw in (body or "").splitlines():
-        line = raw.strip()
+        line = _clean_inline_markdown(raw.strip())
         if not line:
             continue
         low = line.lower()
@@ -458,7 +811,7 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
             run.font.size = Pt(size)
             run.font.bold = bold
             run.font.color.rgb = RGBColor(*color)
-            run.font.name = "Calibri"
+            run.font.name = "Inter"
 
     def _paint_bg(slide, rgb=(238, 243, 248)) -> None:
         shape = slide.shapes.add_shape(
@@ -530,55 +883,13 @@ def write_office(dest: Path, ext: str, body: str) -> Path:
         dest.write_text(data, encoding="utf-8")
         return dest
     if ext == ".xlsx":
-        try:
-            from openpyxl import Workbook
-
-            wb = Workbook()
-            ws = wb.active
-            for i, line in enumerate((body.splitlines() or [body]), start=1):
-                ws.cell(row=i, column=1, value=line)
-            wb.save(dest)
-            return dest
-        except Exception as e:  # noqa: BLE001
-            log.warning("xlsx write failed, fallback csv: %s", e)
-            dest = dest.with_suffix(".csv")
-            dest.write_text(body + "\n", encoding="utf-8")
-            return dest
+        return write_xlsx_styled(dest, body)
     if ext == ".docx":
-        try:
-            from docx import Document
-
-            doc = Document()
-            for line in body.splitlines() or [body]:
-                doc.add_paragraph(line)
-            doc.save(dest)
-            return dest
-        except Exception as e:  # noqa: BLE001
-            log.warning("docx write failed, fallback txt: %s", e)
-            dest = dest.with_suffix(".txt")
-            dest.write_text(body + "\n", encoding="utf-8")
-            return dest
+        return write_docx_styled(dest, body)
     if ext == ".pdf":
-        try:
-            return write_pdf(dest, body)
-        except Exception as e:  # noqa: BLE001
-            log.warning("pdf write failed, fallback txt: %s", type(e).__name__)
-            dest = dest.with_suffix(".txt")
-            dest.write_text(body + "\n", encoding="utf-8")
-            return dest
+        return write_pdf(dest, body)
     if ext == ".pptx":
-        try:
-            return write_pptx_styled(dest, body)
-        except Exception as e:  # noqa: BLE001
-            log.warning("pptx write failed, fallback pdf: %s", type(e).__name__)
-            dest = dest.with_suffix(".pdf")
-            try:
-                return write_pdf(dest, body)
-            except Exception as e2:  # noqa: BLE001
-                log.warning("pptx→pdf fallback failed: %s", type(e2).__name__)
-                dest = dest.with_suffix(".txt")
-                dest.write_text(body + "\n", encoding="utf-8")
-                return dest
+        return write_pptx_styled(dest, body)
     dest.write_text(body + "\n", encoding="utf-8")
     return dest
 
@@ -630,22 +941,23 @@ def register_office_file(
                 name = f"{Path(name).stem}{ext}"
             dest = media_dir / "out" / name
             dest = write_office(dest, ext, body)
-            try:
-                zalo = deliver(
-                    path=str(dest),
-                    thread_id=req.thread_id,
-                    thread_type=req.thread_type or "user",
-                    caption=caption,
-                    filename=dest.name,
-                    lock_thread=True,
-                )
-            except Exception as e:  # noqa: BLE001
-                zalo_error = str(getattr(e, "detail", None) or e)[:300]
-                log.warning(
-                    "office-file wrote %s but zalo send failed: %s",
-                    dest.name,
-                    type(e).__name__,
-                )
+            if req.send_zalo:
+                try:
+                    zalo = deliver(
+                        path=str(dest),
+                        thread_id=req.thread_id,
+                        thread_type=req.thread_type or "user",
+                        caption=caption,
+                        filename=dest.name,
+                        lock_thread=True,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    zalo_error = str(getattr(e, "detail", None) or e)[:300]
+                    log.warning(
+                        "office-file wrote %s but zalo send failed: %s",
+                        dest.name,
+                        type(e).__name__,
+                    )
             files.append(
                 {
                     "file": dest.name,

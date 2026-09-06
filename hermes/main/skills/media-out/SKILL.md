@@ -43,4 +43,4 @@ Applies to **every** create/export/send of a file or media asset: images, PDF, D
 | Image edit | `image-edit` → OmniRoute combo `image-edit` |
 | Office | `file-gen` / `documents` → `POST /v1/office-file` (create+send; not Hermes pdf skill) |
 | Markdown / text file | `markdown` → then `file-gen` |
-| Facts printed as images on a web page | download image → vision-ocr combo (`vision_read` / model-router) → then answer / `image-gen` |
+| Facts printed as images on a web page | download image → vision-ocr combo (`vision_read` / router-worker) → then answer / `image-gen` |

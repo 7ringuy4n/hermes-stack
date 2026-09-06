@@ -7,7 +7,7 @@ export LC_ALL="${LC_ALL:-C.UTF-8}"
 export LANG="${LANG:-C.UTF-8}"
 
 : "${BACKUP_DIR:=/data/assistant/backups}"
-: "${BACKUP_RETENTION_DAYS:=14}"
+: "${BACKUP_RETENTION_DAYS:=7}"
 : "${BACKUP_FAIL_FAST:=1}"
 : "${HERMES_DATA_DIR:=/data/assistant}"
 : "${ROOT:=/opt/assistant}"
@@ -480,18 +480,38 @@ assistant_restore_hermes() {
 }
 
 assistant_backup_openbao() {
-  local dir="$1"
+  local dir="$1" c kv
   $SUDO mkdir -p "${dir}/openbao"
-  if [[ -n "$(assistant_container openbao)" ]]; then
-    docker exec openbao bao kv get -format=json secret/assistant/api-keys \
-      > "${dir}/openbao/kv-assistant-api-keys.json" 2>/dev/null \
-      || docker exec openbao vault kv get -format=json secret/assistant/api-keys \
-      > "${dir}/openbao/kv-assistant-api-keys.json" 2>/dev/null \
-      || echo '{"note":"openbao -dev KV export skipped"}' > "${dir}/openbao/kv-assistant-api-keys.json"
+  c="$(assistant_container openbao || true)"
+  kv="${dir}/openbao/kv-assistant-api-keys.json"
+  if [[ -n "$c" ]]; then
+    if ! docker exec "$c" sh -lc 'BAO_TOKEN="$BAO_DEV_ROOT_TOKEN_ID" bao kv get -format=json secret/assistant/api-keys' > "$kv" 2>/dev/null \
+      && ! docker exec "$c" sh -lc 'VAULT_TOKEN="$BAO_DEV_ROOT_TOKEN_ID" vault kv get -format=json secret/assistant/api-keys' > "$kv" 2>/dev/null; then
+      assistant_backup_fail "OpenBao KV export failed from ${c}"
+      return 1
+    fi
+    python3 - "$kv" <<'PY'
+import json
+import sys
+
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+data = doc.get("data") or {}
+payload = data.get("data") if isinstance(data, dict) else None
+if not isinstance(payload, dict) or not payload:
+    raise SystemExit("OpenBao backup payload is empty")
+print(f"OpenBao backup keys={len(payload)}")
+PY
+  else
+    assistant_backup_fail "OpenBao is enabled but no running container was found"
+    return 1
   fi
   if [[ -f "${HERMES_DATA_DIR}/.env.openbao" ]]; then
     $SUDO cp -a "${HERMES_DATA_DIR}/.env.openbao" "${dir}/openbao/env.openbao"
     $SUDO chmod 600 "${dir}/openbao/env.openbao"
+  fi
+  if [[ -f "${OPENBAO_TOKEN_FILE:-${HERMES_DATA_DIR}/openbao/root-token}" ]]; then
+    $SUDO cp -a "${OPENBAO_TOKEN_FILE:-${HERMES_DATA_DIR}/openbao/root-token}" "${dir}/openbao/root-token"
+    $SUDO chmod 600 "${dir}/openbao/root-token"
   fi
 }
 
@@ -500,6 +520,11 @@ assistant_restore_openbao() {
   if [[ -f "${dir}/openbao/env.openbao" ]]; then
     $SUDO cp -a "${dir}/openbao/env.openbao" "${HERMES_DATA_DIR}/.env.openbao"
     $SUDO chmod 600 "${HERMES_DATA_DIR}/.env.openbao"
+  fi
+  if [[ -f "${dir}/openbao/root-token" ]]; then
+    $SUDO mkdir -p "$(dirname "${OPENBAO_TOKEN_FILE:-${HERMES_DATA_DIR}/openbao/root-token}")"
+    $SUDO cp -a "${dir}/openbao/root-token" "${OPENBAO_TOKEN_FILE:-${HERMES_DATA_DIR}/openbao/root-token}"
+    $SUDO chmod 600 "${OPENBAO_TOKEN_FILE:-${HERMES_DATA_DIR}/openbao/root-token}"
   fi
   # OpenBao -dev is in-memory; ensure container is up before KV import.
   if [[ -f "$kv" ]]; then
@@ -541,7 +566,7 @@ assistant_backup_routers() {
   {
     echo "# Router flags snapshot (non-secret names; secrets remain in env.sealed / OpenBao)"
     for k in \
-      ENABLE_OMNIROUTER ENABLE_MODEL_ROUTER \
+      ENABLE_OMNIROUTER ENABLE_ROUTER_WORKER \
       OMNIROUTER_DEFAULT_COMBO OMNIROUTER_COMBO_STRATEGY \
       OMNIROUTER_HOST_PORT \
       OMNIROUTER_ENABLE_MEMORY OMNIROUTER_FAILOVER_MODELS OMNIROUTER_ROTATE_ATTEMPTS
@@ -552,10 +577,13 @@ assistant_backup_routers() {
     done
   } | $SUDO tee "$envf" >/dev/null
   $SUDO chmod 600 "$envf" 2>/dev/null || true
-  # Best-effort human-readable combo export (login + GET /api/combos). Volumes remain SoT.
+  # Human-readable combo export (login + GET /api/combos). Volumes remain SoT,
+  # but a verified destructive gate also requires an auditable inventory.
   if [[ -f "${BACKUP_LIB_DIR}/backup_routers_export.py" ]]; then
-    ROOT="${ROOT}" python3 "${BACKUP_LIB_DIR}/backup_routers_export.py" "${dir}/routers" \
-      || log "WARN: router combo JSON export returned non-zero (volumes still backed up)"
+    if ! ROOT="${ROOT}" python3 "${BACKUP_LIB_DIR}/backup_routers_export.py" "${dir}/routers"; then
+      assistant_backup_fail "router combo JSON export incomplete"
+      return 1
+    fi
   fi
 }
 

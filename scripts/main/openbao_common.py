@@ -19,7 +19,25 @@ SEED_KEYS = (
     "TELEGRAM_BOT_TOKEN",
     "GEMINI_API_KEY",
     "DEEPSEEK_API_KEY",
+    "DEEPSEEK_OCR_API_KEY",
+    "EMBED_API_KEY",
+    "OCR_API_KEY",
+    "LLM_JUDGE_KEY",
+    "GOOGLE_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "XAI_API_KEY",
+    "QWEN_API_KEY",
+    "ALIBABA_API_KEY",
+    "DASHSCOPE_API_KEY",
 )
+
+# Non-secret operational values kept in OpenBao so clean deploys and timers use
+# one durable source instead of drifting host .env copies.
+RUNTIME_DEFAULTS = {
+    "BACKUP_RETENTION_DAYS": "7",
+    "MEMORY_STAGED_RETENTION_DAYS": "7",
+}
 
 # Retired secrets — removed from OpenBao KV on each seed/update.
 OBSOLETE_SECRET_KEYS = (
@@ -49,12 +67,28 @@ OBSOLETE_ENV_KEYS = OBSOLETE_SECRET_KEYS + (
     "N9ROUTER_IMAGE_COMBO",
     "N9ROUTER_VISION_COMBO",
     "N9ROUTER_EMBED_COMBO",
-    "ROUTER_WORKER_URL",
+    "ENABLE_MODEL_ROUTER",
+    "MODEL_ROUTER_URL",
+    "MODEL_ROUTER_BASE_URL",
+    "MODEL_ROUTER_FALLBACK_PROVIDER_ORDER",
+    "MODEL_ROUTER_TIMEOUT_S",
+    "MODEL_ROUTER_HEALTH_TTL_S",
+    "MODEL_ROUTER_CLASSIFY_TIMEOUT_S",
+    "MODEL_ROUTER_OUTBOUND_TIMEOUT_S",
+    "MODEL_ROUTER_CLASSIFY_MODEL",
+    "MODEL_ROUTER_OUTBOUND_MODEL",
+    "MODEL_ROUTER_WEB_SEARCH_COMBO",
+    "MODEL_ROUTER_CLASSIFY",
+    "MODEL_ROUTER_OUTBOUND",
+    "MODEL_ROUTER_MESSAGES",
+    "MODEL_ROUTER_PORT",
+    "MODEL_ROUTER_HOST_PORT",
     "WHISPER_ENABLED",
     "WHISPER_MODEL",
     "WHISPER_CACHE_DIR",
     "WEB_BACKENDS",  # Omni combo web-search only
     "WEB_SEARCH_COMBO_PATH",
+    "WEB_EXTRACT_BACKENDS",
     "OMNIROUTER_SEARCH_PROVIDERS",
     "IMAGE_OMNI_MODEL",
     "OMNIROUTER_IMAGE_MODEL",
@@ -83,10 +117,28 @@ COMPOSE_HOST_KEYS = (
 )
 
 # Strip plaintext values from ROOT/.env after OpenBao seed (bootstrap token stays).
-ENV_SCRUB_KEYS = SEED_KEYS + (
+ENV_SCRUB_KEYS = SEED_KEYS + tuple(RUNTIME_DEFAULTS) + (
     "FAL_KEY",
     "FLUXAI_API_KEY",
     "POLLINATIONS_API_KEY",
 )
 
 OPENBAO_SECRET_PATH = "secret/data/assistant/api-keys"
+
+
+def is_secret_env_name(name: str) -> bool:
+    """Recognize credential-bearing env names without maintaining a vendor list."""
+    key = str(name or "").strip().upper()
+    if not key or key == "OPENBAO_DEV_ROOT_TOKEN":
+        return False
+    return key.endswith(
+        (
+            "_API_KEY",
+            "_API_KEYS",
+            "_TOKEN",
+            "_PASSWORD",
+            "_SECRET",
+            "_CREDENTIAL",
+            "_CREDENTIALS",
+        )
+    ) or key in {"API_SERVER_KEY", "GATEWAY_API_KEYS"}
