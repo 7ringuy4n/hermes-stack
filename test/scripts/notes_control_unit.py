@@ -106,6 +106,9 @@ def main() -> int:
     assert "CREATE TABLE IF NOT EXISTS note_audit" in memory_source
     assert "fallback_clauses = date_clauses" in memory_source
     assert "Control-plane cancellation bypasses rate limits and FIFO admission" in adapter_source
+    guarded = adapter_source.split("async def _on_inbound_guarded", 1)[1]
+    guarded = guarded.split("async def _on_session_dead", 1)[0]
+    assert guarded.index("await self._as_try_cancel_active_request") < guarded.index("async with lock")
     assert "except asyncio.CancelledError:" in adapter_source
     assert "self._as_active_turn_tasks" in adapter_source
     note_branch = adapter_source.split("if plan_is_note(plan) and not schedule_fire:", 1)[1]

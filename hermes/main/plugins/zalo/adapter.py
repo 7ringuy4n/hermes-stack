@@ -958,6 +958,29 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception:
                 logger.exception("Zalo: inbound admin failed thread=%s", tid or "?")
             return
+        # The conversation lock may be held while the first request is still
+        # classifying, staging media, or submitting a workflow. A stop request
+        # must therefore reach the active task before waiting for that lock;
+        # otherwise it can only run after the work it was meant to cancel.
+        active = self._as_active_turn_tasks.get(tid) if tid else None
+        if active is not None and not active.done():
+            try:
+                if await self._as_try_cancel_active_request(
+                    message=data,
+                    text=str((data or {}).get("text") or ""),
+                    thread_id=tid,
+                    thread_type=(
+                        "group"
+                        if str((data or {}).get("threadType") or "user") == "group"
+                        else "user"
+                    ),
+                ):
+                    return
+            except Exception:
+                logger.exception(
+                    "Zalo: pre-lock cancellation check failed thread=%s",
+                    tid or "?",
+                )
         locks = getattr(self, "_as_inbound_locks", None)
         if not isinstance(locks, dict):
             self._as_inbound_locks = {}

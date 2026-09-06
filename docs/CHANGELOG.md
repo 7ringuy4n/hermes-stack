@@ -29,6 +29,8 @@
 - Added semantic active-request cancellation before rate/FIFO admission. Queue
   ownership survives cancellation and adapter-owned late artifacts are
   suppressed; inactive threads receive an accurate response.
+- Active-turn cancellation now runs before the per-conversation inbound lock,
+  so a stop message can interrupt work instead of waiting behind that work.
 - Zalo non-owner replicas now return promptly as healthy standby and acquire
   the renewable Valkey owner lease in the background, removing the recurring
   gateway reconnect timeout symptom.

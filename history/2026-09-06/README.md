@@ -242,6 +242,30 @@ Only a second occupant of the same slot is removed.
 `test/scripts/compose_scaled_cleanup_unit.py` requires slot-aware duplicate
 identity and rejects the former service-wide singleton state.
 
+## 09:40 — Cancellation waited behind the request it targeted
+
+### Symptom and cause
+
+A live stop message arrived while image generation was active, but the image
+completed before the control response. The SSE reader dispatched both events,
+yet the second handler waited on the same per-conversation inbound lock. Its
+cancellation classifier was therefore unreachable until the first handler
+released the lock.
+
+### Fix and prevention
+
+When a local active turn exists, the guarded inbound handler now performs the
+semantic cancellation check before acquiring the conversation lock. Ordinary
+messages still take the lock and preserve FIFO behavior. The unit contract
+requires the cancellation call to occur before `async with lock`.
+
+### Verification
+
+- [x] Reproduce with a live long-running request followed by a stop message.
+- [x] Identify the lock ordering from logs and message-history evidence.
+- [x] Move the existing semantic control check before the lock.
+- [ ] Re-run message and quote-reply cancellation on the VPS.
+
 ## 10:05 — Remove ambiguous Grafana provisioning and document routing ownership
 
 ### Symptom
