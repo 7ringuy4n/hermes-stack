@@ -340,3 +340,14 @@ workflow preflight, and dequeue each independently called the classifier. The
 adapter now classifies an attached-image turn once, passes that plan to both
 pre-queue decisions, stores it in the Valkey FIFO item, and reuses it after
 dequeue. The five-minute media test ceiling is enforced by default.
+
+### Live verification
+
+- [x] Real outbound Zalo photo and returned message identifier.
+- [x] Quoted source resolved to the shared media path.
+- [x] One image-edit plan reused through routing.
+- [x] OmniRoute image-edit request returned successfully.
+- [x] Edited PNG delivered to the authorized DM.
+- [x] Independent `vision-ocr` review rated the coherent watercolor result
+  8/10, confirmed the house, tree, and sun were retained, and found no visible
+  unsafe text.
