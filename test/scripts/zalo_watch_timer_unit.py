@@ -22,6 +22,10 @@ def main() -> int:
     if "OnBootSec=" in block:
         print("FAIL watcher still depends on boot-relative first trigger")
         return 1
+    install_block = text[start : start + 900]
+    if "systemctl restart assistant-zalo-watch.timer" not in install_block:
+        print("FAIL watcher install does not re-arm an already active timer")
+        return 1
     print("OK Zalo watcher activation and recurrence timers")
     return 0
 
