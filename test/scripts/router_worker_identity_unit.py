@@ -2,6 +2,7 @@
 """Unit: Router Worker has one canonical live identity."""
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -14,10 +15,8 @@ ALLOWED_LEGACY_FILES = {
     ROOT / "test" / "scripts" / "openbao_common_unit.py",
 }
 SKIP_FILES = {
-    ROOT / "AGENT_RULES.md",  # operator-owned local policy may be ahead of the branch
-    ROOT / "test" / "SETUP.local.md",
+    ROOT / "AGENT_RULES.md",  # operator-maintained policy is not a runtime contract
 }
-SKIP_PARTS = {".git", ".idea", "history", "reports", "__pycache__"}
 LEGACY_MARKERS = (
     "model-router",
     "model_router",
@@ -42,10 +41,17 @@ def main() -> int:
             print(f"FAIL canonical compose marker missing: {marker}")
             failed = True
 
-    for path in ROOT.rglob("*"):
-        if not path.is_file() or any(part in SKIP_PARTS for part in path.parts):
-            continue
+    tracked = subprocess.check_output(
+        ["git", "-c", f"safe.directory={ROOT.as_posix()}", "ls-files"],
+        cwd=ROOT,
+        text=True,
+        encoding="utf-8",
+    ).splitlines()
+    for relative in tracked:
+        path = ROOT / relative
         if path in ALLOWED_LEGACY_FILES or path in SKIP_FILES:
+            continue
+        if "history" in path.parts or "reports" in path.parts:
             continue
         if path.name in {"CHANGELOG.md", "HISTORY.md"}:
             continue
