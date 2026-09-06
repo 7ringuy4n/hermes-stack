@@ -197,3 +197,47 @@ Successful create, update, and delete operations now render the configured
 
 `test/scripts/notes_control_unit.py` rejects any return to classifier-authored
 mutation confirmations inside the note execution branch.
+
+## 09:25 — Preserve scaled Compose replicas during cleanup
+
+### Symptom
+
+A component-scoped update removed one healthy Hermes replica even though the
+configured scale remained two.
+
+### Root cause
+
+The pre-update orphan cleanup treated every second container sharing a Compose
+project/service label as a duplicate. Compose intentionally gives scaled
+replicas the same service label and distinguishes them by container-number.
+
+### Technical detail
+
+- **Function:** `architect/backup-restore/lib/workers.sh::assistant_rm_compose_recreate_orphans()` — collapsed a service to one container.
+- **Lines:** `architect/backup-restore/lib/workers.sh:L300–L340` — duplicate identity now includes `service:container-number`.
+- **Label:** `com.docker.compose.container-number` — ignored → preserved as the scale-slot boundary.
+- **Service:** `hermes` — configured replicas `2` → one replica was removed during an unrelated Router Worker update.
+
+### AI decision
+
+Use Compose's stable scale-slot label rather than special-casing Hermes or
+disabling orphan cleanup. This preserves any intentionally scaled service while
+still removing repeated occupants of the same slot and anonymous rename debris.
+
+### Fix (core)
+
+Cleanup tracks one container per project service and container-number slot.
+Only a second occupant of the same slot is removed.
+
+### Todo list
+
+- [x] Reproduce through a component-scoped update with two replicas.
+- [x] Identify the shared service label and distinct slot labels.
+- [x] Fix the shared worker lifecycle library.
+- [x] Add a regression contract.
+- [ ] Verify the component update retains two live replicas on the VPS.
+
+### Prevent recurrence
+
+`test/scripts/compose_scaled_cleanup_unit.py` requires slot-aware duplicate
+identity and rejects the former service-wide singleton state.
