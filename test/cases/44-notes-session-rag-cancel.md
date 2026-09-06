@@ -24,6 +24,7 @@ message identifier:
 python test/scripts/zalo_tn_quote_image_edit_inject.py
 ```
 
-The probe sends its source image through the live bridge, derives the quote
-from the bridge response, injects the edit instruction, and requires both a
-new image artifact and delivery back to the authorized DM.
+The probe sends its source image through the live bridge, uses the real message
+identifier returned by that bridge response, injects the reply with the exact
+shared source path, and requires both a new image artifact and delivery back to
+the authorized DM.
