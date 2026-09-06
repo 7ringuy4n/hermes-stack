@@ -20,6 +20,8 @@
   identity, scripts, monitoring, skills, docs, and tests. Upgrade cleanup
   removes only the retired project container and migrates exact old default
   route values without overwriting operator-owned endpoints.
+- Corrected the remaining current Router Worker configuration heading; retired
+  names remain only in migration checks and immutable historical evidence.
 - Added multipurpose dated/undated notes with per-DM/per-group scopes,
   PostgreSQL date/full-text indexes, deduplication, and immutable mutation audit.
 - Dated note lookup now relaxes language-dependent query tags only after a

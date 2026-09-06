@@ -1,4 +1,4 @@
-# Model-router config — bake fallbacks only
+# Router Worker config — bake fallbacks only
 
 **Do not edit JSON in this folder as the source of truth.**
 

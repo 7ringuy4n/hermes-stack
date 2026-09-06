@@ -351,3 +351,10 @@ dequeue. The five-minute media test ceiling is enforced by default.
 - [x] Independent `vision-ocr` review rated the coherent watercolor result
   8/10, confirmed the house, tree, and sun were retained, and found no visible
   unsafe text.
+
+## Current documentation terminology audit
+
+The final current-document scan found one configuration heading that still used
+the retired Router Worker service name. The heading now uses the active name.
+Compatibility cleanup code, regression fixtures, and dated reports keep the old
+term only where it is necessary to detect or explain legacy state.
