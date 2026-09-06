@@ -20,6 +20,9 @@
   The same final reply can no longer be accepted by one classification and then
   silently discarded by a second nondeterministic decision while the gateway
   records transport success.
+- Use natural user-facing sentences plus a bounded history timestamp in live
+  delivery labs. Internal-looking synthetic markers no longer collide with the
+  privacy filter or appear as execution identifiers in Zalo.
 - Resolve external release fixtures from both normal repositories and nested
   worktrees, while preserving the explicit fixture-directory override.
 - Corrected the media smoke gate and retained lab scripts to check the current

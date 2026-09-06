@@ -673,3 +673,6 @@ intentional protocol/status suppression remains explicit and logged.
 
 The delivery unit requires exactly one outbound-noise decision in the send path
 and requires durable delivery recording only after bridge acknowledgement.
+Live labs use ordinary user-facing sentences and scope their durable queries to
+the run start time, avoiding internal-looking markers that the privacy policy is
+designed to suppress.

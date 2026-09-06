@@ -38,7 +38,7 @@ import json, subprocess, time, urllib.request
 
 uid={USER_ID!r}
 tag=str(int(time.time()))
-marker="QUEUE_FAILOVER_"+tag
+marker="The silver compass is ready."
 
 def output(*args):
     return subprocess.check_output(args,text=True,errors="replace").strip()
@@ -57,13 +57,14 @@ def delivered_count():
 import os, psycopg
 with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
     row=conn.execute(
-        "SELECT count(*) FROM zalo_message_history WHERE thread_id=%s AND thread_type='user' AND event='delivered' AND content LIKE %s",
-        (os.environ["LAB_THREAD_ID"],"%"+os.environ["LAB_MARKER"]+"%"),
+        "SELECT count(*) FROM zalo_message_history WHERE thread_id=%s AND thread_type='user' AND event='delivered' AND created_at >= to_timestamp(%s) AND content LIKE %s",
+        (os.environ["LAB_THREAD_ID"],int(os.environ["LAB_STARTED"]),"%"+os.environ["LAB_MARKER"]+"%"),
     ).fetchone()
 print(int(row[0] or 0))
 """
     value=output(
         "docker","exec","-e","LAB_THREAD_ID="+uid,"-e","LAB_MARKER="+marker,
+        "-e","LAB_STARTED="+str(int(started)),
         zalo_api,"python3","-c",probe,
     )
     return int(value or "0")
@@ -88,7 +89,7 @@ if not owner:
     raise SystemExit("FAIL_OWNER_RESOLUTION")
 
 payload=json.dumps({{
-    "kind":"part","text":"Reply with exactly "+marker,
+    "kind":"part","text":"Reply with exactly this natural sentence: "+marker,
     "thread_id":uid,"thread_type":"user","sender_id":uid,
     "sender_name":"test-user","chat_type":"dm",
     "message_id":"failover-"+tag,"media_urls":[],"media_types":[],

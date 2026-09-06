@@ -113,23 +113,23 @@ group_quote_id=sent_id(post("/send",{{"threadId":gid,"threadType":"group","text"
 if not dm_quote_id or not group_quote_id:
     raise SystemExit("FAIL_REAL_QUOTE_ID")
 
-dm_marker="DM_CONCURRENCY_"+tag
-group_marker="GROUP_CONCURRENCY_"+tag
+dm_marker="The blue orchid is ready."
+group_marker="The amber lantern is ready."
 started=time.time()
 
-def delivered_count(thread_id, thread_type, marker):
+def delivered_count(thread_id, thread_type, marker, started_at):
     probe="""
 import os, psycopg
 with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
     row=conn.execute(
-        "SELECT count(*) FROM zalo_message_history WHERE thread_id=%s AND thread_type=%s AND event='delivered' AND content LIKE %s",
-        (os.environ["LAB_THREAD_ID"],os.environ["LAB_THREAD_TYPE"],"%"+os.environ["LAB_MARKER"]+"%"),
+        "SELECT count(*) FROM zalo_message_history WHERE thread_id=%s AND thread_type=%s AND event='delivered' AND created_at >= to_timestamp(%s) AND content LIKE %s",
+        (os.environ["LAB_THREAD_ID"],os.environ["LAB_THREAD_TYPE"],int(os.environ["LAB_STARTED"]),"%"+os.environ["LAB_MARKER"]+"%"),
     ).fetchone()
 print(int(row[0] or 0))
 """
     value=subprocess.check_output(
         ["docker","exec","-e","LAB_THREAD_ID="+thread_id,"-e","LAB_THREAD_TYPE="+thread_type,
-         "-e","LAB_MARKER="+marker,zalo_api,"python3","-c",probe],
+         "-e","LAB_MARKER="+marker,"-e","LAB_STARTED="+str(int(started_at)),zalo_api,"python3","-c",probe],
         text=True,errors="replace",
     ).strip()
     return int(value or "0")
@@ -139,7 +139,7 @@ def inject(thread_id, thread_type, message_id, marker, quote_id, seed):
     payload={{"type":"message","payload":{{
         "threadId":thread_id,"threadType":thread_type,"senderId":uid,
         "senderName":"test-user","messageId":message_id,
-        "text":"Reply with exactly "+marker,"isSelf":False,
+        "text":"Reply with exactly this natural sentence: "+marker,"isSelf":False,
         "quote":quote,"quoted":quote,"quotedOwnerId":own,
     }}}}
     return bool(post("/inject-event",payload).get("ok"))
@@ -156,11 +156,11 @@ if accepted != [True,True]:
 deadline=time.time()+180
 dm_ok=group_ok=crossed=False
 while time.time()<deadline:
-    dm_ok=delivered_count(uid,"user",dm_marker)==1
-    group_ok=delivered_count(gid,"group",group_marker)==1
+    dm_ok=delivered_count(uid,"user",dm_marker,started)==1
+    group_ok=delivered_count(gid,"group",group_marker,started)==1
     crossed=(
-        delivered_count(gid,"group",dm_marker)>0 or
-        delivered_count(uid,"user",group_marker)>0
+        delivered_count(gid,"group",dm_marker,started)>0 or
+        delivered_count(uid,"user",group_marker,started)>0
     )
     if dm_ok and group_ok:
         break
