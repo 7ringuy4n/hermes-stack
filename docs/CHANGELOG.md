@@ -12,6 +12,8 @@
   gateway reconnect timeout symptom.
 - Backup and stale staged-memory retention now default to seven days, are
   initialized in OpenBao, and are loaded only for timer/lifecycle execution.
+- Removed the retired `web_extract_backends` health field; URL extraction
+  adapters remain an internal implementation detail rather than an env route.
 - Dispatcher office generation supports write-only mode so cancellable adapter
   turns remain the final owner of Zalo artifact delivery.
 
