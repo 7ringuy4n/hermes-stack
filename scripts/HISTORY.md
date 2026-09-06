@@ -5617,3 +5617,5 @@ cloning from recreating ambiguous lookups; chat creation remains on `file-gen`.
   replaying classifier free-form text; see `history/2026-09-06/README.md`.
 - Classifier note bodies now remain stable across identical create requests so
   the existing content dedupe boundary can operate deterministically.
+- Compose cleanup now keys duplicates by service and container-number slot,
+  preventing unrelated component updates from collapsing Hermes HA replicas.

@@ -2804,3 +2804,5 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
   of trusting classifier free-form confirmation text.
 - Note classification preserves stable user-authored content without invented
   category prefixes so deterministic duplicate creation remains idempotent.
+- Component-scoped updates now preserve intentional Compose scale slots while
+  still removing duplicate occupants and anonymous recreate debris.

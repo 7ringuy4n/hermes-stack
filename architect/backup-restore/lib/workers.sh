@@ -302,7 +302,8 @@ assistant_rm_compose_recreate_orphans() {
   # `compose up` can leave that hex name taken → next up:
   #   Conflict: container name "/e207aa1eecb5_assistant-authz-1" is already in use
   # Drop those rename leftovers (and duplicate project service containers) before up.
-  local id name project="${COMPOSE_PROJECT_NAME:-assistant}" svc kept
+  local id name project="${COMPOSE_PROJECT_NAME:-assistant}" svc slot key running
+  local -A kept_slots=()
   while IFS= read -r id; do
     [[ -z "$id" ]] && continue
     name="$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null | sed 's|^/||' || true)"
@@ -314,23 +315,23 @@ assistant_rm_compose_recreate_orphans() {
     fi
   done < <(docker ps -aq 2>/dev/null)
 
-  # Same project+service with >1 container: keep one running (newest), remove rest.
+  # Compose assigns a stable container-number slot to every scaled service
+  # replica. Remove only duplicate occupants of the same service+slot; several
+  # distinct slots are an intentional scale set, not duplicate containers.
   while IFS= read -r svc; do
     [[ -z "$svc" ]] && continue
-    kept=""
     while IFS= read -r id; do
       [[ -z "$id" ]] && continue
-      if [[ -z "$kept" ]] \
-        && [[ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null || echo false)" == "true" ]]; then
-        kept="$id"
-        continue
-      fi
-      if [[ -z "$kept" ]]; then
-        kept="$id"
+      slot="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.container-number"}}' "$id" 2>/dev/null || true)"
+      [[ -n "$slot" ]] || slot="1"
+      key="${svc}:${slot}"
+      running="$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null || echo false)"
+      if [[ -z "${kept_slots[$key]:-}" ]]; then
+        kept_slots[$key]="$id"
         continue
       fi
       name="$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null | sed 's|^/||' || echo "$id")"
-      echo "==> remove duplicate compose container ${name} (service=${svc})"
+      echo "==> remove duplicate compose container ${name} (service=${svc} slot=${slot} running=${running})"
       docker rm -f "$id" 2>/dev/null || true
     done < <(docker ps -aq --filter "label=com.docker.compose.project=${project}" \
       --filter "label=com.docker.compose.service=${svc}" 2>/dev/null)
