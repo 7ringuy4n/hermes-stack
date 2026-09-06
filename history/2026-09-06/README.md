@@ -24,6 +24,23 @@ requested current UTC answer and sources. The harness now distinguishes
 transport delivery from marker compliance and requires semantic evidence when
 the marker is absent.
 
+## Release verification summary
+
+- The one-replica paired DM run completed in 333.44 seconds. The quote-based
+  image edit and the following sourced web response were both delivered; the
+  visual evaluator scored the edited image 8/10.
+- The equivalent two-replica paired DM run completed in 320.20 seconds with
+  the same delivery result and an 8/10 visual score. One sample is not enough
+  to attribute the small difference to replica count because image-provider
+  latency dominated and the same-conversation FIFO intentionally serialized
+  both requests.
+- Group-scoped scenarios were excluded from this release round by operator
+  decision. DM and quote-reply isolation remained in scope.
+- All 90 local unit scripts passed with disposable test dependencies. The live
+  post-run snapshot showed an empty Zalo queue, one SSE lease owner, two
+  running Hermes replicas, healthy stateful services, and zero container
+  restart counts.
+
 ## Late media crossed Zalo turn boundaries
 
 ### Symptom
