@@ -13,6 +13,13 @@
   synchronous provider segment cannot cause false failover. The event-loop
   monitor remains owner-token-aware, and outbound sends are fenced when the
   independent heartbeat proves ownership was lost.
+- Extend cancellation verification to require a delivered acknowledgement that
+  contains no process, container, task, message, correlation, or queue
+  identifier.
+- Remove a duplicate LLM outbound-noise classification from the Zalo send path.
+  The same final reply can no longer be accepted by one classification and then
+  silently discarded by a second nondeterministic decision while the gateway
+  records transport success.
 - Resolve external release fixtures from both normal repositories and nested
   worktrees, while preserving the explicit fixture-directory override.
 - Corrected the media smoke gate and retained lab scripts to check the current

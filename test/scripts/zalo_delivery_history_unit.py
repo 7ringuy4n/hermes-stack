@@ -15,6 +15,9 @@ def main() -> int:
     success = source.index('return SendResult(success=True, message_id=msg_id)', delivery)
     assert error_guard < delivery < success
     assert 'meta={"quoted": bool(used_quote)}' in source[delivery:success]
+    send_start = source.index("    async def send(\n")
+    send_end = source.index("    async def send_typing", send_start)
+    assert source[send_start:send_end].count("self._is_gateway_noise(content)") == 1
     assert "self._as_agent_turn_lock = asyncio.Lock()" in source
     assert "not lease.heartbeat_healthy()" in source
     queued = source.index("async def _as_run_queued_part")

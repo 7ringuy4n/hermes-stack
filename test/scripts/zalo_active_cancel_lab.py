@@ -70,6 +70,30 @@ def history():
         errors="replace",
     )
 
+def delivered_after(started):
+    sql=(
+        "select coalesce(content,'') from zalo_message_history "
+        "where thread_id='"+target+"' and thread_type='"+thread_type+"' "
+        "and event='delivered' and created_at >= to_timestamp("+str(int(started))+") "
+        "order by id desc limit 8"
+    )
+    return subprocess.check_output(
+        ["docker","exec","postgres","sh","-lc",'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc '+json.dumps(sql)],
+        text=True,
+        errors="replace",
+    )
+
+def exposes_internal_id(text):
+    low=" "+str(text or "").casefold().replace("_"," ").replace("-"," ")+" "
+    labels=(" pid "," process id "," container id "," correlation id "," message id "," task id "," queue key ")
+    if any(label in low for label in labels):
+        return True
+    for token in low.split():
+        cleaned=token.strip(".,:;()[]{{}}")
+        if len(cleaned) >= 6 and cleaned.isdigit():
+            return True
+    return False
+
 def gateway_text():
     out=[]
     names=subprocess.check_output(["docker","ps","--format","{{{{.Names}}}}"], text=True).splitlines()
@@ -146,6 +170,18 @@ if "|cancel_requested|control" not in events or "|cancelled|control" not in even
     print(events)
     raise SystemExit("FAIL_CANCEL_AUDIT")
 
+delivery=""
+delivery_deadline=time.time()+20
+while time.time() < delivery_deadline:
+    delivery=delivered_after(started)
+    if delivery.strip():
+        break
+    time.sleep(1)
+if not delivery.strip():
+    raise SystemExit("FAIL_CANCEL_DELIVERY")
+if exposes_internal_id(delivery):
+    raise SystemExit("FAIL_CANCEL_INTERNAL_ID_EXPOSURE")
+
 time.sleep(observe_s)
 logs=gateway_text()
 if "guarded active request cancelled" not in logs and "active request cancelled" not in logs:
@@ -154,6 +190,7 @@ recent=logs[logs.rfind("Zalo: guarded active request cancelled"):]
 if "scene_image_shortcut" in recent and tag in recent:
     raise SystemExit("FAIL_LATE_IMAGE_FLOW")
 print(events.strip())
+print("CANCEL_REPLY_NO_INTERNAL_ID")
 print("PASS_CANCEL_"+scope.upper()+"_"+mode.upper())
 PY
 '''

@@ -643,3 +643,33 @@ lease lifetime without a successful renewal.
 Lease units cover fresh, explicitly lost, and expired heartbeat states. Live
 tests require one owner, one SSE client, no renewal-loss errors, no crossed
 delivery, and recovery when the actual owner container is stopped.
+
+Cancellation release checks also inspect the acknowledged user-facing reply.
+They reject process/container identifiers, internal task or message handles,
+correlation values, queue keys, and long numeric execution identifiers.
+
+## Duplicate outbound classification silently discarded valid replies
+
+### Symptom
+
+Hermes completed concurrent turns and its local delivery-obligation ledger
+marked both as delivered, but Zalo received neither and PostgreSQL contained no
+acknowledgement-backed delivery event.
+
+### Root cause
+
+The adapter called the LLM-based outbound-noise classifier twice on the same
+content. The first decision allowed the final answer; the second could classify
+it differently and returned a successful no-op, causing the gateway ledger to
+finalize an obligation that never reached the bridge.
+
+### Decision and core fix
+
+Outbound content is classified once, after autosend has already performed any
+caption replacement. A permitted reply proceeds directly to the bridge; an
+intentional protocol/status suppression remains explicit and logged.
+
+### Prevention
+
+The delivery unit requires exactly one outbound-noise decision in the send path
+and requires durable delivery recording only after bridge acknowledgement.

@@ -7751,9 +7751,6 @@ class ZaloAdapter(BasePlatformAdapter):
             if not low.startswith("hiện chưa tạo") and "couldn't create" not in low and "couldn’t create" not in low:
                 logger.info("Zalo: drop text after media result")
                 return SendResult(success=True, message_id=None)
-        # Re-check after autosend caption swap
-        if not skip_noise and self._is_gateway_noise(content):
-            return SendResult(success=True, message_id=None)
         if not (content or "").strip():
             return SendResult(success=True, message_id=None)
         # Persist turn to Valkey session SoT (not replica sessions.json).

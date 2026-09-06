@@ -176,6 +176,9 @@ bypass rate/FIFO admission, cancel only the active turn in that thread, record
 `cancel_requested` then `cancelled`, suppress late delivery, release ownership,
 and allow the next queued request to complete. If no work is active, require an
 accurate no-active response rather than a false success.
+The user-facing stop acknowledgement must not expose a process/container ID,
+task or message identifier, correlation value, queue key, or other internal
+execution handle.
 
 ## 5. Two-request concurrency and quote isolation
 
