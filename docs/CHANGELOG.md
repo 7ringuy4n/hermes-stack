@@ -7,6 +7,8 @@
   route values without overwriting operator-owned endpoints.
 - Added multipurpose dated/undated notes with per-DM/per-group scopes,
   PostgreSQL date/full-text indexes, deduplication, and immutable mutation audit.
+- Dated note lookup now relaxes language-dependent query tags only after a
+  strict search misses, while retaining the caller scope and date window.
 - Added file-based classifier contracts and host execution for note CRUD;
   ambiguous mutations are rejected rather than guessed.
 - Added semantic active-request cancellation before rate/FIFO admission. Queue

@@ -450,12 +450,15 @@ def query_notes(req: NoteQueryReq) -> dict[str, Any]:
     if date_to:
         clauses.append("note_date <= %s")
         params.append(date_to)
+    # Preserve the strict scope/date boundary separately. Classifier-produced
+    # semantic tags may differ by language from the tags stored earlier; they
+    # must not hide an otherwise correct dated note.
+    date_clauses = list(clauses)
+    date_params = list(params)
     if req.tags:
         clauses.append("tags && %s")
         params.append(list(dict.fromkeys(req.tags))[:24])
     query = req.query.strip()
-    filter_clauses = list(clauses)
-    filter_params = list(params)
     if query:
         clauses.append(
             "(to_tsvector('simple', content) @@ plainto_tsquery('simple', %s) OR content ILIKE %s)"
@@ -473,9 +476,10 @@ def query_notes(req: NoteQueryReq) -> dict[str, Any]:
         rows = conn.execute(sql, params).fetchall()
         # A narrow wording filter must not hide dated plans. Return the scoped
         # date window as fallback candidates so the caller can answer naturally.
+        # Relax both query wording and semantic tags, never scope/date bounds.
         if query and not rows and (date_from or date_to):
-            fallback_clauses = filter_clauses
-            fallback_params = filter_params + [req.limit]
+            fallback_clauses = date_clauses
+            fallback_params = date_params + [req.limit]
             fallback_sql = f"""
               SELECT * FROM notes
               WHERE {' AND '.join(fallback_clauses)}
