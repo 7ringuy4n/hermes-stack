@@ -3134,6 +3134,11 @@ class ZaloAdapter(BasePlatformAdapter):
             timestamp=datetime.now(),
         )
         self._as_compound_begin(iso)
+        try:
+            from .session_memory import load_messages
+        except ImportError:
+            from session_memory import load_messages  # type: ignore
+        messages_before = load_messages(tid, zalo_tt)
         stop = asyncio.Event()
         watch = asyncio.create_task(self._as_watch_job_files(iso, zalo_tt, stop))
         try:
@@ -3157,7 +3162,51 @@ class ZaloAdapter(BasePlatformAdapter):
                 iso, pulse=_pulse, arm_first=True
             )
             await self._as_autosend_late_files(iso, zalo_tt)
-            complete_job(jid, {"ok": True, "idle": idle, "isolated": True})
+            delivery_event = self._as_part_delivered.get(iso)
+            delivered = bool(delivery_event is not None and delivery_event.is_set())
+            recovered = False
+            if not delivered and not self._as_job_already_sent_file(iso):
+                messages_after = load_messages(tid, zalo_tt)
+                if messages_after != messages_before:
+                    final_text = next(
+                        (
+                            str(row.get("content") or "").strip()
+                            for row in reversed(messages_after)
+                            if str(row.get("role") or "").lower() == "assistant"
+                            and str(row.get("content") or "").strip()
+                        ),
+                        "",
+                    )
+                    if final_text:
+                        logger.warning(
+                            "Zalo: workflow final delivery missing; retry direct job=%s thread=%s",
+                            jid,
+                            tid,
+                        )
+                        retry_result = await self.send(
+                            tid,
+                            final_text,
+                            metadata={
+                                "as_skip_autosend": True,
+                                "skip_outbound_filter": True,
+                                "as_skip_session_memory": True,
+                            },
+                        )
+                        recovered = bool(
+                            retry_result
+                            and getattr(retry_result, "success", None) is not False
+                        )
+                        delivered = recovered
+            complete_job(
+                jid,
+                {
+                    "ok": delivered,
+                    "idle": idle,
+                    "isolated": True,
+                    "delivered": delivered,
+                    "delivery_recovered": recovered,
+                },
+            )
             logger.info(f"[zalo] workflow job done {jid[:16]} idle={idle}")
         except Exception as e:
             logger.exception("Zalo: workflow job failed")
@@ -7548,20 +7597,21 @@ class ZaloAdapter(BasePlatformAdapter):
         if not (content or "").strip():
             return SendResult(success=True, message_id=None)
         # Persist turn to Valkey session SoT (not replica sessions.json).
-        try:
-            from .session_memory import append_turn
-            from .turn_wait import real_thread_id
-        except ImportError:
-            from session_memory import append_turn  # type: ignore
-            from turn_wait import real_thread_id  # type: ignore
-        try:
-            tid = real_thread_id(str(chat_id or ""))
-            last_map = getattr(self, "_as_last_user_text", None) or {}
-            user_prev = str(last_map.get(tid) or last_map.get(str(chat_id)) or "")
-            tt = "group" if str(self._thread_types.get(tid) or "").lower() in {"group", "g"} else "user"
-            append_turn(tid, tt, user_prev, str(content or ""))
-        except Exception:
-            pass
+        if not meta.get("as_skip_session_memory"):
+            try:
+                from .session_memory import append_turn
+                from .turn_wait import real_thread_id
+            except ImportError:
+                from session_memory import append_turn  # type: ignore
+                from turn_wait import real_thread_id  # type: ignore
+            try:
+                tid = real_thread_id(str(chat_id or ""))
+                last_map = getattr(self, "_as_last_user_text", None) or {}
+                user_prev = str(last_map.get(tid) or last_map.get(str(chat_id)) or "")
+                tt = "group" if str(self._thread_types.get(tid) or "").lower() in {"group", "g"} else "user"
+                append_turn(tid, tt, user_prev, str(content or ""))
+            except Exception:
+                pass
         if str(chat_id) not in self._as_hold_inflight:
             self._as_inflight_done(chat_id, metadata)  # ASSISTANT_INFLIGHT_v5
         dest_id = self._as_zalo_api_chat_id(chat_id)

@@ -7,6 +7,15 @@ being resent by the following web-search turn. Direct shortcut delivery now
 records the distributed file claim and the captured turn token, with claim
 rollback on delivery failure.
 
+## Isolated workflow final-delivery recovery
+
+A two-replica DM probe showed that an isolated web-search job could complete
+after producing its final answer without an observable Zalo delivery. Workflow
+completion now requires a delivery marker. When the final assistant message is
+already in shared session memory but delivery is missing, the owner retries it
+once through the per-destination send lock and records whether recovery was
+needed.
+
 ## Late media crossed Zalo turn boundaries
 
 ### Symptom
