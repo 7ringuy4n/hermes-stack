@@ -23,6 +23,9 @@
 - Use natural user-facing sentences plus a bounded history timestamp in live
   delivery labs. Internal-looking synthetic markers no longer collide with the
   privacy filter or appear as execution identifiers in Zalo.
+- Make the owner-failover lab distinguish bridge acknowledgement from terminal
+  queue cleanup by allowing a bounded post-delivery drain interval before it
+  asserts empty pending/inflight lists and active-destination registry.
 - Resolve external release fixtures from both normal repositories and nested
   worktrees, while preserving the explicit fixture-directory override.
 - Corrected the media smoke gate and retained lab scripts to check the current

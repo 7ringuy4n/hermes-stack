@@ -120,9 +120,16 @@ while time.time()<deadline:
         pass
     time.sleep(3)
 
-pending=int(output("docker","exec",valkey,"valkey-cli","LLEN",q) or "0")
-inflight=int(output("docker","exec",valkey,"valkey-cli","LLEN",qinflight) or "0")
-registered=uid in output("docker","exec",valkey,"valkey-cli","--raw","SMEMBERS",qactive).splitlines()
+drain_deadline=time.time()+30
+pending=inflight=0
+registered=True
+while time.time()<drain_deadline:
+    pending=int(output("docker","exec",valkey,"valkey-cli","LLEN",q) or "0")
+    inflight=int(output("docker","exec",valkey,"valkey-cli","LLEN",qinflight) or "0")
+    registered=uid in output("docker","exec",valkey,"valkey-cli","--raw","SMEMBERS",qactive).splitlines()
+    if pending==0 and inflight==0 and not registered:
+        break
+    time.sleep(1)
 subprocess.check_call(["docker","start",owner],stdout=subprocess.DEVNULL)
 time.sleep(12)
 running=len(containers("hermes"))
