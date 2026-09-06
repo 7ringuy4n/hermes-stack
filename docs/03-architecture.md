@@ -107,6 +107,12 @@ and explicit service HA; see [MULTI_NODE.md](./MULTI_NODE.md).
 Lifecycle mutation is backup-gated. `destroy` removes project containers and
 networks but retains volumes/data. See [02-commands.md](./02-commands.md).
 
+Authorized Zalo refreshes obtain a complete group roster from the bridge and
+replace that group's PostgreSQL member snapshot in one transaction. The API
+rejects partial, paginated, malformed, and count-mismatched responses, leaving
+the last valid snapshot intact. This makes named-group authorization and
+post-restore membership verification independent of transient bridge reads.
+
 ## Operational invariants
 
 - Prompt policy is file-based; no request-specific prompt hardcoding in code.

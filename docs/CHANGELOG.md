@@ -1,5 +1,9 @@
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
+- Persist complete Zalo group-member snapshots during authorized refresh and
+  expose an authenticated refresh route for release verification. Partial,
+  paginated, malformed, or count-mismatched bridge responses cannot replace a
+  previously valid roster.
 - Made Zalo per-conversation FIFO work recoverable across elected-owner loss by
   atomically claiming into shared inflight state, acknowledging only after a
   terminal turn, and scanning a durable active-destination registry on

@@ -495,3 +495,36 @@ status, counts, and checksums; it never prints identities or secrets.
 The static backup contract and destructive VPS gate require session and policy
 artifacts before teardown, then compare login, authorized group membership,
 one-SSE ownership, and router inventory after clean deployment.
+
+## Group membership was absent from durable recovery state
+
+### Symptom
+
+The authorized named group and its display name existed after backup, but its
+PostgreSQL member snapshot was empty. A clean restore could therefore pass a
+group-name check without proving the authorization roster or DM/group test
+identity relationship.
+
+### Root cause
+
+The bridge contact refresh synchronized group and user names only. Its
+`getGroupInfo` response exposes the complete roster through versioned member
+entries, but no core path parsed and persisted those entries.
+
+### Decision and core fix
+
+An authenticated group-membership refresh now parses documented structural
+fields, validates numeric identities, deduplicates entries, and requires the
+parsed count to equal the provider's total. A valid roster replaces one
+group's PostgreSQL snapshot in a transaction. Partial, paginated, malformed,
+empty, and count-mismatched responses are rejected without deleting the last
+valid state. The ordinary authorized Zalo refresh updates these snapshots as
+well as names.
+
+### Prevention
+
+The offline parser unit covers versioned and direct member shapes, roles,
+metadata, incomplete results, malformed entries, and pagination. The live
+DM/group lab explicitly refreshes the named group's durable snapshot before it
+requires the expected count and designated test member. Numeric identities are
+kept out of source and reports.

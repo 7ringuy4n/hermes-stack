@@ -84,6 +84,13 @@ member_probe="""
 import json, os, urllib.request
 tid=os.environ["LAB_GROUP_ID"]
 token=os.environ.get("ZALO_API_TOKEN","")
+refresh=urllib.request.Request(
+    "http://127.0.0.1:8100/v1/zalo/threads/"+tid+"/members/refresh",
+    data=b"{{}}",
+    headers={{"Authorization":"Bearer "+token,"Content-Type":"application/json"}},
+    method="POST",
+)
+urllib.request.urlopen(refresh,timeout=15).read()
 req=urllib.request.Request(
     "http://127.0.0.1:8100/v1/zalo/threads/"+tid+"/members",
     headers={{"Authorization":"Bearer "+token}},
