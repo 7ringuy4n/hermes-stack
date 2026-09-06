@@ -125,11 +125,38 @@ token=(os.environ.get("ZALO_PLUGIN_TOKEN") or "").strip()
 headers={{"Content-Type":"application/json"}}
 if token:
     headers["Authorization"]="Bearer " + token
+
+def post(path, body):
+    req=urllib.request.Request(
+        "http://127.0.0.1:8787" + path,
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        method="POST",
+        headers=headers,
+    )
+    return json.loads(urllib.request.urlopen(req, timeout=60).read().decode() or "{{}}")
+
+sent=post("/send-attachment", {{
+    "threadId":uid,
+    "threadType":"user",
+    "path":str(host_source),
+    "caption":"Source image for reply-edit verification " + tag,
+}})
+result=sent.get("result") if isinstance(sent, dict) else {{}}
+result=result if isinstance(result, dict) else {{}}
+message=result.get("message") if isinstance(result.get("message"), dict) else {{}}
+real_id=str(message.get("msgId") or result.get("msgId") or "")
+if not real_id:
+    raise SystemExit("FAIL_REAL_SOURCE_MESSAGE_ID")
+attachments=result.get("attachment")
+if not isinstance(attachments, list):
+    attachments=result.get("attachments")
+attachment=attachments[0] if isinstance(attachments, list) and attachments and isinstance(attachments[0], dict) else None
+quote_content=attachment if attachment else container_source
 quoted={{
     "msgType":"chat.photo",
-    "msgId":"source-" + tag,
-    "cliMsgId":"source-" + tag,
-    "content":container_source,
+    "msgId":real_id,
+    "cliMsgId":real_id,
+    "content":quote_content,
 }}
 payload={{"type":"message","payload":{{
     "threadId":uid,
@@ -142,13 +169,9 @@ payload={{"type":"message","payload":{{
     "quote":quoted,
     "quoted":quoted,
 }}}}
-request=urllib.request.Request(
-    "http://127.0.0.1:8787/inject-event",
-    data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-    method="POST",
-    headers=headers,
-)
-reply=json.loads(urllib.request.urlopen(request, timeout=15).read().decode() or "{{}}")
+reply=post("/inject-event", payload)
+print("REAL_SOURCE_MESSAGE_ID_PRESENT")
+print("SOURCE_ATTACHMENT_METADATA", bool(attachment))
 print("INJECT_OK", reply.get("ok"), "TAG", tag)
 
 artifact=None
@@ -191,7 +214,7 @@ for line in zalo_journal(started).splitlines():
     if "RAW message: type=user thread=" + uid in line or "self=true msgType=chat.photo" in line:
         print(line[:300])
 print("ARTIFACT", artifact.name, "BYTES", len(blob))
-print("PASS_QUOTED_IMAGE_EDIT_DELIVERED")
+print("PASS_REAL_QUOTED_IMAGE_EDIT_DELIVERED")
 PY
 '''
         output = sudo_bash(client, remote, timeout=WAIT_S + 180)
@@ -200,7 +223,7 @@ PY
 
     safe = _sanitize(output or "")
     (OUT / "raw.log").write_text(safe, encoding="utf-8", errors="replace")
-    passed = "PASS_QUOTED_IMAGE_EDIT_DELIVERED" in safe and "FAIL_" not in safe
+    passed = "PASS_REAL_QUOTED_IMAGE_EDIT_DELIVERED" in safe and "FAIL_" not in safe
     (OUT / "summary.json").write_text(
         json.dumps({"ok": passed, "user_name": TN_NAME, "ts": ts()}, indent=2) + "\n",
         encoding="utf-8",

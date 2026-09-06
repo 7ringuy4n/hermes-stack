@@ -303,4 +303,19 @@ Grafana does not report missing standard provisioning paths at startup.
 - [x] Confirm all dashboard UIDs and titles are unique.
 - [x] Remove the unused mirrored provisioning tree.
 - [x] Add a regression that rejects duplicate identities and source trees.
-- [ ] Run the monitor integration after deployment.
+- [x] Run the monitor integration after deployment.
+
+## 10:35 — Require a genuine quote identity in image-edit verification
+
+### Gap
+
+The earlier reply-image-edit probe staged a valid source image but supplied a
+synthetic quote identifier. That exercised media inheritance and generation,
+not the full bridge send-to-quote contract.
+
+### Fix and prevention
+
+The lab now sends the source photo through the live bridge first, extracts the
+real returned message identifier and attachment metadata, then uses those
+values for the inbound reply event. It only passes after the edited artifact
+is created and delivered to the authorized DM.
