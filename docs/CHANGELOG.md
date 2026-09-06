@@ -1,5 +1,7 @@
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
+- Corrected the media smoke gate and retained lab scripts to check the current
+  Router Worker vision route instead of the retired local OCR service.
 - Persist complete Zalo group-member snapshots during authorized refresh and
   expose an authenticated refresh route for release verification. Partial,
   paginated, malformed, or count-mismatched bridge responses cannot replace a

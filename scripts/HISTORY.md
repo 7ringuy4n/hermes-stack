@@ -31,6 +31,8 @@ policy files. See `history/2026-09-06/README.md` for root cause and safeguards.
 The same record documents structurally validated, transactional Zalo group
 membership refresh so recovery verification cannot rely on a name-only group
 record.
+It also records removal of the last active smoke/lab probes for the retired
+local OCR service; media health now follows the Router Worker vision route.
 
 ## 2026-09-05 19:20 +07 — cold-start OpenBao ordering
 

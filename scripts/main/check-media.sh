@@ -16,7 +16,7 @@ check() {
 
 echo "WORKER_MEDIA_FILE=${WORKER_MEDIA_FILE:-inactive} ENABLE_MEDIA_FILE=${ENABLE_MEDIA_FILE:-inactive}"
 check dispatcher "http://127.0.0.1:${DISPATCHER_PORT:-8090}/health"
-check ocr        "http://127.0.0.1:${OCR_PORT:-8091}/health"
+check vision-route "http://127.0.0.1:${ROUTER_WORKER_PORT:-8096}/health"
 check jobs       "http://127.0.0.1:${JOBS_PORT:-8104}/health"
 check searxng    "http://127.0.0.1:${SEARXNG_PORT:-8888}/healthz"
 
@@ -29,4 +29,3 @@ if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
 echo "OK: Media|File smoke passed"
-

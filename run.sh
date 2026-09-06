@@ -1143,7 +1143,7 @@ Knowledge (all):
 
 Memory (media worker):
   compact | optimize-memory
-  check-media             # smoke OCR / Jobs / SearXNG / dispatcher
+  check-media             # smoke vision route / Jobs / SearXNG / dispatcher
 
 Timers:
   install-timers

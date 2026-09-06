@@ -528,3 +528,27 @@ metadata, incomplete results, malformed entries, and pagination. The live
 DM/group lab explicitly refreshes the named group's durable snapshot before it
 requires the expected count and designated test member. Numeric identities are
 kept out of source and reports.
+
+## Media smoke still required the retired OCR container
+
+### Symptom
+
+A clean deployment brought every supported media service up, but
+`run.sh check-media` failed by probing localhost port 8091.
+
+### Root cause
+
+The standalone OCR container had been fully replaced by the `vision-ocr`
+combo through Router Worker, while the supported smoke script and two retained
+lab paths still referenced the removed service.
+
+### Decision and core fix
+
+The media smoke now checks Router Worker as the live vision route alongside
+dispatcher, jobs, and SearXNG. Retained security/matrix labs use the same
+current endpoint and explicitly require the retired container to be absent.
+
+### Prevention
+
+The vision policy unit now rejects port 8091, `OCR_PORT`, and the old check
+name in the supported media smoke while requiring the Router Worker endpoint.
