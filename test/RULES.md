@@ -32,6 +32,10 @@ Never relabel a failed live test as pass. Every report includes exact timestamps
 commit SHA, replica count, correlation IDs, combo/model attribution, elapsed
 time, restart deltas, and sanitized evidence.
 
+Transport delivery evidence must be an acknowledgement-backed durable
+`delivered` event. A queued `assistant_turn`, generated file, log intention, or
+optional bridge self-message echo is not proof that Zalo accepted the result.
+
 ## 3. Two-phase release gate
 
 ### Phase A — local/static

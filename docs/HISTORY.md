@@ -23,6 +23,10 @@ artifact from one request from leaking into or muting a later request.
 The architecture record now distinguishes active-active HTTP routing from the
 active-passive Zalo owner path, and Grafana provisioning has one canonical
 host-mounted tree with uniqueness checks.
+Outbound delivery is now a bridge-acknowledged PostgreSQL event, so HA recovery
+and DM/group isolation evidence remains durable even when the bridge does not
+emit self-message journal events. External fixture discovery also supports
+nested release worktrees without machine-specific paths.
 
 ## 2026-09-05 — update isolation, routing consolidation, and Zalo HA
 

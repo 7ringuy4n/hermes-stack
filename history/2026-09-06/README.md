@@ -552,3 +552,35 @@ current endpoint and explicitly require the retired container to be absent.
 
 The vision policy unit now rejects port 8091, `OCR_PORT`, and the old check
 name in the supported media smoke while requiring the Router Worker endpoint.
+
+## Delivery verification depended on optional bridge echoes
+
+### Symptom
+
+Concurrent DM/group and owner-failover requests produced final Hermes replies,
+but the release labs could not prove delivery after the host bridge stopped
+echoing outbound self-message events to its journal.
+
+### Root cause
+
+Session memory stored an assistant turn before transport completion, while the
+durable PostgreSQL history ended at `processing`. The labs treated an optional
+bridge journal echo as the transport acknowledgement.
+
+### Decision and core fix
+
+After each successful bridge send, the adapter records a `delivered` event with
+the destination type, acknowledged message identifier, final chunk, and quote
+usage. Send failures never create this event. HA labs query the durable event
+and require exactly one matching delivery in the originating conversation and
+none in the other conversation.
+
+External test fixtures are now located by walking repository ancestors for the
+nearest sibling `test docs` directory. This supports both a normal checkout and
+a nested release worktree without embedding a workstation path.
+
+### Prevention
+
+Offline contracts lock acknowledgement ordering and nested-worktree fixture
+resolution. Live concurrency and failover gates require the durable delivery
+row, queue drainage, restored replica count, and one elected SSE owner.

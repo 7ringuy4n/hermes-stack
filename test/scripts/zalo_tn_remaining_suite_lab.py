@@ -18,12 +18,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deploy_stack import connect, sudo_bash, sftp_put, _file_bytes  # noqa: E402
+from fixture_paths import test_docs_root  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
-DOCS = Path(os.environ.get("ASSISTANT_TEST_DOCS") or (ROOT.parent / "test docs"))
+DOCS = test_docs_root(ROOT)
 OUT = ROOT / "test" / "reports" / "run-zalo-tn-remaining-suite"
 REMOTE_PY = Path(__file__).resolve().parent / "zalo_tn_remaining_suite_remote.py"
 TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()

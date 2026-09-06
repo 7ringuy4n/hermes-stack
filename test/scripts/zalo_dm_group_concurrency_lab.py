@@ -117,6 +117,23 @@ dm_marker="DM_CONCURRENCY_"+tag
 group_marker="GROUP_CONCURRENCY_"+tag
 started=time.time()
 
+def delivered_count(thread_id, thread_type, marker):
+    probe="""
+import os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+    row=conn.execute(
+        "SELECT count(*) FROM zalo_message_history WHERE thread_id=%s AND thread_type=%s AND event='delivered' AND content LIKE %s",
+        (os.environ["LAB_THREAD_ID"],os.environ["LAB_THREAD_TYPE"],"%"+os.environ["LAB_MARKER"]+"%"),
+    ).fetchone()
+print(int(row[0] or 0))
+"""
+    value=subprocess.check_output(
+        ["docker","exec","-e","LAB_THREAD_ID="+thread_id,"-e","LAB_THREAD_TYPE="+thread_type,
+         "-e","LAB_MARKER="+marker,zalo_api,"python3","-c",probe],
+        text=True,errors="replace",
+    ).strip()
+    return int(value or "0")
+
 def inject(thread_id, thread_type, message_id, marker, quote_id, seed):
     quote={{"msgType":"webchat","msgId":quote_id,"cliMsgId":quote_id,"content":seed,"ownerId":own,"uidFrom":own}}
     payload={{"type":"message","payload":{{
@@ -139,17 +156,11 @@ if accepted != [True,True]:
 deadline=time.time()+180
 dm_ok=group_ok=crossed=False
 while time.time()<deadline:
-    journal=subprocess.check_output(
-        ["journalctl","--user","-u","com.hermes.zaloplugin","--since",f"@{{int(started)}}","--no-pager","-o","cat"],
-        text=True,errors="replace",
-    )
-    dm_ok=any(dm_marker in line and "type=user" in line and "self=true" in line for line in journal.splitlines())
-    group_ok=any(group_marker in line and "type=group" in line and "self=true" in line for line in journal.splitlines())
-    crossed=any(
-        (dm_marker in line and "type=group" in line) or
-        (group_marker in line and "type=user" in line)
-        for line in journal.splitlines()
-        if "self=true" in line
+    dm_ok=delivered_count(uid,"user",dm_marker)==1
+    group_ok=delivered_count(gid,"group",group_marker)==1
+    crossed=(
+        delivered_count(gid,"group",dm_marker)>0 or
+        delivered_count(uid,"user",group_marker)>0
     )
     if dm_ok and group_ok:
         break

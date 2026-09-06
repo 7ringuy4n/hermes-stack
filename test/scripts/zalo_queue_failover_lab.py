@@ -50,6 +50,23 @@ hermes=containers("hermes")
 if len(hermes) != 2:
     raise SystemExit("FAIL_REPLICA_COUNT")
 valkey=containers("valkey")[0]
+zalo_api=containers("zalo-api")[0]
+
+def delivered_count():
+    probe="""
+import os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+    row=conn.execute(
+        "SELECT count(*) FROM zalo_message_history WHERE thread_id=%s AND thread_type='user' AND event='delivered' AND content LIKE %s",
+        (os.environ["LAB_THREAD_ID"],"%"+os.environ["LAB_MARKER"]+"%"),
+    ).fetchone()
+print(int(row[0] or 0))
+"""
+    value=output(
+        "docker","exec","-e","LAB_THREAD_ID="+uid,"-e","LAB_MARKER="+marker,
+        zalo_api,"python3","-c",probe,
+    )
+    return int(value or "0")
 lease_key="zalo:bridge:owner"
 for env in json.loads(output("docker","inspect",hermes[0]))[0]["Config"]["Env"]:
     if env.startswith("ZALO_OWNER_LEASE_KEY=") and env.partition("=")[2]:
@@ -95,8 +112,7 @@ while time.time()<deadline:
     try:
         current=output("docker","exec",valkey,"valkey-cli","--raw","GET",lease_key)
         promoted=bool(current and not current.startswith(owner_id+":"))
-        journal=output("journalctl","--user","-u","com.hermes.zaloplugin","--since",f"@{{int(started)}}","--no-pager","-o","cat")
-        delivered=any(marker in line and "type=user" in line and "self=true" in line for line in journal.splitlines())
+        delivered=delivered_count()==1
         if promoted and delivered:
             break
     except subprocess.CalledProcessError:

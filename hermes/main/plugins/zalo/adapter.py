@@ -7794,6 +7794,30 @@ class ZaloAdapter(BasePlatformAdapter):
                 return SendResult(success=False, error=res["error"])
             last = res
             logger.info("Zalo: send ok thread=%s chars=%s", dest_id, len(chunk))
+            # The bridge acknowledged this exact chunk. Persist delivery
+            # separately from session memory so HA verification never infers
+            # delivery from a queued turn or optional bridge echo events.
+            try:
+                from .queue_history import record as history_record
+            except ImportError:
+                from queue_history import record as history_record  # type: ignore
+            result = res.get("result") if isinstance(res, dict) else None
+            message = result.get("message") if isinstance(result, dict) else None
+            delivered_id = ""
+            if isinstance(message, dict) and message.get("msgId") is not None:
+                delivered_id = str(message.get("msgId"))
+            elif isinstance(result, dict) and result.get("msgId") is not None:
+                delivered_id = str(result.get("msgId"))
+            history_record(
+                thread_id=str(dest_id),
+                thread_type=str(thread_type),
+                message_id=delivered_id,
+                event="delivered",
+                role="assistant",
+                content=str(chunk),
+                task_hint="outbound",
+                meta={"quoted": bool(used_quote)},
+            )
             await asyncio.sleep(0.2)
         msg_id = None
         if isinstance(last, dict):

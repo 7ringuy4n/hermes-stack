@@ -1,5 +1,11 @@
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
+- Record an outbound Zalo `delivered` history event only after the bridge
+  acknowledges the send. HA and conversation-isolation labs now use this
+  durable acknowledgement instead of relying on optional self-message journal
+  echoes.
+- Resolve external release fixtures from both normal repositories and nested
+  worktrees, while preserving the explicit fixture-directory override.
 - Corrected the media smoke gate and retained lab scripts to check the current
   Router Worker vision route instead of the retired local OCR service.
 - Persist complete Zalo group-member snapshots during authorized refresh and
