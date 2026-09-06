@@ -1,5 +1,12 @@
 # 2026-09-06 — scoped notes, cancellation, and HA liveness
 
+## Direct shortcut artifact deduplication
+
+A one-replica paired direct-message benchmark exposed an image-edit artifact
+being resent by the following web-search turn. Direct shortcut delivery now
+records the distributed file claim and the captured turn token, with claim
+rollback on delivery failure.
+
 ## Late media crossed Zalo turn boundaries
 
 ### Symptom

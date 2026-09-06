@@ -2000,6 +2000,8 @@ class ZaloAdapter(BasePlatformAdapter):
                     pass
                 return True
             image_delivered = False
+            image_claimed = False
+            img_path = ""
             try:
                 img_path = str((shortcut or {}).get("file") or (shortcut or {}).get("path") or "")
                 if img_path:
@@ -2007,17 +2009,30 @@ class ZaloAdapter(BasePlatformAdapter):
                     if p.is_file() and p.suffix.lower() in {
                         ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp",
                     }:
-                        meta = {"as_skip_autosend": True, "as_claimed": True}
-                        res = await self.send_image_file(
-                            str(thread_id),
-                            img_path,
-                            caption="",
-                            metadata=meta,
-                        )
-                        image_delivered = bool(
-                            res and getattr(res, "success", None) is not False
-                        )
+                        image_claimed = self._as_autosend_file_claim(img_path, str(thread_id))
+                        if image_claimed:
+                            turn_token = self._as_turn_token(str(thread_id))
+                            meta = {"as_skip_autosend": True, "as_claimed": True}
+                            res = await self.send_image_file(
+                                str(thread_id),
+                                img_path,
+                                caption="",
+                                metadata=meta,
+                            )
+                            image_delivered = bool(
+                                res and getattr(res, "success", None) is not False
+                            )
+                            if image_delivered:
+                                self._as_mark_job_file_sent(
+                                    str(thread_id), turn_token=turn_token
+                                )
+                            else:
+                                self._as_autosend_file_unclaim(img_path)
+                        else:
+                            image_delivered = True
             except Exception as e:
+                if image_claimed and img_path:
+                    self._as_autosend_file_unclaim(img_path)
                 logger.warning(
                     "Zalo: shortcut direct image send failed: %s",
                     type(e).__name__,
