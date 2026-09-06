@@ -1,5 +1,11 @@
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
+- Documented the deployed hybrid availability model: active-active Hermes HTTP
+  behind Traefik, one active Zalo SSE owner elected by a renewable Valkey lease,
+  and per-conversation Valkey FIFO processing by that owner.
+- Consolidated Grafana provisioning under the host-mounted
+  `config/monitor/grafana` source of truth and added dashboard identity checks
+  so duplicate UIDs, titles, or provisioning trees fail locally.
 - Scoped Zalo artifact discovery and delivery markers to a processed-turn
   token. A late artifact sender from an earlier turn can no longer attach an
   old file to a later request or suppress that request's text response.

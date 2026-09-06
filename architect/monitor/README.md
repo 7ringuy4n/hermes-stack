@@ -39,7 +39,7 @@ Extra usage: Grafana+Prometheus **~1.5 GiB · ~10 GB · ~0.5 vCPU**, Loki+Alloy 
 
 | Package | Function | Pairs with |
 |---|---|---|
-| `grafana/` | Dashboards | Prometheus (metrics/Hardware) and/or Loki (logs) |
+| [`../../config/monitor/grafana/`](../../config/monitor/grafana/) | Canonical Grafana provisioning and dashboards | Prometheus (metrics/Hardware) and/or Loki (logs) |
 | `alert-watch/` | Health / alert watcher | Notify (`ENABLE_NOTIFY=active`). Scrapes **node-exporter only when Grafana/Prometheus is on**. Optional health targets (AV, Zalo, Omni, OCR, OpenBao) are skipped when their `ENABLE_*` is off. DNS failures for disabled hosts are not alerts. |
 | `omni-exporter/` | OmniRoute usage metrics | OmniRoute + Prometheus |
 | `router-exporter/` | Backfills missing requested-model attribution in OmniRoute call logs | OmniRoute |
@@ -56,6 +56,11 @@ Paired exporters expose /metrics
 ```
 
 Do not require the monitor worker for chat.
+
+Grafana provisioning has one source of truth under `config/monitor/grafana/`,
+which is the directory mounted by Compose. Do not mirror dashboards under the
+architecture package: duplicate provisioners make dashboard ownership and
+updates ambiguous.
 
 ## Tests
 

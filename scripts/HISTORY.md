@@ -14,6 +14,11 @@ removes the exact retired Compose container and stale default route settings.
 The same record includes the turn-scoped media-delivery fix for concurrent Zalo
 requests.
 
+Grafana provisioning is now canonical under `config/monitor/grafana`; the
+pairing unit validates unique dashboard identities and rejects a mirrored
+architecture-tree copy. Architecture docs describe HTTP replica selection and
+the distinct leased Zalo owner/queue path.
+
 ## 2026-09-05 19:20 +07 — cold-start OpenBao ordering
 
 See `history/2026-09-05/README.md` section “Clean startup depended on an

@@ -64,15 +64,28 @@ PaddleOCR, Tesseract, ComfyUI, 9Router, or legacy OmniRouter service.
 
 ## Concurrency and availability
 
-Hermes replicas share durable services but have isolated runtime homes. Every
-replica loads the Zalo adapter against the Traefik bridge route; an expiring,
+Hermes replicas share durable services but have isolated runtime homes. HTTP
+requests are active-active: Traefik resolves the Compose `hermes` service and
+selects a healthy replica. Zalo ingestion is active-passive: every replica
+loads the adapter against Traefik's internal bridge route, while an expiring,
 renewed Valkey lease permits exactly one active SSE consumer. If that replica
-dies, a standby acquires the lease without restarting the replica set. The
-inbound queue serializes work per conversation and permits unrelated
-conversations to execute concurrently. Quote-reply correlation is carried as
-message metadata and staged media, not inferred from global recent state.
+dies, a standby acquires the lease without restarting the replica set.
 
-Scaling Hermes from one to two replicas improves agent capacity only. On one
+The elected Zalo owner writes an event to a Valkey FIFO keyed by conversation,
+claims that conversation's Valkey worker lock, dequeues it, and executes the
+turn locally. Its adapter sends the result back through Traefik, `zalo-proxy`,
+and the host bridge to the event's original DM or group. There is no callback
+to a separately selected ingress replica. Another conversation may run at the
+same time. If ownership changes, queued state remains in Valkey; the new owner
+continues it when the conversation is kicked, while duplicate message IDs and
+worker leases prevent concurrent handling. Work already executing in the lost
+process is not migrated and may need retry. Quote-reply correlation is carried
+as message metadata and staged media, not inferred from global recent state.
+
+This is therefore a hybrid single-node availability design: active-active for
+HTTP, active-passive for the Zalo event stream, and shared queues for background
+workers. Scaling Hermes from one to two replicas improves capacity and process
+failover only. On one
 host, PostgreSQL, Valkey, Qdrant, OmniRoute, storage, and the Zalo owner remain
 single points of failure. Multi-node deployment requires external/shared state
 and explicit service HA; see [MULTI_NODE.md](./MULTI_NODE.md).
