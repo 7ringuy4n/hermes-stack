@@ -23,6 +23,12 @@ def main() -> int:
     scrub_at = body.index("do_scrub_plaintext_env")
     assert load_at < backup_at < scrub_at
     assert 'return "$backup_status"' in body
+    for name in ("do_add_components", "do_remove_components"):
+        change_body = function_body(source, name)
+        write_at = change_body.index('env_upsert "$k" "$v"')
+        export_at = change_body.index('export "$k=$v"')
+        apply_at = change_body.index("_apply_component_change")
+        assert write_at < export_at < apply_at
     print("OK component-change OpenBao lifecycle")
     return 0
 

@@ -367,3 +367,9 @@ the transient OpenBao environment. Component add/remove now reloads OpenBao
 before backup and scrubs the export afterward on both success and failure. A
 source-order regression prevents backup from moving outside that protected
 lifecycle.
+
+The first retry then showed that a component option was persisted but not
+exported into the already-running command. The nested update consequently used
+the previous replica count. Add/remove now updates the process environment at
+the same time as `.env`; the regression checks that persistence and export both
+precede the apply step.
