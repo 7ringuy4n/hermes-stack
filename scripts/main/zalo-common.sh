@@ -592,10 +592,10 @@ zalo_teardown_failed_qr() {
 }
 
 zalo_wait_core_for_qr() {
-  zalo_log "wait for core services (model-router + OmniRoute — zalo-api not required yet)"
+  zalo_log "wait for core services (router-worker + OmniRoute — zalo-api not required yet)"
   local tries=60 i=0
   local router_ok=0 omni_ok=0
-  local model_port="${MODEL_ROUTER_PORT:-8096}"
+  local model_port="${ROUTER_WORKER_PORT:-8096}"
   local omni_port="${OMNIROUTER_HOST_PORT:-20129}"
 
   for i in $(seq 1 "$tries"); do
@@ -620,7 +620,7 @@ zalo_wait_core_for_qr() {
     sleep 5
     echo "  waiting (${i}/${tries}) router=${router_ok} omni=${omni_ok}…"
   done
-  echo "ERROR: core not ready for QR (need model-router + OmniRoute when enabled)" >&2
+  echo "ERROR: core not ready for QR (need router-worker + OmniRoute when enabled)" >&2
   return 1
 }
 

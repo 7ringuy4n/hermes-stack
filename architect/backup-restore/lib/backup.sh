@@ -566,7 +566,7 @@ assistant_backup_routers() {
   {
     echo "# Router flags snapshot (non-secret names; secrets remain in env.sealed / OpenBao)"
     for k in \
-      ENABLE_OMNIROUTER ENABLE_MODEL_ROUTER \
+      ENABLE_OMNIROUTER ENABLE_ROUTER_WORKER \
       OMNIROUTER_DEFAULT_COMBO OMNIROUTER_COMBO_STRATEGY \
       OMNIROUTER_HOST_PORT \
       OMNIROUTER_ENABLE_MEMORY OMNIROUTER_FAILOVER_MODELS OMNIROUTER_ROTATE_ATTEMPTS

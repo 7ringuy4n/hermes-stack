@@ -26,7 +26,7 @@ Sizes below assume Docker + Compose on a clean Ubuntu 24.04 host, models routed 
 
 | Setup | Min (boot / light use) | Comfortable (daily use) | Notes |
 |---------|------------------------|-------------------------|-------|
-| **Core only** | **2 vCPU · 4 GiB · 40 GB** | 2 vCPU · 8 GiB · 80 GB | Hermes×1, memory, Valkey, ingest/embed, model-router + Omni |
+| **Core only** | **2 vCPU · 4 GiB · 40 GB** | 2 vCPU · 8 GiB · 80 GB | Hermes×1, memory, Valkey, ingest/embed, router-worker + Omni |
 | **Core + media** | **2 vCPU · 8 GiB · 80 GB** | **4 vCPU · 16 GiB · 120 GB** | + SearXNG, dispatcher, jobs/jobs-worker; remote media combos |
 | **Core + media + security + message** (monitor **off**) | **4 vCPU · 8 GiB · 100 GB** | **4 vCPU · 16 GiB · 200 GB** | + OpenBao, authz, SIEM, zalo-api; Hermes×2 typical |
 | **Above + monitor + all optionals** | **6 vCPU · 16 GiB · 140 GB** | **8 vCPU · 32 GiB · 250 GB** | Base set + **~5 GiB RAM · ~40 GB disk · ~2 vCPU** |

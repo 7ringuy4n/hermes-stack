@@ -3,7 +3,7 @@
 Optional workers are **inactive** until you install them. They are **not** in `.env.example` — use `bash run.sh install`.
 
 Core (always on): Hermes, memory/session/workflow, PostgreSQL, Valkey,
-Qdrant, embedding, ingest, Model Router, OmniRoute, attribution, Traefik local,
+Qdrant, embedding, ingest, Router Worker, OmniRoute, attribution, Traefik local,
 API Gateway, and watchdog.
 
 Runtime data stays on the host (`ASSISTANT_DATA_DIR`, default `/data/assistant`).

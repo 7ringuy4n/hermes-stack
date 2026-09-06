@@ -157,13 +157,13 @@ PY
   zalo_log "enabled zalo-platform in ${cfg}"
 }
 
-ensure_hermes_model_router() {
-  zalo_log "point Hermes shared config at model-router"
+ensure_hermes_router_worker() {
+  zalo_log "point Hermes shared config at router-worker"
   STACK_ROOT="${ROOT}" \
     HERMES_DATA_DIR="${HERMES_SHARED_DATA}" \
     ASSISTANT_DATA_DIR="${HERMES_SHARED_DATA}" \
-    python3 "${ROOT}/scripts/main/patch-hermes-model-router.py" || {
-    echo "WARN: patch-hermes-model-router failed" >&2
+    python3 "${ROOT}/scripts/main/patch-hermes-router-worker.py" || {
+    echo "WARN: patch-hermes-router-worker failed" >&2
   }
 }
 
@@ -231,7 +231,7 @@ install_zalo_stack_after_qr() {
   zalo_log "QR OK — installing Zalo adapter, zalo-api, and Hermes plugin"
   install_adapter
   enable_plugin
-  ensure_hermes_model_router
+  ensure_hermes_router_worker
   wire_env
 
   cd "$ROOT"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake model-router fallback configuration from Hermes skill sources."""
+"""Bake router-worker fallback configuration from Hermes skill sources."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "hermes" / "main" / "skills"
-DESTINATION = ROOT / "architect" / "models" / "model-router" / "config"
+DESTINATION = ROOT / "architect" / "models" / "router-worker" / "config"
 
 
 def _atomic_text(path: Path, content: str) -> None:
@@ -51,7 +51,7 @@ def main() -> int:
         candidate = DESTINATION / retired
         if candidate.is_file():
             candidate.unlink()
-    print(f"synced model-router skill fallbacks to {DESTINATION}")
+    print(f"synced router-worker skill fallbacks to {DESTINATION}")
     return 0
 
 

@@ -21,7 +21,7 @@ Users
  memory/session     classify/skills   workflow/schedule
         │                │                 │
         ▼                ▼                 ▼
-Postgres/Valkey   model-router       Postgres + worker
+Postgres/Valkey   router-worker       Postgres + worker
 Qdrant                    │
                           ▼
                  OmniRoute priority combos
@@ -34,7 +34,7 @@ Qdrant                    │
 | Layer | Ownership |
 |---|---|
 | `hermes/` | Agent configuration, skills, plugins, message contracts, replica runtime. |
-| `architect/models/` | model-router, OmniRoute integration, attribution, dispatcher/jobs. |
+| `architect/models/` | router-worker, OmniRoute integration, attribution, dispatcher/jobs. |
 | `architect/memory/` | Session, long-term memory, ingest, embedding clients. |
 | `architect/social-app/` and `architect/zalo-api/` | Channel session, inbound/outbound API, queue ownership. |
 | `architect/schedule-worker/` | Deterministic scheduled execution. |
@@ -47,8 +47,8 @@ Qdrant                    │
 
 | Request | Path |
 |---|---|
-| Chat | Hermes → model-router → `hermes` combo |
-| Classification | classify prompt → model-router → `classifier` combo → validated JSON |
+| Chat | Hermes → router-worker → `hermes` combo |
+| Classification | classify prompt → router-worker → `classifier` combo → validated JSON |
 | Web research | web-search skill/dispatcher → `web-search` combo |
 | New still image | image-gen skill → `image-gen` combo |
 | Image edit | attached/reply-quoted image → image-edit skill → `image-edit` combo |

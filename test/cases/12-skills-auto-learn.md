@@ -11,7 +11,7 @@ Hermes loads skills from the compose bind mount; **post-ready-learn** mirrors ma
 ## Preconditions
 
 - `WORKER_MEDIA_FILE=active`.
-- Ingest + embedding + model-router healthy.
+- Ingest + embedding + router-worker healthy.
 - `hermes/main/skills` contains real skills (not only `_example`).
 
 ## Steps
@@ -22,14 +22,14 @@ Hermes loads skills from the compose bind mount; **post-ready-learn** mirrors ma
 4. **Mount check:** Hermes container has category skills, e.g. `core/answering/SKILL.md`, `image-gen/SKILL.md`, `communication/friendly-response/SKILL.md`, `communication/vi-people-terms/SKILL.md`.
 5. **Catalog:** `GET /v1/learn/list?q=image-gen&limit=5` — expect ≥1 hit; report total `count`.
 6. **Find:** `POST /v1/learn/find` with selector `knowledge-rag` or `skills` — chunk hits or document names present.
-7. **Router path:** `curl` model-router health after deploy.
+7. **Router path:** `curl` router-worker health after deploy.
 
 ## Pass criteria
 
 - post-ready-learn exits 0; `learn/scan` reports `scanned>0` and `auto_ingest=true` (when approve off).
 - Hermes bind mount lists new skill paths.
 - learn/list returns skill-related titles for at least one wrapper skill (`image-gen`, `knowledge-rag`, `core/answering`).
-- model-router health OK.
+- router-worker health OK.
 - Reports contain no hostnames, IPs, or account names.
 
 ## Fail events

@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKERS = ROOT / "architect" / "backup-restore" / "lib" / "workers.sh"
-CLASSIFY = ROOT / "architect" / "models" / "model-router" / "config" / "classify.json"
+CLASSIFY = ROOT / "architect" / "models" / "router-worker" / "config" / "classify.json"
 COMPOSE = ROOT / "docker" / "docker-compose.yml"
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -36,7 +36,7 @@ def main() -> int:
         print("PASS WORKER_SCHEDULE default inactive")
     checks = [
         ("ENABLE_OMNIROUTER", "active"),
-        ("ENABLE_MODEL_ROUTER", "active"),
+        ("ENABLE_ROUTER_WORKER", "active"),
         ("ENABLE_OPENVPN", "inactive"),
         ("ENABLE_API_GATEWAY", "active"),
         ("ZALO_INBOUND_QUEUE", "active"),
@@ -65,11 +65,11 @@ def main() -> int:
         fails += 1
     else:
         print("PASS schedule-worker compose profile")
-    if "container_name: model-router" not in compose:
-        print("FAIL model-router rename missing")
+    if "container_name: router-worker" not in compose:
+        print("FAIL router-worker rename missing")
         fails += 1
     else:
-        print("PASS model-router container name")
+        print("PASS router-worker container name")
     # classify.json may set max_tokens for the classify chat call (not Hermes outbound).
     if '"timeout_s"' not in classify:
         print("FAIL classify.json missing timeout_s")

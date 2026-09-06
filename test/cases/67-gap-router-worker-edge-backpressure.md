@@ -1,4 +1,4 @@
-# Case 67: Model Router / Edge Backpressure
+# Case 67: Router Worker / Edge Backpressure
 
 **Gap matrix id:** Case 63 (Production Failure Gap Test Cases v2)
 
@@ -34,7 +34,7 @@ At each level record:
 - CPU;
 - RAM;
 - retries;
-- model-router latency;
+- router-worker latency;
 - Hermes latency.
 
 ## Pass criteria

@@ -1,5 +1,24 @@
 # 2026-09-06 — scoped notes, cancellation, and HA liveness
 
+## Task-aware proxy identity
+
+**Symptom:** one service had a generic model-routing name even though its role
+is an execution worker between callers and the OmniRoute provider plane. Its
+old identity was duplicated across container DNS, environment variables,
+health metadata, scripts, monitoring, and tests.
+
+**Cause:** earlier naming changes were partial, allowing runtime and
+documentation terminology to diverge.
+
+**Decision and fix:** use `router-worker`, Router Worker, and
+`ROUTER_WORKER_*` as one atomic contract. Rename the source and operational
+entry points together. During an upgrade, remove only the retired container
+owned by the active Compose project, delete retired environment keys, and
+migrate only exact stack-default URLs; preserve custom operator endpoints.
+
+**Prevention:** configuration, health, routing, and clean-upgrade tests reject
+the retired live identity while historical incident records remain immutable.
+
 ## Durable notes
 
 **Symptom:** general conversational memory could retain facts but did not offer
@@ -52,5 +71,5 @@ timer results, restart deltas, and verified backup pruning without treating
 provider latency as a container failure.
 
 The retired web-extraction environment route was already scrubbed, but its old
-name remained in Model Router health output. The health surface now reports
+name remained in the routing worker health output. The health surface now reports
 only supported search routing fields.

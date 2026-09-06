@@ -3,7 +3,7 @@
 One inbound Zalo message contains **two or more** distinct user tasks.
 Bot must process **all** tasks, not only the first.
 
-LLM classify (`POST model-router /v1/classify`) returns `instructions[]`.
+LLM classify (`POST router-worker /v1/classify`) returns `instructions[]`.
 Application code does not split/join/regex the user text.
 
 ## Example fixture

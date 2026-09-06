@@ -52,7 +52,7 @@ File from social-app or upload
 
 LLM `CLEAN` is ignored. Isolation layers decide allow.
 
-**Secret-probe:** independent **security_status** (`SAFE` / `BLOCKED` / `REVIEW`), never a `task_hint`. Input gate before Model Router / schedule / tools; output gate before the user. Policy: [`config/agent/secret-probe.json`](../../config/agent/secret-probe.json). Package: [secret-probe/](./secret-probe/README.md).
+**Secret-probe:** independent **security_status** (`SAFE` / `BLOCKED` / `REVIEW`), never a `task_hint`. Input gate before Router Worker / schedule / tools; output gate before the user. Policy: [`config/agent/secret-probe.json`](../../config/agent/secret-probe.json). Package: [secret-probe/](./secret-probe/README.md).
 
 ## Related
 

@@ -24,7 +24,7 @@ Run long operations:
 During execution:
 
 1. Kill Hermes.
-2. Repeat with model-router.
+2. Repeat with router-worker.
 3. Repeat with workflow worker.
 4. Repeat with media worker.
 5. Repeat with dispatcher.

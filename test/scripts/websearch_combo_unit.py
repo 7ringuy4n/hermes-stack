@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
+sys.path.insert(0, str(ROOT / "architect" / "models" / "router-worker"))
 
 
 def main() -> int:
@@ -20,7 +20,7 @@ def main() -> int:
 
     os.environ["OMNIROUTER_BASE_URL"] = "http://omni-router:20129/v1"
     os.environ["OMNIROUTER_API_KEY"] = "sk-test-omni-key-for-unit"
-    os.environ["MODEL_ROUTER_WEB_SEARCH_COMBO"] = "web-search"
+    os.environ["ROUTER_WORKER_WEB_SEARCH_COMBO"] = "web-search"
     os.environ.pop("WEB_BACKENDS", None)
     os.environ.pop("WEB_SEARCH_COMBO_PATH", None)
 

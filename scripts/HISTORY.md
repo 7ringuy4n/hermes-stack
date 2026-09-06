@@ -8,7 +8,9 @@ concurrent judges distorted delivery tests”.
 See `history/2026-09-06/README.md`. Durable note CRUD now uses scoped indexed
 PostgreSQL records and audit rows; cancellation is classified before queue
 admission; standby lease acquisition no longer blocks gateway connection; and
-daily retention values initialize from OpenBao.
+daily retention values initialize from OpenBao. The task-aware proxy is now
+consistently named Router Worker across scripts and runtime; upgrade cleanup
+removes the exact retired Compose container and stale default route settings.
 
 ## 2026-09-05 19:20 +07 — cold-start OpenBao ordering
 

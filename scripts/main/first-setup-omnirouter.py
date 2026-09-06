@@ -3,7 +3,7 @@
 
 Creates login session, Default Key (only when OMNIROUTER_API_KEY missing),
 empty combo shells, and missing .env pins. Does **not** refill combos,
-rewire custom image providers, or restart model-router.
+rewire custom image providers, or restart router-worker.
 
 For repair/sync (combo refill, provider-models, API key ACL):
   bash run.sh update-omnirouter
@@ -1016,29 +1016,29 @@ def ensure_request_queue_max_wait(opener) -> None:
         print(f"WARN resilience verify failed: {e}")
 
 
-def patch_hermes_model_router(key: str, model: str) -> None:
-    print("==> patch Hermes config → model-router")
+def patch_hermes_router_worker(key: str, model: str) -> None:
+    print("==> patch Hermes config → router-worker")
     env = os.environ.copy()
     env.setdefault("STACK_ROOT", str(ROOT))
     env.setdefault("HERMES_DATA_DIR", os.environ.get("HERMES_DATA_DIR", "/data/assistant"))
     rc = subprocess.call(
-        [sys.executable, str(ROOT / "scripts" / "main" / "patch-hermes-model-router.py")],
+        [sys.executable, str(ROOT / "scripts" / "main" / "patch-hermes-router-worker.py")],
         env=env,
     )
     if rc != 0:
-        print("WARN: patch-hermes-model-router failed")
+        print("WARN: patch-hermes-router-worker failed")
 
 
-def recreate_model_router() -> None:
-    print("==> recreate model-router (model-router)")
-    for name in ("model-router", "model-router", "assistant-model-router-1"):
+def recreate_router_worker() -> None:
+    print("==> recreate router-worker")
+    for name in ("router-worker", "assistant-router-worker-1"):
         rc = subprocess.call(
             ["docker", "restart", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         if rc == 0:
             print(f"==> restarted {name}")
             return
-    print("WARN: could not restart model-router by name — skip recreate")
+    print("WARN: could not restart router-worker by name — skip recreate")
 
 
 def enable_omni_memory(opener: urllib.request.OpenerDirector) -> None:
@@ -2344,7 +2344,7 @@ def setup_core() -> int:
     for key_name, val in (
         ("OMNIROUTER_DEFAULT_COMBO", COMBO_NAME),
         ("OMNIROUTER_CLASSIFY_COMBO", classify_combo),
-        ("MODEL_ROUTER_CLASSIFY_MODEL", classify_combo),
+        ("ROUTER_WORKER_CLASSIFY_MODEL", classify_combo),
         ("OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY),
         ("OMNIROUTER_HERMES_COMBO_STRATEGY", HERMES_COMBO_STRATEGY),
         ("OMNIROUTER_FALLBACK_COMBO_STRATEGY", FALLBACK_COMBO_STRATEGY),
@@ -2355,17 +2355,17 @@ def setup_core() -> int:
         ("OMNIROUTER_ENABLE_MEMORY", env.get("OMNIROUTER_ENABLE_MEMORY", "active")),
     ):
         set_env_key_if_missing(env_path, key_name, val, env)
-    web_combo = (env.get("MODEL_ROUTER_WEB_SEARCH_COMBO") or env.get("WEB_SEARCH_COMBO") or WEB_SEARCH_COMBO_NAME).strip()
+    web_combo = (env.get("ROUTER_WORKER_WEB_SEARCH_COMBO") or env.get("WEB_SEARCH_COMBO") or WEB_SEARCH_COMBO_NAME).strip()
     if not web_combo:
         web_combo = WEB_SEARCH_COMBO_NAME
     for key_name, val in (
         ("OMNIROUTER_WEB_SEARCH_COMBO", web_combo),
         ("WEB_SEARCH_COMBO", web_combo),
-        ("MODEL_ROUTER_WEB_SEARCH_COMBO", web_combo),
+        ("ROUTER_WORKER_WEB_SEARCH_COMBO", web_combo),
     ):
         set_env_key_if_missing(env_path, key_name, val, env)
 
-    patch_hermes_model_router(key, combo)
+    patch_hermes_router_worker(key, combo)
     print(
         f"OK: first-setup omni-router core "
         f"(login + missing key/combos only; run update-omnirouter to repair/sync)"
@@ -2414,7 +2414,7 @@ def run_update() -> int:
     # Env name pins only when missing — do not overwrite operator combo *names* either.
     set_env_key_if_missing(ROOT / ".env", "OMNIROUTER_DEFAULT_COMBO", COMBO_NAME, env)
     set_env_key_if_missing(ROOT / ".env", "OMNIROUTER_CLASSIFY_COMBO", classify_combo, env)
-    set_env_key_if_missing(ROOT / ".env", "MODEL_ROUTER_CLASSIFY_MODEL", classify_combo, env)
+    set_env_key_if_missing(ROOT / ".env", "ROUTER_WORKER_CLASSIFY_MODEL", classify_combo, env)
     set_env_key_if_missing(ROOT / ".env", "OMNIROUTER_COMBO_STRATEGY", COMBO_STRATEGY, env)
     set_env_key_if_missing(
         ROOT / ".env", "OMNIROUTER_HERMES_COMBO_STRATEGY", HERMES_COMBO_STRATEGY, env
@@ -2445,7 +2445,7 @@ def run_update() -> int:
         "OMNIROUTER_REQUEST_QUEUE_MAX_WAIT_MS",
         str(_request_queue_max_wait_ms()),
     )
-    # Hermes-facing Model Router: combo web-search via Omni only (no direct adapter chain).
+    # Hermes-facing Router Worker: combo web-search via Omni only (no direct adapter chain).
     _clear_stack_env_keys(
         [
             "OMNIROUTER_SEARCH_PROVIDERS",
@@ -2454,20 +2454,20 @@ def run_update() -> int:
         ],
     )
     env.pop("WEB_BACKENDS", None)
-    web_combo = (env.get("MODEL_ROUTER_WEB_SEARCH_COMBO") or env.get("WEB_SEARCH_COMBO") or WEB_SEARCH_COMBO_NAME).strip()
+    web_combo = (env.get("ROUTER_WORKER_WEB_SEARCH_COMBO") or env.get("WEB_SEARCH_COMBO") or WEB_SEARCH_COMBO_NAME).strip()
     if not web_combo:
         web_combo = WEB_SEARCH_COMBO_NAME
     for key_name, val in (
         ("OMNIROUTER_WEB_SEARCH_COMBO", web_combo),
         ("WEB_SEARCH_COMBO", web_combo),
-        ("MODEL_ROUTER_WEB_SEARCH_COMBO", web_combo),
+        ("ROUTER_WORKER_WEB_SEARCH_COMBO", web_combo),
     ):
         set_env_key_if_missing(ROOT / ".env", key_name, val, env)
     enable_omni_memory(opener)
 
-    recreate_model_router()
+    recreate_router_worker()
     time.sleep(3)
-    patch_hermes_model_router(key, combo)
+    patch_hermes_router_worker(key, combo)
     # Verify hermes combo via Omni /v1/chat/completions (OpenCode cloud members).
     verify(key, combo)
     print(

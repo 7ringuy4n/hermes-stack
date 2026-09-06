@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "architect" / "models" / "model-router"))
+sys.path.insert(0, str(ROOT / "architect" / "models" / "router-worker"))
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
 from classify import (  # noqa: E402

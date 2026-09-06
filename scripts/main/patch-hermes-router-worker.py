@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Point shared Hermes config at model-router (OmniRoute path).
+"""Point shared Hermes config at router-worker (OmniRoute path).
 
 Reads OMNIROUTER_API_KEY / OMNIROUTER_DEFAULT_COMBO from stack .env when present.
 Safe to re-run (idempotent base_url / provider / default patch).
@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(os.environ.get("STACK_ROOT", Path(__file__).resolve().parents[2]))
 HERMES_DATA = Path(os.environ.get("HERMES_DATA_DIR", os.environ.get("ASSISTANT_DATA_DIR", "/data/assistant")))
-MODEL_ROUTER_BASE = os.environ.get("HERMES_OPENAI_BASE_URL", "http://model-router:8096/v1").strip()
+ROUTER_WORKER_BASE = os.environ.get("HERMES_OPENAI_BASE_URL", "http://router-worker:8096/v1").strip()
 # Combo alias (OMNIROUTER_DEFAULT_COMBO) — not a vendor model id.
 DEFAULT_COMBO = os.environ.get("OMNIROUTER_DEFAULT_COMBO", "hermes").strip() or "hermes"
 
@@ -90,7 +90,7 @@ def patch_hermes_config(cfg: Path, key: str, model: str, base_url: str) -> bool:
         cfg.write_text(text, encoding="utf-8")
         print(f"OK: patched {cfg} → {base_url} model={model}")
         return True
-    print(f"OK: {cfg} already points at model-router")
+    print(f"OK: {cfg} already points at router-worker")
     return True
 
 
@@ -201,7 +201,7 @@ def main() -> int:
         or ""
     ).strip()
     model = stack_env.get("OMNIROUTER_DEFAULT_COMBO", DEFAULT_COMBO).strip() or DEFAULT_COMBO
-    base_url = stack_env.get("HERMES_OPENAI_BASE_URL", MODEL_ROUTER_BASE).strip() or MODEL_ROUTER_BASE
+    base_url = stack_env.get("HERMES_OPENAI_BASE_URL", ROUTER_WORKER_BASE).strip() or ROUTER_WORKER_BASE
     omni_base = stack_env.get("OMNIROUTER_BASE_URL", "http://omni-router:20129/v1").strip()
     image_combo = stack_env.get("IMAGE_GEN_COMBO", "image-gen").strip() or "image-gen"
     cfg = HERMES_DATA / "config.yaml"

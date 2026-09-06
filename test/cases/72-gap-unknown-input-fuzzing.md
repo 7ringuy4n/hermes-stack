@@ -18,7 +18,7 @@ Generate malformed/random inputs for:
 - captions;
 - group names;
 - tool arguments;
-- model-router JSON;
+- router-worker JSON;
 - workflow payloads.
 
 Include:

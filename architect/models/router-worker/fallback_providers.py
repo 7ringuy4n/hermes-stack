@@ -44,7 +44,7 @@ def configured_fallbacks(capability: str) -> list[tuple[str, str, str, str]]:
     suffix = CAPABILITY_MODEL_SUFFIX.get(capability)
     if not suffix:
         return []
-    order = (os.environ.get("MODEL_ROUTER_FALLBACK_PROVIDER_ORDER") or "").split(",")
+    order = (os.environ.get("ROUTER_WORKER_FALLBACK_PROVIDER_ORDER") or "").split(",")
     out: list[tuple[str, str, str, str]] = []
     seen: set[str] = set()
     for raw in order:

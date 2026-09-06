@@ -1,6 +1,6 @@
 """Image generation backend helper for the capability router.
 
-Diffusion via Model Router /images/generations prefers combo IMAGE_GEN_COMBO
+Diffusion via Router Worker /images/generations prefers combo IMAGE_GEN_COMBO
 (default ``image-gen``) whether Media worker is active or inactive — never the
 chat combo ``hermes`` for still images.
 
@@ -40,7 +40,7 @@ def image_backends() -> list[str]:
 def backend_available(name: str) -> bool:
     n = (name or "").strip().lower()
     if n == "omni":
-        base = _env("MODEL_ROUTER_BASE_URL", default="http://model-router:8096/v1")
+        base = _env("ROUTER_WORKER_BASE_URL", default="http://router-worker:8096/v1")
         key = _env("OMNIROUTER_API_KEY", default="internal")
         return bool(base and key)
     if n == "pillow":
@@ -143,7 +143,7 @@ def _gen_openai_images(
 
 
 def gen_omni(prompt: str, *, size: Optional[str] = None) -> bytes:
-    base = _env("MODEL_ROUTER_BASE_URL", default="http://model-router:8096/v1")
+    base = _env("ROUTER_WORKER_BASE_URL", default="http://router-worker:8096/v1")
     key = _env("OMNIROUTER_API_KEY", default="internal")
     combo = image_gen_combo()
     model = combo

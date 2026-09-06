@@ -6,7 +6,7 @@
 
 ## Goal
 
-Test model-router behavior against realistic malformed LLM output.
+Test router-worker behavior against realistic malformed LLM output.
 
 ## Return these responses
 
@@ -35,7 +35,7 @@ Test model-router behavior against realistic malformed LLM output.
 
 ## Pass criteria
 
-Hermes/model-router must never treat malformed classifier output as a valid execution plan.
+Hermes/router-worker must never treat malformed classifier output as a valid execution plan.
 
 A classification failure must become:
 
@@ -45,6 +45,6 @@ A classification failure must become:
 
 Never execute an invented or accidental instruction.
 
-This is especially important because the current architecture moved task decomposition into Model Router and previously had real failures around timeout-generated fake one-task plans.
+This is especially important because the current architecture moved task decomposition into Router Worker and previously had real failures around timeout-generated fake one-task plans.
 
 ---

@@ -1,7 +1,7 @@
-"""HTTP client for model-router POST /v1/classify (classify skill prompt).
+"""HTTP client for router-worker POST /v1/classify (classify skill prompt).
 
 Prompt SoT: hermes/main/skills/classify/classify.json. Gateway does not own the prompt.
-Keep schema enums in sync with model-router classify.py.
+Keep schema enums in sync with router-worker classify.py.
 """
 from __future__ import annotations
 
@@ -585,7 +585,7 @@ def classify_text(
             return normalize_plan(_planner(blob), blob, tz)
     if not blob:
         return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
-    base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+    base = (os.environ.get("ROUTER_WORKER_URL") or "http://router-worker:8096").rstrip("/")
     payload = json.dumps(
         {
             "text": blob,
@@ -596,7 +596,7 @@ def classify_text(
         },
         ensure_ascii=False,
     ).encode("utf-8")
-    timeout = float(os.environ.get("MODEL_ROUTER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
+    timeout = float(os.environ.get("ROUTER_WORKER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
     last_error = "classify_unavailable"
     for _attempt in range(HTTP_ATTEMPTS):
         req = urllib.request.Request(
@@ -655,9 +655,9 @@ def classify_outbound(text: str) -> dict[str, Any]:
             return normalize_outbound(_outbound_planner(blob))
         except TypeError:
             return normalize_outbound(_outbound_planner(blob, timezone="Asia/Ho_Chi_Minh"))
-    base = (os.environ.get("MODEL_ROUTER_URL") or "http://model-router:8096").rstrip("/")
+    base = (os.environ.get("ROUTER_WORKER_URL") or "http://router-worker:8096").rstrip("/")
     payload = json.dumps({"text": blob}, ensure_ascii=False).encode("utf-8")
-    timeout = float(os.environ.get("MODEL_ROUTER_OUTBOUND_TIMEOUT_S") or 30.0)
+    timeout = float(os.environ.get("ROUTER_WORKER_OUTBOUND_TIMEOUT_S") or 30.0)
     try:
         req = urllib.request.Request(
             base + "/v1/outbound",

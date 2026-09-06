@@ -6,7 +6,7 @@
 |--|--|
 | **Sits between** | Hermes / skills ↔ media backends |
 | **Owns** | office-file, media helpers, and asynchronous job support |
-| **Does not own** | LLM completions (Model Router) or web search (Model Router `/v1/search`) |
+| **Does not own** | LLM completions (Router Worker) or web search (Router Worker `/v1/search`) |
 
 <table style="width:100%;border-collapse:collapse;font-size:13px;">
   <tr>
@@ -37,4 +37,4 @@ Media/File worker HTTP service: office-file creation, media download/convert hel
 ## Related
 
 - [../README.md](../README.md)
-- [../model-router/README.md](../model-router/README.md) — web search (`/v1/search`)
+- [../router-worker/README.md](../router-worker/README.md) — web search (`/v1/search`)

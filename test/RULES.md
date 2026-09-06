@@ -193,7 +193,7 @@ Before and after every live set, capture:
 
 ```bash
 docker compose ps
-docker compose logs --since 15m hermes model-router omni-router
+docker compose logs --since 15m hermes router-worker omni-router
 journalctl --user -u com.hermes.zaloplugin --since '15 minutes ago'
 systemctl --user status com.hermes.zaloplugin
 systemctl list-timers 'assistant-*'

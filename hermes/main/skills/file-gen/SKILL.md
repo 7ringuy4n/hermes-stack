@@ -136,7 +136,7 @@ Requires Media|File worker with `OFFICE_FILE_GEN=active`. Success: `"ok":true` a
 Zalo receives the file (empty caption). User-facing text per **media-out**:
 **file only**.
 
-Dispatcher renders the file locally. Content generation reaches Model Router,
+Dispatcher renders the file locally. Content generation reaches Router Worker,
 which prefers the OmniRoute chat combo and may use an explicitly configured
 chat-compatible provider when OmniRoute is unavailable.
 

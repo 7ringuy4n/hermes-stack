@@ -26,7 +26,7 @@ For every production component, require at least:
 | Component | Happy | Invalid | Timeout | Crash | Duplicate | Recovery | Concurrent |
 |---|---|---|---|---|---|---|---|
 | Hermes | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Model Router | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Router Worker | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | OmniRoute | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | OmniRoute | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Valkey | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |

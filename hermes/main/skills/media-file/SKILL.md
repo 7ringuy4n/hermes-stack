@@ -21,7 +21,7 @@ ELSE:
 Hermes → this skill
            ├── generate_media (always) → image-gen (Omni combo image-gen)
            ├── worker active
-           │                     ├── vision-ocr (model-router combo)
+           │                     ├── vision-ocr (router-worker combo)
            │                     └── file create/convert
            └── worker inactive → combo hermes on Omni/OmniRoute (vision/chat only; not still diffusion)
 ```

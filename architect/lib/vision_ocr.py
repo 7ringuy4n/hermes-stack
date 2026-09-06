@@ -1,4 +1,4 @@
-"""Read images and scanned PDFs via model-router combo vision-ocr."""
+"""Read images and scanned PDFs via router-worker combo vision-ocr."""
 from __future__ import annotations
 
 import base64
@@ -28,8 +28,8 @@ def _chat_base() -> str:
     raw = (
         os.environ.get("HERMES_OPENAI_BASE_URL")
         or os.environ.get("OPENAI_BASE_URL")
-        or os.environ.get("MODEL_ROUTER_URL")
-        or "http://model-router:8096"
+        or os.environ.get("ROUTER_WORKER_URL")
+        or "http://router-worker:8096"
     ).rstrip("/")
     if not raw.endswith("/v1"):
         raw = f"{raw}/v1"

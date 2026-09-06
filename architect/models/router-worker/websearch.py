@@ -1,6 +1,6 @@
-"""Web search for Model Router (Hermes-facing).
+"""Web search for Router Worker (Hermes-facing).
 
-Skill path: Hermes web-search → POST model-router /v1/search → OmniRoute
+Skill path: Hermes web-search → POST router-worker /v1/search → OmniRoute
 ``POST /v1/search`` with combo ``web-search`` (operator-owned members + failover in Omni UI).
 
 Endpoints (mounted before the OpenAI proxy catch-all):
@@ -38,7 +38,7 @@ router = APIRouter()
 def _web_search_combo_name() -> str:
     """Omni/Router combo name (operator-owned in Omni UI)."""
     for key in (
-        "MODEL_ROUTER_WEB_SEARCH_COMBO",
+        "ROUTER_WORKER_WEB_SEARCH_COMBO",
         "WEB_SEARCH_COMBO",
         "OMNIROUTER_WEB_SEARCH_COMBO",
     ):

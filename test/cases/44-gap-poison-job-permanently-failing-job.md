@@ -19,7 +19,7 @@ Create:
 - impossible OCR request;
 - invalid workflow instruction;
 - permanently failing notification;
-- model-router request that always returns 500.
+- router-worker request that always returns 500.
 
 Put valid jobs immediately after the failing job.
 

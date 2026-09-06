@@ -1,6 +1,6 @@
 ---
 name: image-gen
-description: "Generate still images through Model Router, preferring OmniRoute combo image-gen and capability-compatible fallbacks. Host owns scenic-only delivery; Hermes uses this skill only when classify keeps process_original_message true (mixed deliverables)."
+description: "Generate still images through Router Worker, preferring OmniRoute combo image-gen and capability-compatible fallbacks. Host owns scenic-only delivery; Hermes uses this skill only when classify keeps process_original_message true (mixed deliverables)."
 ---
 
 # Image generation
@@ -19,9 +19,9 @@ If you still need diffusion for a **mixed** turn (image + file in one bubble), c
 
 ## Diffusion (capability router → OmniRoute combo image-gen)
 
-Call the internal **Model Router** with requested combo name **`image-gen`** always (Media worker active **or** inactive; never `model=hermes` for still diffusion, never a local image engine, never dispatcher `/v1/image`). It prefers OmniRoute and may use only an operator-declared image-capable fallback:
+Call the internal **Router Worker** with requested combo name **`image-gen`** always (Media worker active **or** inactive; never `model=hermes` for still diffusion, never a local image engine, never dispatcher `/v1/image`). It prefers OmniRoute and may use only an operator-declared image-capable fallback:
 
-- Endpoint: `POST http://model-router:8096/v1/images/generations`
+- Endpoint: `POST http://router-worker:8096/v1/images/generations`
 - Auth: `Authorization: Bearer $OPENAI_API_KEY` (same as `OMNIROUTER_API_KEY`)
 - Body: `model` = `image-gen` (or `$IMAGE_GEN_COMBO` when set), English `prompt`, `n=1`, HD `size` `"1280x720"` (16:9) unless the user asks otherwise
 - Decode `data[0].b64_json` (or fetch `url`) and write under `/opt/data/media/out/<safe-slug>.webp` (or `.png` / `.jpg`)

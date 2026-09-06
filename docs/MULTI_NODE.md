@@ -29,7 +29,7 @@ When you place Hermes on two VMs later:
 1. Point both at the **same** Valkey / Postgres / Qdrant hosts.
 2. Share Valkey and keep `ZALO_OWNER_LEASE_KEY` identical so Zalo ownership remains a cluster singleton.
 3. Run `zalo-proxy` / bridge on **one** node only.
-4. Keep Model Router + OmniRoute reachable from both Hermes instances.
+4. Keep Router Worker + OmniRoute reachable from both Hermes instances.
 
 Do **not** call this HA until stores are replicated.
 

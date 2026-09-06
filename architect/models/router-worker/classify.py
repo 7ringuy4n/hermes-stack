@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent
 
 
 def _repo_skills_root() -> Path | None:
-    # …/architect/models/model-router → parents[2] = repo root (dev checkout only).
+    # …/architect/models/router-worker → parents[2] = repo root (dev checkout only).
     try:
         return ROOT.parents[2] / "hermes" / "main" / "skills"
     except IndexError:
@@ -47,10 +47,10 @@ def _resolve_skill_cfg(env_name: str, skill_rel: str, bake_name: str) -> Path:
 
 
 CFG_PATH = _resolve_skill_cfg(
-    "MODEL_ROUTER_CLASSIFY", "classify/classify.json", "classify.json"
+    "ROUTER_WORKER_CLASSIFY", "classify/classify.json", "classify.json"
 )
 OUTBOUND_CFG_PATH = _resolve_skill_cfg(
-    "MODEL_ROUTER_OUTBOUND", "outbound/outbound.json", "outbound.json"
+    "ROUTER_WORKER_OUTBOUND", "outbound/outbound.json", "outbound.json"
 )
 
 TASK_HINTS = ("normal", "schedule", "coding", "tool", "search", "file", "knowledge", "note", "control", "unknown")
@@ -445,7 +445,7 @@ def _default_chat_combo_alias() -> str:
 
 def _default_classify_combo_alias() -> str:
     """Classify combo alias — dedicated OpenCode ``classifier`` combo by default."""
-    for key in ("MODEL_ROUTER_CLASSIFY_MODEL", "OMNIROUTER_CLASSIFY_COMBO"):
+    for key in ("ROUTER_WORKER_CLASSIFY_MODEL", "OMNIROUTER_CLASSIFY_COMBO"):
         val = (os.environ.get(key) or "").strip()
         if val:
             return val
@@ -456,7 +456,7 @@ def _router_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
     """Resolve classify LLM id — must be a combo alias or real provider/model id."""
     for candidate in (
         override,
-        os.environ.get("MODEL_ROUTER_CLASSIFY_MODEL"),
+        os.environ.get("ROUTER_WORKER_CLASSIFY_MODEL"),
         str(cfg.get("model") or "").strip() or None,
         _default_classify_combo_alias(),
     ):
@@ -743,7 +743,7 @@ def _classify_model_candidates(cfg: dict[str, Any], override: str | None = None)
 def _outbound_llm_model(cfg: dict[str, Any], override: str | None = None) -> str:
     for candidate in (
         override,
-        os.environ.get("MODEL_ROUTER_OUTBOUND_MODEL"),
+        os.environ.get("ROUTER_WORKER_OUTBOUND_MODEL"),
         str(cfg.get("model") or "").strip() or None,
         _default_chat_combo_alias(),
     ):

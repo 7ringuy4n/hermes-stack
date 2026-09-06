@@ -2,16 +2,16 @@
 
 ## Responsibilities
 
-`model-router` is the internal task-aware OpenAI-compatible proxy. It
+`router-worker` is the internal task-aware OpenAI-compatible proxy. It
 normalizes requests, carries attribution headers, invokes classification, and
 selects a named capability. **OmniRoute** owns provider accounts, combo
 membership, priority/fallback strategy, request history, and provider health.
 
 ```text
-caller → model-router → OmniRoute named combo → provider member
+caller → router-worker → OmniRoute named combo → provider member
 ```
 
-When OmniRoute is unhealthy or intentionally inactive, Model Router continues
+When OmniRoute is unhealthy or intentionally inactive, Router Worker continues
 only through explicitly configured capability-compatible providers. Chat,
 vision, embeddings, still generation, and image edits have separate model
 declarations; web search uses the internal SearXNG fallback. Office files use
@@ -85,7 +85,7 @@ modified.
 
 | Setting | Meaning |
 |---|---|
-| `ENABLE_MODEL_ROUTER=active` | Run the internal proxy. |
+| `ENABLE_ROUTER_WORKER=active` | Run the internal proxy. |
 | `ENABLE_OMNIROUTER=active` | Run OmniRoute via the compatibility profile. |
 | `OMNIROUTER_DEFAULT_COMBO=hermes` | Default chat combo. |
 | `OMNIROUTER_CLASSIFY_COMBO=classifier` | Classify combo. |
@@ -93,9 +93,9 @@ modified.
 | `VISION_OCR_COMBO=vision-ocr` | Image/document analysis combo. |
 | `EMBEDDING_MODEL=embedding` | Embedding combo alias. |
 | `HERMES_REPLICAS=1` | Single-host Hermes replica count. |
-| `MODEL_ROUTER_FALLBACK_PROVIDER_ORDER` | Priority list of explicitly configured compatible provider profiles. |
+| `ROUTER_WORKER_FALLBACK_PROVIDER_ORDER` | Priority list of explicitly configured compatible provider profiles. |
 | `<PROVIDER>_*_MODEL` | Per-capability model; the matching API key is held in OpenBao. |
 | `FALLBACK_SEARXNG_URL` | Search fallback used after/unavailable OmniRoute. |
 
-See [architect/models/model-router/README.md](../architect/models/model-router/README.md)
+See [architect/models/router-worker/README.md](../architect/models/router-worker/README.md)
 and [config/DEFAULTS.md](./config/DEFAULTS.md).

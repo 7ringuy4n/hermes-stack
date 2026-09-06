@@ -225,10 +225,10 @@ profiles=""
 [[ "${ENABLE_CLOUDDRIVE:-0}" == "1" ]] && profiles="$profiles --profile clouddrive"
 [[ "${COMFYUI_HAS_GPU:-0}" == "1" ]] && profiles="$profiles --profile comfy-gpu"
 
-docker compose --project-directory /opt/assistant $files $profiles build workflow model-router
-docker rm -f model-router >/dev/null 2>&1 || true
+docker compose --project-directory /opt/assistant $files $profiles build workflow router-worker
+docker rm -f router-worker >/dev/null 2>&1 || true
 docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate workflow
-docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate model-router
+docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate router-worker
 if [[ "${ENABLE_SCHEDULE:-0}" == "1" ]]; then
   docker compose --project-directory /opt/assistant $files $profiles build schedule-worker
   docker compose --project-directory /opt/assistant $files $profiles up -d --no-deps --force-recreate schedule-worker
@@ -254,7 +254,7 @@ for _ in $(seq 1 30); do
   fi
   sleep 2
 done
-echo "model_router_health=$mr_ok"
+echo "router_worker_health=$mr_ok"
 test "$mr_ok" = "1"
 sw_ok=0
 for _ in $(seq 1 40); do
@@ -344,7 +344,7 @@ fi
 # Hermes Agent transcripts live under replica HERMES_HOME (not only Valkey).
 # A huge sessions.json makes a 1-word ping compact + 413 on the LLM hop.
 find /data/assistant/replicas -name sessions.json -not -path '*/home/.cache/*' -print -delete 2>/dev/null || true
-# Hermes chat must go through model-router (compose default). Direct omni-router inherits
+# Hermes chat must go through router-worker (compose default). Direct omni-router inherits
 # a huge context and returns 413 from the upstream model.
 python3 - <<'PY'
 from pathlib import Path
@@ -353,21 +353,21 @@ p = Path("/opt/assistant/.env")
 t = p.read_text(encoding="utf-8", errors="replace")
 t2, n = re.subn(
     r"(?m)^HERMES_OPENAI_BASE_URL=.*omni-router.*$",
-    "HERMES_OPENAI_BASE_URL=http://model-router:8096/v1",
+    "HERMES_OPENAI_BASE_URL=http://router-worker:8096/v1",
     t,
 )
 if n:
     p.write_text(t2, encoding="utf-8")
-    print("HERMES_OPENAI_TO_MODEL_ROUTER")
+    print("HERMES_OPENAI_TO_ROUTER_WORKER")
 else:
     print("HERMES_OPENAI_UNCHANGED")
 cfg = Path("/data/assistant/config.yaml")
 if cfg.is_file():
     raw = cfg.read_text(encoding="utf-8", errors="replace")
-    fixed = raw.replace("http://omni-router:20129/v1", "http://model-router:8096/v1")
+    fixed = raw.replace("http://omni-router:20129/v1", "http://router-worker:8096/v1")
     if fixed != raw:
         cfg.write_text(fixed, encoding="utf-8")
-        print("HERMES_CONFIG_YAML_TO_MODEL_ROUTER")
+        print("HERMES_CONFIG_YAML_TO_ROUTER_WORKER")
     else:
         print("HERMES_CONFIG_YAML_UNCHANGED")
 PY
@@ -468,9 +468,9 @@ if [[ -n "$hname" ]]; then
 else
   echo fail; ok=0
 fi
-echo -n "hermes_to_model_router="
+echo -n "hermes_to_router_worker="
 if [[ -n "$hname" ]]; then
-  docker exec "$hname" python3 -c "import urllib.request; urllib.request.urlopen('http://model-router:8096/health', timeout=5); print('ok')" 2>/dev/null || { echo fail; ok=0; }
+  docker exec "$hname" python3 -c "import urllib.request; urllib.request.urlopen('http://router-worker:8096/health', timeout=5); print('ok')" 2>/dev/null || { echo fail; ok=0; }
 else
   echo fail; ok=0
 fi
@@ -498,19 +498,19 @@ test -f /opt/assistant/hermes/main/plugins/zalo/schedule_client.py && echo files
 test -f /opt/assistant/architect/schedule-worker/main.go && echo files_schedule_worker=ok || { echo files_schedule_worker=missing; ok=0; }
 test -f /opt/assistant/hermes/main/plugins/zalo/turn_wait.py && echo files_turn_wait=ok || echo files_turn_wait=missing
 test -f /opt/assistant/hermes/main/plugins/zalo/knowledge_cite.py && echo files_knowledge_cite=ok || { echo files_knowledge_cite=missing; ok=0; }
-if grep -q 'not a knowledge-base lookup' /opt/assistant/architect/models/model-router/config/classify.json && grep -q 'task_hint=knowledge' /opt/assistant/architect/models/model-router/config/classify.json; then
+if grep -q 'not a knowledge-base lookup' /opt/assistant/architect/models/router-worker/config/classify.json && grep -q 'task_hint=knowledge' /opt/assistant/architect/models/router-worker/config/classify.json; then
   echo files_classify_nocite=ok
 else
   echo files_classify_nocite=missing
   ok=0
 fi
-if grep -q 'execution_class' /opt/assistant/architect/models/model-router/config/classify.json; then
+if grep -q 'execution_class' /opt/assistant/architect/models/router-worker/config/classify.json; then
   echo files_fast_dispatcher=ok
 else
   echo files_fast_dispatcher=missing
   ok=0
 fi
-if grep -q 'max_tokens' /opt/assistant/architect/models/model-router/config/classify.json; then
+if grep -q 'max_tokens' /opt/assistant/architect/models/router-worker/config/classify.json; then
   echo files_classify_no_max_tokens=fail
   ok=0
 else
@@ -588,7 +588,7 @@ echo APPLY_DONE
             write_report()
             return 1
         if "STACK_ROUTE_OK=1" in apply:
-            note("hermes_omni", "pass", "OmniRoute, Model Router, and edge probes ok")
+            note("hermes_omni", "pass", "OmniRoute, Router Worker, and edge probes ok")
         else:
             note("hermes_omni", "fail", apply[-500:])
         if "PASS workflow vps" in apply:
