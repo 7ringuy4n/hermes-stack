@@ -6,7 +6,7 @@ User Tn asks for a live weather PDF with an attractive layout and a Ho Chi Minh 
 
 ## Actor
 
-Zalo user id `233767886566872937` (Tn) via bridge `/inject-event`.
+Authorized Zalo user id from `ZALO_TEST_USER_ID` via bridge `/inject-event`.
 
 ## Steps
 

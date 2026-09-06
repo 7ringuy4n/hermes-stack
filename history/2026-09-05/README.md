@@ -1,5 +1,130 @@
 # 2026-09-05
 
+## 20:15 — Direct fallbacks were chat-shaped regardless of endpoint
+
+### Symptom
+
+Model Router could use one explicit chat fallback after OmniRoute became
+unavailable, but embeddings and image endpoints inherited a chat model, image
+editing lost multipart metadata, and web search had no independent fallback.
+Host media shortcuts also bypassed Model Router and therefore never reached its
+fallback pool.
+
+### Root cause
+
+Fallback selection was provider-wide instead of capability-specific. The proxy
+assumed JSON request bodies, while image edits are multipart. Search routing was
+correctly combo-owned but had no local continuity path.
+
+### Fix (core)
+
+Direct providers are now opt-in priority profiles with separate chat, vision,
+embedding, image, and image-edit model declarations. Their credentials are
+loaded from OpenBao. Multipart image edits retain the original file bytes while
+only the model field is replaced for a compatible fallback. Host and Dispatcher
+still generation call Model Router, and web search uses internal SearXNG after
+OmniRoute failure. Missing capability declarations skip a provider instead of
+guessing support.
+
+### Prevent recurrence
+
+Fallback tests must disable OmniRoute and exercise the real endpoint shape.
+Never infer media capability from a provider or model name, and never route a
+non-chat endpoint through a generic chat-model setting.
+
+## 19:20 — Clean startup depended on an already-running secret service
+
+### Symptom
+
+After a verified `destroy`, `run.sh up` attempted to load OpenBao KV values
+before recreating OpenBao. Required Compose variables were therefore absent and
+the clean deployment could not start.
+
+### Root cause
+
+The normal update path assumed the secret service was already running. A full
+container removal exposed the circular dependency between Compose interpolation
+and loading the values held in OpenBao.
+
+The backup path also discovered the Compose container correctly but executed
+the export against a literal service name that did not exist. It replaced that
+failure with a note file, so structural verification reported a false success.
+
+### Fix (core)
+
+Cold startup creates only OpenBao with non-functional parsing sentinels for
+application-only required variables, waits until KV loading succeeds, imports
+the real values into the current process, and only then creates the full stack.
+The sentinels are neither persisted as secrets nor consumed by an application
+container.
+
+OpenBao backup now uses the discovered container name, validates that the KV
+payload is non-empty, and fails the backup gate otherwise. Cold startup restores
+that verified KV export before importing Compose values.
+
+Credential-bearing environment names are centralized in the OpenBao seed and
+scrub registry. The root bootstrap exception is generated in a mode-600 file
+outside `.env`, backed up with the OpenBao component, and loaded only into the
+deployment process.
+
+Environment cleanup now runs before the deployment shell imports `.env`. This
+ensures an exact legacy internal route is both rewritten on disk and absent from
+the Compose process that creates new containers.
+
+### Prevent recurrence
+
+The clean-deploy gate must begin from zero project containers and verify the
+secret bootstrap before testing higher-level capabilities.
+
+## 18:10 — Filesystem Zalo owner election required replica restarts
+
+### Symptom
+
+Scaled Hermes could process ordinary HTTP traffic, but only the replica chosen
+at container startup loaded Zalo. A dead owner left a shared filesystem marker,
+and recovery restarted every Hermes replica, interrupting unrelated turns.
+
+### Root cause
+
+Zalo ownership was coupled to entrypoint-time filesystem state and local DNS
+checks. Standby adapters were disabled, the bridge bypassed the edge load
+balancer, and the watcher treated a missing SSE client as a reason to bounce the
+whole agent set.
+
+The first shared-lease implementation returned a failed connection from a
+standby replica. The gateway did not retry that startup connection, leaving the
+standby process healthy but unable to acquire an expired owner lease.
+
+### Fix (core)
+
+All replicas now load the adapter against an internal-only Traefik bridge route.
+A renewable Valkey lease uses atomic acquire and owner-checked renew/release;
+only the lease holder opens SSE. Message IDs remain deduplicated and queued in
+Valkey per conversation. Watcher recovery clears the scoped lease and restarts
+the proxy without restarting healthy Hermes replicas. Exact legacy bridge URLs
+are migrated while operator-custom URLs are preserved.
+
+A standby now remains inside the adapter lifecycle and periodically contends
+for the lease. Promotion proceeds directly into bridge health validation and
+SSE startup; it does not require the gateway or container supervisor to retry
+the platform connection.
+
+### Verification
+
+- Static topology and lease protocol units cover routing, lease ownership,
+  removal of the filesystem election, and legacy URL migration.
+- Live release verification must stop the current owner, observe bounded
+  standby acquisition, and prove no duplicate or cross-thread delivery.
+- One-versus-two-replica results must separate local queue/agent time from
+  provider time; a small run is not a general capacity claim.
+
+### Prevent recurrence
+
+Singleton channel ownership must use a renewable shared lease, never replica
+startup order or a persistent marker. Health recovery is scoped to the failed
+hop and cannot restart the full agent pool for provider latency or queue
+saturation.
+
 ## 16:30 — Quoted images were analyzed instead of edited
 
 ### Symptom
@@ -380,3 +505,145 @@ release gate remained closed. Future releases must inspect rendered pages and
 their extracted text; a successful API call or file assertion alone is not a
 pass. A bridge injection must also wait for an active SSE subscriber after a
 replica restart.
+
+## Synthetic quote metadata and concurrent judges distorted delivery tests
+
+### Symptom
+
+Some Zalo capability cases produced correct direct model output but appeared to
+lose the user-visible reply. A delayed reminder fired once but was reclassified
+as a new interactive request instead of delivering its stored notification.
+
+### Root cause
+
+The test harness assigned invented message identifiers, so normal replies tried
+to quote targets that did not exist on Zalo. It also submitted an independent
+vision evaluation while the Zalo vision request was still running against the
+same priority combo. Finally, a correlation tag embedded in reminder prose
+changed the model-owned delivery decision from a simple notification to a
+processed job.
+
+### Decision and fix
+
+Ordinary synthetic events omit message identifiers; real quote behavior remains
+covered by a dedicated test built from a valid Zalo event. User-visible delivery
+completes before the independent model judge runs. Schedule correlation uses the
+created row identifier and its stored fire text without modifying the request.
+Zalo text transport also has a bounded deadline so a stalled quote cannot hold
+the destination lock and block subsequent replies. A host-owned image-analysis
+reply also clears any media-delivery marker that a racing late sender from the
+preceding turn may have restored after the new-turn reset.
+
+### Prevention
+
+Live tests must not add semantic markers to model-classified text, fabricate
+provider-native identifiers, or compete with the capability they are judging.
+They must verify the stored schedule mode and exact fired payload, while timeout
+budgets remain capability-specific.
+
+## Fallback configuration and response-shape drift disabled local recovery
+
+### Symptom
+
+Embedding stopped when OmniRoute was unavailable even though local fallback was
+enabled, while SearXNG returned useful knowledge records that Model Router
+reported as an empty search.
+
+### Root cause
+
+Compose used a numeric enabled value but the embedding service accepted only one
+word form. SearXNG can place knowledge-panel content in `infoboxes` or `answer`
+instead of its normal `results` array when individual public engines are
+rate-limited.
+
+### Decision and prevention
+
+Shared operational flags accept the documented boolean forms, and SearXNG
+normalization retains ordinary results first before adapting answer and infobox
+content to the internal result contract. Outage tests must stop OmniRoute and
+exercise the live search and embedding endpoints rather than inferring fallback
+availability from configuration alone.
+
+## Multipart media requests were normalized as empty chat JSON
+
+### Symptom
+
+Quoted-image editing resolved and classified the source but OmniRoute rejected
+the forwarded upload as invalid form data.
+
+### Root cause and fix
+
+Model Router correctly failed JSON decoding for multipart bytes, then ran an
+empty map through the chat normalizer. The normalizer added a stream field,
+making that map truthy and causing the proxy to send JSON under the original
+multipart content type. Request serialization is now selected from the actual
+content type: JSON is normalized, while multipart bytes and their boundary are
+preserved unchanged. Live quoted-image editing remains the release gate.
+
+## Attractive markup still produced clipped factual content
+
+### Symptom
+
+A current-data PDF was delivered with correct Vietnamese facts but clipped its
+primary value, placed an icon across a card boundary, and left a large unused
+lower region.
+
+### Decision and prevention
+
+Document authoring now treats normal-flow print geometry as mandatory. Generic
+rules prohibit negative/translated/absolute positioning for factual content,
+fixed-height or hidden-overflow text containers, and boundary-straddling icons.
+The author must verify padding, contrast, consistent timezone notation, and
+full-page balance before calling the renderer. Rendered-page vision review—not
+file creation or text extraction—continues to decide the release gate.
+
+## Office packages had no production visual renderer
+
+### Symptom and root cause
+
+DOCX delivery succeeded, but both the production media worker and the local
+artifact runtime lacked LibreOffice. Tests could inspect OOXML structure but
+could not render Word, Calc, or Impress output, violating the visual gate.
+
+### Decision and prevention
+
+The dispatcher image now carries the headless Writer, Calc, and Impress
+components. Release labs convert each generated office package to PDF in the
+same container and inspect every rendered page, slide, or sheet. Structural
+checks remain useful but can no longer substitute for rendering.
+
+## Markdown authoring syntax leaked into delivered Office files
+
+### Symptom and root cause
+
+Rendered Word output exposed inline emphasis markers and pipe-table source.
+The shared renderer understood headings and bullets but treated other common
+Markdown constructs as plain paragraphs, so a valid authored body became an
+unfinished-looking document.
+
+### Decision and prevention
+
+The Office renderer now removes lightweight inline authoring markers and parses
+conventional pipe tables without locale- or topic-specific rules. Word writes
+native styled tables; spreadsheets preserve table cells and add a chart when a
+numeric series is available. Regression checks inspect package content for both
+native structure and absence of raw authoring chrome. Word block emission stays
+in source order, preventing a table from moving away from its authored section,
+and compact print-safe type avoids clipped headings and poorly balanced pages.
+
+## Runtime rebuilt categorized Office-skill collisions after startup
+
+### Symptom and root cause
+
+A live Word request succeeded only after Hermes first attempted an ambiguous
+`docx` lookup. Startup renamed or removed known category clones, but retained
+repository-only local toolkits; Hermes categorized those again after startup
+and registered three folders under the same short name.
+
+### Decision and prevention
+
+Replica startup now excludes all advanced local PDF, Word, and spreadsheet
+toolkits from the chat runtime tree, including root, official, productivity,
+and documents copies. The source toolkits remain in the repository for local
+maintenance, while chat artifact creation has one authoritative path:
+`file-gen` to Dispatcher.

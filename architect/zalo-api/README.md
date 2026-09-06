@@ -36,7 +36,7 @@ Started **only** with Zalo (`ENABLE_ZALO=active` → compose profile `zalo`), al
 
 ## Env
 
-- `ZALO_API_TOKEN` (Bearer) — required in production (`ADMIN_API_TOKEN` still accepted as alias)
+- `ZALO_API_TOKEN` (Bearer) — required in production
 - `ZALO_BRIDGE_URL` / `ZALO_PLUGIN_TOKEN` — reach host `hermes-zalo-plugin`
 - Hermes: `ZALO_API_URL=http://zalo-api:8100`
 

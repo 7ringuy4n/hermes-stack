@@ -1,5 +1,5 @@
 # assistant — core stack. Plain container names (hermes, valkey, â€¦).
-# Optional workers: compose profiles + WORKER_*=active (schedule, zalo, omnirouter, â€¦).
+# Optional workers: compose profiles + WORKER_*=active (schedule, Zalo, OmniRoute, etc.).
 # Media overlay: docker-compose.media.yml. Security/notify overlay: docker-compose.security.yml.
 name: assistant
 
@@ -75,6 +75,7 @@ services:
       - QDRANT_COLLECTION=${QDRANT_COLLECTION_MEMORY:-conversational_memory}
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - EMBED_MODEL=${EMBED_MODEL:-embedding}
+      - MEMORY_STAGED_RETENTION_DAYS=${MEMORY_STAGED_RETENTION_DAYS:-7}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     depends_on:
       postgres:
@@ -113,7 +114,7 @@ services:
       - HERMES_API_URL=${HERMES_API_URL:-http://hermes:8642/v1/chat/completions}
       - HERMES_API_KEY=${API_SERVER_KEY:-}
       - HERMES_WORKFLOW_TIMEOUT_S=${HERMES_WORKFLOW_TIMEOUT_S:-90}
-      - MODEL_ROUTER_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
+      - ROUTER_WORKER_URL=${ROUTER_WORKER_URL:-http://router-worker:8096}
       - SCHEDULE_URL=${SCHEDULE_URL:-http://schedule-worker:8110}
       - SCHEDULE_WORKER=${SCHEDULE_WORKER:-1}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
@@ -195,7 +196,7 @@ services:
     environment:
       - VALKEY_URL=${VALKEY_URL:-redis://valkey:6379/0}
       - REDIS_URL=${VALKEY_URL:-${REDIS_URL:-redis://valkey:6379/0}}
-      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://model-router:8096/v1}
+      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://router-worker:8096/v1}
       - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-}
       - OCR_MODEL=${OCR_MODEL:-vision-ocr}
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
@@ -234,9 +235,9 @@ services:
       dockerfile: models/dispatcher/Dockerfile
     restart: unless-stopped
     environment:
-      # Web search lives on model-router (/v1/search) — media worker only links to it
-      - WEB_SEARCH_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
-      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://model-router:8096/v1}
+      # Web search lives on router-worker (/v1/search) — media worker only links to it
+      - WEB_SEARCH_URL=${ROUTER_WORKER_URL:-http://router-worker:8096}
+      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://router-worker:8096/v1}
       - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-}
       - OCR_MODEL=${OCR_MODEL:-vision-ocr}
       - MEDIA_TEXT_FRAMES=${MEDIA_TEXT_FRAMES:-4}
@@ -267,11 +268,14 @@ services:
       - "127.0.0.1:${DISPATCHER_PORT:-8090}:8090"
     networks: [internal]
 
-  # Task-aware LLM proxy; OmniRouter is the single routing control plane.
-  model-router:
-    build: ./architect/models/model-router
-    container_name: model-router
+  # Task-aware LLM proxy; OmniRoute is the single routing control plane.
+  router-worker:
+    build: ./architect/models/router-worker
+    container_name: router-worker
     restart: unless-stopped
+    env_file:
+      - path: ${ASSISTANT_DATA_DIR:-/data/assistant}/.env.openbao
+        required: false
     environment:
       - OMNIROUTER_BASE_URL=${OMNIROUTER_BASE_URL:-http://omni-router:20129/v1}
       - ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-active}
@@ -279,23 +283,54 @@ services:
       - FALLBACK_OPENAI_BASE_URL=${FALLBACK_OPENAI_BASE_URL:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - FALLBACK_OPENAI_MODEL=${FALLBACK_OPENAI_MODEL:-gpt-4o-mini}
-      - MODEL_ROUTER_TIMEOUT_S=${MODEL_ROUTER_TIMEOUT_S:-180}
+      - ROUTER_WORKER_FALLBACK_PROVIDER_ORDER=${ROUTER_WORKER_FALLBACK_PROVIDER_ORDER:-}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
+      - OPENAI_CHAT_MODEL=${OPENAI_CHAT_MODEL:-}
+      - OPENAI_VISION_MODEL=${OPENAI_VISION_MODEL:-}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-}
+      - OPENAI_IMAGE_MODEL=${OPENAI_IMAGE_MODEL:-}
+      - OPENAI_IMAGE_EDIT_MODEL=${OPENAI_IMAGE_EDIT_MODEL:-}
+      - XAI_API_BASE=${XAI_API_BASE:-}
+      - XAI_CHAT_MODEL=${XAI_CHAT_MODEL:-}
+      - XAI_VISION_MODEL=${XAI_VISION_MODEL:-}
+      - XAI_EMBEDDING_MODEL=${XAI_EMBEDDING_MODEL:-}
+      - XAI_IMAGE_MODEL=${XAI_IMAGE_MODEL:-}
+      - XAI_IMAGE_EDIT_MODEL=${XAI_IMAGE_EDIT_MODEL:-}
+      - ANTHROPIC_API_BASE=${ANTHROPIC_API_BASE:-}
+      - ANTHROPIC_CHAT_MODEL=${ANTHROPIC_CHAT_MODEL:-}
+      - ANTHROPIC_VISION_MODEL=${ANTHROPIC_VISION_MODEL:-}
+      - ANTHROPIC_EMBEDDING_MODEL=${ANTHROPIC_EMBEDDING_MODEL:-}
+      - ANTHROPIC_IMAGE_MODEL=${ANTHROPIC_IMAGE_MODEL:-}
+      - ANTHROPIC_IMAGE_EDIT_MODEL=${ANTHROPIC_IMAGE_EDIT_MODEL:-}
+      - DEEPSEEK_API_BASE=${DEEPSEEK_API_BASE:-}
+      - DEEPSEEK_CHAT_MODEL=${DEEPSEEK_CHAT_MODEL:-}
+      - DEEPSEEK_VISION_MODEL=${DEEPSEEK_VISION_MODEL:-}
+      - DEEPSEEK_EMBEDDING_MODEL=${DEEPSEEK_EMBEDDING_MODEL:-}
+      - DEEPSEEK_IMAGE_MODEL=${DEEPSEEK_IMAGE_MODEL:-}
+      - DEEPSEEK_IMAGE_EDIT_MODEL=${DEEPSEEK_IMAGE_EDIT_MODEL:-}
+      - QWEN_API_BASE=${QWEN_API_BASE:-}
+      - QWEN_CHAT_MODEL=${QWEN_CHAT_MODEL:-}
+      - QWEN_VISION_MODEL=${QWEN_VISION_MODEL:-}
+      - QWEN_EMBEDDING_MODEL=${QWEN_EMBEDDING_MODEL:-}
+      - QWEN_IMAGE_MODEL=${QWEN_IMAGE_MODEL:-}
+      - QWEN_IMAGE_EDIT_MODEL=${QWEN_IMAGE_EDIT_MODEL:-}
+      - ROUTER_WORKER_TIMEOUT_S=${ROUTER_WORKER_TIMEOUT_S:-180}
       # Chat combo = hermes. Classify combo = classifier (OpenCode oc/* via first-setup).
       - OMNIROUTER_DEFAULT_COMBO=${OMNIROUTER_DEFAULT_COMBO:-hermes}
       - OMNIROUTER_FAILOVER_MODELS=${OMNIROUTER_FAILOVER_MODELS:-auto/best-free}
       - OMNIROUTER_ROTATE_ATTEMPTS=${OMNIROUTER_ROTATE_ATTEMPTS:-5}
       - OMNIROUTER_BUSY_BACKOFF_S=${OMNIROUTER_BUSY_BACKOFF_S:-3}
       - OMNIROUTER_CLASSIFY_COMBO=${OMNIROUTER_CLASSIFY_COMBO:-classifier}
-      - MODEL_ROUTER_CLASSIFY_MODEL=${MODEL_ROUTER_CLASSIFY_MODEL:-${OMNIROUTER_CLASSIFY_COMBO:-classifier}}
-      - MODEL_ROUTER_OUTBOUND_MODEL=${MODEL_ROUTER_OUTBOUND_MODEL:-${OMNIROUTER_DEFAULT_COMBO:-hermes}}
+      - ROUTER_WORKER_CLASSIFY_MODEL=${ROUTER_WORKER_CLASSIFY_MODEL:-${OMNIROUTER_CLASSIFY_COMBO:-classifier}}
+      - ROUTER_WORKER_OUTBOUND_MODEL=${ROUTER_WORKER_OUTBOUND_MODEL:-${OMNIROUTER_DEFAULT_COMBO:-hermes}}
       - OMNIROUTER_WEB_SEARCH_COMBO=${OMNIROUTER_WEB_SEARCH_COMBO:-web-search}
       - WEB_SEARCH_COMBO=${WEB_SEARCH_COMBO:-${OMNIROUTER_WEB_SEARCH_COMBO:-web-search}}
-      - MODEL_ROUTER_WEB_SEARCH_COMBO=${MODEL_ROUTER_WEB_SEARCH_COMBO:-${WEB_SEARCH_COMBO:-web-search}}
-      - MODEL_ROUTER_CLASSIFY=${MODEL_ROUTER_CLASSIFY:-/opt/data/skills/classify/classify.json}
-      - MODEL_ROUTER_OUTBOUND=${MODEL_ROUTER_OUTBOUND:-/opt/data/skills/outbound/outbound.json}
-      - MODEL_ROUTER_PORT=8096
+      - ROUTER_WORKER_WEB_SEARCH_COMBO=${ROUTER_WORKER_WEB_SEARCH_COMBO:-${WEB_SEARCH_COMBO:-web-search}}
+      - ROUTER_WORKER_CLASSIFY=${ROUTER_WORKER_CLASSIFY:-/opt/data/skills/classify/classify.json}
+      - ROUTER_WORKER_OUTBOUND=${ROUTER_WORKER_OUTBOUND:-/opt/data/skills/outbound/outbound.json}
+      - ROUTER_WORKER_PORT=8096
       - WEB_SEARCH_PROVIDER_TIMEOUT_S=${WEB_SEARCH_PROVIDER_TIMEOUT_S:-30}
-      - WEB_EXTRACT_BACKENDS=${WEB_EXTRACT_BACKENDS:-tavily,firecrawl}
+      - FALLBACK_SEARXNG_URL=${FALLBACK_SEARXNG_URL:-http://searxng:8080}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
       - WEB_SEARCH_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
@@ -304,14 +339,14 @@ services:
       # Classify prompt SoT lives in Hermes skills (single edit surface).
       - ./hermes/main/skills:/opt/data/skills:ro
     ports:
-      - "127.0.0.1:${MODEL_ROUTER_HOST_PORT:-8096}:8096"
+      - "127.0.0.1:${ROUTER_WORKER_HOST_PORT:-8096}:8096"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       internal:
         aliases: []
 
-  # Optional OmniRouter — ENABLE_OMNIROUTER=active (compose profile omnirouter)
+  # OmniRoute — ENABLE_OMNIROUTER=active (compatibility profile name: omnirouter)
   # Dedicated OmniRoute image. Override with OMNIROUTER_IMAGE in .env.
   omni-router:
     profiles: ["omnirouter"]
@@ -391,17 +426,17 @@ services:
       - HERMES_DISABLE_LAZY_INSTALLS=0
       - HERMES_LAZY_INSTALL_TARGET=/opt/data/lazy-packages
       - PYTHONPATH=/opt/data/lazy-packages
-      # OmniRoute is the model plane. An empty key breaks Hermes→model-router auth.
+      # OmniRoute is the model plane. An empty key breaks Hermes→router-worker auth.
       - OPENAI_API_KEY=${OMNIROUTER_API_KEY:-}
-      # Direct Omni image-gen (/images/generations); chat still goes via model-router.
+      # Direct Omni image-gen (/images/generations); chat still goes via router-worker.
       - OMNIROUTER_BASE_URL=${OMNIROUTER_BASE_URL:-http://omni-router:20129/v1}
       - OMNIROUTER_API_KEY=${OMNIROUTER_API_KEY:-}
       - OMNIROUTER_CLASSIFY_COMBO=${OMNIROUTER_CLASSIFY_COMBO:-classifier}
       - IMAGE_GEN_COMBO=${IMAGE_GEN_COMBO:-image-gen}
-      # v0.5.0: prefer model-router; set HERMES_OPENAI_BASE_URL to override (e.g. dispatcher)
-      - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://model-router:8096/v1}
+      # v0.5.0: prefer router-worker; set HERMES_OPENAI_BASE_URL to override (e.g. dispatcher)
+      - OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://router-worker:8096/v1}
       - DISPATCHER_URL=http://dispatcher:8090
-      - MODEL_ROUTER_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
+      - ROUTER_WORKER_URL=${ROUTER_WORKER_URL:-http://router-worker:8096}
       - MEMORY_URL=http://memory:8095
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - INGEST_URL=${INGEST_URL:-http://ingest:8099}
@@ -419,7 +454,7 @@ services:
       - HERMES_MAX_INFLIGHT=${HERMES_MAX_INFLIGHT:-3}
       - HERMES_CONTEXT_BUDGET=${HERMES_CONTEXT_BUDGET:-24000}
       # Media worker URLs (services only up when overlay is loaded)
-      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://model-router:8096/v1}
+      - HERMES_OPENAI_BASE_URL=${HERMES_OPENAI_BASE_URL:-http://router-worker:8096/v1}
       - OCR_MODEL=${OCR_MODEL:-vision-ocr}
       - OCR_MEDIA_ROOT=/opt/data/media
       - JOBS_URL=${JOBS_URL:-http://jobs:8104}
@@ -431,19 +466,21 @@ services:
       - ZALO_WORKFLOW_TURN_TIMEOUT_S=${ZALO_WORKFLOW_TURN_TIMEOUT_S:-420}
       - ZALO_WORKFLOW_PARALLEL=${ZALO_WORKFLOW_PARALLEL:-8}
       # Native Hermes web_search uses SEARXNG_URL → {base}/search?format=json.
-      # Point at the Model Router SearXNG-compatible shim (Omni-backed), not the raw
+      # Point at the Router Worker SearXNG-compatible shim (Omni-backed), not the raw
       # SearXNG container (datacenter CAPTCHA / empty results).
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
-      - SEARXNG_URL=${HERMES_SEARXNG_URL:-http://model-router:8096/v1/searxng-compat}
-      # Skill/HTTP path: Model Router → Omni search gateway
-      - WEB_SEARCH_URL=${MODEL_ROUTER_URL:-http://model-router:8096}
+      - SEARXNG_URL=${HERMES_SEARXNG_URL:-http://router-worker:8096/v1/searxng-compat}
+      # Skill/HTTP path: Router Worker → Omni search gateway
+      - WEB_SEARCH_URL=${ROUTER_WORKER_URL:-http://router-worker:8096}
       - ZALO_ATTACHMENT_CONTEXT_TTL_S=${ZALO_ATTACHMENT_CONTEXT_TTL_S:-86400}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
-      # Zalo (used when ENABLE_ZALO=active + host bridge + zalo-proxy profile)
-      # Only replica hermes-1 keeps ZALO_PLUGIN_URL (see hermes-replica-entry.sh).
-      - ZALO_PLUGIN_URL=${ZALO_PLUGIN_URL:-http://host.docker.internal:8787}
+      # Zalo (used when ENABLE_ZALO=active). All replicas load the adapter;
+      # Traefik fronts zalo-proxy and a Valkey lease elects one SSE owner.
+      - ZALO_PLUGIN_URL=${ZALO_PLUGIN_URL:-http://traefik:8081/zalo-bridge}
       - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
+      - ZALO_OWNER_LEASE_KEY=${ZALO_OWNER_LEASE_KEY:-zalo:bridge:owner}
+      - ZALO_OWNER_LEASE_TTL_S=${ZALO_OWNER_LEASE_TTL_S:-45}
       - ZALO_GROUP_MODE=${ZALO_GROUP_MODE:-mention}
       - ZALO_ALLOWED_THREADS=${ZALO_ALLOWED_THREADS:-}
       - ZALO_HOME_CHANNEL=${ZALO_HOME_CHANNEL:-}
@@ -463,7 +500,6 @@ services:
       - ZALO_API_URL=${ZALO_API_URL:-http://zalo-api:8100}
       - ZALO_API_TOKEN=${ZALO_API_TOKEN:-}
       - ADMIN_API_URL=${ADMIN_API_URL:-http://zalo-api:8100}
-      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
       - GATEWAY_ALLOW_ALL_USERS=${GATEWAY_ALLOW_ALL_USERS:-true}
       - HERMES_REPLICAS=${HERMES_REPLICAS:-1}
       - SECRET_PROBE_POLICY=/opt/data/secret-probe.json
@@ -477,7 +513,7 @@ services:
       - ./hermes/main/docker/hermes-replica-entry.sh:/opt/stack/hermes-replica-entry.sh:ro
       - ./config/agent/secret-probe.json:/opt/data/secret-probe.json:ro
     depends_on:
-      - model-router
+      - router-worker
       - memory
       - workflow
     extra_hosts:
@@ -504,7 +540,6 @@ services:
     restart: unless-stopped
     environment:
       - ZALO_API_TOKEN=${ZALO_API_TOKEN:-}
-      - ADMIN_API_TOKEN=${ADMIN_API_TOKEN:-}
       - ZALO_ADMIN_USERS=${ZALO_ADMIN_USERS:-}
       - ZALO_ADMIN_USERS_FILE=/data/assistant/zalo_admin_users.txt
       - ZALO_ALLOWED_THREADS_FILE=/data/assistant/zalo_allowed_threads.txt
@@ -512,7 +547,7 @@ services:
       - ZALO_ALLOWED_USERS_FILE=/data/assistant/zalo_allowed_users.txt
       - ZALO_USERS_MODE_FILE=/data/assistant/zalo_users_mode.txt
       - DATABASE_URL=postgresql://${MEMORY_DB_USER:-hermes}:${MEMORY_DB_PASSWORD}@postgres:5432/${MEMORY_DB_NAME:-hermes_memory}
-      - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://host.docker.internal:8787}
+      - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://traefik:8081/zalo-bridge}
       - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
       - AUTHZ_URL=${AUTHZ_URL:-http://authz:8097}
       - NOTIFY_URL=${NOTIFY_URL:-http://notify:8092}

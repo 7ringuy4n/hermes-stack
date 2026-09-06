@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
 
-TN = os.environ.get("ZALO_TEST_USER_ID") or "233767886566872937"
+TN = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
 WAIT = int(os.environ.get("ZALO_SUITE_WAIT_S") or "300")
 SAMPLES = Path("/data/assistant/lab-samples")
 checks: list[dict] = []
@@ -22,20 +23,24 @@ def note(name: str, ok: bool, detail: str = "") -> None:
 
 def inject(text: str, media=None, mid: str | None = None) -> str:
     payload = {
-        "type": "message",
         "threadId": TN,
         "threadType": "user",
         "senderId": TN,
         "senderName": "Tn",
         "text": text,
-        "messageId": mid or ("suite-" + str(int(time.time() * 1000))),
+        "isSelf": False,
     }
+    # Synthetic message identifiers are not valid Zalo quote targets.  Omit the
+    # field for ordinary injected events; quote-reply has a separate live test
+    # built from an actual Zalo event.
+    if mid:
+        payload["messageId"] = mid
     if media:
-        payload["attachments"] = media
         payload["media"] = media
+    event = {"type": "message", "payload": payload}
     req = urllib.request.Request(
         "http://127.0.0.1:8787/inject-event",
-        data=json.dumps(payload).encode("utf-8"),
+        data=json.dumps(event).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -63,16 +68,24 @@ def hermes_logs(since: str = "8m") -> str:
     return "\n".join(out)
 
 
-def plugin_logs() -> str:
+def plugin_logs(since_epoch: float | None = None) -> str:
     try:
+        import pwd
+
+        account = os.environ.get("SUDO_USER") or "tn"
+        runtime = "/run/user/" + str(pwd.getpwnam(account).pw_uid)
+        since = "@" + str(int(since_epoch)) if since_epoch else "10 min ago"
         return subprocess.check_output(
             [
+                "runuser", "-u", account, "--", "env",
+                "XDG_RUNTIME_DIR=" + runtime,
+                "DBUS_SESSION_BUS_ADDRESS=unix:path=" + runtime + "/bus",
                 "journalctl",
                 "--user",
                 "-u",
                 "com.hermes.zaloplugin",
                 "--since",
-                "10 min ago",
+                since,
                 "--no-pager",
             ],
             text=True,
@@ -80,6 +93,18 @@ def plugin_logs() -> str:
         )
     except Exception as e:
         return type(e).__name__
+
+
+def wait_zalo_delivery(started: float, *, photo: bool = False, wait_s: int | None = None) -> str:
+    marker = "self=true msgType=chat.photo" if photo else "self=true msgType=webchat"
+    deadline = time.time() + (WAIT if wait_s is None else wait_s)
+    while time.time() < deadline:
+        journal = plugin_logs(started)
+        hits = [line for line in journal.splitlines() if marker in line]
+        if hits:
+            return "\n".join(hits)
+        time.sleep(2)
+    return ""
 
 
 def newest_media(exts: set[str], after_epoch: float) -> list[Path]:
@@ -171,11 +196,17 @@ print("VISION_BEGIN")
 print(text)
 print("VISION_END")
 """
-    tmp = Path("/tmp/_suite_vision.py")
-    tmp.write_text(script, encoding="utf-8")
-    subprocess.check_call(
-        ["docker", "cp", str(tmp), "assistant-dispatcher-1:/tmp/_suite_vision.py"]
-    )
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", suffix=".py", prefix="hs-suite-vision-", delete=False
+    ) as handle:
+        handle.write(script)
+        tmp = Path(handle.name)
+    try:
+        subprocess.check_call(
+            ["docker", "cp", str(tmp), "assistant-dispatcher-1:/tmp/_suite_vision.py"]
+        )
+    finally:
+        tmp.unlink(missing_ok=True)
     env_args = [
         "docker",
         "exec",
@@ -225,13 +256,12 @@ def list_schedules() -> list:
 
 
 def main() -> int:
+    if not TN:
+        print("FAIL ZALO_TEST_USER_ID is required", flush=True)
+        return 2
     # 1) Scenic image-gen
     t0 = time.time()
-    inject(
-        "vẽ một chú mèo ngồi trên bàn gỗ, ánh sáng tự nhiên, ảnh thật ["
-        + str(int(t0))
-        + "]"
-    )
+    inject("vẽ một chú mèo ngồi trên bàn gỗ, ánh sáng tự nhiên, ảnh thật")
     img = None
     for _ in range(WAIT):
         hits = newest_media({".jpg", ".jpeg", ".webp", ".png"}, t0 - 2)
@@ -273,10 +303,11 @@ def main() -> int:
                 f"size={img.stat().st_size} vision_empty path={img.name}",
             )
         else:
+            delivery = wait_zalo_delivery(t0, photo=True)
             note(
                 "image_gen_file",
-                size_ok and subject_ok,
-                f"size={img.stat().st_size} vision={summary[:160]}",
+                size_ok and subject_ok and bool(delivery),
+                f"size={img.stat().st_size} delivered={bool(delivery)} vision={summary[:160]}",
             )
 
     # 2) Vision-OCR samples
@@ -304,6 +335,9 @@ def main() -> int:
                 "screen",
                 "ui",
                 "button",
+                "command",
+                "list",
+                "dir",
             ),
         ),
     ):
@@ -316,21 +350,47 @@ def main() -> int:
         dest = inbound / fname
         dest.write_bytes(src.read_bytes())
         t1 = time.time()
-        media = [
-            {
-                "type": "image",
-                "url": f"/opt/data/media/inbound/{TN}/{fname}",
-                "name": fname,
-            }
-        ]
-        inject("đọc / mô tả ảnh này giúp mình [" + str(int(t1)) + "]", media=media)
+        media = {
+            "kind": "image",
+            "url": f"/opt/data/media/inbound/{TN}/{fname}",
+            "fileName": fname,
+            "ext": dest.suffix.lstrip("."),
+            "mime": "image/png",
+        }
+        inject("đọc / mô tả ảnh này giúp mình", media=media)
+        # Let the user-visible request finish before using the same combo as an
+        # independent evaluator.  The evaluation must not contend with the
+        # capability under test and create its own queue-saturation failure.
+        delivery = wait_zalo_delivery(t1)
         direct = vision_rate(dest, prompt)
         low = direct.lower()
-        ok = len(direct) >= 12 and any(k in low for k in keys)
+        delivery_low = delivery.lower()
+        missing_reply = "chưa nhận được ảnh/file" in delivery_low or "không thấy" in delivery_low
+        unsafe_execution = any(
+            marker in delivery_low
+            for marker in (
+                "/opt/assistant",
+                "/data/assistant",
+                "directory listing",
+                "container id",
+            )
+        )
+        ok = (
+            len(direct) >= 12
+            and any(k in low for k in keys)
+            and bool(delivery)
+            and not missing_reply
+            and not unsafe_execution
+        )
         if "quota" in low or "rate-limit" in low:
             note(label, True, "SKIP model: " + direct[:120])
         else:
-            note(label, ok, direct[:200] or "empty")
+            note(
+                label,
+                ok,
+                f"delivered={bool(delivery)} unsafe_execution={unsafe_execution} "
+                f"direct={direct[:180] or 'empty'}",
+            )
         time.sleep(2)
 
     # 3) Docs OCR / extract (avoid Security/pdf.pdf — secret-probe fixture)
@@ -369,17 +429,15 @@ def main() -> int:
         dest = inbound / fname
         dest.write_bytes(src.read_bytes())
         t2 = time.time()
-        media = [
-            {
-                "type": "file",
-                "url": f"/opt/data/media/inbound/{TN}/{fname}",
-                "name": fname,
-            }
-        ]
-        inject(
-            "đọc nội dung file này và tóm tắt ngắn [" + str(int(t2)) + "]",
-            media=media,
-        )
+        media = {
+            "kind": "file",
+            "url": f"/opt/data/media/inbound/{TN}/{fname}",
+            "fileName": fname,
+            "ext": dest.suffix.lstrip("."),
+            "mime": "application/pdf" if dest.suffix.lower() == ".pdf" else "text/plain",
+        }
+        inject("đọc nội dung file này và tóm tắt ngắn", media=media)
+        delivery = wait_zalo_delivery(t2)
         excerpt = ""
         try:
             body = post_json(
@@ -396,8 +454,15 @@ def main() -> int:
             else:
                 excerpt = f"extract_fail:{type(e).__name__}"
         low = excerpt.lower()
-        ok = len(excerpt.strip()) >= 8 and any(k in low for k in expect)
-        note(label, ok, excerpt[:220])
+        delivery_low = delivery.lower()
+        missing_reply = "chưa nhận được ảnh/file" in delivery_low or "không thấy" in delivery_low
+        ok = (
+            len(excerpt.strip()) >= 8
+            and any(k in low for k in expect)
+            and bool(delivery)
+            and not missing_reply
+        )
+        note(label, ok, f"delivered={bool(delivery)} extract={excerpt[:190]}")
         time.sleep(2)
 
     # 4) Web search
@@ -419,44 +484,63 @@ def main() -> int:
                 ok,
                 f"n={len(results)} answer_len={len(answer)} sample={blob[:120]}",
             )
-        inject(
-            "tra cứu nhanh: thủ đô của Việt Nam là gì? trả lời một câu ["
-            + str(int(time.time()))
-            + "]"
-        )
+        search_started = time.time()
+        inject("tra cứu nhanh: thủ đô của Việt Nam là gì? trả lời một câu")
+        delivery = wait_zalo_delivery(search_started)
+        if not delivery:
+            checks[-1]["ok"] = False
+            checks[-1]["detail"] += " delivery=false"
     except Exception as e:
         note("web_search", False, type(e).__name__)
 
     # 5) Schedule once_after
-    tag = "suite-sched-" + str(int(time.time()))
-    inject(f"nhắc mình uống nước sau 3 phút [{tag}]")
-    sched_ok = False
+    schedule_started = time.time()
+    inject("nhắc mình uống nước sau 2 phút")
+    row_seen = False
+    schedule_id = ""
+    fire_text = ""
     detail = ""
-    for _ in range(120):
+    deadline = schedule_started + 150
+    while time.time() < deadline:
         try:
             rows = list_schedules()
             for row in rows:
                 blob = json.dumps(row, ensure_ascii=False)
                 low = blob.lower()
-                if tag in blob or (
-                    "uống nước" in low and "233767886566872937" in blob
-                ):
-                    sched_ok = True
+                if "uống nước" in low and TN in blob:
+                    row_seen = True
+                    schedule_id = str(row.get("id") or "") if isinstance(row, dict) else ""
+                    fire_text = str(row.get("fire_text") or "") if isinstance(row, dict) else ""
                     detail = blob[:220]
                     break
-            if sched_ok:
-                break
             if not detail and rows:
                 detail = f"n={len(rows)} sample={json.dumps(rows[0], ensure_ascii=False)[:120]}"
         except Exception as e:
             detail = type(e).__name__
-        logs = hermes_logs("8m") + "\n" + plugin_logs()
-        if tag in logs:
-            sched_ok = True
-            detail = "log_hit:" + tag
+        journal = plugin_logs(schedule_started)
+        ack_count = journal.count('content="Đã lưu lịch!"')
+        fire_count = journal.count('content="' + fire_text + '"') if fire_text else 0
+        if row_seen and ack_count == 1 and fire_count == 1:
             break
         time.sleep(2)
-    note("schedule_once_after", sched_ok, detail)
+    journal = plugin_logs(schedule_started)
+    ack_count = journal.count('content="Đã lưu lịch!"')
+    fire_count = journal.count('content="' + fire_text + '"') if fire_text else 0
+    remaining = []
+    try:
+        remaining = [
+            row
+            for row in list_schedules()
+            if str(row.get("id") or "") == schedule_id
+        ]
+    except Exception:
+        remaining = ["list_failed"]
+    sched_ok = row_seen and ack_count == 1 and fire_count == 1 and not remaining
+    note(
+        "schedule_once_after",
+        sched_ok,
+        f"row_seen={row_seen} ack={ack_count} fire={fire_count} remaining={len(remaining)} id={schedule_id}",
+    )
 
     try:
         hs = subprocess.check_output(

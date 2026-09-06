@@ -1,3 +1,133 @@
+## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
+
+- Fixed direct media shortcut delivery so generated artifacts participate in
+  the shared file-claim ledger and retain their originating turn token. A
+  later queued request can no longer rediscover the prior artifact, resend it,
+  and suppress its own text response.
+- Added an isolated-workflow delivery confirmation and recovery path. If an
+  asynchronous text result reaches shared session memory but its original
+  platform send does not complete, the owning adapter retries the final text
+  once through the serialized destination sender and records the outcome.
+- Corrected the paired Zalo benchmark so transport delivery is established by
+  either its synthetic marker or a timestamp-correlated, semantically valid
+  web response. Marker compliance remains visible as a separate assertion and
+  no longer turns a delivered, sourced answer into a false transport failure.
+- Completed DM-only HA release verification with one and two Hermes replicas,
+  including quote-based image editing, a paired web result, visual scoring,
+  queue drainage, lease ownership, resource observation, and restart checks.
+- Documented the deployed hybrid availability model: active-active Hermes HTTP
+  behind Traefik, one active Zalo SSE owner elected by a renewable Valkey lease,
+  and per-conversation Valkey FIFO processing by that owner.
+- Consolidated Grafana provisioning under the host-mounted
+  `config/monitor/grafana` source of truth and added dashboard identity checks
+  so duplicate UIDs, titles, or provisioning trees fail locally. Empty standard
+  alerting/plugin provisioning directories prevent misleading startup errors.
+- Scoped Zalo artifact discovery and delivery markers to a processed-turn
+  token. A late artifact sender from an earlier turn can no longer attach an
+  old file to a later request or suppress that request's text response.
+- Reload OpenBao-backed runtime secrets before destructive stack teardown and
+  reject lifecycle backups whose enabled OmniRoute provider/combo inventory
+  could not be exported.
+- Reload and re-scrub the transient OpenBao export around component-change
+  backups, so repeated add/remove operations can still capture OmniRoute
+  configuration after an earlier update removed plaintext exports.
+- Apply component option changes to both `.env` and the current lifecycle
+  process before Compose runs, preventing an update from reusing the previous
+  replica count or worker state.
+- Use collision-safe temporary evaluator files in the VPS media capability
+  suite and remove them immediately after transfer.
+- Renamed the task-aware proxy to `router-worker` across its source directory,
+  Compose service/DNS name, `ROUTER_WORKER_*` environment contract, health
+  identity, scripts, monitoring, skills, docs, and tests. Upgrade cleanup
+  removes only the retired project container and migrates exact old default
+  route values without overwriting operator-owned endpoints.
+- Corrected the remaining current Router Worker configuration heading; retired
+  names remain only in migration checks and immutable historical evidence.
+- Added multipurpose dated/undated notes with per-DM/per-group scopes,
+  PostgreSQL date/full-text indexes, deduplication, and immutable mutation audit.
+- Dated note lookup now relaxes language-dependent query tags only after a
+  strict search misses, while retaining the caller scope and date window.
+- Added file-based classifier contracts and host execution for note CRUD;
+  ambiguous mutations are rejected rather than guessed.
+- Added semantic active-request cancellation before rate/FIFO admission. Queue
+  ownership survives cancellation and adapter-owned late artifacts are
+  suppressed; inactive threads receive an accurate response.
+- Active-turn cancellation now runs before the per-conversation inbound lock,
+  so a stop message can interrupt work instead of waiting behind that work.
+- Active ownership now covers the complete guarded inbound lifecycle, including
+  pre-queue classification, media staging, and workflow submission. Valkey gate
+  initialization retries after transient failure instead of caching fail-open
+  mode for the life of the replica.
+- Attached-image routing now classifies once, persists that plan with its FIFO
+  item, and carries the staged source through pre-queue and dequeue decisions.
+  This prevents repeated model calls from changing an image edit into analysis
+  or falling through to a generic agent turn.
+- Zalo non-owner replicas now return promptly as healthy standby and acquire
+  the renewable Valkey owner lease in the background, removing the recurring
+  gateway reconnect timeout symptom.
+- The Zalo watcher now anchors its first run to timer activation, preventing a
+  timer installed after boot from remaining elapsed with no next trigger.
+- Backup and stale staged-memory retention now default to seven days, are
+  initialized in OpenBao, and are loaded only for timer/lifecycle execution.
+- Removed the retired `web_extract_backends` health field; URL extraction
+  adapters remain an internal implementation detail rather than an env route.
+- Dispatcher office generation supports write-only mode so cancellable adapter
+  turns remain the final owner of Zalo artifact delivery.
+
+## 2026-09-05 19:20 +07 — cold-start secret recovery
+
+- Clean startup now creates OpenBao before importing secret-backed Compose
+  values when all stack containers have been removed but data volumes remain.
+- Bootstrap-only parse sentinels are scoped to the OpenBao container creation;
+  application services start only after their real KV values are loaded.
+- OpenBao backup now executes against the discovered Compose container and
+  rejects empty KV exports instead of recording a false successful component.
+- Credential-like environment values now share the OpenBao registry and are
+  scrubbed from `.env`; the self-unlocking token is generated and retained only
+  in a protected external file.
+- Obsolete environment routes are normalized before the shell imports `.env`,
+  preventing a clean deploy from using a corrected file with stale in-process
+  values.
+- Zalo standby replicas now continue lease acquisition in-process, so owner
+  loss promotes a healthy replica without depending on a container restart.
+- Credential-shaped environment values are discovered generically during
+  OpenBao seed/scrub; first setup prints the protected token-file access command.
+- Model Router now selects direct fallbacks by endpoint capability for chat,
+  vision, embeddings, still generation, and image editing; search falls back to
+  internal SearXNG. Media callers route through Model Router rather than
+  bypassing it, and the retired page-extract ordering variable is removed.
+- Zalo text sends now use a short transport deadline so a stalled quote request
+  cannot retain the per-destination lock for a full minute; attachment uploads
+  keep their longer transfer budget and failed quotes still retry as plain text.
+- Live capability evaluation waits for the user-visible result before invoking
+  a second model as judge, and synthetic events no longer claim invalid quote
+  identifiers or alter the natural-language schedule request with test tags.
+- Image-analysis replies clear a late media-delivery marker immediately before
+  sending, preventing a completed artifact from the preceding turn from muting
+  the next turn's valid text response.
+- Local embedding fallback recognizes the same boolean values accepted by
+  Compose and remains available during an OmniRoute outage. SearXNG fallback
+  preserves useful answer and infobox records when public engines return no
+  ordinary result rows.
+- Model Router preserves non-JSON request bodies byte-for-byte, preventing its
+  chat-payload normalizer from replacing multipart image-edit uploads with a
+  synthetic JSON body.
+- Office authoring guidance now treats print geometry as a release constraint:
+  content stays in normal flow without negative/absolute offsets, icons remain
+  bounded, primary values cannot use clipped containers, and short one-page
+  layouts must balance their vertical space.
+- The dispatcher image now includes headless Writer, Calc, and Impress, making
+  visual rendering of generated DOCX, XLSX, and PPTX files available in the
+  release environment instead of relying on package-structure checks.
+- Office renderers now consume conventional inline emphasis and pipe tables as
+  structure instead of printing authoring markers. Word emits native tables,
+  while spreadsheets retain authored rows and add a chart when a usable numeric
+  series is present. Word also preserves authored block order and uses compact,
+  print-safe typography so tables do not detach from their section headings.
+- Replica startup now excludes repository-only PDF, Word, and spreadsheet
+  toolkits from the chat skill registry. File creation continues through the
+  single `file-gen` route, preventing categorized clones and ambiguous lookups.
+
 ## 2026-09-05 16:30 +07 — quoted-image editing and slow-provider resilience
 
 - Quoted Zalo images now retain their staged source through classification and are edited through the dedicated image endpoint before being returned once.
@@ -2695,3 +2825,24 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 - Added pre-delivery checks for a single visible title, locale-appropriate units, unsupported interpretations, compact pagination, and visually balanced page use.
 - Added a Zalo lab fixture that rejects unexpected sibling images and discovers active runtime replicas dynamically.
 - Kept the release gate closed after rendered-PDF review exposed unreliable CSS layout and unsupported descriptive copy; no production merge or rollout is implied by these changes.
+## 2026-09-05 18:10 +07 — Traefik-routed Zalo replica failover
+
+- Zalo bridge traffic now uses a private Traefik entrypoint and a renewable,
+  owner-safe Valkey lease so a standby Hermes replica can take over without a
+  replica-wide restart.
+- The inbound queue retains cross-replica message-id deduplication and
+  per-conversation ordering; watcher recovery clears only the scoped lease and
+  bridge proxy.
+- Current architecture, operations, scaling, and release-test documentation is
+  consolidated around OmniRoute priority combos and worker-based deployment;
+  retired router, tier, local OCR/image-engine, video, and secret-alias paths
+  are removed from active behavior.
+
+## 2026-09-06 09:15 +07 — deterministic note confirmations
+
+- Successful note mutations now render the validated localized result instead
+  of trusting classifier free-form confirmation text.
+- Note classification preserves stable user-authored content without invented
+  category prefixes so deterministic duplicate creation remains idempotent.
+- Component-scoped updates now preserve intentional Compose scale slots while
+  still removing duplicate occupants and anonymous recreate debris.

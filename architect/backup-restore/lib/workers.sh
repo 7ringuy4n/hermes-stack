@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Worker activation. Core is always on: Hermes, Memory, Model Router, Traefik local, watchdog.
+# Worker activation. Core is always on: Hermes, Memory, Router Worker, Traefik local, watchdog.
 # Optional workers are inactive unless WORKER_*=active (or ENABLE_*=active; legacy 1 still accepted via migrate).
 # Bundled ENABLE_* for a worker live with that worker — not in default setup.
 set -euo pipefail
@@ -20,7 +20,7 @@ assistant_migrate_enable_active() {
     ENABLE_SCHEDULE ENABLE_MEDIA_FILE ENABLE_MESSAGE ENABLE_GRAFANA \
     ENABLE_PROMETHEUS ENABLE_LOKI ENABLE_ALLOY ENABLE_ANTIVIRUS ENABLE_AUTHZ \
     ENABLE_SIEM ENABLE_POLICY ENABLE_OPENBAO ENABLE_OPENBAO_AGENT ENABLE_TRAEFIK \
-    ENABLE_API_GATEWAY ENABLE_MODEL_ROUTER ENABLE_CLOUDDRIVE ENABLE_OPENVPN \
+    ENABLE_API_GATEWAY ENABLE_ROUTER_WORKER ENABLE_CLOUDDRIVE ENABLE_OPENVPN \
     ENABLE_LOG_ARCHIVE OFFICE_FILE_GEN OMNIROUTER_ENABLE_MEMORY \
     ENABLE_LLM_JUDGE SECURITY_SANDBOX SECURITY_YARA SECURITY_FAIL_CLOSED \
     SECURITY_LLM_JUDGE IMAGE_ALLOW_PILLOW ZALO_INBOUND_QUEUE \
@@ -83,7 +83,7 @@ assistant_workers_apply() {
     export ENABLE_JOBS="${ENABLE_JOBS:-active}"
     export OFFICE_FILE_GEN="${OFFICE_FILE_GEN:-active}"
     export ENABLE_SEARXNG="${ENABLE_SEARXNG:-active}"
-    # Web search runs on model-router via Omni combo web-search only
+    # Web search runs on router-worker via Omni combo web-search only
     [[ -n "${IMAGE_GEN_COMBO:-}" ]] || export IMAGE_GEN_COMBO=image-gen
     [[ -n "${OCR_MODEL:-}" ]] || export OCR_MODEL=vision-ocr
     [[ -n "${EMBED_MODEL:-}" ]] || export EMBED_MODEL=embedding
@@ -176,7 +176,7 @@ assistant_workers_apply() {
   export TRAEFIK_ACME_ENABLED="${TRAEFIK_ACME_ENABLED:-inactive}"
   export ENABLE_OMNIROUTER="${ENABLE_OMNIROUTER:-active}"
   export OMNIROUTER_ENABLE_MEMORY="${OMNIROUTER_ENABLE_MEMORY:-active}"
-  export ENABLE_MODEL_ROUTER="${ENABLE_MODEL_ROUTER:-active}"
+  export ENABLE_ROUTER_WORKER="${ENABLE_ROUTER_WORKER:-active}"
   export WEB_SEARCH_MAX_RESULTS="${WEB_SEARCH_MAX_RESULTS:-3}"
   export ENABLE_LOG_ARCHIVE="${ENABLE_LOG_ARCHIVE:-active}"
   export LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-30}"
@@ -302,7 +302,8 @@ assistant_rm_compose_recreate_orphans() {
   # `compose up` can leave that hex name taken → next up:
   #   Conflict: container name "/e207aa1eecb5_assistant-authz-1" is already in use
   # Drop those rename leftovers (and duplicate project service containers) before up.
-  local id name project="${COMPOSE_PROJECT_NAME:-assistant}" svc kept
+  local id name project="${COMPOSE_PROJECT_NAME:-assistant}" svc slot key running
+  local -A kept_slots=()
   while IFS= read -r id; do
     [[ -z "$id" ]] && continue
     name="$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null | sed 's|^/||' || true)"
@@ -314,23 +315,23 @@ assistant_rm_compose_recreate_orphans() {
     fi
   done < <(docker ps -aq 2>/dev/null)
 
-  # Same project+service with >1 container: keep one running (newest), remove rest.
+  # Compose assigns a stable container-number slot to every scaled service
+  # replica. Remove only duplicate occupants of the same service+slot; several
+  # distinct slots are an intentional scale set, not duplicate containers.
   while IFS= read -r svc; do
     [[ -z "$svc" ]] && continue
-    kept=""
     while IFS= read -r id; do
       [[ -z "$id" ]] && continue
-      if [[ -z "$kept" ]] \
-        && [[ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null || echo false)" == "true" ]]; then
-        kept="$id"
-        continue
-      fi
-      if [[ -z "$kept" ]]; then
-        kept="$id"
+      slot="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.container-number"}}' "$id" 2>/dev/null || true)"
+      [[ -n "$slot" ]] || slot="1"
+      key="${svc}:${slot}"
+      running="$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null || echo false)"
+      if [[ -z "${kept_slots[$key]:-}" ]]; then
+        kept_slots[$key]="$id"
         continue
       fi
       name="$(docker inspect -f '{{.Name}}' "$id" 2>/dev/null | sed 's|^/||' || echo "$id")"
-      echo "==> remove duplicate compose container ${name} (service=${svc})"
+      echo "==> remove duplicate compose container ${name} (service=${svc} slot=${slot} running=${running})"
       docker rm -f "$id" 2>/dev/null || true
     done < <(docker ps -aq --filter "label=com.docker.compose.project=${project}" \
       --filter "label=com.docker.compose.service=${svc}" 2>/dev/null)
@@ -348,6 +349,19 @@ assistant_remove_stale_worker_containers() {
 
   # Always clear recreate-name collisions first (authz Conflict on update).
   assistant_rm_compose_recreate_orphans
+
+  # The task-aware proxy was renamed to router-worker. Remove only the exact
+  # retired container when it belongs to this Compose project; otherwise a
+  # targeted upgrade cannot bind the unchanged localhost health port.
+  local retired_router_id retired_router_project project="${COMPOSE_PROJECT_NAME:-assistant}"
+  retired_router_id="$(docker ps -aq --filter 'name=^/model-router$' 2>/dev/null || true)"
+  if [[ -n "$retired_router_id" ]]; then
+    retired_router_project="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$retired_router_id" 2>/dev/null || true)"
+    if [[ "$retired_router_project" == "$project" ]]; then
+      echo "==> remove retired model-router container (replaced by router-worker)"
+      docker rm -f "$retired_router_id" >/dev/null
+    fi
+  fi
 
   if [[ "${WORKER_SCHEDULE:-inactive}" == "active" ]] || _env_active "${ENABLE_SCHEDULE:-}"; then
     workers+=(schedule)
@@ -390,7 +404,7 @@ assistant_remove_stale_worker_containers() {
 
 assistant_workers_summary() {
   echo "workers SCHEDULE=${WORKER_SCHEDULE} MEDIA_FILE=${WORKER_MEDIA_FILE} SECURITY=${WORKER_SECURITY} NOTIFY=${WORKER_NOTIFY} MESSAGE=${WORKER_MESSAGE} MONITOR=${WORKER_MONITOR}"
-  echo "core TRAEFIK=${ENABLE_TRAEFIK:-1} GATEWAY=${ENABLE_API_GATEWAY:-1} OMNI=${ENABLE_OMNIROUTER:-1} ROUTER=${ENABLE_MODEL_ROUTER:-1} REPLICAS=${HERMES_REPLICAS:-1} QUEUE=${ZALO_INBOUND_QUEUE:-1}"
+  echo "core TRAEFIK=${ENABLE_TRAEFIK:-1} GATEWAY=${ENABLE_API_GATEWAY:-1} OMNI=${ENABLE_OMNIROUTER:-1} ROUTER=${ENABLE_ROUTER_WORKER:-1} REPLICAS=${HERMES_REPLICAS:-1} QUEUE=${ZALO_INBOUND_QUEUE:-1}"
   echo "ASSISTANT_DATA_DIR=${ASSISTANT_DATA_DIR:-/data/assistant}"
   echo "BACKUP_DIR=${BACKUP_DIR:-/data/assistant/backups}"
   echo "TRAEFIK_MODE=${TRAEFIK_MODE:-local} TRAEFIK_ACME=${TRAEFIK_ACME_ENABLED:-0}"
@@ -439,7 +453,7 @@ ENABLE_MONITOR=${ENABLE_MONITOR:-0}
 ENABLE_OMNIROUTER=${ENABLE_OMNIROUTER:-1}
 OMNIROUTER_ENABLE_MEMORY=${OMNIROUTER_ENABLE_MEMORY:-1}
 WEB_SEARCH_MAX_RESULTS=${WEB_SEARCH_MAX_RESULTS:-3}
-ENABLE_MODEL_ROUTER=${ENABLE_MODEL_ROUTER:-1}
+ENABLE_ROUTER_WORKER=${ENABLE_ROUTER_WORKER:-1}
 ENABLE_LOG_ARCHIVE=${ENABLE_LOG_ARCHIVE:-1}
 ZALO_INBOUND_QUEUE=${ZALO_INBOUND_QUEUE:-1}
 SECURITY_SANDBOX=${SECURITY_SANDBOX:-0}
@@ -454,7 +468,7 @@ EOF
 
 assistant_option_key_ok() {
   case "$1" in
-    WORKER_SCHEDULE|WORKER_MEDIA_FILE|WORKER_SECURITY|WORKER_NOTIFY|WORKER_MESSAGE|WORKER_MONITOR|HERMES_REPLICAS|TRAEFIK_MODE|TRAEFIK_ACME_ENABLED|ENABLE_TRAEFIK|ENABLE_API_GATEWAY|ENABLE_SEARXNG|ENABLE_JOBS|OFFICE_FILE_GEN|WEB_SEARCH_MAX_RESULTS|IMAGE_GEN_COMBO|ENABLE_GRAFANA|ENABLE_LOKI|ENABLE_PROMETHEUS|ENABLE_ALLOY|ENABLE_CLOUDDRIVE|ENABLE_OPENBAO|ENABLE_OPENBAO_AGENT|ENABLE_ANTIVIRUS|ENABLE_SECURITY|ENABLE_NOTIFY|ENABLE_SIEM|ENABLE_POLICY|ENABLE_AUTHZ|ENABLE_ZALO|ENABLE_TELEGRAM|ENABLE_OPENVPN|ENABLE_OMNIROUTER|OMNIROUTER_FAILOVER_MODELS|OMNIROUTER_ROTATE_ATTEMPTS|OMNIROUTER_ENABLE_MEMORY|ENABLE_MODEL_ROUTER|ENABLE_LOG_ARCHIVE|ENABLE_SCHEDULE|ENABLE_MEDIA_FILE|ENABLE_MESSAGE|ENABLE_MONITOR|SECURITY_SANDBOX|SECURITY_LLM_JUDGE|ENABLE_LLM_JUDGE|SECURITY_YARA|SECURITY_FAIL_CLOSED|IMAGE_GEN_COMBO|OCR_MODEL|EMBED_MODEL|VALKEY_URL|ZALO_INBOUND_QUEUE)
+    WORKER_SCHEDULE|WORKER_MEDIA_FILE|WORKER_SECURITY|WORKER_NOTIFY|WORKER_MESSAGE|WORKER_MONITOR|HERMES_REPLICAS|TRAEFIK_MODE|TRAEFIK_ACME_ENABLED|ENABLE_TRAEFIK|ENABLE_API_GATEWAY|ENABLE_SEARXNG|ENABLE_JOBS|OFFICE_FILE_GEN|WEB_SEARCH_MAX_RESULTS|IMAGE_GEN_COMBO|ENABLE_GRAFANA|ENABLE_LOKI|ENABLE_PROMETHEUS|ENABLE_ALLOY|ENABLE_CLOUDDRIVE|ENABLE_OPENBAO|ENABLE_OPENBAO_AGENT|ENABLE_ANTIVIRUS|ENABLE_SECURITY|ENABLE_NOTIFY|ENABLE_SIEM|ENABLE_POLICY|ENABLE_AUTHZ|ENABLE_ZALO|ENABLE_TELEGRAM|ENABLE_OPENVPN|ENABLE_OMNIROUTER|OMNIROUTER_FAILOVER_MODELS|OMNIROUTER_ROTATE_ATTEMPTS|OMNIROUTER_ENABLE_MEMORY|ENABLE_ROUTER_WORKER|ENABLE_LOG_ARCHIVE|ENABLE_SCHEDULE|ENABLE_MEDIA_FILE|ENABLE_MESSAGE|ENABLE_MONITOR|SECURITY_SANDBOX|SECURITY_LLM_JUDGE|ENABLE_LLM_JUDGE|SECURITY_YARA|SECURITY_FAIL_CLOSED|IMAGE_GEN_COMBO|OCR_MODEL|EMBED_MODEL|VALKEY_URL|ZALO_INBOUND_QUEUE)
       return 0
       ;;
     *)

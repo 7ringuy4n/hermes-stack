@@ -151,10 +151,9 @@ if ! grep -qE '^GATEWAY_API_KEYS=.+' .env; then
   upsert GATEWAY_API_KEYS "$KEY"
   echo "SET_GATEWAY_API_KEYS=1"
 fi
-if ! grep -qE '^ZALO_API_TOKEN=.+' .env && ! grep -qE '^ADMIN_API_TOKEN=.+' .env; then
+if ! grep -qE '^ZALO_API_TOKEN=.+' .env; then
   TOK=$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')
   upsert ZALO_API_TOKEN "$TOK"
-  upsert ADMIN_API_TOKEN "$TOK"
   echo "SET_ZALO_API_TOKEN=1"
 fi
 # Point Hermes at zalo-api
@@ -196,7 +195,7 @@ cd {REMOTE}
 set -a; . ./.env; set +a || true
 export ASSISTANT_PROFILE="${{ASSISTANT_PROFILE:-high}}"
 bash run.sh down || true
-NAMES="zalo-proxy zalo-api admin-api hermes traefik api-gateway docker-socket-proxy openbao postgres redis qdrant omni-router model-router dispatcher memory session ingest embedding ocr jobs searxng comfyui-cpu security-manager siem authz policy-center notify av-gateway clamav"
+NAMES="zalo-proxy zalo-api admin-api hermes traefik api-gateway docker-socket-proxy openbao postgres redis qdrant omni-router router-worker dispatcher memory session ingest embedding ocr jobs searxng comfyui-cpu security-manager siem authz policy-center notify av-gateway clamav"
 for n in $NAMES; do docker rm -f "$n" 2>/dev/null || true; done
 docker ps -aq --filter name=assistant | xargs -r docker rm -f || true
 docker ps -aq --filter name=hermes | xargs -r docker rm -f || true

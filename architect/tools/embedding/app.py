@@ -15,12 +15,18 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-UPSTREAM = os.environ.get("EMBED_UPSTREAM", "http://model-router:8096/v1").rstrip("/")
+UPSTREAM = os.environ.get("EMBED_UPSTREAM", "http://router-worker:8096/v1").rstrip("/")
 API_KEY = os.environ.get("EMBED_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
 MODEL = os.environ.get("EMBED_MODEL", "openai/text-embedding-3-small")
 LOCAL_MODEL = os.environ.get("EMBED_LOCAL_MODEL", "BAAI/bge-small-en-v1.5")
 BACKEND = (os.environ.get("EMBED_BACKEND") or "auto").strip().lower()
-LOCAL_FALLBACK = (os.environ.get("EMBED_LOCAL_FALLBACK") or "active").strip().lower() == "active"
+LOCAL_FALLBACK = (os.environ.get("EMBED_LOCAL_FALLBACK") or "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+    "active",
+}
 
 app = FastAPI(title="assistant-embedding", version="1.2.0")
 

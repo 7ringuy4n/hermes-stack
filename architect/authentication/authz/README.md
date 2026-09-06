@@ -6,7 +6,7 @@ HTTP service that answers “may this principal act in this workspace / on this 
 
 ## Profile
 
-High (`ENABLE_AUTHZ=active`).
+Optional authz component (`ENABLE_AUTHZ=active`).
 
 ## Main functions
 
@@ -15,7 +15,7 @@ High (`ENABLE_AUTHZ=active`).
 | Authorize | Input: user/thread/workspace → allow/deny |
 | Membership | Users belong to workspaces with roles |
 | Knowledge scope | Which document collections a role may search |
-| Audit hooks | Record denials for SIEM (High) |
+| Audit hooks | Record denials for SIEM when enabled |
 
 ## Ports (typical)
 

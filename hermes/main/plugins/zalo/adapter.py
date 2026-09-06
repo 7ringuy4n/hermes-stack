@@ -30,7 +30,6 @@ import asyncio
 import json
 import logging
 import os
-import socket
 import sys
 import time
 from datetime import datetime, timezone
@@ -48,77 +47,14 @@ for _zalo_dir in (_ZALO_PLUGIN_DIR, _ZALO_SHARED_PLUGIN):
 
 
 def _replica_id() -> str:
-    return (os.getenv("HOSTNAME") or socket.gethostname() or "").strip()
+    return (os.getenv("HOSTNAME") or "hermes").strip()
 
 
-def _try_claim_zalo_owner(shared: str, rid: str) -> bool:
-    """Atomic mkdir lock + owner file (same contract as hermes-replica-entry.sh)."""
-    lockdir = Path(shared) / "zalo_owner.lock"
-    owner_path = Path(shared) / "zalo_owner"
+def _replica_count() -> int:
     try:
-        lockdir.mkdir()
-        owner_path.write_text(rid + "\n", encoding="utf-8")
-        return True
-    except FileExistsError:
-        try:
-            current = owner_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            return False
-        if current == rid:
-            return True
-        # Stale: previous owner hostname no longer resolves on the Docker network.
-        try:
-            socket.getaddrinfo(current, None)
-            return False
-        except OSError:
-            try:
-                if lockdir.exists():
-                    # Best-effort steal (race-safe enough for 2 replicas).
-                    for child in lockdir.iterdir():
-                        child.unlink(missing_ok=True)
-                    lockdir.rmdir()
-                owner_path.unlink(missing_ok=True)
-            except OSError:
-                return False
-            try:
-                lockdir.mkdir()
-                owner_path.write_text(rid + "\n", encoding="utf-8")
-                return True
-            except FileExistsError:
-                return False
-
-
-def _is_zalo_owner_replica() -> bool:
-    """When Hermes is scaled, only the elected owner may attach to the bridge.
-
-    Compose injects ZALO_PLUGIN_URL into every replica; s6 may restore that env
-    after entrypoint clears it. Ownership is recorded by hermes-replica-entry.sh
-    at HERMES_SHARED_DATA/zalo_owner (hostname of the winner).
-    """
-    try:
-        replicas = int(os.getenv("HERMES_REPLICAS") or "1")
+        return max(1, int(os.getenv("HERMES_REPLICAS") or "1"))
     except ValueError:
-        replicas = 1
-    if replicas <= 1:
-        return True
-    shared = (os.getenv("HERMES_SHARED_DATA") or "/opt/data").rstrip("/")
-    rid = _replica_id()
-    if not rid:
-        return False
-    owner_path = Path(shared) / "zalo_owner"
-    try:
-        owner = owner_path.read_text(encoding="utf-8").strip()
-    except OSError:
-        owner = ""
-    if owner == rid:
-        return True
-    if owner:
-        try:
-            socket.getaddrinfo(owner, None)
-            return False
-        except OSError:
-            return _try_claim_zalo_owner(shared, rid)
-    return _try_claim_zalo_owner(shared, rid)
+        return 1
 
 logger = logging.getLogger(__name__)
 
@@ -395,18 +331,12 @@ class ZaloAdapter(BasePlatformAdapter):
 
         extra = getattr(config, "extra", {}) or {}
 
-        # Empty ZALO_PLUGIN_URL means explicitly disabled (scaled non-owner replicas).
-        # Do not fall back to a default bridge URL — that caused dual SSE on Hermes×2.
+        # Every replica keeps the routed bridge URL. A renewable Valkey lease,
+        # acquired in connect(), elects the one active SSE owner.
         if "ZALO_PLUGIN_URL" in os.environ:
             self.bridge_url = (os.environ.get("ZALO_PLUGIN_URL") or "").strip().rstrip("/")
         else:
             self.bridge_url = str(extra.get("bridge_url") or "").strip().rstrip("/")
-        if self.bridge_url and not _is_zalo_owner_replica():
-            logger.info(
-                "Zalo: skipping bridge on non-owner replica host=%s",
-                _replica_id(),
-            )
-            self.bridge_url = ""
         self.bridge_token = os.getenv("ZALO_PLUGIN_TOKEN") or extra.get("bridge_token", "")
         self._bridge = ZaloBridgeTransport(self.bridge_url, self.bridge_token)
 
@@ -464,6 +394,9 @@ class ZaloAdapter(BasePlatformAdapter):
 
         self._session = None  # aiohttp.ClientSession
         self._sse_task: Optional[asyncio.Task] = None
+        self._owner_lease = None
+        self._owner_lease_task: Optional[asyncio.Task] = None
+        self._standby_task: Optional[asyncio.Task] = None
         self._stop = False
         self._last_event_id = 0
         # Silent auto-sethome (mirrors Yuanbao): stop gateway "📬 No home channel" spam.
@@ -474,10 +407,18 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_inbound_locks: Dict[str, asyncio.Lock] = {}
         self._as_inbound_tasks: set[asyncio.Task] = set()
         self._as_queue_tasks: Dict[str, asyncio.Task] = {}
+        self._as_active_turn_tasks: Dict[str, asyncio.Task] = {}
+        self._as_active_turn_message_ids: Dict[str, str] = {}
         self._as_compound_after: Dict[str, int] = {}
         self._as_compound_defer_ack: set[str] = set()
         self._as_compound_thread_type: Dict[str, str] = {}
         self._as_compound_seq_t0: Dict[str, float] = {}
+        # Media delivery state is scoped to one processed turn, not a chat.
+        # A monotonically increasing local token prevents a cancelled late
+        # autosender from muting the next response for the same destination.
+        self._as_turn_tokens: Dict[str, int] = {}
+        self._as_tclock: Dict[str, Dict[str, float]] = {}
+        self._as_job_file_sent: Dict[str, int] = {}
         self._as_workflow_task: Optional[asyncio.Task] = None
         self._as_workflow_inflight: set[asyncio.Task] = set()
         self._as_dest_send_locks: Dict[str, asyncio.Lock] = {}
@@ -564,9 +505,37 @@ class ZaloAdapter(BasePlatformAdapter):
         if not self.bridge_url:
             self._set_fatal_error("config_missing", "ZALO_PLUGIN_URL must be set", retryable=False)
             return False
+        self._stop = False
+        if _replica_count() > 1:
+            from owner_lease import ValkeyLease
+
+            lease = self._owner_lease or ValkeyLease.from_env(_replica_id())
+            try:
+                owned = (
+                    await lease.renew()
+                    if self._owner_lease is not None
+                    else await lease.acquire()
+                )
+            except Exception as exc:
+                owned = False
+                logger.warning(
+                    "Zalo: owner lease unavailable; entering healthy standby — %s",
+                    type(exc).__name__,
+                )
+            if not owned:
+                self._owner_lease = None
+                if self._standby_task is None or self._standby_task.done():
+                    self._standby_task = asyncio.create_task(self._standby_acquire_loop(lease))
+                # A standby is a healthy HA state. Returning promptly prevents
+                # the gateway reconnect watchdog from timing out every five minutes.
+                self._mark_connected()
+                logger.info("Zalo: bridge owner lease held by another replica; healthy standby")
+                return True
+            self._owner_lease = lease
         try:
             import aiohttp  # noqa
         except ImportError:
+            await self._release_owner_lease()
             self._set_fatal_error(
                 "dependency_missing",
                 "aiohttp is required for the Zalo adapter (pip install aiohttp)",
@@ -576,7 +545,6 @@ class ZaloAdapter(BasePlatformAdapter):
 
         import aiohttp
 
-        self._stop = False
         self._session = aiohttp.ClientSession()
 
         # Probe bridge health and login state.
@@ -588,6 +556,7 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception as e:
             logger.error("Zalo: cannot reach bridge at %s — %s", self.bridge_url, e)
             await self._close_session()
+            await self._release_owner_lease()
             self._set_fatal_error("bridge_unreachable", f"Bridge unreachable: {e}", retryable=True)
             return False
 
@@ -599,6 +568,7 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             logger.error("Zalo: %s", msg)
             await self._close_session()
+            await self._release_owner_lease()
             self._set_fatal_error("not_logged_in", msg, retryable=True)
             return False
 
@@ -626,6 +596,8 @@ class ZaloAdapter(BasePlatformAdapter):
         # Start the SSE inbound loop.
         self._sse_task = asyncio.create_task(self._sse_loop())
         self._as_workflow_task = asyncio.create_task(self._as_workflow_worker())
+        if self._owner_lease is not None:
+            self._owner_lease_task = asyncio.create_task(self._owner_lease_loop())
         self._mark_connected()
         logger.info("Zalo: connected to bridge %s (ownId=%s)", self.bridge_url, self._own_id)
         return True
@@ -633,6 +605,19 @@ class ZaloAdapter(BasePlatformAdapter):
     async def disconnect(self) -> None:
         self._stop = True
         self._mark_disconnected()
+        current = asyncio.current_task()
+        if self._standby_task and self._standby_task is not current and not self._standby_task.done():
+            self._standby_task.cancel()
+            try:
+                await self._standby_task
+            except asyncio.CancelledError:
+                pass
+        if self._owner_lease_task and self._owner_lease_task is not current and not self._owner_lease_task.done():
+            self._owner_lease_task.cancel()
+            try:
+                await self._owner_lease_task
+            except asyncio.CancelledError:
+                pass
         if self._sse_task and not self._sse_task.done():
             self._sse_task.cancel()
             try:
@@ -651,6 +636,59 @@ class ZaloAdapter(BasePlatformAdapter):
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
         await self._close_session()
+        await self._release_owner_lease()
+
+    async def _standby_acquire_loop(self, lease) -> None:
+        """Acquire ownership in background without presenting standby as broken."""
+        interval = max(2, min(5, lease.ttl_s // 3))
+        try:
+            while not self._stop:
+                await asyncio.sleep(interval)
+                try:
+                    if not await lease.acquire():
+                        continue
+                    self._owner_lease = lease
+                    logger.info("Zalo: standby acquired the bridge owner lease")
+                    if await self.connect(is_reconnect=True):
+                        return
+                    await self._release_owner_lease()
+                except Exception as exc:
+                    logger.warning(
+                        "Zalo: standby owner acquisition failed — %s",
+                        type(exc).__name__,
+                    )
+        except asyncio.CancelledError:
+            raise
+
+    async def _release_owner_lease(self) -> None:
+        if self._owner_lease is None:
+            return
+        try:
+            await self._owner_lease.release()
+        except Exception as exc:
+            logger.warning("Zalo: owner lease release failed — %s", type(exc).__name__)
+        self._owner_lease = None
+
+    async def _owner_lease_loop(self) -> None:
+        lease = self._owner_lease
+        if lease is None:
+            return
+        interval = max(5, lease.ttl_s // 3)
+        try:
+            while not self._stop:
+                await asyncio.sleep(interval)
+                if await lease.renew():
+                    continue
+                logger.error("Zalo: owner lease lost; closing bridge session")
+                self._mark_disconnected()
+                await self._close_session()
+                return
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Zalo: owner lease renewal failed — %s", type(exc).__name__)
+            self._mark_disconnected()
+            await self._close_session()
 
     async def _close_session(self) -> None:
         if self._session and not self._session.closed:
@@ -920,6 +958,29 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception:
                 logger.exception("Zalo: inbound admin failed thread=%s", tid or "?")
             return
+        # The conversation lock may be held while the first request is still
+        # classifying, staging media, or submitting a workflow. A stop request
+        # must therefore reach the active task before waiting for that lock;
+        # otherwise it can only run after the work it was meant to cancel.
+        active = self._as_active_turn_tasks.get(tid) if tid else None
+        if active is not None and not active.done():
+            try:
+                if await self._as_try_cancel_active_request(
+                    message=data,
+                    text=str((data or {}).get("text") or ""),
+                    thread_id=tid,
+                    thread_type=(
+                        "group"
+                        if str((data or {}).get("threadType") or "user") == "group"
+                        else "user"
+                    ),
+                ):
+                    return
+            except Exception:
+                logger.exception(
+                    "Zalo: pre-lock cancellation check failed thread=%s",
+                    tid or "?",
+                )
         locks = getattr(self, "_as_inbound_locks", None)
         if not isinstance(locks, dict):
             self._as_inbound_locks = {}
@@ -928,14 +989,57 @@ class ZaloAdapter(BasePlatformAdapter):
         if tid and lock is None:
             lock = asyncio.Lock()
             locks[tid] = lock
+        current_task = asyncio.current_task()
+        registered_active = bool(
+            tid
+            and current_task is not None
+            and (
+                self._as_active_turn_tasks.get(tid) is None
+                or self._as_active_turn_tasks[tid].done()
+            )
+        )
+        if registered_active:
+            self._as_active_turn_tasks[tid] = current_task
+            self._as_active_turn_message_ids[tid] = str(
+                (data or {}).get("messageId") or (data or {}).get("msgId") or ""
+            )
         try:
             if lock is not None:
                 async with lock:
                     await self._on_inbound_message(data)
             else:
                 await self._on_inbound_message(data)
+        except asyncio.CancelledError:
+            if registered_active:
+                logger.info(
+                    "Zalo: guarded active request cancelled thread=%s message=%s",
+                    tid,
+                    self._as_active_turn_message_ids.get(tid, ""),
+                )
+                try:
+                    from .queue_history import record as history_record
+                except ImportError:
+                    from queue_history import record as history_record  # type: ignore
+                history_record(
+                    thread_id=tid,
+                    thread_type=(
+                        "group"
+                        if str((data or {}).get("threadType") or "user") == "group"
+                        else "user"
+                    ),
+                    message_id=self._as_active_turn_message_ids.get(tid, ""),
+                    event="cancelled",
+                    role="system",
+                    content="",
+                    task_hint="control",
+                )
+            raise
         except Exception:
             logger.exception("Zalo: inbound message failed thread=%s", tid or "?")
+        finally:
+            if registered_active and self._as_active_turn_tasks.get(tid) is current_task:
+                self._as_active_turn_tasks.pop(tid, None)
+                self._as_active_turn_message_ids.pop(tid, None)
 
     async def _on_session_dead(self, data: Dict[str, Any]) -> None:
         """Zalo session ended (logout / kicked / cookie expired)."""
@@ -1128,11 +1232,7 @@ class ZaloAdapter(BasePlatformAdapter):
             or os.getenv("ADMIN_API_URL")  # legacy alias
             or "http://zalo-api:8100"
         ).rstrip("/")
-        token = (
-            os.getenv("ZALO_API_TOKEN")
-            or os.getenv("ADMIN_API_TOKEN")  # legacy alias
-            or ""
-        ).strip()
+        token = (os.getenv("ZALO_API_TOKEN") or "").strip()
         headers = {"Content-Type": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -1210,6 +1310,13 @@ class ZaloAdapter(BasePlatformAdapter):
     def _as_gate_store(self):  # ASSISTANT_RATE_LIMIT_v4
         """Valkey gate store (rate + answering). None = fail-open."""
         st = getattr(self, "_as_gate_store_obj", False)
+        if st is None:
+            import time
+
+            failed_at = float(getattr(self, "_as_gate_store_failed_at", 0.0) or 0.0)
+            if time.monotonic() - failed_at < 5.0:
+                return None
+            st = False
         if st is not False:
             return st
         try:
@@ -1220,8 +1327,12 @@ class ZaloAdapter(BasePlatformAdapter):
             mod = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(mod)
             self._as_gate_store_obj = mod.GateStore.from_env()
-        except Exception:
+        except Exception as exc:
+            import time
+
+            logger.warning("Zalo: Valkey gate unavailable; fail-open retry scheduled — %s", type(exc).__name__)
             self._as_gate_store_obj = None
+            self._as_gate_store_failed_at = time.monotonic()
         return self._as_gate_store_obj
 
     def _zalo_rate_limit_cfg(self):  # ASSISTANT_RATE_LIMIT_v4
@@ -1889,6 +2000,8 @@ class ZaloAdapter(BasePlatformAdapter):
                     pass
                 return True
             image_delivered = False
+            image_claimed = False
+            img_path = ""
             try:
                 img_path = str((shortcut or {}).get("file") or (shortcut or {}).get("path") or "")
                 if img_path:
@@ -1896,17 +2009,30 @@ class ZaloAdapter(BasePlatformAdapter):
                     if p.is_file() and p.suffix.lower() in {
                         ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp",
                     }:
-                        meta = {"as_skip_autosend": True, "as_claimed": True}
-                        res = await self.send_image_file(
-                            str(thread_id),
-                            img_path,
-                            caption="",
-                            metadata=meta,
-                        )
-                        image_delivered = bool(
-                            res and getattr(res, "success", None) is not False
-                        )
+                        image_claimed = self._as_autosend_file_claim(img_path, str(thread_id))
+                        if image_claimed:
+                            turn_token = self._as_turn_token(str(thread_id))
+                            meta = {"as_skip_autosend": True, "as_claimed": True}
+                            res = await self.send_image_file(
+                                str(thread_id),
+                                img_path,
+                                caption="",
+                                metadata=meta,
+                            )
+                            image_delivered = bool(
+                                res and getattr(res, "success", None) is not False
+                            )
+                            if image_delivered:
+                                self._as_mark_job_file_sent(
+                                    str(thread_id), turn_token=turn_token
+                                )
+                            else:
+                                self._as_autosend_file_unclaim(img_path)
+                        else:
+                            image_delivered = True
             except Exception as e:
+                if image_claimed and img_path:
+                    self._as_autosend_file_unclaim(img_path)
                 logger.warning(
                     "Zalo: shortcut direct image send failed: %s",
                     type(e).__name__,
@@ -2007,7 +2133,7 @@ class ZaloAdapter(BasePlatformAdapter):
     async def _as_ocr_vision_describe(
         self, local_path: str, *, prompt: str, file_name: str = ""
     ) -> str:
-        """Scene describe via model-router combo vision-ocr."""
+        """Scene describe via router-worker combo vision-ocr."""
         import asyncio
 
         try:
@@ -2122,6 +2248,10 @@ class ZaloAdapter(BasePlatformAdapter):
                 preview=(raw or "")[:120],
                 noise=bool(raw and not reply),
             )
+            # A late file sender from the preceding turn may finish after the
+            # new inbound reset and mark this thread as media-delivered again.
+            # This host-owned response belongs to the current image-read turn.
+            self._as_clear_job_file_sent(str(thread_id))
             try:
                 await self.send(
                     chat_id=str(thread_id),
@@ -2144,6 +2274,9 @@ class ZaloAdapter(BasePlatformAdapter):
             thread_id=thread_id,
             chars=len(reply),
         )
+        # Do not let a racing late-autosend marker from the previous turn mute
+        # the current user-visible analysis response.
+        self._as_clear_job_file_sent(str(thread_id))
         try:
             await self.send(
                 chat_id=str(thread_id),
@@ -2177,6 +2310,7 @@ class ZaloAdapter(BasePlatformAdapter):
         _schedule_fanout_child: bool = False,
         received_at=None,
         has_image_attachment: bool = False,
+        media_urls: list | None = None,
     ) -> bool:
         try:
             from .workflow_client import create_schedule, create_workflow, workflow_enabled
@@ -2193,6 +2327,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
                 plan_is_image_analyze_chat,
+                plan_is_cancel_task,
+                plan_is_note,
                 plan_is_search_then_image_turn,
                 plan_media_shortcut_gate,
                 apply_image_analyze_plan_coercion,
@@ -2216,6 +2352,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
                 plan_is_image_analyze_chat,
+                plan_is_cancel_task,
+                plan_is_note,
                 plan_is_search_then_image_turn,
                 plan_media_shortcut_gate,
                 apply_image_analyze_plan_coercion,
@@ -2285,6 +2423,77 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
             except Exception:
                 logger.warning("[zalo] host direct reply failed thread=%s", thread_id)
+            return True
+        if plan_is_cancel_task(plan) and not schedule_fire:
+            body = self._as_ux_line(
+                "ZALO_REQUEST_NOT_ACTIVE_MSG",
+                ("control", "not_active"),
+                "There is no active request to stop in this conversation.",
+                user_text=current,
+            )
+            try:
+                await self._as_gate_announce(thread_id, thread_type, body)
+            except Exception:
+                logger.warning("[zalo] inactive cancellation reply failed thread=%s", thread_id)
+            return True
+        if plan_is_note(plan) and not schedule_fire:
+            try:
+                from .notes_client import execute_note_plan_async
+            except ImportError:
+                from notes_client import execute_note_plan_async  # type: ignore
+            result = await execute_note_plan_async(
+                plan,
+                thread_id=str(thread_id),
+                thread_type=str(thread_type),
+                sender_id=str(sender_id),
+            )
+            action = str(plan.get("skill_action") or "").strip().lower()
+            if result.get("success") and action == "lookup":
+                body = str(result.get("text") or "").strip()
+                if not body:
+                    body = self._as_ux_line(
+                        "ZALO_NOTES_EMPTY_MSG",
+                        ("notes", "empty"),
+                        "No matching saved notes were found.",
+                        user_text=current,
+                    )
+            elif result.get("success"):
+                count = int(result.get("count") or 1)
+                body = self._as_ux_line(
+                    "ZALO_NOTES_SAVED_MSG",
+                    ("notes", "saved"),
+                    f"The note operation completed ({count} item(s)).",
+                    user_text=current,
+                )
+            else:
+                error = str(result.get("error") or "failed")
+                candidates = str(result.get("text") or "").strip()
+                if error == "ambiguous" and candidates:
+                    body = self._as_ux_line(
+                        "ZALO_NOTES_AMBIGUOUS_MSG",
+                        ("notes", "ambiguous"),
+                        "More than one note matches. Reply with the note id to choose one:\n"
+                        + candidates,
+                        user_text=current,
+                    )
+                elif error == "not_found":
+                    body = self._as_ux_line(
+                        "ZALO_NOTES_EMPTY_MSG",
+                        ("notes", "empty"),
+                        "No matching saved notes were found.",
+                        user_text=current,
+                    )
+                else:
+                    body = self._as_ux_line(
+                        "ZALO_NOTES_FAILED_MSG",
+                        ("notes", "failed"),
+                        "The note operation could not be completed. Please try again.",
+                        user_text=current,
+                    )
+            try:
+                await self._as_gate_announce(thread_id, thread_type, body)
+            except Exception:
+                logger.warning("[zalo] notes reply failed thread=%s", thread_id)
             return True
         if plan_is_immediate_deliver(plan) and not schedule_fire:
             try:
@@ -2757,6 +2966,17 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception:
                 pass
             return True
+        if has_image_attachment and plan_media_shortcut_gate(plan) == "image_edit":
+            return await self._as_run_host_media_shortcut(
+                user_text=current,
+                thread_id=thread_id,
+                thread_type=thread_type,
+                bare_text=current,
+                plan=plan,
+                media_urls=list(media_urls or []),
+                has_image_attachment=True,
+                schedule_fire=schedule_fire,
+            )
         if has_image_attachment:
             ins_parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
             explicit_office = bool(
@@ -2775,6 +2995,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_type=thread_type,
                 bare_text=current,
                 plan=plan,
+                media_urls=list(media_urls or []),
                 has_image_attachment=has_image_attachment,
                 schedule_fire=schedule_fire,
             )
@@ -2889,6 +3110,7 @@ class ZaloAdapter(BasePlatformAdapter):
         sender_id = str(ctx.get("sender_id") or "")
         sender_name = str(ctx.get("sender_name") or tid)
         iso = isolate_session_chat_id(tid, jid)
+        self._as_begin_turn(iso)
         zalo_tt = "group" if tt == "group" or chat_type == "group" else "user"
         try:
             self._thread_types[iso] = zalo_tt
@@ -2912,6 +3134,11 @@ class ZaloAdapter(BasePlatformAdapter):
             timestamp=datetime.now(),
         )
         self._as_compound_begin(iso)
+        try:
+            from .session_memory import load_messages
+        except ImportError:
+            from session_memory import load_messages  # type: ignore
+        messages_before = load_messages(tid, zalo_tt)
         stop = asyncio.Event()
         watch = asyncio.create_task(self._as_watch_job_files(iso, zalo_tt, stop))
         try:
@@ -2935,7 +3162,51 @@ class ZaloAdapter(BasePlatformAdapter):
                 iso, pulse=_pulse, arm_first=True
             )
             await self._as_autosend_late_files(iso, zalo_tt)
-            complete_job(jid, {"ok": True, "idle": idle, "isolated": True})
+            delivery_event = self._as_part_delivered.get(iso)
+            delivered = bool(delivery_event is not None and delivery_event.is_set())
+            recovered = False
+            if not delivered and not self._as_job_already_sent_file(iso):
+                messages_after = load_messages(tid, zalo_tt)
+                if messages_after != messages_before:
+                    final_text = next(
+                        (
+                            str(row.get("content") or "").strip()
+                            for row in reversed(messages_after)
+                            if str(row.get("role") or "").lower() == "assistant"
+                            and str(row.get("content") or "").strip()
+                        ),
+                        "",
+                    )
+                    if final_text:
+                        logger.warning(
+                            "Zalo: workflow final delivery missing; retry direct job=%s thread=%s",
+                            jid,
+                            tid,
+                        )
+                        retry_result = await self.send(
+                            tid,
+                            final_text,
+                            metadata={
+                                "as_skip_autosend": True,
+                                "skip_outbound_filter": True,
+                                "as_skip_session_memory": True,
+                            },
+                        )
+                        recovered = bool(
+                            retry_result
+                            and getattr(retry_result, "success", None) is not False
+                        )
+                        delivered = recovered
+            complete_job(
+                jid,
+                {
+                    "ok": delivered,
+                    "idle": idle,
+                    "isolated": True,
+                    "delivered": delivered,
+                    "delivery_recovered": recovered,
+                },
+            )
             logger.info(f"[zalo] workflow job done {jid[:16]} idle={idle}")
         except Exception as e:
             logger.exception("Zalo: workflow job failed")
@@ -3169,15 +3440,58 @@ class ZaloAdapter(BasePlatformAdapter):
             caps = self._as_file_ceiling
         caps[tid] = float(when if when is not None else __import__("time").time())
 
-    def _as_mark_job_file_sent(self, thread_id: str) -> None:
+    def _as_begin_turn(self, thread_id: str, when=None) -> int:
+        """Start a destination turn and return its local isolation token."""
+        tid = str(thread_id or "")
+        if not tid:
+            return 0
+        tokens = getattr(self, "_as_turn_tokens", None)
+        if not isinstance(tokens, dict):
+            self._as_turn_tokens = {}
+            tokens = self._as_turn_tokens
+        clocks = getattr(self, "_as_tclock", None)
+        if not isinstance(clocks, dict):
+            self._as_tclock = {}
+            clocks = self._as_tclock
+        sent = getattr(self, "_as_job_file_sent", None)
+        if not isinstance(sent, dict):
+            self._as_job_file_sent = {}
+            sent = self._as_job_file_sent
+        try:
+            from .autosend import begin_turn_state
+        except ImportError:
+            from autosend import begin_turn_state  # type: ignore
+        return begin_turn_state(
+            tokens,
+            clocks,
+            sent,
+            tid,
+            float(when if when is not None else __import__("time").time()),
+        )
+
+    def _as_turn_token(self, thread_id: str) -> int:
+        tokens = getattr(self, "_as_turn_tokens", None)
+        if not isinstance(tokens, dict):
+            return 0
+        return int(tokens.get(str(thread_id or "")) or 0)
+
+    def _as_mark_job_file_sent(self, thread_id: str, turn_token: int | None = None) -> None:
         tid = str(thread_id or "")
         if not tid:
             return
         seen = getattr(self, "_as_job_file_sent", None)
-        if not isinstance(seen, set):
-            self._as_job_file_sent = set()
+        if not isinstance(seen, dict):
+            self._as_job_file_sent = {}
             seen = self._as_job_file_sent
-        seen.add(tid)
+        try:
+            from .autosend import mark_media_sent
+        except ImportError:
+            from autosend import mark_media_sent  # type: ignore
+        mark_media_sent(
+            seen,
+            tid,
+            int(turn_token if turn_token is not None else self._as_turn_token(tid)),
+        )
 
     def _as_clear_job_file_sent(self, thread_id: str) -> None:
         """Clear same-turn media-result mute so later schedule/chat text can send."""
@@ -3185,12 +3499,20 @@ class ZaloAdapter(BasePlatformAdapter):
         if not tid:
             return
         seen = getattr(self, "_as_job_file_sent", None)
-        if isinstance(seen, set):
-            seen.discard(tid)
+        if isinstance(seen, dict):
+            seen.pop(tid, None)
 
     def _as_job_already_sent_file(self, thread_id: str) -> bool:
         seen = getattr(self, "_as_job_file_sent", None)
-        return isinstance(seen, set) and str(thread_id or "") in seen
+        tid = str(thread_id or "")
+        current = self._as_turn_token(tid)
+        if not isinstance(seen, dict):
+            return False
+        try:
+            from .autosend import media_sent_in_turn
+        except ImportError:
+            from autosend import media_sent_in_turn  # type: ignore
+        return media_sent_in_turn(seen, tid, current)
 
     def _as_remux_zalo_video(self, path: str) -> str:
         """Re-encode mp4 to baseline H.264 so Zalo send-attachment accepts it."""
@@ -3375,6 +3697,23 @@ class ZaloAdapter(BasePlatformAdapter):
                 queue_max,
                 queue_ttl_s,
             )
+        if has_image_attachment and not isinstance(plan, dict):
+            try:
+                from .classify_client import classify_text_async, strip_prior_for_classify
+            except ImportError:
+                from classify_client import classify_text_async, strip_prior_for_classify  # type: ignore
+            classify_text = strip_prior_for_classify(text) or str(text or "").strip()
+            plan = await classify_text_async(
+                classify_text,
+                thread=("group" if str(thread_type or "").lower() == "group" else "dm"),
+                attachments="image",
+            )
+            logger.info(
+                "Zalo: image route plan skill=%s action=%s output=%s",
+                plan.get("skill"),
+                plan.get("skill_action"),
+                plan.get("output_type"),
+            )
         store = self._as_gate_store()
         if store is None:
             if await self._as_try_image_analyze_vision_reply(
@@ -3383,6 +3722,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_type=thread_type,
                 media_urls=media_urls,
                 has_image_attachment=has_image_attachment,
+                plan=plan,
             ):
                 return
             if await self._as_try_workflow_submit(
@@ -3395,6 +3735,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan=plan,
                 schedule_fire=schedule_fire,
                 has_image_attachment=has_image_attachment,
+                media_urls=media_urls,
             ):
                 return
             await self._as_dispatch_event(event, text)
@@ -3412,6 +3753,7 @@ class ZaloAdapter(BasePlatformAdapter):
             media_types=media_types,
             message_type=message_type,
             schedule_fire=schedule_fire,
+            plan=plan,
         )
         mid = str(message_id or "")
         try:
@@ -3421,6 +3763,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_type=thread_type,
                 media_urls=media_urls,
                 has_image_attachment=has_image_attachment,
+                plan=plan,
             ):
                 return
             if await self._as_try_workflow_submit(
@@ -3433,6 +3776,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan=plan,
                 schedule_fire=schedule_fire,
                 has_image_attachment=has_image_attachment,
+                media_urls=media_urls,
             ):
                 return
             # Schedule fires must not wait behind stuck answering / FIFO queue —
@@ -3600,10 +3944,83 @@ class ZaloAdapter(BasePlatformAdapter):
             if leftover > 0 and not self._stop:
                 self._as_queue_kick(tid)
 
+    async def _as_try_cancel_active_request(
+        self,
+        *,
+        message: dict[str, Any],
+        text: str,
+        thread_id: str,
+        thread_type: str,
+    ) -> bool:
+        """Classify and cancel the active local turn before normal queue admission."""
+        active = self._as_active_turn_tasks.get(str(thread_id))
+        if active is None or active.done() or not str(text or "").strip():
+            return False
+        if active is asyncio.current_task():
+            return False
+        try:
+            from .classify_client import classify_text_async, plan_is_cancel_task
+        except ImportError:
+            from classify_client import classify_text_async, plan_is_cancel_task  # type: ignore
+        quoted = message.get("quote") if isinstance(message.get("quote"), dict) else {}
+        if not quoted and isinstance(message.get("quoted"), dict):
+            quoted = message.get("quoted")
+        quote_context = json.dumps(
+            {
+                "message_id": quoted.get("msgId") or quoted.get("cliMsgId"),
+                "content": str(quoted.get("content") or "")[:500],
+            },
+            ensure_ascii=False,
+        )
+        try:
+            plan = await asyncio.wait_for(
+                classify_text_async(
+                    str(text),
+                    thread="group" if str(thread_type) == "group" else "dm",
+                    quoted=quote_context,
+                ),
+                timeout=max(
+                    3.0,
+                    min(self._as_env_float("ZALO_CANCEL_CLASSIFY_TIMEOUT_S", 15.0, 3.0, 30.0), 30.0),
+                ),
+            )
+        except (asyncio.TimeoutError, OSError):
+            logger.warning("Zalo: active-request control classify unavailable thread=%s", thread_id)
+            return False
+        if not plan_is_cancel_task(plan):
+            return False
+        if self._as_active_turn_tasks.get(str(thread_id)) is not active or active.done():
+            return False
+        message_id = self._as_active_turn_message_ids.get(str(thread_id), "")
+        active.cancel()
+        self._as_cancel_late_autosend(str(thread_id))
+        try:
+            from .queue_history import record as history_record
+        except ImportError:
+            from queue_history import record as history_record  # type: ignore
+        history_record(
+            thread_id=str(thread_id),
+            thread_type=str(thread_type),
+            message_id=message_id,
+            event="cancel_requested",
+            role="system",
+            content=str(text),
+            task_hint="control",
+        )
+        body = self._as_ux_line(
+            "ZALO_REQUEST_CANCELLED_MSG",
+            ("control", "cancelled"),
+            "The active request was stopped.",
+            user_text=str(text),
+        )
+        await self._as_gate_announce(str(thread_id), str(thread_type), body)
+        return True
+
     async def _as_run_queued_part(self, item: dict) -> None:
         tid = str(item.get("thread_id") or "")
         if not tid:
             return
+        self._as_begin_turn(tid)
         try:
             from .queue_history import record as history_record
         except ImportError:
@@ -3683,6 +4100,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         await self._as_gate_announce(tid, thread_type, block_msg)
                     return
                 bare_q = str(event.text or "").strip()
+                queued_plan = item.get("plan") if isinstance(item.get("plan"), dict) else None
                 has_image = self._as_has_image_attachment(
                     list(event.media_urls or []),
                     media_types=list(event.media_types or []),
@@ -3694,6 +4112,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         thread_id=tid,
                         thread_type=thread_type,
                         bare_text=bare_q,
+                        plan=queued_plan,
                         media_urls=list(event.media_urls or []),
                         has_image_attachment=has_image,
                     ):
@@ -3705,14 +4124,18 @@ class ZaloAdapter(BasePlatformAdapter):
                         thread_type=thread_type,
                         media_urls=list(event.media_urls or []),
                         has_image_attachment=True,
+                        plan=queued_plan,
                     ):
                         return
                 await self.handle_message(event)
                 await self._as_autosend_late_files(tid, thread_type)
                 await self._as_compound_wait_part(tid)
 
+            turn_task = asyncio.create_task(_run_turn())
+            self._as_active_turn_tasks[tid] = turn_task
+            self._as_active_turn_message_ids[tid] = str(event.message_id or "")
             try:
-                await asyncio.wait_for(_run_turn(), timeout=turn_timeout)
+                await asyncio.wait_for(turn_task, timeout=turn_timeout)
             except asyncio.TimeoutError:
                 logger.warning(
                     "Zalo: queue turn timeout thread=%s after %.0fs — release for next message",
@@ -3733,9 +4156,28 @@ class ZaloAdapter(BasePlatformAdapter):
                     await self._as_gate_announce(tid, thread_type, msg)
                 except Exception:
                     pass
+            except asyncio.CancelledError:
+                logger.info("Zalo: active request cancelled thread=%s message=%s", tid, event.message_id)
+                try:
+                    self._as_compound_mark_delivered(tid)
+                except Exception:
+                    pass
+                history_record(
+                    thread_id=tid,
+                    thread_type=thread_type,
+                    message_id=str(event.message_id or ""),
+                    event="cancelled",
+                    role="system",
+                    content="",
+                    task_hint="control",
+                )
         except Exception:
             logger.exception("Zalo: queued part failed thread=%s", tid)
         finally:
+            current = self._as_active_turn_tasks.get(tid)
+            if current is locals().get("turn_task"):
+                self._as_active_turn_tasks.pop(tid, None)
+                self._as_active_turn_message_ids.pop(tid, None)
             # Always release answering + hold so the next FIFO item can run.
             self._as_compound_end(tid)
             self._as_compound_after.pop(tid, None)
@@ -4556,6 +4998,19 @@ class ZaloAdapter(BasePlatformAdapter):
         ):
             return
 
+        # Control-plane cancellation bypasses rate limits and FIFO admission.
+        if not schedule_fire and await self._as_try_cancel_active_request(
+            message=m,
+            text=str(text or ""),
+            thread_id=str(thread_id),
+            thread_type=str(thread_type),
+        ):
+            return
+
+        queue_on = self._as_inbound_queue_enabled()
+        if not queue_on:
+            self._as_begin_turn(str(thread_id))
+
         # Host scenic/media shortcuts on bare text — before inflight drop and attachment pipeline.
         bare_early = (text or "").strip()
         if (
@@ -4576,7 +5031,6 @@ class ZaloAdapter(BasePlatformAdapter):
 
         # ASSISTANT_RATE_LIMIT_v4 — Valkey 1 / 10s; queue overflow instead of drop when enabled
         rate_over, rate_notify = self._zalo_rate_check(sender_id, thread_id)
-        queue_on = self._as_inbound_queue_enabled()
         if (not schedule_fire) and (not queue_on) and rate_over:
             logger.info(
                 "Zalo: rate-limit drop sender=%s thread=%s type=%s via valkey",
@@ -5764,6 +6218,7 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             return content
         tid = cid or dest_id
+        turn_token = self._as_turn_token(tid)
         if dest_turn.get("thread_type") in {"user", "group"}:
             meta = {**meta, "thread_type": dest_turn["thread_type"]}
         clock = (getattr(self, "_as_tclock", {}) or {}).get(tid) or {}
@@ -5931,7 +6386,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     continue
                 if ok:
                     sent += 1
-                    self._as_mark_job_file_sent(tid)
+                    self._as_mark_job_file_sent(tid, turn_token=turn_token)
                     flow = getattr(self, "_as_flow", None)
                     if callable(flow):
                         flow("zalo_send_file", thread_id=tid, file=dest_send.name, path=str(dest_send)[:160])
@@ -7142,20 +7597,21 @@ class ZaloAdapter(BasePlatformAdapter):
         if not (content or "").strip():
             return SendResult(success=True, message_id=None)
         # Persist turn to Valkey session SoT (not replica sessions.json).
-        try:
-            from .session_memory import append_turn
-            from .turn_wait import real_thread_id
-        except ImportError:
-            from session_memory import append_turn  # type: ignore
-            from turn_wait import real_thread_id  # type: ignore
-        try:
-            tid = real_thread_id(str(chat_id or ""))
-            last_map = getattr(self, "_as_last_user_text", None) or {}
-            user_prev = str(last_map.get(tid) or last_map.get(str(chat_id)) or "")
-            tt = "group" if str(self._thread_types.get(tid) or "").lower() in {"group", "g"} else "user"
-            append_turn(tid, tt, user_prev, str(content or ""))
-        except Exception:
-            pass
+        if not meta.get("as_skip_session_memory"):
+            try:
+                from .session_memory import append_turn
+                from .turn_wait import real_thread_id
+            except ImportError:
+                from session_memory import append_turn  # type: ignore
+                from turn_wait import real_thread_id  # type: ignore
+            try:
+                tid = real_thread_id(str(chat_id or ""))
+                last_map = getattr(self, "_as_last_user_text", None) or {}
+                user_prev = str(last_map.get(tid) or last_map.get(str(chat_id)) or "")
+                tt = "group" if str(self._thread_types.get(tid) or "").lower() in {"group", "g"} else "user"
+                append_turn(tid, tt, user_prev, str(content or ""))
+            except Exception:
+                pass
         if str(chat_id) not in self._as_hold_inflight:
             self._as_inflight_done(chat_id, metadata)  # ASSISTANT_INFLIGHT_v5
         dest_id = self._as_zalo_api_chat_id(chat_id)
@@ -7753,15 +8209,11 @@ def check_requirements() -> bool:
         import aiohttp  # noqa
     except ImportError:
         return False
-    if not _is_zalo_owner_replica():
-        return False
     return bool((os.getenv("ZALO_PLUGIN_URL") or "").strip())
 
 
 def validate_config(config) -> bool:
     extra = getattr(config, "extra", {}) or {}
-    if not _is_zalo_owner_replica():
-        return False
     if "ZALO_PLUGIN_URL" in os.environ:
         return bool((os.environ.get("ZALO_PLUGIN_URL") or "").strip())
     return bool(extra.get("bridge_url"))

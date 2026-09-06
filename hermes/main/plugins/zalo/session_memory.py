@@ -79,7 +79,7 @@ def hydrate_user_text(thread_id: str, thread_type: str, text: str, *, max_msgs: 
     """Prepend compact prior turns from Valkey so a new replica still has context.
 
     Intended for the Hermes agent turn only. Classify must strip this wrapper
-    (see model-router ``strip_prior_for_classify``) so schedule/intent detection
+    (see router-worker ``strip_prior_for_classify``) so schedule/intent detection
     is not polluted by older PDF/image asks.
     """
     cur = str(text or "").strip()

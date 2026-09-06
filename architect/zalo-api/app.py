@@ -1,6 +1,6 @@
 """Zalo / lab admin API — approve/remove threads & users without SSH.
 
-Protect with ZALO_API_TOKEN (alias ADMIN_API_TOKEN; VPN Traefik or Bearer). Never returns stack traces.
+Protect with ZALO_API_TOKEN (VPN Traefik or Bearer). Never returns stack traces.
 In-Zalo commands: POST /v1/zalo/chat (only ZALO_ADMIN_USERS).
 """
 from __future__ import annotations
@@ -48,7 +48,7 @@ from schedule_crud import (
     visible_jobs as visible_schedule_jobs,
 )
 
-TOKEN = (os.environ.get("ZALO_API_TOKEN") or os.environ.get("ADMIN_API_TOKEN") or "").strip()
+TOKEN = (os.environ.get("ZALO_API_TOKEN") or "").strip()
 ZALO_BRIDGE = os.environ.get("ZALO_BRIDGE_URL", "http://host.docker.internal:8787").rstrip("/")
 ZALO_TOKEN = os.environ.get("ZALO_PLUGIN_TOKEN", "")
 AUTHZ_URL = os.environ.get("AUTHZ_URL", "http://authz:8097").rstrip("/")

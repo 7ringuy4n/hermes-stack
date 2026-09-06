@@ -19,7 +19,7 @@ Inject malicious instructions into:
 - search result;
 - Qdrant knowledge;
 - memory;
-- model-router response;
+- router-worker response;
 - schedule description.
 
 Examples:

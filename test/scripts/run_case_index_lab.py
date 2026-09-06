@@ -44,7 +44,9 @@ UNITS: list[tuple[str, str]] = [
     ("zalo_bridge_transport_unit.py", "zalo-transport"),
     ("openbao_common_unit.py", "43"),
     ("media_refuse_unit.py", "refuse"),
-    ("model_router_chat_norm.py", "router"),
+    ("router_worker_chat_norm.py", "router"),
+    ("router_worker_identity_unit.py", "21"),
+    ("zalo_watch_timer_unit.py", "watcher"),
 ]
 
 VPS: list[tuple[str, str]] = [

@@ -37,9 +37,7 @@ def _api_base() -> str:
 
 
 def _headers() -> dict[str, str]:
-    token = (
-        os.getenv("ZALO_API_TOKEN") or os.getenv("ADMIN_API_TOKEN") or ""
-    ).strip()
+    token = (os.getenv("ZALO_API_TOKEN") or "").strip()
     out = {"Content-Type": "application/json"}
     if token:
         out["Authorization"] = f"Bearer {token}"

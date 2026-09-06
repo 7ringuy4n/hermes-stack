@@ -44,7 +44,10 @@ def load_env(path):
     return out
 
 env = load_env('/opt/assistant/.env')
+token_path = Path(os.environ.get('OPENBAO_TOKEN_FILE') or '/data/assistant/openbao/root-token')
 token = env.get('OPENBAO_DEV_ROOT_TOKEN') or ''
+if not token and token_path.is_file():
+    token = token_path.read_text(encoding='utf-8', errors='replace').strip()
 addr = (env.get('OPENBAO_ADDR') or 'http://127.0.0.1:8200').rstrip('/')
 req = urllib.request.Request(
     addr + '/v1/secret/data/assistant/api-keys',

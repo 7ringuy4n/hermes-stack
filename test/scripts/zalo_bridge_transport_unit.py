@@ -22,6 +22,9 @@ def main() -> int:
         "x-bridge-token": "token",
     }
     assert transport.headers(json_content=False) == {"x-bridge-token": "token"}
+    assert transport.request_timeout_seconds("/send") == 15
+    assert transport.request_timeout_seconds("/send-attachment") == 120
+    assert transport.request_timeout_seconds("/react") == 60
     assert asyncio.run(MOD.ZaloBridgeTransport("", "").post("/send", {})) == {
         "error": "no bridge"
     }

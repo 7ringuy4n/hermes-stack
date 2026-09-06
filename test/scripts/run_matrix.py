@@ -133,14 +133,14 @@ vals = {{
   'TRAEFIK_ACME_ENABLED': '0',
   'TRAEFIK_ACME_EMAIL': '',
   'TRAEFIK_ACME_DOMAIN': '',
-  'ENABLE_MODEL_ROUTER': '1',
+  'ENABLE_ROUTER_WORKER': '1',
   'ENABLE_OMNIROUTER': '0',
   'ENABLE_LOG_ARCHIVE': '1',
   'LOG_RETENTION_DAYS': '30',
   'ENABLE_OPENVPN': '0',
   'ENABLE_ANTIVIRUS': '0',
   'IMAGE_BACKENDS': '',
-  'HERMES_OPENAI_BASE_URL': 'http://model-router:8096/v1',
+  'HERMES_OPENAI_BASE_URL': 'http://router-worker:8096/v1',
 }}
 if '{profile}' in ('medium', 'high'):
     vals.update({{
@@ -195,7 +195,7 @@ sleep 5
 curl -sf -m 8 http://127.0.0.1:8090/health && echo DISP_RECOVER_OK || echo DISP_RECOVER_FAIL
 echo '=== logs ==='
 ERRN=0
-for n in assistant-hermes-1 assistant-hermes-2 hermes dispatcher model-router; do
+for n in assistant-hermes-1 assistant-hermes-2 hermes dispatcher router-worker; do
   c=$(docker logs --since 3m "$n" 2>/dev/null | grep -cE 'Traceback|ERROR' || true)
   ERRN=$((ERRN+c))
 done
@@ -214,7 +214,7 @@ docker ps --filter name=traefik --format 'traefik={{.Status}}'
         timeout=180,
     )
     res = {
-        "mr": "MR_FAIL" not in out and "model-router" in out,
+        "mr": "MR_FAIL" not in out and "router-worker" in out,
         "gw": "GW_FAIL" not in out and "api-gateway" in out,
         "disp": "DISP_FAIL" not in out,
         "mem": "MEM_FAIL" not in out,
@@ -227,7 +227,7 @@ docker ps --filter name=traefik --format 'traefik={{.Status}}'
     if m:
         res["log_err"] = int(m.group(1))
     for k, ok in [
-        ("model_router", res["mr"]),
+        ("router_worker", res["mr"]),
         ("gateway", res["gw"]),
         ("dispatcher", res["disp"]),
         ("memory", res["mem"]),

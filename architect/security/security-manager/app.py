@@ -46,7 +46,7 @@ FAIL_CLOSED = _env_active("SECURITY_FAIL_CLOSED")
 EMBED_UPSTREAM = (
     os.environ.get("LLM_JUDGE_URL")
     or os.environ.get("OPENAI_BASE_URL")
-    or "http://model-router:8096/v1"
+    or "http://router-worker:8096/v1"
 ).rstrip("/")
 API_KEY = (
     os.environ.get("LLM_JUDGE_KEY")

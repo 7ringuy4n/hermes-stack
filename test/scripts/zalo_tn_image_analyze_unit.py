@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Unit: Zalo Tn image-analyze path — stage, resolve, classify, vision body (no VPS).
-
-Simulates user Tn (233767886566872937) sending a captioned photo via the Zalo plugin.
-"""
+"""Unit: Zalo image-analyze path — stage, resolve, classify, vision body (no VPS)."""
 from __future__ import annotations
 
 import base64
@@ -32,7 +29,7 @@ from classify_client import (  # noqa: E402
 )
 from vision_ocr import resolve_media_path  # noqa: E402
 
-TN_THREAD = "233767886566872937"
+TN_THREAD = "test-thread"
 CAPTION = "hình gì đây"
 
 # Valid 1x1 JPEG (works for path/b64 pipeline tests).
@@ -162,11 +159,23 @@ def test_tn_vision_describe_mock() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_current_image_reply_clears_prior_media_mute() -> None:
+    source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(
+        encoding="utf-8"
+    )
+    start = source.index("async def _as_try_image_analyze_vision_reply")
+    end = source.index("async def _as_try_workflow_submit", start)
+    body = source[start:end]
+    assert body.count("self._as_clear_job_file_sent(str(thread_id))") >= 2
+    print("PASS current image reply clears prior media mute")
+
+
 def main() -> int:
     test_tn_stage_and_resolve()
     test_tn_classify_coerce()
     test_tn_vision_body_filters_noise()
     test_tn_vision_describe_mock()
+    test_current_image_reply_clears_prior_media_mute()
     print("OK zalo_tn_image_analyze_unit")
     return 0
 

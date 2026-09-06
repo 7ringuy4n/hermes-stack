@@ -15,8 +15,8 @@ Test each independently:
 - Valkey
 - PostgreSQL
 - Qdrant
-- model-router
-- OmniRouter
+- router-worker
+- OmniRoute
 - OmniRoute
 - workflow
 - dispatcher

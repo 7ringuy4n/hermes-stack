@@ -70,7 +70,7 @@ log "3) health matrix"
 curl -fsS -m 8 http://127.0.0.1:8787/health && echo || { echo "FAIL bridge"; fail=1; }
 TOK=$(grep ^ZALO_API_TOKEN= .env 2>/dev/null | cut -d= -f2- || true)
 [[ -n "$TOK" ]] && curl -fsS -m 8 -H "Authorization: Bearer ${TOK}" http://127.0.0.1:8100/v1/zalo/admin && echo || echo "WARN zalo-api admin"
-curl -fsS -m 8 http://127.0.0.1:8096/health && echo || { echo "FAIL model-router"; fail=1; }
+curl -fsS -m 8 http://127.0.0.1:8096/health && echo || { echo "FAIL router-worker"; fail=1; }
 
 log "4) router chat smoke"
 if ! curl -fsS -m 120 -X POST http://127.0.0.1:8096/v1/chat/completions \
@@ -81,9 +81,9 @@ if ! curl -fsS -m 120 -X POST http://127.0.0.1:8096/v1/chat/completions \
   fail=1
 fi
 
-log "5) Hermes + model-router tail (abnormal)"
+log "5) Hermes + router-worker tail (abnormal)"
 docker logs --tail 30 assistant-hermes-1 2>&1 | grep -iE 'error|deception_hide|crash' || echo "hermes: no critical tail"
-docker logs --tail 20 model-router 2>&1 | grep -iE 'Unable to determine|failover' | tail -5 || true
+docker logs --tail 20 router-worker 2>&1 | grep -iE 'Unable to determine|failover' | tail -5 || true
 
 if [[ "$fail" -eq 0 ]]; then
   echo "POST_LAB_RESTORE_OK"

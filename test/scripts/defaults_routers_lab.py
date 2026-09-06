@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Live Model Router and OmniRoute connectivity (SSH).
+"""Live Router Worker and OmniRoute connectivity (SSH).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 Reports: test/reports/run-defaults-routers/ (no host/account)
@@ -52,13 +52,13 @@ export LC_ALL=C.UTF-8
 cd /opt/assistant
 set -a; . ./.env; set +a
 echo "PROFILE=${{ASSISTANT_PROFILE:-unset}}"
-echo "MODEL_ROUTER=${{ENABLE_MODEL_ROUTER:-1}}"
+echo "ROUTER_WORKER=${{ENABLE_ROUTER_WORKER:-1}}"
 echo "OMNI=${{ENABLE_OMNIROUTER:-0}}"
 echo "GRAFANA=${{ENABLE_GRAFANA:-0}}"
-echo "mr=$(docker inspect -f '{{{{.State.Status}}}}' model-router 2>/dev/null || echo missing)"
+echo "mr=$(docker inspect -f '{{{{.State.Status}}}}' router-worker 2>/dev/null || echo missing)"
 echo "omni=$(docker inspect -f '{{{{.State.Status}}}}' omni-router 2>/dev/null || echo missing)"
-echo -n "hermes_to_model_router="
-docker exec assistant-hermes-1 python3 -c "import urllib.request; urllib.request.urlopen('http://model-router:8096/health', timeout=5); print('ok')" 2>/dev/null || echo fail
+echo -n "hermes_to_router_worker="
+docker exec assistant-hermes-1 python3 -c "import urllib.request; urllib.request.urlopen('http://router-worker:8096/health', timeout=5); print('ok')" 2>/dev/null || echo fail
 echo "mr_health=$(curl -sS -m 5 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:8096/health || echo fail)"
 echo "omni_root=$(curl -sS -m 5 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:20129/ || echo fail)"
 KEY="${{API_SERVER_KEY:-}}"
@@ -81,13 +81,13 @@ echo DEFAULTS_LAB_DONE
         if "DEFAULTS_LAB_DONE" not in out:
             note("lab", "FAIL", "missing done marker")
             return 1
-        if "MODEL_ROUTER=0" in out:
-            note("model_router", "RECORD", "flag off (non-default)")
-        elif "hermes_to_model_router=ok" not in out:
-            note("model_router", "FAIL", "Hermes cannot reach model-router")
+        if "ROUTER_WORKER=0" in out:
+            note("router_worker", "RECORD", "flag off (non-default)")
+        elif "hermes_to_router_worker=ok" not in out:
+            note("router_worker", "FAIL", "Hermes cannot reach router-worker")
             fails += 1
         else:
-            note("model_router", "PASS", "connected")
+            note("router_worker", "PASS", "connected")
         omni_flag_on = "OMNI=1" in out or "OMNI=active" in out
         omni_running = "omni=running" in out
         if omni_flag_on != omni_running:

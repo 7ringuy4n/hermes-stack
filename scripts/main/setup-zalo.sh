@@ -157,13 +157,13 @@ PY
   zalo_log "enabled zalo-platform in ${cfg}"
 }
 
-ensure_hermes_model_router() {
-  zalo_log "point Hermes shared config at model-router"
+ensure_hermes_router_worker() {
+  zalo_log "point Hermes shared config at router-worker"
   STACK_ROOT="${ROOT}" \
     HERMES_DATA_DIR="${HERMES_SHARED_DATA}" \
     ASSISTANT_DATA_DIR="${HERMES_SHARED_DATA}" \
-    python3 "${ROOT}/scripts/main/patch-hermes-model-router.py" || {
-    echo "WARN: patch-hermes-model-router failed" >&2
+    python3 "${ROOT}/scripts/main/patch-hermes-router-worker.py" || {
+    echo "WARN: patch-hermes-router-worker failed" >&2
   }
 }
 
@@ -211,10 +211,7 @@ wire_env() {
       echo "${k}=${v}" | $ZALO_SUDO tee -a "$local_env" >/dev/null
     fi
   }
-  local bridge="http://host.docker.internal:${ZALO_PORT}"
-  if [[ "${HERMES_REPLICAS:-1}" != "1" ]]; then
-    bridge="http://zalo-proxy:${ZALO_PORT}"
-  fi
+  local bridge="http://traefik:8081/zalo-bridge"
   upsert_local ZALO_PLUGIN_URL "$bridge"
   upsert_local ZALO_BRIDGE_URL "$bridge"
   upsert_local ZALO_GROUP_MODE "${ZALO_GROUP_MODE:-mention}"
@@ -223,6 +220,7 @@ wire_env() {
   zalo_env_upsert WORKER_MESSAGE active
   zalo_env_upsert ENABLE_ZALO 1
   zalo_env_upsert ZALO_PLUGIN_URL "$bridge"
+  zalo_env_upsert ZALO_BRIDGE_URL "$bridge"
   $ZALO_SUDO mkdir -p "${HERMES_SHARED_DATA}/channels" "${HERMES_SHARED_DATA}/media/inbound" "${HERMES_SHARED_DATA}/media/out"
   $ZALO_SUDO chown -R "${HERMES_UID:-1000}:${HERMES_GID:-1000}" \
     "$local_env" "${HERMES_SHARED_DATA}/media" 2>/dev/null || true
@@ -233,7 +231,7 @@ install_zalo_stack_after_qr() {
   zalo_log "QR OK — installing Zalo adapter, zalo-api, and Hermes plugin"
   install_adapter
   enable_plugin
-  ensure_hermes_model_router
+  ensure_hermes_router_worker
   wire_env
 
   cd "$ROOT"

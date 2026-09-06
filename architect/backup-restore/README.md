@@ -33,7 +33,7 @@ Must layer for every install.
 | `ops.sh` | `backup` / `restore` / `verify` entry |
 | `lib/profile.sh` | Compatibility shim to `workers.sh` |
 | `lib/workers.sh` | `WORKER_*` / `ENABLE_*` → runtime flags |
-| `lib/load-defaults.sh` | Load `docs/config/DEFAULTS.md` then `.env` |
+| `lib/load-defaults.sh` | Load `docs/config/DEFAULTS.md`, non-secret `.env`, and the protected OpenBao bootstrap token file |
 | `lib/backup.sh` | Component backup/restore (Postgres, Qdrant, Valkey, Hermes, **routers**, OpenBao, …) |
 | `lib/backup_qdrant.py` | Qdrant snapshot helpers |
 | `lib/backup_routers_export.py` | Best-effort Omni/OmniRoute combo+settings JSON export |
@@ -68,7 +68,7 @@ bash run.sh workers             # show current worker activation
 bash run.sh add-components WORKER_MESSAGE=active ENABLE_ZALO=active
 ```
 
-Stamps include `config/env.sealed` (full `.env`) and `config/profile-options.env` (non-secret runtime flags). **Routers** component stores OmniRouter / OmniRoute named volumes (`omni_router_data`, `nine_router_data`), `routers/env.router` flags, and best-effort `*-export.json` combo snapshots. **OpenBao** stores KV JSON + `.env.openbao` and re-imports KV on restore (starts OpenBao if needed). Destroy, `add-components`, and `update` **backup then verify** and abort if verify fails. `switch-profile` is now a removed compatibility command that returns a worker hint.
+Stamps include `config/env.sealed` (non-secret deployment settings) and `config/profile-options.env` (non-secret runtime flags). The **routers** component stores the OmniRoute `omni_router_data` volume, compatibility `routers/env.router` flags, and a best-effort combo export. **OpenBao** stores validated KV JSON and its protected bootstrap token file, then re-imports KV on restore or cold startup. Destroy, `add-components`, and `update` **backup then verify** and abort if verification fails. `switch-profile` is a removed compatibility command that returns a worker hint.
 
 ### Restore behavior (important)
 
@@ -76,7 +76,7 @@ Stamps include `config/env.sealed` (full `.env`) and `config/profile-options.env
 - **Postgres:** `pg_dumpall --clean` restore skips `DROP`/`CREATE`/`ALTER ROLE` for the session DB user (`MEMORY_DB_USER`, default `hermes`) so the connected role is not dropped mid-restore. App containers that hold DB sessions are stopped first.
 - **Qdrant (1.13+):** restores **per-collection** snapshots from the backup manifest. Full **storage** snapshot recover via HTTP is not supported (CLI/startup only); if the stamp has no collection snapshots (empty knowledge), recover is a clean skip.
 - **Routers:** component restores `omni_router_data` / `nine_router_data` (combo+provider SoT). Best-effort `*-export.json` is audit-only. Legacy stamps with those tarballs under `volumes/` still restore.
-- **OpenBao:** restores `.env.openbao` and re-imports `kv-assistant-api-keys.json` into running OpenBao -dev (starts the container + waits health if needed).
+- **OpenBao:** restores the protected bootstrap token and re-imports the validated `kv-assistant-api-keys.json` into running OpenBao -dev (starts the container + waits for health if needed).
 - **Hermes×2:** stops/starts all containers matching `hermes`; compose `--scale hermes=$HERMES_REPLICAS`.
 - **Zalo:** does not archive `zalo_owner` / `zalo_owner.lock` (runtime election). After restore, clears any leftover lock and runs `scripts/main/heal-zalo-sse.sh` so SSE re-attaches (Hermes container ids change on restore).
 - **Schedules:** enables only timer units that exist on the host (missing units are skipped). Hermes user jobs live in `HERMES_DATA_DIR/cron/jobs.json` (shared). Backup copies that file plus `hermes-cron.tgz`. Restore writes them back, then `hermes-cron-share.sh` promotes leftover replica copies. Replica homes under `replicas/<container-id>/` are **not** the durable store (those ids change on destroy).

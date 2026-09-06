@@ -1,8 +1,8 @@
-"""HTTP client for model-router POST /v1/classify (Zalo classify skill).
+"""HTTP client for router-worker POST /v1/classify (Zalo classify skill).
 
-Prompt SoT: hermes/main/skills/classify/classify.json — loaded by model-router.
+Prompt SoT: hermes/main/skills/classify/classify.json — loaded by router-worker.
 This module validates/normalizes the JSON protocol only. Do not add Vietnamese NLU.
-Keep schema enums in sync with model-router classify.py.
+Keep schema enums in sync with router-worker classify.py.
 """
 from __future__ import annotations
 
@@ -11,12 +11,13 @@ import os
 import time
 import urllib.error
 import urllib.request
+from datetime import date
 from typing import Any, Callable
 
 Planner = Callable[..., dict[str, Any]]
 _planner: Planner | None = None
 
-TASK_HINTS = ("normal", "schedule", "coding", "tool", "search", "file", "knowledge", "unknown")
+TASK_HINTS = ("normal", "schedule", "coding", "tool", "search", "file", "knowledge", "note", "control", "unknown")
 CADENCES = ("once", "daily", "weekly", "monthly", "yearly")
 EXECUTION_CLASSES = ("interactive", "async", "schedule")
 TASK_TYPES = (
@@ -34,6 +35,8 @@ TASK_TYPES = (
     "search",
     "tool",
     "coding",
+    "note",
+    "cancel_task",
 )
 RESPONSE_MODES = ("direct", "ack_then_deliver", "confirm")
 ATTACHMENT_TYPES = ("image", "file", "audio", "video")
@@ -45,6 +48,8 @@ SKILLS = (
     "schedule",
     "security",
     "knowledge",
+    "notes",
+    "task-control",
 )
 HINT_SKILL = {
     "search": ("web_search", "search"),
@@ -61,6 +66,8 @@ HINT_EXECUTION = {
     "normal": ("interactive", "chat", "ack_then_deliver"),
     "unknown": ("interactive", "chat", "ack_then_deliver"),
     "tool": ("interactive", "tool", "ack_then_deliver"),
+    "note": ("interactive", "note", "confirm"),
+    "control": ("interactive", "cancel_task", "confirm"),
 }
 HINT_ALIASES = {"chat": "normal", "qna": "normal", "question": "normal", "general": "normal"}
 MAX_INSTRUCTIONS = 32
@@ -77,7 +84,7 @@ LIFECYCLE_TASK_TYPES = (
 )
 LIFECYCLE_ACTIONS = ("pause", "resume", "update", "run_now", "run")
 DEFAULT_TIMEOUT_S = 120.0
-# model-router already owns provider/combo failover. A second host request adds
+# router-worker already owns provider/combo failover. A second host request adds
 # duplicate queue pressure and can execute the same scheduled turn twice.
 HTTP_ATTEMPTS = 1
 HTTP_RETRY_SLEEP_S = 0.0
@@ -89,11 +96,8 @@ REASONING_EFFORTS = ("low", "medium", "high", "max")
 
 
 def router_worker_url() -> str:
-    """Router-worker HTTP base (legacy MODEL_ROUTER_URL still honored)."""
-    return (
-        os.environ.get("MODEL_ROUTER_URL")
-        or "http://model-router:8096"
-    ).rstrip("/")
+    """Return the canonical Router Worker HTTP base."""
+    return (os.environ.get("ROUTER_WORKER_URL") or "http://router-worker:8096").rstrip("/")
 
 
 def _coerce_reasoning_effort(raw: Any) -> str | None:
@@ -128,7 +132,7 @@ def infer_reasoning_effort(hint: str, task_type: str, execution_class: str) -> s
 
 
 def strip_prior_for_classify(text: str) -> str:
-    """Current user ask only — drop Valkey hydrate wrappers (keep in sync with model-router)."""
+    """Current user ask only — drop Valkey hydrate wrappers (keep in sync with router-worker)."""
     blob = text or ""
     while True:
         low = blob.lower()
@@ -332,6 +336,10 @@ def normalize_skill(src: dict[str, Any], hint: str, task_type: str) -> tuple[str
     inferred = HINT_SKILL.get(hint)
     if hint == "tool" and task_type == "media_generation":
         inferred = ("media_file", "generate_media")
+    elif hint == "note" and task_type == "note":
+        inferred = ("notes", "lookup")
+    elif hint == "control" and task_type == "cancel_task":
+        inferred = ("task-control", "cancel")
     elif hint == "tool" and task_type == "file_processing":
         inferred = ("media_file", "process_file")
     elif hint == "schedule" and task_type == "delete_schedule":
@@ -364,6 +372,10 @@ def normalize_skill(src: dict[str, Any], hint: str, task_type: str) -> tuple[str
         action = "run_now"
     if skill and not action:
         action = (inferred or (None, "run"))[1] or "run"
+    if skill == "notes" and action not in {"create", "lookup", "update", "delete"}:
+        action = "lookup"
+    if skill == "task-control":
+        action = "cancel"
     return skill, action
 
 
@@ -1272,6 +1284,70 @@ def _coerce_schedule_selector(raw: Any) -> dict[str, Any] | None:
     }
 
 
+def _coerce_iso_date(raw: Any) -> str | None:
+    value = str(raw or "").strip()
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        return None
+
+
+def _coerce_note_tags(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
+    return list(
+        dict.fromkeys(str(item).strip()[:64] for item in raw if str(item).strip())
+    )[:24]
+
+
+def _coerce_notes(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    notes: list[dict[str, Any]] = []
+    for item in raw[:50]:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()[:8000]
+        if len(content) < 3:
+            continue
+        notes.append(
+            {
+                "content": content,
+                "note_date": _coerce_iso_date(item.get("note_date")),
+                "tags": _coerce_note_tags(item.get("tags")),
+            }
+        )
+    return notes
+
+
+def _coerce_note_selector(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    note_id = str(raw.get("id") or "").strip()[:96] or None
+    query = str(raw.get("query") or "").strip()[:1000]
+    date_from = _coerce_iso_date(raw.get("date_from"))
+    date_to = _coerce_iso_date(raw.get("date_to"))
+    tags = _coerce_note_tags(raw.get("tags"))
+    if not note_id and not query and not date_from and not date_to and not tags:
+        return None
+    return {
+        "id": note_id,
+        "query": query,
+        "date_from": date_from,
+        "date_to": date_to,
+        "tags": tags,
+    }
+
+
+def _coerce_cancel_selector(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    message_id = str(raw.get("message_id") or "").strip()[:160] or None
+    return {"message_id": message_id}
+
+
 def _schedule_contract_fields(src: dict[str, Any], hint: str) -> dict[str, Any]:
     if hint != "schedule":
         return {
@@ -1460,6 +1536,9 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "schedule_resolution": contract.get("schedule_resolution") if hint == "schedule" else None,
         "confirmation_required": contract.get("confirmation_required") if hint == "schedule" else None,
         "schedule_selector": contract.get("schedule_selector") if hint == "schedule" else None,
+        "notes": _coerce_notes(src.get("notes")) if hint == "note" else [],
+        "note_selector": _coerce_note_selector(src.get("note_selector")) if hint == "note" else None,
+        "cancel_selector": _coerce_cancel_selector(src.get("cancel_selector")) if hint == "control" else None,
         "execution_class": exec_cls,
         "task_type": task_type,
         "response_mode": response_mode,
@@ -1515,6 +1594,29 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     return apply_image_analyze_plan_coercion(plan)
 
 
+def plan_is_note(plan: dict[str, Any] | None) -> bool:
+    src = plan if isinstance(plan, dict) else {}
+    return (
+        src.get("ok") is not False
+        and str(src.get("task_hint") or "").strip().lower() == "note"
+        and str(src.get("task_type") or "").strip().lower() == "note"
+        and str(src.get("skill") or "").strip().lower() == "notes"
+        and str(src.get("skill_action") or "").strip().lower()
+        in {"create", "lookup", "update", "delete"}
+    )
+
+
+def plan_is_cancel_task(plan: dict[str, Any] | None) -> bool:
+    src = plan if isinstance(plan, dict) else {}
+    return (
+        src.get("ok") is not False
+        and str(src.get("task_hint") or "").strip().lower() == "control"
+        and str(src.get("task_type") or "").strip().lower() == "cancel_task"
+        and str(src.get("skill") or "").strip().lower() == "task-control"
+        and str(src.get("skill_action") or "").strip().lower() == "cancel"
+    )
+
+
 def classify_text(
     text: str,
     *,
@@ -1543,7 +1645,7 @@ def classify_text(
         },
         ensure_ascii=False,
     ).encode("utf-8")
-    timeout = float(os.environ.get("MODEL_ROUTER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
+    timeout = float(os.environ.get("ROUTER_WORKER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
     last_error = "classify_unavailable"
     for attempt in range(HTTP_ATTEMPTS):
         req = urllib.request.Request(
@@ -1633,7 +1735,7 @@ def classify_outbound(text: str) -> dict[str, Any]:
             return normalize_outbound(_outbound_planner(blob, timezone="Asia/Ho_Chi_Minh"))
     base = router_worker_url()
     payload = json.dumps({"text": blob}, ensure_ascii=False).encode("utf-8")
-    timeout = float(os.environ.get("MODEL_ROUTER_OUTBOUND_TIMEOUT_S") or 30.0)
+    timeout = float(os.environ.get("ROUTER_WORKER_OUTBOUND_TIMEOUT_S") or 30.0)
     try:
         req = urllib.request.Request(
             base + "/v1/outbound",

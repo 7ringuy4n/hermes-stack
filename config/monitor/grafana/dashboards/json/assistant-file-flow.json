@@ -211,7 +211,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (container) (count_over_time({job=\"docker\", container=~\"security-manager|ocr|ingest|embedding|memory|hermes|omni-router|model-router\"} [$__interval]))",
+          "expr": "sum by (container) (count_over_time({job=\"docker\", container=~\"security-manager|ocr|ingest|embedding|memory|hermes|omni-router|router-worker\"} [$__interval]))",
           "legendFormat": "{{container}}",
           "refId": "A"
         }
