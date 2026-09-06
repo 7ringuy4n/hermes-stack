@@ -886,7 +886,17 @@ do_archive_before_change() {
     echo "==> no project containers — skip backup before ${reason} (clean / first-setup host)"
     return 0
   fi
-  do_backup_first "$reason"
+  # A previous lifecycle command scrubs the transient OpenBao export after
+  # Compose consumes it. Reload secrets for this command's router export, then
+  # scrub again even when backup or verification fails.
+  if ! do_prepare_openbao_env_for_compose; then
+    echo "ERROR: cannot load OpenBao secrets — abort ${reason}" >&2
+    return 1
+  fi
+  local backup_status=0
+  do_backup_first "$reason" || backup_status=$?
+  do_scrub_plaintext_env
+  return "$backup_status"
 }
 
 do_switch_profile() {

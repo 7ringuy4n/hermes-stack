@@ -17,7 +17,10 @@ if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
-OUT = ROOT / "test" / "reports" / "run-zalo-tn-quote-image-edit"
+REPORT_SUFFIX = (os.environ.get("ZALO_IMAGE_EDIT_REPORT_SUFFIX") or "").strip()
+OUT = ROOT / "test" / "reports" / (
+    "run-zalo-tn-quote-image-edit" + ("-" + REPORT_SUFFIX if REPORT_SUFFIX else "")
+)
 TN_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
 TN_NAME = (os.environ.get("ZALO_TEST_USER_NAME") or "Tn").strip()
 INSTRUCTION = (
@@ -25,6 +28,12 @@ INSTRUCTION = (
     or "Giữ nguyên ngôi nhà, cây, mặt trời và bố cục; chuyển ảnh thành tranh màu nước tinh tế."
 ).strip()
 WAIT_S = int(os.environ.get("ZALO_IMAGE_EDIT_WAIT_S") or "300")
+BENCHMARK_PAIR = (os.environ.get("ZALO_IMAGE_EDIT_BENCHMARK_PAIR") or "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 
 def ts() -> str:
@@ -50,7 +59,9 @@ uid={TN_ID!r}
 uname={TN_NAME!r}
 instruction={INSTRUCTION!r}
 wait_s={WAIT_S}
+benchmark_pair={BENCHMARK_PAIR!r}
 tag="quote-edit-" + str(int(time.time()))
+benchmark_marker="bench-web-" + tag
 
 def png(width, height):
     rows=[]
@@ -196,9 +207,22 @@ reply=post("/inject-event", payload)
 print("REAL_SOURCE_MESSAGE_ID_PRESENT")
 print("SOURCE_ATTACHMENT_METADATA", bool(attachment))
 print("INJECT_OK", reply.get("ok"), "TAG", tag)
+if benchmark_pair:
+    second_payload={{"type":"message","payload":{{
+        "threadId":uid,
+        "threadType":"user",
+        "senderId":uid,
+        "senderName":uname,
+        "messageId":benchmark_marker,
+        "text":"Search the web for the current UTC time, cite the source, and end the response with this exact marker: " + benchmark_marker,
+        "isSelf":False,
+    }}}}
+    second_reply=post("/inject-event", second_payload)
+    print("BENCHMARK_SECOND_INJECT_OK", second_reply.get("ok"), benchmark_marker)
 
 artifact=None
 delivered=False
+second_delivered=not benchmark_pair
 deadline=time.time()+wait_s
 while time.time() < deadline:
     candidates=[]
@@ -216,7 +240,9 @@ while time.time() < deadline:
             and "self=true msgType=chat.photo" in journal
         )
     )
-    if artifact is not None and delivered and "image_edit_shortcut" in recent:
+    if benchmark_pair and benchmark_marker in journal:
+        second_delivered=True
+    if artifact is not None and delivered and second_delivered and "image_edit_shortcut" in recent:
         break
     time.sleep(2)
 
@@ -228,6 +254,8 @@ if not magic_ok or len(blob) < 80000:
     raise SystemExit("FAIL_BAD_EDIT_ARTIFACT")
 if not delivered:
     raise SystemExit("FAIL_NOT_DELIVERED_TO_ZALO")
+if not second_delivered:
+    raise SystemExit("FAIL_BENCHMARK_SECOND_NOT_DELIVERED")
 
 dispatcher=next(
     (
@@ -302,6 +330,8 @@ for line in zalo_journal(started).splitlines():
     if "RAW message: type=user thread=" + uid in line or "self=true msgType=chat.photo" in line:
         print(line[:300])
 print("ARTIFACT", artifact.name, "BYTES", len(blob))
+print("PAIR_ELAPSED_S", round(time.time()-started, 2))
+print("BENCHMARK_SECOND_DELIVERED", second_delivered)
 print("VISUAL_EVALUATION_BEGIN")
 print(evaluation[:1200])
 print("VISUAL_EVALUATION_END")
