@@ -19,6 +19,9 @@ pairing unit validates unique dashboard identities and rejects a mirrored
 architecture-tree copy. Architecture docs describe HTTP replica selection and
 the distinct leased Zalo owner/queue path.
 
+Active request control is evaluated ahead of the per-conversation inbound
+lock when a turn is running, allowing stop messages to interrupt that turn.
+
 ## 2026-09-05 19:20 +07 — cold-start OpenBao ordering
 
 See `history/2026-09-05/README.md` section “Clean startup depended on an
