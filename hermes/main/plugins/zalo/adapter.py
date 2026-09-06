@@ -3633,6 +3633,23 @@ class ZaloAdapter(BasePlatformAdapter):
                 queue_max,
                 queue_ttl_s,
             )
+        if has_image_attachment and not isinstance(plan, dict):
+            try:
+                from .classify_client import classify_text_async, strip_prior_for_classify
+            except ImportError:
+                from classify_client import classify_text_async, strip_prior_for_classify  # type: ignore
+            classify_text = strip_prior_for_classify(text) or str(text or "").strip()
+            plan = await classify_text_async(
+                classify_text,
+                thread=("group" if str(thread_type or "").lower() == "group" else "dm"),
+                attachments="image",
+            )
+            logger.info(
+                "Zalo: image route plan skill=%s action=%s output=%s",
+                plan.get("skill"),
+                plan.get("skill_action"),
+                plan.get("output_type"),
+            )
         store = self._as_gate_store()
         if store is None:
             if await self._as_try_image_analyze_vision_reply(
@@ -3641,6 +3658,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_type=thread_type,
                 media_urls=media_urls,
                 has_image_attachment=has_image_attachment,
+                plan=plan,
             ):
                 return
             if await self._as_try_workflow_submit(
@@ -3671,6 +3689,7 @@ class ZaloAdapter(BasePlatformAdapter):
             media_types=media_types,
             message_type=message_type,
             schedule_fire=schedule_fire,
+            plan=plan,
         )
         mid = str(message_id or "")
         try:
@@ -3680,6 +3699,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_type=thread_type,
                 media_urls=media_urls,
                 has_image_attachment=has_image_attachment,
+                plan=plan,
             ):
                 return
             if await self._as_try_workflow_submit(
@@ -4016,6 +4036,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         await self._as_gate_announce(tid, thread_type, block_msg)
                     return
                 bare_q = str(event.text or "").strip()
+                queued_plan = item.get("plan") if isinstance(item.get("plan"), dict) else None
                 has_image = self._as_has_image_attachment(
                     list(event.media_urls or []),
                     media_types=list(event.media_types or []),
@@ -4027,6 +4048,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         thread_id=tid,
                         thread_type=thread_type,
                         bare_text=bare_q,
+                        plan=queued_plan,
                         media_urls=list(event.media_urls or []),
                         has_image_attachment=has_image,
                     ):
@@ -4038,6 +4060,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         thread_type=thread_type,
                         media_urls=list(event.media_urls or []),
                         has_image_attachment=True,
+                        plan=queued_plan,
                     ):
                         return
                 await self.handle_message(event)

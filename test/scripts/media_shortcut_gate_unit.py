@@ -253,6 +253,11 @@ def main() -> int:
     assert "media_urls=list(event.media_urls or [])" in adapter_source
     assert "media_urls=list(media_urls or [])" in adapter_source
     assert adapter_source.count("media_urls=media_urls,") >= 2
+    assert 'plan=queued_plan,' in adapter_source
+    assert adapter_source.count("plan=plan,") >= 4
+    assert '"plan": dict(plan) if isinstance(plan, dict) else None' in (
+        ROOT / "hermes" / "main" / "plugins" / "zalo" / "inbound_queue.py"
+    ).read_text(encoding="utf-8")
     image_edit_handoff = (
         'if has_image_attachment and plan_media_shortcut_gate(plan) == "image_edit":'
     )

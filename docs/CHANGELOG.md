@@ -35,9 +35,10 @@
   pre-queue classification, media staging, and workflow submission. Valkey gate
   initialization retries after transient failure instead of caching fail-open
   mode for the life of the replica.
-- Image-edit routing now carries the staged source through the pre-queue
-  workflow decision, allowing the classified image-edit shortcut to execute
-  instead of falling through to a generic agent turn.
+- Attached-image routing now classifies once, persists that plan with its FIFO
+  item, and carries the staged source through pre-queue and dequeue decisions.
+  This prevents repeated model calls from changing an image edit into analysis
+  or falling through to a generic agent turn.
 - Zalo non-owner replicas now return promptly as healthy standby and acquire
   the renewable Valkey owner lease in the background, removing the recurring
   gateway reconnect timeout symptom.

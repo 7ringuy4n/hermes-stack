@@ -316,9 +316,9 @@ not the full bridge send-to-quote contract.
 ### Fix and prevention
 
 The lab now sends the source photo through the live bridge first, extracts the
-real returned message identifier and attachment metadata, then uses those
-values for the inbound reply event. It only passes after the edited artifact
-is created and delivered to the authorized DM.
+real returned message identifier, then injects the reply with that identifier
+and the exact shared source path. It only passes after the edited artifact is
+created and delivered to the authorized DM.
 
 ### First genuine run and root cause
 
@@ -334,3 +334,9 @@ image-edit plan before the generic attached-image fallthrough. The regression
 contract requires this handoff and its ordering. The lab also asks the
 `vision-ocr` combo for a natural-language quality assessment of the edited
 result before accepting the run.
+
+A repeated run also exposed inconsistent decisions because image vision,
+workflow preflight, and dequeue each independently called the classifier. The
+adapter now classifies an attached-image turn once, passes that plan to both
+pre-queue decisions, stores it in the Valkey FIFO item, and reuses it after
+dequeue. The five-minute media test ceiling is enforced by default.

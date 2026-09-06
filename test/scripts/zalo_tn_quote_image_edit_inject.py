@@ -24,7 +24,7 @@ INSTRUCTION = (
     os.environ.get("ZALO_IMAGE_EDIT_INSTRUCTION")
     or "Giữ nguyên ngôi nhà, cây, mặt trời và bố cục; chuyển ảnh thành tranh màu nước tinh tế."
 ).strip()
-WAIT_S = int(os.environ.get("ZALO_IMAGE_EDIT_WAIT_S") or "420")
+WAIT_S = int(os.environ.get("ZALO_IMAGE_EDIT_WAIT_S") or "300")
 
 
 def ts() -> str:
@@ -79,15 +79,18 @@ def png(width, height):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(b"".join(rows), 9)) + chunk(b"IEND", b"")
 
-def hermes_name():
+def hermes_names():
     names=subprocess.check_output(["docker","ps","--format","{{{{.Names}}}}"], text=True).splitlines()
-    return next((name for name in names if name.startswith("assistant-hermes-")), "")
+    return [name for name in names if name.startswith("assistant-hermes-")]
 
 def logs(since="10m"):
-    name=hermes_name()
-    if not name:
+    names=hermes_names()
+    if not names:
         return ""
-    return subprocess.check_output(["docker","logs","--since",since,name], stderr=subprocess.STDOUT, text=True, errors="replace")
+    chunks=[]
+    for name in names:
+        chunks.append(subprocess.check_output(["docker","logs","--since",since,name], stderr=subprocess.STDOUT, text=True, errors="replace"))
+    return "\n".join(chunks)
 
 def zalo_journal(since_epoch):
     try:
@@ -111,7 +114,7 @@ def zalo_journal(since_epoch):
 health=json.loads(urllib.request.urlopen("http://127.0.0.1:8787/health", timeout=8).read().decode() or "{{}}")
 if not health.get("loggedIn"):
     raise SystemExit("BRIDGE_NOT_LOGGED_IN")
-if not hermes_name():
+if not hermes_names():
     raise SystemExit("NO_HERMES")
 
 host_dir=Path("/data/assistant/media/inbound") / uid
@@ -168,7 +171,10 @@ attachments=result.get("attachment")
 if not isinstance(attachments, list):
     attachments=result.get("attachments")
 attachment=attachments[0] if isinstance(attachments, list) and attachments and isinstance(attachments[0], dict) else None
-quote_content=attachment if attachment else container_source
+# zca-js returns the real photo message id but not the later CDN echo payload
+# from this endpoint. The injected reply therefore uses the exact shared source
+# path that was just sent, while retaining the genuine outbound quote identity.
+quote_content=container_source
 quoted={{
     "msgType":"chat.photo",
     "msgId":real_id,
