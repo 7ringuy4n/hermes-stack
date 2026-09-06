@@ -5610,3 +5610,8 @@ order and explicitly resets heading indents for reliable LibreOffice rendering.
 Hermes replicas no longer register local PDF, Word, or spreadsheet maintenance
 toolkits. Removing every root and categorized runtime copy prevents late skill
 cloning from recreating ambiguous lookups; chat creation remains on `file-gen`.
+
+## 2026-09-06 09:15 +07 — note confirmation result boundary
+
+- Note mutations now confirm the validated operation result rather than
+  replaying classifier free-form text; see `history/2026-09-06/README.md`.

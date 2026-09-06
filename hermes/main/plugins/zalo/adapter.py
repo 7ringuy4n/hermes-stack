@@ -2365,15 +2365,13 @@ class ZaloAdapter(BasePlatformAdapter):
                         user_text=current,
                     )
             elif result.get("success"):
-                body = str(plan.get("message") or "").strip()
-                if not body:
-                    count = int(result.get("count") or 1)
-                    body = self._as_ux_line(
-                        "ZALO_NOTES_SAVED_MSG",
-                        ("notes", "saved"),
-                        f"The note operation completed ({count} item(s)).",
-                        user_text=current,
-                    )
+                count = int(result.get("count") or 1)
+                body = self._as_ux_line(
+                    "ZALO_NOTES_SAVED_MSG",
+                    ("notes", "saved"),
+                    f"The note operation completed ({count} item(s)).",
+                    user_text=current,
+                )
             else:
                 error = str(result.get("error") or "failed")
                 candidates = str(result.get("text") or "").strip()

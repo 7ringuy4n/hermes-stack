@@ -149,3 +149,45 @@ provider latency as a container failure.
 The retired web-extraction environment route was already scrubbed, but its old
 name remained in the routing worker health output. The health surface now reports
 only supported search routing fields.
+
+## 09:15 — Note mutation confirmation isolation
+
+### Symptom
+
+A successful structured note mutation stored the right rows but could echo the
+entire source request as its user-visible confirmation.
+
+### Root cause
+
+The adapter trusted the classifier's free-form `message` field for successful
+note mutations even though that field is not the persisted operation result.
+
+### Technical detail
+
+- **Function:** `hermes/main/plugins/zalo/adapter.py::_as_run_host_media_shortcut()` — selected `plan.message` after `execute_note_plan_async()` succeeded.
+- **Lines:** `hermes/main/plugins/zalo/adapter.py:L2364–L2372` — success now always uses the localized note-result message contract.
+- **Field:** classify `message` — untrusted explanatory text → ignored for note mutation confirmation; `result.count` remains the validated result input.
+
+### AI decision
+
+Keep classification responsible for semantic intent and keep the adapter
+responsible for deterministic operation-result messaging. A prompt exception
+would not protect against future models returning source text in `message`.
+
+### Fix (core)
+
+Successful create, update, and delete operations now render the configured
+`ZALO_NOTES_SAVED_MSG` result using the validated item count.
+
+### Todo list
+
+- [x] Reproduce through the live Zalo delivery path.
+- [x] Confirm stored note scope, dates, and contents independently.
+- [x] Fix the core adapter result boundary.
+- [x] Add and pass a regression assertion.
+- [ ] Re-run the live mutation and lookup cases after deployment.
+
+### Prevent recurrence
+
+`test/scripts/notes_control_unit.py` rejects any return to classifier-authored
+mutation confirmations inside the note execution branch.
