@@ -100,6 +100,7 @@ def main() -> int:
 
     memory_source = (ROOT / "architect" / "memory" / "memory-manager" / "app.py").read_text(encoding="utf-8")
     adapter_source = (ZALO / "adapter.py").read_text(encoding="utf-8")
+    notes_prompt = (ROOT / "hermes" / "main" / "skills" / "classify" / "parts" / "notes.txt").read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS notes" in memory_source
     assert "notes_scope_date_idx" in memory_source and "notes_fts_idx" in memory_source
     assert "CREATE TABLE IF NOT EXISTS note_audit" in memory_source
@@ -111,6 +112,8 @@ def main() -> int:
     note_branch = note_branch.split("if plan_is_immediate_deliver", 1)[0]
     assert 'str(plan.get("message")' not in note_branch
     assert '"ZALO_NOTES_SAVED_MSG"' in note_branch
+    assert "without adding category labels" in notes_prompt
+    assert "deterministic storage deduplication" in notes_prompt
     print("OK notes/control unit")
     return 0
 

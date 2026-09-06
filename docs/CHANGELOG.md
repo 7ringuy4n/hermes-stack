@@ -2802,3 +2802,5 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
 
 - Successful note mutations now render the validated localized result instead
   of trusting classifier free-form confirmation text.
+- Note classification preserves stable user-authored content without invented
+  category prefixes so deterministic duplicate creation remains idempotent.
