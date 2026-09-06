@@ -16,6 +16,14 @@ already in shared session memory but delivery is missing, the owner retries it
 once through the per-destination send lock and records whether recovery was
 needed.
 
+## Paired benchmark delivery evidence
+
+The DM benchmark previously treated an omitted synthetic marker as a missing
+Zalo response even when the timestamp-correlated self-message contained the
+requested current UTC answer and sources. The harness now distinguishes
+transport delivery from marker compliance and requires semantic evidence when
+the marker is absent.
+
 ## Late media crossed Zalo turn boundaries
 
 ### Symptom

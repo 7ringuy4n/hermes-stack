@@ -223,6 +223,7 @@ if benchmark_pair:
 artifact=None
 delivered=False
 second_delivered=not benchmark_pair
+second_marker_compliant=not benchmark_pair
 deadline=time.time()+wait_s
 while time.time() < deadline:
     candidates=[]
@@ -240,8 +241,15 @@ while time.time() < deadline:
             and "self=true msgType=chat.photo" in journal
         )
     )
-    if benchmark_pair and benchmark_marker in journal:
-        second_delivered=True
+    if benchmark_pair:
+        second_marker_compliant=benchmark_marker in journal
+        journal_low=journal.lower()
+        semantic_web_reply=(
+            "self=true msgtype=webchat" in journal_low
+            and "current utc" in journal_low
+            and ("source" in journal_low or "http" in journal_low)
+        )
+        second_delivered=second_marker_compliant or semantic_web_reply
     if artifact is not None and delivered and second_delivered and "image_edit_shortcut" in recent:
         break
     time.sleep(2)
@@ -332,6 +340,7 @@ for line in zalo_journal(started).splitlines():
 print("ARTIFACT", artifact.name, "BYTES", len(blob))
 print("PAIR_ELAPSED_S", round(time.time()-started, 2))
 print("BENCHMARK_SECOND_DELIVERED", second_delivered)
+print("BENCHMARK_SECOND_MARKER_COMPLIANT", second_marker_compliant)
 print("VISUAL_EVALUATION_BEGIN")
 print(evaluation[:1200])
 print("VISUAL_EVALUATION_END")
