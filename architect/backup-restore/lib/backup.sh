@@ -7,7 +7,7 @@ export LC_ALL="${LC_ALL:-C.UTF-8}"
 export LANG="${LANG:-C.UTF-8}"
 
 : "${BACKUP_DIR:=/data/assistant/backups}"
-: "${BACKUP_RETENTION_DAYS:=14}"
+: "${BACKUP_RETENTION_DAYS:=7}"
 : "${BACKUP_FAIL_FAST:=1}"
 : "${HERMES_DATA_DIR:=/data/assistant}"
 : "${ROOT:=/opt/assistant}"

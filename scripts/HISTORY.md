@@ -3,6 +3,13 @@
 See `history/2026-09-05/README.md` section “Synthetic quote metadata and
 concurrent judges distorted delivery tests”.
 
+## 2026-09-06 — notes, cancellation, and standby liveness
+
+See `history/2026-09-06/README.md`. Durable note CRUD now uses scoped indexed
+PostgreSQL records and audit rows; cancellation is classified before queue
+admission; standby lease acquisition no longer blocks gateway connection; and
+daily retention values initialize from OpenBao.
+
 ## 2026-09-05 19:20 +07 — cold-start OpenBao ordering
 
 See `history/2026-09-05/README.md` section “Clean startup depended on an

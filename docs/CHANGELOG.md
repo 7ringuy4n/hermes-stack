@@ -1,3 +1,20 @@
+## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
+
+- Added multipurpose dated/undated notes with per-DM/per-group scopes,
+  PostgreSQL date/full-text indexes, deduplication, and immutable mutation audit.
+- Added file-based classifier contracts and host execution for note CRUD;
+  ambiguous mutations are rejected rather than guessed.
+- Added semantic active-request cancellation before rate/FIFO admission. Queue
+  ownership survives cancellation and adapter-owned late artifacts are
+  suppressed; inactive threads receive an accurate response.
+- Zalo non-owner replicas now return promptly as healthy standby and acquire
+  the renewable Valkey owner lease in the background, removing the recurring
+  gateway reconnect timeout symptom.
+- Backup and stale staged-memory retention now default to seven days, are
+  initialized in OpenBao, and are loaded only for timer/lifecycle execution.
+- Dispatcher office generation supports write-only mode so cancellable adapter
+  turns remain the final owner of Zalo artifact delivery.
+
 ## 2026-09-05 19:20 +07 — cold-start secret recovery
 
 - Clean startup now creates OpenBao before importing secret-backed Compose

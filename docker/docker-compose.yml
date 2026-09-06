@@ -75,6 +75,7 @@ services:
       - QDRANT_COLLECTION=${QDRANT_COLLECTION_MEMORY:-conversational_memory}
       - EMBED_URL=${EMBED_URL:-http://embedding:8094}
       - EMBED_MODEL=${EMBED_MODEL:-embedding}
+      - MEMORY_STAGED_RETENTION_DAYS=${MEMORY_STAGED_RETENTION_DAYS:-7}
       - TZ=${TZ:-Asia/Ho_Chi_Minh}
     depends_on:
       postgres:

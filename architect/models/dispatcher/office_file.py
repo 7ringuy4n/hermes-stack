@@ -51,6 +51,7 @@ class OfficeFileReq(_PydanticBase):
     caption: str = ""
     filename: Optional[str] = None
     output_type: Optional[str] = None
+    send_zalo: bool = True
 
 
 def _enabled() -> bool:
@@ -940,22 +941,23 @@ def register_office_file(
                 name = f"{Path(name).stem}{ext}"
             dest = media_dir / "out" / name
             dest = write_office(dest, ext, body)
-            try:
-                zalo = deliver(
-                    path=str(dest),
-                    thread_id=req.thread_id,
-                    thread_type=req.thread_type or "user",
-                    caption=caption,
-                    filename=dest.name,
-                    lock_thread=True,
-                )
-            except Exception as e:  # noqa: BLE001
-                zalo_error = str(getattr(e, "detail", None) or e)[:300]
-                log.warning(
-                    "office-file wrote %s but zalo send failed: %s",
-                    dest.name,
-                    type(e).__name__,
-                )
+            if req.send_zalo:
+                try:
+                    zalo = deliver(
+                        path=str(dest),
+                        thread_id=req.thread_id,
+                        thread_type=req.thread_type or "user",
+                        caption=caption,
+                        filename=dest.name,
+                        lock_thread=True,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    zalo_error = str(getattr(e, "detail", None) or e)[:300]
+                    log.warning(
+                        "office-file wrote %s but zalo send failed: %s",
+                        dest.name,
+                        type(e).__name__,
+                    )
             files.append(
                 {
                     "file": dest.name,

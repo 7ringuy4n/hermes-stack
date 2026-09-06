@@ -32,6 +32,13 @@ SEED_KEYS = (
     "DASHSCOPE_API_KEY",
 )
 
+# Non-secret operational values kept in OpenBao so clean deploys and timers use
+# one durable source instead of drifting host .env copies.
+RUNTIME_DEFAULTS = {
+    "BACKUP_RETENTION_DAYS": "7",
+    "MEMORY_STAGED_RETENTION_DAYS": "7",
+}
+
 # Retired secrets — removed from OpenBao KV on each seed/update.
 OBSOLETE_SECRET_KEYS = (
     "N9ROUTER_API_KEY",
@@ -95,7 +102,7 @@ COMPOSE_HOST_KEYS = (
 )
 
 # Strip plaintext values from ROOT/.env after OpenBao seed (bootstrap token stays).
-ENV_SCRUB_KEYS = SEED_KEYS + (
+ENV_SCRUB_KEYS = SEED_KEYS + tuple(RUNTIME_DEFAULTS) + (
     "FAL_KEY",
     "FLUXAI_API_KEY",
     "POLLINATIONS_API_KEY",

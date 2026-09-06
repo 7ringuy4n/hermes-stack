@@ -34,6 +34,32 @@ question → knowledge search → top supported context → Hermes answer
 Memory optimization/compact uses the same embedding capability and must retain
 useful facts. PostgreSQL remains the durable memory source; vectors are indexes.
 
+## Multipurpose notes
+
+```text
+explicit save/find/change/remove intent → classify `notes` plan
+                                     → conversation scope (DM user or group)
+                                     → PostgreSQL notes + date/full-text indexes
+                                     → immutable create/update/delete audit rows
+```
+
+Notes may contain any user-defined subject and may be dated or undated. The
+host refuses ambiguous mutations instead of choosing a record. Notes and RAG
+memory are separate contracts: vectors can improve retrieval but never replace
+the scoped PostgreSQL source of truth.
+
+## Active request cancellation
+
+```text
+stop message or quote reply → classify control intent (before rate/FIFO gate)
+                            → cancel active task in the same conversation
+                            → suppress adapter-owned late delivery
+                            → release inflight/compound state → continue queue
+```
+
+A healthy no-active response is required when no turn is running. Schedule and
+note lifecycle actions remain distinct from active-work cancellation.
+
 ## Web search
 
 ```text
@@ -95,7 +121,8 @@ inbound file → size/archive controls → optional AV/policy → capability flo
 ```
 
 OpenBao and OmniRoute are separate backup components. Reports never expose
-secret values.
+secret values. Daily backup and memory compaction load their operational values
+from OpenBao; backup and stale staged-memory retention default to seven days.
 
 ## Monitoring and recovery
 
@@ -107,4 +134,6 @@ health checks   → stack/alert watcher → scoped recovery only
 
 Provider quota, OmniRoute queue saturation, and long media latency are not
 container failures. Watchers must not restart healthy services for those
-conditions. See [test/RULES.md](../test/RULES.md).
+conditions. A non-owner Zalo replica reports healthy standby immediately and
+contends for the expiring lease in the background, avoiding periodic gateway
+reconnect timeouts. See [test/RULES.md](../test/RULES.md).

@@ -29,6 +29,8 @@ configuration; update does not replace them.
 | `down` | Stop services; preserve volumes and host data. |
 | `destroy` | Create and verify a backup, then remove project containers and networks. Volumes and `/data/assistant` remain. |
 | `update` | Create and verify a backup, rebuild/reconcile services, clean supported obsolete environment keys, and preserve OmniRoute/OpenBao state. |
+| `backup` | Load OpenBao retention settings, create a verified stamp, retain seven days by default, then remove the transient export. |
+| `compact` | Load OpenBao retention settings, prune expired staged memory, and refresh vector indexes through combo `embedding`. |
 | `ps` | Show service state. |
 | `logs [service]` | Read service logs. |
 

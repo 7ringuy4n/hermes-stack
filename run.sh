@@ -1162,7 +1162,13 @@ case "$cmd" in
   add-components|enable-components|install-workers) do_add_components "$@" ;;
   remove-components|disable-components|remove-workers) do_remove_components "$@" ;;
   update) do_update "$@" ;;
-  backup) ops backup "$@" ;;
+  backup)
+    do_prepare_openbao_env_for_compose
+    _backup_status=0
+    ops backup "$@" || _backup_status=$?
+    do_scrub_plaintext_env
+    exit "$_backup_status"
+    ;;
   restore) ops restore "$@" ;;
   verify) ops verify "$@" ;;
   migrate) ops migrate "$@" ;;
@@ -1171,7 +1177,13 @@ case "$cmd" in
   post-ready-learn|learn-skills)
     do_post_ready_learn
     ;;
-  compact) do_compact ;;
+  compact)
+    do_prepare_openbao_env_for_compose
+    _compact_status=0
+    do_compact || _compact_status=$?
+    do_scrub_plaintext_env
+    exit "$_compact_status"
+    ;;
   optimize-memory|optimize) do_optimize_memory ;;
   check-media|smoke-media)
     need_media check-media || exit 1
