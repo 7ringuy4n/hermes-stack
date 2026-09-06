@@ -49,7 +49,15 @@ def main() -> int:
     assert "OUTPUT SCHEMA" in system
     assert "schedule_resolution" in system
     assert "schedule_request_received_at" in system
-    assert env.get("parts") == ["core", "schedule", "media", "delivery", "schema"]
+    assert env.get("parts") == [
+        "core",
+        "schedule",
+        "media",
+        "notes",
+        "control",
+        "delivery",
+        "schema",
+    ]
     assert len(env.get("priority_rules") or []) >= 5
     assert int(env.get("timeout_s") or 0) <= 60, env.get("timeout_s")
     assert int(env.get("retry") or 99) <= 1, env.get("retry")
