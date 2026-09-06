@@ -15,6 +15,8 @@
 - Zalo non-owner replicas now return promptly as healthy standby and acquire
   the renewable Valkey owner lease in the background, removing the recurring
   gateway reconnect timeout symptom.
+- The Zalo watcher now anchors its first run to timer activation, preventing a
+  timer installed after boot from remaining elapsed with no next trigger.
 - Backup and stale staged-memory retention now default to seven days, are
   initialized in OpenBao, and are loaded only for timer/lifecycle execution.
 - Removed the retired `web_extract_backends` health field; URL extraction

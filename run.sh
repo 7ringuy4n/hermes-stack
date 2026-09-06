@@ -428,7 +428,10 @@ EOF
 [Unit]
 Description=Assistant Zalo self-heal every 1 min
 [Timer]
-OnBootSec=1min
+# Anchor the first run to timer activation. OnBootSec can already be in the
+# past when this unit is installed, leaving a newly enabled timer "elapsed"
+# with no service activation from which OnUnitActiveSec can recur.
+OnActiveSec=1min
 OnUnitActiveSec=1min
 AccuracySec=15s
 Persistent=true

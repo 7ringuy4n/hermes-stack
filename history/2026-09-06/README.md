@@ -62,7 +62,9 @@ referenced an unset shell variable.
 healthy HA state, and the watcher log retained an obsolete field.
 
 **Decision and fix:** return healthy standby promptly, contend for the lease in
-a background task, and remove the unset watcher field. Initialize seven-day
+a background task, remove the unset watcher field, and anchor the watcher's
+first systemd run to timer activation rather than an already-past boot offset.
+Initialize seven-day
 backup and staged-memory retention in OpenBao and load it for lifecycle/timer
 commands.
 
