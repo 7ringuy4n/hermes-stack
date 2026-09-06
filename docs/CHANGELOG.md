@@ -8,6 +8,10 @@
   asynchronous text result reaches shared session memory but its original
   platform send does not complete, the owning adapter retries the final text
   once through the serialized destination sender and records the outcome.
+- Corrected the paired Zalo benchmark so transport delivery is established by
+  either its synthetic marker or a timestamp-correlated, semantically valid
+  web response. Marker compliance remains visible as a separate assertion and
+  no longer turns a delivered, sourced answer into a false transport failure.
 - Documented the deployed hybrid availability model: active-active Hermes HTTP
   behind Traefik, one active Zalo SSE owner elected by a renewable Valkey lease,
   and per-conversation Valkey FIFO processing by that owner.
