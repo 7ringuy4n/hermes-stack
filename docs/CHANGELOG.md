@@ -9,6 +9,10 @@
   the shared gateway session state is not safe for overlapping DM/group turns;
   other conversations remain durably queued rather than being acknowledged
   early or losing a reply.
+- Renew the Zalo owner lease from an independent daemon heartbeat so a
+  synchronous provider segment cannot cause false failover. The event-loop
+  monitor remains owner-token-aware, and outbound sends are fenced when the
+  independent heartbeat proves ownership was lost.
 - Resolve external release fixtures from both normal repositories and nested
   worktrees, while preserving the explicit fixture-directory override.
 - Corrected the media smoke gate and retained lab scripts to check the current

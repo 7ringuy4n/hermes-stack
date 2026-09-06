@@ -529,6 +529,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     type(exc).__name__,
                 )
             if not owned:
+                lease.stop_heartbeat()
                 self._owner_lease = None
                 if self._standby_task is None or self._standby_task.done():
                     self._standby_task = asyncio.create_task(self._standby_acquire_loop(lease))
@@ -538,6 +539,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 logger.info("Zalo: bridge owner lease held by another replica; healthy standby")
                 return True
             self._owner_lease = lease
+            lease.start_heartbeat()
         try:
             import aiohttp  # noqa
         except ImportError:
@@ -698,7 +700,17 @@ class ZaloAdapter(BasePlatformAdapter):
         try:
             while not self._stop:
                 await asyncio.sleep(interval)
-                if await lease.renew():
+                try:
+                    renewed = await lease.renew()
+                except Exception as exc:
+                    if lease.heartbeat_healthy():
+                        logger.warning(
+                            "Zalo: event-loop lease renewal delayed; independent heartbeat is healthy — %s",
+                            type(exc).__name__,
+                        )
+                        continue
+                    raise
+                if renewed:
                     continue
                 logger.error("Zalo: owner lease lost; closing bridge session")
                 self._owner_lease = None
@@ -7682,6 +7694,11 @@ class ZaloAdapter(BasePlatformAdapter):
         reply_to: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ):
+        if _replica_count() > 1:
+            lease = self._owner_lease
+            if lease is None or not lease.heartbeat_healthy():
+                logger.error("Zalo: fenced stale outbound send after owner lease loss")
+                return SendResult(success=False, error="zalo owner lease lost")
         if getattr(self, "_as_autosend_wrong_thread", lambda *_: False)(chat_id, metadata):
             logger.info("Zalo: drop send to %s (not the requesting thread)", chat_id)
             return SendResult(success=True)  # ASSISTANT_AUTOSEND_v3

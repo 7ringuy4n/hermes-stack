@@ -27,6 +27,9 @@ Outbound delivery is now a bridge-acknowledged PostgreSQL event, so HA recovery
 and DM/group isolation evidence remains durable even when the bridge does not
 emit self-message journal events. External fixture discovery also supports
 nested release worktrees without machine-specific paths.
+The Zalo owner lease has an event-loop-independent heartbeat and stale-owner
+send fence, preventing synchronous model work from triggering a false takeover
+or allowing a genuinely superseded owner to deliver late.
 
 ## 2026-09-05 — update isolation, routing consolidation, and Zalo HA
 

@@ -615,3 +615,31 @@ The delivery contract requires the owner execution lock and terminal session
 wait to occur before queue acknowledgement. The live DM/group test injects both
 requests together and requires one acknowledged result in each original
 conversation with no crossed content.
+
+## Model execution starved the HA lease heartbeat
+
+### Symptom
+
+Valkey remained healthy and immediately reachable from the Hermes container,
+but the owner logged a renewal timeout during a long model turn. The resulting
+false ownership loss cancelled queued work and allowed a standby election.
+
+### Root cause
+
+Lease renewal ran on the same asyncio loop as the gateway. A provider path can
+perform a synchronous segment long enough to prevent that loop from scheduling
+the 45-second renewal, so the lease expired despite a healthy store and host.
+
+### Decision and core fix
+
+An owner-token-safe daemon heartbeat now renews the lease independently of the
+gateway loop. The async monitor continues checking ownership and tolerates its
+own delayed connection only while that heartbeat is fresh. A send-time fence
+rejects outbound work when the heartbeat observed token loss or exceeded the
+lease lifetime without a successful renewal.
+
+### Prevention
+
+Lease units cover fresh, explicitly lost, and expired heartbeat states. Live
+tests require one owner, one SSE client, no renewal-loss errors, no crossed
+delivery, and recovery when the actual owner container is stopped.
