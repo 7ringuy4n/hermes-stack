@@ -143,9 +143,26 @@ sent=post("/send-attachment", {{
 }})
 result=sent.get("result") if isinstance(sent, dict) else {{}}
 result=result if isinstance(result, dict) else {{}}
-message=result.get("message") if isinstance(result.get("message"), dict) else {{}}
-real_id=str(message.get("msgId") or result.get("msgId") or "")
+
+def first_value(node, wanted):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if str(key).replace("_", "").lower() in wanted and value not in (None, ""):
+                return str(value)
+        for value in node.values():
+            found=first_value(value, wanted)
+            if found:
+                return found
+    if isinstance(node, list):
+        for value in node:
+            found=first_value(value, wanted)
+            if found:
+                return found
+    return ""
+
+real_id=first_value(result, {{"msgid", "messageid", "climsgid"}})
 if not real_id:
+    print("SEND_RESULT_KEYS", sorted(str(key) for key in result.keys()))
     raise SystemExit("FAIL_REAL_SOURCE_MESSAGE_ID")
 attachments=result.get("attachment")
 if not isinstance(attachments, list):
@@ -206,6 +223,71 @@ if not magic_ok or len(blob) < 80000:
 if not delivered:
     raise SystemExit("FAIL_NOT_DELIVERED_TO_ZALO")
 
+dispatcher=next(
+    (
+        name for name in subprocess.check_output(
+            ["docker", "ps", "--format", "{{{{.Names}}}}"], text=True
+        ).splitlines()
+        if name.startswith("assistant-dispatcher-")
+    ),
+    "",
+)
+if not dispatcher:
+    raise SystemExit("FAIL_NO_DISPATCHER_FOR_VISUAL_EVALUATION")
+container_artifact="/data/media/out/" + artifact.name
+evaluation_code="""
+import base64, io, json, os, urllib.request
+from pathlib import Path
+p=Path(os.environ["EVAL_IMAGE_PATH"])
+blob=p.read_bytes()
+mime="image/jpeg"
+try:
+    from PIL import Image
+    image=Image.open(io.BytesIO(blob)).convert("RGB")
+    image.thumbnail((1280, 1280))
+    buf=io.BytesIO()
+    image.save(buf, format="JPEG", quality=85)
+    blob=buf.getvalue()
+except Exception:
+    if p.suffix.lower() == ".png":
+        mime="image/png"
+    elif p.suffix.lower() == ".webp":
+        mime="image/webp"
+body=json.dumps({{
+    "model":(os.environ.get("OMNIROUTER_VISION_COMBO") or "vision-ocr"),
+    "stream":False,
+    "max_tokens":220,
+    "messages":[{{"role":"user","content":[
+        {{"type":"text","text":"Evaluate this edited image. Describe its style and whether it remains a coherent scene containing a house, a tree, and a sun. Note any unsafe or offensive visible text. Give a concise quality rating from 1 to 10 with reasons."}},
+        {{"type":"image_url","image_url":{{"url":"data:"+mime+";base64,"+base64.b64encode(blob).decode("ascii")}}}},
+    ]}}],
+}}).encode()
+base=(os.environ.get("OMNIROUTER_BASE_URL") or "http://omni-router:20129/v1").rstrip("/")
+key=(os.environ.get("OMNIROUTER_API_KEY") or "").strip()
+req=urllib.request.Request(base+"/chat/completions", data=body, method="POST", headers={{"Authorization":"Bearer "+key,"Content-Type":"application/json"}})
+with urllib.request.urlopen(req, timeout=180) as response:
+    data=json.loads(response.read().decode() or "{{}}")
+print((((data.get("choices") or [{{}}])[0].get("message") or {{}}).get("content") or "").strip())
+"""
+evaluated=subprocess.run(
+    [
+        "docker", "exec", "-i", "-e", "EVAL_IMAGE_PATH=" + container_artifact,
+        dispatcher, "python3", "-",
+    ],
+    input=evaluation_code,
+    text=True,
+    capture_output=True,
+    timeout=240,
+)
+evaluation=(evaluated.stdout or "").strip()
+if evaluated.returncode != 0:
+    error=(evaluated.stderr or "").strip().replace("\n", " ")[:240]
+    if any(token in error.lower() for token in ("quota", "rate limit", "429", "free")):
+        raise SystemExit("SKIP_VISUAL_EVALUATOR_QUOTA " + error)
+    raise SystemExit("FAIL_VISUAL_EVALUATOR " + error)
+if len(evaluation) < 40:
+    raise SystemExit("FAIL_EMPTY_VISUAL_EVALUATION")
+
 recent=logs("10m")
 for line in recent.splitlines():
     if tag in line or "image_edit_shortcut" in line or ("send-attachment path" in line and "image-edit-" in line):
@@ -214,6 +296,9 @@ for line in zalo_journal(started).splitlines():
     if "RAW message: type=user thread=" + uid in line or "self=true msgType=chat.photo" in line:
         print(line[:300])
 print("ARTIFACT", artifact.name, "BYTES", len(blob))
+print("VISUAL_EVALUATION_BEGIN")
+print(evaluation[:1200])
+print("VISUAL_EVALUATION_END")
 print("PASS_REAL_QUOTED_IMAGE_EDIT_DELIVERED")
 PY
 '''

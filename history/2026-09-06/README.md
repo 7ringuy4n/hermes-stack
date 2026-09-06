@@ -319,3 +319,18 @@ The lab now sends the source photo through the live bridge first, extracts the
 real returned message identifier and attachment metadata, then uses those
 values for the inbound reply event. It only passes after the edited artifact
 is created and delivered to the authorized DM.
+
+### First genuine run and root cause
+
+The genuine probe obtained both live values, but the edited artifact did not
+use the image-edit shortcut. The workflow preflight classified the request
+while its call boundary discarded the staged media path; its missing-source
+guard then fell through to a generic agent turn.
+
+### Core fix
+
+Carry staged media paths into workflow preflight and execute an explicit
+image-edit plan before the generic attached-image fallthrough. The regression
+contract requires this handoff and its ordering. The lab also asks the
+`vision-ocr` combo for a natural-language quality assessment of the edited
+result before accepting the run.

@@ -2295,6 +2295,7 @@ class ZaloAdapter(BasePlatformAdapter):
         _schedule_fanout_child: bool = False,
         received_at=None,
         has_image_attachment: bool = False,
+        media_urls: list | None = None,
     ) -> bool:
         try:
             from .workflow_client import create_schedule, create_workflow, workflow_enabled
@@ -2950,6 +2951,17 @@ class ZaloAdapter(BasePlatformAdapter):
             except Exception:
                 pass
             return True
+        if has_image_attachment and plan_media_shortcut_gate(plan) == "image_edit":
+            return await self._as_run_host_media_shortcut(
+                user_text=current,
+                thread_id=thread_id,
+                thread_type=thread_type,
+                bare_text=current,
+                plan=plan,
+                media_urls=list(media_urls or []),
+                has_image_attachment=True,
+                schedule_fire=schedule_fire,
+            )
         if has_image_attachment:
             ins_parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
             explicit_office = bool(
@@ -2968,6 +2980,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_type=thread_type,
                 bare_text=current,
                 plan=plan,
+                media_urls=list(media_urls or []),
                 has_image_attachment=has_image_attachment,
                 schedule_fire=schedule_fire,
             )
@@ -3640,6 +3653,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan=plan,
                 schedule_fire=schedule_fire,
                 has_image_attachment=has_image_attachment,
+                media_urls=media_urls,
             ):
                 return
             await self._as_dispatch_event(event, text)
@@ -3678,6 +3692,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan=plan,
                 schedule_fire=schedule_fire,
                 has_image_attachment=has_image_attachment,
+                media_urls=media_urls,
             ):
                 return
             # Schedule fires must not wait behind stuck answering / FIFO queue —
