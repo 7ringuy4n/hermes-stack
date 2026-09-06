@@ -5615,3 +5615,5 @@ cloning from recreating ambiguous lookups; chat creation remains on `file-gen`.
 
 - Note mutations now confirm the validated operation result rather than
   replaying classifier free-form text; see `history/2026-09-06/README.md`.
+- Classifier note bodies now remain stable across identical create requests so
+  the existing content dedupe boundary can operate deterministically.

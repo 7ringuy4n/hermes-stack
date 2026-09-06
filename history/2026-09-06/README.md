@@ -109,6 +109,12 @@ use a different language from tags saved earlier. The fallback now removes
 query wording and tags only inside the already-enforced scope/date window, so a
 dated plan remains discoverable without widening identity or time boundaries.
 
+A repeated live create also showed that model-added category prefixes can make
+otherwise identical note bodies differ. The classify note contract now
+preserves the user-authored semantic payload without labels or decorative
+prefixes, keeping deterministic content deduplication stable without moving
+semantic comparison into application code.
+
 ## Active request control
 
 **Symptom:** a follow-up stop instruction entered the same queue as the long
