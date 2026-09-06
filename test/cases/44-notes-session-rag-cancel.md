@@ -16,3 +16,14 @@ python test/scripts/zalo_active_cancel_lab.py
 It requires a runtime-provided test identity, uses a real outbound message ID
 for the quote case, verifies both cancellation audit events, and observes the
 late-delivery window. A group requires a separately authorized group identity.
+
+Verify reply-quoted image editing with a real outbound Zalo photo and its real
+message identifier:
+
+```bash
+python test/scripts/zalo_tn_quote_image_edit_inject.py
+```
+
+The probe sends its source image through the live bridge, derives the quote
+from the bridge response, injects the edit instruction, and requires both a
+new image artifact and delivery back to the authorized DM.
