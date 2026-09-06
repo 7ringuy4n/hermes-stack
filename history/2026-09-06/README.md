@@ -270,7 +270,8 @@ after a bounded backoff rather than disabling queues for the replica lifetime.
 - [x] Reproduce with a live long-running request followed by a stop message.
 - [x] Identify the lock ordering from logs and message-history evidence.
 - [x] Move the existing semantic control check before the lock.
-- [ ] Re-run message and quote-reply cancellation on the VPS.
+- [x] Re-run message and quote-reply cancellation in the authorized DM.
+- [ ] Run the same cancellation cases in an authorized group.
 
 ## 10:05 — Remove ambiguous Grafana provisioning and document routing ownership
 
