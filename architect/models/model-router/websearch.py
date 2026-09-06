@@ -137,7 +137,6 @@ def health_fields() -> dict[str, Any]:
         "web_combo": combo,
         "omni_search_combo": combo,
         "web_backends": search_order(),
-        "web_extract_backends": _combo_extract(),
         "web_keys": {name: bool(_key(name)) for name in ("tavily", "firecrawl")},
         "omni_search": _omni_configured(),
         "fallback_searxng": bool(_searxng_url()),

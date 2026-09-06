@@ -50,3 +50,7 @@ commands.
 **Prevention:** monitor lease acquisition, SSE client count, reconnect logs,
 timer results, restart deltas, and verified backup pruning without treating
 provider latency as a container failure.
+
+The retired web-extraction environment route was already scrubbed, but its old
+name remained in Model Router health output. The health surface now reports
+only supported search routing fields.
