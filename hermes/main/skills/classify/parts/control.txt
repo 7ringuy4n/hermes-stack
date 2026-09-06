@@ -1,0 +1,7 @@
+ACTIVE REQUEST CONTROL
+
+Classify an explicit request to stop, cancel, or abort work that is currently running in this conversation as task_hint=control, task_type=cancel_task, skill=task-control, skill_action=cancel, execution_class=interactive, response_mode=confirm, and process_original_message=false.
+
+This route controls active work only. Do not use it for deleting schedules, deleting saved notes, rejecting a proposed action, stopping a recurring schedule, or ordinary discussion containing words about cancellation.
+
+When the user replies to the message whose work must stop, copy the quoted message identifier into cancel_selector.message_id. Otherwise emit message_id=null so the host cancels the active request in the current DM or group thread. Classification never claims cancellation succeeded; the host confirms the actual outcome.

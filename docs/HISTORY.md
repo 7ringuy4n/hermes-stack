@@ -10,6 +10,12 @@ History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
 
+## 2026-09-06 — scoped notes and request control
+
+See `history/2026-09-06/README.md` for the durable note boundary, semantic
+active-turn cancellation, healthy Zalo standby behavior, and OpenBao-backed
+retention defaults.
+
 ## 2026-09-05 — update isolation, routing consolidation, and Zalo HA
 
 See `history/2026-09-05/README.md` for the update/watchdog race, transient

@@ -150,6 +150,27 @@ may use high-signal repositories such as `anthropics/skills` and
 `hugohe3/ppt-master`; learn from their workflows, but do not vendor unlicensed
 or incompatible code/assets.
 
+### C10 — multipurpose notes, session history, RAG, and cancellation
+
+Create dated and undated notes for at least three unrelated subjects (for
+example a plan, an idea, and a personal checklist). Require DM/user and group
+scopes to remain isolated, exact-date lookup to use the indexed note date,
+topic lookup to return the correct stored content, duplicate create to dedupe,
+and update/delete to write an audit version. An ambiguous mutation must ask for
+selection and must not change data.
+
+Verify short-term session history survives a Hermes replica replacement and
+that durable RAG recall remains grounded after compact/embedding reindex. Reset
+the session and prove archived history is traceable without leaking another
+thread's content.
+
+During a deliberately long request, send an explicit stop message and repeat
+with a quote-reply in both an authorized DM and group. The control request must
+bypass rate/FIFO admission, cancel only the active turn in that thread, record
+`cancel_requested` then `cancelled`, suppress late delivery, release ownership,
+and allow the next queued request to complete. If no work is active, require an
+accurate no-active response rather than a false success.
+
 ## 5. Two-request concurrency and quote isolation
 
 Run exactly two concurrent Zalo requests for the designated test identity:

@@ -451,6 +451,9 @@ def run_office_create(
         "thread_id": str(thread_id),
         "thread_type": "group" if str(thread_type).lower() in {"group", "g"} else "user",
         "caption": "",
+        # Delivery remains in the cancellable adapter task. Dispatcher writes
+        # the artifact only, so a stopped request cannot send a late file.
+        "send_zalo": False,
     }
     if (output_type or "").strip():
         body["output_type"] = output_type.strip().lower()

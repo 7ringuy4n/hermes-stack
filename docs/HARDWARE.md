@@ -73,7 +73,7 @@ Do not enable Grafana without Prometheus: `run.sh` starts Prometheus (and Hardwa
 - **Hermes replicas > 1** need more RAM/CPU; host ports `:29119` / `:28642` are only published when `HERMES_REPLICAS=1` — use Traefik (`:8080`) / API Gateway (`:8088`) tunnels instead.
 - Remote image generation/editing latency is provider-bound; allow the media deadline without sizing local GPU memory.
 - **Swap:** optional on small VPS; 2–4 GiB swap helps media on 8 GiB hosts, but SSD + enough RAM is better.
-- **Backups** grow under `/data/assistant/backups` (retention `BACKUP_RETENTION_DAYS`, default 14). Size disk for at least one full stamp plus working set.
+- **Backups** grow under `/data/assistant/backups` (retention `BACKUP_RETENTION_DAYS`, default 7 days from OpenBao). Size disk for at least one full stamp plus working set.
 
 ## Flags that change footprint
 

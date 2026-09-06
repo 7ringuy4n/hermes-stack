@@ -396,6 +396,7 @@ class ZaloAdapter(BasePlatformAdapter):
         self._sse_task: Optional[asyncio.Task] = None
         self._owner_lease = None
         self._owner_lease_task: Optional[asyncio.Task] = None
+        self._standby_task: Optional[asyncio.Task] = None
         self._stop = False
         self._last_event_id = 0
         # Silent auto-sethome (mirrors Yuanbao): stop gateway "📬 No home channel" spam.
@@ -406,6 +407,8 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_inbound_locks: Dict[str, asyncio.Lock] = {}
         self._as_inbound_tasks: set[asyncio.Task] = set()
         self._as_queue_tasks: Dict[str, asyncio.Task] = {}
+        self._as_active_turn_tasks: Dict[str, asyncio.Task] = {}
+        self._as_active_turn_message_ids: Dict[str, str] = {}
         self._as_compound_after: Dict[str, int] = {}
         self._as_compound_defer_ack: set[str] = set()
         self._as_compound_thread_type: Dict[str, str] = {}
@@ -501,35 +504,28 @@ class ZaloAdapter(BasePlatformAdapter):
             from owner_lease import ValkeyLease
 
             lease = self._owner_lease or ValkeyLease.from_env(_replica_id())
-            standby_logged = False
-            while not self._stop:
-                try:
-                    owned = (
-                        await lease.renew()
-                        if self._owner_lease is not None
-                        else await lease.acquire()
-                    )
-                    if owned:
-                        self._owner_lease = lease
-                        if standby_logged:
-                            logger.info("Zalo: standby acquired the bridge owner lease")
-                        break
-                    self._owner_lease = None
-                    if not standby_logged:
-                        logger.info("Zalo: bridge owner lease held by another replica; standing by")
-                        standby_logged = True
-                except Exception as exc:
-                    self._owner_lease = None
-                    self._set_fatal_error("owner_lease_unavailable", str(exc), retryable=True)
-                    if not standby_logged:
-                        logger.warning(
-                            "Zalo: owner lease unavailable; retrying in standby — %s",
-                            type(exc).__name__,
-                        )
-                        standby_logged = True
-                await asyncio.sleep(max(2, min(5, lease.ttl_s // 3)))
-            if self._stop:
-                return False
+            try:
+                owned = (
+                    await lease.renew()
+                    if self._owner_lease is not None
+                    else await lease.acquire()
+                )
+            except Exception as exc:
+                owned = False
+                logger.warning(
+                    "Zalo: owner lease unavailable; entering healthy standby — %s",
+                    type(exc).__name__,
+                )
+            if not owned:
+                self._owner_lease = None
+                if self._standby_task is None or self._standby_task.done():
+                    self._standby_task = asyncio.create_task(self._standby_acquire_loop(lease))
+                # A standby is a healthy HA state. Returning promptly prevents
+                # the gateway reconnect watchdog from timing out every five minutes.
+                self._mark_connected()
+                logger.info("Zalo: bridge owner lease held by another replica; healthy standby")
+                return True
+            self._owner_lease = lease
         try:
             import aiohttp  # noqa
         except ImportError:
@@ -604,6 +600,12 @@ class ZaloAdapter(BasePlatformAdapter):
         self._stop = True
         self._mark_disconnected()
         current = asyncio.current_task()
+        if self._standby_task and self._standby_task is not current and not self._standby_task.done():
+            self._standby_task.cancel()
+            try:
+                await self._standby_task
+            except asyncio.CancelledError:
+                pass
         if self._owner_lease_task and self._owner_lease_task is not current and not self._owner_lease_task.done():
             self._owner_lease_task.cancel()
             try:
@@ -629,6 +631,28 @@ class ZaloAdapter(BasePlatformAdapter):
             await asyncio.gather(*pending, return_exceptions=True)
         await self._close_session()
         await self._release_owner_lease()
+
+    async def _standby_acquire_loop(self, lease) -> None:
+        """Acquire ownership in background without presenting standby as broken."""
+        interval = max(2, min(5, lease.ttl_s // 3))
+        try:
+            while not self._stop:
+                await asyncio.sleep(interval)
+                try:
+                    if not await lease.acquire():
+                        continue
+                    self._owner_lease = lease
+                    logger.info("Zalo: standby acquired the bridge owner lease")
+                    if await self.connect(is_reconnect=True):
+                        return
+                    await self._release_owner_lease()
+                except Exception as exc:
+                    logger.warning(
+                        "Zalo: standby owner acquisition failed — %s",
+                        type(exc).__name__,
+                    )
+        except asyncio.CancelledError:
+            raise
 
     async def _release_owner_lease(self) -> None:
         if self._owner_lease is None:
@@ -2204,6 +2228,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
                 plan_is_image_analyze_chat,
+                plan_is_cancel_task,
+                plan_is_note,
                 plan_is_search_then_image_turn,
                 plan_media_shortcut_gate,
                 apply_image_analyze_plan_coercion,
@@ -2227,6 +2253,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan_is_host_direct_reply,
                 plan_is_immediate_deliver,
                 plan_is_image_analyze_chat,
+                plan_is_cancel_task,
+                plan_is_note,
                 plan_is_search_then_image_turn,
                 plan_media_shortcut_gate,
                 apply_image_analyze_plan_coercion,
@@ -2296,6 +2324,79 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
             except Exception:
                 logger.warning("[zalo] host direct reply failed thread=%s", thread_id)
+            return True
+        if plan_is_cancel_task(plan) and not schedule_fire:
+            body = self._as_ux_line(
+                "ZALO_REQUEST_NOT_ACTIVE_MSG",
+                ("control", "not_active"),
+                "There is no active request to stop in this conversation.",
+                user_text=current,
+            )
+            try:
+                await self._as_gate_announce(thread_id, thread_type, body)
+            except Exception:
+                logger.warning("[zalo] inactive cancellation reply failed thread=%s", thread_id)
+            return True
+        if plan_is_note(plan) and not schedule_fire:
+            try:
+                from .notes_client import execute_note_plan_async
+            except ImportError:
+                from notes_client import execute_note_plan_async  # type: ignore
+            result = await execute_note_plan_async(
+                plan,
+                thread_id=str(thread_id),
+                thread_type=str(thread_type),
+                sender_id=str(sender_id),
+            )
+            action = str(plan.get("skill_action") or "").strip().lower()
+            if result.get("success") and action == "lookup":
+                body = str(result.get("text") or "").strip()
+                if not body:
+                    body = self._as_ux_line(
+                        "ZALO_NOTES_EMPTY_MSG",
+                        ("notes", "empty"),
+                        "No matching saved notes were found.",
+                        user_text=current,
+                    )
+            elif result.get("success"):
+                body = str(plan.get("message") or "").strip()
+                if not body:
+                    count = int(result.get("count") or 1)
+                    body = self._as_ux_line(
+                        "ZALO_NOTES_SAVED_MSG",
+                        ("notes", "saved"),
+                        f"The note operation completed ({count} item(s)).",
+                        user_text=current,
+                    )
+            else:
+                error = str(result.get("error") or "failed")
+                candidates = str(result.get("text") or "").strip()
+                if error == "ambiguous" and candidates:
+                    body = self._as_ux_line(
+                        "ZALO_NOTES_AMBIGUOUS_MSG",
+                        ("notes", "ambiguous"),
+                        "More than one note matches. Reply with the note id to choose one:\n"
+                        + candidates,
+                        user_text=current,
+                    )
+                elif error == "not_found":
+                    body = self._as_ux_line(
+                        "ZALO_NOTES_EMPTY_MSG",
+                        ("notes", "empty"),
+                        "No matching saved notes were found.",
+                        user_text=current,
+                    )
+                else:
+                    body = self._as_ux_line(
+                        "ZALO_NOTES_FAILED_MSG",
+                        ("notes", "failed"),
+                        "The note operation could not be completed. Please try again.",
+                        user_text=current,
+                    )
+            try:
+                await self._as_gate_announce(thread_id, thread_type, body)
+            except Exception:
+                logger.warning("[zalo] notes reply failed thread=%s", thread_id)
             return True
         if plan_is_immediate_deliver(plan) and not schedule_fire:
             try:
@@ -3611,6 +3712,76 @@ class ZaloAdapter(BasePlatformAdapter):
             if leftover > 0 and not self._stop:
                 self._as_queue_kick(tid)
 
+    async def _as_try_cancel_active_request(
+        self,
+        *,
+        message: dict[str, Any],
+        text: str,
+        thread_id: str,
+        thread_type: str,
+    ) -> bool:
+        """Classify and cancel the active local turn before normal queue admission."""
+        active = self._as_active_turn_tasks.get(str(thread_id))
+        if active is None or active.done() or not str(text or "").strip():
+            return False
+        try:
+            from .classify_client import classify_text_async, plan_is_cancel_task
+        except ImportError:
+            from classify_client import classify_text_async, plan_is_cancel_task  # type: ignore
+        quoted = message.get("quote") if isinstance(message.get("quote"), dict) else {}
+        if not quoted and isinstance(message.get("quoted"), dict):
+            quoted = message.get("quoted")
+        quote_context = json.dumps(
+            {
+                "message_id": quoted.get("msgId") or quoted.get("cliMsgId"),
+                "content": str(quoted.get("content") or "")[:500],
+            },
+            ensure_ascii=False,
+        )
+        try:
+            plan = await asyncio.wait_for(
+                classify_text_async(
+                    str(text),
+                    thread="group" if str(thread_type) == "group" else "dm",
+                    quoted=quote_context,
+                ),
+                timeout=max(
+                    3.0,
+                    min(self._as_env_float("ZALO_CANCEL_CLASSIFY_TIMEOUT_S", 15.0, 3.0, 30.0), 30.0),
+                ),
+            )
+        except (asyncio.TimeoutError, OSError):
+            logger.warning("Zalo: active-request control classify unavailable thread=%s", thread_id)
+            return False
+        if not plan_is_cancel_task(plan):
+            return False
+        if self._as_active_turn_tasks.get(str(thread_id)) is not active or active.done():
+            return False
+        message_id = self._as_active_turn_message_ids.get(str(thread_id), "")
+        active.cancel()
+        self._as_cancel_late_autosend(str(thread_id))
+        try:
+            from .queue_history import record as history_record
+        except ImportError:
+            from queue_history import record as history_record  # type: ignore
+        history_record(
+            thread_id=str(thread_id),
+            thread_type=str(thread_type),
+            message_id=message_id,
+            event="cancel_requested",
+            role="system",
+            content=str(text),
+            task_hint="control",
+        )
+        body = self._as_ux_line(
+            "ZALO_REQUEST_CANCELLED_MSG",
+            ("control", "cancelled"),
+            "The active request was stopped.",
+            user_text=str(text),
+        )
+        await self._as_gate_announce(str(thread_id), str(thread_type), body)
+        return True
+
     async def _as_run_queued_part(self, item: dict) -> None:
         tid = str(item.get("thread_id") or "")
         if not tid:
@@ -3722,8 +3893,11 @@ class ZaloAdapter(BasePlatformAdapter):
                 await self._as_autosend_late_files(tid, thread_type)
                 await self._as_compound_wait_part(tid)
 
+            turn_task = asyncio.create_task(_run_turn())
+            self._as_active_turn_tasks[tid] = turn_task
+            self._as_active_turn_message_ids[tid] = str(event.message_id or "")
             try:
-                await asyncio.wait_for(_run_turn(), timeout=turn_timeout)
+                await asyncio.wait_for(turn_task, timeout=turn_timeout)
             except asyncio.TimeoutError:
                 logger.warning(
                     "Zalo: queue turn timeout thread=%s after %.0fs — release for next message",
@@ -3744,9 +3918,28 @@ class ZaloAdapter(BasePlatformAdapter):
                     await self._as_gate_announce(tid, thread_type, msg)
                 except Exception:
                     pass
+            except asyncio.CancelledError:
+                logger.info("Zalo: active request cancelled thread=%s message=%s", tid, event.message_id)
+                try:
+                    self._as_compound_mark_delivered(tid)
+                except Exception:
+                    pass
+                history_record(
+                    thread_id=tid,
+                    thread_type=thread_type,
+                    message_id=str(event.message_id or ""),
+                    event="cancelled",
+                    role="system",
+                    content="",
+                    task_hint="control",
+                )
         except Exception:
             logger.exception("Zalo: queued part failed thread=%s", tid)
         finally:
+            current = self._as_active_turn_tasks.get(tid)
+            if current is locals().get("turn_task"):
+                self._as_active_turn_tasks.pop(tid, None)
+                self._as_active_turn_message_ids.pop(tid, None)
             # Always release answering + hold so the next FIFO item can run.
             self._as_compound_end(tid)
             self._as_compound_after.pop(tid, None)
@@ -4564,6 +4757,15 @@ class ZaloAdapter(BasePlatformAdapter):
         # Verbatim schedule delivery: send fire_text as-is (no Hermes paraphrase).
         if schedule_fire and await self._as_schedule_fire_verbatim(
             m, text=text, thread_id=str(thread_id), thread_type=str(thread_type)
+        ):
+            return
+
+        # Control-plane cancellation bypasses rate limits and FIFO admission.
+        if not schedule_fire and await self._as_try_cancel_active_request(
+            message=m,
+            text=str(text or ""),
+            thread_id=str(thread_id),
+            thread_type=str(thread_type),
         ):
             return
 

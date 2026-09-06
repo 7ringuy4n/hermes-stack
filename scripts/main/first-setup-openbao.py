@@ -23,6 +23,7 @@ from pathlib import Path
 from openbao_common import (
     OBSOLETE_SECRET_KEYS,
     OPENBAO_SECRET_PATH,
+    RUNTIME_DEFAULTS,
     SEED_KEYS,
     is_secret_env_name,
 )
@@ -121,6 +122,10 @@ def collect_seed_payload(env: dict[str, str]) -> dict[str, str]:
         val = (os.environ.get(key) or env.get(key) or "").strip()
         if val and not val.startswith("CHANGE_ME"):
             payload[key] = val
+    for key in RUNTIME_DEFAULTS:
+        val = (os.environ.get(key) or env.get(key) or "").strip()
+        if val:
+            payload[key] = val
     return payload
 
 
@@ -152,6 +157,8 @@ def run_seed(*, update: bool = False) -> int:
     incoming = collect_seed_payload(env)
     existing = kv_get(token)
     merged = dict(existing)
+    for key, value in RUNTIME_DEFAULTS.items():
+        merged.setdefault(key, value)
     merged.update(incoming)
     merged = purge_obsolete(token, merged)
 
@@ -164,6 +171,9 @@ def run_seed(*, update: bool = False) -> int:
             f"(KV total {len(merged)})",
             flush=True,
         )
+    elif merged != existing:
+        kv_put(token, merged)
+        print(f"OK: initialized OpenBao runtime defaults (KV total {len(merged)})", flush=True)
     elif merged:
         print(f"OK: KV unchanged ({len(merged)} keys); obsolete purge applied if any", flush=True)
 

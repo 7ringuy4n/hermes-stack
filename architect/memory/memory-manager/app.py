@@ -15,7 +15,7 @@ import json
 import os
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Literal, Optional
 
 import httpx
@@ -42,6 +42,9 @@ REDIS_URL = os.environ.get("REDIS_URL", "")
 MEMORY_ASYNC = os.environ.get("MEMORY_ASYNC_INDEX", "1") == "1"
 MEMORY_QUEUE = os.environ.get("MEMORY_JOB_QUEUE", "memory:jobs")
 SESSION_URL = os.environ.get("SESSION_URL", "http://session:8107").rstrip("/")
+STAGED_RETENTION_DAYS = max(
+    1, min(int(os.environ.get("MEMORY_STAGED_RETENTION_DAYS", "7")), 3650)
+)
 
 MemoryType = Literal[
     "fact",
@@ -114,6 +117,43 @@ CREATE TABLE IF NOT EXISTS memory_audit (
   detail      JSONB NOT NULL DEFAULT '{}',
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS notes (
+  id            TEXT PRIMARY KEY,
+  scope_id      TEXT NOT NULL,
+  thread_id     TEXT,
+  thread_type   TEXT,
+  owner_id      TEXT,
+  content       TEXT NOT NULL,
+  note_date     DATE,
+  tags          TEXT[] NOT NULL DEFAULT '{}',
+  metadata      JSONB NOT NULL DEFAULT '{}',
+  note_hash     TEXT NOT NULL,
+  version       INTEGER NOT NULL DEFAULT 1,
+  active        BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS notes_scope_date_idx
+  ON notes (scope_id, note_date, updated_at DESC) WHERE active;
+CREATE INDEX IF NOT EXISTS notes_scope_updated_idx
+  ON notes (scope_id, updated_at DESC) WHERE active;
+CREATE INDEX IF NOT EXISTS notes_fts_idx ON notes
+  USING GIN (to_tsvector('simple', coalesce(content, ''))) WHERE active;
+CREATE UNIQUE INDEX IF NOT EXISTS notes_dedupe_idx ON notes
+  (scope_id, note_hash, coalesce(note_date, DATE '0001-01-01')) WHERE active;
+
+CREATE TABLE IF NOT EXISTS note_audit (
+  id          BIGSERIAL PRIMARY KEY,
+  action      TEXT NOT NULL,
+  note_id     TEXT,
+  scope_id    TEXT NOT NULL,
+  version     INTEGER,
+  detail      JSONB NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS note_audit_note_idx
+  ON note_audit (note_id, created_at DESC);
 """
 
 
@@ -244,9 +284,84 @@ class ContextReq(BaseModel):
     task_hint: Optional[str] = None
 
 
+class NoteCreateReq(BaseModel):
+    scope_id: str = Field(min_length=3, max_length=256)
+    content: str = Field(min_length=3, max_length=8000)
+    note_date: Optional[str] = None
+    thread_id: Optional[str] = None
+    thread_type: Optional[str] = None
+    owner_id: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class NoteQueryReq(BaseModel):
+    scope_id: str = Field(min_length=3, max_length=256)
+    id: Optional[str] = Field(default=None, max_length=96)
+    query: str = Field(default="", max_length=1000)
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class NoteUpdateReq(BaseModel):
+    scope_id: str = Field(min_length=3, max_length=256)
+    content: Optional[str] = Field(default=None, min_length=3, max_length=8000)
+    note_date: Optional[str] = None
+    clear_date: bool = False
+    tags: Optional[list[str]] = None
+    metadata: Optional[dict[str, Any]] = None
+
+
 def _hash(content: str, typ: str) -> str:
     norm = " ".join(content.strip().lower().split())
     return hashlib.sha256(f"{typ}|{norm}".encode()).hexdigest()[:32]
+
+
+def _parse_note_date(value: str | None, field: str) -> date | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:
+        raise HTTPException(422, f"{field} must be YYYY-MM-DD") from exc
+
+
+def _note_hash(content: str) -> str:
+    normalized = " ".join(str(content or "").strip().casefold().split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:32]
+
+
+def _note_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "content": row["content"],
+        "note_date": row["note_date"].isoformat() if row.get("note_date") else None,
+        "tags": list(row.get("tags") or []),
+        "metadata": dict(row.get("metadata") or {}),
+        "version": int(row.get("version") or 1),
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+    }
+
+
+def _note_audit(
+    conn: psycopg.Connection,
+    action: str,
+    note_id: str,
+    scope_id: str,
+    version: int,
+    detail: dict[str, Any],
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO note_audit (action, note_id, scope_id, version, detail)
+        VALUES (%s, %s, %s, %s, %s::jsonb)
+        """,
+        (action, note_id, scope_id, version, Json(detail)),
+    )
 
 
 def _audit(conn: psycopg.Connection, action: str, memory_id: str | None, detail: dict) -> None:
@@ -270,6 +385,174 @@ def health() -> dict[str, Any]:
         }
     except Exception as e:
         raise HTTPException(503, f"unhealthy: {e}") from e
+
+
+@app.post("/v1/notes")
+def create_note(req: NoteCreateReq) -> dict[str, Any]:
+    """Persist one scoped, optionally dated note with an immutable audit row."""
+    content = req.content.strip()
+    note_date = _parse_note_date(req.note_date, "note_date")
+    note_hash = _note_hash(content)
+    note_id = f"note_{uuid.uuid4().hex[:12]}"
+    tags = list(dict.fromkeys(str(tag).strip()[:64] for tag in req.tags if str(tag).strip()))[:24]
+    with db().connection() as conn:
+        existing = conn.execute(
+            """
+            SELECT * FROM notes
+            WHERE scope_id=%s AND note_hash=%s
+              AND note_date IS NOT DISTINCT FROM %s AND active
+            LIMIT 1
+            """,
+            (req.scope_id, note_hash, note_date),
+        ).fetchone()
+        if existing:
+            return {"success": True, "deduped": True, "note": _note_row(existing)}
+        row = conn.execute(
+            """
+            INSERT INTO notes (
+              id, scope_id, thread_id, thread_type, owner_id, content,
+              note_date, tags, metadata, note_hash
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+            RETURNING *
+            """,
+            (
+                note_id,
+                req.scope_id,
+                req.thread_id,
+                req.thread_type,
+                req.owner_id,
+                content,
+                note_date,
+                tags,
+                Json(req.metadata),
+                note_hash,
+            ),
+        ).fetchone()
+        _note_audit(conn, "create", note_id, req.scope_id, 1, {"note_date": req.note_date})
+    return {"success": True, "deduped": False, "note": _note_row(row)}
+
+
+@app.post("/v1/notes/query")
+def query_notes(req: NoteQueryReq) -> dict[str, Any]:
+    """Fast scope/date lookup with optional full-text and tag filters."""
+    date_from = _parse_note_date(req.date_from, "date_from")
+    date_to = _parse_note_date(req.date_to, "date_to")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(422, "date_from must not be after date_to")
+    clauses = ["scope_id=%s", "active"]
+    params: list[Any] = [req.scope_id]
+    if req.id:
+        clauses.append("id=%s")
+        params.append(req.id.strip())
+    if date_from:
+        clauses.append("note_date >= %s")
+        params.append(date_from)
+    if date_to:
+        clauses.append("note_date <= %s")
+        params.append(date_to)
+    if req.tags:
+        clauses.append("tags && %s")
+        params.append(list(dict.fromkeys(req.tags))[:24])
+    query = req.query.strip()
+    filter_clauses = list(clauses)
+    filter_params = list(params)
+    if query:
+        clauses.append(
+            "(to_tsvector('simple', content) @@ plainto_tsquery('simple', %s) OR content ILIKE %s)"
+        )
+        params.extend([query, f"%{query}%"])
+    params.append(req.limit)
+    sql = f"""
+      SELECT * FROM notes
+      WHERE {' AND '.join(clauses)}
+      ORDER BY note_date ASC NULLS LAST, updated_at DESC
+      LIMIT %s
+    """
+    fallback_used = False
+    with db().connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+        # A narrow wording filter must not hide dated plans. Return the scoped
+        # date window as fallback candidates so the caller can answer naturally.
+        if query and not rows and (date_from or date_to):
+            fallback_clauses = filter_clauses
+            fallback_params = filter_params + [req.limit]
+            fallback_sql = f"""
+              SELECT * FROM notes
+              WHERE {' AND '.join(fallback_clauses)}
+              ORDER BY note_date ASC NULLS LAST, updated_at DESC
+              LIMIT %s
+            """
+            rows = conn.execute(fallback_sql, fallback_params).fetchall()
+            fallback_used = bool(rows)
+    return {
+        "success": True,
+        "count": len(rows),
+        "query_fallback": fallback_used,
+        "items": [_note_row(row) for row in rows],
+    }
+
+
+@app.patch("/v1/notes/{note_id}")
+def update_note(note_id: str, req: NoteUpdateReq) -> dict[str, Any]:
+    note_date = None if req.clear_date else _parse_note_date(req.note_date, "note_date")
+    with db().connection() as conn:
+        current = conn.execute(
+            "SELECT * FROM notes WHERE id=%s AND scope_id=%s AND active",
+            (note_id, req.scope_id),
+        ).fetchone()
+        if not current:
+            raise HTTPException(404, "note not found")
+        content = req.content.strip() if req.content is not None else current["content"]
+        effective_date = (
+            None
+            if req.clear_date
+            else note_date if req.note_date is not None else current["note_date"]
+        )
+        tags = (
+            list(dict.fromkeys(str(tag).strip()[:64] for tag in req.tags if str(tag).strip()))[:24]
+            if req.tags is not None
+            else current["tags"]
+        )
+        metadata = req.metadata if req.metadata is not None else current["metadata"]
+        version = int(current["version"] or 1) + 1
+        row = conn.execute(
+            """
+            UPDATE notes SET content=%s, note_date=%s, tags=%s, metadata=%s::jsonb,
+              note_hash=%s, version=%s, updated_at=NOW()
+            WHERE id=%s AND scope_id=%s AND active
+            RETURNING *
+            """,
+            (
+                content,
+                effective_date,
+                tags,
+                Json(metadata),
+                _note_hash(content),
+                version,
+                note_id,
+                req.scope_id,
+            ),
+        ).fetchone()
+        _note_audit(conn, "update", note_id, req.scope_id, version, {"previous": _note_row(current)})
+    return {"success": True, "note": _note_row(row)}
+
+
+@app.delete("/v1/notes/{note_id}")
+def delete_note(note_id: str, scope_id: str = Query(..., min_length=3)) -> dict[str, Any]:
+    with db().connection() as conn:
+        current = conn.execute(
+            "SELECT * FROM notes WHERE id=%s AND scope_id=%s AND active",
+            (note_id, scope_id),
+        ).fetchone()
+        if not current:
+            raise HTTPException(404, "note not found")
+        version = int(current["version"] or 1) + 1
+        conn.execute(
+            "UPDATE notes SET active=FALSE, version=%s, updated_at=NOW() WHERE id=%s",
+            (version, note_id),
+        )
+        _note_audit(conn, "delete", note_id, scope_id, version, {"previous": _note_row(current)})
+    return {"success": True, "id": note_id, "version": version}
 
 
 @app.post("/v1/remember")
@@ -593,8 +876,9 @@ def compact(limit: int = Query(50, ge=1, le=200)) -> dict[str, Any]:
                 UPDATE memories
                 SET active = false
                 WHERE staged AND active
-                  AND created_at < NOW() - INTERVAL '30 days'
-                """
+                  AND created_at < NOW() - (%s * INTERVAL '1 day')
+                """,
+                (STAGED_RETENTION_DAYS,),
             )
             deactivated = int(cur.rowcount or 0)
             conn.commit()

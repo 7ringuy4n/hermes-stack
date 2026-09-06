@@ -187,7 +187,7 @@ main() {
 
   if [[ "$sse" -lt 1 ]]; then
     SSE_MISS=$((SSE_MISS + 1))
-    log "loggedIn but sseClients=${sse} (miss ${SSE_MISS}/${SSE_MISS_LIMIT}) restart_hermes=${RESTART_HERMES}"
+    log "loggedIn but sseClients=${sse} (miss ${SSE_MISS}/${SSE_MISS_LIMIT})"
     if [[ "$SSE_MISS" -ge "$SSE_MISS_LIMIT" ]]; then
       if ! in_cooldown "$SSE_COOLDOWN_S"; then
         heal_sse_zero

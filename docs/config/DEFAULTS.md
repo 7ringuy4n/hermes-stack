@@ -11,6 +11,10 @@ After first setup, the terminal prints the root-only access command for that
 bootstrap file. The default is `sudo cat /data/assistant/openbao/root-token`;
 do not paste its output into reports or chat.
 
+OpenBao also initializes `BACKUP_RETENTION_DAYS=7` and
+`MEMORY_STAGED_RETENTION_DAYS=7`. Timer commands load these operational values
+for the process and remove the transient export afterward.
+
 ## Paths and locale
 
 ```env

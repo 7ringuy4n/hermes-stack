@@ -54,7 +54,9 @@ Qdrant                    │
 | Image edit | attached/reply-quoted image → image-edit skill → `image-edit` combo |
 | Image/document analysis | media staging → `vision-ocr` combo → natural analysis |
 | Knowledge ingest | ingest → embedding service → `embedding` combo → Qdrant |
+| Durable notes | classify → notes host route → scoped PostgreSQL note/date indexes + audit |
 | Timed work | schedule skill → schedule-worker/Postgres → later queue injection |
+| Stop active work | classify control intent → thread-local active task cancellation → queue continues |
 | Office artifact | documents skill/file tooling → staged artifact → visual QA → outbound file |
 
 There is no supported video generation/editing capability and no separate
@@ -77,11 +79,11 @@ and explicit service HA; see [MULTI_NODE.md](./MULTI_NODE.md).
 
 ## Persistence and recovery
 
-- PostgreSQL: durable facts, sessions, workflows, schedules, channel metadata.
+- PostgreSQL: durable facts, scoped notes/audit, sessions, workflows, schedules, channel metadata.
 - Valkey: short-lived context, locks, queues, rate limits.
 - Qdrant: knowledge and conversational vectors.
 - `/data/assistant`: documents, staged inbound media, generated artifacts.
-- OpenBao: provider/service secrets.
+- OpenBao: provider/service secrets and durable operational retention values.
 - OmniRoute volume/export: accounts, providers, combo order/strategy/history.
 - `/data/assistant/backups`: verified recovery stamps.
 

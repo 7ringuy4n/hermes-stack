@@ -15,6 +15,7 @@ from openbao_common import (  # noqa: E402
     COMPOSE_HOST_KEYS,
     ENV_SCRUB_KEYS,
     OBSOLETE_SECRET_KEYS,
+    RUNTIME_DEFAULTS,
     SEED_KEYS,
     is_secret_env_name,
 )
@@ -49,6 +50,9 @@ def main() -> int:
     assert "POLLINATIONS_API_KEY" in SEED_KEYS
     assert "POLLINATIONS_API_KEY" in ENV_SCRUB_KEYS
     assert "POLLINATIONS_API_KEY" not in OBSOLETE_SECRET_KEYS
+    assert RUNTIME_DEFAULTS["BACKUP_RETENTION_DAYS"] == "7"
+    assert RUNTIME_DEFAULTS["MEMORY_STAGED_RETENTION_DAYS"] == "7"
+    assert "BACKUP_RETENTION_DAYS" in ENV_SCRUB_KEYS
     for key in ("EMBED_API_KEY", "OCR_API_KEY", "LLM_JUDGE_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"):
         assert key in SEED_KEYS
     assert is_secret_env_name("FUTURE_PROVIDER_API_KEY")

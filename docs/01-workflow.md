@@ -46,10 +46,10 @@ the adapter stages that attachment before invoking the skill.
 | State | Owner | Recovery property |
 |---|---|---|
 | Recent conversation, locks, inbound queues | Valkey | Ephemeral; TTL/queue data may be rebuilt. |
-| Durable facts, sessions, workflows, schedules, Zalo metadata | PostgreSQL | Backed up before lifecycle mutations. |
+| Durable facts, scoped notes/audit, sessions, workflows, schedules, Zalo metadata | PostgreSQL | Backed up before lifecycle mutations. |
 | Knowledge and conversational vectors | Qdrant | Durable volume; knowledge can be re-ingested. |
 | Source documents and generated media | `/data/assistant` | Backed up separately from containers. |
-| Provider credentials | OpenBao | Never written to reports; exported by the backup component. |
+| Provider credentials and retention settings | OpenBao | Never written to reports; exported by the backup component. |
 | Providers, accounts, combos, routing strategy | OmniRoute data volume/export | Preserved on update; operator combo membership is not rewritten. |
 | Hermes runtime home | one directory per replica | Prevents shared SQLite/session mutation between replicas. |
 | Zalo owner + inbound ordering | Valkey lease and per-thread queues | One SSE owner; failover after lease expiry; duplicate-safe ordered turns. |
@@ -90,6 +90,9 @@ member.
   deadline.
 - Scheduled and asynchronous jobs acknowledge once, then deliver one final
   result. Setup commands do not inject test traffic.
+- Explicit note operations use scoped PostgreSQL date/full-text indexes and an
+  audit trail; explicit active-work cancellation bypasses queue admission but
+  affects only the current conversation.
 
 See [03-architecture.md](./03-architecture.md),
 [06-model-routing.md](./06-model-routing.md), and
