@@ -53,6 +53,14 @@ def main() -> int:
     else:
         print(f"PASS {len(identities)} Grafana dashboards have unique uid and title")
 
+    provisioning_root = ROOT / "config" / "monitor" / "grafana"
+    for name in ("alerting", "dashboards", "datasources", "plugins"):
+        if not (provisioning_root / name).is_dir():
+            print(f"FAIL Grafana provisioning directory missing: {name}")
+            fails += 1
+        else:
+            print(f"PASS Grafana provisioning directory: {name}")
+
     legacy = ROOT / "architect" / "monitor" / "grafana"
     if legacy.exists() and any(path.is_file() for path in legacy.rglob("*")):
         print("FAIL duplicate architect/monitor/grafana provisioning tree remains")

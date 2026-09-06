@@ -263,6 +263,9 @@ source. Document the actual hybrid model: Traefik load-balances HTTP, a Valkey
 lease elects one Zalo SSE owner, and that owner drains each conversation FIFO
 and sends its result to the original thread through the bridge route.
 
+The canonical tree also retains empty `alerting` and `plugins` directories so
+Grafana does not report missing standard provisioning paths at startup.
+
 ### Verification
 
 - [x] Confirm Compose mounts the canonical config tree.
