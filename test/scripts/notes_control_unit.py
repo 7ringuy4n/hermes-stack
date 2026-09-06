@@ -103,6 +103,7 @@ def main() -> int:
     assert "CREATE TABLE IF NOT EXISTS notes" in memory_source
     assert "notes_scope_date_idx" in memory_source and "notes_fts_idx" in memory_source
     assert "CREATE TABLE IF NOT EXISTS note_audit" in memory_source
+    assert "fallback_clauses = date_clauses" in memory_source
     assert "Control-plane cancellation bypasses rate limits and FIFO admission" in adapter_source
     assert "except asyncio.CancelledError:" in adapter_source
     assert "self._as_active_turn_tasks" in adapter_source

@@ -35,6 +35,11 @@ executes structured plans. Ambiguous updates and deletes never choose a row.
 **Prevention:** contract and live tests cover unrelated note subjects, date and
 topic lookup, isolation, dedupe, audit, and ambiguous mutation refusal.
 
+A live multilingual lookup showed that classifier-produced semantic tags can
+use a different language from tags saved earlier. The fallback now removes
+query wording and tags only inside the already-enforced scope/date window, so a
+dated plan remains discoverable without widening identity or time boundaries.
+
 ## Active request control
 
 **Symptom:** a follow-up stop instruction entered the same queue as the long
