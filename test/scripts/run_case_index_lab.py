@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Run test/RULES.md §15 unit + VPS lab scripts in batch.
+"""Run the current test/RULES.md offline and VPS release gates in batch.
 
 Env (VPS scripts): ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 Optional: SKIP_VPS=1 (units only), CASE_FILTER=38,32 (comma ids)
@@ -19,35 +19,10 @@ OUT = ROOT / "test" / "reports" / "run-case-index-lab"
 PY = sys.executable
 
 UNITS: list[tuple[str, str]] = [
-    ("schedule_timezone_unit.py", "15"),
-    ("multi_request_unit.py", "16"),
-    ("knowledge_cite_unit.py", "29"),
-    ("llm_classify_unit.py", "24"),
-    ("gateway_noise_unit.py", "22"),
-    ("inbound_queue_unit.py", "23"),
-    ("web_search_backends_unit.py", "18"),
-    ("grafana_pairing_unit.py", "20"),
-    ("defaults_profile_unit.py", "21"),
-    ("update_maintenance_unit.py", "update"),
-    ("omni_attribution_unit.py", "omni-attribution"),
-    ("ux_copy_unit.py", "ux"),
-    ("zalo_attachment_unit.py", "34"),
-    ("schedule_crud_unit.py", "34"),
-    ("secret_probe_path_unit.py", "32"),
-    ("ocr_refuse_unit.py", "35"),
-    ("vision_ocr_policy_unit.py", "36"),
-    ("omni_rotate_noreply_unit.py", "37"),
-    ("zalo_workflow_parallel_unit.py", "wf-par"),
-    ("soul_deception_unit.py", "soul"),
-    ("workflow_cadence_unit.py", "wf"),
-    ("zalo_store_unit.py", "zalo-store"),
-    ("zalo_bridge_transport_unit.py", "zalo-transport"),
-    ("openbao_common_unit.py", "43"),
-    ("media_refuse_unit.py", "refuse"),
-    ("router_worker_chat_norm.py", "router"),
-    ("router_worker_identity_unit.py", "21"),
-    ("zalo_watch_timer_unit.py", "watcher"),
+    (path.name, path.stem)
+    for path in sorted((ROOT / "test" / "scripts").glob("*_unit.py"))
 ]
+UNITS.append(("router_worker_chat_norm.py", "router_worker_chat_norm"))
 
 VPS: list[tuple[str, str]] = [
     ("vps_health_check.py", "health"),
@@ -67,6 +42,9 @@ VPS: list[tuple[str, str]] = [
     ("zalo_tn_remaining_suite_lab.py", "remaining"),
     ("env_obsolete_cleanup_lab.py", "env-clean"),
     ("zalo_tn_archive_extract_lab.py", "archive"),
+    ("zalo_dm_group_concurrency_lab.py", "dm-group-concurrency"),
+    ("zalo_queue_failover_lab.py", "queue-failover"),
+    ("zalo_active_cancel_lab.py", "active-cancel"),
 ]
 
 

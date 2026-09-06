@@ -604,7 +604,7 @@ assistant_restore_routers() {
 }
 
 assistant_backup_zalo() {
-  local dir="$1" unit
+  local dir="$1" unit data session_src="" candidate file
   $SUDO mkdir -p "${dir}/zalo"
   unit="${HOME}/.config/systemd/user/com.hermes.zaloplugin.service"
   if [[ -f "$unit" ]]; then
@@ -612,10 +612,48 @@ assistant_backup_zalo() {
   fi
   systemctl --user cat com.hermes.zaloplugin.service > "${dir}/zalo/unit.cat" 2>/dev/null || true
   printf '%s\n' "${ZALO_VENDOR_DIR:-${ROOT}/vendor/hermes-zalo-plugin}" > "${dir}/zalo/vendor_dir.txt"
+  data="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
+  for candidate in \
+    "${ZALO_DATA_DIR:+${ZALO_DATA_DIR}/credentials.json}" \
+    "${HOME}/.hermes-zalo/credentials.json"; do
+    [[ -n "$candidate" && -f "$candidate" ]] || continue
+    session_src="$candidate"
+    break
+  done
+  if [[ -z "$session_src" ]]; then
+    assistant_backup_fail "Zalo credentials are missing"
+    return 1
+  fi
+  $SUDO mkdir -p "${dir}/zalo/session" "${dir}/zalo/identity"
+  $SUDO cp -a "$session_src" "${dir}/zalo/session/credentials.json"
+  for file in \
+    zalo_admin_users.txt zalo_allowed_users.txt zalo_allowed_threads.txt \
+    zalo_denied_threads.txt; do
+    [[ -f "${data}/${file}" ]] || continue
+    $SUDO cp -a "${data}/${file}" "${dir}/zalo/identity/${file}"
+  done
+  $SUDO chmod 700 "${dir}/zalo/session" "${dir}/zalo/identity" 2>/dev/null || true
+  $SUDO chmod 600 "${dir}/zalo/session/credentials.json" \
+    "${dir}/zalo/identity/"* 2>/dev/null || true
 }
 
 assistant_restore_zalo() {
-  local dir="$1" unit_src="${dir}/zalo/com.hermes.zaloplugin.service"
+  local dir="$1" unit_src="${dir}/zalo/com.hermes.zaloplugin.service" data file
+  data="${HERMES_DATA_DIR:-${ASSISTANT_DATA_DIR:-/data/assistant}}"
+  if [[ -f "${dir}/zalo/session/credentials.json" ]]; then
+    mkdir -p "${ZALO_DATA_DIR:-${HOME}/.hermes-zalo}"
+    cp -a "${dir}/zalo/session/credentials.json" \
+      "${ZALO_DATA_DIR:-${HOME}/.hermes-zalo}/credentials.json"
+    chmod 600 "${ZALO_DATA_DIR:-${HOME}/.hermes-zalo}/credentials.json" 2>/dev/null || true
+  fi
+  for file in \
+    zalo_admin_users.txt zalo_allowed_users.txt zalo_allowed_threads.txt \
+    zalo_denied_threads.txt; do
+    [[ -f "${dir}/zalo/identity/${file}" ]] || continue
+    $SUDO cp -a "${dir}/zalo/identity/${file}" "${data}/${file}"
+    $SUDO chown --reference="${data}" "${data}/${file}" 2>/dev/null || true
+    $SUDO chmod 600 "${data}/${file}" 2>/dev/null || true
+  done
   mkdir -p "${HOME}/.config/systemd/user"
   if [[ -f "$unit_src" ]]; then
     cp -a "$unit_src" "${HOME}/.config/systemd/user/"

@@ -414,3 +414,84 @@ exported into the already-running command. The nested update consequently used
 the previous replica count. Add/remove now updates the process environment at
 the same time as `.env`; the regression checks that persistence and export both
 precede the apply step.
+
+## Reliable Zalo queue ownership across replica loss
+
+### Symptom
+
+A Zalo event was removed from the shared FIFO before its Hermes turn finished.
+If the elected SSE owner stopped in that interval, the event disappeared. A
+second gap left pending queues dormant after promotion unless a later inbound
+event happened to kick that same conversation.
+
+### Root cause
+
+`GateStore.queue_pop()` used destructive `LPOP`, while queue tasks and the list
+of active destinations lived only in one process. Lease loss closed the bridge
+session but did not cancel all owner-local inbound and turn tasks.
+
+### Technical detail
+
+- `gate_valkey.py::queue_claim()` moves `q:<destination>` to
+  `qinflight:<destination>` atomically with `LMOVE`; `queue_ack()` removes the
+  exact payload only after terminal processing.
+- `gate_valkey.py::queue_active_ids()` stores active destinations in `qactive`;
+  `queue_recover()` moves abandoned claims back to the FIFO head in order.
+- `adapter.py::_as_queue_recovery_loop()` scans the registry on the elected
+  owner; `_as_cancel_owner_work()` cancels local inbound, queue-drain, and turn
+  tasks when renewal fails so a promoted replica owns recovery.
+- The per-conversation worker lease now exceeds the maximum queued-turn
+  deadline, preventing a routine recovery scan from reclaiming a legitimate
+  slow turn. A newly elected owner explicitly fences stale worker locks before
+  it recovers inflight items, so failover still follows the owner lease bound.
+- Malformed claimed payloads are acknowledged and discarded rather than
+  becoming permanent poison items.
+
+### Decision and core fix
+
+Use a shared claim/inflight/ack protocol with a durable active-destination
+registry. Keep one worker lease per conversation so ordering is preserved,
+while different DM and group destinations can drain concurrently.
+
+### Prevention
+
+Unit coverage proves claim recovery and destination isolation. The live release
+gate stages a claimed request, stops the current owner, requires a standby to
+acquire the lease and deliver the recovered request, then verifies both queue
+lists and the registry are empty.
+
+## Complete Zalo disaster-recovery state
+
+### Symptom
+
+A verified full backup contained the Zalo systemd unit but omitted the logged-in
+bridge session and identity policy files. A clean host restore could therefore
+require a new QR login or lose the authorization boundary despite a passing
+manifest.
+
+### Root cause
+
+`assistant_backup_zalo()` captured service configuration only. The separate
+session helper was not part of the atomic backup stamp.
+
+### Technical detail
+
+- `assistant_backup_zalo()` now requires and stores `credentials.json`, plus
+  administrator, allowed-user, allowed-thread, and denied-thread policy files.
+- `assistant_restore_zalo()` restores the session before starting the user
+  service and restores identity files with the data-directory owner and mode
+  `0600`.
+- The backup contract fails when credentials are absent, so `destroy` and
+  `update` stop before changing the stack.
+
+### Decision and core fix
+
+Make Zalo session and identity policy part of the same verified recovery stamp
+as OpenBao, stores, schedules, and OmniRoute. Evidence records only component
+status, counts, and checksums; it never prints identities or secrets.
+
+### Prevention
+
+The static backup contract and destructive VPS gate require session and policy
+artifacts before teardown, then compare login, authorized group membership,
+one-SSE ownership, and router inventory after clean deployment.

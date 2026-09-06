@@ -407,6 +407,7 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_inbound_locks: Dict[str, asyncio.Lock] = {}
         self._as_inbound_tasks: set[asyncio.Task] = set()
         self._as_queue_tasks: Dict[str, asyncio.Task] = {}
+        self._as_queue_recovery_task: Optional[asyncio.Task] = None
         self._as_active_turn_tasks: Dict[str, asyncio.Task] = {}
         self._as_active_turn_message_ids: Dict[str, str] = {}
         self._as_compound_after: Dict[str, int] = {}
@@ -596,6 +597,15 @@ class ZaloAdapter(BasePlatformAdapter):
         # Start the SSE inbound loop.
         self._sse_task = asyncio.create_task(self._sse_loop())
         self._as_workflow_task = asyncio.create_task(self._as_workflow_worker())
+        if self._as_queue_recovery_task is None or self._as_queue_recovery_task.done():
+            self._as_queue_recovery_task = asyncio.create_task(
+                self._as_queue_recovery_loop()
+            )
+        if is_reconnect or not any(
+            task is not None and not task.done()
+            for task in self._as_queue_tasks.values()
+        ):
+            self._as_resume_stale_owner_queues()
         if self._owner_lease is not None:
             self._owner_lease_task = asyncio.create_task(self._owner_lease_loop())
         self._mark_connected()
@@ -628,6 +638,12 @@ class ZaloAdapter(BasePlatformAdapter):
             self._as_workflow_task.cancel()
             try:
                 await self._as_workflow_task
+            except asyncio.CancelledError:
+                pass
+        if self._as_queue_recovery_task and not self._as_queue_recovery_task.done():
+            self._as_queue_recovery_task.cancel()
+            try:
+                await self._as_queue_recovery_task
             except asyncio.CancelledError:
                 pass
         pending = [t for t in getattr(self, "_as_workflow_inflight", set()) if not t.done()]
@@ -680,15 +696,39 @@ class ZaloAdapter(BasePlatformAdapter):
                 if await lease.renew():
                     continue
                 logger.error("Zalo: owner lease lost; closing bridge session")
+                self._owner_lease = None
                 self._mark_disconnected()
+                self._as_cancel_owner_work()
                 await self._close_session()
+                if self._standby_task is None or self._standby_task.done():
+                    self._standby_task = asyncio.create_task(
+                        self._standby_acquire_loop(lease)
+                    )
                 return
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.error("Zalo: owner lease renewal failed — %s", type(exc).__name__)
+            self._owner_lease = None
             self._mark_disconnected()
+            self._as_cancel_owner_work()
             await self._close_session()
+            if self._standby_task is None or self._standby_task.done():
+                self._standby_task = asyncio.create_task(
+                    self._standby_acquire_loop(lease)
+                )
+
+    def _as_cancel_owner_work(self) -> None:
+        """Stop owner-local work so a promoted replica can recover it once."""
+        current = asyncio.current_task()
+        tasks = set(getattr(self, "_as_inbound_tasks", set()))
+        tasks.update(getattr(self, "_as_queue_tasks", {}).values())
+        tasks.update(getattr(self, "_as_active_turn_tasks", {}).values())
+        tasks.add(getattr(self, "_sse_task", None))
+        tasks.add(getattr(self, "_as_workflow_task", None))
+        for task in tasks:
+            if task is not current and task is not None and not task.done():
+                task.cancel()
 
     async def _close_session(self) -> None:
         if self._session and not self._session.closed:
@@ -3640,6 +3680,10 @@ class ZaloAdapter(BasePlatformAdapter):
         )
         return max(ZALO_DRAIN_DEFAULT_S, val, self._as_queue_turn_timeout_s())
 
+    def _as_queue_worker_ttl_s(self) -> int:
+        """Keep the worker lease beyond the longest permitted queued turn."""
+        return int(max(300.0, min(86400.0, self._as_queue_turn_timeout_s() + 60.0)))
+
     def _as_queue_kick(self, thread_id: str) -> None:
         tid = str(thread_id or "")
         if not tid:
@@ -3660,6 +3704,53 @@ class ZaloAdapter(BasePlatformAdapter):
         task = asyncio.create_task(self._as_queue_drain(tid))
         task._as_drain_started = __import__("time").time()  # type: ignore[attr-defined]
         self._as_queue_tasks[tid] = task
+
+    def _as_resume_stale_owner_queues(self) -> None:
+        """Fence stale worker locks after startup or owner promotion."""
+        store = self._as_gate_store()
+        if store is None or not hasattr(store, "queue_active_ids"):
+            return
+        try:
+            active = store.queue_active_ids()
+        except Exception as exc:
+            logger.warning(
+                "Zalo: stale queue registry read failed — %s",
+                type(exc).__name__,
+            )
+            return
+        for thread_id in active:
+            try:
+                store.worker_done(thread_id)
+            except Exception:
+                continue
+            self._as_queue_kick(thread_id)
+
+    async def _as_queue_recovery_loop(self) -> None:
+        """Resume durable FIFOs after startup or Zalo owner promotion.
+
+        The previous owner may have died after enqueue and before its local
+        drain task completed. The active-destination registry is shared in
+        Valkey. Startup/promotion fences stale worker locks; periodic kicks
+        handle transient recovery failures without touching a live worker.
+        """
+        try:
+            while not self._stop:
+                if _replica_count() > 1 and self._owner_lease is None:
+                    await asyncio.sleep(10)
+                    continue
+                store = self._as_gate_store()
+                if store is not None and hasattr(store, "queue_active_ids"):
+                    try:
+                        for thread_id in store.queue_active_ids():
+                            self._as_queue_kick(thread_id)
+                    except Exception as exc:
+                        logger.warning(
+                            "Zalo: queue recovery scan failed — %s",
+                            type(exc).__name__,
+                        )
+                await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            raise
 
     async def _as_enqueue_inbound(
         self,
@@ -3854,10 +3945,26 @@ class ZaloAdapter(BasePlatformAdapter):
         store = self._as_gate_store()
         if store is None or not tid:
             return
+        worker_ttl = self._as_queue_worker_ttl_s()
         try:
-            if not store.worker_try(tid, 300):
+            if not store.worker_try(tid, worker_ttl):
                 return
         except Exception:
+            return
+        try:
+            recovered = store.queue_recover(tid) if hasattr(store, "queue_recover") else 0
+            if recovered:
+                logger.warning(
+                    "Zalo: recovered abandoned queue work thread=%s count=%s",
+                    tid,
+                    recovered,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Zalo: queue recovery failed thread=%s — %s",
+                tid,
+                type(exc).__name__,
+            )
             return
         try:
             from .inbound_queue import KIND_PART, decode_item, encode_item, make_item, queue_ttl_s
@@ -3878,17 +3985,26 @@ class ZaloAdapter(BasePlatformAdapter):
                     )
                     break
                 try:
-                    raw = store.queue_pop(tid)
+                    raw = (
+                        store.queue_claim(tid)
+                        if hasattr(store, "queue_claim")
+                        else store.queue_pop(tid)
+                    )
                 except Exception:
                     break
                 if not raw:
                     break
                 try:
-                    store.worker_touch(tid, 300)
+                    store.worker_touch(tid, worker_ttl)
                 except Exception:
                     pass
                 item = decode_item(raw)
                 if not item:
+                    if hasattr(store, "queue_ack"):
+                        try:
+                            store.queue_ack(tid, raw)
+                        except Exception:
+                            break
                     continue
                 text = str(item.get("text") or "")
                 kind = str(item.get("kind") or KIND_PART)
@@ -3929,6 +4045,16 @@ class ZaloAdapter(BasePlatformAdapter):
                         except Exception:
                             pass
                 await self._as_run_queued_part(item)
+                if hasattr(store, "queue_ack"):
+                    try:
+                        store.queue_ack(tid, raw)
+                    except Exception as exc:
+                        logger.warning(
+                            "Zalo: queue acknowledge failed thread=%s — %s",
+                            tid,
+                            type(exc).__name__,
+                        )
+                        break
         except asyncio.CancelledError:
             logger.warning("Zalo: queue drain cancelled thread=%s", tid)
             raise

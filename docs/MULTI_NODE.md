@@ -13,7 +13,7 @@
 
 | Store / hop | Role | If it dies |
 |-------------|------|------------|
-| **Valkey** | Short-term session, gateway rate-limit, RQ jobs, Zalo owner helpers | Sessions drop; queues pause; RL/gateway may 503 |
+| **Valkey** | Short-term session, gateway rate-limit, jobs, Zalo lease and claim/ack FIFOs | Sessions drop; durable inbound queues pause; rate limits/gateway may fail |
 | **Postgres** | Durable facts + authz ACL | Memory/authz unhealthy until reconnect |
 | **Qdrant** | Knowledge chunks (rebuildable) | Cite/search empty until restore/re-ingest |
 | **Traefik / Gateway** | HTTP edge and internal Zalo bridge route | New API and Zalo adapter connections fail until Traefik recovers |

@@ -59,6 +59,8 @@ time, restart deltas, and sanitized evidence.
 5. Prove the Zalo path is bridge → proxy → Traefik → Valkey-elected Hermes
    owner. Stop the active owner and verify a standby acquires after the bounded
    lease interval without duplicate delivery or restarting every replica.
+   Kill an owner after it claims a queued item and prove the promoted owner
+   recovers the inflight item before later items in that conversation.
 6. Execute the capability cases below through the Zalo plugin and confirm the
    operator sees every expected result in Zalo.
 7. Repeat the concurrency workload with `HERMES_REPLICAS=1` and `2` using the
@@ -186,6 +188,11 @@ request blocking the other beyond its operation deadline.
 Record wall-clock completion for the pair with one and two Hermes replicas.
 Report median/tail latency only from observed samples; do not claim scaling
 benefit when provider latency dominates or the sample is too small.
+
+Also run one DM request and one request in the named three-member test group at
+the same instant. Resolve the group by display name at runtime, verify its
+membership through durable channel state, and require each result to return to
+its originating conversation. Numeric identities must remain runtime-only.
 
 ## 6. Stability observation
 

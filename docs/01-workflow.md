@@ -45,14 +45,14 @@ the adapter stages that attachment before invoking the skill.
 
 | State | Owner | Recovery property |
 |---|---|---|
-| Recent conversation, locks, inbound queues | Valkey | Ephemeral; TTL/queue data may be rebuilt. |
+| Recent conversation, locks, inbound queues | Valkey | Sessions expire by policy; queue items use claim/ack and survive owner promotion. |
 | Durable facts, scoped notes/audit, sessions, workflows, schedules, Zalo metadata | PostgreSQL | Backed up before lifecycle mutations. |
 | Knowledge and conversational vectors | Qdrant | Durable volume; knowledge can be re-ingested. |
 | Source documents and generated media | `/data/assistant` | Backed up separately from containers. |
 | Provider credentials and retention settings | OpenBao | Never written to reports; exported by the backup component. |
 | Providers, accounts, combos, routing strategy | OmniRoute data volume/export | Preserved on update; operator combo membership is not rewritten. |
 | Hermes runtime home | one directory per replica | Prevents shared SQLite/session mutation between replicas. |
-| Zalo owner + inbound ordering | Valkey lease and per-thread queues | One SSE owner; failover after lease expiry; duplicate-safe ordered turns. |
+| Zalo owner + inbound ordering | Valkey lease and per-conversation queues | One SSE owner; promoted owners discover and resume abandoned claims without waiting for a new message. |
 
 Embedding is a service path, not an LLM chat fallback. Ingest and memory
 optimization use the `embedding` combo. Web retrieval uses the `web-search`

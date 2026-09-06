@@ -1,5 +1,13 @@
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
+- Made Zalo per-conversation FIFO work recoverable across elected-owner loss by
+  atomically claiming into shared inflight state, acknowledging only after a
+  terminal turn, and scanning a durable active-destination registry on
+  promotion. Lease loss now cancels owner-local work before recovery.
+- Expanded verified recovery stamps to require the Zalo login session and
+  identity policy state, restoring restrictive ownership and permissions before
+  the bridge service starts.
+
 - Fixed direct media shortcut delivery so generated artifacts participate in
   the shared file-claim ledger and retain their originating turn token. A
   later queued request can no longer rediscover the prior artifact, resend it,

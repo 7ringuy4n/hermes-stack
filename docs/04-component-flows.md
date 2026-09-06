@@ -11,7 +11,11 @@ edge/Zalo → queue → Hermes → session + memory context
 HTTP requests may land on any healthy Hermes replica. Zalo events are consumed
 only by the current lease owner; that same process drains the conversation FIFO
 and emits the reply to the original thread through the internal Traefik bridge
-route. The queue carries work, not a destination replica identifier.
+route. The queue carries work and its original destination, not a destination
+replica identifier. Claim/ack state remains in Valkey; a promoted owner scans
+the active-queue registry, fences the previous owner's worker lock, and
+requeues an abandoned claim before continuing. A healthy worker lease is longer
+than the maximum queued-turn deadline.
 
 ## Classification and dispatch
 
