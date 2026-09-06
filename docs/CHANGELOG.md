@@ -4,6 +4,10 @@
   the shared file-claim ledger and retain their originating turn token. A
   later queued request can no longer rediscover the prior artifact, resend it,
   and suppress its own text response.
+- Added an isolated-workflow delivery confirmation and recovery path. If an
+  asynchronous text result reaches shared session memory but its original
+  platform send does not complete, the owning adapter retries the final text
+  once through the serialized destination sender and records the outcome.
 - Documented the deployed hybrid availability model: active-active Hermes HTTP
   behind Traefik, one active Zalo SSE owner elected by a renewable Valkey lease,
   and per-conversation Valkey FIFO processing by that owner.

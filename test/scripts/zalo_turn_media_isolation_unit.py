@@ -36,6 +36,12 @@ def main() -> int:
     assert third == 1
     assert media_sent_in_turn(sent, "thread-a", tokens["thread-a"]) is True
     assert media_sent_in_turn(sent, "thread-b", tokens["thread-b"]) is False
+    adapter_source = (
+        ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py"
+    ).read_text(encoding="utf-8")
+    assert '"delivery_recovered": recovered' in adapter_source
+    assert '"as_skip_session_memory": True' in adapter_source
+    assert 'if not meta.get("as_skip_session_memory"):' in adapter_source
     print("PASS_ZALO_TURN_MEDIA_ISOLATION")
     return 0
 
