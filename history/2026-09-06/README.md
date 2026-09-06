@@ -1,5 +1,15 @@
 # 2026-09-06 — scoped notes, cancellation, and HA liveness
 
+## Verified teardown after secret scrubbing
+
+A clean-deployment gate exposed that successful runtime startup deliberately
+removes transient secret exports, while the later destroy path expected those
+values for both the OmniRoute inventory export and Compose parsing. Destroy now
+reloads OpenBao before its backup and teardown. An enabled OmniRoute export that
+is skipped or fails now fails the pre-change backup gate; the named volume is
+still the recovery source of truth, while the JSON inventory is required audit
+evidence.
+
 ## Task-aware proxy identity
 
 **Symptom:** one service had a generic model-routing name even though its role

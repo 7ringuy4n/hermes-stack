@@ -577,10 +577,13 @@ assistant_backup_routers() {
     done
   } | $SUDO tee "$envf" >/dev/null
   $SUDO chmod 600 "$envf" 2>/dev/null || true
-  # Best-effort human-readable combo export (login + GET /api/combos). Volumes remain SoT.
+  # Human-readable combo export (login + GET /api/combos). Volumes remain SoT,
+  # but a verified destructive gate also requires an auditable inventory.
   if [[ -f "${BACKUP_LIB_DIR}/backup_routers_export.py" ]]; then
-    ROOT="${ROOT}" python3 "${BACKUP_LIB_DIR}/backup_routers_export.py" "${dir}/routers" \
-      || log "WARN: router combo JSON export returned non-zero (volumes still backed up)"
+    if ! ROOT="${ROOT}" python3 "${BACKUP_LIB_DIR}/backup_routers_export.py" "${dir}/routers"; then
+      assistant_backup_fail "router combo JSON export incomplete"
+      return 1
+    fi
   fi
 }
 

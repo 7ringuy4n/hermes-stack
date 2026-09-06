@@ -33,6 +33,12 @@ def main() -> int:
             ROOT / "architect/backup-restore/lib/backup.sh"
         ).read_text(encoding="utf-8"),
         "failed update backup scrubs transient secrets": 'if ! do_backup_first "update"; then\n    do_scrub_plaintext_env' in run,
+        "destroy reloads OpenBao before backup and compose": run.find(
+            "do_prepare_openbao_env_for_compose", run.find("do_destroy()")
+        ) < run.find('do_backup_first "destroy"', run.find("do_destroy()")),
+        "router export failure blocks verified backup": 'assistant_backup_fail "router combo JSON export incomplete"' in (
+            ROOT / "architect/backup-restore/lib/backup.sh"
+        ).read_text(encoding="utf-8"),
         "routine update retains Docker rollback cache": 'UPDATE_AGGRESSIVE_PRUNE:-inactive' in run,
         "unrelated component update skips Zalo restart": 'skip Zalo plugin sync for unrelated component update' in run,
         "update avoids pre-compose Hermes restart": 'SYNC_ZALO_RESTART=0 bash "${SCRIPTS_DIR}/sync-zalo-plugins.sh"' in run,
