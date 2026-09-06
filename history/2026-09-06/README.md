@@ -45,7 +45,10 @@ turn.
 - [x] Reproduce from Hermes and Zalo delivery logs.
 - [x] Replace thread-scoped delivery state with turn-scoped state.
 - [x] Add old-turn completion and cross-thread regression cases.
-- [ ] Verify sequential and concurrent delivery through the live Zalo bridge.
+- [x] Verify sequential delivery and an intentionally stale artifact through
+  the live Zalo bridge; the expected text arrived and no photo was emitted.
+- [ ] Verify the two-request concurrent delivery variant through the live Zalo
+  bridge.
 
 ### Prevent recurrence
 
