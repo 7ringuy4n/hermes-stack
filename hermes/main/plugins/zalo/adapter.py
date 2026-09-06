@@ -413,6 +413,12 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_compound_defer_ack: set[str] = set()
         self._as_compound_thread_type: Dict[str, str] = {}
         self._as_compound_seq_t0: Dict[str, float] = {}
+        # Media delivery state is scoped to one processed turn, not a chat.
+        # A monotonically increasing local token prevents a cancelled late
+        # autosender from muting the next response for the same destination.
+        self._as_turn_tokens: Dict[str, int] = {}
+        self._as_tclock: Dict[str, Dict[str, float]] = {}
+        self._as_job_file_sent: Dict[str, int] = {}
         self._as_workflow_task: Optional[asyncio.Task] = None
         self._as_workflow_inflight: set[asyncio.Task] = set()
         self._as_dest_send_locks: Dict[str, asyncio.Lock] = {}
@@ -3001,6 +3007,7 @@ class ZaloAdapter(BasePlatformAdapter):
         sender_id = str(ctx.get("sender_id") or "")
         sender_name = str(ctx.get("sender_name") or tid)
         iso = isolate_session_chat_id(tid, jid)
+        self._as_begin_turn(iso)
         zalo_tt = "group" if tt == "group" or chat_type == "group" else "user"
         try:
             self._thread_types[iso] = zalo_tt
@@ -3281,15 +3288,58 @@ class ZaloAdapter(BasePlatformAdapter):
             caps = self._as_file_ceiling
         caps[tid] = float(when if when is not None else __import__("time").time())
 
-    def _as_mark_job_file_sent(self, thread_id: str) -> None:
+    def _as_begin_turn(self, thread_id: str, when=None) -> int:
+        """Start a destination turn and return its local isolation token."""
+        tid = str(thread_id or "")
+        if not tid:
+            return 0
+        tokens = getattr(self, "_as_turn_tokens", None)
+        if not isinstance(tokens, dict):
+            self._as_turn_tokens = {}
+            tokens = self._as_turn_tokens
+        clocks = getattr(self, "_as_tclock", None)
+        if not isinstance(clocks, dict):
+            self._as_tclock = {}
+            clocks = self._as_tclock
+        sent = getattr(self, "_as_job_file_sent", None)
+        if not isinstance(sent, dict):
+            self._as_job_file_sent = {}
+            sent = self._as_job_file_sent
+        try:
+            from .autosend import begin_turn_state
+        except ImportError:
+            from autosend import begin_turn_state  # type: ignore
+        return begin_turn_state(
+            tokens,
+            clocks,
+            sent,
+            tid,
+            float(when if when is not None else __import__("time").time()),
+        )
+
+    def _as_turn_token(self, thread_id: str) -> int:
+        tokens = getattr(self, "_as_turn_tokens", None)
+        if not isinstance(tokens, dict):
+            return 0
+        return int(tokens.get(str(thread_id or "")) or 0)
+
+    def _as_mark_job_file_sent(self, thread_id: str, turn_token: int | None = None) -> None:
         tid = str(thread_id or "")
         if not tid:
             return
         seen = getattr(self, "_as_job_file_sent", None)
-        if not isinstance(seen, set):
-            self._as_job_file_sent = set()
+        if not isinstance(seen, dict):
+            self._as_job_file_sent = {}
             seen = self._as_job_file_sent
-        seen.add(tid)
+        try:
+            from .autosend import mark_media_sent
+        except ImportError:
+            from autosend import mark_media_sent  # type: ignore
+        mark_media_sent(
+            seen,
+            tid,
+            int(turn_token if turn_token is not None else self._as_turn_token(tid)),
+        )
 
     def _as_clear_job_file_sent(self, thread_id: str) -> None:
         """Clear same-turn media-result mute so later schedule/chat text can send."""
@@ -3297,12 +3347,20 @@ class ZaloAdapter(BasePlatformAdapter):
         if not tid:
             return
         seen = getattr(self, "_as_job_file_sent", None)
-        if isinstance(seen, set):
-            seen.discard(tid)
+        if isinstance(seen, dict):
+            seen.pop(tid, None)
 
     def _as_job_already_sent_file(self, thread_id: str) -> bool:
         seen = getattr(self, "_as_job_file_sent", None)
-        return isinstance(seen, set) and str(thread_id or "") in seen
+        tid = str(thread_id or "")
+        current = self._as_turn_token(tid)
+        if not isinstance(seen, dict):
+            return False
+        try:
+            from .autosend import media_sent_in_turn
+        except ImportError:
+            from autosend import media_sent_in_turn  # type: ignore
+        return media_sent_in_turn(seen, tid, current)
 
     def _as_remux_zalo_video(self, path: str) -> str:
         """Re-encode mp4 to baseline H.264 so Zalo send-attachment accepts it."""
@@ -3786,6 +3844,7 @@ class ZaloAdapter(BasePlatformAdapter):
         tid = str(item.get("thread_id") or "")
         if not tid:
             return
+        self._as_begin_turn(tid)
         try:
             from .queue_history import record as history_record
         except ImportError:
@@ -4769,6 +4828,10 @@ class ZaloAdapter(BasePlatformAdapter):
         ):
             return
 
+        queue_on = self._as_inbound_queue_enabled()
+        if not queue_on:
+            self._as_begin_turn(str(thread_id))
+
         # Host scenic/media shortcuts on bare text — before inflight drop and attachment pipeline.
         bare_early = (text or "").strip()
         if (
@@ -4789,7 +4852,6 @@ class ZaloAdapter(BasePlatformAdapter):
 
         # ASSISTANT_RATE_LIMIT_v4 — Valkey 1 / 10s; queue overflow instead of drop when enabled
         rate_over, rate_notify = self._zalo_rate_check(sender_id, thread_id)
-        queue_on = self._as_inbound_queue_enabled()
         if (not schedule_fire) and (not queue_on) and rate_over:
             logger.info(
                 "Zalo: rate-limit drop sender=%s thread=%s type=%s via valkey",
@@ -5977,6 +6039,7 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             return content
         tid = cid or dest_id
+        turn_token = self._as_turn_token(tid)
         if dest_turn.get("thread_type") in {"user", "group"}:
             meta = {**meta, "thread_type": dest_turn["thread_type"]}
         clock = (getattr(self, "_as_tclock", {}) or {}).get(tid) or {}
@@ -6144,7 +6207,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     continue
                 if ok:
                     sent += 1
-                    self._as_mark_job_file_sent(tid)
+                    self._as_mark_job_file_sent(tid, turn_token=turn_token)
                     flow = getattr(self, "_as_flow", None)
                     if callable(flow):
                         flow("zalo_send_file", thread_id=tid, file=dest_send.name, path=str(dest_send)[:160])
