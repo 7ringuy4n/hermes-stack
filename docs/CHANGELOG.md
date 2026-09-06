@@ -1,5 +1,9 @@
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
+- Fixed direct media shortcut delivery so generated artifacts participate in
+  the shared file-claim ledger and retain their originating turn token. A
+  later queued request can no longer rediscover the prior artifact, resend it,
+  and suppress its own text response.
 - Documented the deployed hybrid availability model: active-active Hermes HTTP
   behind Traefik, one active Zalo SSE owner elected by a renewable Valkey lease,
   and per-conversation Valkey FIFO processing by that owner.
