@@ -20,6 +20,9 @@ teardown requirement: transient OpenBao values are reloaded before backup and
 Compose parsing, and an incomplete OmniRoute inventory blocks destruction.
 The Zalo autosender now uses a real per-turn clock and token, preventing a late
 artifact from one request from leaking into or muting a later request.
+The architecture record now distinguishes active-active HTTP routing from the
+active-passive Zalo owner path, and Grafana provisioning has one canonical
+host-mounted tree with uniqueness checks.
 
 ## 2026-09-05 — update isolation, routing consolidation, and Zalo HA
 

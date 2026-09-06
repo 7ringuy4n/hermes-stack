@@ -8,6 +8,11 @@ edge/Zalo → queue → Hermes → session + memory context
                            → final reply → session/memory append
 ```
 
+HTTP requests may land on any healthy Hermes replica. Zalo events are consumed
+only by the current lease owner; that same process drains the conversation FIFO
+and emits the reply to the original thread through the internal Traefik bridge
+route. The queue carries work, not a destination replica identifier.
+
 ## Classification and dispatch
 
 ```text

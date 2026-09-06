@@ -191,7 +191,7 @@ Successful create, update, and delete operations now render the configured
 - [x] Confirm stored note scope, dates, and contents independently.
 - [x] Fix the core adapter result boundary.
 - [x] Add and pass a regression assertion.
-- [ ] Re-run the live mutation and lookup cases after deployment.
+- [x] Re-run the live mutation and lookup cases after deployment.
 
 ### Prevent recurrence
 
@@ -235,9 +235,38 @@ Only a second occupant of the same slot is removed.
 - [x] Identify the shared service label and distinct slot labels.
 - [x] Fix the shared worker lifecycle library.
 - [x] Add a regression contract.
-- [ ] Verify the component update retains two live replicas on the VPS.
+- [x] Verify the component update retains two live replicas on the VPS.
 
 ### Prevent recurrence
 
 `test/scripts/compose_scaled_cleanup_unit.py` requires slot-aware duplicate
 identity and rejects the former service-wide singleton state.
+
+## 10:05 — Remove ambiguous Grafana provisioning and document routing ownership
+
+### Symptom
+
+Grafana dashboards existed in two byte-identical repository trees, while
+architecture summaries disagreed about whether the Zalo path used Traefik and
+did not explain which replica drained or returned a queued request.
+
+### Root cause
+
+The mounted runtime configuration was copied into an architecture package and
+both copies were retained. Older documentation used “edge” to mean the API
+Gateway in some places and Traefik in others.
+
+### Decision and fix
+
+Keep the Compose-mounted `config/monitor/grafana` tree as the only provisioning
+source. Document the actual hybrid model: Traefik load-balances HTTP, a Valkey
+lease elects one Zalo SSE owner, and that owner drains each conversation FIFO
+and sends its result to the original thread through the bridge route.
+
+### Verification
+
+- [x] Confirm Compose mounts the canonical config tree.
+- [x] Confirm all dashboard UIDs and titles are unique.
+- [x] Remove the unused mirrored provisioning tree.
+- [x] Add a regression that rejects duplicate identities and source trees.
+- [ ] Run the monitor integration after deployment.

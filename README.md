@@ -49,7 +49,7 @@ Full doc map: **[docs/README.md](./docs/README.md)** · Architecture: **[docs/03
 <table style="width:100%;border-collapse:collapse;font-family:Segoe UI,Arial,sans-serif;font-size:13px;">
   <tr><td colspan="3" style="padding:12px;background:#1a1a1a;color:#fff;text-align:center;font-weight:700;">USERS — Console / IDE · Zalo / Telegram (optional)</td></tr>
   <tr><td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
-  <tr><td colspan="3" style="padding:12px;background:#0f766e;color:#fff;text-align:center;font-weight:700;">edge (default ON) — API Gateway · Traefik &nbsp;|&nbsp; Zalo bypasses edge</td></tr>
+  <tr><td colspan="3" style="padding:12px;background:#0f766e;color:#fff;text-align:center;font-weight:700;">edge (default ON) — API Gateway · Traefik &nbsp;|&nbsp; Zalo uses the internal Traefik bridge route</td></tr>
   <tr><td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
   <tr><td colspan="3" style="padding:14px;background:#2563eb;color:#fff;text-align:center;font-weight:700;">hermes — Agent · skills · plugins (×1 or ×2 on one node)</td></tr>
   <tr><td colspan="3" style="padding:4px;background:#eee;text-align:center;color:#666;">▼</td></tr>
@@ -162,8 +162,8 @@ Self-heal timers (`assistant-stack-watch`, `assistant-zalo-watch`) restart exite
 
 | Component | Today | Note |
 |-----------|-------|------|
-| Hermes | ×2 on **one** node when `HERMES_REPLICAS=2` | Load only — not multi-node HA |
-| Zalo SSE | **One** owner lock | Never two SSE clients; QR only if `sessionDead` |
+| Hermes HTTP | ×2 on **one** node when `HERMES_REPLICAS=2` | Active-active load balancing; not multi-node HA |
+| Zalo SSE | **One** renewable owner lease | Active-passive ingestion; standby takeover after lease loss; QR only if `sessionDead` |
 | Valkey / Postgres / Qdrant / Traefik | Single instance | **SPOFs** — see [docs/MULTI_NODE.md](./docs/MULTI_NODE.md) |
 | Jobs workers | Scale out | Shared Valkey RQ queue |
 
