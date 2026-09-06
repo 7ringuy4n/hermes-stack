@@ -358,3 +358,12 @@ The final current-document scan found one configuration heading that still used
 the retired Router Worker service name. The heading now uses the active name.
 Compatibility cleanup code, regression fixtures, and dated reports keep the old
 term only where it is necessary to detect or explain legacy state.
+
+## Component changes reload secrets before backup
+
+A repeated component change correctly stopped before scaling because its
+mandatory backup could not export OmniRoute after the preceding update scrubbed
+the transient OpenBao environment. Component add/remove now reloads OpenBao
+before backup and scrubs the export afterward on both success and failure. A
+source-order regression prevents backup from moving outside that protected
+lifecycle.

@@ -13,6 +13,9 @@
 - Reload OpenBao-backed runtime secrets before destructive stack teardown and
   reject lifecycle backups whose enabled OmniRoute provider/combo inventory
   could not be exported.
+- Reload and re-scrub the transient OpenBao export around component-change
+  backups, so repeated add/remove operations can still capture OmniRoute
+  configuration after an earlier update removed plaintext exports.
 - Use collision-safe temporary evaluator files in the VPS media capability
   suite and remove them immediately after transfer.
 - Renamed the task-aware proxy to `router-worker` across its source directory,
