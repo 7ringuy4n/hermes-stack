@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -195,11 +196,17 @@ print("VISION_BEGIN")
 print(text)
 print("VISION_END")
 """
-    tmp = Path("/tmp/_suite_vision.py")
-    tmp.write_text(script, encoding="utf-8")
-    subprocess.check_call(
-        ["docker", "cp", str(tmp), "assistant-dispatcher-1:/tmp/_suite_vision.py"]
-    )
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", suffix=".py", prefix="hs-suite-vision-", delete=False
+    ) as handle:
+        handle.write(script)
+        tmp = Path(handle.name)
+    try:
+        subprocess.check_call(
+            ["docker", "cp", str(tmp), "assistant-dispatcher-1:/tmp/_suite_vision.py"]
+        )
+    finally:
+        tmp.unlink(missing_ok=True)
     env_args = [
         "docker",
         "exec",

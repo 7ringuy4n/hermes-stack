@@ -3,6 +3,8 @@
 - Reload OpenBao-backed runtime secrets before destructive stack teardown and
   reject lifecycle backups whose enabled OmniRoute provider/combo inventory
   could not be exported.
+- Use collision-safe temporary evaluator files in the VPS media capability
+  suite and remove them immediately after transfer.
 - Renamed the task-aware proxy to `router-worker` across its source directory,
   Compose service/DNS name, `ROUTER_WORKER_*` environment contract, health
   identity, scripts, monitoring, skills, docs, and tests. Upgrade cleanup
