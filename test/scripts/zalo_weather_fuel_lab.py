@@ -57,7 +57,8 @@ echo PROBE_DONE
         fire_utc = datetime.now(timezone.utc)
         fire_pg = fire_utc.strftime("%Y-%m-%d %H:%M:%S+00")
         since_iso = (fire_utc - timedelta(seconds=15)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        print(f"[{ts()}] classify + create one-job workflow", flush=True)
+        marker = f"case26-grounded-image-{int(time.time())}"
+        print(f"[{ts()}] inject dependency workflow", flush=True)
         apply = sudo_bash(
             c,
             rf"""
@@ -69,29 +70,12 @@ import json, os, urllib.request
 from pathlib import Path
 
 text = {FIXTURE_INFOGRAPHIC_VI!r}
-daily = {FIXTURE_INFOGRAPHIC_DAILY!r}
 
 def post(url, body, timeout=120):
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST", headers={{"Content-Type":"application/json"}})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode() or "{{}}")
-
-def classify(blob):
-    return post("http://127.0.0.1:8096/v1/classify", {{"text": blob, "timezone": "Asia/Ho_Chi_Minh"}}, 120)
-
-now = classify(text)
-inst = now.get("instructions") if isinstance(now.get("instructions"), list) else []
-print("CLASSIFY_NOW HINT", now.get("task_hint"), "PLAN_N", len(inst), "OK", now.get("ok"))
-day = classify(daily)
-dinst = day.get("instructions") if isinstance(day.get("instructions"), list) else []
-print("CLASSIFY_DAILY HINT", day.get("task_hint"), "PLAN_N", len(dinst), "CRON", day.get("cron_expr"), "CADENCE", day.get("cadence"))
-if not now.get("ok") or len(inst) != 1:
-    raise SystemExit("BAD_NOW_PLAN")
-if str(now.get("task_hint") or "") == "schedule":
-    raise SystemExit("NOW_MUST_NOT_BE_SCHEDULE")
-if not day.get("ok") or str(day.get("task_hint") or "") != "schedule" or len(dinst) != 1:
-    raise SystemExit("BAD_DAILY_PLAN")
 
 admin_id = ""
 for path in ("/data/assistant/zalo_admin_users.txt", "/opt/data/zalo_admin_users.txt"):
@@ -113,34 +97,27 @@ for path in ("/data/assistant/zalo_admin_users.txt", "/opt/data/zalo_admin_users
 if not admin_id:
     raise SystemExit("NO_ADMIN_DM")
 print("DEST thread_type=user tid_len=%s admin_dm=1" % len(admin_id))
-body = {{
-    "instructions": inst,
-    "sequential": False,
-    "wrap": True,
-    "origin": {{
-        "platform": "zalo",
-        "thread_id": admin_id,
-        "thread_type": "user",
-        "user_id": admin_id,
-        "chat_id": admin_id,
-        "test": "case26",
-    }},
-    "context": {{
-        "thread_id": admin_id,
-        "thread_type": "user",
-        "chat_type": "dm",
-        "sender_id": admin_id,
-        "sender_name": admin_id,
-        "execute": "hermes",
-        "plan": now,
-    }},
+import subprocess
+offsets=[]
+names=subprocess.check_output(["docker","ps","--format","{{{{.Names}}}}"],text=True).splitlines()
+for name in names:
+    if not name.startswith("assistant-hermes-"):
+        continue
+    count=subprocess.check_output(
+        ["docker","exec",name,"sh","-lc","wc -l < /opt/data/replicas/$(hostname)/logs/agent.log"],
+        text=True,
+    ).strip()
+    offsets.append(name+" "+str(int(count or "0")+1))
+Path("/tmp/case26-log-offsets").write_text("\n".join(offsets)+"\n",encoding="utf-8")
+payload={{
+    "type":"message","threadId":admin_id,"threadType":"user",
+    "senderId":admin_id,"senderName":"test-user","text":text,
+    "messageId":{marker!r},
 }}
-got = post("http://127.0.0.1:8108/v1/workflows", body, 30)
-wf = got.get("workflow") or {{}}
-jobs = wf.get("jobs") if isinstance(wf.get("jobs"), list) else []
-print("WF", got.get("ok"), wf.get("id"), "JOBS", len(jobs))
-if not got.get("ok") or len(jobs) != 1:
-    raise SystemExit("BAD_WF")
+got = post("http://127.0.0.1:8787/inject-event", payload, 30)
+print("INJECT", got.get("ok"), "MARKER", {marker!r})
+if not got.get("ok"):
+    raise SystemExit("BAD_INJECT")
 print("CREATE_DONE")
 PY
 echo CREATE_OK
@@ -151,17 +128,8 @@ echo CREATE_OK
         if "CREATE_OK" not in apply or "NO_ADMIN_DM" in apply:
             print("FAIL create", flush=True)
             return 1
-        if "BAD_NOW_PLAN" in apply or "PLAN_N 1" not in apply:
-            print("FAIL classify exploded or missing PLAN_N 1", flush=True)
-            return 1
-        if "NOW_MUST_NOT_BE_SCHEDULE" in apply:
-            print("FAIL infographic classified as schedule", flush=True)
-            return 1
-        if "BAD_DAILY_PLAN" in apply:
-            print("FAIL daily wrapper was not schedule + PLAN_N 1", flush=True)
-            return 1
-        if "BAD_WF" in apply:
-            print("FAIL workflow was not 1 job", flush=True)
+        if "BAD_INJECT" in apply:
+            print("FAIL channel injection", flush=True)
             return 1
 
         print(f"[{ts()}] watching up to {WAIT_S}s", flush=True)
@@ -176,12 +144,14 @@ PGDB="${MEMORY_DB_NAME:-hermes_memory}"
 export PGPASSWORD="${MEMORY_DB_PASSWORD:-}"
 since="__SINCE__"
 hermes_logs() {
-  docker ps --filter name=hermes --filter status=running --format '{{.Names}}' | while read -r n; do
-    docker logs --since "$since" "$n" 2>&1
-  done
+  while read -r n start; do
+    [ -n "$n" ] || continue
+    docker exec "$n" sh -lc "tail -n +$start /opt/data/replicas/\$(hostname)/logs/agent.log" 2>/dev/null
+  done < /tmp/case26-log-offsets
 }
 done_n=0
 attach_n=0
+delivered_n=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
   curl -sS -m 5 http://127.0.0.1:8787/health 2>/dev/null | python3 -c 'import sys,json
 try:
@@ -189,37 +159,39 @@ try:
 except Exception:
  print("plugin raw")
 ' || echo "plugin down"
-  docker exec -e PGPASSWORD="$PGPASSWORD" postgres psql -U "$PGUSER" -d "$PGDB" -Atc "
-SELECT 'wf='||w.id||' status='||w.status||' jobs='||count(j.id)||' done='||count(*) FILTER (WHERE j.status='COMPLETED')||' run='||count(*) FILTER (WHERE j.status='RUNNING')
-FROM wf.workflows w JOIN wf.jobs j ON j.workflow_id=w.id
-WHERE w.origin->>'test'='case26' AND w.created_at >= TIMESTAMPTZ '__FIRE__'
-GROUP BY w.id, w.status
-ORDER BY w.created_at DESC LIMIT 3;
-" 2>/dev/null || true
-  logs=$(hermes_logs | grep -E '\[zalo\] workflow job done|send-attachment path|workflow job failed|skip autosend' | tail -20)
+  history=$(docker exec -e PGPASSWORD="$PGPASSWORD" postgres psql -U "$PGUSER" -d "$PGDB" -Atc "
+SELECT event||' source='||coalesce(meta->>'source_message_id','')||' attachment='||coalesce(meta->>'attachment_kind','')
+FROM zalo_message_history
+WHERE message_id='__MARKER__' OR meta->>'source_message_id'='__MARKER__'
+ORDER BY id;
+" 2>/dev/null || true)
+  printf '%s\n' "$history"
+  logs=$(hermes_logs | grep -E 'search_composed_image_shortcut|send-attachment path|send-attachment fail' | tail -20)
   echo "LOGS_N=$(printf '%s\n' "$logs" | grep -c . || true)"
   printf '%s\n' "$logs" | tail -8
-  done_n=$(hermes_logs | grep -c '\[zalo\] workflow job done' || true)
+  done_n=$(hermes_logs | grep -c 'search_composed_image_shortcut' || true)
   attach_n=$(hermes_logs | grep -c 'send-attachment path' || true)
-  echo "done_jobs=$done_n attach=$attach_n"
-  if [ "${done_n:-0}" -ge 1 ] && [ "${attach_n:-0}" -ge 1 ]; then
+  delivered_n=$(printf '%s\n' "$history" | grep -c 'delivered source=__MARKER__ attachment=image' || true)
+  echo "done_jobs=$done_n attach=$attach_n delivered=$delivered_n"
+  if [ "${done_n:-0}" -ge 1 ] && [ "${attach_n:-0}" -ge 1 ] && [ "${delivered_n:-0}" -ge 1 ]; then
     echo "JOB_DONE"
     echo "MEDIA_SENT"
+    echo "DELIVERY_RECORDED"
     break
   fi
   sleep 12
 done
-echo "WATCH_END $(date -Is) done_jobs=$done_n attach=$attach_n"
+echo "WATCH_END $(date -Is) done_jobs=$done_n attach=$attach_n delivered=$delivered_n"
 echo WATCH_DONE
 """
         watch_sh = watch_sh.replace("__WAIT__", str(WAIT_S)).replace(
             "__SINCE__", since_iso
-        ).replace("__FIRE__", fire_pg)
+        ).replace("__FIRE__", fire_pg).replace("__MARKER__", marker)
         watch = sudo_bash(c, watch_sh, timeout=WAIT_S + 90)
         print(_sanitize(watch[-3000:]), flush=True)
-        (OUT / "watch.txt").write_text(_sanitize(watch), encoding="utf-8")
         job_ok = "JOB_DONE" in watch or "done_jobs=1" in watch
         media = "MEDIA_SENT" in watch
+        recorded = "DELIVERY_RECORDED" in watch
         if not media:
             for line in reversed(watch.splitlines()):
                 if "attach=" in line:
@@ -231,7 +203,56 @@ echo WATCH_DONE
                     break
         if job_ok and not media:
             print("FAIL media created but not sent (attach=0)", flush=True)
-        ok = job_ok and media
+        ok = job_ok and media and recorded
+        (OUT / "watch.txt").write_text(
+            "\n".join(
+                [
+                    f"job_done={'yes' if job_ok else 'no'}",
+                    f"media_sent={'yes' if media else 'no'}",
+                    f"delivery_recorded={'yes' if recorded else 'no'}",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        print(f"[{ts()}] verify classifier contracts after live delivery", flush=True)
+        classify = sudo_bash(
+            c,
+            rf"""
+set -euo pipefail
+python3 - <<'PY'
+import json, urllib.request
+
+def classify(text):
+    data = json.dumps({{"text": text, "timezone": "Asia/Ho_Chi_Minh"}}, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request("http://127.0.0.1:8096/v1/classify", data=data, method="POST", headers={{"Content-Type": "application/json"}})
+    with urllib.request.urlopen(req, timeout=120) as response:
+        return json.loads(response.read().decode() or "{{}}")
+
+def task_types(result):
+    details = result.get("task_details") if isinstance(result.get("task_details"), list) else []
+    return [str(item.get("task_type") or "") for item in details if isinstance(item, dict)]
+
+now = classify({FIXTURE_INFOGRAPHIC_VI!r})
+now_types = task_types(now)
+now_ok = bool(now.get("ok")) and str(now.get("task_hint") or "") != "schedule" and now_types.count("search") >= 1 and now_types.count("media_generation") == 1
+print("NOW_CONTRACT", "PASS" if now_ok else "FAIL", "HINT", now.get("task_hint"), "TYPES", ",".join(now_types))
+
+daily = classify({FIXTURE_INFOGRAPHIC_DAILY!r})
+daily_types = task_types(daily)
+daily_ok = bool(daily.get("ok")) and str(daily.get("task_hint") or "") == "schedule" and daily_types.count("search") >= 1 and daily_types.count("media_generation") == 1
+print("DAILY_CONTRACT", "PASS" if daily_ok else "FAIL", "HINT", daily.get("task_hint"), "TYPES", ",".join(daily_types))
+if not now_ok or not daily_ok:
+    raise SystemExit(1)
+PY
+""",
+            timeout=300,
+        )
+        print(_sanitize(classify[-1800:]), flush=True)
+        now_ok = "NOW_CONTRACT PASS" in classify
+        daily_ok = "DAILY_CONTRACT PASS" in classify
+        ok = ok and now_ok and daily_ok
         (OUT / "SUMMARY.md").write_text(
             "\n".join(
                 [
@@ -240,6 +261,9 @@ echo WATCH_DONE
                     f"- Time: `{ts()}`",
                     f"- Job done: **{'yes' if job_ok else 'no'}**",
                     f"- Media sent: **{'yes' if media else 'no'}**",
+                    f"- Delivery recorded: **{'yes' if recorded else 'no'}**",
+                    f"- Immediate classifier contract: **{'yes' if now_ok else 'no'}**",
+                    f"- Daily classifier contract: **{'yes' if daily_ok else 'no'}**",
                     "",
                     "See `watch.txt`.",
                     "",
@@ -249,10 +273,6 @@ echo WATCH_DONE
         )
         if RUN_DAILY:
             print("NOTE ZALO_INFOGRAPHIC_DAILY=1: classify daily is in this lab; full fire is case 27 optional", flush=True)
-        daily_ok = "CLASSIFY_DAILY HINT schedule" in apply and "PLAN_N 1" in apply
-        if "BAD_DAILY_PLAN" in apply:
-            print("FAIL case27 daily classify", flush=True)
-            daily_ok = False
         print(f"CASE27_CLASSIFY {'PASS' if daily_ok else 'FAIL'}", flush=True)
         return 0 if ok else 1
     finally:

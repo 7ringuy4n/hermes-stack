@@ -56,6 +56,7 @@ from fallback_providers import (
     endpoint_failure_allows_fallback,
     replace_multipart_model,
 )
+from session_headers import opencode_session, with_opencode_session
 
 ROOT = Path(__file__).resolve().parent
 MESSAGES_PATH = Path(os.environ.get("ROUTER_WORKER_MESSAGES", str(ROOT / "messages" / "en.json")))
@@ -382,6 +383,7 @@ async def classify_endpoint(request: Request) -> dict[str, Any]:
     thread = str(body.get("thread") or "unknown")
     attachments = str(body.get("attachments") or "none")
     quoted = str(body.get("quoted") or "none")
+    provider_session = opencode_session(request.headers, body)
     last: dict[str, Any] = {}
     candidates = await _candidates("normal")
     for _name, base, headers, model in candidates:
@@ -395,6 +397,7 @@ async def classify_endpoint(request: Request) -> dict[str, Any]:
             thread=thread,
             attachments=attachments,
             quoted=quoted,
+            extra_headers={"x-opencode-session": provider_session},
         )
         if last.get("ok"):
             return last
@@ -411,6 +414,7 @@ async def outbound_endpoint(request: Request) -> dict[str, Any]:
         except Exception:
             body = {}
     text = str(body.get("text") or "")
+    provider_session = opencode_session(request.headers, body)
     last: dict[str, Any] = {"ok": False, "action": "send", "error": "outbound_llm_failed"}
     candidates = await _candidates("normal")
     for _name, base, headers, model in candidates:
@@ -420,6 +424,7 @@ async def outbound_endpoint(request: Request) -> dict[str, Any]:
             n9_base=base,
             n9_key=_bearer_key(headers),
             model=model,
+            extra_headers={"x-opencode-session": provider_session},
         )
         if last.get("ok") and str(last.get("action") or "") in {"send", "drop"}:
             return last
@@ -441,6 +446,7 @@ async def proxy(path: str, request: Request) -> Response:
             body = parsed if isinstance(parsed, dict) else {}
         except Exception:
             body = {}
+    provider_session = opencode_session(request.headers, body)
 
     is_chat = path.rstrip("/").endswith("chat/completions") or path == "chat/completions"
     task = _classify(request, body) if is_chat or body else "normal"
@@ -480,7 +486,7 @@ async def proxy(path: str, request: Request) -> Response:
             if is_json_request
             else {}
         )
-        request_headers = dict(headers)
+        request_headers = with_opencode_session(headers, provider_session)
         request_content = raw
         incoming_content_type = str(request.headers.get("content-type") or "")
         if not body and raw and incoming_content_type:
@@ -510,7 +516,10 @@ async def proxy(path: str, request: Request) -> Response:
                 req = _client().build_request(
                     request.method,
                     url,
-                    headers={**headers, **{k: v for k, v in request.headers.items() if k.lower() == "accept"}},
+                    headers={
+                        **with_opencode_session(headers, provider_session),
+                        **{k: v for k, v in request.headers.items() if k.lower() == "accept"},
+                    },
                     content=json.dumps(payload).encode("utf-8"),
                 )
                 upstream = await _client().send(req, stream=True)

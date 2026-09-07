@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Run test/RULES.md §15 unit + VPS lab scripts in batch.
+"""Run the current test/RULES.md offline and VPS release gates in batch.
 
 Env (VPS scripts): ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 Optional: SKIP_VPS=1 (units only), CASE_FILTER=38,32 (comma ids)
@@ -19,35 +19,10 @@ OUT = ROOT / "test" / "reports" / "run-case-index-lab"
 PY = sys.executable
 
 UNITS: list[tuple[str, str]] = [
-    ("schedule_timezone_unit.py", "15"),
-    ("multi_request_unit.py", "16"),
-    ("knowledge_cite_unit.py", "29"),
-    ("llm_classify_unit.py", "24"),
-    ("gateway_noise_unit.py", "22"),
-    ("inbound_queue_unit.py", "23"),
-    ("web_search_backends_unit.py", "18"),
-    ("grafana_pairing_unit.py", "20"),
-    ("defaults_profile_unit.py", "21"),
-    ("update_maintenance_unit.py", "update"),
-    ("omni_attribution_unit.py", "omni-attribution"),
-    ("ux_copy_unit.py", "ux"),
-    ("zalo_attachment_unit.py", "34"),
-    ("schedule_crud_unit.py", "34"),
-    ("secret_probe_path_unit.py", "32"),
-    ("ocr_refuse_unit.py", "35"),
-    ("vision_ocr_policy_unit.py", "36"),
-    ("omni_rotate_noreply_unit.py", "37"),
-    ("zalo_workflow_parallel_unit.py", "wf-par"),
-    ("soul_deception_unit.py", "soul"),
-    ("workflow_cadence_unit.py", "wf"),
-    ("zalo_store_unit.py", "zalo-store"),
-    ("zalo_bridge_transport_unit.py", "zalo-transport"),
-    ("openbao_common_unit.py", "43"),
-    ("media_refuse_unit.py", "refuse"),
-    ("router_worker_chat_norm.py", "router"),
-    ("router_worker_identity_unit.py", "21"),
-    ("zalo_watch_timer_unit.py", "watcher"),
+    (path.name, path.stem)
+    for path in sorted((ROOT / "test" / "scripts").glob("*_unit.py"))
 ]
+UNITS.append(("router_worker_chat_norm.py", "router_worker_chat_norm"))
 
 VPS: list[tuple[str, str]] = [
     ("vps_health_check.py", "health"),
@@ -55,7 +30,6 @@ VPS: list[tuple[str, str]] = [
     ("zalo_tn_greeting_inject.py", "32"),
     ("zalo_tn_visual_weather_pdf_inject.py", "39"),
     ("zalo_latency_lab.py", "17"),
-    ("zalo_special_four_lab.py", "25"),
     ("zalo_weather_fuel_lab.py", "26"),
     ("file_pipeline_security_lab.py", "19"),
     ("grafana_integration_lab.py", "20"),
@@ -67,6 +41,11 @@ VPS: list[tuple[str, str]] = [
     ("zalo_tn_remaining_suite_lab.py", "remaining"),
     ("env_obsolete_cleanup_lab.py", "env-clean"),
     ("zalo_tn_archive_extract_lab.py", "archive"),
+    ("zalo_dm_group_concurrency_lab.py", "dm-group-concurrency"),
+    ("zalo_queue_failover_lab.py", "queue-failover"),
+    ("zalo_active_cancel_lab.py", "active-cancel"),
+    ("zalo_continuous_messages_lab.py", "continuous-messages"),
+    ("memory_scale_10m_lab.py", "memory-scale-10m"),
 ]
 
 
@@ -74,12 +53,33 @@ def ts() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat()
 
 
+def report_cell(value: str, limit: int = 120) -> str:
+    """Return one safe Markdown-table cell without terminal auth prompts."""
+    lines: list[str] = []
+    for raw in (value or "").splitlines():
+        line = raw.strip()
+        lowered = line.lower()
+        if not line:
+            continue
+        if "password:" in lowered and ("sudo" in lowered or "authenticate" in lowered):
+            continue
+        lines.append(line)
+    clean = " / ".join(lines).replace("|", "\\|").replace("`", "'")
+    return clean[:limit]
+
+
 def run_script(name: str, case: str) -> tuple[str, int, str]:
     path = ROOT / "test" / "scripts" / name
     if not path.is_file():
         return case, 127, f"MISSING {name}"
     env = os.environ.copy()
-    env.setdefault("ASSISTANT_REPO_ROOT", str(ROOT))
+    # A parent shell may point at another checkout. Test evidence must always
+    # stay with the case index that launched the child process.
+    env["ASSISTANT_REPO_ROOT"] = str(ROOT)
+    # Keep child output deterministic when the host shell uses a legacy Windows
+    # console code page; several tests intentionally exercise Unicode content.
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
     try:
         p = subprocess.run(
             [PY, str(path)],
@@ -118,7 +118,7 @@ def main() -> int:
         status = "PASS" if rc == 0 else f"FAIL({rc})"
         if rc != 0:
             fails += 1
-        rows.append(f"| unit | {c} | {name} | {status} | `{tail[:120]}` |")
+        rows.append(f"| unit | {c} | {name} | {status} | `{report_cell(tail)}` |")
         print(f"[unit {c}] {status} {name}", flush=True)
 
     if not skip_vps:
@@ -129,7 +129,7 @@ def main() -> int:
             status = "PASS" if rc == 0 else f"FAIL({rc})"
             if rc != 0:
                 fails += 1
-            rows.append(f"| vps | {c} | {name} | {status} | `{tail[:120]}` |")
+            rows.append(f"| vps | {c} | {name} | {status} | `{report_cell(tail)}` |")
             print(f"[vps {c}] {status} {name}", flush=True)
 
     md = (

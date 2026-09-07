@@ -68,6 +68,8 @@ def make_item(
     message_type: str = "TEXT",
     schedule_fire: bool = False,
     plan: Optional[Dict[str, Any]] = None,
+    user_text: str = "",
+    reply_quote: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return {
         "kind": kind,
@@ -83,6 +85,8 @@ def make_item(
         "message_type": str(message_type or "TEXT"),
         "schedule_fire": bool(schedule_fire),
         "plan": dict(plan) if isinstance(plan, dict) else None,
+        "user_text": str(user_text or text or ""),
+        "reply_quote": dict(reply_quote) if isinstance(reply_quote, dict) else None,
     }
 
 

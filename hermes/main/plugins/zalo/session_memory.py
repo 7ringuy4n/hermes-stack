@@ -129,6 +129,8 @@ def append_turn(
     thread_type: str,
     user_text: str,
     assistant_text: str,
+    *,
+    source_message_id: str = "",
 ) -> None:
     if not enabled() or not str(thread_id or "").strip():
         return
@@ -167,15 +169,19 @@ def append_turn(
         history_record(
             thread_id=str(thread_id),
             thread_type=str(thread_type),
+            message_id=str(source_message_id or ""),
             event="user_turn",
             role="user",
             content=user,
+            meta={"source_message_id": str(source_message_id or "")},
         )
     if asst:
         history_record(
             thread_id=str(thread_id),
             thread_type=str(thread_type),
+            message_id=str(source_message_id or ""),
             event="assistant_turn",
             role="assistant",
             content=asst,
+            meta={"source_message_id": str(source_message_id or "")},
         )

@@ -5,6 +5,13 @@ concurrent judges distorted delivery tests”.
 
 ## 2026-09-06 — notes, cancellation, and standby liveness
 
+The continuous-message lab now evaluates two concurrent conversation scopes,
+persists only aggregate results, and fails when all terminal responses do not
+arrive within the release deadline. Its embedded semantic evaluator correctly
+escapes generated source, correlates session and delivery events by source
+message, and distinguishes quoted-context proof from native quote transport
+that synthetic identifiers cannot establish.
+
 See `history/2026-09-06/README.md`. Durable note CRUD now uses scoped indexed
 PostgreSQL records and audit rows; cancellation is classified before queue
 admission; standby lease acquisition no longer blocks gateway connection; and
@@ -13,6 +20,8 @@ consistently named Router Worker across scripts and runtime; upgrade cleanup
 removes the exact retired Compose container and stale default route settings.
 The same record includes the turn-scoped media-delivery fix for concurrent Zalo
 requests.
+It also records authorization-preserving pre-lock cancellation and identifier-
+free live control evidence for DM and addressed-group requests.
 
 Grafana provisioning is now canonical under `config/monitor/grafana`; the
 pairing unit validates unique dashboard identities and rejects a mirrored
@@ -5629,3 +5638,32 @@ cloning from recreating ambiguous lookups; chat creation remains on `file-gen`.
   the existing content dedupe boundary can operate deterministically.
 - Compose cleanup now keys duplicates by service and container-number slot,
   preventing unrelated component updates from collapsing Hermes HA replicas.
+
+## 2026-09-06 19:30 +07 — provider sessions and 10M memory retrieval
+
+Router Worker now sends an opaque stable conversation header on provider
+requests and packages its helper module in the image. Memory recall uses its
+GIN expression index and session/time indexes; the isolated 10,000,000-row VPS
+gate passed exact knowledge and historical-session retrieval and cleaned its
+generated table. See `history/2026-09-06/README.md`.
+
+## 2026-09-06 20:30 +07 — clean-deploy ownership and failover delivery
+
+Post-ready learning now repairs the validated persistent documentation mirror
+and treats sync failure as a deployment failure. Message-owner promotion keeps
+the completed terminal response and performs a fenced recovery send before it
+acknowledges the durable queue item. See `history/2026-09-06/README.md`.
+## 2026-09-07 — durable attachment delivery and paused production gate
+
+See `history/2026-09-07/README.md`. Acknowledged attachment sends now persist
+source-correlated shared delivery records. Focused local units and the VPS
+component update passed, but the production composed-image gate remains failed
+because its real inbound turn did not enter the host shortcut and the daily
+classifier probe returned `unknown`. Work was checkpointed before further
+diagnosis; no merge request was opened.
+
+The subsequent strict run exposed dependent execution nodes being split into
+synthetic queue turns. See `history/2026-09-07/README.md` for the atomic queue
+fix, stateless provider-session isolation, and precise bounded schema repair.
+The final VPS gate correlated the delivered image to the original request and
+passed both immediate and scheduled classifier contracts.

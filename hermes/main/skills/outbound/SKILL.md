@@ -1,6 +1,6 @@
 ---
 name: outbound
-description: "Filter each assistant outbound line for Zalo/chat: send final user result only, drop process/status/noise. Prompt SoT is outbound.json. Never invent a user-facing reply — only label send|drop."
+description: "Filter each assistant outbound messaging line: send final user result only, drop process/status/noise. Prompt SoT is outbound.json. Never invent a user-facing reply — only label send|drop."
 ---
 
 # Outbound (quiet delivery filter)
@@ -10,7 +10,7 @@ Do **not** hand-edit `architect/models/router-worker/config/outbound.json` — s
 
 ## When it runs
 
-On each candidate assistant line before Zalo/Telegram delivery, the host may call router-worker `POST /v1/outbound`. The LLM returns `{action: send|drop, text?: string}` using this prompt. Optional `text` is a privacy-cleaned send body (no chat/thread ids or folder/DM meta).
+On each candidate assistant line before channel delivery, the host may call router-worker `POST /v1/outbound`. The LLM returns `{action: send|drop, text?: string}` using this prompt. Optional `text` is a privacy-cleaned send body (no chat/thread ids or folder/direct-message meta).
 
 Structural path/secret redaction still applies on the host. This skill owns status-vs-result and identifier privacy — no host phrase regex for those.
 

@@ -51,7 +51,7 @@ local queue/agent time.
 ## Related
 
 - [00-workers.md](./00-workers.md)
-- [00-profiles.md](./00-profiles.md) (legacy)
+- [00-profiles.md](./00-profiles.md) (compatibility redirect)
 - [03-architecture.md](./03-architecture.md)
 - [06-model-routing.md](./06-model-routing.md)
 - [HARDWARE.md](./HARDWARE.md) — extra RAM/disk/CPU when Grafana/Prometheus/Loki/OmniRoute are on

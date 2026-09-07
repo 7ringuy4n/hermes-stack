@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-09-06T20:03:12.296133+07:00",
+  "result": {
+    "ok": true,
+    "destinations": 2,
+    "messages_per_destination": 4,
+    "delivered": 8,
+    "fifo": true,
+    "quoted_context": true,
+    "synthetic_quote_transport_required": false,
+    "context_continuity": true,
+    "scope_isolation": true,
+    "llm_self_evaluation": true,
+    "queue_empty": true,
+    "late_timeout": false,
+    "elapsed_s": 149.92
+  }
+}
