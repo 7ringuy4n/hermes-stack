@@ -248,7 +248,7 @@ def reset_all_sessions() -> dict[str, Any]:
     }
 
 
-# --- Per-turn timing (Zalo footer) ---
+# --- Per-turn timing (messaging footer) ---
 TIMING_PREFIX = "nh:turn"
 TIMING_ACTIVE = "nh:turn:active"
 TIMING_TTL = 600
@@ -278,7 +278,7 @@ SENTFILE_TTL = 600
 
 
 def _timing_current() -> Optional[str]:
-    """Newest / current Zalo turn — never the oldest stale one."""
+    """Newest/current messaging turn, never the oldest stale one."""
     cutoff = time.time() - TIMING_TTL
     try:
         r.zremrangebyscore(TIMING_ACTIVE, "-inf", cutoff)
@@ -326,7 +326,7 @@ class FileClaim(BaseModel):
 
 @app.post("/v1/turn/dest")
 def turn_dest_set(body: TurnDest) -> dict[str, Any]:
-    """Remember which Zalo thread asked — outbound files must go here only."""
+    """Remember which conversation asked; outbound files must return there."""
     tid = (body.thread_id or "").strip()
     if not tid:
         raise HTTPException(400, "thread_id required")
@@ -353,7 +353,7 @@ def turn_dest_get() -> dict[str, Any]:
 
 @app.post("/v1/files/claim")
 def file_claim(body: FileClaim) -> dict[str, Any]:
-    """First caller owns this generated file for 10 minutes (no duplicate Zalo send)."""
+    """First caller owns this generated file for 10 minutes (no duplicate send)."""
     key = (body.key or "").strip()
     if not key:
         raise HTTPException(400, "key required")

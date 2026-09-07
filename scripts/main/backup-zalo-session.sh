@@ -12,10 +12,9 @@ DEST="${DATA_DIR}/zalo-session-backup"
 PORT="${ZALO_PLUGIN_PORT:-8787}"
 
 mkdir -p "$DEST"
-# Prefer explicit ZALO_DATA_DIR, then common lab home for user tn, then $HOME.
+# Prefer the explicit Zalo data directory, then the current operator's home.
 CANDIDATES=(
   "${ZALO_DATA_DIR:+${ZALO_DATA_DIR}/credentials.json}"
-  "/home/tn/.hermes-zalo/credentials.json"
   "${HOME}/.hermes-zalo/credentials.json"
   "${SRC_DIR}/credentials.json"
 )

@@ -3,6 +3,7 @@
   "max_tokens": 3072,
   "temperature": 0,
   "retry": 1,
+  "repair_template": "The previous response could not be accepted because it violated the required output contract ({failure}). Return one corrected minified JSON object only. Preserve the original request and apply the complete schema and priority rules.",
   "priority_rules": [
     "Resolve outer timing before inner work. A future, relative, or recurring request is a schedule and its inner tasks are not executed during schedule creation.",
     "Represent intent through the declared schema and protocol fields. Infer unseen wording semantically in any language; do not build topic or phrase dictionaries.",

@@ -138,7 +138,7 @@ def chat_body_should_failover(status: int, data: Any) -> bool:
 
     OmniRoute may return HTTP 200 with an error payload (or a paid-model
     subscription refuse). Streaming that through leaves Hermes with a 403 and
-    no Zalo reply — failover must happen here instead.
+    no messaging reply — failover must happen here instead.
     """
     if status >= 500 or status in {401, 403, 413, 429}:
         return True

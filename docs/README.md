@@ -5,7 +5,7 @@ English operations docs for the **assistant** stack.
 | Doc | Contents |
 |-----|----------|
 | [00-workers.md](./00-workers.md) | Optional workers (`WORKER_*=active\|inactive`) |
-| [00-profiles.md](./00-profiles.md) | Legacy note — profiles removed; redirects to workers |
+| [00-profiles.md](./00-profiles.md) | Compatibility redirect from retired profiles to current workers |
 | [HARDWARE.md](./HARDWARE.md) | Tested lab + extra RAM/disk/CPU (Grafana+Prometheus, Loki, all optionals ~5 GiB / ~40 GB / ~2 vCPU) |
 | [01-workflow.md](./01-workflow.md) | Chat / request path |
 | [02-components-and-commands.md](./02-components-and-commands.md) | Components + commands |

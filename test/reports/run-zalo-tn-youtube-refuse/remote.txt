@@ -1,0 +1,6 @@
+{"ok":true}
+INJECT_OK
+DELIVERED=1 POLICY=0 NEWIMG=0
+DELIVERED_RESPONSE "Mình rất tiếc, nhưng mình không thể truy cập hoặc tóm tắt nội dung từ các đường dẫn video/URL bên ngoài. Bạn có thể dán nội dung văn bản của video vào đây để mình hỗ trợ tóm tắt nhé."
+SELF_EVALUATION {"pass": true, "quality_score": 9, "reason": "Clearly states cannot access or summarize external video URLs, offers a helpful alternative, and makes no claims about the video content."}
+VERDICT PASS delivered_honest_refusal_no_image

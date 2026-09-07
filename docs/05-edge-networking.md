@@ -15,7 +15,8 @@ Production target (see `referrence/hermes-production-scalability-architecture.md
 3. **OpenVPN** — private admin access  
 4. **Zalo** — local bridge through Traefik's internal route (does **not** use the API Gateway)
 
-Heavy OCR/image work stays on **dispatcher workers** (async + timeouts) so Hermes does not hang on long jobs.
+Long image and office work uses capability-specific asynchronous paths and
+deadlines so the SSE reader and unrelated conversations remain responsive.
 
 ---
 
@@ -61,7 +62,7 @@ bash run.sh up
 | Route | All paths → service `hermes-gw` |
 | Upstream | `http://hermes:8642` (Hermes gateway inside Docker) |
 | Health | Periodic check; unhealthy instances drop from LB |
-| Scale later | Add more `servers` in `architect/edge/traefik/dynamic/hermes.yml` for Hermes × N |
+| Scale | Compose service DNS exposes the configured Hermes replicas to the single Traefik service URL. |
 
 Config files: `architect/edge/traefik/traefik.yml` + `dynamic/hermes.yml`.
 
@@ -108,7 +109,7 @@ GATEWAY_UPSTREAM_URL=http://traefik:80
 | `GET /health` | Process liveness |
 | Proxy | Forwards HTTP to `GATEWAY_UPSTREAM_URL` |
 | Valkey rate limit | Shared counters `rate:gw:user:*` / `rate:gw:ip:*` (does not multiply with Hermes replicas) |
-| Skip rate limit | Coding skill paths (`GATEWAY_SKIP_RL_PATHS`) or header `X-Assistant-Skill: coding` |
+| Skip rate limit | Explicit path prefixes in `GATEWAY_SKIP_RL_PATHS`; client headers cannot bypass it. |
 | Messages | Edit `architect/gateway/api-gateway/messages/en.json` (UTF-8) — no hardcoded operator strings in logic |
 | Timeout | `GATEWAY_PROXY_TIMEOUT_S` bounds how long Gateway waits (helps ISSUE: long hang) |
 
@@ -142,13 +143,13 @@ Initialize PKI before expecting a healthy VPN. Steps: `architect/edge/openvpn/RE
 |---------|------|-------------|
 | Chat | Gateway → Traefik → Hermes × N | Yes, across Hermes |
 | Coding (skills) | Same Hermes pool; **no** Gateway RL | Yes, as chat turns |
-| OCR / image | Dispatcher → Valkey/RQ workers | Separate queue; should not block Hermes if async |
+| Vision / image | vision/image combo or Dispatcher job path | Capability-specific work; unrelated conversations remain concurrent |
 
 ---
 
 ## 7. Operator checklist
 
-- [ ] `.env` flags set intentionally (default all `0`)  
+- [ ] Core and optional worker flags reviewed with `bash run.sh workers`
 - [ ] Ports only on localhost / VPN (`TRAEFIK_MODE=local`, ACME off)  
 - [ ] If Gateway + Traefik: `GATEWAY_UPSTREAM_URL=http://traefik:80`  
 - [ ] Edit rate-limit / 503 messages in `messages/en.json` if needed  

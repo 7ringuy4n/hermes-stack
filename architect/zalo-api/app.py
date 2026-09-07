@@ -19,6 +19,7 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 import zalo_store
+from group_members import complete_group_members
 from channels_registry import (
     list_channels,
     resolve,
@@ -1180,6 +1181,21 @@ def _fetch_group_name(tid: str) -> str:
     return _dig_name(info)
 
 
+def _refresh_group_members(tid: str) -> Optional[int]:
+    """Persist a group roster only when the bridge returns a complete snapshot."""
+    tid = (tid or "").strip()
+    if not tid:
+        return None
+    members = complete_group_members(_bridge_api("getGroupInfo", tid), tid)
+    if members is None:
+        return None
+    try:
+        return zalo_store.replace_group_members(tid, members)
+    except Exception:
+        logging.getLogger("zalo-api").exception("group membership refresh failed")
+        return None
+
+
 def _resolve_user_ref(ref: str, users: list[dict[str, str]]) -> Optional[str]:
     """Resolve name or user:uid / bare uid → uid."""
     ref = (ref or "").strip()
@@ -1447,6 +1463,22 @@ def zalo_thread_members(
     if not tid:
         raise HTTPException(400, "thread_id required")
     return {"ok": True, "thread_id": tid, "members": zalo_store.get_thread_members(tid)}
+
+
+@app.post("/v1/zalo/threads/{thread_id}/members/refresh")
+def zalo_thread_members_refresh(
+    thread_id: str,
+    authorization: Optional[str] = Header(default=None),
+    x_admin_token: Optional[str] = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization, x_admin_token)
+    tid = (thread_id or "").strip()
+    if not tid:
+        raise HTTPException(400, "thread_id required")
+    count = _refresh_group_members(tid)
+    if count is None:
+        raise HTTPException(409, "complete group membership snapshot unavailable")
+    return {"ok": True, "thread_id": tid, "member_count": count}
 
 
 class ZaloMessageHistoryBody(BaseModel):
@@ -2436,7 +2468,7 @@ def chat_command(
 
     if cmd in {"refresh", "syncnames", "names"}:
         users = _read_allowed_users()
-        u_ok = g_ok = 0
+        u_ok = g_ok = member_groups = member_total = 0
         for u in users:
             nm = _fetch_user_name(u["id"])
             if nm:
@@ -2456,6 +2488,10 @@ def chat_command(
                 channel_upsert("zalo", e["id"], name=e.get("name") or "", kind="group")
             except Exception:
                 pass
+            member_count = _refresh_group_members(e["id"])
+            if member_count is not None:
+                member_groups += 1
+                member_total += member_count
         _write_entries(entries)
         contacts_n = _sync_registry_from_bridge_contacts()
         _sync_registry_from_files()
@@ -2466,6 +2502,7 @@ def chat_command(
                 f"refresh tên:\n"
                 f"• users: {u_ok}/{len(users)} có tên\n"
                 f"• groups: {g_ok}/{len(entries)} có tên\n"
+                f"• membership snapshots: {member_groups}/{len(entries)} groups, {member_total} members\n"
                 f"• contacts→registry: {contacts_n}\n"
                 f"!zalo users | !zalo list"
             ),

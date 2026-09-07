@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""File/OCR/YARA/AV matrix lab (SSH, separate from other labs).
+"""File/vision/YARA/AV matrix lab (SSH, separate from other labs).
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 Reports: test/reports/run-file-pipeline-security/ (no host/account)
@@ -92,7 +92,7 @@ cd /opt/assistant
 set -a; . ./.env; set +a
 SM_PORT="${SECURITY_PORT:-8093}"
 AV_PORT="${AV_GATEWAY_PORT:-8098}"
-OCR_PORT="${OCR_PORT:-8091}"
+ROUTER_WORKER_PORT="${ROUTER_WORKER_PORT:-8096}"
 printf '%s' 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar.com
 printf 'hello clean lab19\n' > /tmp/clean.txt
 
@@ -130,10 +130,10 @@ else
   echo "INGEST_SECURITY_URL=unset"
 fi
 
-if curl -sf -m 5 "http://127.0.0.1:${OCR_PORT}/health" >/dev/null 2>&1; then
-  echo "OCR_HEALTH=up"
+if curl -sf -m 5 "http://127.0.0.1:${ROUTER_WORKER_PORT}/health" >/dev/null 2>&1; then
+  echo "VISION_ROUTE_HEALTH=up"
 else
-  echo "OCR_HEALTH=down"
+  echo "VISION_ROUTE_HEALTH=down"
 fi
 '''
     out = sudo_bash(c, script)

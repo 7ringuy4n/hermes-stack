@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -35,6 +36,13 @@ async def verify() -> bool:
     )
     checks["renew uses compare script"] = calls[1][0] == "EVAL" and lease.token in calls[1]
     checks["release uses compare script"] = calls[2][0] == "EVAL" and lease.token in calls[2]
+    lease._heartbeat_last_success = time.monotonic()
+    checks["fresh heartbeat healthy"] = lease.heartbeat_healthy()
+    lease._ownership_lost = True
+    checks["lost token fenced"] = not lease.heartbeat_healthy()
+    lease._ownership_lost = False
+    lease._heartbeat_last_success = time.monotonic() - lease.ttl_s
+    checks["expired heartbeat fenced"] = not lease.heartbeat_healthy()
 
     for name, ok in checks.items():
         print(("PASS" if ok else "FAIL"), name)

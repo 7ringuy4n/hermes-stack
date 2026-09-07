@@ -68,6 +68,8 @@ def make_item(
     message_type: str = "TEXT",
     schedule_fire: bool = False,
     plan: Optional[Dict[str, Any]] = None,
+    user_text: str = "",
+    reply_quote: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return {
         "kind": kind,
@@ -83,6 +85,8 @@ def make_item(
         "message_type": str(message_type or "TEXT"),
         "schedule_fire": bool(schedule_fire),
         "plan": dict(plan) if isinstance(plan, dict) else None,
+        "user_text": str(user_text or text or ""),
+        "reply_quote": dict(reply_quote) if isinstance(reply_quote, dict) else None,
     }
 
 
@@ -92,6 +96,7 @@ class MemoryFifo:
     def __init__(self, max_n: int = DEFAULT_MAX) -> None:
         self.max_n = max_n
         self._q: Dict[str, List[str]] = {}
+        self._inflight: Dict[str, List[str]] = {}
 
     def queue_push(self, chat_id: str, payload: str, max_n: int, ttl_s: int) -> int:
         q = self._q.setdefault(str(chat_id), [])
@@ -113,3 +118,36 @@ class MemoryFifo:
 
     def queue_len(self, chat_id: str) -> int:
         return len(self._q.get(str(chat_id)) or [])
+
+    def queue_active_ids(self) -> List[str]:
+        """Return destinations with pending work for owner-recovery tests."""
+        keys = set(self._q) | set(self._inflight)
+        return sorted(
+            key for key in keys if self._q.get(key) or self._inflight.get(key)
+        )
+
+    def queue_claim(self, chat_id: str) -> Optional[str]:
+        key = str(chat_id)
+        q = self._q.get(key) or []
+        if not q:
+            return None
+        raw = q.pop(0)
+        self._inflight.setdefault(key, []).append(raw)
+        return raw
+
+    def queue_ack(self, chat_id: str, payload: str) -> None:
+        inflight = self._inflight.get(str(chat_id)) or []
+        try:
+            inflight.remove(payload)
+        except ValueError:
+            pass
+
+    def queue_recover(self, chat_id: str) -> int:
+        key = str(chat_id)
+        inflight = self._inflight.get(key) or []
+        if not inflight:
+            return 0
+        self._q.setdefault(key, [])[0:0] = inflight
+        count = len(inflight)
+        inflight.clear()
+        return count
