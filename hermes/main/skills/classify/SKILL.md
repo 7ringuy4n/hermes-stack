@@ -1,9 +1,9 @@
 ---
 name: classify
-description: "Classify every inbound Zalo (and host) user message into structured purpose JSON. Prompt SoT is this skill's parts, assembled into one system hop. Never reply to the user."
+description: "Classify every inbound messaging and host user message into structured purpose JSON. Prompt SoT is this skill's parts, assembled into one system hop. Never reply to the user."
 ---
 
-# Classify (Zalo inbound purpose)
+# Classify (inbound purpose)
 
 **Source of truth:** `hermes/main/skills/classify/`  
 Envelope: `classify.json` (`timeout_s`, `user_template`, `parts[]`).  
@@ -14,12 +14,12 @@ Router-worker **assembles parts into one `system` string** and makes **one** `PO
 
 ## When it runs
 
-On **every new Zalo user message** (and gateway/host classify hops), the host must:
+On **every new user message** (and gateway/host classify hops), the host must:
 
 1. Strip Valkey `[Prior conversation]` wrappers for the classify input.
 2. Call router-worker `POST /v1/classify` (combo `classifier` / `ROUTER_WORKER_CLASSIFY_MODEL`).
 3. Consume the structured JSON only (`task_hint`, `task_type`, `skill`, `skill_action`, `instructions`, `output_type`, `clock_hm`, `poster_*`, schedule fields, `target_channel`, `tasks[]`, …).
-4. Route via `core/worker-routing` / Zalo adapter — **never** re-parse Vietnamese prose with regex dictionaries.
+4. Route via `core/worker-routing` and the active channel adapter — **never** re-parse natural-language prose with regex dictionaries.
 
 Classify **never** sends a user-facing chat reply. It only structures work.
 

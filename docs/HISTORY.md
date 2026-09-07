@@ -30,6 +30,23 @@ nested release worktrees without machine-specific paths.
 The Zalo owner lease has an event-loop-independent heartbeat and stale-owner
 send fence, preventing synchronous model work from triggering a false takeover
 or allowing a genuinely superseded owner to deliver late.
+The pre-lock request-control path now reuses deterministic access and group
+addressing boundaries before semantic cancellation, and its release evidence
+contains no internal execution identifiers.
+The same dated record follows the continuous-message production gate from its
+initial timeout through the core fixes and final pass. Per-conversation SSE
+sequencing and execution locks preserve FIFO without blocking an independent
+DM/group stream; quote/session/delivery state is bound to the claimed source
+message, and the release evaluator executes as valid nested Python.
+
+The dated record also covers privacy-preserving provider-session correlation
+and the 10-million-record memory index gate. That gate exposed and corrected an
+expression-index mismatch that made full-text retrieval scan the corpus.
+It additionally records the clean-deploy documentation ownership failure and
+the owner-failover delivery gap. Post-ready learning now repairs only its
+validated persistent mirror and propagates failure; queue recovery now retains
+the terminal response, performs a fenced channel send, and acknowledges only
+after delivery succeeds.
 
 ## 2026-09-05 — update isolation, routing consolidation, and Zalo HA
 

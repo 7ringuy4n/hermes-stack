@@ -40,6 +40,11 @@ def main() -> None:
     assert "Never place internal identifiers, server paths, credentials" in core
     ob = (ROOT / "hermes" / "main" / "skills" / "outbound" / "outbound.json").read_text(encoding="utf-8")
     assert "chat/thread" in ob.lower() or "thread" in ob.lower()
+    assert "zalo" not in ob.lower()
+    assembled = (
+        ROOT / "architect" / "models" / "router-worker" / "config" / "classify.json"
+    ).read_text(encoding="utf-8")
+    assert "zalo" not in assembled.lower()
     print("outbound_privacy_unit OK")
 
 

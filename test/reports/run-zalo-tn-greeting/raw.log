@@ -1,0 +1,11 @@
+[sudo: authenticate] Password:
+SSE_CLIENTS 1
+ZALO_CONNECTED
+USER_NAME Tn
+TAG greet-1788698774
+INJECT_OK True sse 1
+INBOUND_MS 1024
+REPLY_READY_MS 52452
+SEND_OK_MS 60681
+SSE_AFTER 1 loggedIn True
+PASS inbound_ms 1024 send_ms 60681

@@ -174,10 +174,16 @@ valkey=subprocess.check_output(
     ["docker","ps","--filter","label=com.docker.compose.service=valkey","--format","{{{{.Names}}}}"],
     text=True,
 ).splitlines()[0]
-active=subprocess.check_output(
-    ["docker","exec",valkey,"valkey-cli","--raw","SMEMBERS","assistant:gate:qactive"],
-    text=True,errors="replace",
-).splitlines()
+drain_deadline=time.time()+30
+active=[]
+while time.time()<drain_deadline:
+    active=subprocess.check_output(
+        ["docker","exec",valkey,"valkey-cli","--raw","SMEMBERS","assistant:gate:qactive"],
+        text=True,errors="replace",
+    ).splitlines()
+    if uid not in active and gid not in active:
+        break
+    time.sleep(1)
 if uid in active or gid in active:
     raise SystemExit("FAIL_QUEUE_NOT_DRAINED")
 
@@ -189,7 +195,10 @@ PY
 '''
     client = connect()
     try:
-        raw = sanitize(sudo_bash(client, remote, timeout=300) or "")
+        try:
+            raw = sanitize(sudo_bash(client, remote, timeout=300) or "")
+        except SystemExit as exc:
+            raw = sanitize(str(exc))
     finally:
         client.close()
     line = next((row for row in reversed(raw.splitlines()) if row.startswith("{")), "")

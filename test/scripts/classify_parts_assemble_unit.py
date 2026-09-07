@@ -61,6 +61,7 @@ def main() -> int:
     assert len(env.get("priority_rules") or []) >= 5
     assert int(env.get("timeout_s") or 0) <= 60, env.get("timeout_s")
     assert int(env.get("retry") or 99) <= 1, env.get("retry")
+    assert "{failure}" in str(env.get("repair_template") or "")
     assert int(env.get("max_tokens") or 0) >= 3072, env.get("max_tokens")
     assert CLASSIFY_REASONING_EFFORT == "low"
     media = (skill / "parts" / "media.txt").read_text(encoding="utf-8")
@@ -72,6 +73,7 @@ def main() -> int:
         ROOT / "architect" / "models" / "router-worker" / "classify.py"
     ).read_text(encoding="utf-8")
     assert 'system = "Return JSON with' not in classify_source
+    assert "llm_attempts = 1 +" in classify_source
 
     from classify import _fill_user_template, _local_now_label  # noqa: E402
 
@@ -216,11 +218,37 @@ def main() -> int:
                 "current conditions in Da Lat",
                 "RENDER: composed-image\nSCENE: evening city illustration with calm negative space",
             ],
+            "task_details": [
+                {"task_type": "search", "depends_on": []},
+                {"task_type": "media_generation", "output_type": "image", "depends_on": [0]},
+            ],
         },
         "five minutes later create a current conditions picture",
         "Asia/Ho_Chi_Minh",
     )
     assert process.get("message") == "\n".join(process.get("instructions") or [])
+    assert plan_schema_ok(process), process
+
+    contradictory = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "schedule_form": "once_after",
+            "delay_seconds": 300,
+            "instructions": [
+                "retrieve current facts",
+                "RENDER: composed-image\nSCENE: neutral visual with negative space",
+            ],
+            "task_details": [
+                {"task_type": "chat", "depends_on": []},
+                {"task_type": "chat", "depends_on": []},
+            ],
+        },
+        "create a current-facts image later",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert not plan_schema_ok(contradictory), contradictory
 
     unsure = normalize_plan(
         {

@@ -23,7 +23,7 @@ def direct_ollama_allowed(*, task: str, enable_omni: bool, omni_ok: bool) -> boo
     Normal chat still goes to Omni ``hermes`` first (candidate order + forced
     ``model=hermes``). Omni's combo owns member RR. Ollama must remain available
     after Omni returns 503 inactive/empty — excluding it when Omni was merely
-    healthy caused ack-then-silence (no final Zalo reply).
+    healthy caused acknowledgement-then-silence (no final messaging reply).
     """
     _ = (task, enable_omni, omni_ok)
     return True

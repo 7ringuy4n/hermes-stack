@@ -101,6 +101,7 @@ def main() -> int:
     memory_source = (ROOT / "architect" / "memory" / "memory-manager" / "app.py").read_text(encoding="utf-8")
     adapter_source = (ZALO / "adapter.py").read_text(encoding="utf-8")
     notes_prompt = (ROOT / "hermes" / "main" / "skills" / "classify" / "parts" / "notes.txt").read_text(encoding="utf-8")
+    outbound_prompt = (ROOT / "hermes" / "main" / "skills" / "outbound" / "outbound.json").read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS notes" in memory_source
     assert "notes_scope_date_idx" in memory_source and "notes_fts_idx" in memory_source
     assert "CREATE TABLE IF NOT EXISTS note_audit" in memory_source
@@ -109,18 +110,63 @@ def main() -> int:
     guarded = adapter_source.split("async def _on_inbound_guarded", 1)[1]
     guarded = guarded.split("async def _on_session_dead", 1)[0]
     assert guarded.index("await self._as_try_cancel_active_request") < guarded.index("async with lock")
+    assert "control_text = self._as_prelock_control_text(data)" in guarded
+    assert "text=control_text" in guarded
+    prelock = adapter_source.split("def _as_prelock_control_text", 1)[1]
+    prelock = prelock.split("async def _on_inbound_guarded", 1)[0]
+    assert "self._allowed_threads_effective()" in prelock
+    assert "self._users_strict_mode()" in prelock
+    assert "self._allowed_users_effective()" in prelock
+    assert "self._is_addressed(blob, text)" in prelock
+    assert 'self.group_mode == "off"' in prelock
     assert "registered_active" in guarded
     assert 'event="cancelled"' in guarded
     assert "active is asyncio.current_task()" in adapter_source
+    send_body = adapter_source.split("async def send(", 1)[1]
+    send_body = send_body.split("async def send_typing", 1)[0]
+    assert send_body.count("self._rewrite_gateway_user_notice(content)") == 1
+    assert "self._is_gateway_noise(content)" not in send_body
+    assert '"source_message_id"' in send_body
+    assert '"delivery_kind"' in send_body
+    assert "self._as_inbound_queue_enabled() or recorded.get(tid)" in send_body
+    gate_body = adapter_source.split("async def _as_gate_announce", 1)[1]
+    gate_body = gate_body.split("def _as_ux_line", 1)[0]
+    assert '"as_skip_session_memory": True' in gate_body
     assert "Valkey gate unavailable; fail-open retry scheduled" in adapter_source
     assert "except asyncio.CancelledError:" in adapter_source
     assert "self._as_active_turn_tasks" in adapter_source
+    queue_turn = adapter_source.split("async def _as_run_queued_part", 1)[1]
+    queue_turn = queue_turn.split("async def _as_dispatch_event", 1)[0]
+    assert 'item.get("user_text")' in queue_turn
+    assert 'item.get("reply_quote")' in queue_turn
+    assert "self._pending_reply_quote[tid] = reply_quote" in queue_turn
+    assert "quote_text = quoted_context_snip(reply_quote)" in queue_turn
+    assert 'f"[Quoted message]\\n{quote_text}"' in queue_turn
+    assert "event.text = hydrate_user_text(tid, thread_type, prompt_text)" in queue_turn
+    assert "source_message_id=str(event.message_id or \"\")" in queue_turn
+    assert "wait_for_terminal=True" in queue_turn
+    assert "recorded.get(tid)" in adapter_source
+    assert "text=turn_user_text" in queue_turn
+    assert "bare_q = turn_user_text.strip()" in queue_turn
+    session_memory_source = (ROOT / "hermes/main/plugins/zalo/session_memory.py").read_text(encoding="utf-8")
+    assert 'message_id=str(source_message_id or "")' in session_memory_source
+    assert 'meta={"source_message_id": str(source_message_id or "")}' in session_memory_source
+    continuous_lab_source = (ROOT / "test/scripts/zalo_continuous_messages_lab.py").read_text(encoding="utf-8")
+    assert '\\\\nDATA=' in continuous_lab_source
+    assert "used_quote = False" in adapter_source
+    assert '"synthetic_quote_transport_required":False' in continuous_lab_source
+    hydrate = adapter_source.split("# Valkey short-term memory", 1)[1]
+    hydrate = hydrate.split("event = MessageEvent", 1)[0]
+    assert "if not queue_on:" in hydrate
+    assert "else:\n                    text = bare_text" in hydrate
     note_branch = adapter_source.split("if plan_is_note(plan) and not schedule_fire:", 1)[1]
     note_branch = note_branch.split("if plan_is_immediate_deliver", 1)[0]
     assert 'str(plan.get("message")' not in note_branch
     assert '"ZALO_NOTES_SAVED_MSG"' in note_branch
     assert "without adding category labels" in notes_prompt
     assert "deterministic storage deduplication" in notes_prompt
+    assert "Brevity is not evidence of process chatter" in outbound_prompt
+    assert "When uncertain whether useful content is a final answer, choose send" in outbound_prompt
     print("OK notes/control unit")
     return 0
 

@@ -1,6 +1,6 @@
 # 01 — Request and data workflow
 
-**As of:** 2026-09-05
+**As of:** 2026-09-06
 
 ## Request path
 
@@ -38,7 +38,9 @@ renewable Valkey lease elects exactly one Hermes SSE consumer. Standby replicas
 keep the adapter loaded and acquire after lease expiry without a full replica
 restart. Inbound events then enter a Valkey-backed per-conversation queue;
 different conversations may run concurrently while the same conversation
-remains ordered. A reply-quote may provide the source media for `image-edit`;
+remains ordered. An owner-local per-conversation admission sequencer preserves
+SSE arrival order before any semantic control classification can delay an
+item. A reply-quote may provide the source media for `image-edit`;
 the adapter stages that attachment before invoking the skill.
 
 ## State ownership

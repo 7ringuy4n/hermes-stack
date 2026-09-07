@@ -393,32 +393,68 @@ def failed_plan(timezone: str, error: str = "classify_llm_failed") -> dict[str, 
     }
 
 
-def plan_schema_ok(plan: dict[str, Any]) -> bool:
+def plan_schema_failure(plan: dict[str, Any]) -> str:
+    """Return a structural contract failure code, or an empty string."""
     if not isinstance(plan, dict) or plan.get("ok") is False:
-        return False
+        return "invalid_plan"
+    instructions = [
+        str(item or "") for item in (plan.get("instructions") or []) if str(item or "").strip()
+    ]
+    if any("RENDER: composed-image" in item for item in instructions):
+        # Validate the classifier's own typed render protocol. This is not
+        # user-text intent inference: the LLM explicitly selected composed
+        # rendering, so its task graph must agree before the host executes it.
+        details = [
+            item for item in (plan.get("task_details") or []) if isinstance(item, dict)
+        ]
+        search_indexes = [
+            index
+            for index, item in enumerate(details)
+            if str(item.get("task_type") or "").strip().lower() == "search"
+        ]
+        media_indexes = [
+            index
+            for index, item in enumerate(details)
+            if str(item.get("task_type") or "").strip().lower() == "media_generation"
+        ]
+        if len(search_indexes) != 1 or len(media_indexes) != 1:
+            return "composed_image_requires_one_search_and_one_media_task"
+        search_index = search_indexes[0]
+        media_index = media_indexes[0]
+        if search_index >= media_index:
+            return "composed_image_search_must_precede_media"
+        dependencies = details[media_index].get("depends_on") or []
+        if search_index not in dependencies:
+            return "composed_image_media_must_depend_on_search"
     if str(plan.get("task_hint") or "") != "schedule":
-        return True
+        return ""
     action = str(plan.get("skill_action") or "").strip().lower()
     task_type = str(plan.get("task_type") or "").strip().lower()
     if action == "delete" or task_type == "delete_schedule":
-        return True
+        return ""
     if action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
-        return True
+        return ""
     if action in LIFECYCLE_ACTIONS or task_type in LIFECYCLE_TASK_TYPES:
-        return True
+        return ""
     if plan.get("uncertain") is True:
-        return True
+        return ""
     resolution = str(plan.get("schedule_resolution") or "").strip().lower()
     if resolution in {"needs_confirmation", "ambiguous", "invalid"}:
-        return True
+        return ""
     if _task_has_schedule_timing(plan):
-        return True
+        return ""
     tasks = plan.get("tasks")
     if isinstance(tasks, list):
         for item in tasks:
             if isinstance(item, dict) and _task_has_schedule_timing(item):
-                return True
-    return bool(plan.get("cron_expr"))
+                return ""
+    if plan.get("cron_expr"):
+        return ""
+    return "schedule_requires_timing_or_explicit_uncertainty"
+
+
+def plan_schema_ok(plan: dict[str, Any]) -> bool:
+    return not plan_schema_failure(plan)
 
 
 def _coerce_delay_seconds(raw: Any) -> int | None:
@@ -1144,6 +1180,7 @@ async def classify_with_llm(
     thread: str = "unknown",
     attachments: str = "none",
     quoted: str = "none",
+    extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     cfg = _load_cfg()
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
@@ -1170,38 +1207,60 @@ async def classify_with_llm(
     headers = {"Content-Type": "application/json"}
     if n9_key:
         headers["Authorization"] = f"Bearer {n9_key}"
+    if extra_headers:
+        headers.update(extra_headers)
     timeout = float(cfg.get("timeout_s") or 20)
     url = f"{n9_base.rstrip('/')}/chat/completions"
     last_err = "classify_llm_failed"
-    llm_attempts = max(1, int(cfg.get("retry") or 1))
+    # ``retry`` is the number of bounded repair attempts after the initial
+    # request, not the total number of requests. HTTP/provider failures still
+    # leave the model loop immediately; only structurally unusable successful
+    # responses receive repair feedback.
+    llm_attempts = 1 + max(0, int(cfg.get("retry") or 0))
+    repair_template = str(cfg.get("repair_template") or "").strip()
     for model_id in _classify_model_candidates(cfg, model):
-        payload = {
-            "model": model_id,
-            "stream": False,
-            "temperature": float(cfg.get("temperature") or 0),
-            # Classification is schema extraction, not downstream task solving.
-            # Reasoning models otherwise can consume the entire output allowance
-            # on hidden thought and return no JSON content.
-            "reasoning_effort": CLASSIFY_REASONING_EFFORT,
-            "messages": [
-                {"role": "system", "content": str(cfg.get("system") or "")},
-                {
-                    "role": "user",
-                    "content": _fill_user_template(
-                        tmpl,
-                        timezone=tz,
-                        local_now=local_now,
-                        text=blob,
-                        thread=str(thread or "unknown"),
-                        attachments=str(attachments or "none"),
-                        quoted=str(quoted or "none"),
-                    ),
-                },
-            ],
-        }
-        if cfg.get("max_tokens") not in (None, ""):
-            payload["max_tokens"] = int(cfg["max_tokens"])
+        base_messages = [
+            {"role": "system", "content": str(cfg.get("system") or "")},
+            {
+                "role": "user",
+                "content": _fill_user_template(
+                    tmpl,
+                    timezone=tz,
+                    local_now=local_now,
+                    text=blob,
+                    thread=str(thread or "unknown"),
+                    attachments=str(attachments or "none"),
+                    quoted=str(quoted or "none"),
+                ),
+            },
+        ]
+        repair_content = ""
+        repair_failure = ""
         for attempt in range(llm_attempts):
+            messages = list(base_messages)
+            if attempt and repair_template:
+                if repair_content:
+                    messages.append({"role": "assistant", "content": repair_content})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": repair_template.replace(
+                            "{failure}", repair_failure or "invalid_protocol"
+                        ),
+                    }
+                )
+            payload = {
+                "model": model_id,
+                "stream": False,
+                "temperature": float(cfg.get("temperature") or 0),
+                # Classification is schema extraction, not downstream task solving.
+                # Reasoning models otherwise can consume the entire output allowance
+                # on hidden thought and return no JSON content.
+                "reasoning_effort": CLASSIFY_REASONING_EFFORT,
+                "messages": messages,
+            }
+            if cfg.get("max_tokens") not in (None, ""):
+                payload["max_tokens"] = int(cfg["max_tokens"])
             content = ""
             try:
                 resp = await client.post(url, headers=headers, json=payload, timeout=timeout)
@@ -1227,6 +1286,8 @@ async def classify_with_llm(
                         flush=True,
                     )
                     last_err = "classify_llm_failed"
+                    repair_content = ""
+                    repair_failure = "empty_content"
                     continue
             except Exception as exc:
                 print(
@@ -1250,13 +1311,23 @@ async def classify_with_llm(
             parsed = _json_object(content) or _loads_first(content)
             if not parsed:
                 last_err = "classify_llm_failed"
+                repair_content = content
+                repair_failure = "invalid_json"
                 continue
             plan = normalize_plan(parsed, blob, tz)
-            if plan_schema_ok(plan):
+            schema_failure = plan_schema_failure(plan)
+            if not schema_failure:
                 if model_id != _router_llm_model(cfg, model):
                     print(f"[classify] ok via fallback model={model_id}", flush=True)
                 return plan
             last_err = "classify_invalid"
+            repair_content = content
+            repair_failure = schema_failure
+            print(
+                f"[classify] invalid schema model={model_id} attempt={attempt + 1} "
+                f"failure={schema_failure}",
+                flush=True,
+            )
     return failed_plan(tz, last_err)
 
 
@@ -1291,6 +1362,7 @@ async def outbound_with_llm(
     n9_base: str,
     n9_key: str,
     model: str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     cfg = _load_outbound_cfg()
     blob = (text or "").strip()
@@ -1310,6 +1382,8 @@ async def outbound_with_llm(
     headers = {"Content-Type": "application/json"}
     if n9_key:
         headers["Authorization"] = f"Bearer {n9_key}"
+    if extra_headers:
+        headers.update(extra_headers)
     timeout = float(cfg.get("timeout_s") or 30)
     url = f"{n9_base.rstrip('/')}/chat/completions"
     content = ""

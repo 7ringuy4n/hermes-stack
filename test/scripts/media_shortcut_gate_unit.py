@@ -13,6 +13,7 @@ from classify_client import (  # noqa: E402
     plan_allows_office_shortcut,
     plan_media_shortcut_gate,
     plan_allows_scene_image,
+    plan_is_media_policy_refuse,
 )
 
 
@@ -226,6 +227,25 @@ def test_model_authored_office_instruction_never_becomes_document_body() -> None
     assert plan_allows_office_shortcut(plan) is False
 
 
+def test_unavailable_remote_media_summary_is_host_refusal() -> None:
+    plan = normalize_plan(
+        {
+            "ok": True,
+            "task_hint": "tool",
+            "task_type": "tool",
+            "execution_class": "interactive",
+            "skill": "content-summary",
+            "skill_action": "summarize",
+            "process_original_message": True,
+            "instructions": ["Summarize the supplied remote media URL."],
+        },
+        "summarize the media at this URL",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_is_media_policy_refuse(plan) is True
+    assert plan_media_shortcut_gate(plan) == "refuse"
+
+
 def main() -> int:
     test_scenic_plan_gate()
     test_pure_media_process_false()
@@ -236,6 +256,7 @@ def main() -> int:
     test_scenic_misrouted_as_pdf_coerced()
     test_weather_pdf_with_search_not_coerced_to_image()
     test_model_authored_office_instruction_never_becomes_document_body()
+    test_unavailable_remote_media_summary_is_host_refusal()
     adapter_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(
         encoding="utf-8"
     )
@@ -252,9 +273,17 @@ def main() -> int:
     assert "has_image_attachment=attach_is_image" in adapter_source
     assert "media_urls=list(event.media_urls or [])" in adapter_source
     assert "media_urls=list(media_urls or [])" in adapter_source
+    assert "or (urls and not has_image_attachment)" not in adapter_source
     assert adapter_source.count("media_urls=media_urls,") >= 2
     assert 'plan=queued_plan,' in adapter_source
     assert adapter_source.count("plan=plan,") >= 4
+    workflow_start = adapter_source.index("async def _as_try_workflow_submit")
+    workflow_policy = adapter_source.index(
+        "if plan_is_media_policy_refuse(plan) and not schedule_fire:", workflow_start
+    )
+    workflow_create = adapter_source.index("data = create_workflow(", workflow_start)
+    assert workflow_start < workflow_policy < workflow_create
+    assert "host media policy did not consume classified request" in adapter_source
     assert '"plan": dict(plan) if isinstance(plan, dict) else None' in (
         ROOT / "hermes" / "main" / "plugins" / "zalo" / "inbound_queue.py"
     ).read_text(encoding="utf-8")

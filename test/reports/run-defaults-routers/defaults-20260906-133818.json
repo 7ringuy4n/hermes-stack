@@ -1,0 +1,29 @@
+{
+  "rows": [
+    {
+      "ts": "2026-09-06 20:38:18 +0700",
+      "name": "router_worker",
+      "status": "PASS",
+      "detail": "connected"
+    },
+    {
+      "ts": "2026-09-06 20:38:18 +0700",
+      "name": "omni_match",
+      "status": "PASS",
+      "detail": "flag matches container"
+    },
+    {
+      "ts": "2026-09-06 20:38:18 +0700",
+      "name": "omni_default",
+      "status": "PASS",
+      "detail": "live OmniRoute enabled"
+    },
+    {
+      "ts": "2026-09-06 20:38:18 +0700",
+      "name": "ping",
+      "status": "RECORD",
+      "detail": "PING_HTTP=SKIP PING_MS=0"
+    }
+  ],
+  "fails": 0
+}

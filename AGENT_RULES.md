@@ -526,6 +526,21 @@ invariants.
 
 ------------------------------------------------------------------------
 
+### 11.4 Platform-neutral shared behavior
+
+Shared prompts, model instructions, queueing, memory, routing, and user-facing
+copy must describe generic messaging concepts such as `message`, `conversation`,
+`direct conversation`, `group thread`, and `channel`. Do not name a specific
+messaging vendor in those shared layers.
+
+Integration adapters may retain vendor-specific protocol names, API fields,
+commands, environment variables, service identifiers, and test fixtures when
+those names are required for interoperability. Keep that boundary at the
+adapter; do not let vendor identity leak into reusable behavior or model
+prompts.
+
+------------------------------------------------------------------------
+
 ## 12. Reusable Architecture
 
 Features should be designed as reusable components.

@@ -189,7 +189,7 @@ if "guarded active request cancelled" not in logs and "active request cancelled"
 recent=logs[logs.rfind("Zalo: guarded active request cancelled"):]
 if "scene_image_shortcut" in recent and tag in recent:
     raise SystemExit("FAIL_LATE_IMAGE_FLOW")
-print(events.strip())
+print("CANCEL_AUDIT_PRESENT")
 print("CANCEL_REPLY_NO_INTERNAL_ID")
 print("PASS_CANCEL_"+scope.upper()+"_"+mode.upper())
 PY

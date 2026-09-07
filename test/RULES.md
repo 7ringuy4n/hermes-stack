@@ -179,6 +179,48 @@ accurate no-active response rather than a false success.
 The user-facing stop acknowledgement must not expose a process/container ID,
 task or message identifier, correlation value, queue key, or other internal
 execution handle.
+An unauthorized sender, disallowed group, unaddressed group message, or group
+with control disabled must not reach semantic cancellation or stop another
+user's active turn.
+
+### C11 — continuous-message ordering and conversational continuity
+
+Send at least four natural messages consecutively to one DM without waiting for
+the previous response. Include one direct request, one reply quoting the bot's
+answer, one short contextual follow-up that omits an entity already established
+by the quoted/prior turn, and one unrelated request. Repeat the sequence in an
+authorized group while correctly addressing the bot.
+
+Require every accepted message to produce exactly one terminal outcome in FIFO
+order. Each response must remain correlated with its own source queue item,
+retain the correct source-tagged user text in session history, use quoted and
+recent context without an unnecessary clarification, and keep unrelated
+requests independent. Native quote transport must be verified with genuine
+Zalo message identifiers; an injection lab may verify quoted-context semantics
+and successful plain fallback but must not claim native quote-bubble proof.
+Fail on crossed sources, duplicate or missing replies, context taken from a
+later message, a timeout notice after a valid result, late output from an
+earlier turn, queue residue, or leakage between DM and group scopes.
+
+Run a second burst while the first item is intentionally slow. Verify queue
+depth grows within its configured bound, the elected owner renews its lease,
+later items remain durable, and completion or cancellation of the first item
+allows the remaining items to drain in order. Record admission-to-delivery
+latency for every item rather than reporting only total runtime.
+
+### C12 — ten-million-record memory scale
+
+Generate an isolated, disposable corpus of exactly 10,000,000 records on the
+production PostgreSQL engine. Do not commit or retain the generated data. Use
+the same full-text, conversation, session, and time predicates/index families
+as Memory Manager.
+
+Measure two independently marked needles: one knowledge/RAG fact and one task
+from a specifically named old session. Require exact content and scope matches,
+an indexed query plan, individual execution latency within the configured
+production budget, and zero cross-session substitution. Report corpus size and
+both measured latencies. Always drop the lab table in cleanup, including after
+a failed assertion.
 
 ## 5. Two-request concurrency and quote isolation
 
@@ -200,10 +242,10 @@ Also run one DM request and one request in the named three-member test group at
 the same instant. Resolve the group by display name at runtime, verify its
 membership through durable channel state, and require each result to return to
 its originating conversation. Numeric identities must remain runtime-only.
-The elected owner may serialize gateway agent execution when the underlying
-gateway state is not concurrency-safe, but it must retain both durable claims,
-pulse worker ownership while waiting, acknowledge only after terminal session
-completion, and deliver both within their operation deadlines.
+The elected owner serializes gateway agent execution per conversation while
+allowing independent conversations to run concurrently. It must retain both
+durable claims, pulse worker ownership while waiting, acknowledge only after
+terminal session completion, and deliver both within their operation deadlines.
 
 ## 6. Stability observation
 

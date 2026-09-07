@@ -1,5 +1,63 @@
+## 2026-09-07 — atomic dependency delivery and classifier isolation
+
+- Keep dependent execution graphs in one durable queue turn and reuse their
+  admission plan, while continuing to split truly independent requests.
+- Correlate provider calls with opaque per-conversation identifiers and derive
+  isolated, content-hashed identifiers for stateless callers.
+- Give the existing bounded classifier repair a precise structural failure
+  code without increasing retries or changing operator-owned model combos.
+- Verify all local unit contracts and a real-channel composed-image delivery
+  whose durable attachment record retains the original request source.
+
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
+- Repair the persistent documentation mirror ownership during post-ready learn
+  instead of depending on a one-off host correction. Clean deployment now
+  fails if synchronization or learning fails after services become ready.
+- Preserve a terminal Hermes response at the inbound event boundary. If an
+  elected message owner disappears after the model finishes but before the
+  channel send, its successor performs one fenced recovery delivery and does
+  not acknowledge the durable queue item when that delivery fails.
+- Make live concurrency gates wait for bounded queue cleanup after confirmed
+  delivery, retain structured diagnostics on privileged-command failures, and
+  force UTF-8 for child test processes on Windows.
+- Add opaque per-conversation session correlation to every Router Worker
+  provider request. Raw channel, conversation, and thread identifiers are
+  one-way digested before leaving the stack, including classifier and outbound
+  model calls.
+- Make shared model prompts and reusable core guidance platform-neutral while
+  retaining protocol-required names inside integration adapters.
+- Add session/time-constrained memory recall and matching PostgreSQL indexes.
+  Full-text recall now uses the exact indexed expression before attempting a
+  compatibility substring fallback. A disposable 10,000,000-row VPS corpus
+  returned the exact knowledge item in 0.546 ms and exact historical-session
+  task in 0.177 ms, then was removed.
+- Include the session-correlation module in the Router Worker image. A live
+  rebuild exposed the missing explicit Dockerfile copy as a restart loop;
+  packaging coverage now blocks that recurrence.
+- Route capability-owned Zalo work only after durable FIFO claim, retain the
+  claimed item's quote and user text through dequeue, and establish one common
+  session-history boundary for direct, workflow, media, and ordinary turns.
+- Sequence SSE admission per conversation before semantic control checks, then
+  serialize agent execution with a conversation-scoped lock. Independent DM
+  and group conversations can execute concurrently without reordering either
+  stream.
+- Reconstruct quoted-message context from the durable queue item at claim time,
+  correlate session and delivery history with the source message, and mark a
+  quote as delivered only when the bridge accepts the quoted send rather than
+  its plain fallback.
+- Remove duplicate outbound classification and make the file-based outbound
+  contract preserve concise completed answers while still suppressing clear
+  protocol/process chatter.
+- Add a continuous-message release gate with natural direct/group bursts,
+  quote and history correlation, queue-residue checks, and LLM semantic review.
+  The two-destination eight-message VPS run passed in 181.27 seconds with no
+  late timeout or queue residue; provider fallback dominated observed latency.
+
+- Apply the normal sender, thread, and group-addressing gates before an active
+  request can enter the pre-lock cancellation path. Addressed group control
+  text is normalized before semantic classification, and live cancellation
+  reports expose only outcome markers rather than internal audit values.
 - Record an outbound Zalo `delivered` history event only after the bridge
   acknowledges the send. HA and conversation-isolation labs now use this
   durable acknowledgement instead of relying on optional self-message journal

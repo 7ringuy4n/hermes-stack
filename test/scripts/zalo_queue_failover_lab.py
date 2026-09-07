@@ -147,7 +147,10 @@ PY
 '''
     client = connect()
     try:
-        raw = sanitize(sudo_bash(client, remote, timeout=240) or "")
+        try:
+            raw = sanitize(sudo_bash(client, remote, timeout=240) or "")
+        except SystemExit as exc:
+            raw = sanitize(str(exc))
     finally:
         client.close()
     line = next((row for row in reversed(raw.splitlines()) if row.startswith("{")), "")
