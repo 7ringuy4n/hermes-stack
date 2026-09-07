@@ -1,3 +1,14 @@
+## 2026-09-07 — release queue, scheduler, and lifecycle hardening
+
+- Rehydrate secret-backed Compose variables for standalone lifecycle commands
+  and make post-ready knowledge synchronization safe for unattended runs.
+- Rebind recovered queue work to its original destination and acknowledge it
+  only after the channel bridge confirms delivery.
+- Preserve task-local schedule source correlation through asynchronous sends,
+  and classify simple reminders as verbatim content rather than generated work.
+- Strengthen live release evidence with exact source/destination correlation,
+  deterministic outcome checks, and semantic model evaluation.
+
 ## 2026-09-07 — atomic dependency delivery and classifier isolation
 
 - Keep dependent execution graphs in one durable queue turn and reuse their

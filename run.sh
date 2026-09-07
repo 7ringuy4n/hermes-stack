@@ -780,6 +780,16 @@ do_prepare_openbao_env_for_compose() {
   return 1
 }
 
+do_compose_with_openbao_env() {
+  # Read-only and lifecycle commands still require Compose to interpolate
+  # secret-backed required variables after plaintext exports have been scrubbed.
+  # Load them into this process, remove the transient file before invoking
+  # Compose, and keep the values only in the lifetime of this run.sh process.
+  do_prepare_openbao_env_for_compose
+  do_scrub_plaintext_env
+  compose "$@"
+}
+
 do_post_ready_learn() {
   # All profiles: after Hermes and OmniRoute are ready, learn bundled skills/docs.
   echo "==> post-ready learn (skills|docs)"
@@ -805,9 +815,23 @@ do_post_ready_learn() {
   if [[ "$(id -u)" -eq 0 ]]; then
     mkdir -p "$docs_root"
     chown -R "$owner_uid:$owner_gid" "$docs_root"
-  else
-    sudo mkdir -p "$docs_root"
-    sudo chown -R "$owner_uid:$owner_gid" "$docs_root"
+  elif ! mkdir -p "$docs_root" 2>/dev/null || [[ ! -w "$docs_root" ]]; then
+    # Automated cold starts must never block on an interactive sudo prompt.
+    # Prefer cached/passwordless sudo, then use the already-running Hermes
+    # container's root user against the same bind mount.
+    if sudo -n mkdir -p "$docs_root" 2>/dev/null \
+      && sudo -n chown -R "$owner_uid:$owner_gid" "$docs_root" 2>/dev/null; then
+      :
+    else
+      local hermes_container
+      hermes_container="$(compose ps -q hermes | head -n1)"
+      if [[ -z "$hermes_container" ]]; then
+        echo "ERROR: cannot repair knowledge-sync directory ownership without a running Hermes container" >&2
+        return 1
+      fi
+      docker exec -u 0 "$hermes_container" sh -c \
+        "mkdir -p /opt/data/docs && chown -R ${owner_uid}:${owner_gid} /opt/data/docs"
+    fi
   fi
   chmod -R u+rwX "$docs_root"
   if ! python3 "${SCRIPTS_DIR}/post-ready-learn.py"; then
@@ -1212,10 +1236,10 @@ case "$cmd" in
       do_post_up_hooks
     fi
     ;;
-  down) compose down ;;
+  down) do_compose_with_openbao_env down ;;
   destroy) do_destroy ;;
-  ps) compose ps ;;
-  logs) compose logs -f --tail=100 "$@" ;;
+  ps) do_compose_with_openbao_env ps ;;
+  logs) do_compose_with_openbao_env logs -f --tail=100 "$@" ;;
   workers|profile) assistant_workers_summary ;;
   switch-profile|change-profile) do_switch_profile "$@" ;;
   install|enable) do_install "$@" ;;

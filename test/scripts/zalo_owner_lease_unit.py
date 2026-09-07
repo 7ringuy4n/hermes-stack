@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
+import types
 from pathlib import Path
 from unittest.mock import AsyncMock
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
-
-from owner_lease import ValkeyLease  # noqa: E402
+LEASE_SOURCE = ROOT / "hermes" / "main" / "plugins" / "zalo" / "owner_lease.py"
+lease_module = types.ModuleType("owner_lease_source")
+exec(compile(LEASE_SOURCE.read_text(encoding="utf-8"), str(LEASE_SOURCE), "exec"), lease_module.__dict__)
+ValkeyLease = lease_module.ValkeyLease
 
 
 async def verify() -> bool:
@@ -24,6 +25,10 @@ async def verify() -> bool:
         "password parsed": lease.password == "secret",
         "lease bounded": lease.ttl_s == 45,
         "unique owner token": lease.token.startswith("replica-a:"),
+        "adapter heartbeat API is complete": all(
+            callable(getattr(lease, method, None))
+            for method in ("start_heartbeat", "stop_heartbeat", "heartbeat_healthy")
+        ),
     }
 
     lease._execute = AsyncMock(side_effect=["OK", 1, 1])  # type: ignore[method-assign]

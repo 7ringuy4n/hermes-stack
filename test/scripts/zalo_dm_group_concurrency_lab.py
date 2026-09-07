@@ -117,22 +117,23 @@ dm_marker="The blue orchid is ready."
 group_marker="The amber lantern is ready."
 started=time.time()
 
-def delivered_count(thread_id, thread_type, marker, started_at):
+def delivery_evidence(thread_id, thread_type, source_message_id, marker, started_at):
     probe="""
-import os, psycopg
+import json, os, psycopg
 with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
     row=conn.execute(
-        "SELECT count(*) FROM zalo_message_history WHERE thread_id=%s AND thread_type=%s AND event='delivered' AND created_at >= to_timestamp(%s) AND content LIKE %s",
-        (os.environ["LAB_THREAD_ID"],os.environ["LAB_THREAD_TYPE"],int(os.environ["LAB_STARTED"]),"%"+os.environ["LAB_MARKER"]+"%"),
+        "SELECT count(*), COALESCE(bool_or(content LIKE %s), false) FROM zalo_message_history WHERE thread_id=%s AND thread_type=%s AND event='delivered' AND created_at >= to_timestamp(%s) AND meta->>'source_message_id'=%s",
+        ("%"+os.environ["LAB_MARKER"]+"%",os.environ["LAB_THREAD_ID"],os.environ["LAB_THREAD_TYPE"],int(os.environ["LAB_STARTED"]),os.environ["LAB_SOURCE_MESSAGE_ID"]),
     ).fetchone()
-print(int(row[0] or 0))
+print(json.dumps({{"count":int(row[0] or 0),"content_exact":bool(row[1])}}))
 """
     value=subprocess.check_output(
         ["docker","exec","-e","LAB_THREAD_ID="+thread_id,"-e","LAB_THREAD_TYPE="+thread_type,
-         "-e","LAB_MARKER="+marker,"-e","LAB_STARTED="+str(int(started_at)),zalo_api,"python3","-c",probe],
+         "-e","LAB_SOURCE_MESSAGE_ID="+source_message_id,"-e","LAB_MARKER="+marker,
+         "-e","LAB_STARTED="+str(int(started_at)),zalo_api,"python3","-c",probe],
         text=True,errors="replace",
     ).strip()
-    return int(value or "0")
+    return json.loads(value or "{{}}")
 
 def inject(thread_id, thread_type, message_id, marker, quote_id, seed):
     quote={{"msgType":"webchat","msgId":quote_id,"cliMsgId":quote_id,"content":seed,"ownerId":own,"uidFrom":own}}
@@ -145,9 +146,11 @@ def inject(thread_id, thread_type, message_id, marker, quote_id, seed):
     return bool(post("/inject-event",payload).get("ok"))
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+    dm_source_id="dm-"+tag
+    group_source_id="group-"+tag
     futures=[
-        pool.submit(inject,uid,"user","dm-"+tag,dm_marker,dm_quote_id,dm_seed),
-        pool.submit(inject,gid,"group","group-"+tag,group_marker,group_quote_id,group_seed),
+        pool.submit(inject,uid,"user",dm_source_id,dm_marker,dm_quote_id,dm_seed),
+        pool.submit(inject,gid,"group",group_source_id,group_marker,group_quote_id,group_seed),
     ]
     accepted=[future.result() for future in futures]
 if accepted != [True,True]:
@@ -155,12 +158,17 @@ if accepted != [True,True]:
 
 deadline=time.time()+180
 dm_ok=group_ok=crossed=False
+dm_content_exact=group_content_exact=False
 while time.time()<deadline:
-    dm_ok=delivered_count(uid,"user",dm_marker,started)==1
-    group_ok=delivered_count(gid,"group",group_marker,started)==1
+    dm_evidence=delivery_evidence(uid,"user",dm_source_id,dm_marker,started)
+    group_evidence=delivery_evidence(gid,"group",group_source_id,group_marker,started)
+    dm_ok=dm_evidence.get("count")==1
+    group_ok=group_evidence.get("count")==1
+    dm_content_exact=bool(dm_evidence.get("content_exact"))
+    group_content_exact=bool(group_evidence.get("content_exact"))
     crossed=(
-        delivered_count(gid,"group",dm_marker,started)>0 or
-        delivered_count(uid,"user",group_marker,started)>0
+        delivery_evidence(gid,"group",dm_source_id,dm_marker,started).get("count",0)>0 or
+        delivery_evidence(uid,"user",group_source_id,group_marker,started).get("count",0)>0
     )
     if dm_ok and group_ok:
         break
@@ -190,6 +198,7 @@ if uid in active or gid in active:
 print(json.dumps({{
     "ok":True,"requests":2,"elapsed_s":elapsed,"group_members":len(members),
     "dm_quote":True,"group_quote":True,"crossed":False,"queue_empty":True,
+    "dm_content_exact":dm_content_exact,"group_content_exact":group_content_exact,
 }},separators=(",",":")))
 PY
 '''
