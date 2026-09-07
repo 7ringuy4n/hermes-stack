@@ -37,6 +37,8 @@ def main() -> int:
     assert "preserve the user's requested subject and time scope" in system
     assert "bilingual copy" in system
     assert "self-review before delivery" in system
+    assert "A simple reminder" in system
+    assert "never retain the timing wrapper" in system
     assert "one verified, timestamped source" in system
     assert "no repeated standalone subject label" in system
     assert "without applying an offset twice" in system

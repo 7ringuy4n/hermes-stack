@@ -145,6 +145,15 @@ def main() -> int:
     if "async with self._as_agent_turn_lock_for(tid):" not in adapter_source:
         print("FAIL queued turns do not use the conversation execution lock")
         return 1
+    queued_part = adapter_source.split("async def _as_run_queued_part", 1)[1].split(
+        "async def _as_dispatch_event", 1
+    )[0]
+    remember = "self._as_autosend_remember_turn(tid, thread_type)"
+    if remember not in queued_part or queued_part.index(remember) > queued_part.index(
+        "await self.handle_message(event)"
+    ):
+        print("FAIL recovered queue turn does not rebind its destination")
+        return 1
     sse_handler = adapter_source.split("async def _handle_sse_event", 1)[1]
     sse_handler = sse_handler.split("def _as_inbound_is_admin", 1)[0]
     if "self._as_sequence_inbound_event(data)" not in sse_handler:
@@ -173,6 +182,9 @@ def main() -> int:
         return 1
     if 'raise RuntimeError("terminal queue response delivery failed")' not in recovery_block[1]:
         print("FAIL failed delivery recovery can still acknowledge queue work")
+        return 1
+    if "recovery_event.is_set()" not in recovery_block[1]:
+        print("FAIL successful no-op can still acknowledge recovered queue work")
         return 1
 
     async def verify_conversation_locks() -> bool:

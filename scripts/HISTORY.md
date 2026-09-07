@@ -1,3 +1,9 @@
+## 2026-09-07 — lifecycle and delivery release gate
+
+See `history/2026-09-07/README.md` for secret-backed standalone Compose
+commands, unattended post-ready learning, fenced queue recovery, and durable
+schedule source correlation verified through the live channel path.
+
 ## 2026-09-05 20:45 +07 — bounded Zalo sends and non-interfering live evaluation
 
 See `history/2026-09-05/README.md` section “Synthetic quote metadata and

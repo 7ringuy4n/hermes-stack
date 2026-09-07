@@ -34,6 +34,12 @@ configuration; update does not replace them.
 | `ps` | Show service state. |
 | `logs [service]` | Read service logs. |
 
+Standalone `down`, `ps`, and `logs` hydrate their required Compose values from
+OpenBao after plaintext environment cleanup and remove the transient export
+when the command exits. Post-ready knowledge synchronization uses a
+noninteractive privilege boundary and fails the lifecycle command instead of
+silently leaving the knowledge index stale.
+
 Clean redeploy of current data:
 
 ```bash
