@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit: channel name from classify plan + diacritic-insensitive resolve."""
+"""Unit: channel name from classify plan and normalized resolve."""
 from __future__ import annotations
 
 import sys
@@ -21,7 +21,7 @@ def test_extract() -> None:
     # Host no longer phrase-scans; destination must come from classify JSON.
     assert (
         extract_target_group_ref(
-            "đặt lịch hàng ngày 7:00 gửi vào nhóm Family: chào buổi sáng",
+            "schedule daily at 07:00 to group Family with a greeting",
             {},
         )
         == ""
@@ -52,18 +52,20 @@ def test_extract() -> None:
 
 def test_resolve_prefixed_and_reverse(tmp_path: Path) -> None:
     reg.REGISTRY_FILE = tmp_path / "registry.json"
-    reg.upsert("zalo", "5275909225773405280", name="LC group", kind="group")
+    reg.upsert("zalo", "12345", name="Lab group", kind="group")
     hit = reg.resolve("zalo", "Zalo LC group")
-    assert hit and hit["external_id"] == "5275909225773405280"
-    hit2 = reg.resolve("zalo", "LC group")
-    assert hit2 and hit2["external_id"] == "5275909225773405280"
+    assert hit is None
+    hit = reg.resolve("zalo", "Zalo Lab group")
+    assert hit and hit["external_id"] == "12345"
+    hit2 = reg.resolve("zalo", "Lab group")
+    assert hit2 and hit2["external_id"] == "12345"
 
 
 def test_resolve_and_apply(tmp_path: Path) -> None:
     reg.REGISTRY_FILE = tmp_path / "registry.json"
-    reg.upsert("zalo", "111", name="Nhóm Gia Đình", kind="group")
+    reg.upsert("zalo", "111", name="Café Team", kind="group")
     reg.upsert("zalo", "999", name="Tn", kind="user")
-    hit = reg.resolve("zalo", "nhom gia dinh")
+    hit = reg.resolve("zalo", "cafe team")
     assert hit and hit["external_id"] == "111"
     origin = {
         "platform": "zalo",
@@ -88,8 +90,8 @@ def test_resolve_and_apply(tmp_path: Path) -> None:
 
     cc.resolve_channel = _fake_resolve  # type: ignore
     new_o, new_c, note = apply_schedule_delivery_target(
-        text="đặt lịch 7:00 gửi vào nhóm Gia Dinh chào",
-        plan={"target_channel": "Gia Dinh"},
+        text="schedule at 07:00 and send a greeting to Cafe Team",
+        plan={"target_channel": "Cafe Team"},
         origin=origin,
         context=context,
         current_thread_type="user",

@@ -1024,19 +1024,20 @@ test/cases/
 Do not run unrelated expensive test suites merely for the appearance of
 verification.
 
-### 29.1 “Run all test cases” means §15 Case index (full)
+### 29.1 “Run all test cases” means the current verification contract (full)
 
 When the operator asks to run **all test cases**, **all tests**, or the full
-lab suite, run the **entire** [`test/RULES.md`](./test/RULES.md) **§15 Case index**:
+lab suite, run the entire current [`test/RULES.md`](./test/RULES.md) contract:
 
-1.  Every **unit script** listed under §15 (offline batch).
-2.  Every **lab/VPS script** listed under §15 (SSH; real Zalo traffic where
-    applicable — Tn on develop lab, any sole admin on `main`).
+1.  Every discoverable `test/scripts/*_unit.py` script plus the explicit
+    compatibility units in the batch runner.
+2.  Every applicable capability and stability case in `test/RULES.md` §§3–6
+    (SSH; real Zalo traffic where applicable).
 3.  Do **not** substitute a smaller subset (e.g. health + preflight only)
     unless the operator explicitly scopes the run.
 
-Batch runner: `test/scripts/run_case_index_lab.py` (keep in sync when §15
-grows). Gap cases **40–74** are separate unless the operator asks for them.
+Batch runner: `test/scripts/run_case_index_lab.py`. It discovers offline unit
+scripts so adding a regression cannot silently omit it from the full gate.
 
 After **all** rounds finish, **before stopping the host**, run post-lab restore
 (§19.1) — not optional when the operator requested a full lab.

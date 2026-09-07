@@ -88,6 +88,29 @@ def main() -> int:
         return 1
     print("PASS FIFO 3 immediate parts + cap")
 
+    # A claimed turn survives an owner crash and is restored ahead of later
+    # work. Independent DM/group destinations remain separately discoverable.
+    reliable = MemoryFifo(max_n=4)
+    reliable.queue_push("dm-1", "first", 4, 3600)
+    reliable.queue_push("dm-1", "second", 4, 3600)
+    reliable.queue_push("group-1", "group", 4, 3600)
+    if reliable.queue_active_ids() != ["dm-1", "group-1"]:
+        print(f"FAIL active queue registry {reliable.queue_active_ids()!r}")
+        return 1
+    claimed = reliable.queue_claim("dm-1")
+    if claimed != "first" or reliable.queue_recover("dm-1") != 1:
+        print("FAIL abandoned claim recovery")
+        return 1
+    replay = reliable.queue_claim("dm-1")
+    if replay != "first":
+        print(f"FAIL recovered ordering {replay!r}")
+        return 1
+    reliable.queue_ack("dm-1", replay)
+    if reliable.queue_claim("group-1") != "group":
+        print("FAIL group queue independence")
+        return 1
+    print("PASS durable claim recovery + independent destinations")
+
     kept = split_compound_requests(PLENTY_SCHEDULE)
     if len(kept) != 1 or "E10 RON95" not in kept[0]:
         print(f"FAIL daily plenty list must stay one job, got {kept!r}")

@@ -34,7 +34,7 @@ Run all commands from the repository root.
 | `bash run.sh workers` | Show effective worker and core flags. |
 | `bash run.sh install NAME…` | Enable workers after backup/verification. |
 | `bash run.sh uninstall NAME…` | Disable workers after backup/verification. |
-| `bash run.sh backup` / `verify` / `restore` | Disaster-recovery stamp lifecycle. |
+| `bash run.sh backup` / `verify` / `restore` | Disaster-recovery lifecycle, including Zalo session/identity and router/vault exports. |
 | `bash run.sh auto-learn` / `learn-status` | Knowledge indexing. |
 | `bash run.sh compact` / `optimize-memory` | Knowledge/memory maintenance using embedding. |
 | `bash run.sh install-timers` | Install host timers and enabled-worker watches. |

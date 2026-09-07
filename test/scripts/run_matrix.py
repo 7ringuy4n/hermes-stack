@@ -375,13 +375,13 @@ print('AV_MSG', alerts.get('antivirus_disabled',''))
 print('VPN_OFF', 'ENABLE_OPENVPN=1' not in env.replace('\r',''))
 print('VPN_MSG', alerts.get('openvpn_disabled',''))
 PY
-echo '=== ocr bounce ==='
-docker stop ocr >/dev/null 2>&1 || true
-sleep 2
-curl -sf -m 3 http://127.0.0.1:8091/health && echo OCR_STILL_UP || echo OCR_DOWN_OK
-docker start ocr >/dev/null 2>&1 || true
-sleep 6
-curl -sf -m 8 http://127.0.0.1:8091/health && echo OCR_RECOVER_OK || echo OCR_RECOVER_FAIL
+echo '=== vision route ==='
+curl -sf -m 8 http://127.0.0.1:8096/health >/dev/null && echo VISION_ROUTE_OK || echo VISION_ROUTE_FAIL
+if docker ps -a --format '{{.Names}}' | grep -qx 'ocr'; then
+  echo RETIRED_OCR_PRESENT
+else
+  echo RETIRED_OCR_ABSENT
+fi
 echo '=== session lock ==='
 curl -sf -m 5 -X POST http://127.0.0.1:8107/v1/sessions/r2-lock/lock \
   -H 'Content-Type: application/json' -d '{"owner":"r2","ttl_seconds":8}' && echo LOCK_OK || echo LOCK_FAIL

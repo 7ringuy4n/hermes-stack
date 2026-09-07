@@ -568,6 +568,43 @@ def upsert_group_member(
     return True
 
 
+def replace_group_members(thread_id: str, members: list[dict[str, Any]]) -> int:
+    """Atomically replace one group's members from a complete bridge snapshot."""
+    tid = (thread_id or "").strip()
+    normalized: list[tuple[str, str, dict[str, Any]]] = []
+    seen: set[str] = set()
+    for member in members if isinstance(members, list) else []:
+        if not isinstance(member, dict):
+            continue
+        uid = str(member.get("zalo_user_id") or "").strip()
+        if not uid or not uid.isdigit() or uid in seen:
+            continue
+        seen.add(uid)
+        role = str(member.get("role") or "member").strip() or "member"
+        metadata = member.get("raw_metadata")
+        normalized.append((uid, role, metadata if isinstance(metadata, dict) else {}))
+    if not tid or not normalized:
+        raise ValueError("thread_id and a non-empty member snapshot are required")
+    if not _ensure():
+        raise RuntimeError("postgres unavailable")
+
+    from psycopg.types.json import Json
+
+    with _pool.connection() as conn:
+        conn.execute("DELETE FROM zalo_group_members WHERE thread_id=%s", (tid,))
+        for uid, role, metadata in normalized:
+            conn.execute(
+                """
+                INSERT INTO zalo_group_members
+                  (thread_id, zalo_user_id, role, raw_metadata, updated_at)
+                VALUES (%s, %s, %s, %s, NOW())
+                """,
+                (tid, uid, role, Json(metadata)),
+            )
+        conn.commit()
+    return len(normalized)
+
+
 def set_claim(
     *,
     admin_user_id: str,

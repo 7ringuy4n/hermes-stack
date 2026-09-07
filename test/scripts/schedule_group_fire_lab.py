@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Lab: scheduleFire into LC group bypasses mention gate; history API.
+"""Lab: scheduleFire into a named test group bypasses mention gate; history API.
 
 Env: ASSISTANT_SSH_*
 Reports: test/reports/run-schedule-group-fire/
@@ -26,7 +26,7 @@ PW = os.environ["ASSISTANT_SSH_PASSWORD"]
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-schedule-group-fire"
 esc = PW.replace("'", "'\\''")
-LC_GID = "5275909225773405280"
+GROUP_NAME = (os.environ.get("ZALO_TEST_GROUP_NAME") or "test").strip()
 
 
 def connect():
@@ -77,15 +77,25 @@ for ln in Path('/data/assistant/zalo_admin_users.txt').read_text(encoding='utf-8
   admin=s.split('|')[0].strip()
   break
 assert admin and not admin.startswith('#'), admin
-gid = {LC_GID!r}
+group_name = {GROUP_NAME!r}.casefold()
+groups=[]
+for ln in Path('/data/assistant/zalo_allowed_threads.txt').read_text(encoding='utf-8').splitlines():
+  value=ln.strip()
+  if not value or value.startswith('#'):
+    continue
+  ident, sep, name=value.partition('|')
+  if sep and name.strip().casefold() == group_name:
+    groups.append(ident.strip())
+assert len(groups) == 1, "named test group must resolve exactly once"
+gid = groups[0]
 tag = {tag!r}
 body = {{
   "cron_expr": "59 23 * * *",
   "cadence": "once",
   "timezone": "Asia/Ho_Chi_Minh",
   "text": f"lab schedule {{tag}}",
-  "fire_text": f"xin chào từ schedule lab {{tag}}",
-  "origin": {{"platform":"zalo","thread_id":gid,"chat_id":gid,"user_id":admin,"chat_name":"LC group"}},
+  "fire_text": f"scheduled test message {{tag}}",
+  "origin": {{"platform":"zalo","thread_id":gid,"chat_id":gid,"user_id":admin,"chat_name":{GROUP_NAME!r}}},
   "context": {{"thread_id":gid,"thread_type":"group","chat_type":"group","sender_id":admin,"sender_name":"admin"}},
   "next_run_at": "2020-01-01T00:00:00Z",
 }}

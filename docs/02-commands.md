@@ -80,8 +80,10 @@ bash run.sh restore 20260905_120000
 bash run.sh migrate
 ```
 
-A valid stamp covers data/config plus the OmniRoute and OpenBao components.
-Reports must show presence/checksums without printing tokens or provider keys.
+A valid stamp covers data/config, OmniRoute, OpenBao, the Zalo login credential,
+and Zalo identity/allowlist files. PostgreSQL carries the channel/member
+registry. Reports show presence/checksums and membership counts without
+printing identities, tokens, or provider keys.
 
 ## Knowledge, memory, and schedule
 
