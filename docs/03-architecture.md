@@ -92,12 +92,6 @@ queue after deterministic access/addressing checks, but a slow semantic check
 cannot allow a later ordinary message to overtake an earlier one. Claimed agent
 turns use per-conversation locks, not one owner-wide lock.
 
-Before durable admission, an owner-local sequencer processes SSE events in
-arrival order for each conversation. Cancellation can still bypass the work
-queue after deterministic access/addressing checks, but a slow semantic check
-cannot allow a later ordinary message to overtake an earlier one. Claimed agent
-turns use per-conversation locks, not one owner-wide lock.
-
 This is therefore a hybrid single-node availability design: active-active for
 HTTP, active-passive for the Zalo event stream, and shared queues for background
 workers. Scaling Hermes from one to two replicas improves capacity and process
