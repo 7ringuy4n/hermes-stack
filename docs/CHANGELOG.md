@@ -1958,7 +1958,7 @@ Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting 
 
 ## 2026-08-20 10:20 +07 â€” Zalo lab cases 16â€“29; case 16/29 fixes
 
-- Full lab run on VPS `72.61.127.249`: cases **17, 26, 27, 28 PASS** on first pass; **16** (480s watch too short for sequential image+fuel) and **29** (transient classify `ok=false`) failed once.
+- Full lab run on the validation host: cases **17, 26, 27, 28 PASS** on first pass; **16** (480s watch too short for sequential image+fuel) and **29** (transient classify `ok=false`) failed once.
 - Fixes: `zalo_multi_request_lab.py` default watch **720s**; case 29 classify **3Ã— retry**; `classify.json` schedule prompt no longer uses standalone word *lá»‹ch*.
 - Rerun cases **16 + 29: PASS** (`test/reports/rerun-16-29.log`). Zalo bridge `0.0.0.0:8787`, `sseClients=1` throughout.
 
