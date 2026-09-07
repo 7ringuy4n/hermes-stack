@@ -129,10 +129,13 @@ must fail clearly without crashing workers.
 
 ### C7 — scheduler
 
-Schedule one harmless Zalo result for no more than two minutes in the future.
-Require exactly one acknowledgement, durable row, one execution, one final
-delivery, correct timezone, and no duplicate after worker/Hermes restart.
-Remove the test schedule and row afterward.
+Schedule one harmless result for no more than two minutes in the future. A
+simple reminder must be stored and delivered as verbatim standalone content;
+it must not be converted into generated work or a follow-up question. Require
+exactly one acknowledgement, durable row, one execution, and one final
+transport-accepted delivery whose `source_message_id` correlates to that
+schedule row. Also require the correct timezone and no duplicate after a
+worker or Hermes restart. Remove the test schedule and row afterward.
 
 ### C8 — image edit, including Zalo reply quote
 

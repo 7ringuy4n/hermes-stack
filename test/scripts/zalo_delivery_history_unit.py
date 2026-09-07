@@ -18,6 +18,18 @@ def main() -> int:
     assert '"quoted": bool(used_quote)' in delivery_body
     assert '"delivery_kind": str(meta.get("delivery_kind") or "result")' in delivery_body
     assert '"source_message_id": str(' in delivery_body
+    assert 'meta.get("source_message_id")' in delivery_body
+    assert 'self._as_source_message_id.get()' in delivery_body
+    schedule_start = source.index("    async def _as_schedule_fire_verbatim(")
+    schedule_end = source.index("    async def _as_gate_announce(", schedule_start)
+    schedule_body = source[schedule_start:schedule_end]
+    assert '"delivery_kind": "result"' in schedule_body
+    assert 'm.get("messageId") or m.get("message_id")' in schedule_body
+    guarded_start = source.index("    async def _on_inbound_guarded(")
+    guarded_end = source.index("    async def _on_session_dead(", guarded_start)
+    guarded_body = source[guarded_start:guarded_end]
+    assert "self._as_source_message_id.set(" in guarded_body
+    assert "self._as_source_message_id.reset(source_token)" in guarded_body
     helper_start = source.index("    def _as_record_attachment_delivery(")
     image_start = source.index("    async def send_image_file(", helper_start)
     document_start = source.index("    async def send_document(", image_start)

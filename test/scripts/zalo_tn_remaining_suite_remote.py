@@ -255,6 +255,44 @@ def list_schedules() -> list:
     return rows if isinstance(rows, list) else []
 
 
+def schedule_delivery_count(schedule_id: str, started: float) -> int:
+    """Count terminal deliveries for one schedule execution in durable history."""
+    if not schedule_id:
+        return 0
+    containers = subprocess.check_output(
+        ["docker", "ps", "-q", "--filter", "name=zalo-api"], text=True
+    ).split()
+    if not containers:
+        return 0
+    probe = """
+import os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+    row = conn.execute(
+        "SELECT count(*) FROM zalo_message_history "
+        "WHERE thread_id=%s AND thread_type='user' AND event='delivered' "
+        "AND created_at >= to_timestamp(%s) "
+        "AND meta->>'source_message_id' LIKE %s "
+        "AND COALESCE(meta->>'delivery_kind','result') "
+        "IN ('result','queue_recovery')",
+        (os.environ["LAB_THREAD_ID"], int(os.environ["LAB_STARTED"]),
+         "schedule:" + os.environ["LAB_SCHEDULE_ID"] + ":%"),
+    ).fetchone()
+print(int(row[0] or 0))
+"""
+    raw = subprocess.check_output(
+        [
+            "docker", "exec",
+            "-e", "LAB_THREAD_ID=" + TN,
+            "-e", "LAB_STARTED=" + str(int(started)),
+            "-e", "LAB_SCHEDULE_ID=" + schedule_id,
+            containers[0], "python3", "-c", probe,
+        ],
+        text=True,
+        errors="replace",
+    ).strip()
+    return int(raw or "0")
+
+
 def main() -> int:
     if not TN:
         print("FAIL ZALO_TEST_USER_ID is required", flush=True)
@@ -495,22 +533,20 @@ def main() -> int:
 
     # 5) Schedule once_after
     schedule_started = time.time()
-    inject("nhắc mình uống nước sau 2 phút")
+    inject("remind me to drink water after 1 minute")
     row_seen = False
     schedule_id = ""
-    fire_text = ""
     detail = ""
-    deadline = schedule_started + 150
+    deadline = schedule_started + 120
     while time.time() < deadline:
         try:
             rows = list_schedules()
             for row in rows:
                 blob = json.dumps(row, ensure_ascii=False)
                 low = blob.lower()
-                if "uống nước" in low and TN in blob:
+                if "drink water" in low and TN in blob:
                     row_seen = True
                     schedule_id = str(row.get("id") or "") if isinstance(row, dict) else ""
-                    fire_text = str(row.get("fire_text") or "") if isinstance(row, dict) else ""
                     detail = blob[:220]
                     break
             if not detail and rows:
@@ -519,13 +555,19 @@ def main() -> int:
             detail = type(e).__name__
         journal = plugin_logs(schedule_started)
         ack_count = journal.count('content="Đã lưu lịch!"')
-        fire_count = journal.count('content="' + fire_text + '"') if fire_text else 0
+        try:
+            fire_count = schedule_delivery_count(schedule_id, schedule_started)
+        except Exception:
+            fire_count = 0
         if row_seen and ack_count == 1 and fire_count == 1:
             break
         time.sleep(2)
     journal = plugin_logs(schedule_started)
     ack_count = journal.count('content="Đã lưu lịch!"')
-    fire_count = journal.count('content="' + fire_text + '"') if fire_text else 0
+    try:
+        fire_count = schedule_delivery_count(schedule_id, schedule_started)
+    except Exception:
+        fire_count = 0
     remaining = []
     try:
         remaining = [
@@ -539,7 +581,7 @@ def main() -> int:
     note(
         "schedule_once_after",
         sched_ok,
-        f"row_seen={row_seen} ack={ack_count} fire={fire_count} remaining={len(remaining)} id={schedule_id}",
+        f"row_seen={row_seen} ack={ack_count} fire={fire_count} remaining={len(remaining)}",
     )
 
     try:

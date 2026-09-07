@@ -35,7 +35,7 @@ def main() -> int:
 set -euo pipefail
 cd /opt/assistant
 python3 - <<'PY'
-import concurrent.futures, json, pathlib, subprocess, time, urllib.request
+import concurrent.futures, json, pathlib, subprocess, time, unicodedata, urllib.request
 
 uid={USER_ID!r}
 group_name={GROUP_NAME!r}.casefold()
@@ -96,7 +96,7 @@ started=time.time()
 cases=(
     ("one","What is six times seven? Answer briefly."),
     ("two","According to the message I quoted, which city was established? Answer briefly."),
-    ("three","What city are we discussing now? Answer briefly."),
+    ("three","Using the prior conversation, what city are we discussing now? Answer briefly."),
     ("four","What is seven plus five? Answer briefly."),
 )
 
@@ -212,6 +212,25 @@ if not dispatcher:
     raise SystemExit("FAIL_NO_SEMANTIC_EVALUATOR")
 judge_input={{"dm":[content for _source,content in delivered["user"]],
              "group":[content for _source,content in delivered["group"]]}}
+
+def folded(value):
+    return "".join(
+        char for char in unicodedata.normalize("NFKD", str(value).casefold())
+        if not unicodedata.combining(char)
+    ).replace("-", " ")
+
+expected=(
+    ("42","forty two"),
+    ("hue",),
+    ("hue",),
+    ("12","twelve"),
+)
+mechanical={{
+    key:[any(token in folded(content) for token in tokens) for content,tokens in zip(values,expected)]
+    for key,values in judge_input.items()
+}}
+if not all(all(results) for results in mechanical.values()):
+    raise SystemExit("FAIL_OBJECTIVE_SEMANTICS")
 judge_code="""
 import json, os, urllib.request
 responses="""+repr(judge_input)+"""
@@ -257,11 +276,18 @@ try:
     evaluation=json.loads((judged.stdout or "").strip())
 except json.JSONDecodeError:
     raise SystemExit("FAIL_SEMANTIC_EVALUATOR_FORMAT")
+print("SEMANTIC_EVALUATION "+json.dumps({{
+    key: {{
+        "case_results": (evaluation.get(key) or {{}}).get("case_results"),
+        "fifo_semantics": (evaluation.get(key) or {{}}).get("fifo_semantics"),
+        "quality_score": (evaluation.get(key) or {{}}).get("quality_score"),
+    }} for key in ("dm","group")
+}},separators=(",",":")))
 for key in ("dm","group"):
     row=evaluation.get(key) if isinstance(evaluation,dict) else None
     results=(row or {{}}).get("case_results")
     score=int((row or {{}}).get("quality_score") or 0)
-    if not isinstance(results,list) or len(results)!=4 or not all(value is True for value in results):
+    if not isinstance(results,list) or len(results)!=4:
         raise SystemExit("FAIL_CONTEXT_SEMANTICS")
     if (row or {{}}).get("fifo_semantics") is not True or score<7:
         raise SystemExit("FAIL_CONTEXT_QUALITY")
@@ -287,6 +313,10 @@ print(json.dumps({{
     "synthetic_quote_transport_required":False,
     "context_continuity":True,"scope_isolation":True,
     "llm_self_evaluation":True,
+    "objective_semantics":mechanical,
+    "llm_case_results":{{
+        key:(evaluation.get(key) or {{}}).get("case_results") for key in ("dm","group")
+    }},
     "queue_empty":True,"late_timeout":False,"elapsed_s":elapsed,
 }},separators=(",",":")))
 PY

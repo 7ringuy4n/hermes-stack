@@ -10,6 +10,14 @@ History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
 
+## 2026-09-07 — release queue, scheduler, and lifecycle hardening
+
+See `history/2026-09-07/README.md` for standalone Compose secret hydration,
+noninteractive post-ready knowledge synchronization, destination-safe queue
+recovery, and task-local schedule delivery correlation. The release evidence
+now distinguishes accepted transport delivery from generated output and proves
+that simple reminders execute once with their requested content.
+
 ## 2026-09-06 — scoped notes and request control
 
 See `history/2026-09-06/README.md` for the durable note boundary, semantic
