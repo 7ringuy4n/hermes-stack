@@ -62,6 +62,17 @@ def create_workflow(
     )
 
 
+def wait_workflow(workflow_id: str, timeout_s: float = 60.0) -> dict[str, Any]:
+    """Wait for one workflow state transition without blocking the caller forever."""
+    wait_s = max(0.0, min(float(timeout_s), 300.0))
+    return _req(
+        "POST",
+        f"/v1/workflows/{workflow_id}/wait",
+        {"timeout_s": wait_s},
+        timeout=wait_s + 5.0,
+    )
+
+
 def create_schedule(
     *,
     cron_expr: str,

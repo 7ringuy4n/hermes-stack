@@ -57,7 +57,7 @@ MemoryType = Literal[
 ]
 
 def _timing_add(field: str, seconds: float, thread_id: Optional[str] = None) -> None:
-    v = (os.environ.get("ZALO_TIMING_RECORD") or "1").strip().lower()
+    v = (os.environ.get("MESSAGE_TIMING_RECORD") or "1").strip().lower()
     if v in {"0", "false", "no", "off"} or seconds < 0.001:
         return
     try:
@@ -105,6 +105,9 @@ CREATE TABLE IF NOT EXISTS memories (
 CREATE INDEX IF NOT EXISTS memories_type_idx ON memories (type) WHERE active;
 CREATE INDEX IF NOT EXISTS memories_importance_idx ON memories (importance DESC) WHERE active;
 CREATE INDEX IF NOT EXISTS memories_thread_idx ON memories (thread_id) WHERE active;
+CREATE INDEX IF NOT EXISTS memories_session_idx ON memories (session_id) WHERE active;
+CREATE INDEX IF NOT EXISTS memories_thread_session_created_idx ON memories
+  (thread_id, session_id, created_at DESC) WHERE active AND NOT staged;
 CREATE INDEX IF NOT EXISTS memories_created_idx ON memories (created_at DESC);
 CREATE INDEX IF NOT EXISTS memories_fts_idx ON memories
   USING GIN (to_tsvector('simple', coalesce(content, '')));
@@ -271,6 +274,9 @@ class RecallReq(BaseModel):
     query: str = ""
     types: list[MemoryType] = Field(default_factory=list)
     thread_id: Optional[str] = None
+    session_id: Optional[str] = None
+    created_from: Optional[datetime] = None
+    created_to: Optional[datetime] = None
     limit: int = Field(default=8, ge=1, le=50)
     min_importance: float = Field(default=0.0, ge=0.0, le=1.0)
 
@@ -461,7 +467,7 @@ def query_notes(req: NoteQueryReq) -> dict[str, Any]:
     query = req.query.strip()
     if query:
         clauses.append(
-            "(to_tsvector('simple', content) @@ plainto_tsquery('simple', %s) OR content ILIKE %s)"
+            "(to_tsvector('simple', coalesce(content, '')) @@ plainto_tsquery('simple', %s) OR content ILIKE %s)"
         )
         params.extend([query, f"%{query}%"])
     params.append(req.limit)
@@ -653,19 +659,30 @@ def recall(req: RecallReq) -> dict[str, Any]:
     if req.thread_id:
         clauses.append("(thread_id = %s OR thread_id IS NULL)")
         params.append(req.thread_id)
+    if req.session_id:
+        clauses.append("session_id = %s")
+        params.append(req.session_id)
+    if req.created_from:
+        clauses.append("created_at >= %s")
+        params.append(req.created_from)
+    if req.created_to:
+        clauses.append("created_at <= %s")
+        params.append(req.created_to)
     if req.min_importance > 0:
         clauses.append("importance >= %s")
         params.append(req.min_importance)
 
     q = req.query.strip()
+    base_clauses = list(clauses)
+    base_params = list(params)
     if q:
         clauses.append(
-            "(to_tsvector('simple', content) @@ plainto_tsquery('simple', %s) OR content ILIKE %s)"
+            "to_tsvector('simple', coalesce(content, '')) @@ plainto_tsquery('simple', %s)"
         )
-        params.extend([q, f"%{q}%"])
+        params.append(q)
 
     sql = f"""
-      SELECT id, type, content, importance, source, tags, metadata, created_at
+      SELECT id, type, content, importance, source, session_id, tags, metadata, created_at
       FROM memories
       WHERE {' AND '.join(clauses)}
       ORDER BY importance DESC, created_at DESC
@@ -675,6 +692,16 @@ def recall(req: RecallReq) -> dict[str, Any]:
 
     with db().connection() as conn:
         rows = conn.execute(sql, params).fetchall()
+        if q and not rows:
+            fallback_params = base_params + [f"%{q}%", req.limit]
+            fallback_sql = f"""
+              SELECT id, type, content, importance, source, session_id, tags, metadata, created_at
+              FROM memories
+              WHERE {' AND '.join(base_clauses)} AND content ILIKE %s
+              ORDER BY importance DESC, created_at DESC
+              LIMIT %s
+            """
+            rows = conn.execute(fallback_sql, fallback_params).fetchall()
 
     items = []
     for r in rows:
@@ -685,6 +712,7 @@ def recall(req: RecallReq) -> dict[str, Any]:
                 "content": r["content"],
                 "importance": float(r["importance"]),
                 "source": r["source"],
+                "session_id": r["session_id"],
                 "tags": r["tags"] or [],
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
             }
@@ -788,7 +816,7 @@ def assemble_context(req: ContextReq) -> dict[str, Any]:
             f"SKILLS={', '.join(skills)}",
             f"BUDGET_TOKENS={req.budget_tokens} (keep total prompt well under this).",
             "Do not dump docs into MEMORY.md; call memory manager for durable facts.",
-            "One short Zalo reply. Do not invent a timing footer.",
+            "One short messaging reply. Do not invent a timing footer.",
         ]
         if selected:
             system_hints.append("RECALLED_MEMORIES:")

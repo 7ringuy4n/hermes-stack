@@ -786,8 +786,34 @@ do_post_ready_learn() {
   export STACK_ROOT="${STACK_ROOT:-$ROOT}"
   export ASSISTANT_DATA_DIR="${ASSISTANT_DATA_DIR:-/data/assistant}"
   export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$ASSISTANT_DATA_DIR}"
-  python3 "${SCRIPTS_DIR}/post-ready-learn.py" \
-    || echo "WARN: post-ready-learn failed — re-run: bash run.sh post-ready-learn"
+  local data_root docs_root owner_uid owner_gid
+  data_root="$(readlink -f "$ASSISTANT_DATA_DIR")"
+  docs_root="${data_root}/docs"
+  if [[ "$(id -u)" -eq 0 ]]; then
+    owner_uid="${HERMES_UID:-1000}"
+    owner_gid="${HERMES_GID:-1000}"
+  else
+    owner_uid="$(id -u)"
+    owner_gid="$(id -g)"
+  fi
+  if [[ -z "$data_root" || "$data_root" == "/" || "$docs_root" != "$data_root/docs" ]]; then
+    echo "ERROR: unsafe knowledge-sync data path: ${ASSISTANT_DATA_DIR}" >&2
+    return 1
+  fi
+  # Restore jobs may extract this mirror as root. Repair only the generated
+  # knowledge-sync subtree before the deploy user refreshes it.
+  if [[ "$(id -u)" -eq 0 ]]; then
+    mkdir -p "$docs_root"
+    chown -R "$owner_uid:$owner_gid" "$docs_root"
+  else
+    sudo mkdir -p "$docs_root"
+    sudo chown -R "$owner_uid:$owner_gid" "$docs_root"
+  fi
+  chmod -R u+rwX "$docs_root"
+  if ! python3 "${SCRIPTS_DIR}/post-ready-learn.py"; then
+    echo "ERROR: post-ready-learn failed — re-run: bash run.sh post-ready-learn" >&2
+    return 1
+  fi
 }
 
 do_zalo_setup_hint() {

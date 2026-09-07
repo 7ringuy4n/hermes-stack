@@ -762,12 +762,13 @@ def plan_allows_search_then_composed_image(plan: dict[str, Any] | None) -> bool:
 
 
 def plan_is_media_policy_refuse(plan: dict[str, Any] | None) -> bool:
-    """True only when classify explicitly requests the refusal action."""
+    """True for an explicit refusal or an unavailable remote-media summary."""
     src = plan if isinstance(plan, dict) else {}
     if src.get("ok") is False:
         return False
     action = str(src.get("skill_action") or "").strip().lower()
-    return action == "refuse"
+    skill = str(src.get("skill") or "").strip().lower().replace("_", "-")
+    return action == "refuse" or skill == "content-summary"
 
 
 def plan_allows_image_edit(plan: dict[str, Any] | None) -> bool:
@@ -1624,6 +1625,7 @@ def classify_text(
     thread: str = "unknown",
     attachments: str = "none",
     quoted: str = "none",
+    conversation_id: str = "",
 ) -> dict[str, Any]:
     tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
     blob = strip_prior_for_classify(text or "")
@@ -1642,6 +1644,7 @@ def classify_text(
             "thread": thread or "unknown",
             "attachments": attachments or "none",
             "quoted": quoted or "none",
+            "conversation_id": conversation_id or "",
         },
         ensure_ascii=False,
     ).encode("utf-8")
@@ -1680,6 +1683,7 @@ async def classify_text_async(
     thread: str = "unknown",
     attachments: str = "none",
     quoted: str = "none",
+    conversation_id: str = "",
 ) -> dict[str, Any]:
     """Offload sync classify HTTP so Hermes asyncio liveness probes stay healthy."""
     import asyncio
@@ -1691,6 +1695,7 @@ async def classify_text_async(
         thread=thread,
         attachments=attachments,
         quoted=quoted,
+        conversation_id=conversation_id,
     )
 
 

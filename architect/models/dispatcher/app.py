@@ -63,7 +63,7 @@ def _msg(key: str, fallback: str) -> str:
 
 def _timing_enabled() -> bool:
     """Always record phase clocks; adapter decides whether to print the footer."""
-    v = (os.environ.get("ZALO_TIMING_RECORD") or "1").strip().lower()
+    v = (os.environ.get("MESSAGE_TIMING_RECORD") or "1").strip().lower()
     return v not in {"0", "false", "no", "off"}
 
 
