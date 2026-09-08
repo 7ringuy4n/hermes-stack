@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
-from autosend import file_in_send_window  # noqa: E402
+from autosend import canonical_send_name, file_in_send_window  # noqa: E402
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -94,7 +94,10 @@ def main() -> int:
         if Path(hit).name != "scene.png":
             print("FAIL sibling png")
             return 1
-    print("PASS autosend window")
+    assert canonical_send_name("/tmp/report.docx") == "report.docx"
+    assert canonical_send_name("/tmp/send-report.docx") == "report.docx"
+    assert canonical_send_name("/tmp/send-send-report.docx") == "report.docx"
+    print("PASS autosend window and staged-copy identity")
     return 0
 
 

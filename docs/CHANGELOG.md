@@ -9,6 +9,9 @@
   delivery and the expected response content.
 - Align the documented inbound queue capacity with its runtime default and
   migrate only the retired persisted default while preserving custom limits.
+- Deliver the exact artifact returned by every media/file shortcut instead of
+  scanning a shared output directory, preventing concurrent conversations
+  from exchanging files. Treat bridge-staged copies as the same claim target.
 - Prioritize the latest self-contained request over historical context and avoid
   unrelated tools for direct conversational answers.
 - Exclude incomplete user-only exchanges from model-visible session hydration;

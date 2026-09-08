@@ -13,6 +13,14 @@ ZALO_VIDEO_SUFFIX = ".zalo.mp4"
 ATTACH_CAPTION_FALLBACK = ""
 
 
+def canonical_send_name(path: str) -> str:
+    """Collapse bridge staging prefixes so one artifact has one claim key."""
+    name = Path(str(path or "")).name.lower()
+    while name.startswith("send-"):
+        name = name[5:]
+    return name
+
+
 def begin_turn_state(
     tokens: dict[str, int],
     clocks: dict[str, dict[str, float]],

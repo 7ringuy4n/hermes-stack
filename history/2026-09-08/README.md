@@ -107,6 +107,21 @@ left both destination queues empty without a queue timeout.
 The environment migration unit gate also proved that the retired queue cap is
 upgraded and a custom cap remains byte-for-byte unchanged.
 
+The first post-update repetition exposed a real artifact-isolation defect. Two
+simultaneous office shortcuts created distinct files, but the completion path
+directly delivered only image outputs and fell back to scanning the shared
+output directory for documents. Each conversation could therefore claim the
+other conversation's document, while a bridge-created `send-` copy used a
+second fingerprint and allowed a duplicate delivery.
+
+The shortcut completion path now treats its returned file path as
+authoritative for every supported artifact type and sends that exact path.
+Shared-directory discovery remains only for legacy shortcuts that return no
+path. File claims also canonicalize bridge staging prefixes, so source and
+staged copies have one identity. The live gate must be repeated unchanged;
+the failed repetition is retained as regression evidence rather than accepted
+as a pass.
+
 ## Prevention
 
 Future concurrency labs must retain structured evidence for both delivery and
