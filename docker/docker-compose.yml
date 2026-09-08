@@ -168,6 +168,9 @@ services:
       interval: 5s
       timeout: 4s
       retries: 12
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [internal]
 
   embedding:

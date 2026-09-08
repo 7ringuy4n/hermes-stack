@@ -250,6 +250,20 @@ allowing independent conversations to run concurrently. It must retain both
 durable claims, pulse worker ownership while waiting, acknowledge only after
 terminal session completion, and deliver both within their operation deadlines.
 
+Run two additional capability bursts with
+`test/scripts/zalo_dm_group_capability_concurrency_lab.py`. Each burst admits
+exactly one DM and one addressed group request simultaneously:
+
+1. current-weather searches for different cities, with independent
+   source-message correlations, current-condition semantics, independent
+   evaluation, and `web-search` combo attribution;
+2. DOCX creation with distinct titles and exact body markers, followed by
+   acknowledged attachment correlation and package-content inspection.
+
+These bursts must not use quote replies as a substitute for executing the real
+search and file-generation paths. See
+`test/cases/76-zalo-dm-group-capability-concurrency.md`.
+
 ## 6. Stability observation
 
 Before and after every live set, capture:

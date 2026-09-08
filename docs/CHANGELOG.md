@@ -50,6 +50,17 @@
 - Verify all local unit contracts and a real-channel composed-image delivery
   whose durable attachment record retains the original request source.
 
+## 2026-09-08 — capability-bearing DM/group concurrency gate
+
+- Added live two-destination weather-search and document-generation bursts so
+  queue verification now proves real capability execution, acknowledged
+  source correlation, OmniRoute search attribution, generated-package content,
+  semantic quality, scope isolation, and complete drain rather than relying on
+  fixed quote replies alone.
+- Make the scheduler wait for a healthy PostgreSQL service before startup,
+  preventing a transient DNS failure and avoidable restart during a clean
+  multi-profile deployment.
+
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
 - Repair the persistent documentation mirror ownership during post-ready learn

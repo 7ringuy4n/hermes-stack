@@ -65,6 +65,17 @@ def main() -> int:
         fails += 1
     else:
         print("PASS schedule-worker compose profile")
+    schedule_section = compose.partition("  schedule-worker:\n")[2].partition("\n  embedding:\n")[0]
+    schedule_dependency = (
+        "    depends_on:\n"
+        "      postgres:\n"
+        "        condition: service_healthy\n"
+    )
+    if schedule_dependency not in schedule_section:
+        print("FAIL schedule-worker missing healthy postgres dependency")
+        fails += 1
+    else:
+        print("PASS schedule-worker waits for healthy postgres")
     if "container_name: router-worker" not in compose:
         print("FAIL router-worker rename missing")
         fails += 1
