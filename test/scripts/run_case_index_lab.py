@@ -42,6 +42,7 @@ VPS: list[tuple[str, str]] = [
     ("env_obsolete_cleanup_lab.py", "env-clean"),
     ("zalo_tn_archive_extract_lab.py", "archive"),
     ("zalo_dm_group_concurrency_lab.py", "dm-group-concurrency"),
+    ("zalo_dm_group_capability_concurrency_lab.py", "76"),
     ("zalo_queue_failover_lab.py", "queue-failover"),
     ("zalo_active_cancel_lab.py", "active-cancel"),
     ("zalo_continuous_messages_lab.py", "continuous-messages"),
