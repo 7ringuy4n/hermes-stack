@@ -27,7 +27,10 @@ def main() -> int:
     )
     baked = json.loads(baked_path.read_text(encoding="utf-8"))
     expected_bake = dict(env)
-    expected_bake["system"] = system
+    expected_bake["system"] = "\n\n".join(
+        (skill / "parts" / f"{name}.txt").read_text(encoding="utf-8").strip()
+        for name in env.get("parts") or []
+    )
     assert baked == expected_bake, (
         "router-worker classify bake is stale; run "
         "scripts/main/sync_router_worker_skills.py"
