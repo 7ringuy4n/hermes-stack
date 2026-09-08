@@ -157,6 +157,7 @@ done_n=0
 attach_n=0
 delivered_n=0
 evidence_n=0
+planner_invalid_n=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
   curl -sS -m 5 http://127.0.0.1:8787/health 2>/dev/null | python3 -c 'import sys,json
 try:
@@ -171,24 +172,26 @@ WHERE message_id='__MARKER__' OR meta->>'source_message_id'='__MARKER__'
 ORDER BY id;
 " 2>/dev/null || true)
   printf '%s\n' "$history"
-  logs=$(hermes_logs | grep -E 'composed image evidence plan|search_composed_image_shortcut|send-attachment path|send-attachment fail' | tail -20)
+  logs=$(hermes_logs | grep -E 'composed image evidence plan|image structured planning invalid|search_composed_image_shortcut|send-attachment path|send-attachment fail' | tail -20)
   echo "LOGS_N=$(printf '%s\n' "$logs" | grep -c . || true)"
   printf '%s\n' "$logs" | tail -8
   done_n=$(hermes_logs | grep -c 'search_composed_image_shortcut' || true)
   attach_n=$(hermes_logs | grep -c 'send-attachment path' || true)
   delivered_n=$(printf '%s\n' "$history" | grep -c 'delivered source=__MARKER__ attachment=image' || true)
   evidence_n=$(hermes_logs | grep -Ec 'composed image evidence plan queries=[2-4]' || true)
-  echo "done_jobs=$done_n attach=$attach_n delivered=$delivered_n evidence=$evidence_n"
-  if [ "${done_n:-0}" -ge 1 ] && [ "${attach_n:-0}" -ge 1 ] && [ "${delivered_n:-0}" -ge 1 ] && [ "${evidence_n:-0}" -ge 1 ]; then
+  planner_invalid_n=$(hermes_logs | grep -c 'image structured planning invalid' || true)
+  echo "done_jobs=$done_n attach=$attach_n delivered=$delivered_n evidence=$evidence_n planner_invalid=$planner_invalid_n"
+  if [ "${done_n:-0}" -ge 1 ] && [ "${attach_n:-0}" -ge 1 ] && [ "${delivered_n:-0}" -ge 1 ] && [ "${evidence_n:-0}" -ge 1 ] && [ "${planner_invalid_n:-0}" -eq 0 ]; then
     echo "JOB_DONE"
     echo "MEDIA_SENT"
     echo "DELIVERY_RECORDED"
     echo "EVIDENCE_DECOMPOSED"
+    echo "PLANNER_JSON_COMPLETE"
     break
   fi
   sleep 12
 done
-echo "WATCH_END $(date -Is) done_jobs=$done_n attach=$attach_n delivered=$delivered_n evidence=$evidence_n"
+echo "WATCH_END $(date -Is) done_jobs=$done_n attach=$attach_n delivered=$delivered_n evidence=$evidence_n planner_invalid=$planner_invalid_n"
 echo WATCH_DONE
 """
         watch_sh = watch_sh.replace("__WAIT__", str(WAIT_S)).replace(
@@ -200,6 +203,7 @@ echo WATCH_DONE
         media = "MEDIA_SENT" in watch
         recorded = "DELIVERY_RECORDED" in watch
         evidence_decomposed = "EVIDENCE_DECOMPOSED" in watch
+        planner_complete = "PLANNER_JSON_COMPLETE" in watch
         if not media:
             for line in reversed(watch.splitlines()):
                 if "attach=" in line:
@@ -211,7 +215,7 @@ echo WATCH_DONE
                     break
         if job_ok and not media:
             print("FAIL media created but not sent (attach=0)", flush=True)
-        ok = job_ok and media and recorded and evidence_decomposed
+        ok = job_ok and media and recorded and evidence_decomposed and planner_complete
         (OUT / "watch.txt").write_text(
             "\n".join(
                 [
@@ -219,6 +223,7 @@ echo WATCH_DONE
                     f"media_sent={'yes' if media else 'no'}",
                     f"delivery_recorded={'yes' if recorded else 'no'}",
                     f"evidence_decomposed={'yes' if evidence_decomposed else 'no'}",
+                    f"planner_json_complete={'yes' if planner_complete else 'no'}",
                     "",
                 ]
             ),
@@ -276,6 +281,7 @@ PY
                     f"- Media sent: **{'yes' if media else 'no'}**",
                     f"- Delivery recorded: **{'yes' if recorded else 'no'}**",
                     f"- Evidence decomposed: **{'yes' if evidence_decomposed else 'no'}**",
+                    f"- Planner JSON complete: **{'yes' if planner_complete else 'no'}**",
                     f"- Immediate classifier contract: **{'yes' if now_ok else 'no'}**",
                     f"- Daily classifier contract: **{'yes' if daily_ok else 'no'}**",
                     "",

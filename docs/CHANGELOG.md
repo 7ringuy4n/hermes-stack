@@ -1,3 +1,16 @@
+## 2026-09-08 19:12 +07 — complete structured multi-region plans
+
+- Raise the bounded, operator-configurable completion budget for composed-image
+  planning so multi-region JSON is not cut off after evidence retrieval.
+- Request compact model output with bounded fact rows and scene length while
+  preserving flexible subjects, languages, and spatial relationships.
+- Log structural planner failures without exposing prompt content and make the
+  live multi-region gate reject truncated or empty planner output.
+- Align Router Worker validation with the per-domain search graph: require one
+  or more searches before exactly one media task, with all dependencies linked.
+- Keep composition timestamp labels lexical so renderer-owned current time is
+  not concatenated with model-supplied dates or freshness values.
+
 ## 2026-09-08 — flexible multi-region image and document composition
 
 - Preserve independently sourced subjects in composed images by planning and

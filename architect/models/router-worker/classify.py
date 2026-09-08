@@ -417,15 +417,14 @@ def plan_schema_failure(plan: dict[str, Any]) -> str:
             for index, item in enumerate(details)
             if str(item.get("task_type") or "").strip().lower() == "media_generation"
         ]
-        if len(search_indexes) != 1 or len(media_indexes) != 1:
-            return "composed_image_requires_one_search_and_one_media_task"
-        search_index = search_indexes[0]
+        if not search_indexes or len(media_indexes) != 1:
+            return "composed_image_requires_search_and_one_media_task"
         media_index = media_indexes[0]
-        if search_index >= media_index:
-            return "composed_image_search_must_precede_media"
+        if any(search_index >= media_index for search_index in search_indexes):
+            return "composed_image_searches_must_precede_media"
         dependencies = details[media_index].get("depends_on") or []
-        if search_index not in dependencies:
-            return "composed_image_media_must_depend_on_search"
+        if any(search_index not in dependencies for search_index in search_indexes):
+            return "composed_image_media_must_depend_on_all_searches"
     if str(plan.get("task_hint") or "") != "schedule":
         return ""
     action = str(plan.get("skill_action") or "").strip().lower()

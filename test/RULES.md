@@ -172,6 +172,10 @@ image, require one dispatcher-composed image with all requested regions, embed
 only that final image, and reject overlap, missing regions, risky absolute CSS,
 or separately delivered intermediate images.
 
+For composed images with several information regions, also reject an empty or
+truncated structured composition plan. The live gate must observe a complete
+planner response before accepting generated-file and delivery evidence.
+
 ### C10 — multipurpose notes, session history, RAG, and cancellation
 
 Create dated and undated notes for at least three unrelated subjects (for
