@@ -224,3 +224,108 @@ document contract, and `zalo_weather_fuel_lab.py` requires runtime evidence
 decomposition instead of assuming one exact classifier graph shape. Future
 capability gates must continue visual inspection; file existence alone is not
 sufficient.
+
+## 19:12 — Structured composition output exhausted its completion budget
+
+### Symptom
+
+A request with two independently sourced image regions completed classification
+and both searches but returned no artifact. The user received the generic
+artifact failure response while all services remained healthy.
+
+### Root cause
+
+The structured composition call allowed only 720 completion tokens. The active
+reasoning model used part of that budget internally and emitted a detailed but
+unfinished JSON object with `finish_reason=length`. Structural parsing correctly
+rejected the incomplete object, leaving no composition to render.
+
+The follow-up consistency gate exposed a second contract mismatch. Classifier
+prompting now permits one focused search per evidence domain, but Router Worker
+validation still required exactly one search. Valid two-search plans were
+rejected through every repair attempt and surfaced as an `unknown` plan.
+
+Visual review of the first successfully delivered artifact exposed a third,
+non-terminal presentation defect: the model placed a source timestamp inside
+`timestamp_label`, then the renderer appended its authoritative current time.
+The resulting line contained two dates even though the factual panels and
+requested positions were correct.
+
+### Technical detail
+
+- **Functions:** `media_shortcuts.py::_omni_json_plan()` and
+  `::_synthesize_overlay_plan()` at
+  `hermes/main/plugins/zalo/media_shortcuts.py:L321-L380,L410-L435`.
+- **Key:** `OMNI_OVERLAY_PLAN_MAX_TOKENS` — absent/implicit `720` → bounded,
+  operator-configurable default `4096` with accepted range `1024..8192`.
+- **Fields:** chat request `max_tokens=720` → `4096`; provider response
+  `finish_reason=length` and incomplete `message.content` → diagnostic rejection
+  with model, finish reason, content length, and budget only.
+- **Prompt asset:**
+  `hermes/main/skills/classify/parts/image-runtime.json:5` now requests compact
+  minified JSON, bounded fact rows, a bounded scene brief, and omission of
+  non-material optional design fields.
+- **Validator:** `architect/models/router-worker/classify.py::plan_schema_failure()`
+  at `architect/models/router-worker/classify.py:L396-L432` — exactly one search
+  → one or more searches, all preceding and linked to exactly one media task.
+- **Timestamp ownership:** composition prompt asset — a loosely described short
+  label → a localized words-only label with date, time, number, and source
+  freshness values explicitly reserved for the renderer.
+
+### AI decision
+
+Retain strict JSON validation and the LLM-owned visual plan. Repairing an
+unfinished object in host code could accept missing subjects or unsupported
+facts, while topic-specific fallback panels would violate the generalization
+contract. A configurable adequate budget plus compact schema guidance addresses
+the failure class without interpreting user language in Python.
+
+### Fix (core)
+
+- Add a bounded planning-budget helper and use it for the complete composition
+  call.
+- Preserve the shorter evidence-query budget because that schema contains only
+  one small string array.
+- Add safe diagnostics when a provider returns no parseable object.
+- Require the live multi-region gate to observe a complete planner response.
+- Accept the intended per-domain search graph while continuing to reject missing,
+  reversed, or partially linked dependencies.
+- Keep timestamp formatting under renderer ownership while leaving language and
+  visual-copy selection with the composition model.
+
+### Todo list
+
+- [x] Correlate the failed delivery with classifier, search, and planner logs.
+- [x] Capture the provider finish reason and confirm truncated JSON.
+- [x] Correct the source-owned planning budget and compact-output prompt.
+- [x] Add unit and live-gate regression coverage.
+- [x] Align Router Worker validation with the multi-domain classifier contract.
+- [x] Deploy the focused fix through the normal updater and repeat the real request.
+- [x] Inspect the first delivered artifact and reject its duplicate timestamp.
+- [x] Repeat the live request with the timestamp-label contract and inspect it.
+- [x] Audit service restarts/errors.
+
+### Verification
+
+The exact multi-source request completed twice after the structured-output fix.
+Both runs executed two evidence queries, produced a source-correlated artifact,
+and recorded successful delivery without an empty or truncated planner response.
+The immediate and scheduled classifier contracts both returned the intended
+two-search graph followed by one dependent media task. Visual review rejected
+the first artifact's duplicate timestamp, then confirmed the corrected artifact
+had localized, legible left/right panels and one renderer-owned current stamp.
+
+Focused compile, overlay, media-skill, workflow, multi-request, planner-budget,
+and Router Worker repair gates passed. The service audit found zero container
+restart counts and no post-test application errors in either Hermes replica,
+the bridge, Router Worker, or OmniRoute. Traefik logged a brief connection refusal
+only while the explicitly requested plugin synchronization restarted Hermes;
+subsequent health probes and both attachment deliveries returned HTTP 200.
+
+### Prevent recurrence
+
+`media_shortcuts_omni_unit.py` asserts both the configurable bound and that
+composition synthesis invokes the full budget. `composed_image_overlay_unit.py`
+protects the compact prompt contract. `zalo_weather_fuel_lab.py` rejects a run
+that logs invalid structured planning, even if later file or delivery evidence
+were otherwise present.

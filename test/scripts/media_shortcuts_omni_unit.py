@@ -33,6 +33,44 @@ def test_image_gen_timeout_clamped() -> None:
         os.environ.pop("OMNI_IMAGE_GEN_TIMEOUT_S", None)
 
 
+def test_overlay_plan_budget_is_large_enough_for_multi_region_json() -> None:
+    os.environ.pop("OMNI_OVERLAY_PLAN_MAX_TOKENS", None)
+    assert mod._omni_overlay_plan_max_tokens() == 4096
+    os.environ["OMNI_OVERLAY_PLAN_MAX_TOKENS"] = "99999"
+    try:
+        assert mod._omni_overlay_plan_max_tokens() == 8192
+    finally:
+        os.environ.pop("OMNI_OVERLAY_PLAN_MAX_TOKENS", None)
+
+
+def test_overlay_synthesis_uses_full_multi_region_budget() -> None:
+    captured = {"max_tokens": 0}
+    original = mod._omni_json_plan
+
+    def fake_plan(_system, _user, *, max_tokens):
+        captured["max_tokens"] = max_tokens
+        return {
+            "title": "Summary",
+            "facts": [{"label": "Value", "value": "One", "emphasis": "normal"}],
+            "design": {},
+            "include_timestamp": False,
+            "background_scene": "Balanced abstract background",
+        }
+
+    mod._omni_json_plan = fake_plan
+    try:
+        result = mod._synthesize_overlay_plan(
+            {"answer": "Grounded value: One"},
+            query="Create one composed image",
+            instruction="RENDER: composed-image",
+        )
+    finally:
+        mod._omni_json_plan = original
+
+    assert result.get("facts")
+    assert captured["max_tokens"] == 4096
+
+
 def test_image_gen_size_default() -> None:
     os.environ.pop("OMNI_IMAGE_GEN_SIZE", None)
     assert mod._omni_image_gen_size() == "1280x720"
@@ -196,6 +234,8 @@ def test_image_request_can_wait_full_five_minute_budget() -> None:
 def main() -> None:
     test_image_gen_timeout_default()
     test_image_gen_timeout_clamped()
+    test_overlay_plan_budget_is_large_enough_for_multi_region_json()
+    test_overlay_synthesis_uses_full_multi_region_budget()
     test_image_gen_size_default()
     test_image_gen_model_combo()
     test_image_gen_model_uses_member_id_when_combo_is_member()

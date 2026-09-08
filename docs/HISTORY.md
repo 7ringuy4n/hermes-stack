@@ -18,6 +18,8 @@ subject and support validated named or normalized regions; document authoring
 uses the same compositor for text over embedded images while keeping ordinary
 page regions in safe normal flow. Local rendering, VPS image/PDF inspection,
 real-channel delivery, classifier contracts, and restart checks passed.
+The same record documents the follow-up completion-budget correction after a
+valid multi-region plan was truncated before its closing JSON delimiter.
 
 ## 2026-09-08 — bounded queue-session recovery
 

@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "models" / "router-worker"))
 
-from classify import classify_with_llm  # noqa: E402
+from classify import classify_with_llm, plan_schema_failure  # noqa: E402
 
 
 class Response:
@@ -34,6 +34,38 @@ class Client:
 
 
 async def run() -> None:
+    multi_search_composed = {
+        "ok": True,
+        "task_hint": "file",
+        "instructions": [
+            "Retrieve current conditions",
+            "Retrieve current product values",
+            "RENDER: composed-image\nSCENE: balanced background",
+        ],
+        "task_details": [
+            {"task_type": "search", "depends_on": []},
+            {"task_type": "search", "depends_on": []},
+            {"task_type": "media_generation", "depends_on": [0, 1]},
+        ],
+    }
+    assert plan_schema_failure(multi_search_composed) == ""
+    missing_dependency = json.loads(json.dumps(multi_search_composed))
+    missing_dependency["task_details"][2]["depends_on"] = [0]
+    assert (
+        plan_schema_failure(missing_dependency)
+        == "composed_image_media_must_depend_on_all_searches"
+    )
+    reversed_graph = json.loads(json.dumps(multi_search_composed))
+    reversed_graph["task_details"] = [
+        {"task_type": "media_generation", "depends_on": [1, 2]},
+        {"task_type": "search", "depends_on": []},
+        {"task_type": "search", "depends_on": []},
+    ]
+    assert (
+        plan_schema_failure(reversed_graph)
+        == "composed_image_searches_must_precede_media"
+    )
+
     corrected = json.dumps(
         {
             "task_hint": "normal",
