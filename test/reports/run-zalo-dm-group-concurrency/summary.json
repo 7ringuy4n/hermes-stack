@@ -1,14 +1,16 @@
 {
-  "timestamp": "2026-09-06T20:09:06.507312+07:00",
+  "timestamp": "2026-09-08T09:44:33.558297+07:00",
   "result": {
     "ok": true,
     "requests": 2,
-    "elapsed_s": 81.58,
+    "elapsed_s": 52.92,
     "group_members": 3,
     "dm_quote": true,
     "group_quote": true,
     "crossed": false,
-    "queue_empty": true
+    "queue_empty": true,
+    "dm_content_exact": true,
+    "group_content_exact": true
   },
-  "output": "[sudo: authenticate] Password: \r\n{\"ok\":true,\"requests\":2,\"elapsed_s\":81.58,\"group_members\":3,\"dm_quote\":true,\"group_quote\":true,\"crossed\":false,\"queue_empty\":true}\r\r\n"
+  "output": "[sudo: authenticate] Password: \r\n{\"ok\":true,\"requests\":2,\"elapsed_s\":52.92,\"group_members\":3,\"dm_quote\":true,\"group_quote\":true,\"crossed\":false,\"queue_empty\":true,\"dm_content_exact\":true,\"group_content_exact\":true}\r\r\n"
 }

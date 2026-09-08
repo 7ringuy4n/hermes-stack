@@ -1,3 +1,30 @@
+## 2026-09-08 — bounded queue-session recovery
+
+- Cancel a background agent session before releasing a durable queue claim when
+  the session does not become idle, preventing stale model work from consuming
+  provider capacity or delivering after the destination FIFO has advanced.
+- Distinguish the outer queue deadline from a nested agent-operation timeout so
+  logs and user-safe recovery notices describe the actual failure boundary.
+- Require live DM/group concurrency evidence to validate both source-correlated
+  delivery and the expected response content.
+- Prioritize the latest self-contained request over historical context and avoid
+  unrelated tools for direct conversational answers.
+- Exclude incomplete user-only exchanges from model-visible session hydration;
+  retain them in durable history for audit without replaying abandoned work.
+- Remove a retired duplicate worker-routing skill and give the vendored review
+  implementation a distinct registry name, preventing ambiguous skill loads.
+- Preserve staged attachment paths when queued capability plans enter the host
+  media shortcut, so a quoted-image edit reaches the configured edit combo
+  instead of falling through to a generic agent turn.
+- Compact sparse, text-bearing single-page PDFs after rendering while leaving
+  multi-page, image-only, and already balanced documents unchanged.
+- Require the live PDF gate to extract text, render the first page, and obtain
+  an independent visual review; observable image-edit delivery now ends its
+  test immediately instead of waiting for an optional internal log marker.
+- Point PostgreSQL readiness probes at the configured application database,
+  eliminating a continuous fatal-log stream caused by the client defaulting
+  to a non-existent database named after its role.
+
 ## 2026-09-07 — release queue, scheduler, and lifecycle hardening
 
 - Rehydrate secret-backed Compose variables for standalone lifecycle commands

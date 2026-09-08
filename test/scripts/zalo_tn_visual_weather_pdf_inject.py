@@ -133,18 +133,68 @@ if [[ -z "$DISPATCHER_ID" ]]; then
   exit 1
 fi
 docker exec -i -e P="$CONT_PDF" -e P2="$HOST_PDF" "$DISPATCHER_ID" python - <<'PY'
+import base64
+import json
 import os
+import urllib.request
 from pathlib import Path
+import fitz
+
 p = Path(os.environ.get("P") or "")
 if not p.is_file():
     p = Path(os.environ.get("P2") or "")
 print("size", p.stat().st_size if p.is_file() else 0)
-try:
-    from pypdf import PdfReader
-    t = (PdfReader(str(p)).pages[0].extract_text() or "") if p.is_file() else ""
-    print(t[:2000])
-except Exception as e:
-    print("extract", type(e).__name__, e)
+if not p.is_file():
+    raise SystemExit("FAIL_PDF_NOT_SHARED")
+doc = fitz.open(str(p))
+if len(doc) < 1:
+    raise SystemExit("FAIL_PDF_NO_PAGES")
+page = doc[0]
+text = (page.get_text("text") or "").strip()
+pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+image = pix.tobytes("png")
+print("PDF_PAGE_COUNT", len(doc))
+print("PDF_TEXT_CHARS", len(text))
+print(text[:2000])
+if len(text) < 80 or len(image) < 10000:
+    raise SystemExit("FAIL_PDF_UNREADABLE")
+
+body = json.dumps(dict(
+    model=os.environ.get("OMNIROUTER_VISION_COMBO") or "vision-ocr",
+    stream=False,
+    max_tokens=260,
+    messages=[dict(role="user", content=[
+        dict(type="text", text=(
+            "Evaluate this rendered PDF page as a professional information document. "
+            "Check visual hierarchy, readability, spacing, contrast, factual labels, "
+            "and whether any interface chrome or unrelated title leaked into the page. "
+            "Give a concise quality rating from 1 to 10 with reasons."
+        )),
+        dict(type="image_url", image_url=dict(url=(
+            "data:image/png;base64," + base64.b64encode(image).decode("ascii")
+        ))),
+    ])],
+)).encode("utf-8")
+base = (os.environ.get("OMNIROUTER_BASE_URL") or "http://omni-router:20129/v1").rstrip("/")
+key = (os.environ.get("OMNIROUTER_API_KEY") or "").strip()
+request = urllib.request.Request(
+    base + "/chat/completions",
+    data=body,
+    method="POST",
+    headers=dict([
+        ("Authorization", "Bearer " + key),
+        ("Content-Type", "application/json"),
+    ]),
+)
+with urllib.request.urlopen(request, timeout=180) as response:
+    result = json.loads(response.read().decode("utf-8") or "{{}}")
+evaluation = str((((result.get("choices") or [dict()])[0].get("message") or dict()).get("content") or "")).strip()
+if len(evaluation) < 40:
+    raise SystemExit("FAIL_PDF_VISUAL_EVALUATION")
+print("PDF_VISUAL_EVALUATION_BEGIN")
+print(evaluation[:1600])
+print("PDF_VISUAL_EVALUATION_END")
+print("PDF_STRUCTURE_OK")
 PY
 """
         print(f"INJECTED wait up to {WAIT_S}s", flush=True)
@@ -183,6 +233,15 @@ PY
         report["greeting_leak"] = greeting_leak
         new_pdf = "NEW_PDF" in out
         report["new_pdf"] = new_pdf
+        report["pdf_structure_ok"] = "PDF_STRUCTURE_OK" in out
+        report["visual_evaluation"] = (
+            out.split("PDF_VISUAL_EVALUATION_BEGIN", 1)[1]
+            .split("PDF_VISUAL_EVALUATION_END", 1)[0]
+            .strip()
+            if "PDF_VISUAL_EVALUATION_BEGIN" in out
+            and "PDF_VISUAL_EVALUATION_END" in out
+            else ""
+        )
         unexpected_image = "UNEXPECTED_NEW_IMAGE" in out
         report["unexpected_image"] = unexpected_image
 
@@ -206,6 +265,12 @@ PY
             if "maxwaitms" in blob or "rate-limit" in blob or "quota" in blob:
                 print("SKIP rate-limit/quota", flush=True)
                 return 0
+            return 1
+        if "PDF_STRUCTURE_OK" not in out:
+            if "rate-limit" in blob or "quota" in blob or "429" in blob:
+                print("SKIP visual evaluator rate-limit/quota", flush=True)
+                return 0
+            print("FAIL PDF structure or visual evaluation", flush=True)
             return 1
         print("PASS visual weather pdf", flush=True)
         return 0

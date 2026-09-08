@@ -1,11 +1,11 @@
 {
-  "ts": "2026-09-06T19:49:27.503294+07:00",
+  "ts": "2026-09-08T09:13:50.495677+07:00",
   "verdict": "PASS",
   "payload": {
     "ok": true,
     "rows": 10000000,
-    "knowledge_ms": 0.243,
-    "old_session_ms": 0.215,
+    "knowledge_ms": 0.629,
+    "old_session_ms": 0.306,
     "checks": [
       {
         "name": "database_access",
@@ -25,7 +25,7 @@
       {
         "name": "knowledge_latency",
         "ok": true,
-        "detail": "0.243 ms"
+        "detail": "0.629 ms"
       },
       {
         "name": "knowledge_index",
@@ -40,7 +40,7 @@
       {
         "name": "old_session_latency",
         "ok": true,
-        "detail": "0.215 ms"
+        "detail": "0.306 ms"
       },
       {
         "name": "old_session_index",

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-06T20:03:12.296133+07:00",
+  "timestamp": "2026-09-08T09:11:36.552601+07:00",
   "result": {
     "ok": true,
     "destinations": 2,
@@ -11,8 +11,36 @@
     "context_continuity": true,
     "scope_isolation": true,
     "llm_self_evaluation": true,
+    "objective_semantics": {
+      "dm": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "group": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    "llm_case_results": {
+      "dm": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "group": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
     "queue_empty": true,
     "late_timeout": false,
-    "elapsed_s": 149.92
+    "elapsed_s": 126.92
   }
 }

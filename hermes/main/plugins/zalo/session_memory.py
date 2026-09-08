@@ -75,6 +75,29 @@ def load_messages(thread_id: str, thread_type: str = "user") -> List[Dict[str, A
     return out
 
 
+def completed_context(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Return only completed user/assistant exchanges for prompt hydration.
+
+    A failed or still-running request leaves a user-only row in the durable
+    session. Reinjecting those rows on every retry can make the next model turn
+    repeat obsolete instructions or continue abandoned work. Durable history
+    remains untouched; only the model-visible short context is filtered.
+    """
+    out: List[Dict[str, Any]] = []
+    pending_user: Optional[Dict[str, Any]] = None
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").strip().lower()
+        if role == "user":
+            pending_user = message
+            continue
+        if role == "assistant" and pending_user is not None:
+            out.extend((pending_user, message))
+            pending_user = None
+    return out
+
+
 def hydrate_user_text(thread_id: str, thread_type: str, text: str, *, max_msgs: int = DEFAULT_MAX) -> str:
     """Prepend compact prior turns from Valkey so a new replica still has context.
 
@@ -107,7 +130,9 @@ def hydrate_user_text(thread_id: str, thread_type: str, text: str, *, max_msgs: 
             msgs = pg_turns(thread_id, thread_type, limit=cap)
     if not msgs:
         return cur
-    prior = msgs[-cap:]
+    prior = completed_context(msgs)[-cap:]
+    if not prior:
+        return cur
     # Avoid double-hydrate if the adapter already injected
     if "[Prior conversation]" in cur:
         return cur

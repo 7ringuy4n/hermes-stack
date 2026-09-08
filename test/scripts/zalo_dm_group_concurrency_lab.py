@@ -170,12 +170,18 @@ while time.time()<deadline:
         delivery_evidence(gid,"group",dm_source_id,dm_marker,started).get("count",0)>0 or
         delivery_evidence(uid,"user",group_source_id,group_marker,started).get("count",0)>0
     )
-    if dm_ok and group_ok:
+    if dm_ok and group_ok and dm_content_exact and group_content_exact:
         break
     time.sleep(3)
 
 elapsed=round(time.time()-started,2)
-if not dm_ok or not group_ok or crossed:
+if not dm_ok or not group_ok or not dm_content_exact or not group_content_exact or crossed:
+    print(json.dumps({{
+        "ok":False,"requests":2,"elapsed_s":elapsed,
+        "dm_delivered":dm_ok,"group_delivered":group_ok,
+        "dm_content_exact":dm_content_exact,"group_content_exact":group_content_exact,
+        "crossed":crossed,
+    }},separators=(",",":")))
     raise SystemExit("FAIL_DELIVERY_ISOLATION")
 
 valkey=subprocess.check_output(
