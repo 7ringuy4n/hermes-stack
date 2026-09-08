@@ -39,6 +39,11 @@ LEGACY_ROUTER_URLS = {
         "http://model-router:8096/v1",
     },
 }
+SUPPORTED_VALUE_MIGRATIONS = {
+    "ZALO_INBOUND_QUEUE_MAX": {
+        "8": "16",
+    },
+}
 
 ROOT = Path(os.environ.get("STACK_ROOT") or Path(__file__).resolve().parents[2])
 ENV_PATH = ROOT / ".env"
@@ -77,7 +82,7 @@ def remove_obsolete_keys(path: Path, keys: tuple[str, ...] | list[str]) -> list[
 
 
 def migrate_supported_values(path: Path) -> list[str]:
-    """Migrate only exact retired stack defaults; preserve operator URLs."""
+    """Migrate only exact retired stack defaults; preserve operator choices."""
     if not path.is_file():
         return []
     changed: list[str] = []
@@ -94,6 +99,9 @@ def migrate_supported_values(path: Path) -> list[str]:
             if name in {"HERMES_OPENAI_BASE_URL", "OPENAI_BASE_URL", "EMBED_UPSTREAM"}:
                 suffix = "/v1"
             output.append(f"{name}={ROUTER_WORKER_URL}{suffix}")
+            changed.append(name)
+        elif name in SUPPORTED_VALUE_MIGRATIONS and current in SUPPORTED_VALUE_MIGRATIONS[name]:
+            output.append(f"{name}={SUPPORTED_VALUE_MIGRATIONS[name][current]}")
             changed.append(name)
         else:
             output.append(line)
@@ -117,7 +125,7 @@ def main() -> int:
         migrated = migrate_supported_values(p)
         if migrated:
             total += len(migrated)
-            print(f"OK: migrated {len(migrated)} supported route setting(s) in {p}: {', '.join(sorted(set(migrated)))}")
+            print(f"OK: migrated {len(migrated)} supported setting(s) in {p}: {', '.join(sorted(set(migrated)))}")
     if total == 0:
         print("OK: no obsolete env keys to remove")
     return 0

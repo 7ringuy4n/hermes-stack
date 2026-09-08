@@ -36,7 +36,7 @@ Optional env: `ZALO_CONCURRENT_MAX=24`.
 4. Ramp N = 4 → 8 → 16 → 24 until first failure (timeout / 5xx / drop)
 5. After burst: re-check `sseClients=1`, Hermes replicas healthy, no crash loop
 6. **Required:** mixed burst with **text and media generation in the same window** (see `cases/09-zalo-concurrent-media.md` + `test/scripts/zalo_concurrent_media.py`). Record per-kind latency (p50/p95/max). Ramp until first fail.
-7. **FIFO smoke (optional):** with Valkey queue on, send 4+ short pings in one thread within the rate window — expect rate-limit notice then **all** answers (case 23); cap default **3** waiting items per thread.
+7. **FIFO smoke (optional):** with Valkey queue on, send 4+ short pings in one thread within the rate window — expect rate-limit notice then **all** answers (case 23); cap default **16** waiting items per thread.
 
 ## Pass criteria
 
