@@ -300,6 +300,15 @@ def _omni_overlay_plan_timeout_s() -> int:
         return 120
 
 
+def _omni_overlay_plan_max_tokens() -> int:
+    """Return a bounded completion budget for multi-region JSON plans."""
+    raw = (os.getenv("OMNI_OVERLAY_PLAN_MAX_TOKENS") or "4096").strip()
+    try:
+        return max(1024, min(int(raw), 8192))
+    except ValueError:
+        return 4096
+
+
 def _omni_overlay_plan_model() -> str:
     """Return the configured priority combo for short structured planning."""
     return (
@@ -356,7 +365,18 @@ def _omni_json_plan(system: str, user: str, *, max_tokens: int) -> dict[str, Any
         return {}
     message = choices[0].get("message")
     text = str(message.get("content") or "").strip() if isinstance(message, dict) else ""
-    return _json_object(text)
+    parsed = _json_object(text)
+    if not parsed:
+        finish_reason = str(choices[0].get("finish_reason") or "unknown")
+        log.warning(
+            "image structured planning invalid model=%r finish_reason=%r "
+            "content_chars=%s max_tokens=%s",
+            model,
+            finish_reason,
+            len(text),
+            max_tokens,
+        )
+    return parsed
 
 
 def _evidence_queries(query: str, instruction: str) -> list[str]:
@@ -405,7 +425,11 @@ def _synthesize_overlay_plan(
     user = user_template.replace("{query}", (query or "").strip()[:240])
     user = user.replace("{instruction}", (instruction or "").strip()[:1200])
     user = user.replace("{notes}", notes)
-    parsed = _omni_json_plan(system, user, max_tokens=720)
+    parsed = _omni_json_plan(
+        system,
+        user,
+        max_tokens=_omni_overlay_plan_max_tokens(),
+    )
     facts: list[dict[str, str]] = []
     seen: set[str] = set()
     for item in parsed.get("facts") or []:

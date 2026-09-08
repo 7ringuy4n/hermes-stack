@@ -1,3 +1,8 @@
+## 2026-09-08 19:12 +07 — composed-plan completion budget
+
+See `history/2026-09-08/README.md` for the structured planner completion-budget root
+cause, core correction, and gated live verification status.
+
 ## 2026-09-07 — lifecycle and delivery release gate
 
 See `history/2026-09-07/README.md` for secret-backed standalone Compose

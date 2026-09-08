@@ -16,6 +16,7 @@ from media_shortcuts import (  # noqa: E402
     _image_prompt_assets,
     _validated_evidence_queries,
     _json_object,
+    _omni_overlay_plan_max_tokens,
     _omni_overlay_plan_model,
     _omni_overlay_plan_timeout_s,
     _overlay_payload,
@@ -31,6 +32,7 @@ OUT = ROOT / "scripts" / "temp" / "composed_image_overlay_unit"
 
 def main() -> int:
     assert _omni_overlay_plan_timeout_s() == 120
+    assert _omni_overlay_plan_max_tokens() == 4096
     assert _omni_overlay_plan_model() == "classifier"
     os.environ["OMNIROUTER_CLASSIFY_COMBO"] = "structured-planner"
     try:
@@ -129,6 +131,14 @@ def main() -> int:
     assert "up to six" in str(assets.get("composition_system")).lower()
     assert "center-right" in str(assets.get("composition_system"))
     assert "region" in str(assets.get("composition_system"))
+    assert "compact minified JSON" in str(assets.get("composition_user_template"))
+    assert "no more than four concise fact rows per panel" in str(
+        assets.get("composition_user_template")
+    )
+    assert "renderer adds the authoritative current timestamp" in str(
+        assets.get("composition_system")
+    )
+    assert "never put a date, time, number" in str(assets.get("composition_system"))
 
     from PIL import Image
 
