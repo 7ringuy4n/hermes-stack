@@ -62,7 +62,6 @@ Do not enable Grafana without Prometheus: `run.sh` starts Prometheus (and Hardwa
 | Component | Exporter | When it starts |
 |-----------|----------|----------------|
 | OmniRoute | `omni-exporter` | OmniRoute **and** Prometheus/Grafana |
-| OmniRoute | `omni-exporter` | OmniRoute **and** Prometheus/Grafana |
 | Host hardware (Grafana CPU/RAM panels) | `node-exporter` | Prometheus or Grafana |
 | Stack health (`assistant_service_up`) | `stack-exporter` | Prometheus or Grafana |
 | Container logs | Alloy → Loki | Loki or Alloy |

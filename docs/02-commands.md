@@ -34,6 +34,12 @@ configuration; update does not replace them.
 | `ps` | Show service state. |
 | `logs [service]` | Read service logs. |
 
+Standalone `down`, `ps`, and `logs` hydrate their required Compose values from
+OpenBao after plaintext environment cleanup and remove the transient export
+when the command exits. Post-ready knowledge synchronization uses a
+noninteractive privilege boundary and fails the lifecycle command instead of
+silently leaving the knowledge index stale.
+
 Clean redeploy of current data:
 
 ```bash
@@ -74,8 +80,10 @@ bash run.sh restore 20260905_120000
 bash run.sh migrate
 ```
 
-A valid stamp covers data/config plus the OmniRoute and OpenBao components.
-Reports must show presence/checksums without printing tokens or provider keys.
+A valid stamp covers data/config, OmniRoute, OpenBao, the Zalo login credential,
+and Zalo identity/allowlist files. PostgreSQL carries the channel/member
+registry. Reports show presence/checksums and membership counts without
+printing identities, tokens, or provider keys.
 
 ## Knowledge, memory, and schedule
 

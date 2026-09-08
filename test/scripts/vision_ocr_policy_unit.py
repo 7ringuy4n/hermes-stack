@@ -26,6 +26,15 @@ def test_lib_vision_only() -> None:
     print("OK lib vision-only policy")
 
 
+def test_media_smoke_uses_current_route() -> None:
+    smoke = (ROOT / "scripts" / "main" / "check-media.sh").read_text(encoding="utf-8")
+    if "8091" in smoke or "OCR_PORT" in smoke or "check ocr" in smoke:
+        raise SystemExit("FAIL media smoke still probes the retired OCR service")
+    if "ROUTER_WORKER_PORT" not in smoke or "vision-route" not in smoke:
+        raise SystemExit("FAIL media smoke does not check the current vision route")
+    print("OK media smoke uses Router Worker vision route")
+
+
 def test_empty_scan() -> None:
     sys.path.insert(0, str(ROOT / "architect" / "lib"))
     from vision_ocr import empty_scan_result  # noqa: E402
@@ -59,6 +68,7 @@ def test_path_resolution_opt_data() -> None:
 
 def main() -> int:
     test_lib_vision_only()
+    test_media_smoke_uses_current_route()
     test_empty_scan()
     test_path_resolution_opt_data()
     print("PASS vision_ocr_policy_unit")

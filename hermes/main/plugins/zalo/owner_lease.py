@@ -8,6 +8,9 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+import socket
+import threading
+import time
 from urllib.parse import urlsplit
 
 
@@ -50,6 +53,10 @@ class ValkeyLease:
         self.key = key
         self.ttl_s = max(15, ttl_s)
         self.token = f"{owner}:{secrets.token_hex(12)}"
+        self._heartbeat_stop = threading.Event()
+        self._heartbeat_thread: threading.Thread | None = None
+        self._heartbeat_last_success = 0.0
+        self._ownership_lost = False
 
     @classmethod
     def from_env(cls, owner: str) -> "ValkeyLease":
@@ -100,8 +107,102 @@ class ValkeyLease:
         ) == 1
 
     async def release(self) -> None:
+        self.stop_heartbeat()
         script = (
             "if redis.call('get',KEYS[1]) == ARGV[1] then "
             "return redis.call('del',KEYS[1]) else return 0 end"
         )
         await self._execute("EVAL", script, "1", self.key, self.token)
+
+    def _sync_reply(self, stream):
+        prefix = stream.read(1)
+        line = stream.readline().rstrip(b"\r\n")
+        if prefix == b"+":
+            return line.decode("utf-8", "replace")
+        if prefix == b":":
+            return int(line)
+        if prefix == b"$":
+            size = int(line)
+            if size < 0:
+                return None
+            data = stream.read(size)
+            stream.read(2)
+            return data.decode("utf-8", "replace")
+        if prefix == b"-":
+            raise RuntimeError(line.decode("utf-8", "replace"))
+        raise RuntimeError("unsupported Valkey response")
+
+    def _sync_execute(self, *parts: str):
+        with socket.create_connection((self.host, self.port), timeout=5.0) as conn:
+            conn.settimeout(5.0)
+            stream = conn.makefile("rb")
+            if self.password:
+                auth = ("AUTH", self.username, self.password) if self.username else ("AUTH", self.password)
+                conn.sendall(_command(*auth))
+                self._sync_reply(stream)
+            if self.database:
+                conn.sendall(_command("SELECT", str(self.database)))
+                self._sync_reply(stream)
+            conn.sendall(_command(*parts))
+            return self._sync_reply(stream)
+
+    def _sync_renew(self) -> bool:
+        script = (
+            "if redis.call('get',KEYS[1]) == ARGV[1] then "
+            "return redis.call('expire',KEYS[1],ARGV[2]) else return 0 end"
+        )
+        return int(
+            self._sync_execute(
+                "EVAL", script, "1", self.key, self.token, str(self.ttl_s)
+            )
+            or 0
+        ) == 1
+
+    def start_heartbeat(self) -> None:
+        """Renew independently from the gateway event loop.
+
+        Some provider clients execute synchronous work inside the gateway loop.
+        A daemon thread prevents that work from creating a false HA failover.
+        """
+        if self._heartbeat_thread is not None and self._heartbeat_thread.is_alive():
+            return
+        self._heartbeat_stop.clear()
+        self._ownership_lost = False
+        self._heartbeat_last_success = time.monotonic()
+        interval = max(5.0, float(self.ttl_s) / 3.0)
+
+        def _run() -> None:
+            delay = interval
+            while not self._heartbeat_stop.wait(delay):
+                try:
+                    if not self._sync_renew():
+                        self._ownership_lost = True
+                        return
+                    self._heartbeat_last_success = time.monotonic()
+                    delay = interval
+                except Exception:
+                    if time.monotonic() - self._heartbeat_last_success >= self.ttl_s:
+                        self._ownership_lost = True
+                        return
+                    delay = 2.0
+
+        self._heartbeat_thread = threading.Thread(
+            target=_run,
+            name="zalo-owner-lease",
+            daemon=True,
+        )
+        self._heartbeat_thread.start()
+
+    def stop_heartbeat(self) -> None:
+        self._heartbeat_stop.set()
+        thread = self._heartbeat_thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=1.0)
+        self._heartbeat_thread = None
+
+    def heartbeat_healthy(self) -> bool:
+        if self._ownership_lost:
+            return False
+        if self._heartbeat_last_success <= 0:
+            return False
+        return time.monotonic() - self._heartbeat_last_success < self.ttl_s

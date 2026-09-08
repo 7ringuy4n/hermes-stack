@@ -27,6 +27,7 @@ Or via environment variables (override config.yaml):
 """
 
 import asyncio
+from contextvars import ContextVar
 import json
 import logging
 import os
@@ -412,6 +413,12 @@ class ZaloAdapter(BasePlatformAdapter):
         self._as_queue_recovery_task: Optional[asyncio.Task] = None
         self._as_active_turn_tasks: Dict[str, asyncio.Task] = {}
         self._as_active_turn_message_ids: Dict[str, str] = {}
+        # Async-task-local source identity covers schedule work that intentionally
+        # bypasses a busy conversation queue without corrupting another turn's
+        # shared per-thread state.
+        self._as_source_message_id: ContextVar[str] = ContextVar(
+            "channel_source_message_id", default=""
+        )
         self._as_compound_after: Dict[str, int] = {}
         self._as_compound_defer_ack: set[str] = set()
         self._as_compound_thread_type: Dict[str, str] = {}
@@ -1099,12 +1106,17 @@ class ZaloAdapter(BasePlatformAdapter):
                 if isinstance(stored_plan, dict)
                 else "?",
             )
+            source_token = self._as_source_message_id.set(
+                str((data or {}).get("messageId") or (data or {}).get("msgId") or "")
+            )
             try:
                 # Due work is already isolated by schedule execution identity and
                 # must not miss its due time behind an unrelated chat turn.
                 await self._on_inbound_message(data)
             except Exception:
                 logger.exception("Zalo: scheduled inbound failed thread=%s", tid or "?")
+            finally:
+                self._as_source_message_id.reset(source_token)
             return
         if self._as_inbound_is_admin(data):
             try:
@@ -1553,6 +1565,10 @@ class ZaloAdapter(BasePlatformAdapter):
                 "skip_outbound_filter": True,
                 "schedule_fire": True,
                 "schedule_delivery": "verbatim",
+                "delivery_kind": "result",
+                "source_message_id": str(
+                    m.get("messageId") or m.get("message_id") or ""
+                ),
             },
         )
         return True
@@ -2779,6 +2795,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_type=thread_type,
                 bare_text=current,
                 plan=plan,
+                media_urls=list(media_urls or []),
+                has_image_attachment=has_image_attachment,
                 schedule_fire=schedule_fire,
             )
         origin = {
@@ -4330,6 +4348,11 @@ class ZaloAdapter(BasePlatformAdapter):
         tid = str(item.get("thread_id") or "")
         if not tid:
             return
+        thread_type = str(item.get("thread_type") or "user")
+        # A durable queue claim may resume on a different HA replica. Rebind
+        # its destination before any handler or recovery send; owner-local
+        # state cannot transfer, and the shared hint may name another chat.
+        self._as_autosend_remember_turn(tid, thread_type)
         self._as_begin_turn(tid)
         try:
             from .queue_history import record as history_record
@@ -4395,7 +4418,6 @@ class ZaloAdapter(BasePlatformAdapter):
                 parts_after = int(store.queue_len(tid) or 0)
             except Exception:
                 parts_after = 0
-        thread_type = str(item.get("thread_type") or "user")
         self._as_compound_set_after(tid, parts_after, thread_type)
         self._as_compound_begin(tid)
         turn_timeout = self._as_queue_turn_timeout_s()
@@ -4503,7 +4525,14 @@ class ZaloAdapter(BasePlatformAdapter):
                         arm_first=True,
                     )
                     if not idle:
-                        raise TimeoutError("Zalo agent session did not become idle")
+                        # ``handle_message`` starts the agent in a separate base
+                        # adapter task. Merely abandoning this queue coroutine
+                        # leaves that task consuming models and able to deliver
+                        # a stale response after the FIFO has advanced. Fence it
+                        # before releasing the durable claim.
+                        session_key = self._event_session_key(event)
+                        await self.cancel_session_processing(session_key)
+                        raise RuntimeError("agent session did not become idle")
                     await self._as_autosend_late_files(tid, thread_type)
                     delivery_event = self._as_part_delivered.get(tid)
                     delivered = bool(delivery_event is not None and delivery_event.is_set())
@@ -4526,7 +4555,12 @@ class ZaloAdapter(BasePlatformAdapter):
                                 "delivery_kind": "queue_recovery",
                             },
                         )
-                        if not recovered.success:
+                        recovery_event = self._as_part_delivered.get(tid)
+                        if (
+                            not recovered.success
+                            or recovery_event is None
+                            or not recovery_event.is_set()
+                        ):
                             raise RuntimeError("terminal queue response delivery failed")
                     await self._as_compound_wait_part(tid)
 
@@ -4536,11 +4570,29 @@ class ZaloAdapter(BasePlatformAdapter):
             try:
                 await asyncio.wait_for(turn_task, timeout=turn_timeout)
             except asyncio.TimeoutError:
-                logger.warning(
-                    "Zalo: queue turn timeout thread=%s after %.0fs — release for next message",
-                    tid,
-                    turn_timeout,
-                )
+                # An outer wait timeout cancels ``turn_task``. A TimeoutError
+                # raised by nested work must not be mislabeled as the configured
+                # queue timeout.
+                outer_timeout = turn_task.cancelled()
+                if outer_timeout:
+                    logger.warning(
+                        "Zalo: queue turn timeout thread=%s after %.0fs — release for next message",
+                        tid,
+                        turn_timeout,
+                    )
+                    try:
+                        await self.cancel_session_processing(self._event_session_key(event))
+                    except Exception:
+                        logger.warning(
+                            "Zalo: timed-out agent cancellation failed thread=%s",
+                            tid,
+                            exc_info=True,
+                        )
+                else:
+                    logger.warning(
+                        "Zalo: queued agent operation timed out thread=%s — release for next message",
+                        tid,
+                    )
                 # Unblock compound waiters / outbound paths that key off delivery.
                 try:
                     self._as_compound_mark_delivered(tid)
@@ -4549,7 +4601,23 @@ class ZaloAdapter(BasePlatformAdapter):
                 msg = self._as_ux_line(
                     "ZALO_QUEUE_TURN_TIMEOUT_MSG",
                     ("queue", "turn_timeout"),
-                    "Xin lỗi, tin trước xử lý quá lâu (hơn 15 phút) nên mình dừng lại. Bạn gửi tin tiếp theo nhé.",
+                    "The request took too long and was stopped. You can send the next message now.",
+                )
+                try:
+                    await self._as_gate_announce(tid, thread_type, msg)
+                except Exception:
+                    pass
+            except RuntimeError as exc:
+                if str(exc) != "agent session did not become idle":
+                    raise
+                logger.warning(
+                    "Zalo: agent session stayed active past its deadline thread=%s — cancelled",
+                    tid,
+                )
+                msg = self._as_ux_line(
+                    "ZALO_QUEUE_TURN_TIMEOUT_MSG",
+                    ("queue", "turn_timeout"),
+                    "The request took too long and was stopped. You can send the next message now.",
                 )
                 try:
                     await self._as_gate_announce(tid, thread_type, msg)
@@ -8121,7 +8189,9 @@ class ZaloAdapter(BasePlatformAdapter):
                     "quoted": bool(used_quote),
                     "delivery_kind": str(meta.get("delivery_kind") or "result"),
                     "source_message_id": str(
-                        self._as_active_turn_message_ids.get(str(dest_id))
+                        meta.get("source_message_id")
+                        or self._as_source_message_id.get()
+                        or self._as_active_turn_message_ids.get(str(dest_id))
                         or self._as_active_turn_message_ids.get(str(chat_id))
                         or ""
                     ),

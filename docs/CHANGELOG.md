@@ -1,3 +1,41 @@
+## 2026-09-08 — bounded queue-session recovery
+
+- Cancel a background agent session before releasing a durable queue claim when
+  the session does not become idle, preventing stale model work from consuming
+  provider capacity or delivering after the destination FIFO has advanced.
+- Distinguish the outer queue deadline from a nested agent-operation timeout so
+  logs and user-safe recovery notices describe the actual failure boundary.
+- Require live DM/group concurrency evidence to validate both source-correlated
+  delivery and the expected response content.
+- Prioritize the latest self-contained request over historical context and avoid
+  unrelated tools for direct conversational answers.
+- Exclude incomplete user-only exchanges from model-visible session hydration;
+  retain them in durable history for audit without replaying abandoned work.
+- Remove a retired duplicate worker-routing skill and give the vendored review
+  implementation a distinct registry name, preventing ambiguous skill loads.
+- Preserve staged attachment paths when queued capability plans enter the host
+  media shortcut, so a quoted-image edit reaches the configured edit combo
+  instead of falling through to a generic agent turn.
+- Compact sparse, text-bearing single-page PDFs after rendering while leaving
+  multi-page, image-only, and already balanced documents unchanged.
+- Require the live PDF gate to extract text, render the first page, and obtain
+  an independent visual review; observable image-edit delivery now ends its
+  test immediately instead of waiting for an optional internal log marker.
+- Point PostgreSQL readiness probes at the configured application database,
+  eliminating a continuous fatal-log stream caused by the client defaulting
+  to a non-existent database named after its role.
+
+## 2026-09-07 — release queue, scheduler, and lifecycle hardening
+
+- Rehydrate secret-backed Compose variables for standalone lifecycle commands
+  and make post-ready knowledge synchronization safe for unattended runs.
+- Rebind recovered queue work to its original destination and acknowledge it
+  only after the channel bridge confirms delivery.
+- Preserve task-local schedule source correlation through asynchronous sends,
+  and classify simple reminders as verbatim content rather than generated work.
+- Strengthen live release evidence with exact source/destination correlation,
+  deterministic outcome checks, and semantic model evaluation.
+
 ## 2026-09-07 — atomic dependency delivery and classifier isolation
 
 - Keep dependent execution graphs in one durable queue turn and reuse their
@@ -1958,7 +1996,7 @@ Promote develop → main: Qwen-only/slim combos, SOUL deception_hide + greeting 
 
 ## 2026-08-20 10:20 +07 â€” Zalo lab cases 16â€“29; case 16/29 fixes
 
-- Full lab run on the validation host: cases **17, 26, 27, 28 PASS** on first pass; **16** (480s watch too short for sequential image+fuel) and **29** (transient classify `ok=false`) failed once.
+- Full lab run on VPS `72.61.127.249`: cases **17, 26, 27, 28 PASS** on first pass; **16** (480s watch too short for sequential image+fuel) and **29** (transient classify `ok=false`) failed once.
 - Fixes: `zalo_multi_request_lab.py` default watch **720s**; case 29 classify **3Ã— retry**; `classify.json` schedule prompt no longer uses standalone word *lá»‹ch*.
 - Rerun cases **16 + 29: PASS** (`test/reports/rerun-16-29.log`). Zalo bridge `0.0.0.0:8787`, `sseClients=1` throughout.
 

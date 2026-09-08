@@ -101,7 +101,12 @@ def main() -> int:
     assert b'name="image"; filename="quoted.png"' in body
     adapter = (ZALO / "adapter.py").read_text(encoding="utf-8")
     assert "run_image_edit" in adapter
-    assert "media_urls=list(event.media_urls or [])" in adapter
+    media_gate = adapter.split(
+        "# A process schedule fires its inner work", 1
+    )[1].split("origin = {", 1)[0]
+    assert "plan_media_shortcut_gate(plan)" in media_gate
+    assert "media_urls=list(media_urls or [])" in media_gate
+    assert "has_image_attachment=has_image_attachment" in media_gate
     print("OK zalo_quote_image_edit_unit")
     return 0
 

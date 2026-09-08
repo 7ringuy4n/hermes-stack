@@ -24,6 +24,26 @@ def main() -> int:
             "standby acquired the bridge owner lease" in adapter
             and "while not self._stop:" in adapter
         ),
+        "promoted owner scans durable queue registry": (
+            "_as_queue_recovery_loop" in adapter
+            and "_as_resume_stale_owner_queues" in adapter
+            and "queue_active_ids" in adapter
+            and "queue_recover" in adapter
+            and "store.worker_done(thread_id)" in adapter
+        ),
+        "worker lease exceeds queued turn deadline": (
+            "def _as_queue_worker_ttl_s" in adapter
+            and "self._as_queue_turn_timeout_s() + 60.0" in adapter
+            and "store.worker_try(tid, worker_ttl)" in adapter
+            and "store.worker_touch(tid, worker_ttl)" in adapter
+        ),
+        "lease loss cancels owner-local work": (
+            "_as_cancel_owner_work()" in adapter
+            and "_as_active_turn_tasks" in adapter
+            and 'tasks.add(getattr(self, "_sse_task", None))' in adapter
+            and 'tasks.add(getattr(self, "_as_workflow_task", None))' in adapter
+            and "task.cancel()" in adapter
+        ),
     }
     for name, ok in checks.items():
         print(("PASS" if ok else "FAIL"), name)

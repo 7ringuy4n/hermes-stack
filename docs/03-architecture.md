@@ -72,15 +72,19 @@ renewed Valkey lease permits exactly one active SSE consumer. If that replica
 dies, a standby acquires the lease without restarting the replica set.
 
 The elected Zalo owner writes an event to a Valkey FIFO keyed by conversation,
-claims that conversation's Valkey worker lock, dequeues it, and executes the
-turn locally. Its adapter sends the result back through Traefik, `zalo-proxy`,
-and the host bridge to the event's original DM or group. There is no callback
-to a separately selected ingress replica. Another conversation may run at the
-same time. If ownership changes, queued state remains in Valkey; the new owner
-continues it when the conversation is kicked, while duplicate message IDs and
-worker leases prevent concurrent handling. Work already executing in the lost
-process is not migrated and may need retry. Quote-reply correlation is carried
-as message metadata and staged media, not inferred from global recent state.
+claims that conversation's Valkey worker lock, and atomically moves the FIFO
+head to a durable in-flight list before executing it locally. Terminal turns
+acknowledge the claim. Its adapter sends the result back through Traefik,
+`zalo-proxy`, and the host bridge to the event's original DM or group. There is
+no callback to a separately selected ingress replica. Another conversation may
+run at the same time. If ownership changes, the old owner cancels local work;
+the promoted owner discovers registered queues, fences worker locks owned by
+the previous lease holder, restores abandoned claims to the FIFO head, and
+resumes them. Routine worker leases exceed the bounded turn deadline, so a
+slow healthy request is never reclaimed by the periodic scanner. Duplicate
+message IDs and worker leases prevent concurrent handling. Quote-reply
+correlation is carried as message metadata and staged media, not inferred from
+global recent state.
 
 Before durable admission, an owner-local sequencer processes SSE events in
 arrival order for each conversation. Cancellation can still bypass the work
@@ -108,6 +112,12 @@ and explicit service HA; see [MULTI_NODE.md](./MULTI_NODE.md).
 
 Lifecycle mutation is backup-gated. `destroy` removes project containers and
 networks but retains volumes/data. See [02-commands.md](./02-commands.md).
+
+Authorized Zalo refreshes obtain a complete group roster from the bridge and
+replace that group's PostgreSQL member snapshot in one transaction. The API
+rejects partial, paginated, malformed, and count-mismatched responses, leaving
+the last valid snapshot intact. This makes named-group authorization and
+post-restore membership verification independent of transient bridge reads.
 
 ## Operational invariants
 

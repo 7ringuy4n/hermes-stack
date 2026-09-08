@@ -1,5 +1,77 @@
 # 2026-09-07
 
+## 19:48 — standalone lifecycle and asynchronous delivery release gate
+
+### Symptom
+
+Standalone Compose inspection or teardown could fail after plaintext secrets
+were scrubbed, cold-start knowledge synchronization could wait for an
+interactive privilege prompt, and recovered or scheduled work could complete
+without durable proof that the response reached its original destination.
+
+### Root cause
+
+Lifecycle helpers did not share the OpenBao hydration boundary used by full
+startup. Post-ready synchronization assumed an interactive host session. Queue
+recovery retained work content but did not rebind the original conversation,
+while scheduled processing crossed an asynchronous boundary that discarded
+the originating message identity. The classifier also had no explicit generic
+contract separating simple reminder content from work that needs live tools.
+
+### Technical detail
+
+- **Function:** `run.sh::do_compose_with_openbao_env()` wraps standalone
+  Compose commands with transient secret hydration and guaranteed cleanup.
+- **Function:** `run.sh::do_post_ready_learn()` prepares the bind mount with a
+  noninteractive privilege check and executes synchronization inside the
+  running service container.
+- **Function:** `adapter.py::_as_run_queued_part()` rebinds the queued
+  destination before handling recovery and requires the actual delivery event
+  before acknowledgement.
+- **Functions:** `adapter.py::_on_inbound_guarded()`,
+  `_as_schedule_fire_verbatim()`, and `send()` carry a task-local source
+  identity through asynchronous schedule execution.
+- **Fields:** `delivery_kind`, `source_message_id`, and `scheduleDelivery`
+  distinguish queue recovery, generated results, and schedule-originated
+  delivery without exposing internal execution identifiers.
+- **Prompt:** `skills/classify/parts/delivery.txt` makes simple reminders
+  verbatim and reserves process-mode scheduling for requests requiring live
+  lookup, tools, reasoning, or generated content.
+
+### AI decision
+
+Transport acceptance, not content generation or a log intention, is the
+terminal success boundary. Task-local context preserves the schedule source
+across concurrent asynchronous work without mutable global state. Reminder
+semantics remain model-driven through the shared prompt while code validates
+only routing and delivery invariants.
+
+### Fix (core)
+
+Unified standalone lifecycle secret hydration, made post-ready synchronization
+unattended-safe, fenced queue acknowledgement on confirmed delivery, rebound
+recovered work to its original destination, and propagated schedule source
+identity through a context-local value. Hardened the classifier prompt and
+release labs to prove exact source/destination correlation.
+
+### Todo list
+
+- [x] Verify a clean destroy and full-feature startup.
+- [x] Verify concurrent direct and threaded conversation delivery.
+- [x] Verify owner failover and fenced recovery without duplicate output.
+- [x] Verify image, vision, document, and web capability delivery.
+- [x] Reproduce and repair schedule evidence and reminder semantics.
+- [x] Verify one acknowledgement and one correlated schedule delivery.
+- [x] Verify plain and quoted active-request cancellation without exposing an
+      internal execution identifier.
+
+### Prevent recurrence
+
+Lifecycle, queue, delivery-history, classifier assembly, scheduler, continuous
+message, and concurrency tests now cover these boundaries. Future live gates
+must correlate schedule delivery to its durable source row and may not infer
+success from generated content, logs, or a synthetic bridge echo.
+
 ## Attachment acknowledgements were absent from durable delivery history
 
 ### Symptom

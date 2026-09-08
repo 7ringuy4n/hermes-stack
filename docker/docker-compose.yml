@@ -34,7 +34,7 @@ services:
       - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     networks: [internal]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${MEMORY_DB_USER:-hermes}"]
+      test: ["CMD-SHELL", "pg_isready -U ${MEMORY_DB_USER:-hermes} -d ${MEMORY_DB_NAME:-hermes_memory}"]
       interval: 5s
       timeout: 5s
       retries: 10

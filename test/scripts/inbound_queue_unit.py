@@ -88,6 +88,29 @@ def main() -> int:
         return 1
     print("PASS FIFO 3 immediate parts + cap")
 
+    # A claimed turn survives an owner crash and is restored ahead of later
+    # work. Independent DM/group destinations remain separately discoverable.
+    reliable = MemoryFifo(max_n=4)
+    reliable.queue_push("dm-1", "first", 4, 3600)
+    reliable.queue_push("dm-1", "second", 4, 3600)
+    reliable.queue_push("group-1", "group", 4, 3600)
+    if reliable.queue_active_ids() != ["dm-1", "group-1"]:
+        print(f"FAIL active queue registry {reliable.queue_active_ids()!r}")
+        return 1
+    claimed = reliable.queue_claim("dm-1")
+    if claimed != "first" or reliable.queue_recover("dm-1") != 1:
+        print("FAIL abandoned claim recovery")
+        return 1
+    replay = reliable.queue_claim("dm-1")
+    if replay != "first":
+        print(f"FAIL recovered ordering {replay!r}")
+        return 1
+    reliable.queue_ack("dm-1", replay)
+    if reliable.queue_claim("group-1") != "group":
+        print("FAIL group queue independence")
+        return 1
+    print("PASS durable claim recovery + independent destinations")
+
     kept = split_compound_requests(PLENTY_SCHEDULE)
     if len(kept) != 1 or "E10 RON95" not in kept[0]:
         print(f"FAIL daily plenty list must stay one job, got {kept!r}")
@@ -145,6 +168,15 @@ def main() -> int:
     if "async with self._as_agent_turn_lock_for(tid):" not in adapter_source:
         print("FAIL queued turns do not use the conversation execution lock")
         return 1
+    queued_part = adapter_source.split("async def _as_run_queued_part", 1)[1].split(
+        "async def _as_dispatch_event", 1
+    )[0]
+    remember = "self._as_autosend_remember_turn(tid, thread_type)"
+    if remember not in queued_part or queued_part.index(remember) > queued_part.index(
+        "await self.handle_message(event)"
+    ):
+        print("FAIL recovered queue turn does not rebind its destination")
+        return 1
     sse_handler = adapter_source.split("async def _handle_sse_event", 1)[1]
     sse_handler = sse_handler.split("def _as_inbound_is_admin", 1)[0]
     if "self._as_sequence_inbound_event(data)" not in sse_handler:
@@ -173,6 +205,9 @@ def main() -> int:
         return 1
     if 'raise RuntimeError("terminal queue response delivery failed")' not in recovery_block[1]:
         print("FAIL failed delivery recovery can still acknowledge queue work")
+        return 1
+    if "recovery_event.is_set()" not in recovery_block[1]:
+        print("FAIL successful no-op can still acknowledge recovered queue work")
         return 1
 
     async def verify_conversation_locks() -> bool:

@@ -36,6 +36,20 @@ def main() -> int:
         "destroy reloads OpenBao before backup and compose": run.find(
             "do_prepare_openbao_env_for_compose", run.find("do_destroy()")
         ) < run.find('do_backup_first "destroy"', run.find("do_destroy()")),
+        "standalone compose commands hydrate scrubbed OpenBao secrets": all(
+            marker in run
+            for marker in (
+                "down) do_compose_with_openbao_env down ;;",
+                "ps) do_compose_with_openbao_env ps ;;",
+                'logs) do_compose_with_openbao_env logs -f --tail=100 "$@" ;;',
+            )
+        )
+        and run.find("do_prepare_openbao_env_for_compose", run.find("do_compose_with_openbao_env()"))
+        < run.find('compose "$@"', run.find("do_compose_with_openbao_env()")),
+        "standalone compose commands remove transient export before compose": run.find(
+            "do_scrub_plaintext_env", run.find("do_compose_with_openbao_env()")
+        )
+        < run.find('compose "$@"', run.find("do_compose_with_openbao_env()")),
         "router export failure blocks verified backup": 'assistant_backup_fail "router combo JSON export incomplete"' in (
             ROOT / "architect/backup-restore/lib/backup.sh"
         ).read_text(encoding="utf-8"),

@@ -1,3 +1,9 @@
+## 2026-09-07 — lifecycle and delivery release gate
+
+See `history/2026-09-07/README.md` for secret-backed standalone Compose
+commands, unattended post-ready learning, fenced queue recovery, and durable
+schedule source correlation verified through the live channel path.
+
 ## 2026-09-05 20:45 +07 — bounded Zalo sends and non-interfering live evaluation
 
 See `history/2026-09-05/README.md` section “Synthetic quote metadata and
@@ -32,6 +38,16 @@ Active request control is evaluated ahead of the per-conversation inbound
 lock when a turn is running, allowing stop messages to interrupt that turn.
 The active owner now begins at guarded inbound admission rather than only after
 queue admission, covering classification, staging, and fail-open execution.
+
+Zalo FIFO processing now uses durable claim/inflight/ack state and an active
+destination registry so a promoted lease owner can resume abandoned work.
+Verified recovery stamps now include the bridge login session and identity
+policy files. See `history/2026-09-06/README.md` for root cause and safeguards.
+The same record documents structurally validated, transactional Zalo group
+membership refresh so recovery verification cannot rely on a name-only group
+record.
+It also records removal of the last active smoke/lab probes for the retired
+local OCR service; media health now follows the Router Worker vision route.
 
 ## 2026-09-05 19:20 +07 — cold-start OpenBao ordering
 
