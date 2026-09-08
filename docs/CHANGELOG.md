@@ -1,3 +1,14 @@
+## 2026-09-08 — flexible multi-region image and document composition
+
+- Preserve independently sourced subjects in composed images by planning and
+  executing focused evidence queries before visual synthesis.
+- Support up to six validated information regions with named grid placement,
+  repeated-side distribution, or normalized custom rectangles.
+- Preserve explicit spatial relationships in Office artifacts and reuse the
+  image compositor when copy must appear over an embedded visual.
+- Strengthen live release evidence with runtime query-decomposition checks,
+  source-correlated delivery, image/PDF visual review, and restart auditing.
+
 ## 2026-09-08 — bounded queue-session recovery
 
 - Cancel a background agent session before releasing a durable queue claim when

@@ -14,7 +14,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from classify_fixtures import FIXTURE_INFOGRAPHIC_DAILY, FIXTURE_INFOGRAPHIC_VI  # noqa: E402
+from classify_fixtures import (  # noqa: E402
+    FIXTURE_INFOGRAPHIC_DAILY,
+    FIXTURE_INFOGRAPHIC_SPLIT_VI,
+    FIXTURE_INFOGRAPHIC_VI,
+)
 from deploy_stack import connect, sudo_bash  # noqa: E402
 from sanitize import sanitize as _sanitize  # noqa: E402
 
@@ -69,7 +73,7 @@ python3 - <<'PY'
 import json, os, urllib.request
 from pathlib import Path
 
-text = {FIXTURE_INFOGRAPHIC_VI!r}
+text = {FIXTURE_INFOGRAPHIC_SPLIT_VI!r}
 
 def post(url, body, timeout=120):
     data = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -152,6 +156,7 @@ hermes_logs() {
 done_n=0
 attach_n=0
 delivered_n=0
+evidence_n=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
   curl -sS -m 5 http://127.0.0.1:8787/health 2>/dev/null | python3 -c 'import sys,json
 try:
@@ -166,22 +171,24 @@ WHERE message_id='__MARKER__' OR meta->>'source_message_id'='__MARKER__'
 ORDER BY id;
 " 2>/dev/null || true)
   printf '%s\n' "$history"
-  logs=$(hermes_logs | grep -E 'search_composed_image_shortcut|send-attachment path|send-attachment fail' | tail -20)
+  logs=$(hermes_logs | grep -E 'composed image evidence plan|search_composed_image_shortcut|send-attachment path|send-attachment fail' | tail -20)
   echo "LOGS_N=$(printf '%s\n' "$logs" | grep -c . || true)"
   printf '%s\n' "$logs" | tail -8
   done_n=$(hermes_logs | grep -c 'search_composed_image_shortcut' || true)
   attach_n=$(hermes_logs | grep -c 'send-attachment path' || true)
   delivered_n=$(printf '%s\n' "$history" | grep -c 'delivered source=__MARKER__ attachment=image' || true)
-  echo "done_jobs=$done_n attach=$attach_n delivered=$delivered_n"
-  if [ "${done_n:-0}" -ge 1 ] && [ "${attach_n:-0}" -ge 1 ] && [ "${delivered_n:-0}" -ge 1 ]; then
+  evidence_n=$(hermes_logs | grep -Ec 'composed image evidence plan queries=[2-4]' || true)
+  echo "done_jobs=$done_n attach=$attach_n delivered=$delivered_n evidence=$evidence_n"
+  if [ "${done_n:-0}" -ge 1 ] && [ "${attach_n:-0}" -ge 1 ] && [ "${delivered_n:-0}" -ge 1 ] && [ "${evidence_n:-0}" -ge 1 ]; then
     echo "JOB_DONE"
     echo "MEDIA_SENT"
     echo "DELIVERY_RECORDED"
+    echo "EVIDENCE_DECOMPOSED"
     break
   fi
   sleep 12
 done
-echo "WATCH_END $(date -Is) done_jobs=$done_n attach=$attach_n delivered=$delivered_n"
+echo "WATCH_END $(date -Is) done_jobs=$done_n attach=$attach_n delivered=$delivered_n evidence=$evidence_n"
 echo WATCH_DONE
 """
         watch_sh = watch_sh.replace("__WAIT__", str(WAIT_S)).replace(
@@ -192,6 +199,7 @@ echo WATCH_DONE
         job_ok = "JOB_DONE" in watch or "done_jobs=1" in watch
         media = "MEDIA_SENT" in watch
         recorded = "DELIVERY_RECORDED" in watch
+        evidence_decomposed = "EVIDENCE_DECOMPOSED" in watch
         if not media:
             for line in reversed(watch.splitlines()):
                 if "attach=" in line:
@@ -203,13 +211,14 @@ echo WATCH_DONE
                     break
         if job_ok and not media:
             print("FAIL media created but not sent (attach=0)", flush=True)
-        ok = job_ok and media and recorded
+        ok = job_ok and media and recorded and evidence_decomposed
         (OUT / "watch.txt").write_text(
             "\n".join(
                 [
                     f"job_done={'yes' if job_ok else 'no'}",
                     f"media_sent={'yes' if media else 'no'}",
                     f"delivery_recorded={'yes' if recorded else 'no'}",
+                    f"evidence_decomposed={'yes' if evidence_decomposed else 'no'}",
                     "",
                 ]
             ),
@@ -234,9 +243,13 @@ def task_types(result):
     details = result.get("task_details") if isinstance(result.get("task_details"), list) else []
     return [str(item.get("task_type") or "") for item in details if isinstance(item, dict)]
 
-now = classify({FIXTURE_INFOGRAPHIC_VI!r})
+now = classify({FIXTURE_INFOGRAPHIC_SPLIT_VI!r})
 now_types = task_types(now)
-now_ok = bool(now.get("ok")) and str(now.get("task_hint") or "") != "schedule" and now_types.count("search") >= 1 and now_types.count("media_generation") == 1
+details = now.get("task_details") if isinstance(now.get("task_details"), list) else []
+search_indexes = [i for i, item in enumerate(details) if isinstance(item, dict) and str(item.get("task_type") or "") == "search"]
+media = [item for item in details if isinstance(item, dict) and str(item.get("task_type") or "") == "media_generation"]
+media_dependencies = media[0].get("depends_on") if len(media) == 1 and isinstance(media[0].get("depends_on"), list) else []
+now_ok = bool(now.get("ok")) and str(now.get("task_hint") or "") != "schedule" and len(search_indexes) >= 1 and len(media) == 1 and all(index in media_dependencies for index in search_indexes)
 print("NOW_CONTRACT", "PASS" if now_ok else "FAIL", "HINT", now.get("task_hint"), "TYPES", ",".join(now_types))
 
 daily = classify({FIXTURE_INFOGRAPHIC_DAILY!r})
@@ -262,6 +275,7 @@ PY
                     f"- Job done: **{'yes' if job_ok else 'no'}**",
                     f"- Media sent: **{'yes' if media else 'no'}**",
                     f"- Delivery recorded: **{'yes' if recorded else 'no'}**",
+                    f"- Evidence decomposed: **{'yes' if evidence_decomposed else 'no'}**",
                     f"- Immediate classifier contract: **{'yes' if now_ok else 'no'}**",
                     f"- Daily classifier contract: **{'yes' if daily_ok else 'no'}**",
                     "",

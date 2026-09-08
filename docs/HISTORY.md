@@ -10,6 +10,15 @@ History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
 
+## 2026-09-08 — multi-domain spatial composition
+
+See `history/2026-09-08/README.md` for the evidence-decomposition and flexible
+layout correction. Composed images now retain each independently sourced
+subject and support validated named or normalized regions; document authoring
+uses the same compositor for text over embedded images while keeping ordinary
+page regions in safe normal flow. Local rendering, VPS image/PDF inspection,
+real-channel delivery, classifier contracts, and restart checks passed.
+
 ## 2026-09-08 — bounded queue-session recovery
 
 See `history/2026-09-08/README.md` for the production-gate failure in which a

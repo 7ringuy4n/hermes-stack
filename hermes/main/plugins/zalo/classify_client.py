@@ -951,6 +951,31 @@ def plan_search_query(plan: dict[str, Any] | None, fallback: str = "") -> str:
     return str(fallback or "").strip()
 
 
+def plan_search_queries(plan: dict[str, Any] | None, fallback: str = "") -> list[str]:
+    """Return every structurally declared search query in dependency order."""
+    src = plan if isinstance(plan, dict) else {}
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    details = src.get("task_details") if isinstance(src.get("task_details"), list) else []
+    queries: list[str] = []
+    seen: set[str] = set()
+    for index, detail in enumerate(details):
+        if not isinstance(detail, dict):
+            continue
+        task_type = str(detail.get("task_type") or "").strip().lower()
+        skill = str(detail.get("skill") or "").strip().lower()
+        if task_type != "search" and skill != "web_search":
+            continue
+        query = parts[index] if index < len(parts) else ""
+        key = query.casefold()
+        if query and key not in seen:
+            seen.add(key)
+            queries.append(query)
+    if queries:
+        return queries
+    query = plan_search_query(src, fallback)
+    return [query] if query else []
+
+
 def plan_file_instruction(plan: dict[str, Any] | None, fallback: str = "") -> str:
     """Pick the office-file body instruction from classify."""
     src = plan if isinstance(plan, dict) else {}
