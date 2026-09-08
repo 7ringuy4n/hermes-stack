@@ -53,7 +53,7 @@ Disable auto-sethome with `ZALO_AUTO_SETHOME=0` and run `/sethome` once in the d
 | Immediate list (`tin nhắn 1` / `1 …` `2.Sau đó` / one-line `1. … 2. …`) | Split into **durable jobs**. Each instruction is wrapped “chỉ làm đúng việc này”. Autosend keeps files for the **whole sequence**. Send the file/result only — no success ack line. |
 | Schedule list (`đặt lịch`, `daily` / `hằng ngày`, weekly / monthly / yearly, or a clock) | Stored as a **schedule**. Clock-only `đặt lịch lúc HH:MM` is **once** (removed after it runs). Named cadence words set daily / weekly / monthly / yearly. At tick time the scheduler creates one job per numbered item. Extra markers: `ZALO_SCHEDULE_KEEP_WHOLE=term1,term2`. |
 | Rate limit | Announce once, **enqueue** the message, process later. Copy in `messages/ux.json` `queue.rate_limited`. |
-| Queue full | Cap `ZALO_INBOUND_QUEUE_MAX` (default **8** waiting items / thread). `queue.full` line. Valkey down → fail-open sequential turns. Inbound requests only — not a response queue. |
+| Queue full | Cap `ZALO_INBOUND_QUEUE_MAX` (default **16** waiting items / thread). `queue.full` line. Valkey down → fail-open sequential turns. Inbound requests only — not a response queue. |
 | Hermes busy / `/busy` tips | Dropped on Zalo. Never show “Interrupting current task” or First-time `/busy` copy. |
 
 Cron jobs with `deliver: origin` reply in the **same Zalo thread that created them** (DM if you asked in a DM, group if you asked in a group). `ZALO_HOME_CHANNEL` is only the fallback when origin/home is unset. The workflow service owns execution; `jobs.json` stays for list/CRUD compatibility (`no_agent`).

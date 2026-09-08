@@ -2174,45 +2174,78 @@ class ZaloAdapter(BasePlatformAdapter):
                 except Exception:
                     pass
                 return True
-            image_delivered = False
-            image_claimed = False
-            img_path = ""
+            artifact_delivered = False
+            artifact_claimed = False
+            artifact_available = False
+            artifact_path = ""
             try:
-                img_path = str((shortcut or {}).get("file") or (shortcut or {}).get("path") or "")
-                if img_path:
-                    p = Path(img_path)
-                    if p.is_file() and p.suffix.lower() in {
-                        ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp",
-                    }:
-                        image_claimed = self._as_autosend_file_claim(img_path, str(thread_id))
-                        if image_claimed:
+                artifact_path = str(
+                    (shortcut or {}).get("file") or (shortcut or {}).get("path") or ""
+                )
+                if artifact_path:
+                    p = Path(artifact_path)
+                    suffix = p.suffix.lower()
+                    image_ext = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+                    video_ext = {".mp4", ".webm", ".mov", ".m4v", ".mkv"}
+                    artifact_available = (
+                        p.is_file() and suffix in self._as_autosend_ok_ext()
+                    )
+                    if artifact_available:
+                        artifact_claimed = self._as_autosend_file_claim(
+                            artifact_path, str(thread_id)
+                        )
+                        if artifact_claimed:
                             turn_token = self._as_turn_token(str(thread_id))
-                            meta = {"as_skip_autosend": True, "as_claimed": True}
-                            res = await self.send_image_file(
-                                str(thread_id),
-                                img_path,
-                                caption="",
-                                metadata=meta,
-                            )
-                            image_delivered = bool(
+                            meta = {
+                                "as_skip_autosend": True,
+                                "as_claimed": True,
+                                "thread_type": (
+                                    "group"
+                                    if str(thread_type).lower() in {"group", "g"}
+                                    else "user"
+                                ),
+                            }
+                            if suffix in image_ext:
+                                res = await self.send_image_file(
+                                    str(thread_id), artifact_path, caption="", metadata=meta
+                                )
+                            elif suffix in video_ext:
+                                res = await self.send_video(
+                                    str(thread_id), artifact_path, caption="", metadata=meta
+                                )
+                            else:
+                                res = await self.send_document(
+                                    str(thread_id),
+                                    artifact_path,
+                                    caption="",
+                                    file_name=p.name,
+                                    metadata=meta,
+                                )
+                            artifact_delivered = bool(
                                 res and getattr(res, "success", None) is not False
                             )
-                            if image_delivered:
+                            if artifact_delivered:
                                 self._as_mark_job_file_sent(
                                     str(thread_id), turn_token=turn_token
                                 )
                             else:
-                                self._as_autosend_file_unclaim(img_path)
+                                self._as_autosend_file_unclaim(artifact_path)
                         else:
-                            image_delivered = True
+                            logger.warning(
+                                "Channel: exact shortcut artifact already claimed file=%s",
+                                p.name,
+                            )
             except Exception as e:
-                if image_claimed and img_path:
-                    self._as_autosend_file_unclaim(img_path)
+                if artifact_claimed and artifact_path:
+                    self._as_autosend_file_unclaim(artifact_path)
                 logger.warning(
-                    "Zalo: shortcut direct image send failed: %s",
+                    "Zalo: shortcut direct artifact send failed: %s",
                     type(e).__name__,
                 )
-            if not image_delivered:
+            # A shortcut-supplied path is authoritative for this turn. Never
+            # replace it by scanning a shared output directory where a
+            # simultaneous conversation may have created another artifact.
+            if not artifact_delivered and not artifact_available:
                 try:
                     await self._as_autosend_late_files(
                         str(thread_id),
@@ -2225,7 +2258,14 @@ class ZaloAdapter(BasePlatformAdapter):
             except ImportError:
                 from session_memory import append_turn  # type: ignore
             try:
-                append_turn(str(thread_id), str(thread_type), bare, "Đã gửi hình.")
+                append_turn(
+                    str(thread_id),
+                    str(thread_type),
+                    bare,
+                    "Artifact delivered."
+                    if artifact_delivered
+                    else "Artifact delivery failed.",
+                )
             except Exception:
                 pass
             try:
@@ -6585,21 +6625,21 @@ class ZaloAdapter(BasePlatformAdapter):
         return real_thread_id(str(chat_id or "")) != str(dest["thread_id"])
 
     def _as_autosend_file_fp(self, file_path) -> str:  # ASSISTANT_AUTOSEND_v5
-        """Dedupe key: image stem so foo.png + foo.jpg count as one send."""
+        """Stable dedupe key shared by source files and staged send copies."""
         from pathlib import Path
 
         p = Path(str(file_path or ""))
         stem = (p.stem or p.name or "").lower()
         try:
-            from .autosend import VIDEO_EXTS, video_dedupe_stem
+            from .autosend import VIDEO_EXTS, canonical_send_name, video_dedupe_stem
         except ImportError:
-            from autosend import VIDEO_EXTS, video_dedupe_stem  # type: ignore
+            from autosend import VIDEO_EXTS, canonical_send_name, video_dedupe_stem  # type: ignore
         try:
             if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
                 return f"img:{stem}"
             if p.suffix.lower() in VIDEO_EXTS:
                 return f"vid:{video_dedupe_stem(str(p))}"
-            return f"{p.stat().st_size}:{p.name}"
+            return f"{p.stat().st_size}:{canonical_send_name(str(p))}"
         except OSError:
             return f"img:{stem}" if stem else (p.name or "")
 

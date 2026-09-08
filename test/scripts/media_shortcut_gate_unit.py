@@ -303,12 +303,17 @@ def main() -> int:
     assert "and not self._as_inbound_queue_enabled()" in adapter_source
     assert "sock_connect=15, sock_read=45" in adapter_source
     assert '("classify", "failed")' in adapter_source
-    assert "image_claimed = self._as_autosend_file_claim(img_path, str(thread_id))" in adapter_source
-    direct_send = adapter_source.index("image_claimed = self._as_autosend_file_claim")
-    direct_metadata = adapter_source.index(
-        'meta = {"as_skip_autosend": True, "as_claimed": True}', direct_send
+    direct_send = adapter_source.index(
+        "artifact_claimed = self._as_autosend_file_claim("
     )
-    assert direct_send < direct_metadata
+    direct_document = adapter_source.index("res = await self.send_document(", direct_send)
+    shared_scan_guard = adapter_source.index(
+        "if not artifact_delivered and not artifact_available:", direct_send
+    )
+    assert direct_send < direct_document < shared_scan_guard
+    assert '"as_skip_autosend": True' in adapter_source[direct_send:direct_document]
+    assert '"as_claimed": True' in adapter_source[direct_send:direct_document]
+    assert "canonical_send_name(str(p))" in adapter_source
     classify_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "classify_client.py").read_text(
         encoding="utf-8"
     )

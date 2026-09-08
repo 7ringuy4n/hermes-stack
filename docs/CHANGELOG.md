@@ -7,6 +7,11 @@
   logs and user-safe recovery notices describe the actual failure boundary.
 - Require live DM/group concurrency evidence to validate both source-correlated
   delivery and the expected response content.
+- Align the documented inbound queue capacity with its runtime default and
+  migrate only the retired persisted default while preserving custom limits.
+- Deliver the exact artifact returned by every media/file shortcut instead of
+  scanning a shared output directory, preventing concurrent conversations
+  from exchanging files. Treat bridge-staged copies as the same claim target.
 - Prioritize the latest self-contained request over historical context and avoid
   unrelated tools for direct conversational answers.
 - Exclude incomplete user-only exchanges from model-visible session hydration;
@@ -49,6 +54,17 @@
   code without increasing retries or changing operator-owned model combos.
 - Verify all local unit contracts and a real-channel composed-image delivery
   whose durable attachment record retains the original request source.
+
+## 2026-09-08 — capability-bearing DM/group concurrency gate
+
+- Added live two-destination weather-search and document-generation bursts so
+  queue verification now proves real capability execution, acknowledged
+  source correlation, OmniRoute search attribution, generated-package content,
+  semantic quality, scope isolation, and complete drain rather than relying on
+  fixed quote replies alone.
+- Make the scheduler wait for a healthy PostgreSQL service before startup,
+  preventing a transient DNS failure and avoidable restart during a clean
+  multi-profile deployment.
 
 ## 2026-09-06 — scoped notes, active cancellation, and calm HA standby
 
