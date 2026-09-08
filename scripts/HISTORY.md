@@ -5683,3 +5683,12 @@ synthetic queue turns. See `history/2026-09-07/README.md` for the atomic queue
 fix, stateless provider-session isolation, and precise bounded schema repair.
 The final VPS gate correlated the delivered image to the original request and
 passed both immediate and scheduled classifier contracts.
+
+## 2026-09-08 — multi-domain composed images and spatial document assets
+
+The composed-image path now plans independent evidence domains and renders up
+to six validated named or normalized regions. Document authoring reuses the
+same compositor for copy over embedded images and keeps ordinary page regions
+in safe normal flow. Focused local gates, VPS image/PDF rendering, real-channel
+delivery, visual review, classifier contracts, and restart auditing passed.
+See `history/2026-09-08/README.md`.

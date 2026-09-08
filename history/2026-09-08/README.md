@@ -129,3 +129,98 @@ semantic outcome. Any asynchronous layer that waits on a lower-level task must
 also define how that task is fenced or cancelled when the wait expires.
 Changes to classifier prompt parts must regenerate the committed fallback in
 the same change; exact bake equivalence is a release invariant.
+
+## Multi-domain evidence and flexible spatial composition
+
+### Symptom
+
+A composed image with several independently sourced subjects could retain only
+one subject and one placement. Layout choices were limited to corner badges,
+so repeated side requests and precise in-image or embedded-document regions
+could overlap or be omitted.
+
+### Root cause
+
+The classifier could legally emit one broad search for multiple evidence
+domains, while the host executed only the first declared query. The composition
+schema then exposed one top-level fact collection and one placement. The image
+renderer had no normalized region contract and supported only four corners and
+a bottom bar.
+
+### Technical detail
+
+- **Functions:** `media_shortcuts.py::_evidence_queries()`,
+  `::_synthesize_overlay_plan()`, `::_overlay_panels_payload()`, and
+  `::run_search_then_composed_image()` at
+  `hermes/main/plugins/zalo/media_shortcuts.py:L340-L460,L654-L700,L1253-L1315`.
+- **Renderer:** `overlay.py::_normalized_region()`, `::apply_overlay()`, and
+  `::apply_overlay_panels()` at
+  `architect/models/dispatcher/overlay.py:L182-L220,L253-L350,L352-L400`.
+- **API fields:** `ImageReq.overlay_panels` and
+  `overlay_design.region={x,y,width,height}` at
+  `architect/models/dispatcher/app.py:L174-L194,L783-L815`; normalized values
+  are clamped to the drawable image and malformed regions are ignored.
+- **Contract:** `design.placement` expanded from four corners plus one bar to a
+  nine-cell grid, bars, and side columns; `panels` expanded from one effective
+  region to six validated regions.
+
+### AI decision
+
+Keep natural-language decomposition and design in English prompt assets, then
+validate only structural fields in Python. A topic-specific parser or fixed
+two-column template would repair one example but leave future subjects,
+languages, and positions uncovered. Documents reuse the composed-image API for
+copy over an embedded image and retain normal-flow tables/sections for ordinary
+page layout.
+
+### Fix (core)
+
+- Plan up to four focused evidence searches and execute every planned query.
+- Synthesize up to six independent panels while preserving requested subjects,
+  language, timestamp label, and relative positions.
+- Support named grid regions and arbitrary normalized rectangles, clamp them
+  to safe bounds, and distribute repeated-side or automatic panels into stable
+  non-overlapping slots.
+- Teach the file-generation skill to preserve multi-region page relationships
+  and to compose image overlays before embedding them in a document.
+- Replace the classifier-only lab assertion with stronger runtime evidence:
+  the live gate now requires at least two executed evidence queries in addition
+  to classifier graph validity and source-correlated delivery.
+
+### Todo list
+
+- [x] Reproduce the missing-subject and single-placement output.
+- [x] Fix evidence decomposition and multi-result composition in core source.
+- [x] Add named, repeated-side, and normalized-region renderer variants.
+- [x] Add the embedded-document spatial contract and regression checks.
+- [x] Pass focused local compile, render, workflow, and Office structure gates.
+- [x] Apply through the normal VPS updater with a verified backup.
+- [x] Pass live multi-domain delivery and visually inspect the generated image.
+- [x] Render and inspect a one-page PDF containing the six-region composition.
+- [x] Audit container and bridge logs plus restart counts after the run.
+
+### Verification
+
+Local focused gates passed, including a six-region raster and three repeated
+left-side panels. The VPS overlay endpoint rendered twelve lines across six
+normalized regions; a one-page PDF embedded the resulting image and retained
+all six regions. The real channel run decomposed one broad classifier query
+into two evidence searches, delivered one source-correlated image, and passed
+both immediate and scheduled classifier contracts. Visual review confirmed two
+requested subjects in their requested left/right regions with localized,
+legible copy and no overlap.
+
+All observed core containers remained running with zero restart counts. Two
+Traefik health warnings occurred while the recently recreated Hermes service
+was handling the long media request; subsequent probes recovered without a
+restart or delivery failure. This non-terminal load sensitivity remains an
+operational observation rather than a release failure.
+
+### Prevent recurrence
+
+`composed_image_overlay_unit.py` covers malformed regions, six custom regions,
+and repeated-side distribution. `media_capability_skills_unit.py` protects the
+document contract, and `zalo_weather_fuel_lab.py` requires runtime evidence
+decomposition instead of assuming one exact classifier graph shape. Future
+capability gates must continue visual inspection; file existence alone is not
+sufficient.

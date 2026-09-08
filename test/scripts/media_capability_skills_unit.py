@@ -36,6 +36,11 @@ def main() -> int:
     assert "supposedly current observation that is in the future" in file_gen
     assert "measurement units customary for that language/locale" in file_gen
     assert "do not leave a large unused lower area" in file_gen
+    assert "Treat every explicitly positioned content request as a layout constraint" in file_gen
+    assert "overlay_panels" in file_gen
+    assert "normalized `region` object" in file_gen
+    assert "Up to six regions are" in file_gen
+    assert "Do not simulate an image overlay with risky HTML positioning" in file_gen
     assert "Styling inside a document is not a separate image deliverable" in media
     system = runtime["composition_system"]
     assert "dominant language of the current Request message" in system

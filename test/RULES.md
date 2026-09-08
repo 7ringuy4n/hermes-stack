@@ -88,6 +88,12 @@ Send a natural-language still-image request through Zalo. Require:
   (maximum five minutes);
 - when text is requested, visible text follows the current message language,
   contains no profanity, and is checked by OCR plus visual inspection;
+- for a multi-subject request, every independently sourced subject is present
+  exactly once and every explicit spatial relationship is preserved;
+- exercise at least one named grid arrangement, one repeated-side arrangement,
+  and one normalized custom-region arrangement. Unspecified regions must be
+  distributed without overlap; no panel may cover another panel or essential
+  requested scene content;
 - the scene, composition, typography, contrast, and requested facts are scored,
   not merely file existence.
 
@@ -158,6 +164,13 @@ External design references must be reviewed for license before reuse. Research
 may use high-signal repositories such as `anthropics/skills` and
 `hugohe3/ppt-master`; learn from their workflows, but do not vendor unlicensed
 or incompatible code/assets.
+
+Repeat the PDF case with several explicitly positioned subjects. Ordinary
+document content must preserve the requested row/column/edge relationships in
+safe normal flow. When the request explicitly requires copy over an embedded
+image, require one dispatcher-composed image with all requested regions, embed
+only that final image, and reject overlap, missing regions, risky absolute CSS,
+or separately delivered intermediate images.
 
 ### C10 — multipurpose notes, session history, RAG, and cancellation
 
