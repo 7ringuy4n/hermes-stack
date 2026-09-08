@@ -62,6 +62,45 @@ disposable ten-million-row corpus with indexed sub-millisecond queries, and
 delivered both a real quoted-image edit and a rendered single-page PDF for
 independent visual review.
 
+## Capability concurrency and scheduler startup ordering
+
+### Symptom
+
+A clean full-profile deployment started all requested services, but the
+scheduler restarted once before becoming healthy. Its first connection attempt
+failed while the internal PostgreSQL hostname was not yet resolvable. Existing
+two-destination tests also concentrated on ordered text and quote isolation and
+did not prove that independent conversations could run search and file
+generation at the same time.
+
+### Cause
+
+The scheduler had a runtime database dependency but no Compose startup
+dependency. Its restart policy recovered the service, masking the avoidable
+startup fault. The concurrency suite verified queue mechanics without
+transport-acknowledged capability artifacts or provider-side search
+attribution.
+
+### Decision and fix
+
+- Require PostgreSQL to be healthy before Compose starts the scheduler.
+- Assert that dependency in the offline defaults contract.
+- Add two simultaneous private/group bursts for current-weather search and
+  DOCX generation.
+- Correlate each delivery to its source event, verify both generated packages,
+  inspect exact document content, confirm search-combo attribution, obtain an
+  independent semantic score, and require complete queue drain.
+- Resolve private runtime identities from protected state and keep numeric
+  identities out of source and reports.
+
+### Verification
+
+The corrected scheduler started healthy with zero restarts and no database
+resolution error. The live capability gate delivered both weather answers,
+attributed both searches to the expected combo, delivered two valid and
+content-isolated DOCX packages, received a perfect semantic evaluation, and
+left both destination queues empty without a queue timeout.
+
 ## Prevention
 
 Future concurrency labs must retain structured evidence for both delivery and
