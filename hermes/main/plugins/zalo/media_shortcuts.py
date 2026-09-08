@@ -183,11 +183,17 @@ def _collect_host_facts(instruction: str, search: dict[str, Any] | None) -> list
     return facts[:8]
 
 
-def _search_notes_blob(search: dict[str, Any] | None, *, limit: int = 4) -> str:
+def _search_notes_blob(search: Any, *, limit: int = 8) -> str:
     """Concat result content fields for LLM synthesis (not titles; not host NLU)."""
+    if isinstance(search, list):
+        blocks = [_search_notes_blob(item, limit=limit) for item in search]
+        return "\n===\n".join(block for block in blocks if block)[:6400]
     if not isinstance(search, dict):
         return ""
     chunks: list[str] = []
+    source_query = str(search.get("_request_query") or "").strip()
+    if source_query:
+        chunks.append(f"Requested evidence: {source_query[:500]}")
     ans = search.get("answer")
     if isinstance(ans, str) and ans.strip():
         chunks.append(ans.strip()[:800])
@@ -200,7 +206,7 @@ def _search_notes_blob(search: dict[str, Any] | None, *, limit: int = 4) -> str:
         chunks.append(content[:400])
         if len(chunks) >= limit + (1 if ans else 0):
             break
-    return "\n---\n".join(chunks)[:2400]
+    return "\n---\n".join(chunks)[:3200]
 
 
 @lru_cache(maxsize=1)
@@ -236,7 +242,11 @@ def _safe_overlay_design(raw: Any) -> dict[str, Any]:
     base = dict(defaults) if isinstance(defaults, dict) else {}
     source = raw if isinstance(raw, dict) else {}
     allowed = {
-        "placement": {"auto", "top-left", "top-right", "bottom-left", "bottom-right", "bottom-bar"},
+        "placement": {
+            "auto", "top-left", "top-center", "top-right", "center-left", "center",
+            "center-right", "bottom-left", "bottom-center", "bottom-right", "top-bar",
+            "bottom-bar", "left-column", "right-column",
+        },
         "theme": {"auto", "light", "dark"},
         "alignment": {"left", "center", "right"},
         "font_family": {"auto", "inter", "noto-sans", "serif", "mono"},
@@ -250,6 +260,21 @@ def _safe_overlay_design(raw: Any) -> dict[str, Any]:
     for key, choices in allowed.items():
         value = str(source.get(key) or base.get(key) or "auto").strip().lower()
         out[key] = value if value in choices else str(base.get(key) or "auto")
+    region = source.get("region")
+    if isinstance(region, dict):
+        try:
+            min_width = 0.18
+            min_height = 0.28
+            x = max(0.0, min(float(region.get("x")), 1.0 - min_width))
+            y = max(0.0, min(float(region.get("y")), 1.0 - min_height))
+            width = max(min_width, min(float(region.get("width")), 1.0 - x))
+            height = max(min_height, min(float(region.get("height")), 1.0 - y))
+            out["region"] = {
+                "x": round(x, 4), "y": round(y, 4),
+                "width": round(width, 4), "height": round(height, 4),
+            }
+        except (TypeError, ValueError):
+            pass
     return out
 
 
@@ -284,21 +309,8 @@ def _omni_overlay_plan_model() -> str:
     ).strip() or "classifier"
 
 
-def _synthesize_overlay_plan(
-    search: dict[str, Any] | None,
-    *,
-    query: str = "",
-    instruction: str = "",
-) -> dict[str, Any]:
-    """Ask the chat combo for grounded content and generic visual-design decisions."""
-    notes = _search_notes_blob(search)
-    if not notes.strip():
-        return {}
-    assets = _image_prompt_assets()
-    system = str(assets.get("composition_system") or "").strip()
-    user_template = str(assets.get("composition_user_template") or "").strip()
-    if not system or not user_template:
-        return {}
+def _omni_json_plan(system: str, user: str, *, max_tokens: int) -> dict[str, Any]:
+    """Run one prompt-asset-owned structured planning call."""
     try:
         from .omni_env import resolve_media_router_api_key, resolve_media_router_base_url
     except ImportError:
@@ -306,22 +318,15 @@ def _synthesize_overlay_plan(
 
     base = resolve_media_router_base_url()
     key = resolve_media_router_api_key()
-    if not base or not key:
+    if not base or not key or not system or not user:
         return {}
-    # This is a short, schema-constrained planning call, so use the same
-    # priority combo as intent classification.  The general chat combo may be
-    # round-robin and can select a slow conversational model, which needlessly
-    # holds the Zalo delivery path before image generation even starts.
     model = _omni_overlay_plan_model()
-    user = user_template.replace("{query}", (query or "").strip()[:240])
-    user = user.replace("{instruction}", (instruction or "").strip()[:1200])
-    user = user.replace("{notes}", notes)
     body = json.dumps(
         {
             "model": model,
             "stream": False,
             "temperature": 0,
-            "max_tokens": 420,
+            "max_tokens": max_tokens,
             "metadata": {"task_hint": "file", "task_type": "file_processing"},
             "messages": [
                 {"role": "system", "content": system},
@@ -343,19 +348,64 @@ def _synthesize_overlay_plan(
     try:
         with urllib.request.urlopen(req, timeout=_omni_overlay_plan_timeout_s()) as resp:
             data = json.loads(resp.read().decode("utf-8") or "{}")
-    except Exception as e:  # noqa: BLE001
-        log.warning("overlay fact synthesize failed: %s", type(e).__name__)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("image structured planning failed: %s", type(exc).__name__)
         return {}
-    text = ""
-    try:
-        choices = data.get("choices") if isinstance(data, dict) else None
-        if isinstance(choices, list) and choices:
-            msg = (choices[0] or {}).get("message") if isinstance(choices[0], dict) else {}
-            if isinstance(msg, dict):
-                text = str(msg.get("content") or "").strip()
-    except Exception:
-        text = ""
-    parsed = _json_object(text)
+    choices = data.get("choices") if isinstance(data, dict) else None
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return {}
+    message = choices[0].get("message")
+    text = str(message.get("content") or "").strip() if isinstance(message, dict) else ""
+    return _json_object(text)
+
+
+def _evidence_queries(query: str, instruction: str) -> list[str]:
+    """Use an editable LLM prompt to decompose unrelated evidence domains."""
+    assets = _image_prompt_assets()
+    system = str(assets.get("evidence_system") or "").strip()
+    template = str(assets.get("evidence_user_template") or "").strip()
+    user = template.replace("{query}", (query or "").strip()[:1200])
+    user = user.replace("{instruction}", (instruction or "").strip()[:1200])
+    parsed = _omni_json_plan(system, user, max_tokens=320)
+    return _validated_evidence_queries(parsed)
+
+
+def _validated_evidence_queries(parsed: Any) -> list[str]:
+    """Validate a model-authored query list without interpreting its language."""
+    source = parsed if isinstance(parsed, dict) else {}
+    queries: list[str] = []
+    seen: set[str] = set()
+    for raw in source.get("queries") or []:
+        value = " ".join(str(raw or "").split())[:500]
+        key = value.casefold()
+        if len(value) < 8 or key in seen:
+            continue
+        seen.add(key)
+        queries.append(value)
+        if len(queries) >= 4:
+            break
+    return queries
+
+
+def _synthesize_overlay_plan(
+    search: Any,
+    *,
+    query: str = "",
+    instruction: str = "",
+) -> dict[str, Any]:
+    """Ask the chat combo for grounded content and generic visual-design decisions."""
+    notes = _search_notes_blob(search)
+    if not notes.strip():
+        return {}
+    assets = _image_prompt_assets()
+    system = str(assets.get("composition_system") or "").strip()
+    user_template = str(assets.get("composition_user_template") or "").strip()
+    if not system or not user_template:
+        return {}
+    user = user_template.replace("{query}", (query or "").strip()[:240])
+    user = user.replace("{instruction}", (instruction or "").strip()[:1200])
+    user = user.replace("{notes}", notes)
+    parsed = _omni_json_plan(system, user, max_tokens=720)
     facts: list[dict[str, str]] = []
     seen: set[str] = set()
     for item in parsed.get("facts") or []:
@@ -377,18 +427,49 @@ def _synthesize_overlay_plan(
                 "emphasis": emphasis if emphasis in {"primary", "important", "normal"} else "normal",
             }
         )
-        if len(facts) >= 4:
+        if len(facts) >= 5:
             break
     title = " ".join(str(parsed.get("title") or "").split())[:64]
     background_scene = " ".join(str(parsed.get("background_scene") or "").split())[:1200]
-    if not facts:
-        log.warning("overlay plan synthesize empty model=%r", model)
+    panels: list[dict[str, Any]] = []
+    for raw_panel in parsed.get("panels") or []:
+        if not isinstance(raw_panel, dict):
+            continue
+        panel_facts: list[dict[str, str]] = []
+        for item in raw_panel.get("facts") or []:
+            if not isinstance(item, dict):
+                continue
+            label = " ".join(str(item.get("label") or "").split())[:40]
+            value = " ".join(str(item.get("value") or "").split())[:72]
+            emphasis = str(item.get("emphasis") or "normal").strip().lower()
+            if not label or not value or _skip_structural_junk(value):
+                continue
+            panel_facts.append({
+                "label": label,
+                "value": value,
+                "emphasis": emphasis if emphasis in {"primary", "important", "normal"} else "normal",
+            })
+            if len(panel_facts) >= 4:
+                break
+        if not panel_facts:
+            continue
+        panels.append({
+            "title": " ".join(str(raw_panel.get("title") or "").split())[:64],
+            "facts": panel_facts,
+            "design": _safe_overlay_design(raw_panel.get("design")),
+        })
+        if len(panels) >= 6:
+            break
+    if not facts and not panels:
+        log.warning("overlay plan synthesize empty model=%r", _omni_overlay_plan_model())
         return {}
     return {
         "title": title,
         "facts": facts,
+        "panels": panels,
         "design": _safe_overlay_design(parsed.get("design")),
         "include_timestamp": bool(parsed.get("include_timestamp", True)),
+        "timestamp_label": " ".join(str(parsed.get("timestamp_label") or "").split())[:24],
         "background_scene": background_scene,
     }
 
@@ -547,25 +628,60 @@ def _overlay_payload(composition: dict[str, Any]) -> tuple[list[str], dict[str, 
         roles.append(str(fact.get("emphasis") or "normal"))
         if len(lines) >= 5:
             break
-    tz_name = (os.getenv("ASSISTANT_TZ") or os.getenv("TZ") or "Asia/Ho_Chi_Minh").strip()
-    try:
-        now = datetime.now(ZoneInfo(tz_name)).strftime("%H:%M · %Y-%m-%d")
-    except Exception:  # noqa: BLE001
-        now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H:%M · %Y-%m-%d")
     if composition.get("include_timestamp", True):
-        stamp = " ".join(str(assets.get("timestamp_label") or "").split())
-        if stamp:
-            lines.append(f"{stamp}: {now}")
+        timestamp = _overlay_timestamp_line(assets, label=composition.get("timestamp_label"))
+        if timestamp:
+            lines.append(timestamp)
             roles.append("meta")
     design = _safe_overlay_design(composition.get("design"))
     design["line_roles"] = roles[:6]
     return lines[:6], design
 
 
+def _overlay_timestamp_line(
+    assets: dict[str, Any] | None = None, *, label: Any = ""
+) -> str:
+    source = assets if isinstance(assets, dict) else _image_prompt_assets()
+    stamp = " ".join(str(label or source.get("timestamp_label") or "").split())[:24]
+    if not stamp:
+        return ""
+    tz_name = (os.getenv("ASSISTANT_TZ") or os.getenv("TZ") or "Asia/Ho_Chi_Minh").strip()
+    try:
+        now = datetime.now(ZoneInfo(tz_name)).strftime("%H:%M · %Y-%m-%d")
+    except Exception:  # noqa: BLE001
+        now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H:%M · %Y-%m-%d")
+    return f"{stamp}: {now}"
+
+
+def _overlay_panels_payload(composition: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert optional model-authored regions into validated renderer panels."""
+    payload: list[dict[str, Any]] = []
+    for panel in composition.get("panels") or []:
+        if not isinstance(panel, dict):
+            continue
+        lines, design = _overlay_payload({
+            "title": panel.get("title"),
+            "facts": panel.get("facts"),
+            "design": panel.get("design"),
+            "include_timestamp": False,
+        })
+        if lines:
+            payload.append({"overlay": lines, "overlay_design": design})
+    if payload and composition.get("include_timestamp", True):
+        timestamp = _overlay_timestamp_line(label=composition.get("timestamp_label"))
+        if timestamp and len(payload[-1]["overlay"]) < 6:
+            payload[-1]["overlay"].append(timestamp)
+            payload[-1]["overlay_design"]["line_roles"].append("meta")
+    return payload[:6]
+
+
 def _apply_composed_overlay(out: dict[str, Any], composition: dict[str, Any]) -> dict[str, Any]:
     """Post-process an image using the model-authored, renderer-validated design."""
+    panels = _overlay_panels_payload(composition)
     lines, design = _overlay_payload(composition)
-    if not lines:
+    if panels:
+        lines = []
+    if not lines and not panels:
         return out
     path = str(out.get("path") or out.get("file") or "")
     name = Path(path).name if path else ""
@@ -579,11 +695,12 @@ def _apply_composed_overlay(out: dict[str, Any], composition: dict[str, Any]) ->
                 "overlay": lines,
                 "overlay_corner": design.get("placement", "auto"),
                 "overlay_design": design,
+                "overlay_panels": panels or None,
                 "prompt": "",
             },
             timeout=45.0,
         )
-        out["overlay"] = len(lines)
+        out["overlay"] = sum(len(panel.get("overlay") or []) for panel in panels) if panels else len(lines)
     except Exception as e:  # noqa: BLE001
         log.warning("live overlay failed: %s", type(e).__name__)
     return out
@@ -1148,21 +1265,39 @@ def run_search_then_composed_image(
     if not classified:
         return None
     try:
-        from .classify_client import plan_image_instruction, plan_search_query
+        from .classify_client import plan_image_instruction, plan_search_queries
     except ImportError:
-        from classify_client import (  # type: ignore
-            plan_image_instruction,
-            plan_search_query,
-        )
-    query = plan_search_query(plan, user_ask)
+        from classify_client import plan_image_instruction, plan_search_queries  # type: ignore
+    queries = plan_search_queries(plan, user_ask)
     img_ins = plan_image_instruction(plan, user_ask)
-    search = run_web_search(query or user_ask)
+    planned_queries = _evidence_queries(user_ask, img_ins)
+    if planned_queries:
+        queries = planned_queries
+    log.info(
+        "composed image evidence plan queries=%s classifier_queries=%s",
+        len(queries),
+        len(plan_search_queries(plan, user_ask)),
+    )
+    query = queries[0] if queries else user_ask
+    searches: list[dict[str, Any]] = []
+    for search_query in queries or [user_ask]:
+        result = run_web_search(search_query)
+        if not result:
+            result = run_web_search(search_query)
+        if isinstance(result, dict):
+            result = dict(result)
+            result["_request_query"] = search_query
+            searches.append(result)
+        else:
+            log.warning("composed image evidence unavailable query_index=%s", len(searches))
+            return shortcut_consumed()
+    search: Any = searches
     scene = scene_prompt_from_instruction(img_ins)
     if not scene:
         return shortcut_consumed()
     composition = _synthesize_overlay_plan(
         search,
-        query=query or user_ask,
+        query=user_ask,
         instruction=img_ins or user_ask,
     )
     if not composition:

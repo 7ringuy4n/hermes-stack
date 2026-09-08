@@ -86,6 +86,30 @@ The requested time and subject scope is a hard boundary. If the user requests on
 
 Before the final office-file call, self-review the authored body and correct every violation: one visible title; no standalone repetition of the subject before or after that title; one requested language with locale-appropriate units and no decorative translation; one verified locality and non-future current observation timestamp; one consistent set of current values from the cited source; no unrequested scope; no unsupported interpretation or advice; and no negative/absolute/translated positioning of content. Keep a compact snapshot on one page when its content fits; remove decorative overflow, forced page breaks, and footer fragments that would create accidental extra pages. Balance the layout across the chosen page size: do not leave a large unused lower area when resizing the page, increasing useful spacing, or simplifying the layout would produce a deliberate composition.
 
+### Requested spatial layout
+
+Treat every explicitly positioned content request as a layout constraint, not
+as optional styling. Preserve all requested subjects and their relationships.
+For ordinary document content, express left/right, top/bottom, centered, row,
+column, and multi-region arrangements with normal-flow tables, table cells,
+sections, and page breaks that the target renderer supports. Rebalance widths,
+padding, typography, and page size when content grows; never omit a region or
+allow two regions to cover one another.
+
+When the user explicitly wants information placed over an image inside the
+document, compose that image before embedding it. Create or resolve the base
+image, then call `POST http://dispatcher:8090/v1/overlay` once with
+`send_zalo=false` and `overlay_panels`. Each panel contains `overlay` and
+`overlay_design`. Use a named placement for a conventional region, or a
+validated normalized `region` object (`x`, `y`, `width`, `height`, each from
+zero to one) for a precise or unusual location. Up to six regions are
+supported. Use `placement=auto` for unspecified positions so the renderer
+distributes them. Embed only the returned composed image in the final file;
+do not separately send its base or intermediate image.
+
+Do not simulate an image overlay with risky HTML positioning. The dispatcher
+owns image composition; the document renderer owns normal-flow page layout.
+
 ## Optional embedded visual (pdf|pptx|docx|xlsx|md)
 
 Use a generated visual only when the user explicitly requests an image/photo inside the document. An attractive interface, polished layout, or a verb such as draw/render does not by itself request a separate image artifact.

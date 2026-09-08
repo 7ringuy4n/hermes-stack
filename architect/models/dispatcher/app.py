@@ -189,6 +189,7 @@ class ImageReq(BaseModel):
     overlay: Optional[list[str]] = None  # short fact lines already fetched by the agent
     overlay_corner: Optional[str] = None
     overlay_design: Optional[dict[str, Any]] = None
+    overlay_panels: Optional[list[dict[str, Any]]] = None
 
 
 @app.get("/health")
@@ -660,6 +661,13 @@ def _apply_image_overlay(
     return len(facts)
 
 
+def _apply_image_overlay_panels(dest: Path, panels: list[dict[str, Any]] | None) -> int:
+    """Render validated information regions without automatic overlap."""
+    from overlay import apply_overlay_panels
+
+    return apply_overlay_panels(dest, panels)
+
+
 def _chown_media(path: Path) -> None:
     try:
         uid = int(os.environ.get("HERMES_UID") or "1000")
@@ -783,9 +791,11 @@ def image_overlay(req: ImageReq) -> dict[str, Any]:
     if not dest.is_file():
         raise HTTPException(404, f"image not found: {name}")
     corner = (req.overlay_corner or "auto").strip() or "auto"
-    overlay_n = _apply_image_overlay(
-        dest, req.overlay, corner=corner, design=req.overlay_design
-    )
+    overlay_n = _apply_image_overlay_panels(dest, req.overlay_panels)
+    if overlay_n == 0:
+        overlay_n = _apply_image_overlay(
+            dest, req.overlay, corner=corner, design=req.overlay_design
+        )
     result: dict[str, Any] = {
         "ok": True,
         "file": str(dest),

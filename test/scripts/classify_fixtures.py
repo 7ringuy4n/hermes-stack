@@ -102,6 +102,10 @@ FIXTURE_INFOGRAPHIC_VI = (
     "trên hình thể hiện ngắn gọn giá xăng E5 RON92 và E10 RON95 mới nhất và thông tin "
     "tình hình thời tiết hiện tại, bằng tiếng Việt."
 )
+FIXTURE_INFOGRAPHIC_SPLIT_VI = (
+    "Vẽ cho tôi hình thời tiết Hồ Chí Minh hiện tại có kèm thông tin thời tiết "
+    "bên trái, bên phải cập nhật giá xăng E5 RON92 và E10 RON95."
+)
 FIXTURE_INFOGRAPHIC_EN = (
     "Draw an image of Ho Chi Minh City based on the actual current weather. "
     "On the image, briefly show the latest E5 RON92 and E10 RON95 gasoline prices "
@@ -209,6 +213,13 @@ _PLANS = {
         "task_type": "media_generation",
         "response_mode": "ack_then_deliver",
         "instructions": [FIXTURE_INFOGRAPHIC_VI],
+    },
+    FIXTURE_INFOGRAPHIC_SPLIT_VI: {
+        "task_hint": "tool",
+        "execution_class": "async",
+        "task_type": "media_generation",
+        "response_mode": "ack_then_deliver",
+        "instructions": [FIXTURE_INFOGRAPHIC_SPLIT_VI],
     },
     FIXTURE_INFOGRAPHIC_EN: {
         "task_hint": "tool",
