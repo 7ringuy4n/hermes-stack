@@ -45,6 +45,9 @@ misleading configured-duration message.
 - Bind every PostgreSQL readiness probe to the configured database name. A
   role-only probe still reported ready but attempted a connection to a missing
   role-named database every five seconds, obscuring meaningful production logs.
+- Regenerate the committed Router Worker classifier fallback from the canonical
+  prompt parts and assert exact equivalence in the unit gate. This prevents a
+  normal update from rewriting tracked source when a prompt part changes.
 
 ## Verification
 
@@ -52,7 +55,7 @@ Verification requires the full local unit suite, a clean VPS lifecycle check,
 the two-destination real-channel test, owner failover, queue drain, and a final
 log/restart audit. A release must not advance while any of those checks fail.
 
-This release gate completed 102 unit scripts without failure, exercised direct
+This release gate completed 104 unit scripts without failure, exercised direct
 and quoted cancellation in private and group scopes, delivered eight ordered
 messages across two concurrent destinations, retrieved exact records from a
 disposable ten-million-row corpus with indexed sub-millisecond queries, and
@@ -64,3 +67,5 @@ independent visual review.
 Future concurrency labs must retain structured evidence for both delivery and
 semantic outcome. Any asynchronous layer that waits on a lower-level task must
 also define how that task is fenced or cancelled when the wait expires.
+Changes to classifier prompt parts must regenerate the committed fallback in
+the same change; exact bake equivalence is a release invariant.

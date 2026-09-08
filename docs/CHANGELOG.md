@@ -24,6 +24,9 @@
 - Point PostgreSQL readiness probes at the configured application database,
   eliminating a continuous fatal-log stream caused by the client defaulting
   to a non-existent database named after its role.
+- Keep the committed Router Worker classifier fallback synchronized with its
+  prompt-part source and fail the unit gate when the baked copy is stale,
+  preventing routine updates from dirtying a production checkout.
 
 ## 2026-09-07 — release queue, scheduler, and lifecycle hardening
 

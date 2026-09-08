@@ -22,6 +22,16 @@ def main() -> int:
     skill = ROOT / "hermes" / "main" / "skills" / "classify"
     env = json.loads((skill / "classify.json").read_text(encoding="utf-8"))
     system = assemble_classify_system(skill, env)
+    baked_path = (
+        ROOT / "architect" / "models" / "router-worker" / "config" / "classify.json"
+    )
+    baked = json.loads(baked_path.read_text(encoding="utf-8"))
+    expected_bake = dict(env)
+    expected_bake["system"] = system
+    assert baked == expected_bake, (
+        "router-worker classify bake is stale; run "
+        "scripts/main/sync_router_worker_skills.py"
+    )
     assert system.startswith("HARD PRIORITY RULES"), system[:120]
     assert "outer timing" in system
     assert "RENDER: composed-image" in system
