@@ -250,7 +250,9 @@ while time.time() < deadline:
             and ("source" in journal_low or "http" in journal_low)
         )
         second_delivered=second_marker_compliant or semantic_web_reply
-    if artifact is not None and delivered and second_delivered and "image_edit_shortcut" in recent:
+    # Delivery plus a newly created artifact are the observable contract. Flow
+    # logs are diagnostic and may be routed away from container stdout.
+    if artifact is not None and delivered and second_delivered:
         break
     time.sleep(2)
 

@@ -2795,6 +2795,8 @@ class ZaloAdapter(BasePlatformAdapter):
                 thread_type=thread_type,
                 bare_text=current,
                 plan=plan,
+                media_urls=list(media_urls or []),
+                has_image_attachment=has_image_attachment,
                 schedule_fire=schedule_fire,
             )
         origin = {
@@ -4523,7 +4525,14 @@ class ZaloAdapter(BasePlatformAdapter):
                         arm_first=True,
                     )
                     if not idle:
-                        raise TimeoutError("Zalo agent session did not become idle")
+                        # ``handle_message`` starts the agent in a separate base
+                        # adapter task. Merely abandoning this queue coroutine
+                        # leaves that task consuming models and able to deliver
+                        # a stale response after the FIFO has advanced. Fence it
+                        # before releasing the durable claim.
+                        session_key = self._event_session_key(event)
+                        await self.cancel_session_processing(session_key)
+                        raise RuntimeError("agent session did not become idle")
                     await self._as_autosend_late_files(tid, thread_type)
                     delivery_event = self._as_part_delivered.get(tid)
                     delivered = bool(delivery_event is not None and delivery_event.is_set())
@@ -4561,11 +4570,29 @@ class ZaloAdapter(BasePlatformAdapter):
             try:
                 await asyncio.wait_for(turn_task, timeout=turn_timeout)
             except asyncio.TimeoutError:
-                logger.warning(
-                    "Zalo: queue turn timeout thread=%s after %.0fs — release for next message",
-                    tid,
-                    turn_timeout,
-                )
+                # An outer wait timeout cancels ``turn_task``. A TimeoutError
+                # raised by nested work must not be mislabeled as the configured
+                # queue timeout.
+                outer_timeout = turn_task.cancelled()
+                if outer_timeout:
+                    logger.warning(
+                        "Zalo: queue turn timeout thread=%s after %.0fs — release for next message",
+                        tid,
+                        turn_timeout,
+                    )
+                    try:
+                        await self.cancel_session_processing(self._event_session_key(event))
+                    except Exception:
+                        logger.warning(
+                            "Zalo: timed-out agent cancellation failed thread=%s",
+                            tid,
+                            exc_info=True,
+                        )
+                else:
+                    logger.warning(
+                        "Zalo: queued agent operation timed out thread=%s — release for next message",
+                        tid,
+                    )
                 # Unblock compound waiters / outbound paths that key off delivery.
                 try:
                     self._as_compound_mark_delivered(tid)
@@ -4574,7 +4601,23 @@ class ZaloAdapter(BasePlatformAdapter):
                 msg = self._as_ux_line(
                     "ZALO_QUEUE_TURN_TIMEOUT_MSG",
                     ("queue", "turn_timeout"),
-                    "Xin lỗi, tin trước xử lý quá lâu (hơn 15 phút) nên mình dừng lại. Bạn gửi tin tiếp theo nhé.",
+                    "The request took too long and was stopped. You can send the next message now.",
+                )
+                try:
+                    await self._as_gate_announce(tid, thread_type, msg)
+                except Exception:
+                    pass
+            except RuntimeError as exc:
+                if str(exc) != "agent session did not become idle":
+                    raise
+                logger.warning(
+                    "Zalo: agent session stayed active past its deadline thread=%s — cancelled",
+                    tid,
+                )
+                msg = self._as_ux_line(
+                    "ZALO_QUEUE_TURN_TIMEOUT_MSG",
+                    ("queue", "turn_timeout"),
+                    "The request took too long and was stopped. You can send the next message now.",
                 )
                 try:
                     await self._as_gate_announce(tid, thread_type, msg)

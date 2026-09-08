@@ -10,6 +10,19 @@ History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
 
+## 2026-09-08 — bounded queue-session recovery
+
+See `history/2026-09-08/README.md` for the production-gate failure in which a
+background agent session remained active after a queue worker expected terminal
+delivery. The fix fences the background task before releasing durable work,
+separates nested operation timeouts from the queue deadline, and strengthens the
+live concurrency test to reject semantically wrong replies.
+The same gate found two additional release blockers: queued media routing
+dropped the staged source arguments before the host shortcut, and document
+tests accepted a PDF without proving it was readable or visually balanced.
+The dated record covers the routed quoted-image edit, generic sparse-page
+compaction, and render-based PDF evaluation added to prevent recurrence.
+
 ## 2026-09-07 — release queue, scheduler, and lifecycle hardening
 
 See `history/2026-09-07/README.md` for standalone Compose secret hydration,

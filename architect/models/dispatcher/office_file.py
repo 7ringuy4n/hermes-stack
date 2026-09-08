@@ -321,10 +321,52 @@ def write_pdf_from_html(dest: Path, html: str) -> Path:
             from weasyprint import HTML
 
             HTML(string=doc, base_url=base).write_pdf(str(dest))
-        return dest
+        return _compact_sparse_single_page_pdf(dest)
     except Exception as e:  # noqa: BLE001
         log.warning("weasyprint html->pdf skipped: %s", type(e).__name__)
-    return _write_pdf_pymupdf_story(dest, doc)
+    return _compact_sparse_single_page_pdf(_write_pdf_pymupdf_story(dest, doc))
+
+
+def _compact_sparse_single_page_pdf(dest: Path) -> Path:
+    """Crop accidental lower-page void from compact, text-bearing one-pagers.
+
+    Model-authored HTML can correctly use normal flow yet occupy only the upper
+    half of an A4 page. For a single-page information artifact with several
+    text blocks, preserve a deliberate footer margin and reduce the crop box.
+    Multi-page documents, image-only pages, and already balanced pages retain
+    their authored geometry.
+    """
+    try:
+        import pymupdf
+
+        doc = pymupdf.open(str(dest))
+        if len(doc) != 1:
+            doc.close()
+            return dest
+        page = doc[0]
+        page_height = float(page.rect.height)
+        blocks = [
+            block
+            for block in page.get_text("blocks")
+            if len(block) >= 5 and str(block[4] or "").strip()
+        ]
+        if len(blocks) < 4:
+            doc.close()
+            return dest
+        content_bottom = max(float(block[3]) for block in blocks)
+        if content_bottom >= page_height * 0.68:
+            doc.close()
+            return dest
+        target_height = max(page_height * 0.55, content_bottom + 36.0)
+        target_height = min(page_height, target_height)
+        page.set_cropbox(pymupdf.Rect(0, 0, float(page.rect.width), target_height))
+        tmp = dest.with_name(dest.stem + ".compact.pdf")
+        doc.save(str(tmp), garbage=3, deflate=True)
+        doc.close()
+        tmp.replace(dest)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("single-page PDF compaction skipped: %s", type(exc).__name__)
+    return dest
 
 
 def _write_pdf_pymupdf_story(dest: Path, html: str) -> Path:

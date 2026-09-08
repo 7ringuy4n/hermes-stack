@@ -34,6 +34,12 @@ def main() -> int:
     pdf = write_pdf(OUT / "hero.pdf", html)
     assert pdf.is_file() and pdf.stat().st_size > 800, pdf.stat().st_size
     assert pdf.read_bytes()[:4] == b"%PDF"
+    import pymupdf
+
+    compact_doc = pymupdf.open(str(pdf))
+    assert len(compact_doc) == 1
+    assert compact_doc[0].rect.height < pymupdf.paper_rect("a4").height * 0.8
+    compact_doc.close()
 
     # Placeholders must not appear when HTML is authored cleanly
     bad = write_pdf(

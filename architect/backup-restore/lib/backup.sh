@@ -190,7 +190,7 @@ assistant_restart_postgres_clients() {
   local i
   docker start postgres >/dev/null 2>&1 || true
   for i in $(seq 1 30); do
-    docker exec postgres pg_isready -U "${MEMORY_DB_USER:-hermes}" >/dev/null 2>&1 && break
+    docker exec postgres pg_isready -U "${MEMORY_DB_USER:-hermes}" -d "${MEMORY_DB_NAME:-hermes_memory}" >/dev/null 2>&1 && break
     sleep 1
   done
   docker restart memory ingest embedding authz 2>/dev/null || true
@@ -308,7 +308,7 @@ assistant_restore_postgres() {
   assistant_stop_services jobs jobs-worker
   assistant_stop_hermes
   for i in $(seq 1 30); do
-    docker exec "$pg" pg_isready -U "$dbuser" >/dev/null 2>&1 && break
+    docker exec "$pg" pg_isready -U "$dbuser" -d "${MEMORY_DB_NAME:-hermes_memory}" >/dev/null 2>&1 && break
     sleep 2
   done
   docker exec -e PAGER=cat "$pg" psql -U "$dbuser" -d postgres -v ON_ERROR_STOP=on \
@@ -886,7 +886,7 @@ PY
   echo "==> live checks"
   pg="$(assistant_container postgres || true)"
   if [[ -n "$pg" ]]; then
-    docker exec "$pg" pg_isready -U "${MEMORY_DB_USER:-hermes}" || exit 1
+    docker exec "$pg" pg_isready -U "${MEMORY_DB_USER:-hermes}" -d "${MEMORY_DB_NAME:-hermes_memory}" || exit 1
   fi
   redis="$(assistant_container redis || true)"
   if [[ -n "$redis" ]]; then
