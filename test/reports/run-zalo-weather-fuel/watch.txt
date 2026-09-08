@@ -1,3 +1,5 @@
 job_done=yes
 media_sent=yes
 delivery_recorded=yes
+evidence_decomposed=yes
+planner_json_complete=yes
