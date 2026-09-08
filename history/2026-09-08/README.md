@@ -55,7 +55,7 @@ Verification requires the full local unit suite, a clean VPS lifecycle check,
 the two-destination real-channel test, owner failover, queue drain, and a final
 log/restart audit. A release must not advance while any of those checks fail.
 
-This release gate completed 104 unit scripts without failure, exercised direct
+This release gate completed 103 unit scripts without failure, exercised direct
 and quoted cancellation in private and group scopes, delivered eight ordered
 messages across two concurrent destinations, retrieved exact records from a
 disposable ten-million-row corpus with indexed sub-millisecond queries, and
