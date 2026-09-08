@@ -7,6 +7,8 @@
   logs and user-safe recovery notices describe the actual failure boundary.
 - Require live DM/group concurrency evidence to validate both source-correlated
   delivery and the expected response content.
+- Align the documented inbound queue capacity with its runtime default and
+  migrate only the retired persisted default while preserving custom limits.
 - Prioritize the latest self-contained request over historical context and avoid
   unrelated tools for direct conversational answers.
 - Exclude incomplete user-only exchanges from model-visible session hydration;

@@ -92,6 +92,9 @@ attribution.
   independent semantic score, and require complete queue drain.
 - Resolve private runtime identities from protected state and keep numeric
   identities out of source and reports.
+- Normalize the example and operator documentation to the runtime queue cap.
+  Environment cleanup upgrades only the exact retired default, leaving
+  operator-selected capacities unchanged.
 
 ### Verification
 
@@ -100,6 +103,9 @@ resolution error. The live capability gate delivered both weather answers,
 attributed both searches to the expected combo, delivered two valid and
 content-isolated DOCX packages, received a perfect semantic evaluation, and
 left both destination queues empty without a queue timeout.
+
+The environment migration unit gate also proved that the retired queue cap is
+upgraded and a custom cap remains byte-for-byte unchanged.
 
 ## Prevention
 
