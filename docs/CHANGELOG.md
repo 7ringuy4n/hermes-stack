@@ -14,6 +14,8 @@
   history so a quoted text request cannot resume an older image/file task.
 - Run every indexed live gate through the shared credential-free VPS-local
   transport, including latency and file-security matrices.
+- Keep case 17 on the documented Zalo bridge/SSE path; the direct Traefik ping
+  remains an optional comparison rather than release evidence.
 
 ## 2026-09-08 19:12 +07 — complete structured multi-region plans
 

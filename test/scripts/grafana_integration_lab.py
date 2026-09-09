@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_stack import connect, sudo_bash  # noqa: E402
+from deploy_stack import LOCAL_MODE, connect, sudo_bash  # noqa: E402
 from sanitize import sanitize
 
 if hasattr(sys.stdout, "buffer"):
@@ -36,7 +36,7 @@ def note(name: str, status: str, detail: str = "") -> None:
 
 
 def main() -> int:
-    if not os.environ.get("ASSISTANT_SSH_HOST"):
+    if not LOCAL_MODE and not os.environ.get("ASSISTANT_SSH_HOST"):
         print("SKIP: set ASSISTANT_SSH_* to run the lab")
         return 0
     OUT.mkdir(parents=True, exist_ok=True)

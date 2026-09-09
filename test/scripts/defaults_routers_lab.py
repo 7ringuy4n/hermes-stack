@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from deploy_stack import connect, sudo_bash  # noqa: E402
+from deploy_stack import LOCAL_MODE, connect, sudo_bash  # noqa: E402
 from sanitize import sanitize
 
 if hasattr(sys.stdout, "buffer"):
@@ -37,7 +37,7 @@ def note(name: str, status: str, detail: str = "") -> None:
 
 
 def main() -> int:
-    if not os.environ.get("ASSISTANT_SSH_HOST"):
+    if not LOCAL_MODE and not os.environ.get("ASSISTANT_SSH_HOST"):
         print("SKIP: set ASSISTANT_SSH_* to run the lab")
         return 0
     OUT.mkdir(parents=True, exist_ok=True)
@@ -62,13 +62,19 @@ docker exec assistant-hermes-1 python3 -c "import urllib.request; urllib.request
 echo "mr_health=$(curl -sS -m 5 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:8096/health || echo fail)"
 echo "omni_root=$(curl -sS -m 5 -o /dev/null -w '%{{http_code}}' http://127.0.0.1:20129/ || echo fail)"
 KEY="${{API_SERVER_KEY:-}}"
+if [[ -z "$KEY" ]]; then
+  HERMES_C=$(docker ps --filter label=com.docker.compose.service=hermes --format '{{{{.Names}}}}' | head -1)
+  if [[ -n "$HERMES_C" ]]; then
+    KEY=$(docker exec "$HERMES_C" sh -lc 'printf "%s" "${{API_SERVER_KEY:-${{GATEWAY_API_KEYS%%,*}}}}"')
+  fi
+fi
 if [[ -n "$KEY" ]]; then
-  t0=$(date +%s%3N)
+  t0=$(python3 -c 'import time; print(time.monotonic_ns() // 1000000)')
   code=$(curl -sS -m 60 -o /tmp/def-ping.json -w "%{{http_code}}" \
     -X POST http://127.0.0.1:8080/v1/chat/completions \
     -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
     -d '{{"model":"hermes","messages":[{{"role":"user","content":"ping reply OK"}}],"max_tokens":8}}' || echo 000)
-  t1=$(date +%s%3N)
+  t1=$(python3 -c 'import time; print(time.monotonic_ns() // 1000000)')
   echo "PING_HTTP=$code PING_MS=$((t1-t0))"
 else
   echo "PING_HTTP=SKIP PING_MS=0"

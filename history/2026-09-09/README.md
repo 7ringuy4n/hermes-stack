@@ -83,6 +83,10 @@ sanitization boundary.
 Latency sampling uses Python's monotonic nanosecond clock converted to
 milliseconds rather than implementation-specific `date %3N` formatting, which
 uutils can emit at an unexpected width and corrupt duration arithmetic.
+The numbered case index now invokes the documented bridge/SSE latency test;
+the direct Traefik sampler remains an optional diagnostic and cannot substitute
+for end-to-end Zalo delivery evidence. Grafana and router-default gates also
+honor VPS-local mode instead of silently skipping it.
 The scheduled-image gate correlates flow telemetry from the active replicas'
 `agent.log` files as well as Docker stdout because the production Hermes image
 persists info-level plugin events to per-replica logs.

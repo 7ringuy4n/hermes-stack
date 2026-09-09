@@ -29,7 +29,7 @@ VPS: list[tuple[str, str]] = [
     ("omni_combo_preflight.py", "38"),
     ("zalo_tn_greeting_inject.py", "32"),
     ("zalo_tn_visual_weather_pdf_inject.py", "39"),
-    ("zalo_latency_lab.py", "17"),
+    ("zalo_user_latency.py", "17"),
     ("zalo_weather_fuel_lab.py", "26"),
     ("zalo_scheduled_composed_image_lab.py", "27-fire"),
     ("file_pipeline_security_lab.py", "19"),
