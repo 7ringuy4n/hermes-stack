@@ -34,6 +34,11 @@ boundary: old extracts were appended to every later text-only request, causing
 new URL, archive, and DOCX turns to take unrelated long paths and block their
 conversation queue. Recall is now conservative and explicit; the archive and
 post-restart gates also wait for real terminal/bridge readiness evidence.
+The resumed 131-case release gate exposed a cross-process autosend gap:
+Dispatcher delivered the requested PDF and claimed it in the shared session,
+then the adapter skipped that claim and fell through to an older embedded hero
+image. A claimed rich document now terminates that turn's older-file scan, and
+the live oracle checks acknowledged source-correlated image delivery directly.
 
 ## 2026-09-08 — multi-domain spatial composition
 

@@ -13,6 +13,11 @@ for unquoted text: a prior extract could divert a fresh archive, URL, image, or
 DOCX request and leave later DM work queued. Recall now requires an explicit
 back-reference, schedule creation preserves its original text until execution,
 and live restart/archive gates wait for terminal source-correlated evidence.
+The resumed full gate found one PDF-only turn where Dispatcher correctly sent
+and claimed the PDF but adapter late-autosend continued to the older embedded
+hero image and exposed it as a second attachment. Claimed composite documents
+now terminate older sidecar discovery. The gate records filesystem sidecars as
+diagnostics but fails only on acknowledged source-correlated image delivery.
 
 ## 2026-09-08 19:12 +07 — composed-plan completion budget
 

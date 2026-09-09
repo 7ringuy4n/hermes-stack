@@ -6944,14 +6944,20 @@ class ZaloAdapter(BasePlatformAdapter):
             try:
                 dest_send = dest
                 try:
-                    from .autosend import existing_media_path
+                    from .autosend import claimed_composite_is_terminal, existing_media_path
                 except ImportError:
-                    from autosend import existing_media_path  # type: ignore
+                    from autosend import claimed_composite_is_terminal, existing_media_path  # type: ignore
                 resolved = existing_media_path(str(dest))
                 if resolved:
                     dest_send = Path(resolved)
                 if not self._as_autosend_file_claim(dest_send, tid):
                     logger.debug("Zalo: autosend skip already-claimed %s", dest_send.name)
+                    if claimed_composite_is_terminal(str(dest_send)):
+                        logger.info(
+                            "Zalo: autosend final document already delivered; "
+                            "suppress older sidecar files for this turn"
+                        )
+                        break
                     continue
                 meta_send = {
                     **meta,

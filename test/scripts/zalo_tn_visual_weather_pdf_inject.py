@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -60,7 +61,12 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     c = connect()
     marker = f"lab-visual-weather-pdf-{int(time.time())}"
-    report: dict = {"ts": ts(), "user": TN_ID, "message": MSG, "marker": marker}
+    report: dict = {
+        "ts": ts(),
+        "target": "runtime-authorized-user",
+        "message": MSG,
+        "marker": marker,
+    }
     try:
         before = _clean(
             sudo_bash(c, "ls -1t /data/assistant/media/out/*.pdf 2>/dev/null | head -1 || true")
@@ -196,6 +202,21 @@ print(evaluation[:1600])
 print("PDF_VISUAL_EVALUATION_END")
 print("PDF_STRUCTURE_OK")
 PY
+ZALO_API_ID=$(docker ps \
+  --filter label=com.docker.compose.service=zalo-api \
+  --format '{{{{.ID}}}}' | head -1)
+docker exec -e SOURCE_ID={marker!r} "$ZALO_API_ID" python3 -c '
+import os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as c:
+    row = c.execute(
+        "select count(*) from zalo_message_history "
+        "where event='"'"'delivered'"'"' "
+        "and meta->>'"'"'attachment_kind'"'"'='"'"'image'"'"' "
+        "and meta->>'"'"'source_message_id'"'"'=%s",
+        (os.environ["SOURCE_ID"],),
+    ).fetchone()
+print("DELIVERED_IMAGE_COUNT", int(row[0] if row else 0))
+'
 """
         print(f"INJECTED wait up to {WAIT_S}s", flush=True)
         out = _clean(sudo_bash(c, remote, timeout=WAIT_S + 120))
@@ -244,6 +265,8 @@ PY
         )
         unexpected_image = "UNEXPECTED_NEW_IMAGE" in out
         report["unexpected_image"] = unexpected_image
+        delivered_image = not re.search(r"DELIVERED_IMAGE_COUNT\s+0(?:\s|$)", out)
+        report["unexpected_image_delivery"] = delivered_image
 
         out_path = OUT / f"report-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
         out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -257,8 +280,8 @@ PY
         if greeting_leak:
             print("FAIL hello/help leak without file delivery", flush=True)
             return 1
-        if unexpected_image:
-            print("FAIL requested PDF also produced a standalone image", flush=True)
+        if delivered_image:
+            print("FAIL requested PDF also delivered a standalone image", flush=True)
             return 1
         if not new_pdf:
             print("FAIL no new pdf produced (quota/rate-limit → skip)", flush=True)

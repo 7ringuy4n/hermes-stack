@@ -52,6 +52,11 @@
   shape and waits for its terminal source-correlated reply, post-restart Zalo
   injection waits for a logged-in SSE owner, and refusal evidence uses a unique
   temporary file per run.
+- Stop Zalo late autosend when Dispatcher has already claimed the newest rich
+  document. An older image embedded while building that PDF/DOCX/PPTX/XLSX is
+  a sidecar, not a second user-visible result. The visual-PDF gate now proves
+  the absence of a source-correlated image delivery instead of confusing a
+  private build artifact with transport delivery.
 
 ## 2026-09-08 19:12 +07 — complete structured multi-region plans
 

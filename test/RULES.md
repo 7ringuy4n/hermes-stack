@@ -195,6 +195,12 @@ image, require one dispatcher-composed image with all requested regions, embed
 only that final image, and reject overlap, missing regions, risky absolute CSS,
 or separately delivered intermediate images.
 
+When Dispatcher has already delivered and claimed a final PDF or Office file,
+adapter late-autosend must stop at that claimed document and must not expose an
+older embedded image as another attachment. Filesystem sidecars are diagnostic;
+the release oracle fails on an acknowledgement-backed image delivery correlated
+to the document-only source request.
+
 For composed images with several information regions, also reject an empty or
 truncated structured composition plan. The live gate must observe a complete
 planner response before accepting generated-file and delivery evidence.

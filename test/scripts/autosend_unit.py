@@ -44,6 +44,7 @@ def main() -> int:
         return 1
     from autosend import (  # noqa: E402
         bridge_response_ok,
+        claimed_composite_is_terminal,
         existing_media_path,
         file_ready_for_send,
         looks_invalid_param,
@@ -73,6 +74,15 @@ def main() -> int:
     if bridge_response_ok({}):
         print("FAIL empty body")
         return 1
+    if not claimed_composite_is_terminal("/tmp/weather-report.pdf"):
+        print("FAIL claimed PDF not terminal")
+        return 1
+    if not claimed_composite_is_terminal("/tmp/weather-report.docx"):
+        print("FAIL claimed DOCX not terminal")
+        return 1
+    if claimed_composite_is_terminal("/tmp/weather-hero.jpg"):
+        print("FAIL image sidecar treated as final document")
+        return 1
     import tempfile
 
     if video_dedupe_stem("city.mp4") != video_dedupe_stem("city.zalo.mp4"):
@@ -94,6 +104,16 @@ def main() -> int:
         if Path(hit).name != "scene.png":
             print("FAIL sibling png")
             return 1
+    adapter_source = (
+        ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py"
+    ).read_text(encoding="utf-8")
+    claimed_guard = adapter_source.find(
+        "if claimed_composite_is_terminal(str(dest_send)):"
+    )
+    next_candidate = adapter_source.find("continue", claimed_guard)
+    if claimed_guard < 0 or "break" not in adapter_source[claimed_guard:next_candidate]:
+        print("FAIL adapter can fall through from claimed document to image sidecar")
+        return 1
     assert canonical_send_name("/tmp/report.docx") == "report.docx"
     assert canonical_send_name("/tmp/send-report.docx") == "report.docx"
     assert canonical_send_name("/tmp/send-send-report.docx") == "report.docx"
