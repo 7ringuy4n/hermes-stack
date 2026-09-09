@@ -74,3 +74,67 @@ checkpoint file was added.
    merge requests while retaining the newest conflicting change, and provide
    the documented main-branch update instructions.
 
+## Second pause checkpoint — 2026-09-09 21:10 +07:00
+
+### New committed candidates
+
+- `6359c29` stops a claimed rich document from falling through to an older
+  embedded image sidecar.
+- `7b60e04` preserves the restrictive repository Office wrappers.
+- `9ac1998` isolates the visual-PDF result parser from live SSH dependencies.
+- `6d72f83` records bundled `pdf`, `docx`, and `xlsx` names in each replica's
+  `.curator_suppressed` file before image-level skill sync and strengthens the
+  rendered-PDF release oracle.
+- `27c24bf` defines current-condition practical tips as unrequested
+  recommendations and adds a deterministic scope regression check.
+
+Both Hermes replicas were updated through `bash run.sh update hermes` after
+verified backups. Each active replica retained `pdf-tools-local`, contained the
+three curator suppression entries, and had no categorized or `official` PDF
+duplicate. No merge request has been created or merged.
+
+### Focused verification
+
+The first collision-free focused PDF run produced one readable document, no
+acknowledged image sidecar, and a 9/10 page without blocking visual defects, but
+it added a practical-advice strip. The strengthened scope contract and oracle
+then rejected that pattern. A second focused run on `27c24bf` passed with one
+current-observation-only PDF, no image sidecar, an 8/10 rendered-page score,
+and no blocking overlap, clipping, or unreadable content.
+
+### Interrupted 132-case run
+
+Adding the separately counted visual-PDF parser unit expanded the current case
+index from 131 to 132. The latest run passed cases `1/132` through `110/132`.
+Case `111/132` (`zalo_tn_visual_weather_pdf_inject.py`) failed because no new
+PDF appeared within its 240-second artifact window. Its durable image-delivery
+audit succeeded with count zero; this was not a sidecar regression.
+
+Hermes logs show that the request entered the safe file-generation path, ran
+search, then a terminal action waited for approval and ended after roughly 314
+seconds with `BLOCKED: Command timed out without user response`. The agent turn
+finished after roughly 402 seconds, after the case oracle had already returned.
+Case `112/132` began while that stale agent turn was still active and failed;
+treat it as contaminated downstream evidence until rerun in isolation. Case
+`113/132` was interrupted immediately at the user's pause request and is not
+valid evidence. No test-script process remained after interruption, and the
+incomplete run did not write a new authoritative case-index summary.
+
+### Resume from this point
+
+1. Re-read all mandatory repository rules and histories, including this
+   checkpoint. Use candidate `27c24bf8649ffa5c48d4dddd69350ea60bbc41bf`.
+2. Inspect the Router Worker/Omni request trace for the case-111 terminal call
+   around the recorded failure boundary. Determine why an ordinary authorized
+   Dispatcher office-file call entered a user-approval wait. Fix the core
+   routing/tool contract rather than extending the artifact deadline blindly.
+3. Recheck queue/session drainage, Zalo SSE ownership, both Hermes replicas,
+   and the absence of bundled Office-skill duplicates. Rerun case 111 and the
+   latency case independently before starting another matrix.
+4. Run the complete numbered 132-case matrix from the beginning with a
+   900-second per-case process timeout and the protected runtime target. Require
+   a new uninterrupted `Fails: 0` summary; the partial run is not release
+   evidence.
+5. Complete the full Docker/Hermes/Zalo/OmniRouter/Router Worker/Dispatcher log
+   audit, commit valid evidence, and only then follow the develop/main merge
+   sequence from the earlier resume procedure.
