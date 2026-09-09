@@ -176,10 +176,11 @@ else:
     raise SystemExit("FAIL_NO_SOURCE_CORRELATED_IMAGE")
 
 logs = ""
-for name in subprocess.check_output(
+hermes_names = subprocess.check_output(
     ["docker", "ps", "--filter", "label=com.docker.compose.service=hermes", "--format", "{{{{.Names}}}}"],
     text=True,
-).splitlines():
+).splitlines()
+for name in hermes_names:
     captured = subprocess.run(
         ["docker", "logs", "--since", since_iso, name],
         text=True,
@@ -187,6 +188,18 @@ for name in subprocess.check_output(
         capture_output=True,
     )
     logs += captured.stdout + captured.stderr
+    replica_id = subprocess.check_output(
+        ["docker", "inspect", "-f", "{{{{.Config.Hostname}}}}", name],
+        text=True,
+    ).strip()
+    agent_log = Path("/data/assistant/replicas") / replica_id / "logs" / "agent.log"
+    if agent_log.is_file():
+        local_start = datetime.fromtimestamp(started - 5).strftime("%Y-%m-%d %H:%M:%S")
+        recent_lines = []
+        for line in agent_log.read_text(encoding="utf-8", errors="replace").splitlines():
+            if len(line) >= 19 and line[:19] >= local_start:
+                recent_lines.append(line)
+        logs += "\n".join(recent_lines)
 if "search_composed_image_shortcut" not in logs:
     raise SystemExit("FAIL_COMPOSED_SHORTCUT_NOT_OBSERVED")
 if "image structured planning invalid" in logs:

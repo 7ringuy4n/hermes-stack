@@ -64,6 +64,9 @@ instead of a retired wording fragment.
 The live-test harness also has an explicit VPS-local mode, allowing the numbered
 gates to run on the target without placing SSH credentials in command arguments
 or installing Paramiko on the production host.
+The scheduled-image gate correlates flow telemetry from the active replicas'
+`agent.log` files as well as Docker stdout because the production Hermes image
+persists info-level plugin events to per-replica logs.
 
 ## Verification
 
