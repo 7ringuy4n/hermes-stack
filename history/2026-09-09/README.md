@@ -86,6 +86,22 @@ current-weather requests answered through `execute_code` using conversation
 context instead of making a new call through the operator-owned `web-search`
 combo. Its answer looked plausible, but attribution correctly rejected it.
 
+The first clean, uninterrupted full-suite run exposed a cross-case attachment
+recall defect. Every unquoted text-only turn received the last extracts even
+when it was a fresh URL, image, schedule, or DOCX request. A representative
+archive test also sent a list where the real adapter expects one media object
+and exited after extraction without waiting for the injected chat turn. That
+unrelated generic turn occupied the DM queue for minutes, delayed the following
+concurrency cases, and sent document creation into Hermes-local tooling instead
+of the Dispatcher. An OpenBao lifecycle case also restarted the active Zalo
+owner immediately before the URL-refusal gate; the test endpoint accepted an
+event before an SSE consumer was ready, so no user turn existed to answer.
+
+Search-backed schedule creation had a separate evidence mismatch: the runtime
+current-search contract was appended before persistence. The schedule executed
+correctly, but `context.original_request` no longer matched the user's text and
+the strict gate could not find the pending record.
+
 ## Technical detail
 
 - `architect/models/dispatcher/image_backends.py:L20` imports the shared
@@ -157,6 +173,16 @@ combo. Its answer looked plausible, but attribution correctly rejected it.
   with the current request plus a trusted execution contract: call native
   `web_search` now, do not reuse prior results, and do not bypass routing with
   code, shell, or direct HTTP libraries.
+- Apply that current-search contract only to an executing immediate or fired
+  turn. Preserve schedule-create text byte-for-byte in `original_request`.
+- Append recalled attachment extracts only when the new text explicitly refers
+  to an earlier file, sheet, image, archive, or short elliptical follow-up.
+  Output filenames in fresh create requests and remote URLs are not references.
+- Exercise archive chat delivery with the adapter's real single-media object
+  and wait for a non-busy source-correlated terminal response before the next
+  case. Wait for a logged-in bridge with an SSE owner after lifecycle restarts,
+  and use per-run refusal evidence files so repeated privileged runs cannot
+  collide in `/tmp`.
 
 ## Prevention
 

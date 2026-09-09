@@ -65,7 +65,7 @@ set -euo pipefail
 cp -f /tmp/hs-arch/*.zip /data/assistant/lab-samples/
 export TN={TN_ID!r}
 python3 - <<'PY'
-import json, time, urllib.request
+import json, subprocess, time, urllib.request
 from pathlib import Path
 
 TN = {TN_ID!r}
@@ -85,11 +85,12 @@ def post(url, body, timeout=90):
         return json.loads(r.read().decode() or '{{}}')
 
 def inject(text, media):
+    source_id = 'arch-' + str(int(time.time()*1000))
     payload = {{
         'type': 'message', 'threadId': TN, 'threadType': 'user',
         'senderId': TN, 'senderName': 'Tn', 'text': text,
-        'messageId': 'arch-' + str(int(time.time()*1000)),
-        'attachments': media, 'media': media,
+        'messageId': source_id,
+        'attachments': [media], 'media': media,
     }}
     req = urllib.request.Request(
         'http://127.0.0.1:8787/inject-event',
@@ -97,8 +98,10 @@ def inject(text, media):
         headers={{'Content-Type': 'application/json'}}, method='POST',
     )
     with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read().decode('utf-8', 'replace')[:200]
+        r.read()
+    return source_id
 
+representative_source = ''
 for name in {SAMPLES!r}:
     src = SAMPLES / name
     if not src.is_file():
@@ -127,9 +130,41 @@ for name in {SAMPLES!r}:
         note('extract_' + name, False, json.dumps(body, ensure_ascii=False)[:200])
     # User-visible inject (one representative)
     if name == '1.zip':
-        media_att = [{{'type': 'file', 'url': f'/opt/data/media/inbound/{{TN}}/{{name}}', 'name': name}}]
-        inject('đọc file zip này, liệt kê nội dung media an toàn [' + str(int(time.time())) + ']', media_att)
+        media_att = {{
+            'type': 'file',
+            'url': f'/opt/data/media/inbound/{{TN}}/{{name}}',
+            'name': name,
+            'fileName': name,
+        }}
+        representative_source = inject(
+            'đọc file zip này, liệt kê nội dung media an toàn [' + str(int(time.time())) + ']',
+            media_att,
+        )
     time.sleep(1)
+
+if representative_source:
+    pg=subprocess.check_output(
+        ['docker','ps','--filter','label=com.docker.compose.service=postgres','--format','{{{{.Names}}}}'],
+        text=True,
+    ).splitlines()[0]
+    delivered=''
+    deadline=time.time()+240
+    while time.time()<deadline:
+        safe=representative_source.replace("'", "''")
+        sql=("select coalesce(content,'') from zalo_message_history where event='delivered' "
+             "and meta->>'source_message_id'='"+safe+"' order by id desc limit 1")
+        delivered=subprocess.check_output(
+            ['docker','exec',pg,'psql','-U','hermes','-d','hermes_memory','-At','-c',sql],
+            text=True,errors='replace',
+        ).strip()
+        if delivered and 'Vui lòng chờ' not in delivered:
+            break
+        time.sleep(2)
+    note(
+        'user_visible_archive_reply',
+        bool(delivered and 'Vui lòng chờ' not in delivered),
+        delivered[:120],
+    )
 
 ok = all(x['ok'] for x in checks)
 print('VERDICT', 'PASS' if ok else 'FAIL')

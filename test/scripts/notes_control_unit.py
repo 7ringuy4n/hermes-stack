@@ -170,12 +170,15 @@ def main() -> int:
     assert "recorded.get(tid)" in adapter_source
     assert "text=turn_user_text" in queue_turn
     assert "bare_q = turn_user_text.strip()" in queue_turn
-    assert "plan_requires_live_search(queued_plan)" in queue_turn
+    assert "plan_should_apply_live_search_contract(" in queue_turn
+    assert 'schedule_fire=bool(item.get("schedule_fire"))' in queue_turn
     assert "Call the native web_search tool during this turn" in queue_turn
     assert "Do not reuse prior search results" in queue_turn
     inbound_body = adapter_source.split("async def _on_inbound_message", 1)[1]
     inbound_body = inbound_body.split("async def send(", 1)[0]
-    assert "user_text_before_attach and not explicit_quote" in inbound_body
+    assert "user_text_before_attach" in inbound_body
+    assert "and not explicit_quote" in inbound_body
+    assert "text_refers_to_attachment(user_text_before_attach)" in inbound_body
     session_memory_source = (ROOT / "hermes/main/plugins/zalo/session_memory.py").read_text(encoding="utf-8")
     assert 'message_id=str(source_message_id or "")' in session_memory_source
     assert 'meta={"source_message_id": str(source_message_id or "")}' in session_memory_source

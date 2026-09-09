@@ -42,6 +42,16 @@
 - Give every remaining-suite request its own durable source identifier and make
   history regression cases delete the exact schedules they create, preventing
   delayed test traffic from corrupting later concurrency evidence.
+- Apply the trusted current-search execution contract only when work executes;
+  do not append it to the original text while a search-backed schedule is being
+  created.
+- Make durable attachment recall opt-in for explicit file follow-ups. Fresh
+  URL, image-generation, schedule, and document-creation requests no longer
+  inherit unrelated files from earlier turns.
+- Strengthen clean-run isolation: archive injection uses the real single-media
+  shape and waits for its terminal source-correlated reply, post-restart Zalo
+  injection waits for a logged-in SSE owner, and refusal evidence uses a unique
+  temporary file per run.
 
 ## 2026-09-08 19:12 +07 — complete structured multi-region plans
 

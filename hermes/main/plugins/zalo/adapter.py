@@ -256,6 +256,7 @@ from attachment import (  # noqa: E402
     sheet_ref_from_text,
     song_hint_from_filename,
     stage_shared_media,
+    text_refers_to_attachment,
     workbook_sheet_reply,
     worker_media_path,
 )
@@ -4559,10 +4560,13 @@ class ZaloAdapter(BasePlatformAdapter):
                     queued_plan = item.get("plan") if isinstance(item.get("plan"), dict) else None
                     if queued_plan is not None:
                         try:
-                            from .classify_client import plan_requires_live_search
+                            from .classify_client import plan_should_apply_live_search_contract
                         except ImportError:
-                            from classify_client import plan_requires_live_search  # type: ignore
-                        if plan_requires_live_search(queued_plan):
+                            from classify_client import plan_should_apply_live_search_contract  # type: ignore
+                        if plan_should_apply_live_search_contract(
+                            queued_plan,
+                            schedule_fire=bool(item.get("schedule_fire")),
+                        ):
                             # Current-data plans must not inherit unrelated file
                             # recall or reuse a previous lookup from session history.
                             # Keep provider selection in the configured native
@@ -6023,7 +6027,12 @@ class ZaloAdapter(BasePlatformAdapter):
         # An explicit reply already supplies the authoritative prior message.
         # Do not contaminate it with unrelated recent-file recall from the chat;
         # that can turn a literal quote reply into an old document task.
-        if not media_urls and user_text_before_attach and not explicit_quote:
+        if (
+            not media_urls
+            and user_text_before_attach
+            and not explicit_quote
+            and text_refers_to_attachment(user_text_before_attach)
+        ):
             text = self._as_attachment_followup(str(thread_id), text)
 
         # Quoted reply (DM + group): inject quoted text/title/media label so the

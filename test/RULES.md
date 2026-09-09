@@ -245,6 +245,14 @@ Fail on crossed sources, duplicate or missing replies, context taken from a
 later message, a timeout notice after a valid result, late output from an
 earlier turn, queue residue, or leakage between DM and group scopes.
 
+After an attachment case, send an unrelated URL, image-generation, schedule,
+or document-creation request in the same conversation. The fresh request must
+not inherit the old extract. A text-only attachment follow-up must contain an
+explicit file/sheet/image/archive back-reference (or be a short unambiguous
+elliptical follow-up) before recall is hydrated. Archive injection must use the
+real single-media shape and its case must wait for a non-busy, exact-source
+terminal reply before later concurrency cases begin.
+
 Run a second burst while the first item is intentionally slow. Verify queue
 depth grows within its configured bound, the elected owner renews its lease,
 later items remain durable, and completion or cancellation of the first item
@@ -315,6 +323,11 @@ journalctl --user -u com.hermes.zaloplugin --since '15 minutes ago'
 systemctl --user status com.hermes.zaloplugin
 systemctl list-timers 'assistant-*'
 ```
+
+After any lifecycle test that restarts the active Zalo owner, wait until bridge
+health reports both a logged-in session and at least one SSE consumer before
+injecting the next test event. HTTP acceptance without a live consumer is not
+message-delivery evidence.
 
 Include dispatcher/jobs, schedule-worker, Valkey/PostgreSQL/Qdrant, and stack/
 alert watchers when used. Distinguish:

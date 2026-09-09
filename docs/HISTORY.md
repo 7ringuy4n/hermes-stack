@@ -29,6 +29,11 @@ to full image width; bands are now content-sized and bounded so they preserve
 the unrequested side of the scene. The record also covers stale attachment
 recall in explicit replies, same-turn routed-search enforcement, and removal of
 test-created schedule leakage across live cases.
+The uninterrupted clean-deploy run then exposed a broader attachment-recall
+boundary: old extracts were appended to every later text-only request, causing
+new URL, archive, and DOCX turns to take unrelated long paths and block their
+conversation queue. Recall is now conservative and explicit; the archive and
+post-restart gates also wait for real terminal/bridge readiness evidence.
 
 ## 2026-09-08 — multi-domain spatial composition
 

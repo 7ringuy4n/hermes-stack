@@ -8,6 +8,11 @@ acknowledged Zalo delivery records. Follow-up production gates also made lower
 information bands content-sized, isolated explicit quotes from stale attachment
 recall, enforced native routed search for current-data turns, and cleaned every
 schedule created by the history harness.
+The subsequent clean full-suite run found that recall was still unconditional
+for unquoted text: a prior extract could divert a fresh archive, URL, image, or
+DOCX request and leave later DM work queued. Recall now requires an explicit
+back-reference, schedule creation preserves its original text until execution,
+and live restart/archive gates wait for terminal source-correlated evidence.
 
 ## 2026-09-08 19:12 +07 — composed-plan completion budget
 
