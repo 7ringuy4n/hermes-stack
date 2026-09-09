@@ -12,6 +12,8 @@
   the complete case-index run.
 - Give an explicit DM/group reply precedence over unrelated durable session
   history so a quoted text request cannot resume an older image/file task.
+- Run every indexed live gate through the shared credential-free VPS-local
+  transport, including latency and file-security matrices.
 
 ## 2026-09-08 19:12 +07 — complete structured multi-region plans
 
