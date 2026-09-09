@@ -131,8 +131,18 @@ def main() -> int:
     assert "up to six" in str(assets.get("composition_system")).lower()
     assert "center-right" in str(assets.get("composition_system"))
     assert "region" in str(assets.get("composition_system"))
+    assert "Region count follows the Request's visual grouping" in str(
+        assets.get("composition_system")
+    )
+    assert "exactly one information region" in str(assets.get("composition_system"))
+    assert "below or at the bottom uses bottom-bar" in str(
+        assets.get("composition_system")
+    )
+    assert "on the left or right uses left-column or right-column" in str(
+        assets.get("composition_system")
+    )
     assert "compact minified JSON" in str(assets.get("composition_user_template"))
-    assert "no more than four concise fact rows per panel" in str(
+    assert "no more than six concise fact rows per information region" in str(
         assets.get("composition_user_template")
     )
     assert "renderer adds the authoritative current timestamp" in str(

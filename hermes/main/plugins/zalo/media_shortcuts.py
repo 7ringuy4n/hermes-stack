@@ -448,7 +448,7 @@ def _synthesize_overlay_plan(
                 "emphasis": emphasis if emphasis in {"primary", "important", "normal"} else "normal",
             }
         )
-        if len(facts) >= 5:
+        if len(facts) >= 6:
             break
     title = " ".join(str(parsed.get("title") or "").split())[:64]
     background_scene = " ".join(str(parsed.get("background_scene") or "").split())[:1200]
@@ -470,7 +470,7 @@ def _synthesize_overlay_plan(
                 "value": value,
                 "emphasis": emphasis if emphasis in {"primary", "important", "normal"} else "normal",
             })
-            if len(panel_facts) >= 4:
+            if len(panel_facts) >= 6:
                 break
         if not panel_facts:
             continue

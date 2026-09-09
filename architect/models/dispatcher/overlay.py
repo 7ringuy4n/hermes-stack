@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageStat
 
 from fonts import pillow_font
 
-MAX_OVERLAY_LINES = 6
+MAX_OVERLAY_LINES = 8
 MAX_OVERLAY_PANELS = 6
 MIN_FONT = 13
 MAX_BOX_RATIO = 0.46
