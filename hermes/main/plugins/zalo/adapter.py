@@ -2718,13 +2718,13 @@ class ZaloAdapter(BasePlatformAdapter):
                 error = str(result.get("error") or "failed")
                 candidates = str(result.get("text") or "").strip()
                 if error == "ambiguous" and candidates:
-                    body = self._as_ux_line(
+                    lead = self._as_ux_line(
                         "ZALO_NOTES_AMBIGUOUS_MSG",
                         ("notes", "ambiguous"),
-                        "More than one note matches. Reply with the note id to choose one:\n"
-                        + candidates,
+                        "More than one note matches. Reply with the note id to choose one.",
                         user_text=current,
                     )
+                    body = f"{lead.rstrip()}\n{candidates}"
                 elif error == "not_found":
                     body = self._as_ux_line(
                         "ZALO_NOTES_EMPTY_MSG",
@@ -4087,6 +4087,23 @@ class ZaloAdapter(BasePlatformAdapter):
                     "Zalo: scheduleFire bypass queue thread=%s",
                     thread_id[:24],
                 )
+                # Execute the creation-time typed plan before any generic-agent
+                # fallback. Direct dispatch drops the search/media dependency
+                # graph and can turn a scheduled image into a text response.
+                if await self._as_try_workflow_submit(
+                    text=text,
+                    thread_id=thread_id,
+                    thread_type=thread_type,
+                    sender_id=sender_id,
+                    sender_name=sender_name,
+                    chat_type=chat_type,
+                    plan=plan,
+                    schedule_fire=True,
+                    has_image_attachment=has_image_attachment,
+                    media_urls=media_urls,
+                    wait_for_terminal=True,
+                ):
+                    return
                 await self._as_dispatch_event(event, text)
                 return
             if mid and hasattr(store, "queue_seen") and not store.queue_seen(mid):
@@ -5580,10 +5597,17 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
 
         # Cache inbound as SendMessageQuote so outbound replies quote the @mention.  (ASSISTANT_REPLY_QUOTE)
+        # A schedule fire is a synthetic transport event whose messageId is not
+        # a real Zalo message. Quoting it is rejected by Zalo and can also make
+        # an attachment delivery fail, so due work must start with no quote.
         if not hasattr(self, "_pending_reply_quote"):
             self._pending_reply_quote = {}
-        q = m.get("quote") if isinstance(m.get("quote"), dict) else None
-        if not q or not (q.get("msgId") is not None or q.get("cliMsgId") is not None):
+        q = None if schedule_fire else (
+            m.get("quote") if isinstance(m.get("quote"), dict) else None
+        )
+        if schedule_fire:
+            self._pending_reply_quote.pop(str(thread_id), None)
+        elif not q or not (q.get("msgId") is not None or q.get("cliMsgId") is not None):
             mid = m.get("messageId") or m.get("msgId")
             if mid:
                 q = {
@@ -8425,6 +8449,7 @@ class ZaloAdapter(BasePlatformAdapter):
         source_message_id = str(
             self._as_active_turn_message_ids.get(str(dest_id))
             or self._as_active_turn_message_ids.get(str(chat_id))
+            or self._as_source_message_id.get()
             or ""
         )
         name = Path(str(file_path or "")).name

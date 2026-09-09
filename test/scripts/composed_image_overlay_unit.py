@@ -13,10 +13,10 @@ sys.path.insert(0, str(ZALO))
 sys.path.insert(0, str(DISPATCHER))
 
 from media_shortcuts import (  # noqa: E402
+    _OVERLAY_PLAN_MAX_TOKENS,
     _image_prompt_assets,
     _validated_evidence_queries,
     _json_object,
-    _omni_overlay_plan_max_tokens,
     _omni_overlay_plan_model,
     _omni_overlay_plan_timeout_s,
     _overlay_payload,
@@ -32,7 +32,7 @@ OUT = ROOT / "scripts" / "temp" / "composed_image_overlay_unit"
 
 def main() -> int:
     assert _omni_overlay_plan_timeout_s() == 120
-    assert _omni_overlay_plan_max_tokens() == 4096
+    assert _OVERLAY_PLAN_MAX_TOKENS == 4096
     assert _omni_overlay_plan_model() == "classifier"
     os.environ["OMNIROUTER_CLASSIFY_COMBO"] = "structured-planner"
     try:

@@ -10,6 +10,14 @@ History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
 
+## 2026-09-09 — scheduled composed-image execution
+
+See `history/2026-09-09/README.md` for the queue-enabled schedule-fire gap that
+discarded a valid persisted search→image graph, quoted an internal schedule id,
+and omitted task-local attachment correlation. The same correction adds
+same-language note UX, removes an unnecessary composed-plan environment knob,
+and makes the full scheduled-image fire a mandatory release case.
+
 ## 2026-09-08 — multi-domain spatial composition
 
 See `history/2026-09-08/README.md` for the evidence-decomposition and flexible

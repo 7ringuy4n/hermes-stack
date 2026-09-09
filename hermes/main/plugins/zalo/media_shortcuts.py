@@ -300,13 +300,7 @@ def _omni_overlay_plan_timeout_s() -> int:
         return 120
 
 
-def _omni_overlay_plan_max_tokens() -> int:
-    """Return a bounded completion budget for multi-region JSON plans."""
-    raw = (os.getenv("OMNI_OVERLAY_PLAN_MAX_TOKENS") or "4096").strip()
-    try:
-        return max(1024, min(int(raw), 8192))
-    except ValueError:
-        return 4096
+_OVERLAY_PLAN_MAX_TOKENS = 4096
 
 
 def _omni_overlay_plan_model() -> str:
@@ -428,7 +422,10 @@ def _synthesize_overlay_plan(
     parsed = _omni_json_plan(
         system,
         user,
-        max_tokens=_omni_overlay_plan_max_tokens(),
+        # This is a protocol bound, not an operator tuning knob. The validator
+        # below caps every collection and string, so one fixed budget covers the
+        # largest accepted plan and keeps deployments configuration-free.
+        max_tokens=_OVERLAY_PLAN_MAX_TOKENS,
     )
     facts: list[dict[str, str]] = []
     seen: set[str] = set()

@@ -14,6 +14,7 @@ sys.path.insert(0, str(ZALO))
 
 import classify_client  # noqa: E402
 import notes_client  # noqa: E402
+from ux_copy import pick_localized, reply_lang  # noqa: E402
 
 
 def _load_router_classify():
@@ -44,7 +45,22 @@ def _note_plan() -> dict:
     }
 
 
+def test_note_confirmation_language_assets() -> None:
+    import json
+
+    ux = json.loads(
+        (ROOT / "hermes" / "main" / "messages" / "ux.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    saved = ux["notes"]["saved"]
+    assert reply_lang("note giúp tôi hôm nay cần bàn giao công việc") == "vi"
+    assert pick_localized(saved, "vi", "fallback") == "Đã lưu ghi chú."
+    assert pick_localized(saved, "en", "fallback") == "Note saved."
+
+
 def main() -> int:
+    test_note_confirmation_language_assets()
     for module in (classify_client, _load_router_classify()):
         normalized = module.normalize_plan(_note_plan(), "remember these", "Asia/Ho_Chi_Minh")
         assert normalized["task_hint"] == "note"

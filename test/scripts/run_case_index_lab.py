@@ -31,6 +31,7 @@ VPS: list[tuple[str, str]] = [
     ("zalo_tn_visual_weather_pdf_inject.py", "39"),
     ("zalo_latency_lab.py", "17"),
     ("zalo_weather_fuel_lab.py", "26"),
+    ("zalo_scheduled_composed_image_lab.py", "27-fire"),
     ("file_pipeline_security_lab.py", "19"),
     ("grafana_integration_lab.py", "20"),
     ("defaults_routers_lab.py", "21"),
@@ -67,6 +68,10 @@ def report_cell(value: str, limit: int = 120) -> str:
         lines.append(line)
     clean = " / ".join(lines).replace("|", "\\|").replace("`", "'")
     return clean[:limit]
+
+
+def progress_line(index: int, total: int, kind: str, case: str, name: str) -> str:
+    return f"running test case {index}/{total}: {kind} {case} {name}"
 
 
 def run_script(name: str, case: str) -> tuple[str, int, str]:
@@ -111,10 +116,18 @@ def main() -> int:
     skip_vps = os.environ.get("SKIP_VPS", "0").strip() in {"1", "true", "yes"}
     rows: list[str] = []
     fails = 0
+    selected_units = [
+        row for row in UNITS if not filt or row[1] in filt or row[0] in filt
+    ]
+    selected_vps = [] if skip_vps else [
+        row for row in VPS if not filt or row[1] in filt or row[0] in filt
+    ]
+    total = len(selected_units) + len(selected_vps)
+    progress = 0
 
-    for name, case in UNITS:
-        if filt and case not in filt and name not in filt:
-            continue
+    for name, case in selected_units:
+        progress += 1
+        print(progress_line(progress, total, "unit", case, name), flush=True)
         c, rc, tail = run_script(name, case)
         status = "PASS" if rc == 0 else f"FAIL({rc})"
         if rc != 0:
@@ -122,16 +135,15 @@ def main() -> int:
         rows.append(f"| unit | {c} | {name} | {status} | `{report_cell(tail)}` |")
         print(f"[unit {c}] {status} {name}", flush=True)
 
-    if not skip_vps:
-        for name, case in VPS:
-            if filt and case not in filt and name not in filt:
-                continue
-            c, rc, tail = run_script(name, case)
-            status = "PASS" if rc == 0 else f"FAIL({rc})"
-            if rc != 0:
-                fails += 1
-            rows.append(f"| vps | {c} | {name} | {status} | `{report_cell(tail)}` |")
-            print(f"[vps {c}] {status} {name}", flush=True)
+    for name, case in selected_vps:
+        progress += 1
+        print(progress_line(progress, total, "vps", case, name), flush=True)
+        c, rc, tail = run_script(name, case)
+        status = "PASS" if rc == 0 else f"FAIL({rc})"
+        if rc != 0:
+            fails += 1
+        rows.append(f"| vps | {c} | {name} | {status} | `{report_cell(tail)}` |")
+        print(f"[vps {c}] {status} {name}", flush=True)
 
     md = (
         f"# Case index lab — {ts()}\n\n"

@@ -1,3 +1,16 @@
+## 2026-09-09 — scheduled composed-image and same-language delivery
+
+- Execute persisted process-schedule plans before generic-agent fallback so a
+  due search-backed image remains one generated image instead of text.
+- Reject synthetic schedule ids as Zalo quote targets and retain task-local
+  source correlation for acknowledged scheduled attachments.
+- Localize host-owned note confirmations to the current message language.
+- Replace the composed-plan token environment knob with one validated protocol
+  bound and keep requested visual subjects recognizable while the model chooses
+  layout and copy.
+- Add a mandatory two-minute scheduled-image fire gate and numbered progress for
+  the complete case-index run.
+
 ## 2026-09-08 19:12 +07 — complete structured multi-region plans
 
 - Raise the bounded, operator-configurable completion budget for composed-image

@@ -39,6 +39,7 @@ def main() -> int:
     helper_body = source[helper_start:image_start]
     assert 'event="delivered"' in helper_body
     assert '"source_message_id": source_message_id' in helper_body
+    assert "or self._as_source_message_id.get()" in helper_body
     assert '"attachment_kind": str(attachment_kind or "file")' in helper_body
     assert '"file_name": name' in helper_body
     assert "_as_bridge_message_id(response)" in helper_body
