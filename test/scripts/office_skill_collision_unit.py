@@ -49,10 +49,13 @@ def main() -> int:
         return 1
     entry = ROOT / "hermes" / "main" / "docker" / "hermes-replica-entry.sh"
     sh = entry.read_text(encoding="utf-8", errors="replace")
-    if "productivity" not in sh or '"${_dst_skills}/${_n}"' not in sh or "rm -rf" not in sh:
-        print("FAIL entrypoint must exclude local office toolkits and clones", file=sys.stderr)
+    if "productivity" not in sh or '"${_dst_skills}/official/${_n}"' not in sh or "rm -rf" not in sh:
+        print("FAIL entrypoint must exclude categorized office toolkit clones", file=sys.stderr)
         return 1
-    print("OK office skill names unique; file-gen uses office-file; runtime excludes local toolkits")
+    if 'rm -rf "${_dst_skills}/${_n}"' in sh:
+        print("FAIL entrypoint must retain root office wrappers against bundled backfill", file=sys.stderr)
+        return 1
+    print("OK office skill names unique; runtime wrappers block unsafe bundled backfill")
     return 0
 
 

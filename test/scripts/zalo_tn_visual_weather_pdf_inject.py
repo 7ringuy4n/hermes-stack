@@ -54,6 +54,17 @@ def _clean(text: str) -> str:
     return "\n".join(lines)
 
 
+def _new_pdf_seen(text: str) -> bool:
+    """Require the positive line token; ``NO_NEW_PDF`` must never match."""
+    return bool(re.search(r"(?m)^NEW_PDF\s+\S+", text or ""))
+
+
+def _delivered_image_count(text: str) -> int | None:
+    """Return the durable delivery count, or None when the audit failed."""
+    match = re.search(r"(?m)^DELIVERED_IMAGE_COUNT\s+(\d+)\s*$", text or "")
+    return int(match.group(1)) if match else None
+
+
 def main() -> int:
     if not TN_ID:
         print("ERROR: ZALO_TEST_USER_ID is required", file=sys.stderr)
@@ -127,6 +138,26 @@ fi
 if [[ -z "$NEWPDF" ]]; then
   echo "NO_NEW_PDF"
   ls -1t /data/assistant/media/out/*.pdf 2>/dev/null | head -3 || true
+  ZALO_API_ID=$(docker ps \
+    --filter label=com.docker.compose.service=zalo-api \
+    --format '{{{{.ID}}}}' | head -1)
+  if [[ -z "$ZALO_API_ID" ]]; then
+    echo "DELIVERED_IMAGE_COUNT_QUERY_FAILED no_zalo_api"
+  elif ! docker exec -e SOURCE_ID={marker!r} "$ZALO_API_ID" python3 -c '
+import os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as c:
+    row = c.execute(
+        "select count(*) from zalo_message_history "
+        "where event='"'"'delivered'"'"' "
+        "and meta->>'"'"'attachment_kind'"'"'='"'"'image'"'"' "
+        "and meta->>'"'"'source_message_id'"'"'=%s",
+        (os.environ["SOURCE_ID"],),
+    ).fetchone()
+print("DELIVERED_IMAGE_COUNT", int(row[0] if row else 0))
+'
+  then
+    echo "DELIVERED_IMAGE_COUNT_QUERY_FAILED query_error"
+  fi
   exit 0
 fi
 HOST_PDF="$NEWPDF"
@@ -252,7 +283,7 @@ print("DELIVERED_IMAGE_COUNT", int(row[0] if row else 0))
         )
         report["fail_bits"] = bad
         report["greeting_leak"] = greeting_leak
-        new_pdf = "NEW_PDF" in out
+        new_pdf = _new_pdf_seen(out)
         report["new_pdf"] = new_pdf
         report["pdf_structure_ok"] = "PDF_STRUCTURE_OK" in out
         report["visual_evaluation"] = (
@@ -265,7 +296,9 @@ print("DELIVERED_IMAGE_COUNT", int(row[0] if row else 0))
         )
         unexpected_image = "UNEXPECTED_NEW_IMAGE" in out
         report["unexpected_image"] = unexpected_image
-        delivered_image = not re.search(r"DELIVERED_IMAGE_COUNT\s+0(?:\s|$)", out)
+        delivered_count = _delivered_image_count(out)
+        report["delivery_history_query_ok"] = delivered_count is not None
+        delivered_image = delivered_count is None or delivered_count > 0
         report["unexpected_image_delivery"] = delivered_image
 
         out_path = OUT / f"report-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
@@ -280,14 +313,14 @@ print("DELIVERED_IMAGE_COUNT", int(row[0] if row else 0))
         if greeting_leak:
             print("FAIL hello/help leak without file delivery", flush=True)
             return 1
-        if delivered_image:
-            print("FAIL requested PDF also delivered a standalone image", flush=True)
-            return 1
         if not new_pdf:
             print("FAIL no new pdf produced (quota/rate-limit → skip)", flush=True)
             if "maxwaitms" in blob or "rate-limit" in blob or "quota" in blob:
                 print("SKIP rate-limit/quota", flush=True)
                 return 0
+            return 1
+        if delivered_image:
+            print("FAIL requested PDF also delivered a standalone image", flush=True)
             return 1
         if "PDF_STRUCTURE_OK" not in out:
             if "rate-limit" in blob or "quota" in blob or "429" in blob:

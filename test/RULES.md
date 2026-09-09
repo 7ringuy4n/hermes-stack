@@ -201,6 +201,14 @@ older embedded image as another attachment. Filesystem sidecars are diagnostic;
 the release oracle fails on an acknowledgement-backed image delivery correlated
 to the document-only source request.
 
+Replica startup must retain the repository root `pdf`, `docx`, and `xlsx`
+wrapper directories so the image-level bundled-skill sync cannot backfill its
+generic local-generation tools after bootstrap. Their frontmatter names remain
+distinct and route chat creation to `file-gen`; only categorized and official
+clones are removed. The live oracle must match the positive `NEW_PDF` line
+exactly, never treat `NO_NEW_PDF` as success, and query durable image delivery
+even when no document appears before the deadline.
+
 For composed images with several information regions, also reject an empty or
 truncated structured composition plan. The live gate must observe a complete
 planner response before accepting generated-file and delivery evidence.

@@ -286,3 +286,44 @@ the PDF request, not mere workspace existence.
 - PDF-only reports must contain no source-correlated image delivery.
 - Test reports identify only the authorized runtime target class; they do not
   persist the numeric Zalo identity.
+
+## Root Office wrappers were removed before bundled skill sync
+
+### Symptom
+
+The focused PDF rerun ignored the Dispatcher-only `file-gen` contract, loaded a
+generic bundled PDF skill, and attempted a long local FPDF script. The script
+first wrote outside the safe root, then called an unsupported rounded-rectangle
+API and did not produce a deliverable PDF before the live deadline. The gate
+misreported the run because substring matching treated `NO_NEW_PDF` as the
+positive `NEW_PDF` token and the early timeout path skipped the durable image
+delivery query.
+
+### Root cause
+
+Replica bootstrap overlaid the repository skills and then removed every root
+`pdf`, `docx`, and `xlsx` directory to avoid ambiguous registry names. The base
+image runs `skills_sync.py` later in its stage-two hook. With those directories
+absent, that later pass installed its generic local-generation skills after our
+cleanup, bypassing the repository wrappers that direct chat creation to
+Dispatcher. The test parser independently used an unsafe substring predicate
+and placed its audit query after an early exit.
+
+### Fix
+
+Keep the repository's root Office wrapper directories in each replica. Their
+frontmatter names are already unique (`*-tools-local`) and their chat path
+explicitly requires `file-gen` and `/v1/office-file`; their presence also blocks
+the later bundled backfill. Continue deleting categorized and `official` clones.
+The live oracle now requires a line beginning with `NEW_PDF`, queries durable
+image delivery on the no-document path, and fails closed when that audit is
+unavailable.
+
+### Prevention
+
+- Test bootstrap behavior across the complete entrypoint plus image stage-two
+  ordering, not only the pre-stage-two filesystem state.
+- Preserve restrictive same-directory wrappers when an upstream sync installs
+  only missing destinations.
+- Use exact positive result tokens in live gates and exercise their negative
+  branches with unit tests.

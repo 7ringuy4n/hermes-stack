@@ -42,6 +42,11 @@
 - Give every remaining-suite request its own durable source identifier and make
   history regression cases delete the exact schedules they create, preventing
   delayed test traffic from corrupting later concurrency evidence.
+- Retain the repository's restrictive root Office wrappers through replica
+  startup so the image-level bundled-skill sync cannot reintroduce an unsafe
+  generic PDF tool after the entrypoint has run.
+- Make the live PDF oracle distinguish `NEW_PDF` from `NO_NEW_PDF` exactly and
+  query acknowledged image delivery even when document generation times out.
 - Apply the trusted current-search execution contract only when work executes;
   do not append it to the original text while a search-backed schedule is being
   created.
