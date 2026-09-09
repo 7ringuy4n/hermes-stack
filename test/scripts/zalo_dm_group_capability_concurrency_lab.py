@@ -270,7 +270,7 @@ if any(len(rows)!=1 for rows in file_rows.values()):
 document_text={{}}
 for label,rows in file_rows.items():
     file_name=rows[0][3]
-    if file_name!=file_names[label] or pathlib.Path(file_name).name!=file_name:
+    if not file_name or pathlib.Path(file_name).name!=file_name or not file_name.casefold().endswith(".docx"):
         raise SystemExit("FAIL_FILE_NAME")
     path=pathlib.Path("/data/assistant/media/out")/file_name
     if not path.is_file() or path.stat().st_size<1000:

@@ -13,6 +13,9 @@ def main() -> int:
     start = run.index("do_post_ready_learn()")
     end = run.index("\nenv_upsert()", start)
     block = run[start:end]
+    router_sync = (ROOT / "scripts" / "main" / "sync-router-worker-skills.sh").read_text(
+        encoding="utf-8"
+    )
     checks = {
         "rejects a root data path": '"$data_root" == "/"' in block,
         "limits repair to the docs mirror": 'docs_root="${data_root}/docs"' in block
@@ -35,6 +38,16 @@ def main() -> int:
         "knowledge sync failure propagates": 'if ! python3 "${SCRIPTS_DIR}/post-ready-learn.py"' in block
         and "return 1" in block,
         "failure is not converted to warning success": "WARN: post-ready-learn failed" not in block,
+        "router bake stages outside a non-writable checkout": all(
+            marker in router_sync
+            for marker in (
+                'if [[ -w "$DST_DIR" ]]; then',
+                'STAGE_DIR="$(mktemp -d)"',
+                'mktemp "${STAGE_DIR}/.${name}.XXXXXX"',
+                'python3 - "$ROOT" "$STAGE_DIR"',
+                'echo "$(id -u):$(id -g)"',
+            )
+        ),
     }
     for name, ok in checks.items():
         print(("PASS" if ok else "FAIL"), name)
