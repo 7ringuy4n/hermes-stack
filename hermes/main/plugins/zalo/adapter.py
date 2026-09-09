@@ -2852,6 +2852,11 @@ class ZaloAdapter(BasePlatformAdapter):
             "chat_type": chat_type,
             "sender_id": sender_id,
             "sender_name": sender_name,
+            "source_message_id": str(
+                self._as_active_turn_message_ids.get(str(thread_id))
+                or self._as_source_message_id.get()
+                or ""
+            ),
             "execute": "hermes",
             "plan": plan,
         }
@@ -3376,6 +3381,7 @@ class ZaloAdapter(BasePlatformAdapter):
         chat_type = str(ctx.get("chat_type") or "dm")
         sender_id = str(ctx.get("sender_id") or "")
         sender_name = str(ctx.get("sender_name") or tid)
+        source_message_id = str(ctx.get("source_message_id") or "")
         iso = isolate_session_chat_id(tid, jid)
         self._as_begin_turn(iso)
         zalo_tt = "group" if tt == "group" or chat_type == "group" else "user"
@@ -3384,7 +3390,7 @@ class ZaloAdapter(BasePlatformAdapter):
             self._thread_types[tid] = zalo_tt
         except Exception:
             pass
-        self._as_autosend_remember_turn(iso, zalo_tt)
+        self._as_autosend_remember_turn(iso, zalo_tt, source_message_id)
         source = self.build_source(
             chat_id=iso,
             chat_name=sender_name if chat_type == "dm" else tid,
@@ -6553,7 +6559,9 @@ class ZaloAdapter(BasePlatformAdapter):
             ".mp4", ".webm", ".mov", ".m4v", ".mkv",
         )
 
-    def _as_autosend_remember_turn(self, thread_id, thread_type=None) -> None:  # ASSISTANT_AUTOSEND_v3
+    def _as_autosend_remember_turn(
+        self, thread_id, thread_type=None, source_message_id=""
+    ) -> None:  # ASSISTANT_AUTOSEND_v3
         """Bind this turn's outbound (file + text) to the thread that asked."""
         try:
             from .turn_wait import real_thread_id
@@ -6570,6 +6578,13 @@ class ZaloAdapter(BasePlatformAdapter):
             self._as_turns = turns
         turns[tid] = dest
         real = real_thread_id(tid)
+        source = str(
+            source_message_id
+            or self._as_active_turn_message_ids.get(str(real or tid))
+            or self._as_active_turn_message_ids.get(tid)
+            or self._as_source_message_id.get()
+            or ""
+        )
         if real and real not in turns:
             turns[real] = {"thread_id": real, "thread_type": tt}
         self._as_turn = dest
@@ -6580,8 +6595,13 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception:
             pass
         http = getattr(self, "_as_session_http", None)
+        payload = {
+            "thread_id": real or tid,
+            "thread_type": tt,
+            "source_message_id": source,
+        }
         if callable(http):
-            http("POST", "/v1/turn/dest", {"thread_id": real or tid, "thread_type": tt})
+            http("POST", "/v1/turn/dest", payload)
             return
         try:
             import json as _json
@@ -6590,7 +6610,7 @@ class ZaloAdapter(BasePlatformAdapter):
             base = (os.getenv("SESSION_URL") or "http://session:8107").rstrip("/")
             req = urllib.request.Request(
                 base + "/v1/turn/dest",
-                data=_json.dumps({"thread_id": real or tid, "thread_type": tt}).encode("utf-8"),
+                data=_json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
@@ -6883,7 +6903,7 @@ class ZaloAdapter(BasePlatformAdapter):
             except OSError:
                 dest = src
             if self._as_autosend_already_sent(dest):
-                logger.info("Zalo: autosend skip already-claimed %s", dest.name)
+                logger.debug("Zalo: autosend skip already-claimed %s", dest.name)
                 continue
             try:
                 dest_send = dest
@@ -6895,7 +6915,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 if resolved:
                     dest_send = Path(resolved)
                 if not self._as_autosend_file_claim(dest_send, tid):
-                    logger.info("Zalo: autosend skip already-claimed %s", dest_send.name)
+                    logger.debug("Zalo: autosend skip already-claimed %s", dest_send.name)
                     continue
                 meta_send = {
                     **meta,

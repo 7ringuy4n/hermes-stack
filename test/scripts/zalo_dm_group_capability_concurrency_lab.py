@@ -253,8 +253,9 @@ file_expected={{
 }}
 file_markers={{"dm":"DOCX-DM-"+tag,"group":"DOCX-GROUP-"+tag}}
 file_titles={{"dm":"Concurrent DM Report","group":"Concurrent Group Report"}}
+file_names={{"dm":"concurrent-dm-"+tag+".docx","group":"concurrent-group-"+tag+".docx"}}
 file_prompts={{
-    label:"Create and send one DOCX document. Use the title '"+file_titles[label]+"' and include this exact body marker: "+file_markers[label]
+    label:"Create and send one DOCX document named '"+file_names[label]+"'. Use the title '"+file_titles[label]+"' and include this exact body marker: "+file_markers[label]
     for label in file_expected
 }}
 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
@@ -269,7 +270,7 @@ if any(len(rows)!=1 for rows in file_rows.values()):
 document_text={{}}
 for label,rows in file_rows.items():
     file_name=rows[0][3]
-    if not file_name or pathlib.Path(file_name).name!=file_name or not file_name.casefold().endswith(".docx"):
+    if file_name!=file_names[label] or pathlib.Path(file_name).name!=file_name:
         raise SystemExit("FAIL_FILE_NAME")
     path=pathlib.Path("/data/assistant/media/out")/file_name
     if not path.is_file() or path.stat().st_size<1000:
