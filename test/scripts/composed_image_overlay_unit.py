@@ -80,6 +80,22 @@ def main() -> int:
     assert lines == ["City Pulse", "Index: 92"]
     assert payload_design["line_roles"] == ["title", "primary"]
 
+    combined = {
+        "title": "Combined",
+        "facts": [
+            {"label": f"Subject {index + 1}", "value": str(index + 1)}
+            for index in range(6)
+        ],
+        "design": {"placement": "left-column"},
+        "include_timestamp": True,
+        "timestamp_label": "Updated",
+    }
+    combined_lines, combined_design = _overlay_payload(combined)
+    assert len(combined_lines) == 8
+    assert combined_lines[-2] == "Subject 6: 6"
+    assert combined_lines[-1].startswith("Updated:")
+    assert len(combined_design["line_roles"]) == 8
+
     multi = _json_object(
         '{"title":"","facts":[],"panels":['
         '{"title":"Current conditions","facts":[{"label":"Temperature","value":"30 C",'
@@ -149,6 +165,8 @@ def main() -> int:
         assets.get("composition_system")
     )
     assert "never put a date, time, number" in str(assets.get("composition_system"))
+    media_source = (ZALO / "media_shortcuts.py").read_text(encoding="utf-8")
+    assert "composed image layout request=" in media_source
 
     from PIL import Image
 

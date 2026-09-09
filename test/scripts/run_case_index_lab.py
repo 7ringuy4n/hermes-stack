@@ -41,6 +41,7 @@ VPS: list[tuple[str, str]] = [
     ("zalo_user_latency.py", "17"),
     ("zalo_weather_fuel_lab.py", "26"),
     ("zalo_scheduled_composed_image_lab.py", "27-fire"),
+    ("zalo_flexible_composed_layout_lab.py", "flexible-layout"),
     ("file_pipeline_security_lab.py", "19"),
     ("grafana_integration_lab.py", "20"),
     ("defaults_routers_lab.py", "21"),
