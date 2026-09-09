@@ -33,6 +33,15 @@
   history instead of optional bridge self-message journal echoes.
 - Stamp the numbered case-index summary with the validated candidate revision,
   including an explicit override for an intentionally overlaid VPS checkout.
+- Keep model-selected top/bottom information bands content-sized by default;
+  cap them at 72% width and preserve the scene outside the card unless the user
+  explicitly asks for a full-width region.
+- Prevent an explicit quoted reply from inheriting unrelated recent attachment
+  context, and require typed live-search turns to use the current native routed
+  search result rather than an old answer or code/network bypass.
+- Give every remaining-suite request its own durable source identifier and make
+  history regression cases delete the exact schedules they create, preventing
+  delayed test traffic from corrupting later concurrency evidence.
 
 ## 2026-09-08 19:12 +07 — complete structured multi-region plans
 

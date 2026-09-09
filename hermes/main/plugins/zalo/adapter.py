@@ -4557,6 +4557,23 @@ class ZaloAdapter(BasePlatformAdapter):
                         return
                     bare_q = turn_user_text.strip()
                     queued_plan = item.get("plan") if isinstance(item.get("plan"), dict) else None
+                    if queued_plan is not None:
+                        try:
+                            from .classify_client import plan_requires_live_search
+                        except ImportError:
+                            from classify_client import plan_requires_live_search  # type: ignore
+                        if plan_requires_live_search(queued_plan):
+                            # Current-data plans must not inherit unrelated file
+                            # recall or reuse a previous lookup from session history.
+                            # Keep provider selection in the configured native
+                            # web_search route and forbid shell/network bypasses.
+                            event.text = (
+                                f"{bare_q}\n\n[Current lookup execution contract]\n"
+                                "Call the native web_search tool during this turn through its "
+                                "configured routing. Do not reuse prior search results. Do not "
+                                "substitute execute_code, terminal commands, or network libraries. "
+                                "Answer only from the current tool result."
+                            )
                     has_image = self._as_has_image_attachment(
                         list(event.media_urls or []),
                         media_types=list(event.media_types or []),
@@ -6003,7 +6020,10 @@ class ZaloAdapter(BasePlatformAdapter):
                         pass
                     return
         user_text_before_attach = str(text or "").strip()
-        if not media_urls and user_text_before_attach:
+        # An explicit reply already supplies the authoritative prior message.
+        # Do not contaminate it with unrelated recent-file recall from the chat;
+        # that can turn a literal quote reply into an old document task.
+        if not media_urls and user_text_before_attach and not explicit_quote:
             text = self._as_attachment_followup(str(thread_id), text)
 
         # Quoted reply (DM + group): inject quoted text/title/media label so the

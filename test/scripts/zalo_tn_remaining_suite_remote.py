@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+import uuid
 from pathlib import Path
 
 TN = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
@@ -22,6 +23,7 @@ def note(name: str, ok: bool, detail: str = "") -> None:
 
 
 def inject(text: str, media=None, mid: str | None = None) -> str:
+    source_id = mid or f"suite-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
     payload = {
         "threadId": TN,
         "threadType": "user",
@@ -30,11 +32,8 @@ def inject(text: str, media=None, mid: str | None = None) -> str:
         "text": text,
         "isSelf": False,
     }
-    # Synthetic message identifiers are not valid Zalo quote targets.  Omit the
-    # field for ordinary injected events; quote-reply has a separate live test
-    # built from an actual Zalo event.
-    if mid:
-        payload["messageId"] = mid
+    # A source ID is a delivery-correlation key, never a synthetic quote target.
+    payload["messageId"] = source_id
     if media:
         payload["media"] = media
     event = {"type": "message", "payload": payload}
@@ -45,7 +44,8 @@ def inject(text: str, media=None, mid: str | None = None) -> str:
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read().decode("utf-8", "replace")[:300]
+        r.read()
+    return source_id
 
 
 def hermes_logs(since: str = "8m") -> str:
@@ -95,7 +95,13 @@ def plugin_logs(since_epoch: float | None = None) -> str:
         return type(e).__name__
 
 
-def wait_zalo_delivery(started: float, *, photo: bool = False, wait_s: int | None = None) -> str:
+def wait_zalo_delivery(
+    started: float,
+    *,
+    source_id: str,
+    photo: bool = False,
+    wait_s: int | None = None,
+) -> dict:
     """Return the latest acknowledgement-backed delivery after ``started``.
 
     The bridge self-message journal is optional transport telemetry and may be
@@ -114,11 +120,13 @@ with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
         "SELECT content, meta FROM zalo_message_history "
         "WHERE thread_id=%s AND thread_type='user' AND event='delivered' "
         "AND created_at >= to_timestamp(%s) "
+        "AND meta->>'source_message_id'=%s "
         "AND COALESCE(meta->>'delivery_kind','result') "
         "IN ('result','queue_recovery') "
         "AND (%s = false OR meta->>'attachment_kind'='image') "
         "ORDER BY created_at DESC LIMIT 1",
         (os.environ["LAB_THREAD_ID"], float(os.environ["LAB_STARTED"]),
+         os.environ["LAB_SOURCE_ID"],
          os.environ.get("LAB_PHOTO") == "1"),
     ).fetchone()
 print(json.dumps({"content": row[0], "meta": row[1]} if row else {}))
@@ -131,6 +139,7 @@ print(json.dumps({"content": row[0], "meta": row[1]} if row else {}))
                     "docker", "exec",
                     "-e", "LAB_THREAD_ID=" + TN,
                     "-e", "LAB_STARTED=" + repr(float(started)),
+                    "-e", "LAB_SOURCE_ID=" + source_id,
                     "-e", "LAB_PHOTO=" + ("1" if photo else "0"),
                     containers[0], "python3", "-c", probe,
                 ],
@@ -138,13 +147,12 @@ print(json.dumps({"content": row[0], "meta": row[1]} if row else {}))
                 errors="replace",
             )
             result = json.loads(raw or "{}")
-            content = str(result.get("content") or "").strip()
-            if content:
-                return content
+            if str(result.get("content") or "").strip() or result.get("meta"):
+                return result
         except Exception:
             pass
         time.sleep(2)
-    return ""
+    return {}
 
 
 def newest_media(exts: set[str], after_epoch: float) -> list[Path]:
@@ -333,7 +341,7 @@ print(int(row[0] or 0))
     return int(raw or "0")
 
 
-def schedule_ack_count(started: float) -> int:
+def schedule_ack_count(started: float, source_id: str) -> int:
     """Count durable schedule acknowledgements for this test request."""
     containers = subprocess.check_output(
         ["docker", "ps", "-q", "--filter", "name=zalo-api"], text=True
@@ -347,8 +355,10 @@ with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
         "SELECT count(*) FROM zalo_message_history "
         "WHERE thread_id=%s AND thread_type='user' AND event='delivered' "
         "AND created_at >= to_timestamp(%s) "
-        "AND meta->>'delivery_kind'='gate'",
-        (os.environ["LAB_THREAD_ID"], float(os.environ["LAB_STARTED"])),
+        "AND meta->>'delivery_kind'='gate' "
+        "AND meta->>'source_message_id'=%s",
+        (os.environ["LAB_THREAD_ID"], float(os.environ["LAB_STARTED"]),
+         os.environ["LAB_SOURCE_ID"]),
     ).fetchone()
 print(int(row[0] or 0))
 """
@@ -357,6 +367,7 @@ print(int(row[0] or 0))
             "docker", "exec",
             "-e", "LAB_THREAD_ID=" + TN,
             "-e", "LAB_STARTED=" + repr(float(started)),
+            "-e", "LAB_SOURCE_ID=" + source_id,
             containers[0], "python3", "-c", probe,
         ],
         text=True,
@@ -371,15 +382,12 @@ def main() -> int:
         return 2
     # 1) Scenic image-gen
     t0 = time.time()
-    inject("vẽ một chú mèo ngồi trên bàn gỗ, ánh sáng tự nhiên, ảnh thật")
-    img = None
-    for _ in range(WAIT):
-        hits = newest_media({".jpg", ".jpeg", ".webp", ".png"}, t0 - 2)
-        if hits and hits[0].stat().st_size > 20_000:
-            img = hits[0]
-            break
-        time.sleep(2)
-    if not img:
+    image_source = inject("vẽ một chú mèo ngồi trên bàn gỗ, ánh sáng tự nhiên, ảnh thật")
+    image_delivery = wait_zalo_delivery(t0, source_id=image_source, photo=True)
+    image_meta = image_delivery.get("meta") if isinstance(image_delivery.get("meta"), dict) else {}
+    image_name = Path(str(image_meta.get("file_name") or "")).name
+    img = Path("/data/assistant/media/out") / image_name if image_name else None
+    if img is None or not img.is_file() or img.stat().st_size <= 20_000:
         note("image_gen_file", False, "no new image")
     else:
         summary = vision_rate(
@@ -413,11 +421,10 @@ def main() -> int:
                 f"size={img.stat().st_size} vision_empty path={img.name}",
             )
         else:
-            delivery = wait_zalo_delivery(t0, photo=True)
             note(
                 "image_gen_file",
-                size_ok and subject_ok and bool(delivery),
-                f"size={img.stat().st_size} delivered={bool(delivery)} vision={summary[:160]}",
+                size_ok and subject_ok and bool(image_delivery),
+                f"size={img.stat().st_size} delivered={bool(image_delivery)} vision={summary[:160]}",
             )
 
     # 2) Vision-OCR samples
@@ -467,11 +474,12 @@ def main() -> int:
             "ext": dest.suffix.lstrip("."),
             "mime": "image/png",
         }
-        inject("đọc / mô tả ảnh này giúp mình", media=media)
+        source_id = inject("đọc / mô tả ảnh này giúp mình", media=media)
         # Let the user-visible request finish before using the same combo as an
         # independent evaluator.  The evaluation must not contend with the
         # capability under test and create its own queue-saturation failure.
-        delivery = wait_zalo_delivery(t1)
+        delivery_record = wait_zalo_delivery(t1, source_id=source_id)
+        delivery = str(delivery_record.get("content") or "").strip()
         direct = vision_rate(dest, prompt)
         low = direct.lower()
         delivery_low = delivery.lower()
@@ -546,8 +554,9 @@ def main() -> int:
             "ext": dest.suffix.lstrip("."),
             "mime": "application/pdf" if dest.suffix.lower() == ".pdf" else "text/plain",
         }
-        inject("đọc nội dung file này và tóm tắt ngắn", media=media)
-        delivery = wait_zalo_delivery(t2)
+        source_id = inject("đọc nội dung file này và tóm tắt ngắn", media=media)
+        delivery_record = wait_zalo_delivery(t2, source_id=source_id)
+        delivery = str(delivery_record.get("content") or "").strip()
         excerpt = ""
         try:
             body = post_json(
@@ -595,8 +604,8 @@ def main() -> int:
                 f"n={len(results)} answer_len={len(answer)} sample={blob[:120]}",
             )
         search_started = time.time()
-        inject("tra cứu nhanh: thủ đô của Việt Nam là gì? trả lời một câu")
-        delivery = wait_zalo_delivery(search_started)
+        source_id = inject("tra cứu nhanh: thủ đô của Việt Nam là gì? trả lời một câu")
+        delivery = wait_zalo_delivery(search_started, source_id=source_id)
         if not delivery:
             checks[-1]["ok"] = False
             checks[-1]["detail"] += " delivery=false"
@@ -605,7 +614,7 @@ def main() -> int:
 
     # 5) Schedule once_after
     schedule_started = time.time()
-    inject("remind me to drink water after 1 minute")
+    schedule_source = inject("remind me to drink water after 1 minute")
     row_seen = False
     schedule_id = ""
     detail = ""
@@ -616,7 +625,7 @@ def main() -> int:
             for row in rows:
                 blob = json.dumps(row, ensure_ascii=False)
                 low = blob.lower()
-                if "drink water" in low and TN in blob:
+                if schedule_source in blob and "drink water" in low and TN in blob:
                     row_seen = True
                     schedule_id = str(row.get("id") or "") if isinstance(row, dict) else ""
                     detail = blob[:220]
@@ -626,7 +635,7 @@ def main() -> int:
         except Exception as e:
             detail = type(e).__name__
         try:
-            ack_count = schedule_ack_count(schedule_started)
+            ack_count = schedule_ack_count(schedule_started, schedule_source)
         except Exception:
             ack_count = 0
         try:
@@ -637,7 +646,7 @@ def main() -> int:
             break
         time.sleep(2)
     try:
-        ack_count = schedule_ack_count(schedule_started)
+        ack_count = schedule_ack_count(schedule_started, schedule_source)
     except Exception:
         ack_count = 0
     try:

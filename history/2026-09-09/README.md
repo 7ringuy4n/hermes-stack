@@ -66,6 +66,26 @@ recovery rebound only the destination before the file tool read shared session
 state. The later text response used the new source, making the mismatch visible
 only to exact attachment correlation.
 
+The first complete numbered run exposed three interacting follow-up failures.
+The history harness treated optional gateway text as delivery proof, created
+three-hour schedules without cleanup, and let those schedules fire inside later
+cases. The remaining suite correlated all replies only by thread and time, so
+an unrelated schedule acknowledgement could be counted twice. Finally, an
+explicit quoted reply still received the chat's recent-attachment pack before
+quoted context was appended; the model could resume the old file task instead
+of returning the literal quoted response.
+
+A visual artifact supplied after the first adaptive-layout pass exposed a
+renderer defect rather than a planner defect. `bottom-bar` first measured a
+content-sized card, then unconditionally replaced its width with the full image
+width. The resulting dark layer hid the entire lower-right scene even though
+the copy occupied only the left half.
+
+The corrected concurrency gate then caught a live-data route bypass: one of two
+current-weather requests answered through `execute_code` using conversation
+context instead of making a new call through the operator-owned `web-search`
+combo. Its answer looked plausible, but attribution correctly rejected it.
+
 ## Technical detail
 
 - `architect/models/dispatcher/image_backends.py:L20` imports the shared
@@ -126,6 +146,17 @@ only to exact attachment correlation.
   restored read-only tree.
 - Use acknowledged `zalo_message_history` delivery rows for reply and schedule
   acknowledgement evidence; retain journal echoes as diagnostics only.
+- Suppress recent-attachment recall when the inbound turn contains an explicit
+  quote; quoted context is already the authoritative reference.
+- Keep named top/bottom bands content-sized and capped at 72% image width by
+  default. A normalized region can still request full width explicitly.
+- Re-correlate every remaining-suite delivery and schedule acknowledgement by
+  its unique source message. The history harness now proves the exact durable
+  result and deletes its tagged schedule in a `finally` cleanup boundary.
+- When a typed plan requires live search, replace unrelated attachment recall
+  with the current request plus a trusted execution contract: call native
+  `web_search` now, do not reuse prior results, and do not bypass routing with
+  code, shell, or direct HTTP libraries.
 
 ## Prevention
 
@@ -173,6 +204,17 @@ VPS test tree cannot silently attribute results to its older checkout HEAD.
 The DM/group capability gate additionally requires each DOCX attachment's
 durable source ID to equal its own queue item, so correct destination alone can
 no longer hide a crossed correlation.
+Renderer coverage now asserts the actual band bounds on a 1280×720 image and
+fails unless more than 200 pixels of right-side scene remain uncovered. The
+live exact Da Nang gate produced a bounded lower-left card and a separate
+bounded left-frame artifact; both preserved one cohesive scene.
+History greeting, schedule, mixed schedule, PDF, and English cases passed with
+durable source correlation and no leftover tagged schedule. The repaired
+remaining suite passed image generation, two vision inputs, PDF/text extract,
+web search, exactly one schedule acknowledgement/fire, automatic row removal,
+and restart checks. Focused DM/group runs then passed exact quote responses,
+two attributable weather searches, two isolated DOCX packages, semantic score
+10, eight-message FIFO continuity, empty queues, and honest remote-video refusal.
 
 ## Verification
 

@@ -4,7 +4,10 @@ See `history/2026-09-09/README.md` for scheduled composed-plan execution,
 verbatim atomic queue prompts, dispatcher source correlation, restored Router
 Worker skill ownership, shared-region layout planning, the retired six-line
 payload cap, and the live-suite change from optional journal echoes to durable
-acknowledged Zalo delivery records.
+acknowledged Zalo delivery records. Follow-up production gates also made lower
+information bands content-sized, isolated explicit quotes from stale attachment
+recall, enforced native routed search for current-data turns, and cleaned every
+schedule created by the history harness.
 
 ## 2026-09-08 19:12 +07 — composed-plan completion budget
 

@@ -23,7 +23,12 @@ Follow-up gates preserved verbatim atomic prompts through the queue, repaired
 dispatcher attachment correlation and scheduled environment loading, and made
 shared bottom/left information regions independent of subject count. The same
 record documents the retired six-line payload cap and the live harness change
-from optional bridge echoes to durable acknowledged delivery evidence.
+from optional bridge echoes to durable acknowledged delivery evidence. A later
+visual review found that the renderer still forced a model-selected bottom band
+to full image width; bands are now content-sized and bounded so they preserve
+the unrequested side of the scene. The record also covers stale attachment
+recall in explicit replies, same-turn routed-search enforcement, and removal of
+test-created schedule leakage across live cases.
 
 ## 2026-09-08 — multi-domain spatial composition
 

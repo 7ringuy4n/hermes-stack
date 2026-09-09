@@ -97,7 +97,9 @@ Send a natural-language still-image request through Zalo. Require:
 - exercise both a shared bottom information bar and a shared left-side frame
   with current weather plus fuel prices. Require the complete facts in the
   requested language, the requested placement, one cohesive background, and no
-  hard-coded split-panel fallback;
+  hard-coded split-panel fallback. A bottom band is content-sized by default
+  and must leave meaningful scene visible beside it; it may cover the full
+  width only when the request explicitly requires full width;
 - exercise at least one named grid arrangement, one repeated-side arrangement,
   and one normalized custom-region arrangement. Unspecified regions must be
   distributed without overlap; no panel may cover another panel or essential
@@ -125,7 +127,10 @@ Ask a time-sensitive question whose answer can be independently checked.
 Require route attribution to `web-search`, current sources/links, agreement
 between cited sources and answer, and no fabricated citation. A provider quota
 may be skipped only when an alternate member also cannot serve and logs prove
-the external limit.
+the external limit. Each typed current-data request must make a fresh native
+search call in the same turn. Reusing a prior answer or substituting code,
+shell, or direct language HTTP calls fails the route even if the prose looks
+plausible.
 
 ### C5 — embedding API (`embedding`)
 
@@ -156,6 +161,10 @@ it to a text reminder. Run the same adaptive weather-and-fuel composition used
 by C1 with a near-future deadline and require the scheduled artifact to retain
 the shared-region placement, facts, language, single-scene requirement, and
 source-correlated image delivery.
+
+Every test-created schedule must include an opaque source marker and be deleted
+in a cleanup boundary on pass, failure, or timeout. A later live case must never
+observe a delayed fire left behind by an earlier harness.
 
 ### C8 — image edit, including Zalo reply quote
 

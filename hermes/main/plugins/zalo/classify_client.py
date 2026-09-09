@@ -573,6 +573,18 @@ def _plan_has_search(src: dict[str, Any]) -> bool:
     return False
 
 
+def plan_requires_live_search(plan: dict[str, Any] | None) -> bool:
+    """Whether a typed plan requires a fresh routed web lookup this turn."""
+    src = plan if isinstance(plan, dict) else {}
+    if str(src.get("task_hint") or "").strip().lower() == "search":
+        return True
+    if str(src.get("task_type") or "").strip().lower() == "search":
+        return True
+    if str(src.get("skill") or "").strip().lower() in {"web_search", "web-search"}:
+        return True
+    return _plan_has_search(src)
+
+
 def _plan_has_media_generation(src: dict[str, Any]) -> bool:
     if "media_generation" in _plan_types(src):
         return True

@@ -176,6 +176,25 @@ def main() -> int:
     image.save(image_path, quality=90)
     apply_overlay(image_path, lines, corner="auto", design=payload_design)
     assert image_path.stat().st_size > 4000
+    band_image = OUT / "content-sized-bottom-band.jpg"
+    Image.new("RGB", (1280, 720), (52, 82, 112)).save(band_image, quality=90)
+    band_bounds = apply_overlay(
+        band_image,
+        [
+            "Current information",
+            "Feels like: 26.6 C",
+            "Conditions: Heavy rain",
+            "Air quality: Unhealthy",
+            "Fuel E10 RON 95-III: 23,270 VND",
+            "Trend: Prices decreased",
+            "Updated: 12:00 2026-09-09",
+        ],
+        corner="bottom-bar",
+        design={"placement": "bottom-bar", "density": "comfortable"},
+    )
+    assert band_bounds is not None
+    assert band_bounds[0] > 0 and band_bounds[2] <= int(1280 * 0.75)
+    assert band_bounds[2] < 1280 - 200, "bottom band must preserve the right-side scene"
     panel_image = OUT / "multipanel.jpg"
     image.save(panel_image, quality=90)
     rendered = apply_overlay_panels(panel_image, panels)

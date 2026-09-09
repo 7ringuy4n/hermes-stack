@@ -37,7 +37,12 @@ MODULE.plugin_logs = lambda *_args, **_kwargs: (_ for _ in ()).throw(
     AssertionError("journal echo must not be the delivery oracle")
 )
 
-assert MODULE.wait_zalo_delivery(123.5, photo=True, wait_s=1) == "accepted result"
-assert MODULE.schedule_ack_count(123.5) == 1
+result = MODULE.wait_zalo_delivery(
+    123.5, source_id="suite-source", photo=True, wait_s=1
+)
+assert result["content"] == "accepted result"
+assert MODULE.schedule_ack_count(123.5, "schedule-source") == 1
+assert any("LAB_SOURCE_ID=suite-source" in item for cmd in calls for item in cmd)
+assert any("LAB_SOURCE_ID=schedule-source" in item for cmd in calls for item in cmd)
 assert any(cmd[:2] == ["docker", "exec"] for cmd in calls)
 print("zalo_remaining_suite_oracle_unit: PASS")
