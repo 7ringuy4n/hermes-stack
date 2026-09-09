@@ -29,6 +29,11 @@ note branch used its English fallback. Composed planning read
 `OMNI_OVERLAY_PLAN_MAX_TOKENS` even though the accepted JSON structure is
 already strictly bounded (`media_shortcuts.py:L303`).
 
+A clean full-feature redeploy also exposed a restored-tree ownership gap. The
+post-ready hook only repaired `docs/` recursively when the top-level directory
+was not writable. A writable parent containing root-owned descendants therefore
+passed the probe and failed later at recursive `chmod`.
+
 ## Decision and fix
 
 - Execute a schedule's creation-time plan through `_as_try_workflow_submit`
@@ -43,6 +48,8 @@ already strictly bounded (`media_shortcuts.py:L303`).
   removing the operator environment knob.
 - Keep visual design model-authored, but require a requested visual subject to
   remain recognizable instead of degenerating into an abstract gradient.
+- Probe recursive docs-tree access before learning and fall back to the bounded
+  sudo/container ownership repair when any restored descendant is inaccessible.
 
 ## Prevention
 

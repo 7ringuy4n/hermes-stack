@@ -27,6 +27,8 @@ def main() -> int:
             )
         )
         and 'sudo mkdir -p "$docs_root"' not in block,
+        "repairs inaccessible restored descendants":
+        '|| ! chmod -R u+rwX "$docs_root" 2>/dev/null' in block,
         "root execution targets the runtime owner": 'owner_uid="${HERMES_UID:-1000}"' in block
         and 'owner_gid="${HERMES_GID:-1000}"' in block,
         "restores deploy-user write access": 'chmod -R u+rwX "$docs_root"' in block,
