@@ -61,6 +61,9 @@ before every unit and VPS gate so long production runs have auditable progress.
 The Router Worker classifier bundle is regenerated from the authoritative skill
 parts, and the assembly contract checks the current per-domain search invariant
 instead of a retired wording fragment.
+The live-test harness also has an explicit VPS-local mode, allowing the numbered
+gates to run on the target without placing SSH credentials in command arguments
+or installing Paramiko on the production host.
 
 ## Verification
 
