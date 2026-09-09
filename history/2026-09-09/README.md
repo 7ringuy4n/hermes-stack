@@ -1,4 +1,4 @@
-# 2026-09-09 — scheduled composed-image execution and locale integrity
+# 2026-09-09 — scheduled composed-image execution, adaptive layout, and locale integrity
 
 ## Symptom
 
@@ -40,6 +40,57 @@ but the queue worker then hydrated an unrelated completed session before the
 current reply. A direct-message model resumed the older image task instead of
 following the current quoted-text instruction.
 
+Later live tests found four additional gaps. The dispatcher scheduled path used
+the environment lookup helper without importing it, and dispatcher-created
+attachments did not always retain the source turn for durable delivery. A
+single queued request was replaced by the classifier's normalized instruction,
+so exact-response intent could be lost even though multi-part splitting was not
+needed. Vietnamese semantic folding removed combining marks but did not map
+`đ`, producing false evaluation failures.
+
+Composed-image planning also conflated independently sourced subjects with
+visual panel count. Requests for weather and fuel in one shared bottom or left
+region were therefore split, while a legacy payload adapter silently retained
+only six of the planner's validated fact lines. The visible result looked like
+a hard-coded template and could omit fuel data.
+
+Finally, the remaining live-suite harness waited on optional bridge
+self-message journal echoes even after durable history proved Zalo accepted a
+result. Every successful request incurred the full wait and the scheduler gate
+reported a false missing acknowledgement.
+
+The mixed DM/group capability gate then found a source-correlation race within
+one DM. The next DOCX reached the correct user, but its dispatcher-generated
+attachment was recorded against the preceding weather request because queue
+recovery rebound only the destination before the file tool read shared session
+state. The later text response used the new source, making the mismatch visible
+only to exact attachment correlation.
+
+## Technical detail
+
+- `architect/models/dispatcher/image_backends.py:L20` imports the shared
+  `env_active` helper used by the generated-image backend; dispatcher delivery
+  correlation is resolved and persisted by
+  `architect/models/dispatcher/app.py:L509-L704`.
+- `hermes/main/plugins/zalo/multi_request.py:L62` returns raw text for a single
+  atomic item, and `hermes/main/plugins/zalo/adapter.py:L4259` applies that rule
+  before durable admission.
+- `hermes/main/plugins/zalo/adapter.py:L4415-L4430` now passes the claimed
+  queue item's `message_id` into `_as_autosend_remember_turn` before handlers
+  execute; this atomically refreshes the per-conversation source key read by
+  dispatcher attachment delivery.
+- `hermes/main/plugins/zalo/media_shortcuts.py:L186-L638` keeps eight bounded
+  facts and authors one shared overlay payload; opaque layout telemetry at
+  `media_shortcuts.py:L1332` exposes panel/fact counts and normalized placement.
+  `architect/models/dispatcher/overlay.py:L12-L45` enforces the same eight-line
+  renderer bound.
+- `scripts/main/sync-router-worker-skills.sh:L42-L62` installs through a staged
+  writable file and repairs bounded destination ownership before replacing the
+  baked classifier.
+- `test/scripts/zalo_tn_remaining_suite_remote.py:L98-L148` reads acknowledged
+  `delivered` rows, while `L336-L365` counts scheduler acknowledgements whose
+  `meta.delivery_kind` is `gate`.
+
 ## Decision and fix
 
 - Execute a schedule's creation-time plan through `_as_try_workflow_submit`
@@ -59,6 +110,22 @@ following the current quoted-text instruction.
 - Persist whether a queue item contains an explicit inbound quote and suppress
   unrelated session hydration for that turn. The quoted text remains visible,
   while ordinary unquoted follow-ups retain durable conversation continuity.
+- Import runtime environment lookup on every dispatcher execution path and
+  propagate the active Zalo source correlation into dispatcher attachment
+  sends.
+- Keep raw text for an atomic queue item; use classifier-normalized parts only
+  when the request was actually decomposed. Normalize Vietnamese `đ` explicitly
+  in language-agnostic semantic checks.
+- Rebind both destination and source from the durable queue claim before
+  beginning a recovered turn; never infer a new file's source from the previous
+  per-conversation session value.
+- Treat a user-requested shared region as one group regardless of source-subject
+  count. Carry eight bounded facts consistently through planner, validator,
+  payload adapter, and overlay renderer, with opaque layout diagnostics.
+- Recursively repair and verify the Router Worker skill bundle before baking a
+  restored read-only tree.
+- Use acknowledged `zalo_message_history` delivery rows for reply and schedule
+  acknowledgement evidence; retain journal echoes as diagnostics only.
 
 ## Prevention
 
@@ -95,6 +162,15 @@ note cannot regress to an English host confirmation unnoticed.
 The concurrency gate requires exact source-correlated responses in both a DM
 and a three-member group, preserving the explicit-quote flag through the durable
 FIFO so stale session context cannot silently override either reply.
+The flexible-composition gate now sends both a near-future shared-bottom request
+and an immediate shared-left request. It requires one cohesive scene, the
+requested placement, all weather/fuel facts, source-correlated image delivery,
+and planner diagnostics that do not derive panel count from subject count.
+The remaining-suite oracle has a focused unit test that fails if journal echoes
+again replace acknowledged durable delivery or schedule-gate evidence.
+The DM/group capability gate additionally requires each DOCX attachment's
+durable source ID to equal its own queue item, so correct destination alone can
+no longer hide a crossed correlation.
 
 ## Verification
 

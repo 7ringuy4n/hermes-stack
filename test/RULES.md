@@ -90,6 +90,14 @@ Send a natural-language still-image request through Zalo. Require:
   contains no profanity, and is checked by OCR plus visual inspection;
 - for a multi-subject request, every independently sourced subject is present
   exactly once and every explicit spatial relationship is preserved;
+- treat an explicitly requested shared region as one visual group even when it
+  contains several independently sourced subjects. Subject count must not
+  silently become panel count, and payload adaptation must preserve every
+  validated fact rather than truncating to a legacy line limit;
+- exercise both a shared bottom information bar and a shared left-side frame
+  with current weather plus fuel prices. Require the complete facts in the
+  requested language, the requested placement, one cohesive background, and no
+  hard-coded split-panel fallback;
 - exercise at least one named grid arrangement, one repeated-side arrangement,
   and one normalized custom-region arrangement. Unspecified regions must be
   distributed without overlap; no panel may cover another panel or essential
@@ -142,6 +150,12 @@ exactly one acknowledgement, durable row, one execution, and one final
 transport-accepted delivery whose `source_message_id` correlates to that
 schedule row. Also require the correct timezone and no duplicate after a
 worker or Hermes restart. Remove the test schedule and row afterward.
+
+For scheduled image work, persist the full original intent instead of reducing
+it to a text reminder. Run the same adaptive weather-and-fuel composition used
+by C1 with a near-future deadline and require the scheduled artifact to retain
+the shared-region placement, facts, language, single-scene requirement, and
+source-correlated image delivery.
 
 ### C8 — image edit, including Zalo reply quote
 

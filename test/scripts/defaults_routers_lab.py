@@ -24,6 +24,7 @@ ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().paren
 OUT = ROOT / "test" / "reports" / "run-defaults-routers"
 ROWS: list[dict] = []
 SLO_MS = int(os.environ.get("SIMPLE_MSG_SLO_MS", "5000"))
+SAMPLE_COUNT = max(3, int(os.environ.get("SIMPLE_MSG_SAMPLES", "3")))
 
 
 def ts() -> str:
@@ -69,15 +70,17 @@ if [[ -z "$KEY" ]]; then
   fi
 fi
 if [[ -n "$KEY" ]]; then
-  t0=$(python3 -c 'import time; print(time.monotonic_ns() // 1000000)')
-  code=$(curl -sS -m 60 -o /tmp/def-ping.json -w "%{{http_code}}" \
-    -X POST http://127.0.0.1:8080/v1/chat/completions \
-    -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
-    -d '{{"model":"hermes","messages":[{{"role":"user","content":"ping reply OK"}}],"max_tokens":8}}' || echo 000)
-  t1=$(python3 -c 'import time; print(time.monotonic_ns() // 1000000)')
-  echo "PING_HTTP=$code PING_MS=$((t1-t0))"
+  for n in $(seq 1 {SAMPLE_COUNT}); do
+    t0=$(python3 -c 'import time; print(time.monotonic_ns() // 1000000)')
+    code=$(curl -sS -m 60 -o /tmp/def-ping.json -w "%{{http_code}}" \
+      -X POST http://127.0.0.1:8080/v1/chat/completions \
+      -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+      -d '{{"model":"hermes","messages":[{{"role":"user","content":"ping reply OK"}}],"max_tokens":8}}' || echo 000)
+    t1=$(python3 -c 'import time; print(time.monotonic_ns() // 1000000)')
+    echo "PING_SAMPLE=$n PING_HTTP=$code PING_MS=$((t1-t0))"
+  done
 else
-  echo "PING_HTTP=SKIP PING_MS=0"
+  echo "PING_SAMPLE=0 PING_HTTP=SKIP PING_MS=0"
 fi
 echo DEFAULTS_LAB_DONE
 """,
@@ -106,17 +109,39 @@ echo DEFAULTS_LAB_DONE
             fails += 1
         else:
             note("omni_default", "PASS", "live OmniRoute enabled")
+        ping_ms: list[int] = []
         for line in out.splitlines():
-            if line.startswith("PING_HTTP="):
-                note("ping", "RECORD", line)
-                parts = line.replace("PING_HTTP=", "").replace("PING_MS=", "").split()
-                if len(parts) >= 2 and parts[0] == "200" and parts[1].isdigit():
-                    ms = int(parts[1])
-                    if ms > SLO_MS:
-                        note("ping_slo", "FAIL", f"{ms}ms > {SLO_MS}ms simple-message SLO")
-                        fails += 1
-                    else:
-                        note("ping_slo", "PASS", f"{ms}ms")
+            if not line.startswith("PING_SAMPLE="):
+                continue
+            note("ping", "RECORD", line)
+            fields = dict(
+                part.split("=", 1) for part in line.split() if "=" in part
+            )
+            if fields.get("PING_HTTP") == "200" and fields.get("PING_MS", "").isdigit():
+                ping_ms.append(int(fields["PING_MS"]))
+        if ping_ms:
+            ordered = sorted(ping_ms)
+            median_ms = ordered[len(ordered) // 2]
+            tail_ms = ordered[-1]
+            if len(ping_ms) != SAMPLE_COUNT:
+                note("ping_slo", "FAIL", f"only {len(ping_ms)}/{SAMPLE_COUNT} successful samples")
+                fails += 1
+            elif median_ms > SLO_MS:
+                note(
+                    "ping_slo",
+                    "FAIL",
+                    f"median={median_ms}ms > {SLO_MS}ms tail={tail_ms}ms samples={ping_ms}",
+                )
+                fails += 1
+            else:
+                note(
+                    "ping_slo",
+                    "PASS",
+                    f"median={median_ms}ms tail={tail_ms}ms samples={ping_ms}",
+                )
+        else:
+            note("ping_slo", "FAIL", "no successful simple-message samples")
+            fails += 1
         path = OUT / f"defaults-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.json"
         path.write_text(json.dumps({"rows": ROWS, "fails": fails}, indent=2), encoding="utf-8")
         print(f"report={path.relative_to(ROOT)}")

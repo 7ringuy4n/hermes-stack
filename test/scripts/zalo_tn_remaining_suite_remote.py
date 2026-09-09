@@ -96,13 +96,53 @@ def plugin_logs(since_epoch: float | None = None) -> str:
 
 
 def wait_zalo_delivery(started: float, *, photo: bool = False, wait_s: int | None = None) -> str:
-    marker = "self=true msgType=chat.photo" if photo else "self=true msgType=webchat"
+    """Return the latest acknowledgement-backed delivery after ``started``.
+
+    The bridge self-message journal is optional transport telemetry and may be
+    absent even when Zalo accepted the send.  The durable delivery history is
+    the release oracle used by test/RULES.md.
+    """
+    containers = subprocess.check_output(
+        ["docker", "ps", "-q", "--filter", "name=zalo-api"], text=True
+    ).split()
+    if not containers:
+        return ""
+    probe = """
+import json, os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+    row = conn.execute(
+        "SELECT content, meta FROM zalo_message_history "
+        "WHERE thread_id=%s AND thread_type='user' AND event='delivered' "
+        "AND created_at >= to_timestamp(%s) "
+        "AND COALESCE(meta->>'delivery_kind','result') "
+        "IN ('result','queue_recovery') "
+        "AND (%s = false OR meta->>'attachment_kind'='image') "
+        "ORDER BY created_at DESC LIMIT 1",
+        (os.environ["LAB_THREAD_ID"], float(os.environ["LAB_STARTED"]),
+         os.environ.get("LAB_PHOTO") == "1"),
+    ).fetchone()
+print(json.dumps({"content": row[0], "meta": row[1]} if row else {}))
+"""
     deadline = time.time() + (WAIT if wait_s is None else wait_s)
     while time.time() < deadline:
-        journal = plugin_logs(started)
-        hits = [line for line in journal.splitlines() if marker in line]
-        if hits:
-            return "\n".join(hits)
+        try:
+            raw = subprocess.check_output(
+                [
+                    "docker", "exec",
+                    "-e", "LAB_THREAD_ID=" + TN,
+                    "-e", "LAB_STARTED=" + repr(float(started)),
+                    "-e", "LAB_PHOTO=" + ("1" if photo else "0"),
+                    containers[0], "python3", "-c", probe,
+                ],
+                text=True,
+                errors="replace",
+            )
+            result = json.loads(raw or "{}")
+            content = str(result.get("content") or "").strip()
+            if content:
+                return content
+        except Exception:
+            pass
         time.sleep(2)
     return ""
 
@@ -285,6 +325,38 @@ print(int(row[0] or 0))
             "-e", "LAB_THREAD_ID=" + TN,
             "-e", "LAB_STARTED=" + str(int(started)),
             "-e", "LAB_SCHEDULE_ID=" + schedule_id,
+            containers[0], "python3", "-c", probe,
+        ],
+        text=True,
+        errors="replace",
+    ).strip()
+    return int(raw or "0")
+
+
+def schedule_ack_count(started: float) -> int:
+    """Count durable schedule acknowledgements for this test request."""
+    containers = subprocess.check_output(
+        ["docker", "ps", "-q", "--filter", "name=zalo-api"], text=True
+    ).split()
+    if not containers:
+        return 0
+    probe = """
+import os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+    row = conn.execute(
+        "SELECT count(*) FROM zalo_message_history "
+        "WHERE thread_id=%s AND thread_type='user' AND event='delivered' "
+        "AND created_at >= to_timestamp(%s) "
+        "AND meta->>'delivery_kind'='gate'",
+        (os.environ["LAB_THREAD_ID"], float(os.environ["LAB_STARTED"])),
+    ).fetchone()
+print(int(row[0] or 0))
+"""
+    raw = subprocess.check_output(
+        [
+            "docker", "exec",
+            "-e", "LAB_THREAD_ID=" + TN,
+            "-e", "LAB_STARTED=" + repr(float(started)),
             containers[0], "python3", "-c", probe,
         ],
         text=True,
@@ -553,8 +625,10 @@ def main() -> int:
                 detail = f"n={len(rows)} sample={json.dumps(rows[0], ensure_ascii=False)[:120]}"
         except Exception as e:
             detail = type(e).__name__
-        journal = plugin_logs(schedule_started)
-        ack_count = journal.count('content="Đã lưu lịch!"')
+        try:
+            ack_count = schedule_ack_count(schedule_started)
+        except Exception:
+            ack_count = 0
         try:
             fire_count = schedule_delivery_count(schedule_id, schedule_started)
         except Exception:
@@ -562,8 +636,10 @@ def main() -> int:
         if row_seen and ack_count == 1 and fire_count == 1:
             break
         time.sleep(2)
-    journal = plugin_logs(schedule_started)
-    ack_count = journal.count('content="Đã lưu lịch!"')
+    try:
+        ack_count = schedule_ack_count(schedule_started)
+    except Exception:
+        ack_count = 0
     try:
         fire_count = schedule_delivery_count(schedule_id, schedule_started)
     except Exception:

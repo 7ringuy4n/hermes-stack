@@ -1,3 +1,11 @@
+## 2026-09-09 — adaptive composed-image and durable live-test evidence
+
+See `history/2026-09-09/README.md` for scheduled composed-plan execution,
+verbatim atomic queue prompts, dispatcher source correlation, restored Router
+Worker skill ownership, shared-region layout planning, the retired six-line
+payload cap, and the live-suite change from optional journal echoes to durable
+acknowledged Zalo delivery records.
+
 ## 2026-09-08 19:12 +07 — composed-plan completion budget
 
 See `history/2026-09-08/README.md` for the structured planner completion-budget root

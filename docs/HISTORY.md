@@ -19,6 +19,11 @@ same-language note UX, removes an unnecessary composed-plan environment knob,
 and makes the full scheduled-image fire a mandatory release case. The live
 DM/group concurrency gate also found that explicit quoted text was combined
 with an unrelated completed session; quote context now takes precedence.
+Follow-up gates preserved verbatim atomic prompts through the queue, repaired
+dispatcher attachment correlation and scheduled environment loading, and made
+shared bottom/left information regions independent of subject count. The same
+record documents the retired six-line payload cap and the live harness change
+from optional bridge echoes to durable acknowledged delivery evidence.
 
 ## 2026-09-08 — multi-domain spatial composition
 

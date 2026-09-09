@@ -32,7 +32,10 @@ Hermes → INPUT Secret Probe → task_hint (explicit or default normal)
 
 **Unit (no VPS):** `python test/scripts/defaults_profile_unit.py`
 
-**Lab (SSH, separate process):** `python test/scripts/defaults_routers_lab.py`
+**Lab (SSH, separate process):** `python test/scripts/defaults_routers_lab.py`.
+The live latency gate records at least three simple-message samples, requires
+every sample to return HTTP 200, enforces the configured SLO on the observed
+median, and records the observed tail without silently widening the threshold.
 
 1. Dump live flags (no secrets).
 2. Compare to the table above — **RECORD** mismatches (lab overrides are OK if labelled).

@@ -16,6 +16,21 @@
   transport, including latency and file-security matrices.
 - Keep case 17 on the documented Zalo bridge/SSE path; the direct Traefik ping
   remains an optional comparison rather than release evidence.
+- Preserve a single atomic request verbatim through durable admission instead
+  of replacing it with classifier-normalized text, including Vietnamese `đ`
+  when semantic test matching folds accents.
+- Bind a claimed queue item's source message together with its destination
+  before any handler or file tool runs, preventing a later document from
+  inheriting the previous request's durable source correlation.
+- Derive composed-image placement from the user's requested shared region, not
+  from the number of sourced subjects, and preserve up to eight validated fact
+  lines through planning, payload adaptation, validation, and rendering.
+- Correlate dispatcher-produced attachments with their originating Zalo turn
+  and load the runtime environment helper on scheduled dispatcher execution.
+- Repair Router Worker skill descendants even when a restored top-level tree is
+  writable, and verify the baked classifier bundle before continuing deploy.
+- Make live-suite delivery and schedule-ack evidence use acknowledged durable
+  history instead of optional bridge self-message journal echoes.
 
 ## 2026-09-08 19:12 +07 — complete structured multi-region plans
 
