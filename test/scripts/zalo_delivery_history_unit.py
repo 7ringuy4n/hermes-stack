@@ -57,6 +57,11 @@ def main() -> int:
     assert "async with self._as_agent_turn_lock_for(tid):" in source
     assert "not lease.heartbeat_healthy()" in source
     queued = source.index("async def _as_run_queued_part")
+    queued_body = source[queued:source.index("async def _as_dispatch_event", queued)]
+    assert 'str(item.get("message_id") or "")' in queued_body
+    assert queued_body.index('str(item.get("message_id") or "")') < queued_body.index(
+        "await self.handle_message(event)"
+    )
     terminal = source.index("idle = await self._as_wait_thread_idle(", queued)
     assert source.index("async with self._as_agent_turn_lock_for(tid):", queued) < terminal
     drain = source.index("async def _as_queue_drain")

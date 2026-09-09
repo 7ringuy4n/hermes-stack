@@ -175,11 +175,11 @@ def main() -> int:
     queued_part = adapter_source.split("async def _as_run_queued_part", 1)[1].split(
         "async def _as_dispatch_event", 1
     )[0]
-    remember = "self._as_autosend_remember_turn(tid, thread_type)"
+    remember = 'str(item.get("message_id") or "")'
     if remember not in queued_part or queued_part.index(remember) > queued_part.index(
         "await self.handle_message(event)"
     ):
-        print("FAIL recovered queue turn does not rebind its destination")
+        print("FAIL recovered queue turn does not rebind its source and destination")
         return 1
     sse_handler = adapter_source.split("async def _handle_sse_event", 1)[1]
     sse_handler = sse_handler.split("def _as_inbound_is_admin", 1)[0]

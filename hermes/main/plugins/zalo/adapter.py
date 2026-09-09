@@ -4420,7 +4420,11 @@ class ZaloAdapter(BasePlatformAdapter):
         # A durable queue claim may resume on a different HA replica. Rebind
         # its destination before any handler or recovery send; owner-local
         # state cannot transfer, and the shared hint may name another chat.
-        self._as_autosend_remember_turn(tid, thread_type)
+        self._as_autosend_remember_turn(
+            tid,
+            thread_type,
+            str(item.get("message_id") or ""),
+        )
         self._as_begin_turn(tid)
         try:
             from .queue_history import record as history_record
