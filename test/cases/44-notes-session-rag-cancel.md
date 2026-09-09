@@ -7,6 +7,13 @@ history cancellation events, user-visible Zalo replies, restart deltas, and
 late-delivery observation. Run message and quote-reply cancellation in the
 authorized DM and group; never claim a group pass from a DM-only probe.
 
+Verify that an exact Vietnamese note request receives the host-owned Vietnamese
+confirmation with:
+
+```bash
+ASSISTANT_VPS_LOCAL=1 python test/scripts/zalo_note_locale_lab.py
+```
+
 Run the reproducible DM cancellation probe with:
 
 ```bash

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import tempfile
 from pathlib import Path
 
 
@@ -26,6 +27,10 @@ def main() -> int:
     assert module.LOCAL_MODE is True
     client = module.connect()
     assert client.__class__.__name__ == "_LocalClient"
+    with tempfile.TemporaryDirectory() as raw:
+        target = Path(raw) / "sample.bin"
+        module.sftp_put(client, b"local-copy", str(target))
+        assert target.read_bytes() == b"local-copy"
     client.close()
     print("deploy_stack_local_unit: PASS")
     return 0

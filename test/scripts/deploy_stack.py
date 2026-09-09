@@ -210,6 +210,9 @@ def pack_skills() -> bytes:
 
 
 def sftp_put(c, local_bytes: bytes, remote_path: str) -> None:
+    if LOCAL_MODE:
+        Path(remote_path).write_bytes(local_bytes)
+        return
     sftp = c.open_sftp()
     with sftp.file(remote_path, "wb") as f:
         f.write(local_bytes)

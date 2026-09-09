@@ -67,6 +67,8 @@ or installing Paramiko on the production host.
 The scheduled-image gate correlates flow telemetry from the active replicas'
 `agent.log` files as well as Docker stdout because the production Hermes image
 persists info-level plugin events to per-replica logs.
+Case 44 now includes a live Vietnamese note-locale gate so a classifier-correct
+note cannot regress to an English host confirmation unnoticed.
 
 ## Verification
 
