@@ -21,6 +21,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deploy_stack import connect, sudo_bash  # noqa: E402
 from sanitize import sanitize as _sanitize  # noqa: E402
+from visual_weather_pdf_gate import (  # noqa: E402
+    delivered_image_count as _delivered_image_count,
+    new_pdf_seen as _new_pdf_seen,
+)
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -52,17 +56,6 @@ def _clean(text: str) -> str:
             continue
         lines.append(s)
     return "\n".join(lines)
-
-
-def _new_pdf_seen(text: str) -> bool:
-    """Require the positive line token; ``NO_NEW_PDF`` must never match."""
-    return bool(re.search(r"(?m)^NEW_PDF\s+\S+", text or ""))
-
-
-def _delivered_image_count(text: str) -> int | None:
-    """Return the durable delivery count, or None when the audit failed."""
-    match = re.search(r"(?m)^DELIVERED_IMAGE_COUNT\s+(\d+)\s*$", text or "")
-    return int(match.group(1)) if match else None
 
 
 def main() -> int:
