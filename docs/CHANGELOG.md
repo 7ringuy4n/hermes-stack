@@ -31,6 +31,8 @@
   writable, and verify the baked classifier bundle before continuing deploy.
 - Make live-suite delivery and schedule-ack evidence use acknowledged durable
   history instead of optional bridge self-message journal echoes.
+- Stamp the numbered case-index summary with the validated candidate revision,
+  including an explicit override for an intentionally overlaid VPS checkout.
 
 ## 2026-09-08 19:12 +07 — complete structured multi-region plans
 

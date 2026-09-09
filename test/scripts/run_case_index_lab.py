@@ -3,12 +3,14 @@
 
 Env (VPS scripts): ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 Optional: SKIP_VPS=1 (units only), CASE_FILTER=38,32 (comma ids)
+          ASSISTANT_CANDIDATE_SHA=<tested commit when the VPS tree is overlaid>
 
 Report: test/reports/run-case-index-lab/SUMMARY.md
 """
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -83,6 +85,23 @@ def report_cell(value: str, limit: int = 120) -> str:
 
 def progress_line(index: int, total: int, kind: str, case: str, name: str) -> str:
     return f"running test case {index}/{total}: {kind} {case} {name}"
+
+
+def candidate_sha() -> str:
+    """Return a validated tested revision without leaking arbitrary env text."""
+    override = (os.environ.get("ASSISTANT_CANDIDATE_SHA") or "").strip()
+    if override and re.fullmatch(r"[0-9a-fA-F]{7,40}", override):
+        return override.lower()
+    try:
+        value = subprocess.check_output(
+            ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+            text=True,
+            errors="replace",
+            timeout=10,
+        ).strip()
+    except Exception:
+        return "unknown"
+    return value.lower() if re.fullmatch(r"[0-9a-fA-F]{40}", value) else "unknown"
 
 
 def enabled(name: str) -> bool:
@@ -178,6 +197,7 @@ def main() -> int:
 
     md = (
         f"# Case index lab — {ts()}\n\n"
+        f"**Candidate:** `{candidate_sha()}`\n\n"
         "| kind | case | script | result | tail |\n"
         "|------|------|--------|--------|------|\n"
         + "\n".join(rows)

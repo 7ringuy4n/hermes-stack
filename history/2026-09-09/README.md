@@ -168,6 +168,8 @@ requested placement, all weather/fuel facts, source-correlated image delivery,
 and planner diagnostics that do not derive panel count from subject count.
 The remaining-suite oracle has a focused unit test that fails if journal echoes
 again replace acknowledged durable delivery or schedule-gate evidence.
+The case-index summary records a validated candidate revision, so an overlaid
+VPS test tree cannot silently attribute results to its older checkout HEAD.
 The DM/group capability gate additionally requires each DOCX attachment's
 durable source ID to equal its own queue item, so correct destination alone can
 no longer hide a crossed correlation.

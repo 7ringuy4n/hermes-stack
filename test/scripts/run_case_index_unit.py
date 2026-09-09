@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-from run_case_index_lab import progress_line, report_cell, unit_command
+from run_case_index_lab import candidate_sha, progress_line, report_cell, unit_command
 
 
 def main() -> int:
@@ -16,6 +16,11 @@ def main() -> int:
     assert progress_line(16, 103, "unit", "x", "demo_unit.py") == (
         "running test case 16/103: unit x demo_unit.py"
     )
+    with patch.dict(os.environ, {"ASSISTANT_CANDIDATE_SHA": "AbCdEf1"}):
+        assert candidate_sha() == "abcdef1"
+    with patch.dict(os.environ, {"ASSISTANT_CANDIDATE_SHA": "not a sha"}):
+        with patch("run_case_index_lab.subprocess.check_output", side_effect=OSError):
+            assert candidate_sha() == "unknown"
     with patch.dict(os.environ, {"ASSISTANT_TEST_LOCAL": "1"}):
         assert unit_command("router_worker_identity_unit.py")[0] != "docker"
         gateway = unit_command("workflow_gateway_unit.py")
