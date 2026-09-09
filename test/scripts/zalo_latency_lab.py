@@ -63,6 +63,12 @@ cd /opt/assistant
 set -a; . ./.env; set +a
 GW="${{GATEWAY_API_KEYS%%,*}}"
 KEY="${{API_SERVER_KEY:-$GW}}"
+if [[ -z "$KEY" ]]; then
+  HERMES_C=$(docker ps --filter label=com.docker.compose.service=hermes --format '{{{{.Names}}}}' | head -1)
+  if [[ -n "$HERMES_C" ]]; then
+    KEY=$(docker exec "$HERMES_C" sh -lc 'printf "%s" "${{API_SERVER_KEY:-${{GATEWAY_API_KEYS%%,*}}}}"')
+  fi
+fi
 export KEY N={N} CHAT_TO={CHAT_TO}
 if [[ -z "$KEY" ]]; then
   echo 'RESULT:{{"status":"SKIP","reason":"no_api_server_key"}}'

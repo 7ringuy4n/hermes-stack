@@ -76,6 +76,10 @@ or installing Paramiko on the production host.
 The latency and file-security matrices use that same shared transport instead
 of maintaining private Paramiko-only executors, so the complete case index can
 run under one audited execution mode.
+The latency matrix also reads its API credential from an active Hermes process
+when the production host deliberately keeps runtime OpenBao values out of the
+on-disk environment; the value remains inside the test process and report
+sanitization boundary.
 The scheduled-image gate correlates flow telemetry from the active replicas'
 `agent.log` files as well as Docker stdout because the production Hermes image
 persists info-level plugin events to per-replica logs.
