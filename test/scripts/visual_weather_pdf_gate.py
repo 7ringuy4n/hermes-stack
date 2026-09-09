@@ -36,3 +36,18 @@ def extracted_pdf_text(text: str) -> str:
     if "PDF_TEXT_BEGIN" not in text or "PDF_TEXT_END" not in text:
         return ""
     return text.split("PDF_TEXT_BEGIN", 1)[1].split("PDF_TEXT_END", 1)[0].strip()
+
+
+def unrequested_current_scope_terms(text: str) -> list[str]:
+    """Identify forecast/recommendation copy forbidden in a current-only PDF."""
+    lower = (text or "").lower()
+    forbidden = (
+        "dự báo 4 ngày",
+        "khả năng mưa",
+        "khuyến nghị",
+        "nếu ra ngoài",
+        "nên mang",
+        "hãy mang",
+        "mang theo áo mưa",
+    )
+    return [phrase for phrase in forbidden if phrase in lower]

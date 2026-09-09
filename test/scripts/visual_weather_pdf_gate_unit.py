@@ -7,6 +7,7 @@ from visual_weather_pdf_gate import (
     delivered_image_count,
     extracted_pdf_text,
     new_pdf_seen,
+    unrequested_current_scope_terms,
     visual_quality_score,
 )
 
@@ -27,6 +28,11 @@ def main() -> int:
         "PDF_TEXT_BEGIN\nCurrent weather\nPDF_TEXT_END\nBLOCKING_DEFECTS: none"
     ) == "Current weather"
     assert extracted_pdf_text("PDF_TEXT_CHARS 42") == ""
+    assert unrequested_current_scope_terms("Trời mưa, nếu ra ngoài bạn nên mang theo ô") == [
+        "nếu ra ngoài",
+        "nên mang",
+    ]
+    assert unrequested_current_scope_terms("Nhiệt độ hiện tại 27°C") == []
     print("visual_weather_pdf_gate_unit OK")
     return 0
 

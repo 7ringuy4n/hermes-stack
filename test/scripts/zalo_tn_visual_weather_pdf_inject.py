@@ -26,6 +26,7 @@ from visual_weather_pdf_gate import (  # noqa: E402
     delivered_image_count as _delivered_image_count,
     extracted_pdf_text as _extracted_pdf_text,
     new_pdf_seen as _new_pdf_seen,
+    unrequested_current_scope_terms as _unrequested_current_scope_terms,
     visual_quality_score as _visual_quality_score,
 )
 
@@ -300,11 +301,7 @@ print("DELIVERED_IMAGE_COUNT", int(row[0] if row else 0))
         report["visual_quality_score"] = visual_score
         report["visual_blocking_defects_clear"] = _blocking_defects_clear(evaluation)
         pdf_text = _extracted_pdf_text(out)
-        scope_bad = [
-            phrase
-            for phrase in ("dự báo 4 ngày", "khả năng mưa", "khuyến nghị")
-            if phrase in pdf_text.lower()
-        ]
+        scope_bad = _unrequested_current_scope_terms(pdf_text)
         report["unrequested_scope"] = scope_bad
         unexpected_image = "UNEXPECTED_NEW_IMAGE" in out
         report["unexpected_image"] = unexpected_image

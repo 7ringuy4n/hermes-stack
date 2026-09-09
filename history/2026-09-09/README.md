@@ -322,6 +322,11 @@ the no-document path, and fails closed when that audit is unavailable. It also
 rejects forecast/advice expansion for a current-only request and requires an
 explicit visual score of at least 8/10 with no blocking layout defect.
 
+The first collision-free rerun produced a structurally valid 9/10 page but
+still added a practical-advice strip to a current-observations-only request.
+The authoring contract now defines suggested actions as recommendations even
+when based on a current condition, and the live scope oracle detects that copy.
+
 ### Prevention
 
 - Test bootstrap behavior across the complete entrypoint plus image stage-two

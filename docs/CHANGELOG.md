@@ -51,6 +51,9 @@
   Current-only document tests now reject unsolicited forecast/advice sections
   and require an explicit visual score of at least 8/10 with no blocking layout
   defect.
+- Clarify that current-condition practical tips are recommendations too: a
+  current-only artifact must not add an unrequested advice sentence, card, or
+  strip merely because the advice is not forecast-based.
 - Apply the trusted current-search execution contract only when work executes;
   do not append it to the original text while a search-backed schedule is being
   created.
