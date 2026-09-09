@@ -202,12 +202,15 @@ the release oracle fails on an acknowledgement-backed image delivery correlated
 to the document-only source request.
 
 Replica startup must retain the repository root `pdf`, `docx`, and `xlsx`
-wrapper directories so the image-level bundled-skill sync cannot backfill its
-generic local-generation tools after bootstrap. Their frontmatter names remain
-distinct and route chat creation to `file-gen`; only categorized and official
-clones are removed. The live oracle must match the positive `NEW_PDF` line
-exactly, never treat `NO_NEW_PDF` as success, and query durable image delivery
-even when no document appears before the deadline.
+wrapper directories and add the bundled names to `.curator_suppressed` before
+image-level skill sync. Their frontmatter names remain distinct and route chat
+creation to `file-gen`; categorized and official clones are removed. The live
+oracle must match the positive `NEW_PDF` line exactly, never treat `NO_NEW_PDF`
+as success, query durable image delivery even when no document appears before
+the deadline, and fail closed if that audit is unavailable. For a current-only
+request, it must reject forecast, probability, or advice sections. Its rendered
+page judge must report at least 8/10 and no blocking overlap, clipping,
+unreadable text, broken hierarchy, or materially wasted space.
 
 For composed images with several information regions, also reject an empty or
 truncated structured composition plan. The live gate must observe a complete

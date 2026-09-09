@@ -18,12 +18,14 @@ and claimed the PDF but adapter late-autosend continued to the older embedded
 hero image and exposed it as a second attachment. Claimed composite documents
 now terminate older sidecar discovery. The gate records filesystem sidecars as
 diagnostics but fails only on acknowledged source-correlated image delivery.
-The focused retry revealed that deleting the root Office wrappers before the
-image's later `skills_sync.py` pass simply caused the bundled generic `pdf`,
-`docx`, and `xlsx` tools to be reinstalled. Replica bootstrap now preserves the
-repository root wrappers (whose distinct names route creation to `file-gen`)
-and removes only categorized/official clones. The visual-PDF gate no longer
-matches `NO_NEW_PDF` as success and audits delivery history on its timeout path.
+The focused retry revealed that the image's later `skills_sync.py` pass could
+reinstall bundled generic `pdf`, `docx`, and `xlsx` tools after entrypoint
+cleanup. Replica bootstrap now preserves the repository root wrappers (whose
+distinct names route creation to `file-gen`), records those bundled names in
+`.curator_suppressed`, and removes categorized/official clones. The visual-PDF
+gate no longer matches `NO_NEW_PDF` as success, audits delivery history on its
+timeout path, rejects unsolicited current-only scope, and requires an explicit
+8/10 visual score with no blocking defect.
 
 ## 2026-09-08 19:12 +07 — composed-plan completion budget
 

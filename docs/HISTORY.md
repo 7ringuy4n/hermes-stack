@@ -39,12 +39,14 @@ Dispatcher delivered the requested PDF and claimed it in the shared session,
 then the adapter skipped that claim and fell through to an older embedded hero
 image. A claimed rich document now terminates that turn's older-file scan, and
 the live oracle checks acknowledged source-correlated image delivery directly.
-The focused rerun then exposed a startup-order regression: removing the root
-Office wrappers before Hermes' image-level bundled-skill sync allowed its
-generic PDF skill to be installed afterward, sending chat creation back to
-local FPDF scripts. Replica startup now retains the restrictive repository
-wrappers while deleting only categorized clones. The PDF oracle also uses an
-exact positive token and always runs its durable delivery audit.
+The focused rerun then exposed a startup-order regression: Hermes' later
+image-level bundled-skill sync installed a generic PDF skill even after the
+entrypoint cleaned categorized clones, sending chat creation back to local
+FPDF scripts. Replica startup now retains the restrictive repository wrappers,
+suppresses the bundled Office skill names before that later sync, and deletes
+categorized clones. The PDF oracle also uses an exact positive token, always
+runs its durable delivery audit, rejects unsolicited current-only scope, and
+requires an 8/10 visual result without blocking layout defects.
 
 ## 2026-09-08 — multi-domain spatial composition
 

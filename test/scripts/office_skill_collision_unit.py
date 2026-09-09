@@ -55,7 +55,10 @@ def main() -> int:
     if 'rm -rf "${_dst_skills}/${_n}"' in sh:
         print("FAIL entrypoint must retain root office wrappers against bundled backfill", file=sys.stderr)
         return 1
-    print("OK office skill names unique; runtime wrappers block unsafe bundled backfill")
+    if ".curator_suppressed" not in sh or 'for _n in pdf docx xlsx' not in sh:
+        print("FAIL entrypoint must suppress later bundled Office backfill", file=sys.stderr)
+        return 1
+    print("OK office skill names unique; runtime wrappers suppress unsafe bundled backfill")
     return 0
 
 

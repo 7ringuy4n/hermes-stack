@@ -43,10 +43,14 @@
   history regression cases delete the exact schedules they create, preventing
   delayed test traffic from corrupting later concurrency evidence.
 - Retain the repository's restrictive root Office wrappers through replica
-  startup so the image-level bundled-skill sync cannot reintroduce an unsafe
-  generic PDF tool after the entrypoint has run.
+  startup and add the bundled `pdf`, `docx`, and `xlsx` names to Hermes'
+  curator suppression file before image-level skill sync. This prevents the
+  later sync stage from reintroducing unsafe generic local-generation tools.
 - Make the live PDF oracle distinguish `NEW_PDF` from `NO_NEW_PDF` exactly and
   query acknowledged image delivery even when document generation times out.
+  Current-only document tests now reject unsolicited forecast/advice sections
+  and require an explicit visual score of at least 8/10 with no blocking layout
+  defect.
 - Apply the trusted current-search execution contract only when work executes;
   do not append it to the original text while a search-backed schedule is being
   created.

@@ -22,8 +22,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deploy_stack import connect, sudo_bash  # noqa: E402
 from sanitize import sanitize as _sanitize  # noqa: E402
 from visual_weather_pdf_gate import (  # noqa: E402
+    blocking_defects_clear as _blocking_defects_clear,
     delivered_image_count as _delivered_image_count,
+    extracted_pdf_text as _extracted_pdf_text,
     new_pdf_seen as _new_pdf_seen,
+    visual_quality_score as _visual_quality_score,
 )
 
 if hasattr(sys.stdout, "buffer"):
@@ -185,7 +188,9 @@ pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
 image = pix.tobytes("png")
 print("PDF_PAGE_COUNT", len(doc))
 print("PDF_TEXT_CHARS", len(text))
+print("PDF_TEXT_BEGIN")
 print(text[:2000])
+print("PDF_TEXT_END")
 if len(text) < 80 or len(image) < 10000:
     raise SystemExit("FAIL_PDF_UNREADABLE")
 
@@ -198,7 +203,10 @@ body = json.dumps(dict(
             "Evaluate this rendered PDF page as a professional information document. "
             "Check visual hierarchy, readability, spacing, contrast, factual labels, "
             "and whether any interface chrome or unrelated title leaked into the page. "
-            "Give a concise quality rating from 1 to 10 with reasons."
+            "First output exactly QUALITY_SCORE: <integer>/10. On the next line output "
+            "exactly BLOCKING_DEFECTS: none, or a concise comma-separated list. "
+            "Blocking defects include overlap, clipping, unreadable text, broken hierarchy, "
+            "or materially wasted page space. Then give concise reasons."
         )),
         dict(type="image_url", image_url=dict(url=(
             "data:image/png;base64," + base64.b64encode(image).decode("ascii")
@@ -287,6 +295,17 @@ print("DELIVERED_IMAGE_COUNT", int(row[0] if row else 0))
             and "PDF_VISUAL_EVALUATION_END" in out
             else ""
         )
+        evaluation = report["visual_evaluation"]
+        visual_score = _visual_quality_score(evaluation)
+        report["visual_quality_score"] = visual_score
+        report["visual_blocking_defects_clear"] = _blocking_defects_clear(evaluation)
+        pdf_text = _extracted_pdf_text(out)
+        scope_bad = [
+            phrase
+            for phrase in ("dự báo 4 ngày", "khả năng mưa", "khuyến nghị")
+            if phrase in pdf_text.lower()
+        ]
+        report["unrequested_scope"] = scope_bad
         unexpected_image = "UNEXPECTED_NEW_IMAGE" in out
         report["unexpected_image"] = unexpected_image
         delivered_count = _delivered_image_count(out)
@@ -315,11 +334,17 @@ print("DELIVERED_IMAGE_COUNT", int(row[0] if row else 0))
         if delivered_image:
             print("FAIL requested PDF also delivered a standalone image", flush=True)
             return 1
+        if scope_bad:
+            print("FAIL current-only PDF added unrequested scope:", scope_bad, flush=True)
+            return 1
         if "PDF_STRUCTURE_OK" not in out:
             if "rate-limit" in blob or "quota" in blob or "429" in blob:
                 print("SKIP visual evaluator rate-limit/quota", flush=True)
                 return 0
             print("FAIL PDF structure or visual evaluation", flush=True)
+            return 1
+        if visual_score is None or visual_score < 8 or not _blocking_defects_clear(evaluation):
+            print("FAIL PDF visual quality gate", flush=True)
             return 1
         print("PASS visual weather pdf", flush=True)
         return 0

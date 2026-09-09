@@ -124,12 +124,17 @@ elif [ -d "$_src_skills" ] && [ -d "$_dst_skills" ]; then
 fi
 # Advanced local Office toolkits are repository references, not chat runtime
 # skills. Hermes' image-level skills sync runs *after* this entrypoint and
-# backfills a bundled ``pdf``/``docx``/``xlsx`` skill whenever the matching
-# root directory is absent. Keep the repository root wrappers in place: their
+# backfills bundled ``pdf``/``docx``/``xlsx`` skills into categorized paths
+# after our cleanup. Keep the repository root wrappers in place: their
 # frontmatter names are distinct (``*-tools-local``) and, most importantly,
-# they direct chat creation to file-gen -> Dispatcher. Remove only categorized
-# and ``official`` clones, which are the actual duplicate registry entries.
+# they direct chat creation to file-gen -> Dispatcher. Suppress those bundled
+# names before stage two, then remove categorized and ``official`` clones.
 if [ -d "$_dst_skills" ]; then
+  _suppressed="${_dst_skills}/.curator_suppressed"
+  touch "$_suppressed" 2>/dev/null || true
+  for _n in pdf docx xlsx; do
+    grep -qx "$_n" "$_suppressed" 2>/dev/null || printf '%s\n' "$_n" >> "$_suppressed"
+  done
   for _cat in productivity documents; do
     for _n in pdf docx xlsx; do
       rm -rf "${_dst_skills}/${_cat}/${_n}" 2>/dev/null || true

@@ -313,11 +313,14 @@ and placed its audit query after an early exit.
 
 Keep the repository's root Office wrapper directories in each replica. Their
 frontmatter names are already unique (`*-tools-local`) and their chat path
-explicitly requires `file-gen` and `/v1/office-file`; their presence also blocks
-the later bundled backfill. Continue deleting categorized and `official` clones.
-The live oracle now requires a line beginning with `NEW_PDF`, queries durable
-image delivery on the no-document path, and fails closed when that audit is
-unavailable.
+explicitly requires `file-gen` and `/v1/office-file`. Before the image-level
+sync runs, record the bundled `pdf`, `docx`, and `xlsx` names in
+`.curator_suppressed`; root-directory presence alone does not block categorized
+backfill. Continue deleting categorized and `official` clones. The live oracle
+now requires a line beginning with `NEW_PDF`, queries durable image delivery on
+the no-document path, and fails closed when that audit is unavailable. It also
+rejects forecast/advice expansion for a current-only request and requires an
+explicit visual score of at least 8/10 with no blocking layout defect.
 
 ### Prevention
 
