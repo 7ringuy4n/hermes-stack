@@ -40,6 +40,12 @@ def main() -> int:
     assert "abandoned old request" not in hydrated
     assert "currently abandoned request" not in hydrated
     assert hydrated.endswith("current request")
+
+    # Adapter contract: an explicit reply already names the relevant context,
+    # so unrelated durable history must not be prepended to that turn.
+    adapter_source = (PLUGIN / "adapter.py").read_text(encoding="utf-8")
+    assert 'if explicit_quote' in adapter_source
+    assert 'and not item.get("explicit_quote")' in adapter_source
     print("session_memory_hygiene_unit: PASS")
     return 0
 

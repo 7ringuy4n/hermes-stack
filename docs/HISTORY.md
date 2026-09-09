@@ -16,7 +16,9 @@ See `history/2026-09-09/README.md` for the queue-enabled schedule-fire gap that
 discarded a valid persisted search→image graph, quoted an internal schedule id,
 and omitted task-local attachment correlation. The same correction adds
 same-language note UX, removes an unnecessary composed-plan environment knob,
-and makes the full scheduled-image fire a mandatory release case.
+and makes the full scheduled-image fire a mandatory release case. The live
+DM/group concurrency gate also found that explicit quoted text was combined
+with an unrelated completed session; quote context now takes precedence.
 
 ## 2026-09-08 — multi-domain spatial composition
 

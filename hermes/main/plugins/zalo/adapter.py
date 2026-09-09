@@ -4000,6 +4000,7 @@ class ZaloAdapter(BasePlatformAdapter):
         has_image_attachment: bool = False,
         user_text: str = "",
         reply_quote: dict | None = None,
+        explicit_quote: bool = False,
     ) -> None:
         try:
             from .inbound_queue import (
@@ -4077,6 +4078,7 @@ class ZaloAdapter(BasePlatformAdapter):
             plan=plan,
             user_text=user_text,
             reply_quote=reply_quote,
+            explicit_quote=explicit_quote,
         )
         mid = str(message_id or "")
         try:
@@ -4506,7 +4508,7 @@ class ZaloAdapter(BasePlatformAdapter):
                                 if prompt_text.strip()
                                 else f"[Quoted message]\n{quote_text}"
                             )
-                    if prompt_text and not event.media_urls:
+                    if prompt_text and not event.media_urls and not item.get("explicit_quote"):
                         try:
                             from .session_memory import hydrate_user_text
                         except ImportError:
@@ -5605,6 +5607,13 @@ class ZaloAdapter(BasePlatformAdapter):
         q = None if schedule_fire else (
             m.get("quote") if isinstance(m.get("quote"), dict) else None
         )
+        explicit_quote = bool(
+            not schedule_fire
+            and (
+                isinstance(m.get("quote"), dict)
+                or isinstance(m.get("quoted"), dict)
+            )
+        )
         if schedule_fire:
             self._pending_reply_quote.pop(str(thread_id), None)
         elif not q or not (q.get("msgId") is not None or q.get("cliMsgId") is not None):
@@ -6107,7 +6116,11 @@ class ZaloAdapter(BasePlatformAdapter):
                 self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
                 if not queue_on:
                     self._as_last_user_text[str(thread_id)] = bare_text
-                    text = hydrate_user_text(str(thread_id), str(thread_type), bare_text)
+                    text = (
+                        bare_text
+                        if explicit_quote
+                        else hydrate_user_text(str(thread_id), str(thread_type), bare_text)
+                    )
                 else:
                     text = bare_text
         except Exception as e:
@@ -6150,6 +6163,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_fire=bool(m.get("scheduleFire") or m.get("schedule_fire")),
                 user_text=user_text_before_attach or bare_text,
                 reply_quote=q if isinstance(q, dict) else None,
+                explicit_quote=explicit_quote,
                 has_image_attachment=bool(
                     media_urls
                     and (

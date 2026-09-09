@@ -10,6 +10,8 @@
   layout and copy.
 - Add a mandatory two-minute scheduled-image fire gate and numbered progress for
   the complete case-index run.
+- Give an explicit DM/group reply precedence over unrelated durable session
+  history so a quoted text request cannot resume an older image/file task.
 
 ## 2026-09-08 19:12 +07 — complete structured multi-region plans
 

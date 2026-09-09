@@ -53,6 +53,7 @@ def main() -> int:
                 message_id=f"m{i}",
                 user_text=f"user-{i}",
                 reply_quote={"msgId": f"q{i}", "content": f"quote-{i}"},
+                explicit_quote=True,
             )
         )
         n = fifo.queue_push("t1", encode_item(items[-1]), 3, 3600)
@@ -79,6 +80,9 @@ def main() -> int:
         quote = got.get("reply_quote") or {}
         if quote.get("msgId") != f"q{expected_index}":
             print("FAIL queued quote correlation")
+            return 1
+        if got.get("explicit_quote") is not True:
+            print("FAIL queued explicit-quote precedence")
             return 1
     if len(popped) != 3:
         print(f"FAIL pop count {popped!r}")

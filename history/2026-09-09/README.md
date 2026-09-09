@@ -34,6 +34,12 @@ post-ready hook only repaired `docs/` recursively when the top-level directory
 was not writable. A writable parent containing root-owned descendants therefore
 passed the probe and failed later at recursive `chmod`.
 
+The live DM/group concurrency gate exposed a separate context-precedence gap.
+The bridge and durable queue preserved the correct quoted text and destination,
+but the queue worker then hydrated an unrelated completed session before the
+current reply. A direct-message model resumed the older image task instead of
+following the current quoted-text instruction.
+
 ## Decision and fix
 
 - Execute a schedule's creation-time plan through `_as_try_workflow_submit`
@@ -50,6 +56,9 @@ passed the probe and failed later at recursive `chmod`.
   remain recognizable instead of degenerating into an abstract gradient.
 - Probe recursive docs-tree access before learning and fall back to the bounded
   sudo/container ownership repair when any restored descendant is inaccessible.
+- Persist whether a queue item contains an explicit inbound quote and suppress
+  unrelated session hydration for that turn. The quoted text remains visible,
+  while ordinary unquoted follow-ups retain durable conversation continuity.
 
 ## Prevention
 
@@ -69,6 +78,9 @@ The scheduled-image gate correlates flow telemetry from the active replicas'
 persists info-level plugin events to per-replica logs.
 Case 44 now includes a live Vietnamese note-locale gate so a classifier-correct
 note cannot regress to an English host confirmation unnoticed.
+The concurrency gate requires exact source-correlated responses in both a DM
+and a three-member group, preserving the explicit-quote flag through the durable
+FIFO so stale session context cannot silently override either reply.
 
 ## Verification
 
