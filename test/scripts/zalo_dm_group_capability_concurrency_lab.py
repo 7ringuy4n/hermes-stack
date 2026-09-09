@@ -209,7 +209,7 @@ def folded(value):
     return "".join(
         char for char in unicodedata.normalize("NFKD",str(value).casefold())
         if not unicodedata.combining(char)
-    )
+    ).replace("đ", "d")
 
 search_rowid,attribution=omni_search_rowid()
 weather_started=time.time()

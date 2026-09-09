@@ -18,6 +18,15 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "test" / "reports" / "run-case-index-lab"
 PY = sys.executable
 
+HOST_UNIT_SCRIPTS = {
+    "router_worker_chat_norm.py",
+    "router_worker_identity_unit.py",
+}
+GATEWAY_UNIT_SCRIPTS = {
+    "workflow_gateway_unit.py",
+    "workflow_schedule_concurrency_unit.py",
+}
+
 UNITS: list[tuple[str, str]] = [
     (path.name, path.stem)
     for path in sorted((ROOT / "test" / "scripts").glob("*_unit.py"))
@@ -75,7 +84,27 @@ def progress_line(index: int, total: int, kind: str, case: str, name: str) -> st
     return f"running test case {index}/{total}: {kind} {case} {name}"
 
 
-def run_script(name: str, case: str) -> tuple[str, int, str]:
+def enabled(name: str) -> bool:
+    return (os.environ.get(name) or "").strip().casefold() in {"1", "true", "yes"}
+
+
+def unit_command(name: str) -> list[str]:
+    path = ROOT / "test" / "scripts" / name
+    if not enabled("ASSISTANT_TEST_LOCAL") or name in HOST_UNIT_SCRIPTS:
+        return [PY, str(path)]
+    image = "assistant-api-gateway" if name in GATEWAY_UNIT_SCRIPTS else "assistant-dispatcher"
+    return [
+        "docker", "run", "--rm",
+        "-e", "ASSISTANT_REPO_ROOT=/repo",
+        "-e", "PYTHONUTF8=1",
+        "-e", "PYTHONIOENCODING=utf-8",
+        "-v", f"{ROOT}:/repo",
+        "-w", "/repo",
+        image, "python", f"test/scripts/{name}",
+    ]
+
+
+def run_script(name: str, case: str, *, unit: bool = False) -> tuple[str, int, str]:
     path = ROOT / "test" / "scripts" / name
     if not path.is_file():
         return case, 127, f"MISSING {name}"
@@ -89,7 +118,7 @@ def run_script(name: str, case: str) -> tuple[str, int, str]:
     env.setdefault("PYTHONIOENCODING", "utf-8")
     try:
         p = subprocess.run(
-            [PY, str(path)],
+            unit_command(name) if unit else [PY, str(path)],
             cwd=str(ROOT),
             env=env,
             capture_output=True,
@@ -129,7 +158,7 @@ def main() -> int:
     for name, case in selected_units:
         progress += 1
         print(progress_line(progress, total, "unit", case, name), flush=True)
-        c, rc, tail = run_script(name, case)
+        c, rc, tail = run_script(name, case, unit=True)
         status = "PASS" if rc == 0 else f"FAIL({rc})"
         if rc != 0:
             fails += 1

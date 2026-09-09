@@ -4206,10 +4206,13 @@ class ZaloAdapter(BasePlatformAdapter):
         except ImportError:
             from inbound_queue import KIND_PART, decode_item, encode_item, make_item, queue_ttl_s  # type: ignore
         try:
-            from .multi_request import classify_compound_request, parts_from_plan
+            from .multi_request import classify_compound_request, parts_from_plan, queue_part_text
         except ImportError:
             classify_compound_request = lambda t: ([t], {})  # type: ignore[misc, assignment]
             parts_from_plan = lambda t, p: [t]  # type: ignore[misc, assignment]
+            queue_part_text = lambda raw, parts: (  # type: ignore[misc, assignment]
+                parts[0] if len(parts) >= 2 else raw
+            )
         loop = asyncio.get_running_loop()
         drain_deadline = loop.time() + self._as_queue_drain_max_s()
         try:
@@ -4253,7 +4256,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         parts, compound_plan = classify_compound_request(text)
                         parts = parts or [text]
                     rest = parts[1:]
-                    text = parts[0] if parts else text
+                    text = queue_part_text(text, parts)
                     total = len(parts)
                     # Preserve the one classification result for an atomic
                     # request. Independent parts must each be classified from
