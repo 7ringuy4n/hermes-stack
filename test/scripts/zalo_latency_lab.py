@@ -75,34 +75,37 @@ if [[ -z "$KEY" ]]; then
   exit 0
 fi
 tmpdir=$(mktemp -d)
+now_ms() {{
+  python3 -c 'import time; print(time.monotonic_ns() // 1000000)'
+}}
 classify_one() {{
   i="$1"
-  t0=$(date +%s%3N)
+  t0=$(now_ms)
   code=$(curl -sS -m 25 -o "$tmpdir/cl-$i.json" -w "%{{http_code}}" \\
     -X POST "http://127.0.0.1:8096/v1/classify" \\
     -H "Content-Type: application/json" \\
     -d "{{\\"text\\":\\"ping $i xin chào\\",\\"timezone\\":\\"Asia/Ho_Chi_Minh\\"}}" || echo 000)
-  t1=$(date +%s%3N)
+  t1=$(now_ms)
   echo "classify $code $((t1-t0))" > "$tmpdir/k-$i.txt"
 }}
 send_one() {{
   i="$1"
-  t0=$(date +%s%3N)
+  t0=$(now_ms)
   code=$(curl -sS -m "$CHAT_TO" -o "$tmpdir/r-$i.json" -w "%{{http_code}}" \\
     -X POST "http://127.0.0.1:8080/v1/chat/completions" \\
     -H "Authorization: Bearer ${{KEY}}" -H "Content-Type: application/json" \\
     -d "{{\\"model\\":\\"hermes\\",\\"messages\\":[{{\\"role\\":\\"user\\",\\"content\\":\\"ping $i reply OK\\"}}],\\"max_tokens\\":8}}" || echo 000)
-  t1=$(date +%s%3N)
+  t1=$(now_ms)
   echo "text $code $((t1-t0))" > "$tmpdir/c-$i.txt"
 }}
 send_vi() {{
   i="$1"
-  t0=$(date +%s%3N)
+  t0=$(now_ms)
   code=$(curl -sS -m "$CHAT_TO" -o "$tmpdir/v-$i.json" -w "%{{http_code}}" \\
     -X POST "http://127.0.0.1:8080/v1/chat/completions" \\
     -H "Authorization: Bearer ${{KEY}}" -H "Content-Type: application/json" \\
     -d "{{\\"model\\":\\"hermes\\",\\"messages\\":[{{\\"role\\":\\"user\\",\\"content\\":\\"xin chào $i\\"}}],\\"max_tokens\\":16}}" || echo 000)
-  t1=$(date +%s%3N)
+  t1=$(now_ms)
   echo "vi $code $((t1-t0))" > "$tmpdir/vlat-$i.txt"
 }}
 for i in $(seq 1 $N); do send_one "$i"; done

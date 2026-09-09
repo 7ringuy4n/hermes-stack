@@ -80,6 +80,9 @@ The latency matrix also reads its API credential from an active Hermes process
 when the production host deliberately keeps runtime OpenBao values out of the
 on-disk environment; the value remains inside the test process and report
 sanitization boundary.
+Latency sampling uses Python's monotonic nanosecond clock converted to
+milliseconds rather than implementation-specific `date %3N` formatting, which
+uutils can emit at an unexpected width and corrupt duration arithmetic.
 The scheduled-image gate correlates flow telemetry from the active replicas'
 `agent.log` files as well as Docker stdout because the production Hermes image
 persists info-level plugin events to per-replica logs.
