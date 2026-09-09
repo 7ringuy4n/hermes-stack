@@ -51,6 +51,9 @@ stored evidence dependency graph, execution through the composed-image shortcut,
 one source-correlated acknowledged image, absence of planner truncation, and no
 synthetic quote attempt. The case-index runner prints `running test case N/T`
 before every unit and VPS gate so long production runs have auditable progress.
+The Router Worker classifier bundle is regenerated from the authoritative skill
+parts, and the assembly contract checks the current per-domain search invariant
+instead of a retired wording fragment.
 
 ## Verification
 
