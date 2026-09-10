@@ -18,6 +18,9 @@ Tests prove the live user outcome and route; an assertion alone is not proof.
   during an update test. Export before/after and compare.
 - Temporary artifacts go under `scripts/temp/` or the lab report directory and
   are removed when the run completes. Remove Python caches from core source.
+- VPS-local fixture transfer must atomically replace a stale destination rather
+  than truncate it in place, because prior sudo-backed runs may leave an
+  unwritable file inside an intentionally writable temporary lab directory.
 
 ## 2. Outcomes
 

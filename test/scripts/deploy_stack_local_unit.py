@@ -31,6 +31,11 @@ def main() -> int:
         target = Path(raw) / "sample.bin"
         module.sftp_put(client, b"local-copy", str(target))
         assert target.read_bytes() == b"local-copy"
+        original_inode = target.stat().st_ino
+        module.sftp_put(client, b"atomic-replacement", str(target))
+        assert target.read_bytes() == b"atomic-replacement"
+        if os.name != "nt":
+            assert target.stat().st_ino != original_inode
     client.close()
     print("deploy_stack_local_unit: PASS")
     return 0

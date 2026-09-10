@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 from pathlib import Path
 
@@ -211,7 +212,25 @@ def pack_skills() -> bytes:
 
 def sftp_put(c, local_bytes: bytes, remote_path: str) -> None:
     if LOCAL_MODE:
-        Path(remote_path).write_bytes(local_bytes)
+        # Match SFTP's replace semantics when a prior sudo-backed lab left a
+        # root-owned fixture at the destination.  The staging file is owned by
+        # the current test user and os.replace only requires write access to
+        # the containing lab directory; opening the stale file for truncation
+        # would fail even when that directory is intentionally writable.
+        target = Path(remote_path)
+        fd, staged = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(local_bytes)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(staged, target)
+        except BaseException:
+            try:
+                os.unlink(staged)
+            except FileNotFoundError:
+                pass
+            raise
         return
     sftp = c.open_sftp()
     with sftp.file(remote_path, "wb") as f:
