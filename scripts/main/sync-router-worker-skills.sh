@@ -11,7 +11,17 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DST_DIR="$ROOT/architect/models/router-worker/config"
 mkdir -p "$DST_DIR"
 
-if [[ -w "$DST_DIR" ]]; then
+# Directory writable is not enough: a prior root sync can leave individual bake
+# files root-owned. Only take the Python fast path when every managed file is
+# missing or operator-writable; otherwise use the repair install path below.
+_need_file_repair=0
+for _bake in classify.json outbound.json; do
+  if [[ -e "$DST_DIR/$_bake" && ! -w "$DST_DIR/$_bake" ]]; then
+    _need_file_repair=1
+    break
+  fi
+done
+if [[ -w "$DST_DIR" && "$_need_file_repair" -eq 0 ]]; then
   exec python3 "$ROOT/scripts/main/sync_router_worker_skills.py"
 fi
 

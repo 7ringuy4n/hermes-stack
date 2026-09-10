@@ -1,3 +1,9 @@
+## 2026-09-10 — router-worker skill sync ownership
+
+See `history/2026-09-10/README.md`. Operator update hit `PermissionError` on
+root-owned `outbound.json` during skill bake sync; atomic replace and shell
+file-writability checks repair the path without sudo chown for every update.
+
 ## 2026-09-10 — host clock on live chat turns
 
 See `history/2026-09-10/README.md`. Zalo Hermes turns now carry host
