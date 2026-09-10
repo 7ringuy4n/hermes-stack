@@ -30,3 +30,7 @@ Thumbs.db
 .idea/
 AGENT_RULES.md
 BE_RULE.md
+
+.worktrees/
+.codex-production-final_/
+

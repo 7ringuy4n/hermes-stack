@@ -1,7 +1,0 @@
-PASS embed_http dim=1024 model=ai-box/qwen3.7-text-embedding
-PASS embed_model_echo ai-box/qwen3.7-text-embedding
-PASS compact_ok {"ok": true, "reindexed": 0, "deactivated_staged": 0, "embed_model": "embedding", "embed": false, "error": null}
-PASS compact_uses_embed_model embedding
-PASS router_health 200
-VERDICT PASS
-{"checks": [{"name": "embed_http", "ok": true, "detail": "dim=1024 model=ai-box/qwen3.7-text-embedding"}, {"name": "embed_model_echo", "ok": true, "detail": "ai-box/qwen3.7-text-embedding"}, {"name": "compact_ok", "ok": true, "detail": "{\"ok\": true, \"reindexed\": 0, \"deactivated_staged\": 0, \"embed_model\": \"embedding\", \"embed\": false, \"error\": null}"}, {"name": "compact_uses_embed_model", "ok": true, "detail": "embedding"}, {"name": "router_health", "ok": true, "detail": "200"}], "ok": true}

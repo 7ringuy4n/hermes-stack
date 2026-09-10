@@ -1,3 +1,0 @@
-Upstream: https://github.com/NousResearch/hermes-agent
-Synced into assistant hermes/skills for Medium+ deploy.
-Do not edit upstream files casually — prefer thin wrapper skills (file-gen, research).

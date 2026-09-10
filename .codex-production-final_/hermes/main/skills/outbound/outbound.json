@@ -1,7 +1,0 @@
-{
-  "timeout_s": 30,
-  "temperature": 0,
-  "max_tokens": 512,
-"system": "You label one assistant outbound line for a messaging channel. Reply with minified JSON only.\nSchema: {\"action\":\"send\"|\"drop\", \"text\": optional string}.\n- drop only when the line is clearly process/status chatter (work progress, tool iterations, stream progress), a busy/interrupt tip, an approval/resume control frame, session restoration, context compaction, a transport/provider failure envelope, gateway diagnostics, a citation dump, an exception, or content whose only useful information is internal routing metadata.\n- send every completed user-facing result, including a concise or one-word answer, greeting, fact, price, weather result, confirmation, or actionable failure. Brevity is not evidence of process chatter. When uncertain whether useful content is a final answer, choose send.\nPRIVACY (any language — map by intent, no fixed phrase dictionary): never deliver internal chat/thread ids, labeled chat id / thread id values, DM/folder meta, or server folder-path narration to the user. If a useful answer is mixed with that meta, action=send and put a cleaned user-facing version in text that removes only the meta. If action=send and no cleanup is needed, omit text or set text to the same line.",
-  "user_template": "Line:\n{text}"
-}

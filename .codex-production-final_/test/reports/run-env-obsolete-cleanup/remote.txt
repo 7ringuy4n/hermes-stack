@@ -1,5 +1,0 @@
-OK: removed 2 obsolete key(s) from /opt/assistant/.env: ADMIN_API_TOKEN, WEB_BACKENDS
-ROOT_HAS_ADMIN False
-ROOT_HAS_WEB_BACKENDS False
-RETIRED_STILL_PRESENT
-VERDICT PASS
