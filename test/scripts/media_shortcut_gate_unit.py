@@ -300,6 +300,17 @@ def main() -> int:
     assert "creation plan must continue" in adapter_source
     assert "if schedule_fire:" in adapter_source
     assert "Zalo: scheduleFire received thread=%s schedule=%s execution=%s plan=%s hint=%s" in adapter_source
+    enqueue = adapter_source.split("async def _as_enqueue_inbound", 1)[1]
+    enqueue = enqueue.split("async def _as_run_queued_part", 1)[0]
+    fire_branch = enqueue.split("if schedule_fire:", 1)[1]
+    fire_branch = fire_branch.split("await self._as_dispatch_event(event, text)", 1)[0]
+    assert "self._as_try_workflow_submit(" in fire_branch
+    assert "plan=plan" in fire_branch
+    assert "schedule_fire=True" in fire_branch
+    quote_cache = adapter_source.split("# Cache inbound as SendMessageQuote", 1)[1]
+    quote_cache = quote_cache.split("source = self.build_source", 1)[0]
+    assert "q = None if schedule_fire" in quote_cache
+    assert "self._pending_reply_quote.pop(str(thread_id), None)" in quote_cache
     assert "and not self._as_inbound_queue_enabled()" in adapter_source
     assert "sock_connect=15, sock_read=45" in adapter_source
     assert '("classify", "failed")' in adapter_source

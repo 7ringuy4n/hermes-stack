@@ -7,10 +7,24 @@ DEFAULT_GRACE_S = 8.0
 # File suffixes are protocol, not user NLU.
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 VIDEO_EXTS = (".mp4", ".webm", ".mov", ".m4v", ".mkv")
+COMPOSITE_DOCUMENT_EXTS = (
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods",
+)
 ZALO_VIDEO_SUFFIX = ".zalo.mp4"
 # Zalo rejects a whitespace-only caption on document attachments
 # (localized "invalid parameter"). Omit the caption instead of padding it.
 ATTACH_CAPTION_FALLBACK = ""
+
+
+def claimed_composite_is_terminal(path: str) -> bool:
+    """True when an already-claimed file is the turn's final rich document.
+
+    Dispatcher sends rich documents directly and claims them in the shared
+    session service.  The adapter's late autosender must stop at that newest
+    claimed document instead of falling through to an older embedded image and
+    exposing the image as a second user-visible result.
+    """
+    return Path(str(path or "")).suffix.lower() in COMPOSITE_DOCUMENT_EXTS
 
 
 def canonical_send_name(path: str) -> str:

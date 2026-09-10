@@ -57,3 +57,6 @@ members and provider connections. Do **not** call Omni chat
 
 1. Do not bypass Router Worker with direct provider calls from Hermes.
 2. Do not use SearXNG for page extract.
+3. Do not use `execute_code`, terminal commands, or language HTTP libraries as
+   a substitute for native `web_search`. A current lookup needs a fresh native
+   search call in that turn even when conversation history contains an older answer.

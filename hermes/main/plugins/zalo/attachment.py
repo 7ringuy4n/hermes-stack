@@ -5,7 +5,9 @@ Kept free of gateway imports so the rules stay unit-testable without Hermes.
 from __future__ import annotations
 
 import json
+import re
 import time
+import unicodedata
 from typing import Any, Dict, List, Tuple
 
 TEXT_EXTS = (".txt", ".md", ".csv", ".tsv", ".log", ".json", ".yaml", ".yml", ".xml")
@@ -28,6 +30,49 @@ ATTACHMENT_CONTEXT_TTL_S_DEFAULT = 86400
 # Hermes writes /opt/data/media/...; workers mount the same volume at /data/media.
 _MEDIA_PREFIXES = ("/opt/data/media/", "/data/assistant/media/")
 _WORKER_MEDIA_ROOT = "/data/media/"
+
+
+def text_refers_to_attachment(text: str) -> bool:
+    """Return true only when a text-only turn explicitly refers to recalled files."""
+    raw = str(text or "").strip()
+    if not raw or "http://" in raw.casefold() or "https://" in raw.casefold():
+        return False
+    folded = unicodedata.normalize("NFKD", raw.casefold()).encode(
+        "ascii", "ignore"
+    ).decode("ascii").replace("đ", "d")
+    create = re.search(
+        r"\b(create|generate|make|write|draw|tao|ve|soan|lap)\b", folded
+    )
+    deictic = re.search(
+        r"\b(this|that|these|those|above|previous|prior|recent|attached|uploaded|"
+        r"nay|do|kia|tren|truoc|vua gui)\b",
+        folded,
+    )
+    # A filename in a create request normally names the desired output, not an
+    # old attachment.  Require an explicit backward reference in that case.
+    if create and not deictic:
+        return False
+    noun = re.search(
+        r"\b(file|tep|tai lieu|document|doc|pdf|sheet|tab|workbook|excel|"
+        r"anh|hinh|video|audio|clip|zip|archive|bai hat)\b",
+        folded,
+    )
+    if noun and deictic:
+        return True
+    if re.search(r"\b(sheet|tab)\s*(?:so\s*)?[a-z0-9_-]+\b", folded):
+        return True
+    if re.search(r"\b(loi bai hat|lyrics?)\b", folded):
+        return True
+    # Short elliptical follow-ups are common immediately after an upload.
+    words = folded.split()
+    return len(words) <= 8 and bool(
+        re.fullmatch(
+            r"(?:hay\s+)?(?:doc|xem|mo ta|tom tat|phan tich|dich|trich xuat|"
+            r"liet ke|summarize|describe|analy[sz]e|translate|extract)"
+            r"(?:\s+(?:no|cai nay|giup toi|giup minh|please|it))?[.!?]?",
+            folded,
+        )
+    )
 
 
 def attachment_kind(file_name: str) -> str:

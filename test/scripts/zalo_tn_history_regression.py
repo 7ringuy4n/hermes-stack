@@ -45,7 +45,7 @@ export LC_ALL=C.UTF-8
 cd /opt/assistant
 set -a; . ./.env; set +a
 python3 - <<'PY'
-import json, time, urllib.request, os, re
+import json, time, urllib.request, os, re, subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -96,14 +96,6 @@ texts = {{
 }}
 text = texts[case]
 
-offs = {{}}
-for root in ("/data/assistant/replicas", "/opt/data/replicas"):
-    base = Path(root)
-    if not base.is_dir():
-        continue
-    for f in base.glob("*/logs/gateway.log"):
-        offs[str(f)] = f.stat().st_size
-
 tok = (os.environ.get("ZALO_PLUGIN_TOKEN") or "").strip()
 headers = {{"Content-Type": "application/json"}}
 if tok:
@@ -115,6 +107,7 @@ payload = {{
         "threadType": "user",
         "senderId": uid,
         "senderName": uname,
+        "messageId": tag,
         "text": text,
         "isSelf": False,
     }},
@@ -128,41 +121,81 @@ req = urllib.request.Request(
 with urllib.request.urlopen(req, timeout=20) as r:
     print("INJECT", r.status, case, tag)
 
-deadline = time.time() + wait_s
-chunk = ""
-while time.time() < deadline:
-    chunk = ""
-    for path, off in list(offs.items()):
-        p = Path(path)
-        if not p.is_file():
+zalo = subprocess.check_output(
+    ["docker", "ps", "-q", "--filter", "label=com.docker.compose.service=zalo-api"],
+    text=True,
+).split()[0]
+probe = r'''import json, os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+ row=conn.execute(
+  "SELECT content, meta FROM zalo_message_history "
+  "WHERE thread_id=%s AND thread_type='user' AND event='delivered' "
+  "AND meta->>'source_message_id'=%s AND created_at>=to_timestamp(%s) "
+  "ORDER BY id DESC LIMIT 1",
+  (os.environ['LAB_THREAD'],os.environ['LAB_SOURCE'],float(os.environ['LAB_STARTED']))
+ ).fetchone()
+print(json.dumps({{'content':row[0],'meta':row[1]}} if row else {{}}))'''
+started = time.time() - 3
+
+def delivered():
+    raw = subprocess.check_output([
+        "docker", "exec", "-e", "LAB_THREAD=" + uid,
+        "-e", "LAB_SOURCE=" + tag, "-e", "LAB_STARTED=" + repr(started),
+        zalo, "python3", "-c", probe,
+    ], text=True, errors="replace")
+    return json.loads(raw or "{{}}")
+
+def schedules():
+    with urllib.request.urlopen("http://127.0.0.1:8110/v1/schedules", timeout=15) as r:
+        body=json.loads(r.read() or b'{{}}')
+    rows=body.get('schedules') if isinstance(body,dict) else body
+    return rows if isinstance(rows,list) else []
+
+def tagged_schedules():
+    return [row for row in schedules() if tag in json.dumps(row,ensure_ascii=False)]
+
+def cleanup():
+    for row in tagged_schedules():
+        sid=str(row.get('id') or '') if isinstance(row,dict) else ''
+        if not re.fullmatch(r'[A-Za-z0-9_-]+',sid):
             continue
-        data = p.read_bytes()[off:]
-        chunk += data.decode("utf-8", "replace")
-        offs[path] = p.stat().st_size
-    low = chunk.lower()
-    if case in ("greeting", "multilang"):
-        if "send ok" in low or "outbound" in low:
-            print("PASS_HIST", case)
-            raise SystemExit(0)
-    elif case in ("schedule", "mixed_store"):
-        # schedule ack or cron write — not 3 immediate weather jobs
-        if "schedule" in low or "cron" in low or "đặt lịch" in chunk.lower() or "lich" in low:
-            if case == "mixed_store" and low.count("thời tiết") + low.count("weather") > 2:
-                # duplicate weather smell — keep waiting for clearer signal
-                pass
-            else:
+        delete=urllib.request.Request(
+            "http://127.0.0.1:8110/v1/schedules/" + sid, method="DELETE"
+        )
+        try:
+            urllib.request.urlopen(delete,timeout=15).read()
+        except Exception:
+            pass
+
+deadline = time.time() + wait_s
+failure = "timeout"
+try:
+    while time.time() < deadline:
+        result=delivered()
+        meta=result.get('meta') if isinstance(result.get('meta'),dict) else {{}}
+        rows=tagged_schedules() if case in ("schedule","mixed_store") else []
+        if case in ("greeting", "multilang"):
+            if str(result.get('content') or '').strip() and meta.get('delivery_kind') in (None,'result','queue_recovery'):
                 print("PASS_HIST", case)
                 raise SystemExit(0)
-    elif case == "pdf_shortcut":
-        if "office-file" in low or "send" in low and "pdf" in low:
-            if "reportlab" in low or "skill_view" in low and "pip" in low:
-                print("FAIL_HIST", case, "pdf_skill_collision_smell")
-                raise SystemExit(2)
-            print("PASS_HIST", case)
-            raise SystemExit(0)
-    time.sleep(2)
-print("FAIL_HIST", case, "timeout")
-print(chunk[-2000:])
+        elif case in ("schedule", "mixed_store"):
+            if meta.get('delivery_kind') == 'gate' and len(rows) == 1:
+                print("PASS_HIST", case)
+                raise SystemExit(0)
+            failure="gate=%s tagged_schedules=%d" % (meta.get('delivery_kind')=='gate',len(rows))
+        elif case == "pdf_shortcut":
+            name=str(meta.get('file_name') or '')
+            if meta.get('attachment_kind') == 'document' and name.lower().endswith('.pdf'):
+                print("PASS_HIST", case)
+                raise SystemExit(0)
+            failure="document=%s pdf=%s" % (meta.get('attachment_kind')=='document',name.lower().endswith('.pdf'))
+        time.sleep(2)
+finally:
+    cleanup()
+    if case in ("schedule","mixed_store") and tagged_schedules():
+        print("FAIL_HIST",case,"schedule_cleanup")
+        raise SystemExit(2)
+print("FAIL_HIST", case, failure)
 raise SystemExit(1)
 PY
 """

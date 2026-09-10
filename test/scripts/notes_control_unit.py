@@ -14,6 +14,7 @@ sys.path.insert(0, str(ZALO))
 
 import classify_client  # noqa: E402
 import notes_client  # noqa: E402
+from ux_copy import pick_localized, reply_lang  # noqa: E402
 
 
 def _load_router_classify():
@@ -44,7 +45,22 @@ def _note_plan() -> dict:
     }
 
 
+def test_note_confirmation_language_assets() -> None:
+    import json
+
+    ux = json.loads(
+        (ROOT / "hermes" / "main" / "messages" / "ux.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    saved = ux["notes"]["saved"]
+    assert reply_lang("note giúp tôi hôm nay cần bàn giao công việc") == "vi"
+    assert pick_localized(saved, "vi", "fallback") == "Đã lưu ghi chú."
+    assert pick_localized(saved, "en", "fallback") == "Note saved."
+
+
 def main() -> int:
+    test_note_confirmation_language_assets()
     for module in (classify_client, _load_router_classify()):
         normalized = module.normalize_plan(_note_plan(), "remember these", "Asia/Ho_Chi_Minh")
         assert normalized["task_hint"] == "note"
@@ -55,6 +71,12 @@ def main() -> int:
     assert classify_client.plan_is_note(classify_client.normalize_plan(
         _note_plan(), "remember these", "Asia/Ho_Chi_Minh"
     ))
+    assert classify_client.plan_requires_live_search(
+        {"task_hint": "search", "task_type": "search", "skill": "web_search"}
+    )
+    assert not classify_client.plan_requires_live_search(
+        {"task_hint": "chat", "task_type": "chat"}
+    )
 
     cancel = classify_client.normalize_plan(
         {
@@ -148,6 +170,15 @@ def main() -> int:
     assert "recorded.get(tid)" in adapter_source
     assert "text=turn_user_text" in queue_turn
     assert "bare_q = turn_user_text.strip()" in queue_turn
+    assert "plan_should_apply_live_search_contract(" in queue_turn
+    assert 'schedule_fire=bool(item.get("schedule_fire"))' in queue_turn
+    assert "Call the native web_search tool during this turn" in queue_turn
+    assert "Do not reuse prior search results" in queue_turn
+    inbound_body = adapter_source.split("async def _on_inbound_message", 1)[1]
+    inbound_body = inbound_body.split("async def send(", 1)[0]
+    assert "user_text_before_attach" in inbound_body
+    assert "and not explicit_quote" in inbound_body
+    assert "text_refers_to_attachment(user_text_before_attach)" in inbound_body
     session_memory_source = (ROOT / "hermes/main/plugins/zalo/session_memory.py").read_text(encoding="utf-8")
     assert 'message_id=str(source_message_id or "")' in session_memory_source
     assert 'meta={"source_message_id": str(source_message_id or "")}' in session_memory_source

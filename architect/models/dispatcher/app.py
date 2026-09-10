@@ -506,6 +506,88 @@ def _active_turn() -> dict[str, str]:
     return {}
 
 
+def _active_source(thread_id: str, thread_type: str) -> str:
+    """Source message for this exact conversation; concurrent turns cannot cross."""
+    tid = str(thread_id or "").strip()
+    if not tid:
+        return ""
+    tt = thread_type if thread_type in {"user", "group"} else "user"
+    try:
+        with httpx.Client(timeout=1.5) as c:
+            r = c.get(
+                f"{SESSION_URL}/v1/turn/source/{tid}",
+                params={"thread_type": tt},
+            )
+            if r.status_code < 300:
+                return str((r.json() or {}).get("source_message_id") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _bridge_message_id(payload: Any) -> str:
+    """Extract the bridge acknowledgement id from supported nested responses."""
+    pending = [payload]
+    seen: set[int] = set()
+    while pending:
+        item = pending.pop(0)
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        if isinstance(item, dict):
+            value = item.get("msgId")
+            if value is not None and str(value).strip():
+                return str(value)
+            for key in ("result", "message", "attachment"):
+                child = item.get(key)
+                if isinstance(child, (dict, list)):
+                    pending.append(child)
+        elif isinstance(item, list):
+            pending.extend(child for child in item if isinstance(child, (dict, list)))
+    return ""
+
+
+def _record_zalo_attachment_delivery(
+    *,
+    thread_id: str,
+    thread_type: str,
+    source_message_id: str,
+    response: dict[str, Any],
+    path: Path,
+    caption: str,
+) -> bool:
+    """Persist proof only after the bridge acknowledged this attachment."""
+    api = (os.environ.get("ZALO_API_URL") or "http://zalo-api:8100").rstrip("/")
+    token = (os.environ.get("ZALO_API_TOKEN") or "").strip()
+    ext = path.suffix.lower()
+    attachment_kind = "image" if ext in {".jpg", ".jpeg", ".png", ".webp", ".gif"} else "document"
+    headers = {"content-type": "application/json"}
+    if token:
+        headers["authorization"] = f"Bearer {token}"
+    body = {
+        "thread_id": str(thread_id),
+        "thread_type": "group" if thread_type == "group" else "user",
+        "message_id": _bridge_message_id(response),
+        "event": "delivered",
+        "role": "assistant",
+        "content": str(caption or path.name),
+        "task_hint": "outbound",
+        "meta": {
+            "quoted": False,
+            "delivery_kind": "result",
+            "source_message_id": str(source_message_id or ""),
+            "attachment_kind": attachment_kind,
+            "file_name": path.name,
+        },
+    }
+    try:
+        with httpx.Client(timeout=3.0) as c:
+            r = c.post(f"{api}/v1/zalo/message-history", headers=headers, json=body)
+            return r.status_code < 300 and bool((r.json() or {}).get("ok"))
+    except Exception:
+        return False
+
+
 def _claim_generated_file(path: Path, thread_id: str) -> bool:
     """True = this process may send. False = already sent this turn."""
     try:
@@ -599,8 +681,28 @@ def send_file(req: SendFileReq) -> dict[str, Any]:
         flush=True,
     )
     zalo = _send_zalo_base64(req.thread_id, req.thread_type, staged, req.caption or "")
+    source_message_id = _active_source(req.thread_id, req.thread_type)
+    history_recorded = _record_zalo_attachment_delivery(
+        thread_id=req.thread_id,
+        thread_type=req.thread_type,
+        source_message_id=source_message_id,
+        response=zalo,
+        path=staged,
+        caption=req.caption or "",
+    )
+    if not history_recorded:
+        print(
+            f"[flow] stage=zalo_send_history_failed thread_id={req.thread_id} file={name}",
+            flush=True,
+        )
     _timing_add("workflow_s", time.time() - t0, req.thread_id)
-    return {"ok": True, "file": name, "zalo": zalo, "av": scan}
+    return {
+        "ok": True,
+        "file": name,
+        "zalo": zalo,
+        "av": scan,
+        "history_recorded": history_recorded,
+    }
 
 
 def _send_zalo_attachment(thread_id: str, thread_type: str, dest: Path, caption: str) -> dict[str, Any]:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -20,6 +21,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from deploy_stack import connect, sudo_bash  # noqa: E402
 from sanitize import sanitize as _sanitize  # noqa: E402
+from visual_weather_pdf_gate import (  # noqa: E402
+    blocking_defects_clear as _blocking_defects_clear,
+    delivered_image_count as _delivered_image_count,
+    extracted_pdf_text as _extracted_pdf_text,
+    new_pdf_seen as _new_pdf_seen,
+    unrequested_current_scope_terms as _unrequested_current_scope_terms,
+    visual_quality_score as _visual_quality_score,
+)
 
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -60,7 +69,12 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     c = connect()
     marker = f"lab-visual-weather-pdf-{int(time.time())}"
-    report: dict = {"ts": ts(), "user": TN_ID, "message": MSG, "marker": marker}
+    report: dict = {
+        "ts": ts(),
+        "target": "runtime-authorized-user",
+        "message": MSG,
+        "marker": marker,
+    }
     try:
         before = _clean(
             sudo_bash(c, "ls -1t /data/assistant/media/out/*.pdf 2>/dev/null | head -1 || true")
@@ -121,6 +135,26 @@ fi
 if [[ -z "$NEWPDF" ]]; then
   echo "NO_NEW_PDF"
   ls -1t /data/assistant/media/out/*.pdf 2>/dev/null | head -3 || true
+  ZALO_API_ID=$(docker ps \
+    --filter label=com.docker.compose.service=zalo-api \
+    --format '{{{{.ID}}}}' | head -1)
+  if [[ -z "$ZALO_API_ID" ]]; then
+    echo "DELIVERED_IMAGE_COUNT_QUERY_FAILED no_zalo_api"
+  elif ! docker exec -e SOURCE_ID={marker!r} "$ZALO_API_ID" python3 -c '
+import os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as c:
+    row = c.execute(
+        "select count(*) from zalo_message_history "
+        "where event='"'"'delivered'"'"' "
+        "and meta->>'"'"'attachment_kind'"'"'='"'"'image'"'"' "
+        "and meta->>'"'"'source_message_id'"'"'=%s",
+        (os.environ["SOURCE_ID"],),
+    ).fetchone()
+print("DELIVERED_IMAGE_COUNT", int(row[0] if row else 0))
+'
+  then
+    echo "DELIVERED_IMAGE_COUNT_QUERY_FAILED query_error"
+  fi
   exit 0
 fi
 HOST_PDF="$NEWPDF"
@@ -155,7 +189,9 @@ pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
 image = pix.tobytes("png")
 print("PDF_PAGE_COUNT", len(doc))
 print("PDF_TEXT_CHARS", len(text))
+print("PDF_TEXT_BEGIN")
 print(text[:2000])
+print("PDF_TEXT_END")
 if len(text) < 80 or len(image) < 10000:
     raise SystemExit("FAIL_PDF_UNREADABLE")
 
@@ -168,7 +204,10 @@ body = json.dumps(dict(
             "Evaluate this rendered PDF page as a professional information document. "
             "Check visual hierarchy, readability, spacing, contrast, factual labels, "
             "and whether any interface chrome or unrelated title leaked into the page. "
-            "Give a concise quality rating from 1 to 10 with reasons."
+            "First output exactly QUALITY_SCORE: <integer>/10. On the next line output "
+            "exactly BLOCKING_DEFECTS: none, or a concise comma-separated list. "
+            "Blocking defects include overlap, clipping, unreadable text, broken hierarchy, "
+            "or materially wasted page space. Then give concise reasons."
         )),
         dict(type="image_url", image_url=dict(url=(
             "data:image/png;base64," + base64.b64encode(image).decode("ascii")
@@ -196,6 +235,21 @@ print(evaluation[:1600])
 print("PDF_VISUAL_EVALUATION_END")
 print("PDF_STRUCTURE_OK")
 PY
+ZALO_API_ID=$(docker ps \
+  --filter label=com.docker.compose.service=zalo-api \
+  --format '{{{{.ID}}}}' | head -1)
+docker exec -e SOURCE_ID={marker!r} "$ZALO_API_ID" python3 -c '
+import os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as c:
+    row = c.execute(
+        "select count(*) from zalo_message_history "
+        "where event='"'"'delivered'"'"' "
+        "and meta->>'"'"'attachment_kind'"'"'='"'"'image'"'"' "
+        "and meta->>'"'"'source_message_id'"'"'=%s",
+        (os.environ["SOURCE_ID"],),
+    ).fetchone()
+print("DELIVERED_IMAGE_COUNT", int(row[0] if row else 0))
+'
 """
         print(f"INJECTED wait up to {WAIT_S}s", flush=True)
         out = _clean(sudo_bash(c, remote, timeout=WAIT_S + 120))
@@ -231,7 +285,7 @@ PY
         )
         report["fail_bits"] = bad
         report["greeting_leak"] = greeting_leak
-        new_pdf = "NEW_PDF" in out
+        new_pdf = _new_pdf_seen(out)
         report["new_pdf"] = new_pdf
         report["pdf_structure_ok"] = "PDF_STRUCTURE_OK" in out
         report["visual_evaluation"] = (
@@ -242,8 +296,19 @@ PY
             and "PDF_VISUAL_EVALUATION_END" in out
             else ""
         )
+        evaluation = report["visual_evaluation"]
+        visual_score = _visual_quality_score(evaluation)
+        report["visual_quality_score"] = visual_score
+        report["visual_blocking_defects_clear"] = _blocking_defects_clear(evaluation)
+        pdf_text = _extracted_pdf_text(out)
+        scope_bad = _unrequested_current_scope_terms(pdf_text)
+        report["unrequested_scope"] = scope_bad
         unexpected_image = "UNEXPECTED_NEW_IMAGE" in out
         report["unexpected_image"] = unexpected_image
+        delivered_count = _delivered_image_count(out)
+        report["delivery_history_query_ok"] = delivered_count is not None
+        delivered_image = delivered_count is None or delivered_count > 0
+        report["unexpected_image_delivery"] = delivered_image
 
         out_path = OUT / f"report-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
         out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -257,20 +322,26 @@ PY
         if greeting_leak:
             print("FAIL hello/help leak without file delivery", flush=True)
             return 1
-        if unexpected_image:
-            print("FAIL requested PDF also produced a standalone image", flush=True)
-            return 1
         if not new_pdf:
             print("FAIL no new pdf produced (quota/rate-limit → skip)", flush=True)
             if "maxwaitms" in blob or "rate-limit" in blob or "quota" in blob:
                 print("SKIP rate-limit/quota", flush=True)
                 return 0
             return 1
+        if delivered_image:
+            print("FAIL requested PDF also delivered a standalone image", flush=True)
+            return 1
+        if scope_bad:
+            print("FAIL current-only PDF added unrequested scope:", scope_bad, flush=True)
+            return 1
         if "PDF_STRUCTURE_OK" not in out:
             if "rate-limit" in blob or "quota" in blob or "429" in blob:
                 print("SKIP visual evaluator rate-limit/quota", flush=True)
                 return 0
             print("FAIL PDF structure or visual evaluation", flush=True)
+            return 1
+        if visual_score is None or visual_score < 8 or not _blocking_defects_clear(evaluation):
+            print("FAIL PDF visual quality gate", flush=True)
             return 1
         print("PASS visual weather pdf", flush=True)
         return 0

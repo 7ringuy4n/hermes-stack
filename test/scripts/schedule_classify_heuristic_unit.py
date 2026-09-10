@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "architect" / "models" / "router-worker"))
 sys.path.insert(0, str(ROOT / "test" / "scripts"))
+sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 
 from classify import (  # noqa: E402
     _CLASSIFY_SKIP_HTTP,
@@ -24,6 +25,7 @@ from classify_fixtures import (  # noqa: E402
     FIXTURE_DAILY_LC_TASK,
     _planner,
 )
+from classify_client import plan_should_apply_live_search_contract  # noqa: E402
 
 
 def main() -> int:
@@ -48,6 +50,15 @@ def main() -> int:
     attach_bare = strip_prior_for_classify(attach_wrapped)
     assert attach_bare == "2 phút nữa nhắc tôi: tới giờ uống nước"
     assert "[Recent attachments" not in attach_bare
+    scheduled_search = {
+        "task_hint": "schedule",
+        "task_details": [{"task_type": "search"}],
+    }
+    assert not plan_should_apply_live_search_contract(scheduled_search)
+    assert plan_should_apply_live_search_contract(scheduled_search, schedule_fire=True)
+    assert plan_should_apply_live_search_contract(
+        {"task_hint": "search", "task_type": "search"}
+    )
     # Classify Python must not phrase-scan schedule/destination/delay.
     assert heuristic_plan(bare) is None
     once_llm = normalize_plan(

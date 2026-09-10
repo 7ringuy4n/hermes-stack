@@ -42,6 +42,28 @@
       "vi": "Lịch chạy không thành công. Vui lòng thử lại sau."
     }
   },
+  "notes": {
+    "saved": {
+      "default": "en",
+      "en": "Note saved.",
+      "vi": "Đã lưu ghi chú."
+    },
+    "empty": {
+      "default": "en",
+      "en": "No matching saved notes were found.",
+      "vi": "Không tìm thấy ghi chú phù hợp."
+    },
+    "ambiguous": {
+      "default": "en",
+      "en": "More than one note matches. Reply with the note id to choose one.",
+      "vi": "Có nhiều ghi chú phù hợp. Hãy trả lời bằng mã ghi chú để chọn."
+    },
+    "failed": {
+      "default": "en",
+      "en": "The note operation could not be completed. Please try again.",
+      "vi": "Không thể hoàn tất thao tác ghi chú. Vui lòng thử lại."
+    }
+  },
   "session": {
     "interrupted": {
       "default": "en",
