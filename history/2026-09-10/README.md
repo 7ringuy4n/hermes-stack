@@ -13,10 +13,16 @@ stamp from `ASSISTANT_TZ`/`TZ`. Hermes chat turns built `MessageEvent(text=…)`
 from the raw user string only, so the agent invented a wall clock from search
 snippets or prior turns.
 
+A second gap: the live-search queue path replaced `event.text` with
+`bare_q` + `[Current lookup execution contract]`, wiping any host clock prefix
+just before `handle_message`.
+
 ## Fix
 
 - `hermes/main/plugins/zalo/host_clock.py` — pure `with_host_clock_context`.
-- `adapter.py` applies it on inbound, queue parts, compound parts, schedule fire.
+- `adapter.py` applies it on inbound, queue parts, compound parts, schedule fire,
+  hydrate, live-search contract rewrite, and again immediately before
+  `handle_message` on the queue path.
 - `web-search` / `core/answering` / `SOUL.md` — never invent a conflicting clock.
 - Unit: `test/scripts/host_clock_context_unit.py`.
 

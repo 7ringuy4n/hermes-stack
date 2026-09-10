@@ -4551,7 +4551,9 @@ class ZaloAdapter(BasePlatformAdapter):
                             from .session_memory import hydrate_user_text
                         except ImportError:
                             from session_memory import hydrate_user_text  # type: ignore
-                        event.text = hydrate_user_text(tid, thread_type, prompt_text)
+                        event.text = self._as_with_host_clock_context(
+                            hydrate_user_text(tid, thread_type, prompt_text)
+                        )
                     if turn_user_text:
                         try:
                             from .session_memory import append_turn
@@ -4595,7 +4597,7 @@ class ZaloAdapter(BasePlatformAdapter):
                             # recall or reuse a previous lookup from session history.
                             # Keep provider selection in the configured native
                             # web_search route and forbid shell/network bypasses.
-                            event.text = (
+                            event.text = self._as_with_host_clock_context(
                                 f"{bare_q}\n\n[Current lookup execution contract]\n"
                                 "Call the native web_search tool during this turn through its "
                                 "configured routing. Do not reuse prior search results. Do not "
@@ -4631,6 +4633,9 @@ class ZaloAdapter(BasePlatformAdapter):
                             plan=queued_plan,
                         ):
                             return
+                    event.text = self._as_with_host_clock_context(
+                        str(event.text or "")
+                    )
                     await self.handle_message(event)
 
                     def _pulse() -> None:
