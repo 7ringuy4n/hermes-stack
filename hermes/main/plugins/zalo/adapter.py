@@ -4497,7 +4497,7 @@ class ZaloAdapter(BasePlatformAdapter):
         mt_name = str(item.get("message_type") or "TEXT")
         mt = getattr(MessageType, mt_name, MessageType.TEXT)
         event = MessageEvent(
-            text=self._as_with_host_clock_context(str(item.get("text") or "")),
+            text=str(item.get("text") or ""),
             message_type=mt,
             source=source,
             message_id=str(item.get("message_id") or ""),
@@ -4551,9 +4551,7 @@ class ZaloAdapter(BasePlatformAdapter):
                             from .session_memory import hydrate_user_text
                         except ImportError:
                             from session_memory import hydrate_user_text  # type: ignore
-                        event.text = self._as_with_host_clock_context(
-                            hydrate_user_text(tid, thread_type, prompt_text)
-                        )
+                        event.text = hydrate_user_text(tid, thread_type, prompt_text)
                     if turn_user_text:
                         try:
                             from .session_memory import append_turn
@@ -4597,7 +4595,7 @@ class ZaloAdapter(BasePlatformAdapter):
                             # recall or reuse a previous lookup from session history.
                             # Keep provider selection in the configured native
                             # web_search route and forbid shell/network bypasses.
-                            event.text = self._as_with_host_clock_context(
+                            event.text = (
                                 f"{bare_q}\n\n[Current lookup execution contract]\n"
                                 "Call the native web_search tool during this turn through its "
                                 "configured routing. Do not reuse prior search results. Do not "
@@ -4610,7 +4608,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         message_type=event.message_type,
                     )
                     if await self._as_try_workflow_submit(
-                        text=str(event.text or bare_q),
+                        text=bare_q,
                         thread_id=tid,
                         thread_type=thread_type,
                         sender_id=sender_id,
@@ -4625,7 +4623,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         return
                     if has_image and list(event.media_urls or []):
                         if await self._as_try_image_analyze_vision_reply(
-                            text=str(event.text or ""),
+                            text=bare_q or str(event.text or ""),
                             thread_id=tid,
                             thread_type=thread_type,
                             media_urls=list(event.media_urls or []),
@@ -4633,8 +4631,9 @@ class ZaloAdapter(BasePlatformAdapter):
                             plan=queued_plan,
                         ):
                             return
+                    # Hermes-only: stamp after classify/schedule/storage decisions.
                     event.text = self._as_with_host_clock_context(
-                        str(event.text or "")
+                        str(event.text or bare_q)
                     )
                     await self.handle_message(event)
 

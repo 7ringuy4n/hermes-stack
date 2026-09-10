@@ -41,3 +41,28 @@ def with_host_clock_context(text: str, *, tz_name: str | None = None) -> str:
         f"Local now: {stamp}\n\n"
     )
     return prefix + body
+
+
+def strip_host_clock_context(text: str) -> str:
+    """Remove host-clock wrapper so classify/schedule see the bare user ask."""
+    body = str(text or "")
+    if not body.strip():
+        return body
+    marker = "[Host clock — authoritative]"
+    idx = body.find(marker)
+    if idx >= 0:
+        body = body[idx + len(marker) :]
+    elif not (
+        "Timezone:" in body[:160] and "Local now:" in body[:240]
+    ):
+        return body.strip() or (text or "").strip()
+    lines = body.lstrip("\n").splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line or line.startswith("Timezone:") or line.startswith("Local now:"):
+            i += 1
+            continue
+        break
+    cleaned = "\n".join(lines[i:]).strip()
+    return cleaned or (text or "").strip()

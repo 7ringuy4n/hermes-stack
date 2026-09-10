@@ -50,6 +50,15 @@ def main() -> int:
     attach_bare = strip_prior_for_classify(attach_wrapped)
     assert attach_bare == "2 phút nữa nhắc tôi: tới giờ uống nước"
     assert "[Recent attachments" not in attach_bare
+    clock_wrapped = (
+        "[Host clock — authoritative]\n"
+        "Timezone: Asia/Ho_Chi_Minh\n"
+        "Local now: 2026-09-10 13:40\n\n"
+        "2 phút nữa vẽ cho tôi hình thời tiết hồ chí minh hiện tại"
+    )
+    clock_bare = strip_prior_for_classify(clock_wrapped)
+    assert clock_bare.startswith("2 phút nữa"), clock_bare
+    assert "Host clock" not in clock_bare and "Local now:" not in clock_bare
     scheduled_search = {
         "task_hint": "schedule",
         "task_details": [{"task_type": "search"}],
