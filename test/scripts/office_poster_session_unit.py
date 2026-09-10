@@ -283,6 +283,26 @@ def main() -> int:
         return 1
     import session_memory  # noqa: F401
 
+    dispatcher_source = (ROOT / "architect" / "models" / "dispatcher" / "app.py").read_text(
+        encoding="utf-8"
+    )
+    session_source = (ROOT / "architect" / "memory" / "session" / "app.py").read_text(
+        encoding="utf-8"
+    )
+    adapter_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(
+        encoding="utf-8"
+    )
+    assert '/v1/turn/source/{thread_id}' in session_source
+    assert 'f"{TURN_SOURCE_PREFIX}:{tt}:{tid}"' in session_source
+    assert 'f"{SESSION_URL}/v1/turn/source/{tid}"' in dispatcher_source
+    assert 'f"{api}/v1/zalo/message-history"' in dispatcher_source
+    assert '"attachment_kind": attachment_kind' in dispatcher_source
+    workflow_source = adapter_source.split("async def _as_run_workflow_job", 1)[1].split(
+        "async def _as_workflow_loop", 1
+    )[0]
+    assert 'source_message_id = str(ctx.get("source_message_id") or "")' in workflow_source
+    assert "self._as_autosend_remember_turn(iso, zalo_tt, source_message_id)" in workflow_source
+
     print("OK office/poster from classify JSON + soul/session")
     return 0
 

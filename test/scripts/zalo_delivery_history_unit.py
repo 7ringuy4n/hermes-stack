@@ -39,6 +39,7 @@ def main() -> int:
     helper_body = source[helper_start:image_start]
     assert 'event="delivered"' in helper_body
     assert '"source_message_id": source_message_id' in helper_body
+    assert "or self._as_source_message_id.get()" in helper_body
     assert '"attachment_kind": str(attachment_kind or "file")' in helper_body
     assert '"file_name": name' in helper_body
     assert "_as_bridge_message_id(response)" in helper_body
@@ -56,6 +57,11 @@ def main() -> int:
     assert "async with self._as_agent_turn_lock_for(tid):" in source
     assert "not lease.heartbeat_healthy()" in source
     queued = source.index("async def _as_run_queued_part")
+    queued_body = source[queued:source.index("async def _as_dispatch_event", queued)]
+    assert 'str(item.get("message_id") or "")' in queued_body
+    assert queued_body.index('str(item.get("message_id") or "")') < queued_body.index(
+        "await self.handle_message(event)"
+    )
     terminal = source.index("idle = await self._as_wait_thread_idle(", queued)
     assert source.index("async with self._as_agent_turn_lock_for(tid):", queued) < terminal
     drain = source.index("async def _as_queue_drain")

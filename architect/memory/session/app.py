@@ -273,6 +273,7 @@ def _timing_key(thread_id: str) -> str:
 
 TIMING_CURRENT = "nh:turn:current"
 TIMING_CURRENT_TYPE = "nh:turn:current_type"
+TURN_SOURCE_PREFIX = "nh:turn:source"
 SENTFILE_PREFIX = "nh:sentfile"
 SENTFILE_TTL = 600
 
@@ -317,6 +318,7 @@ def timing_start(body: TimingStart) -> dict[str, Any]:
 class TurnDest(BaseModel):
     thread_id: str
     thread_type: str = "user"
+    source_message_id: str = ""
 
 
 class FileClaim(BaseModel):
@@ -333,7 +335,15 @@ def turn_dest_set(body: TurnDest) -> dict[str, Any]:
     tt = body.thread_type if body.thread_type in {"user", "group"} else "user"
     r.set(TIMING_CURRENT, tid, ex=TIMING_TTL)
     r.set(TIMING_CURRENT_TYPE, tt, ex=TIMING_TTL)
-    return {"ok": True, "thread_id": tid, "thread_type": tt}
+    source = (body.source_message_id or "").strip()
+    if source:
+        r.set(f"{TURN_SOURCE_PREFIX}:{tt}:{tid}", source, ex=TIMING_TTL)
+    return {
+        "ok": True,
+        "thread_id": tid,
+        "thread_type": tt,
+        "source_message_id": source,
+    }
 
 
 @app.get("/v1/turn/dest")
@@ -349,6 +359,19 @@ def turn_dest_get() -> dict[str, Any]:
         "thread_id": str(tid or ""),
         "thread_type": tt if tt in {"user", "group"} else "user",
     }
+
+
+@app.get("/v1/turn/source/{thread_id}")
+def turn_source_get(thread_id: str, thread_type: str = "user") -> dict[str, Any]:
+    """Return the source message bound to one conversation, never a global turn."""
+    tid = (thread_id or "").strip()
+    if not tid:
+        raise HTTPException(400, "thread_id required")
+    tt = thread_type if thread_type in {"user", "group"} else "user"
+    source = r.get(f"{TURN_SOURCE_PREFIX}:{tt}:{tid}") or ""
+    if isinstance(source, (bytes, bytearray)):
+        source = source.decode()
+    return {"ok": bool(source), "source_message_id": str(source)}
 
 
 @app.post("/v1/files/claim")

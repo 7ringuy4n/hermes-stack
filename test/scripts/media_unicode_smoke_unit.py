@@ -27,6 +27,7 @@ if not (DISP / "fonts.py").is_file():
 sys.path.insert(0, str(DISP))
 
 from fonts import pillow_font, resolve_font_path  # noqa: E402
+from image_backends import generate_image_bytes  # noqa: E402
 from office_file import write_office, write_pdf  # noqa: E402
 from text_poster import render_text_poster_bytes  # noqa: E402
 
@@ -90,6 +91,7 @@ def _one_poster(i: int) -> Path:
 
 
 def main() -> int:
+    assert callable(generate_image_bytes.__globals__.get("env_active"))
     OUT.mkdir(parents=True, exist_ok=True)
     for old in OUT.glob("*"):
         old.unlink()

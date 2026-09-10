@@ -260,6 +260,9 @@ services:
       # Zalo outbound (send-file / send_zalo on /v1/image) via host bridge proxy
       - ZALO_BRIDGE_URL=${ZALO_BRIDGE_URL:-http://zalo-proxy:8787}
       - ZALO_PLUGIN_TOKEN=${ZALO_PLUGIN_TOKEN:-}
+      - ZALO_API_URL=${ZALO_API_URL:-http://zalo-api:8100}
+      - ZALO_API_TOKEN=${ZALO_API_TOKEN:-}
+      - SESSION_URL=${SESSION_URL:-http://session:8107}
       - ZALO_HOST_MEDIA_DIR=${ASSISTANT_DATA_DIR:-/data/assistant}/media
       - ZALO_HOST_DATA_DIR=${ASSISTANT_DATA_DIR:-${HERMES_DATA_DIR:-/data/assistant}}
       - AV_SCAN=${AV_SCAN:-0}

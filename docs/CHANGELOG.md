@@ -1,3 +1,75 @@
+## 2026-09-09 — scheduled composed-image and same-language delivery
+
+- Execute persisted process-schedule plans before generic-agent fallback so a
+  due search-backed image remains one generated image instead of text.
+- Reject synthetic schedule ids as Zalo quote targets and retain task-local
+  source correlation for acknowledged scheduled attachments.
+- Localize host-owned note confirmations to the current message language.
+- Replace the composed-plan token environment knob with one validated protocol
+  bound and keep requested visual subjects recognizable while the model chooses
+  layout and copy.
+- Add a mandatory two-minute scheduled-image fire gate and numbered progress for
+  the complete case-index run.
+- Give an explicit DM/group reply precedence over unrelated durable session
+  history so a quoted text request cannot resume an older image/file task.
+- Run every indexed live gate through the shared credential-free VPS-local
+  transport, including latency and file-security matrices.
+- Keep case 17 on the documented Zalo bridge/SSE path; the direct Traefik ping
+  remains an optional comparison rather than release evidence.
+- Preserve a single atomic request verbatim through durable admission instead
+  of replacing it with classifier-normalized text, including Vietnamese `đ`
+  when semantic test matching folds accents.
+- Bind a claimed queue item's source message together with its destination
+  before any handler or file tool runs, preventing a later document from
+  inheriting the previous request's durable source correlation.
+- Derive composed-image placement from the user's requested shared region, not
+  from the number of sourced subjects, and preserve up to eight validated fact
+  lines through planning, payload adaptation, validation, and rendering.
+- Correlate dispatcher-produced attachments with their originating Zalo turn
+  and load the runtime environment helper on scheduled dispatcher execution.
+- Repair Router Worker skill descendants even when a restored top-level tree is
+  writable, and verify the baked classifier bundle before continuing deploy.
+- Make live-suite delivery and schedule-ack evidence use acknowledged durable
+  history instead of optional bridge self-message journal echoes.
+- Stamp the numbered case-index summary with the validated candidate revision,
+  including an explicit override for an intentionally overlaid VPS checkout.
+- Keep model-selected top/bottom information bands content-sized by default;
+  cap them at 72% width and preserve the scene outside the card unless the user
+  explicitly asks for a full-width region.
+- Prevent an explicit quoted reply from inheriting unrelated recent attachment
+  context, and require typed live-search turns to use the current native routed
+  search result rather than an old answer or code/network bypass.
+- Give every remaining-suite request its own durable source identifier and make
+  history regression cases delete the exact schedules they create, preventing
+  delayed test traffic from corrupting later concurrency evidence.
+- Retain the repository's restrictive root Office wrappers through replica
+  startup and add the bundled `pdf`, `docx`, and `xlsx` names to Hermes'
+  curator suppression file before image-level skill sync. This prevents the
+  later sync stage from reintroducing unsafe generic local-generation tools.
+- Make the live PDF oracle distinguish `NEW_PDF` from `NO_NEW_PDF` exactly and
+  query acknowledged image delivery even when document generation times out.
+  Current-only document tests now reject unsolicited forecast/advice sections
+  and require an explicit visual score of at least 8/10 with no blocking layout
+  defect.
+- Clarify that current-condition practical tips are recommendations too: a
+  current-only artifact must not add an unrequested advice sentence, card, or
+  strip merely because the advice is not forecast-based.
+- Apply the trusted current-search execution contract only when work executes;
+  do not append it to the original text while a search-backed schedule is being
+  created.
+- Make durable attachment recall opt-in for explicit file follow-ups. Fresh
+  URL, image-generation, schedule, and document-creation requests no longer
+  inherit unrelated files from earlier turns.
+- Strengthen clean-run isolation: archive injection uses the real single-media
+  shape and waits for its terminal source-correlated reply, post-restart Zalo
+  injection waits for a logged-in SSE owner, and refusal evidence uses a unique
+  temporary file per run.
+- Stop Zalo late autosend when Dispatcher has already claimed the newest rich
+  document. An older image embedded while building that PDF/DOCX/PPTX/XLSX is
+  a sidecar, not a second user-visible result. The visual-PDF gate now proves
+  the absence of a source-correlated image delivery instead of confusing a
+  private build artifact with transport delivery.
+
 ## 2026-09-08 19:12 +07 — complete structured multi-region plans
 
 - Raise the bounded, operator-configurable completion budget for composed-image

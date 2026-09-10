@@ -11,24 +11,23 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DST_DIR="$ROOT/architect/models/router-worker/config"
 mkdir -p "$DST_DIR"
 
-if [[ "$(id -u)" -ne 0 ]] || [[ -w "$DST_DIR" ]]; then
+if [[ -w "$DST_DIR" ]]; then
   exec python3 "$ROOT/scripts/main/sync_router_worker_skills.py"
 fi
 
 _dst_owner() {
-  # Prefer directory owner so git checkout trees stay operator-writable.
-  if command -v stat >/dev/null 2>&1; then
-    if stat -c '%u:%g' "$DST_DIR" >/dev/null 2>&1; then
-      stat -c '%u:%g' "$DST_DIR"
-      return 0
-    fi
-    if stat -f '%u' "$DST_DIR" >/dev/null 2>&1; then
-      echo "$(stat -f '%u' "$DST_DIR"):$(stat -f '%g' "$DST_DIR")"
-      return 0
-    fi
-  fi
+  # This path is reached by a non-root operator repairing a root-owned bake.
+  # Keep the replacement operator-writable for the next ordinary update.
   echo "$(id -u):$(id -g)"
 }
+
+if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null; then
+  echo "cannot repair non-writable $DST_DIR without passwordless sudo" >&2
+  exit 1
+fi
+
+STAGE_DIR="$(mktemp -d)"
+trap 'rmdir "$STAGE_DIR" 2>/dev/null || true' EXIT
 
 _install_file() {
   local src="$1"
@@ -71,7 +70,7 @@ sync_one() {
     exit 1
   fi
   local tmp
-  tmp="$(mktemp "${DST_DIR}/.${name}.XXXXXX")"
+  tmp="$(mktemp "${STAGE_DIR}/.${name}.XXXXXX")"
   cp -f "$src" "$tmp"
   _install_file "$tmp" "$DST_DIR/$name"
   echo "synced $name ← $src"
@@ -79,14 +78,14 @@ sync_one() {
 
 # Assemble classify skill parts into a self-contained bake JSON (no parts/ in the image).
 CLASSIFY_TMP="$(
-  python3 - "$ROOT" "$DST_DIR" <<'PY'
+  python3 - "$ROOT" "$STAGE_DIR" <<'PY'
 import json
 import sys
 import tempfile
 from pathlib import Path
 
 root = Path(sys.argv[1])
-dst_dir = Path(sys.argv[2])
+stage_dir = Path(sys.argv[2])
 skill = root / "hermes" / "main" / "skills" / "classify"
 env_path = skill / "classify.json"
 data = json.loads(env_path.read_text(encoding="utf-8"))
@@ -106,7 +105,7 @@ for name in names:
 if not chunks:
     raise SystemExit("classify parts produced empty system")
 data["system"] = "\n\n".join(chunks)
-fd, tmp_name = tempfile.mkstemp(prefix=".classify.json.", dir=str(dst_dir))
+fd, tmp_name = tempfile.mkstemp(prefix=".classify.json.", dir=str(stage_dir))
 tmp_path = Path(tmp_name)
 try:
     with open(fd, "w", encoding="utf-8", newline="\n") as fh:
@@ -125,11 +124,11 @@ echo "assembled classify.json → $DST_DIR/classify.json"
 sync_one "$ROOT/hermes/main/skills/outbound/outbound.json" "outbound.json"
 
 if [[ -f "$DST_DIR/web-search-combo.json" ]]; then
-  rm -f "$DST_DIR/web-search-combo.json"
+  sudo -n rm -f "$DST_DIR/web-search-combo.json"
   echo "removed unused bake copy web-search-combo.json"
 fi
 
 if [[ -f "$DST_DIR/heuristic.json" ]]; then
-  rm -f "$DST_DIR/heuristic.json"
+  sudo -n rm -f "$DST_DIR/heuristic.json"
   echo "removed unused bake copy heuristic.json"
 fi

@@ -13,10 +13,10 @@ sys.path.insert(0, str(ZALO))
 sys.path.insert(0, str(DISPATCHER))
 
 from media_shortcuts import (  # noqa: E402
+    _OVERLAY_PLAN_MAX_TOKENS,
     _image_prompt_assets,
     _validated_evidence_queries,
     _json_object,
-    _omni_overlay_plan_max_tokens,
     _omni_overlay_plan_model,
     _omni_overlay_plan_timeout_s,
     _overlay_payload,
@@ -32,7 +32,7 @@ OUT = ROOT / "scripts" / "temp" / "composed_image_overlay_unit"
 
 def main() -> int:
     assert _omni_overlay_plan_timeout_s() == 120
-    assert _omni_overlay_plan_max_tokens() == 4096
+    assert _OVERLAY_PLAN_MAX_TOKENS == 4096
     assert _omni_overlay_plan_model() == "classifier"
     os.environ["OMNIROUTER_CLASSIFY_COMBO"] = "structured-planner"
     try:
@@ -79,6 +79,22 @@ def main() -> int:
     lines, payload_design = _overlay_payload(parsed)
     assert lines == ["City Pulse", "Index: 92"]
     assert payload_design["line_roles"] == ["title", "primary"]
+
+    combined = {
+        "title": "Combined",
+        "facts": [
+            {"label": f"Subject {index + 1}", "value": str(index + 1)}
+            for index in range(6)
+        ],
+        "design": {"placement": "left-column"},
+        "include_timestamp": True,
+        "timestamp_label": "Updated",
+    }
+    combined_lines, combined_design = _overlay_payload(combined)
+    assert len(combined_lines) == 8
+    assert combined_lines[-2] == "Subject 6: 6"
+    assert combined_lines[-1].startswith("Updated:")
+    assert len(combined_design["line_roles"]) == 8
 
     multi = _json_object(
         '{"title":"","facts":[],"panels":['
@@ -131,14 +147,26 @@ def main() -> int:
     assert "up to six" in str(assets.get("composition_system")).lower()
     assert "center-right" in str(assets.get("composition_system"))
     assert "region" in str(assets.get("composition_system"))
+    assert "Region count follows the Request's visual grouping" in str(
+        assets.get("composition_system")
+    )
+    assert "exactly one information region" in str(assets.get("composition_system"))
+    assert "below or at the bottom uses bottom-bar" in str(
+        assets.get("composition_system")
+    )
+    assert "on the left or right uses left-column or right-column" in str(
+        assets.get("composition_system")
+    )
     assert "compact minified JSON" in str(assets.get("composition_user_template"))
-    assert "no more than four concise fact rows per panel" in str(
+    assert "no more than six concise fact rows per information region" in str(
         assets.get("composition_user_template")
     )
     assert "renderer adds the authoritative current timestamp" in str(
         assets.get("composition_system")
     )
     assert "never put a date, time, number" in str(assets.get("composition_system"))
+    media_source = (ZALO / "media_shortcuts.py").read_text(encoding="utf-8")
+    assert "composed image layout request=" in media_source
 
     from PIL import Image
 
@@ -148,6 +176,25 @@ def main() -> int:
     image.save(image_path, quality=90)
     apply_overlay(image_path, lines, corner="auto", design=payload_design)
     assert image_path.stat().st_size > 4000
+    band_image = OUT / "content-sized-bottom-band.jpg"
+    Image.new("RGB", (1280, 720), (52, 82, 112)).save(band_image, quality=90)
+    band_bounds = apply_overlay(
+        band_image,
+        [
+            "Current information",
+            "Feels like: 26.6 C",
+            "Conditions: Heavy rain",
+            "Air quality: Unhealthy",
+            "Fuel E10 RON 95-III: 23,270 VND",
+            "Trend: Prices decreased",
+            "Updated: 12:00 2026-09-09",
+        ],
+        corner="bottom-bar",
+        design={"placement": "bottom-bar", "density": "comfortable"},
+    )
+    assert band_bounds is not None
+    assert band_bounds[0] > 0 and band_bounds[2] <= int(1280 * 0.75)
+    assert band_bounds[2] < 1280 - 200, "bottom band must preserve the right-side scene"
     panel_image = OUT / "multipanel.jpg"
     image.save(panel_image, quality=90)
     rendered = apply_overlay_panels(panel_image, panels)

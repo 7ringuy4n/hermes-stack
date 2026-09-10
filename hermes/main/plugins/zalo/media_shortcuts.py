@@ -8,6 +8,7 @@ or run_search_then_office when plan_allows_search_then_office is true.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import mimetypes
@@ -22,6 +23,8 @@ from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
 log = logging.getLogger("hermes_plugins.zalo_platform.media_shortcuts")
+
+_OVERLAY_PAYLOAD_MAX_LINES = 8
 
 _MEDIA_FAIL_LINE_VI = (
     "Hiện chưa tạo được file này. Bạn thử lại sau hoặc rút gọn yêu cầu giúp mình."
@@ -300,13 +303,7 @@ def _omni_overlay_plan_timeout_s() -> int:
         return 120
 
 
-def _omni_overlay_plan_max_tokens() -> int:
-    """Return a bounded completion budget for multi-region JSON plans."""
-    raw = (os.getenv("OMNI_OVERLAY_PLAN_MAX_TOKENS") or "4096").strip()
-    try:
-        return max(1024, min(int(raw), 8192))
-    except ValueError:
-        return 4096
+_OVERLAY_PLAN_MAX_TOKENS = 4096
 
 
 def _omni_overlay_plan_model() -> str:
@@ -428,7 +425,10 @@ def _synthesize_overlay_plan(
     parsed = _omni_json_plan(
         system,
         user,
-        max_tokens=_omni_overlay_plan_max_tokens(),
+        # This is a protocol bound, not an operator tuning knob. The validator
+        # below caps every collection and string, so one fixed budget covers the
+        # largest accepted plan and keeps deployments configuration-free.
+        max_tokens=_OVERLAY_PLAN_MAX_TOKENS,
     )
     facts: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -451,7 +451,7 @@ def _synthesize_overlay_plan(
                 "emphasis": emphasis if emphasis in {"primary", "important", "normal"} else "normal",
             }
         )
-        if len(facts) >= 5:
+        if len(facts) >= 6:
             break
     title = " ".join(str(parsed.get("title") or "").split())[:64]
     background_scene = " ".join(str(parsed.get("background_scene") or "").split())[:1200]
@@ -473,7 +473,7 @@ def _synthesize_overlay_plan(
                 "value": value,
                 "emphasis": emphasis if emphasis in {"primary", "important", "normal"} else "normal",
             })
-            if len(panel_facts) >= 4:
+            if len(panel_facts) >= 6:
                 break
         if not panel_facts:
             continue
@@ -650,7 +650,7 @@ def _overlay_payload(composition: dict[str, Any]) -> tuple[list[str], dict[str, 
             continue
         lines.append(f"{label}: {value}")
         roles.append(str(fact.get("emphasis") or "normal"))
-        if len(lines) >= 5:
+        if len(lines) >= _OVERLAY_PAYLOAD_MAX_LINES - 1:
             break
     if composition.get("include_timestamp", True):
         timestamp = _overlay_timestamp_line(assets, label=composition.get("timestamp_label"))
@@ -658,8 +658,8 @@ def _overlay_payload(composition: dict[str, Any]) -> tuple[list[str], dict[str, 
             lines.append(timestamp)
             roles.append("meta")
     design = _safe_overlay_design(composition.get("design"))
-    design["line_roles"] = roles[:6]
-    return lines[:6], design
+    design["line_roles"] = roles[:_OVERLAY_PAYLOAD_MAX_LINES]
+    return lines[:_OVERLAY_PAYLOAD_MAX_LINES], design
 
 
 def _overlay_timestamp_line(
@@ -693,7 +693,7 @@ def _overlay_panels_payload(composition: dict[str, Any]) -> list[dict[str, Any]]
             payload.append({"overlay": lines, "overlay_design": design})
     if payload and composition.get("include_timestamp", True):
         timestamp = _overlay_timestamp_line(label=composition.get("timestamp_label"))
-        if timestamp and len(payload[-1]["overlay"]) < 6:
+        if timestamp and len(payload[-1]["overlay"]) < _OVERLAY_PAYLOAD_MAX_LINES:
             payload[-1]["overlay"].append(timestamp)
             payload[-1]["overlay_design"]["line_roles"].append("meta")
     return payload[:6]
@@ -1326,6 +1326,21 @@ def run_search_then_composed_image(
     )
     if not composition:
         return shortcut_consumed()
+    panels = composition.get("panels") if isinstance(composition.get("panels"), list) else []
+    design = composition.get("design") if isinstance(composition.get("design"), dict) else {}
+    log.info(
+        "composed image layout request=%s panels=%s facts=%s placement=%s panel_placements=%s",
+        hashlib.sha256(user_ask.encode("utf-8")).hexdigest()[:12],
+        len(panels),
+        len(composition.get("facts") or []),
+        str(design.get("placement") or "auto"),
+        ",".join(
+            str((panel.get("design") or {}).get("placement") or "auto")
+            for panel in panels
+            if isinstance(panel, dict)
+        )
+        or "none",
+    )
     # Grounded composition owns both overlay design and the clean background
     # brief.  Fall back to the classifier scene only for older model responses.
     visual_scene = str(composition.get("background_scene") or "").strip() or scene

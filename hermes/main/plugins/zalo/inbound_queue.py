@@ -70,6 +70,7 @@ def make_item(
     plan: Optional[Dict[str, Any]] = None,
     user_text: str = "",
     reply_quote: Optional[Dict[str, Any]] = None,
+    explicit_quote: bool = False,
 ) -> Dict[str, Any]:
     return {
         "kind": kind,
@@ -87,6 +88,7 @@ def make_item(
         "plan": dict(plan) if isinstance(plan, dict) else None,
         "user_text": str(user_text or text or ""),
         "reply_quote": dict(reply_quote) if isinstance(reply_quote, dict) else None,
+        "explicit_quote": bool(explicit_quote),
     }
 
 

@@ -217,7 +217,7 @@ def folded(value):
     return "".join(
         char for char in unicodedata.normalize("NFKD", str(value).casefold())
         if not unicodedata.combining(char)
-    ).replace("-", " ")
+    ).replace("đ", "d").replace("-", " ")
 
 expected=(
     ("42","forty two"),

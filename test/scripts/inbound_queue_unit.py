@@ -53,6 +53,7 @@ def main() -> int:
                 message_id=f"m{i}",
                 user_text=f"user-{i}",
                 reply_quote={"msgId": f"q{i}", "content": f"quote-{i}"},
+                explicit_quote=True,
             )
         )
         n = fifo.queue_push("t1", encode_item(items[-1]), 3, 3600)
@@ -79,6 +80,9 @@ def main() -> int:
         quote = got.get("reply_quote") or {}
         if quote.get("msgId") != f"q{expected_index}":
             print("FAIL queued quote correlation")
+            return 1
+        if got.get("explicit_quote") is not True:
+            print("FAIL queued explicit-quote precedence")
             return 1
     if len(popped) != 3:
         print(f"FAIL pop count {popped!r}")
@@ -171,11 +175,11 @@ def main() -> int:
     queued_part = adapter_source.split("async def _as_run_queued_part", 1)[1].split(
         "async def _as_dispatch_event", 1
     )[0]
-    remember = "self._as_autosend_remember_turn(tid, thread_type)"
+    remember = 'str(item.get("message_id") or "")'
     if remember not in queued_part or queued_part.index(remember) > queued_part.index(
         "await self.handle_message(event)"
     ):
-        print("FAIL recovered queue turn does not rebind its destination")
+        print("FAIL recovered queue turn does not rebind its source and destination")
         return 1
     sse_handler = adapter_source.split("async def _handle_sse_event", 1)[1]
     sse_handler = sse_handler.split("def _as_inbound_is_admin", 1)[0]

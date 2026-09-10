@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "hermes" / "main" / "plugins" / "zalo"))
 sys.path.insert(0, str(ROOT / "test" / "scripts"))
 
-from multi_request import split_compound_requests  # noqa: E402
+from multi_request import queue_part_text, split_compound_requests  # noqa: E402
 from classify_fixtures import install_unit_planner  # noqa: E402
 
 install_unit_planner()
@@ -34,6 +34,9 @@ FIXTURE_NUMBERED = (
 
 
 def main() -> int:
+    exact = "Reply with exactly this natural sentence: The blue orchid is ready."
+    assert queue_part_text(exact, ["The blue orchid is ready."]) == exact
+    assert queue_part_text("Do A and B", ["Do A", "Do B"]) == "Do A"
     parts = split_compound_requests(FIXTURE)
     if len(parts) != 2:
         print(f"FAIL expected 2 parts, got {len(parts)}: {parts!r}")

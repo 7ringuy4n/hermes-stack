@@ -123,18 +123,25 @@ elif [ -d "$_src_skills" ] && [ -d "$_dst_skills" ]; then
   cp -a "$_src_skills"/. "$_dst_skills"/ 2>/dev/null || true
 fi
 # Advanced local Office toolkits are repository references, not chat runtime
-# skills. If copied into a replica, Hermes also creates categorized clones and
-# registers each folder basename, producing ambiguous pdf/docx/xlsx lookups.
-# Chat creation is exclusively file-gen -> Dispatcher, so exclude every local
-# toolkit copy from the runtime skill tree before Hermes starts.
+# skills. Hermes' image-level skills sync runs *after* this entrypoint and
+# backfills bundled ``pdf``/``docx``/``xlsx`` skills into categorized paths
+# after our cleanup. Keep the repository root wrappers in place: their
+# frontmatter names are distinct (``*-tools-local``) and, most importantly,
+# they direct chat creation to file-gen -> Dispatcher. Suppress those bundled
+# names before stage two, then remove categorized and ``official`` clones.
 if [ -d "$_dst_skills" ]; then
+  _suppressed="${_dst_skills}/.curator_suppressed"
+  touch "$_suppressed" 2>/dev/null || true
+  for _n in pdf docx xlsx; do
+    grep -qx "$_n" "$_suppressed" 2>/dev/null || printf '%s\n' "$_n" >> "$_suppressed"
+  done
   for _cat in productivity documents; do
     for _n in pdf docx xlsx; do
       rm -rf "${_dst_skills}/${_cat}/${_n}" 2>/dev/null || true
     done
   done
   for _n in pdf docx xlsx; do
-    rm -rf "${_dst_skills}/${_n}" "${_dst_skills}/official/${_n}" 2>/dev/null || true
+    rm -rf "${_dst_skills}/official/${_n}" 2>/dev/null || true
   done
 fi
 link_shared messages

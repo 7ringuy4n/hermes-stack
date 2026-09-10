@@ -209,7 +209,7 @@ def folded(value):
     return "".join(
         char for char in unicodedata.normalize("NFKD",str(value).casefold())
         if not unicodedata.combining(char)
-    )
+    ).replace("đ", "d")
 
 search_rowid,attribution=omni_search_rowid()
 weather_started=time.time()
@@ -253,8 +253,9 @@ file_expected={{
 }}
 file_markers={{"dm":"DOCX-DM-"+tag,"group":"DOCX-GROUP-"+tag}}
 file_titles={{"dm":"Concurrent DM Report","group":"Concurrent Group Report"}}
+file_names={{"dm":"concurrent-dm-"+tag+".docx","group":"concurrent-group-"+tag+".docx"}}
 file_prompts={{
-    label:"Create and send one DOCX document. Use the title '"+file_titles[label]+"' and include this exact body marker: "+file_markers[label]
+    label:"Create and send one DOCX document named '"+file_names[label]+"'. Use the title '"+file_titles[label]+"' and include this exact body marker: "+file_markers[label]
     for label in file_expected
 }}
 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:

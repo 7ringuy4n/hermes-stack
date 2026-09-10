@@ -59,6 +59,14 @@ def classify_compound_request(text: str) -> Tuple[List[str], Dict[str, Any]]:
     return parts_from_plan(raw, plan), plan
 
 
+def queue_part_text(raw: str, parts: List[str]) -> str:
+    """Preserve an atomic user's wording; use planned text only for real splits."""
+    values = [str(value or "").strip() for value in parts if str(value or "").strip()]
+    if len(values) >= 2:
+        return values[0]
+    return str(raw or "")
+
+
 def split_compound_requests(text: str) -> List[str]:
     parts, _plan = classify_compound_request(text)
     return parts

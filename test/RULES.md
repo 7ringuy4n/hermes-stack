@@ -18,6 +18,9 @@ Tests prove the live user outcome and route; an assertion alone is not proof.
   during an update test. Export before/after and compare.
 - Temporary artifacts go under `scripts/temp/` or the lab report directory and
   are removed when the run completes. Remove Python caches from core source.
+- VPS-local fixture transfer must atomically replace a stale destination rather
+  than truncate it in place, because prior sudo-backed runs may leave an
+  unwritable file inside an intentionally writable temporary lab directory.
 
 ## 2. Outcomes
 
@@ -35,6 +38,12 @@ time, restart deltas, and sanitized evidence.
 Transport delivery evidence must be an acknowledgement-backed durable
 `delivered` event. A queued `assistant_turn`, generated file, log intention, or
 optional bridge self-message echo is not proof that Zalo accepted the result.
+
+Gateway approval prompts are control-plane messages. When a gateway marks a
+send with `is_approval_prompt`, the Zalo adapter must deliver it through the
+normal secret and egress guards while bypassing assistant process-narration and
+post-media muting. A filtered prompt reported as successfully delivered is a
+failure because it leaves the tool waiting for consent the user cannot provide.
 
 ## 3. Two-phase release gate
 
@@ -90,6 +99,16 @@ Send a natural-language still-image request through Zalo. Require:
   contains no profanity, and is checked by OCR plus visual inspection;
 - for a multi-subject request, every independently sourced subject is present
   exactly once and every explicit spatial relationship is preserved;
+- treat an explicitly requested shared region as one visual group even when it
+  contains several independently sourced subjects. Subject count must not
+  silently become panel count, and payload adaptation must preserve every
+  validated fact rather than truncating to a legacy line limit;
+- exercise both a shared bottom information bar and a shared left-side frame
+  with current weather plus fuel prices. Require the complete facts in the
+  requested language, the requested placement, one cohesive background, and no
+  hard-coded split-panel fallback. A bottom band is content-sized by default
+  and must leave meaningful scene visible beside it; it may cover the full
+  width only when the request explicitly requires full width;
 - exercise at least one named grid arrangement, one repeated-side arrangement,
   and one normalized custom-region arrangement. Unspecified regions must be
   distributed without overlap; no panel may cover another panel or essential
@@ -117,7 +136,10 @@ Ask a time-sensitive question whose answer can be independently checked.
 Require route attribution to `web-search`, current sources/links, agreement
 between cited sources and answer, and no fabricated citation. A provider quota
 may be skipped only when an alternate member also cannot serve and logs prove
-the external limit.
+the external limit. Each typed current-data request must make a fresh native
+search call in the same turn. Reusing a prior answer or substituting code,
+shell, or direct language HTTP calls fails the route even if the prose looks
+plausible.
 
 ### C5 — embedding API (`embedding`)
 
@@ -142,6 +164,16 @@ exactly one acknowledgement, durable row, one execution, and one final
 transport-accepted delivery whose `source_message_id` correlates to that
 schedule row. Also require the correct timezone and no duplicate after a
 worker or Hermes restart. Remove the test schedule and row afterward.
+
+For scheduled image work, persist the full original intent instead of reducing
+it to a text reminder. Run the same adaptive weather-and-fuel composition used
+by C1 with a near-future deadline and require the scheduled artifact to retain
+the shared-region placement, facts, language, single-scene requirement, and
+source-correlated image delivery.
+
+Every test-created schedule must include an opaque source marker and be deleted
+in a cleanup boundary on pass, failure, or timeout. A later live case must never
+observe a delayed fire left behind by an earlier harness.
 
 ### C8 — image edit, including Zalo reply quote
 
@@ -171,6 +203,23 @@ safe normal flow. When the request explicitly requires copy over an embedded
 image, require one dispatcher-composed image with all requested regions, embed
 only that final image, and reject overlap, missing regions, risky absolute CSS,
 or separately delivered intermediate images.
+
+When Dispatcher has already delivered and claimed a final PDF or Office file,
+adapter late-autosend must stop at that claimed document and must not expose an
+older embedded image as another attachment. Filesystem sidecars are diagnostic;
+the release oracle fails on an acknowledgement-backed image delivery correlated
+to the document-only source request.
+
+Replica startup must retain the repository root `pdf`, `docx`, and `xlsx`
+wrapper directories and add the bundled names to `.curator_suppressed` before
+image-level skill sync. Their frontmatter names remain distinct and route chat
+creation to `file-gen`; categorized and official clones are removed. The live
+oracle must match the positive `NEW_PDF` line exactly, never treat `NO_NEW_PDF`
+as success, query durable image delivery even when no document appears before
+the deadline, and fail closed if that audit is unavailable. For a current-only
+request, it must reject forecast, probability, or advice sections. Its rendered
+page judge must report at least 8/10 and no blocking overlap, clipping,
+unreadable text, broken hierarchy, or materially wasted space.
 
 For composed images with several information regions, also reject an empty or
 truncated structured composition plan. The live gate must observe a complete
@@ -221,6 +270,14 @@ and successful plain fallback but must not claim native quote-bubble proof.
 Fail on crossed sources, duplicate or missing replies, context taken from a
 later message, a timeout notice after a valid result, late output from an
 earlier turn, queue residue, or leakage between DM and group scopes.
+
+After an attachment case, send an unrelated URL, image-generation, schedule,
+or document-creation request in the same conversation. The fresh request must
+not inherit the old extract. A text-only attachment follow-up must contain an
+explicit file/sheet/image/archive back-reference (or be a short unambiguous
+elliptical follow-up) before recall is hydrated. Archive injection must use the
+real single-media shape and its case must wait for a non-busy, exact-source
+terminal reply before later concurrency cases begin.
 
 Run a second burst while the first item is intentionally slow. Verify queue
 depth grows within its configured bound, the elected owner renews its lease,
@@ -292,6 +349,11 @@ journalctl --user -u com.hermes.zaloplugin --since '15 minutes ago'
 systemctl --user status com.hermes.zaloplugin
 systemctl list-timers 'assistant-*'
 ```
+
+After any lifecycle test that restarts the active Zalo owner, wait until bridge
+health reports both a logged-in session and at least one SSE consumer before
+injecting the next test event. HTTP acceptance without a live consumer is not
+message-delivery evidence.
 
 Include dispatcher/jobs, schedule-worker, Valkey/PostgreSQL/Qdrant, and stack/
 alert watchers when used. Distinguish:

@@ -27,6 +27,7 @@ from attachment import (  # noqa: E402
     sheet_ref_from_text,
     split_workbook_sheets,
     stage_shared_media,
+    text_refers_to_attachment,
     workbook_sheet_reply,
     worker_media_path,
 )
@@ -155,6 +156,21 @@ def test_context_blocks() -> None:
     print("PASS recall blocks newest-first within budget")
 
 
+def test_recall_reference_gate() -> None:
+    assert text_refers_to_attachment("đọc file zip này, liệt kê media")
+    assert text_refers_to_attachment("sheet 2 có gì?")
+    assert text_refers_to_attachment("tóm tắt giúp mình")
+    assert text_refers_to_attachment("tìm lời bài hát")
+    assert not text_refers_to_attachment(
+        "tóm tắt video này: https://www.youtube.com/watch?v=abc"
+    )
+    assert not text_refers_to_attachment(
+        "Create a DOCX document named concurrent-report.docx"
+    )
+    assert not text_refers_to_attachment("vẽ hình thời tiết Đà Nẵng hiện tại")
+    print("PASS recalled attachments require an explicit reference")
+
+
 def test_image_ocr_ack() -> None:
     empty = image_ocr_ack_message("")
     assert "OCR không đọc được" in empty, empty
@@ -229,6 +245,7 @@ def main() -> int:
         test_caption()
         test_context_pack()
         test_context_blocks()
+        test_recall_reference_gate()
         test_image_ocr_ack()
         test_file_extract_ack()
         test_workbook_sheet_recall()
