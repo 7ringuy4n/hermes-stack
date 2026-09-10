@@ -134,6 +134,15 @@ def infer_reasoning_effort(hint: str, task_type: str, execution_class: str) -> s
 def strip_prior_for_classify(text: str) -> str:
     """Current user ask only — drop Valkey hydrate wrappers (keep in sync with router-worker)."""
     blob = text or ""
+    try:
+        from .host_clock import strip_host_clock_context
+    except ImportError:
+        try:
+            from host_clock import strip_host_clock_context  # type: ignore
+        except ImportError:
+            strip_host_clock_context = None  # type: ignore
+    if strip_host_clock_context is not None:
+        blob = strip_host_clock_context(blob)
     while True:
         low = blob.lower()
         start = low.find(_PRIOR_START)

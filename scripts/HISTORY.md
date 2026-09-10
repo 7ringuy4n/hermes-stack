@@ -1,3 +1,9 @@
+## 2026-09-10 — host clock on live chat turns
+
+See `history/2026-09-10/README.md`. Zalo Hermes turns now carry host
+`Timezone` / `Local now` so weather and other live answers stop inventing a
+conflicting observation clock.
+
 ## 2026-09-09 — adaptive composed-image and durable live-test evidence
 
 See `history/2026-09-09/README.md` for scheduled composed-plan execution,

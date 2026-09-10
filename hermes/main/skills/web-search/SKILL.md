@@ -52,6 +52,7 @@ members and provider connections. Do **not** call Omni chat
 1. Search only when classify `task_hint=search` or `skill=web_search`, or the instruction is clearly a live-web lookup (fuel, weather, FX, lyrics).
 2. Return short facts in the user's language. Do not dump raw JSON.
 3. If search returns empty, say so briefly — do not invent sources.
+4. **Current time is host-owned.** When the turn includes `Timezone:` / `Local now:` (host clock), use that for any “as of / hiện tại / khoảng …” phrasing. Prefer an observation timestamp printed by the search source when it is clearly labeled; otherwise use Host Local now. Never invent a wall-clock time that conflicts with Local now. Do not apply a timezone offset twice.
 
 ## Don't
 
@@ -60,3 +61,4 @@ members and provider connections. Do **not** call Omni chat
 3. Do not use `execute_code`, terminal commands, or language HTTP libraries as
    a substitute for native `web_search`. A current lookup needs a fresh native
    search call in that turn even when conversation history contains an older answer.
+4. Do not invent observation times (for example “khoảng 20:25”) when Local now shows a different clock.

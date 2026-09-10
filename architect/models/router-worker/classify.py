@@ -516,6 +516,20 @@ _ATTACH_RECALL_START = "[recent attachments in this chat"
 def strip_prior_for_classify(text: str) -> str:
     """Classify must see the current user ask only — not Valkey hydrate wrappers."""
     blob = text or ""
+    # Host-clock stamps are Hermes-only; never feed them into classify/schedule.
+    marker = "[Host clock — authoritative]"
+    idx = blob.find(marker)
+    if idx >= 0:
+        blob = blob[idx + len(marker) :]
+        lines = blob.lstrip("\n").splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if not line or line.startswith("Timezone:") or line.startswith("Local now:"):
+                i += 1
+                continue
+            break
+        blob = "\n".join(lines[i:])
     while True:
         low = blob.lower()
         start = low.find(_PRIOR_START)

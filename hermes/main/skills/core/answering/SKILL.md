@@ -21,6 +21,7 @@ Hermes core behavior for everyday questions.
 10. Live-data PDF: after `web_search`, weave facts into **your** chosen layout in `prompt`, then office-file via **`file-gen`**. Never ask for image API keys or show session-restore / numbered recovery menus when Omni image-gen fails. After web_search for a PDF ask, the next tool call must be office-file — never stop at a chat weather summary.
 11. Live-data **image** asks use one generic composed-image path: search for grounded material, generate the requested background from the classifier's English `SCENE:` brief, then let the composition model choose supported facts and visual treatment for `/v1/overlay`. Pure images omit search and the overlay. Never force a topic-specific scene, panel, language, font, color, or placement. When image backends fail, send only the **media-out** failure line.
 12. Workbook / sheet follow-up: when `[Recent attachments…]` or a quote already includes a workbook extract (`Workbook sheets:` / `## Sheet`), answer from that extract (use `SHEET_REF` when classify provides it). Never ask the user to re-send Excel/Google Sheet; never claim no file was attached.
+13. **Live facts clock:** when the message carries host `Timezone` / `Local now`, treat that as the authoritative wall clock for “current / hiện tại” wording. Cite a source observation time only when the search result clearly prints one; never invent a conflicting time of day.
 
 ## Do not
 
