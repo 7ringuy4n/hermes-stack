@@ -26,3 +26,4 @@ Legacy source: [`scripts/HISTORY.md`](../scripts/HISTORY.md) (append-only ops lo
 - [2026-09-07](./2026-09-07/README.md)
 - [2026-09-08](./2026-09-08/README.md)
 - [2026-09-09](./2026-09-09/README.md)
+- [2026-09-10](./2026-09-10/README.md)

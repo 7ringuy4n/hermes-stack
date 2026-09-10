@@ -1,3 +1,12 @@
+## 2026-09-10 — host clock on live chat turns
+
+- Prepend authoritative host `Timezone` / `Local now` on Hermes-facing Zalo
+  turns only (after classify/schedule/storage).
+- Strip the same wrapper in `strip_prior_for_classify` so schedule
+  `original_request` and media routing stay on the bare user ask.
+- Harden web-search / answering / SOUL so live answers never invent a wall
+  clock that conflicts with host Local now.
+
 ## 2026-09-09 — scheduled composed-image and same-language delivery
 
 - Execute persisted process-schedule plans before generic-agent fallback so a
