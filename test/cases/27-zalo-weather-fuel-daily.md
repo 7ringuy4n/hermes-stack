@@ -1,11 +1,14 @@
 # Case: daily schedule of one weather + fuel infographic
 
-Same **one-task** poster as case 26, wrapped as a recurring schedule. Classify
-must store **one** instruction (the poster), not three jobs (draw / fuel / weather).
+Same **one-deliverable** image as case 26, wrapped as a schedule. Classification
+must preserve the complete inner dependency graph in one stored schedule: one
+focused search per evidence domain, then exactly one composed-image task that
+depends on every search. The wrapper must not execute or flatten the graph.
 
-**Architect:** Secret Probe → LLM classify (`task_hint=schedule`, `cadence=daily`,
-one instruction) → Schedule skill → Go worker. Tick injects the poster text;
-Hermes creates **one** job.
+**Architect:** Secret Probe → LLM classify (`task_hint=schedule`,
+`schedule_delivery=process`) → Schedule skill → Go worker. A due tick injects
+the stored plan; the Zalo adapter executes its host-owned search/composition
+path and delivers exactly one image.
 
 ## Fixture
 
@@ -45,18 +48,35 @@ Daily fixture stays **one** schedule payload (`split_compound_requests` length 1
 
 ## Steps (lab)
 
-Case 26 lab also classifies this daily wrapper (`PLAN_HINT schedule PLAN_N 1`).
-A full fire is optional (`ZALO_INFOGRAPHIC_DAILY=1` on `zalo_weather_fuel_lab.py`).
+Run the immediate image gate and the two-minute full-fire gate:
+
+```bash
+python test/scripts/zalo_weather_fuel_lab.py
+python test/scripts/zalo_scheduled_composed_image_lab.py
+```
+
+The full-fire fixture uses the same inner work with `once_after=120`. It resolves
+the destination from runtime state, records no numeric identity, and requires
+the schedule-created synthetic message id to correlate to exactly one
+bridge-acknowledged image delivery.
 
 ## Pass criteria
 
 - Units PASS
-- `task_hint=schedule`, `PLAN_N 1`, cron `0 7 * * *` (07:00 GMT+7)
-- Must not explode into weather + fuel + overlay jobs
-- Optional fire: one `send-attachment` to the admin DM
+- `task_hint=schedule`, `schedule_delivery=process`, cron `0 7 * * *` for the
+  recurring fixture or `delay_seconds=120` for the release gate
+- Two or more independently focused search details followed by exactly one
+  media detail whose dependency list contains every search index
+- At fire, the queue-enabled adapter executes the persisted plan before generic
+  Hermes fallback
+- Exactly one source-correlated, bridge-acknowledged image is delivered
+- No structured-plan truncation and no quote attempt against the synthetic
+  schedule event
 
 ## Fail events
 
 - Daily wrapper classified as `tool` with no cron → FAIL
-- `PLAN_N` ≥ 2 → FAIL
-- Numbered-list explode (case 25 behavior) → FAIL
+- Stored plan is missing, flattened, or reclassified at fire → FAIL
+- Text answer instead of an image → FAIL
+- Synthetic quote rejection, missing source correlation, duplicate image, or
+  planner truncation → FAIL

@@ -815,7 +815,8 @@ do_post_ready_learn() {
   if [[ "$(id -u)" -eq 0 ]]; then
     mkdir -p "$docs_root"
     chown -R "$owner_uid:$owner_gid" "$docs_root"
-  elif ! mkdir -p "$docs_root" 2>/dev/null || [[ ! -w "$docs_root" ]]; then
+  elif ! mkdir -p "$docs_root" 2>/dev/null \
+    || ! chmod -R u+rwX "$docs_root" 2>/dev/null; then
     # Automated cold starts must never block on an interactive sudo prompt.
     # Prefer cached/passwordless sudo, then use the already-running Hermes
     # container's root user against the same bind mount.

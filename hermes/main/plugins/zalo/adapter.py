@@ -256,6 +256,7 @@ from attachment import (  # noqa: E402
     sheet_ref_from_text,
     song_hint_from_filename,
     stage_shared_media,
+    text_refers_to_attachment,
     workbook_sheet_reply,
     worker_media_path,
 )
@@ -2718,13 +2719,13 @@ class ZaloAdapter(BasePlatformAdapter):
                 error = str(result.get("error") or "failed")
                 candidates = str(result.get("text") or "").strip()
                 if error == "ambiguous" and candidates:
-                    body = self._as_ux_line(
+                    lead = self._as_ux_line(
                         "ZALO_NOTES_AMBIGUOUS_MSG",
                         ("notes", "ambiguous"),
-                        "More than one note matches. Reply with the note id to choose one:\n"
-                        + candidates,
+                        "More than one note matches. Reply with the note id to choose one.",
                         user_text=current,
                     )
+                    body = f"{lead.rstrip()}\n{candidates}"
                 elif error == "not_found":
                     body = self._as_ux_line(
                         "ZALO_NOTES_EMPTY_MSG",
@@ -2852,6 +2853,11 @@ class ZaloAdapter(BasePlatformAdapter):
             "chat_type": chat_type,
             "sender_id": sender_id,
             "sender_name": sender_name,
+            "source_message_id": str(
+                self._as_active_turn_message_ids.get(str(thread_id))
+                or self._as_source_message_id.get()
+                or ""
+            ),
             "execute": "hermes",
             "plan": plan,
         }
@@ -3376,6 +3382,7 @@ class ZaloAdapter(BasePlatformAdapter):
         chat_type = str(ctx.get("chat_type") or "dm")
         sender_id = str(ctx.get("sender_id") or "")
         sender_name = str(ctx.get("sender_name") or tid)
+        source_message_id = str(ctx.get("source_message_id") or "")
         iso = isolate_session_chat_id(tid, jid)
         self._as_begin_turn(iso)
         zalo_tt = "group" if tt == "group" or chat_type == "group" else "user"
@@ -3384,7 +3391,7 @@ class ZaloAdapter(BasePlatformAdapter):
             self._thread_types[tid] = zalo_tt
         except Exception:
             pass
-        self._as_autosend_remember_turn(iso, zalo_tt)
+        self._as_autosend_remember_turn(iso, zalo_tt, source_message_id)
         source = self.build_source(
             chat_id=iso,
             chat_name=sender_name if chat_type == "dm" else tid,
@@ -4000,6 +4007,7 @@ class ZaloAdapter(BasePlatformAdapter):
         has_image_attachment: bool = False,
         user_text: str = "",
         reply_quote: dict | None = None,
+        explicit_quote: bool = False,
     ) -> None:
         try:
             from .inbound_queue import (
@@ -4077,6 +4085,7 @@ class ZaloAdapter(BasePlatformAdapter):
             plan=plan,
             user_text=user_text,
             reply_quote=reply_quote,
+            explicit_quote=explicit_quote,
         )
         mid = str(message_id or "")
         try:
@@ -4087,6 +4096,23 @@ class ZaloAdapter(BasePlatformAdapter):
                     "Zalo: scheduleFire bypass queue thread=%s",
                     thread_id[:24],
                 )
+                # Execute the creation-time typed plan before any generic-agent
+                # fallback. Direct dispatch drops the search/media dependency
+                # graph and can turn a scheduled image into a text response.
+                if await self._as_try_workflow_submit(
+                    text=text,
+                    thread_id=thread_id,
+                    thread_type=thread_type,
+                    sender_id=sender_id,
+                    sender_name=sender_name,
+                    chat_type=chat_type,
+                    plan=plan,
+                    schedule_fire=True,
+                    has_image_attachment=has_image_attachment,
+                    media_urls=media_urls,
+                    wait_for_terminal=True,
+                ):
+                    return
                 await self._as_dispatch_event(event, text)
                 return
             if mid and hasattr(store, "queue_seen") and not store.queue_seen(mid):
@@ -4181,10 +4207,13 @@ class ZaloAdapter(BasePlatformAdapter):
         except ImportError:
             from inbound_queue import KIND_PART, decode_item, encode_item, make_item, queue_ttl_s  # type: ignore
         try:
-            from .multi_request import classify_compound_request, parts_from_plan
+            from .multi_request import classify_compound_request, parts_from_plan, queue_part_text
         except ImportError:
             classify_compound_request = lambda t: ([t], {})  # type: ignore[misc, assignment]
             parts_from_plan = lambda t, p: [t]  # type: ignore[misc, assignment]
+            queue_part_text = lambda raw, parts: (  # type: ignore[misc, assignment]
+                parts[0] if len(parts) >= 2 else raw
+            )
         loop = asyncio.get_running_loop()
         drain_deadline = loop.time() + self._as_queue_drain_max_s()
         try:
@@ -4228,7 +4257,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         parts, compound_plan = classify_compound_request(text)
                         parts = parts or [text]
                     rest = parts[1:]
-                    text = parts[0] if parts else text
+                    text = queue_part_text(text, parts)
                     total = len(parts)
                     # Preserve the one classification result for an atomic
                     # request. Independent parts must each be classified from
@@ -4392,7 +4421,11 @@ class ZaloAdapter(BasePlatformAdapter):
         # A durable queue claim may resume on a different HA replica. Rebind
         # its destination before any handler or recovery send; owner-local
         # state cannot transfer, and the shared hint may name another chat.
-        self._as_autosend_remember_turn(tid, thread_type)
+        self._as_autosend_remember_turn(
+            tid,
+            thread_type,
+            str(item.get("message_id") or ""),
+        )
         self._as_begin_turn(tid)
         try:
             from .queue_history import record as history_record
@@ -4489,7 +4522,7 @@ class ZaloAdapter(BasePlatformAdapter):
                                 if prompt_text.strip()
                                 else f"[Quoted message]\n{quote_text}"
                             )
-                    if prompt_text and not event.media_urls:
+                    if prompt_text and not event.media_urls and not item.get("explicit_quote"):
                         try:
                             from .session_memory import hydrate_user_text
                         except ImportError:
@@ -4525,6 +4558,26 @@ class ZaloAdapter(BasePlatformAdapter):
                         return
                     bare_q = turn_user_text.strip()
                     queued_plan = item.get("plan") if isinstance(item.get("plan"), dict) else None
+                    if queued_plan is not None:
+                        try:
+                            from .classify_client import plan_should_apply_live_search_contract
+                        except ImportError:
+                            from classify_client import plan_should_apply_live_search_contract  # type: ignore
+                        if plan_should_apply_live_search_contract(
+                            queued_plan,
+                            schedule_fire=bool(item.get("schedule_fire")),
+                        ):
+                            # Current-data plans must not inherit unrelated file
+                            # recall or reuse a previous lookup from session history.
+                            # Keep provider selection in the configured native
+                            # web_search route and forbid shell/network bypasses.
+                            event.text = (
+                                f"{bare_q}\n\n[Current lookup execution contract]\n"
+                                "Call the native web_search tool during this turn through its "
+                                "configured routing. Do not reuse prior search results. Do not "
+                                "substitute execute_code, terminal commands, or network libraries. "
+                                "Answer only from the current tool result."
+                            )
                     has_image = self._as_has_image_attachment(
                         list(event.media_urls or []),
                         media_types=list(event.media_types or []),
@@ -5580,10 +5633,24 @@ class ZaloAdapter(BasePlatformAdapter):
                 )
 
         # Cache inbound as SendMessageQuote so outbound replies quote the @mention.  (ASSISTANT_REPLY_QUOTE)
+        # A schedule fire is a synthetic transport event whose messageId is not
+        # a real Zalo message. Quoting it is rejected by Zalo and can also make
+        # an attachment delivery fail, so due work must start with no quote.
         if not hasattr(self, "_pending_reply_quote"):
             self._pending_reply_quote = {}
-        q = m.get("quote") if isinstance(m.get("quote"), dict) else None
-        if not q or not (q.get("msgId") is not None or q.get("cliMsgId") is not None):
+        q = None if schedule_fire else (
+            m.get("quote") if isinstance(m.get("quote"), dict) else None
+        )
+        explicit_quote = bool(
+            not schedule_fire
+            and (
+                isinstance(m.get("quote"), dict)
+                or isinstance(m.get("quoted"), dict)
+            )
+        )
+        if schedule_fire:
+            self._pending_reply_quote.pop(str(thread_id), None)
+        elif not q or not (q.get("msgId") is not None or q.get("cliMsgId") is not None):
             mid = m.get("messageId") or m.get("msgId")
             if mid:
                 q = {
@@ -5957,7 +6024,15 @@ class ZaloAdapter(BasePlatformAdapter):
                         pass
                     return
         user_text_before_attach = str(text or "").strip()
-        if not media_urls and user_text_before_attach:
+        # An explicit reply already supplies the authoritative prior message.
+        # Do not contaminate it with unrelated recent-file recall from the chat;
+        # that can turn a literal quote reply into an old document task.
+        if (
+            not media_urls
+            and user_text_before_attach
+            and not explicit_quote
+            and text_refers_to_attachment(user_text_before_attach)
+        ):
             text = self._as_attachment_followup(str(thread_id), text)
 
         # Quoted reply (DM + group): inject quoted text/title/media label so the
@@ -6083,7 +6158,11 @@ class ZaloAdapter(BasePlatformAdapter):
                 self._as_last_user_text = getattr(self, "_as_last_user_text", {}) or {}
                 if not queue_on:
                     self._as_last_user_text[str(thread_id)] = bare_text
-                    text = hydrate_user_text(str(thread_id), str(thread_type), bare_text)
+                    text = (
+                        bare_text
+                        if explicit_quote
+                        else hydrate_user_text(str(thread_id), str(thread_type), bare_text)
+                    )
                 else:
                     text = bare_text
         except Exception as e:
@@ -6126,6 +6205,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_fire=bool(m.get("scheduleFire") or m.get("schedule_fire")),
                 user_text=user_text_before_attach or bare_text,
                 reply_quote=q if isinstance(q, dict) else None,
+                explicit_quote=explicit_quote,
                 has_image_attachment=bool(
                     media_urls
                     and (
@@ -6515,7 +6595,9 @@ class ZaloAdapter(BasePlatformAdapter):
             ".mp4", ".webm", ".mov", ".m4v", ".mkv",
         )
 
-    def _as_autosend_remember_turn(self, thread_id, thread_type=None) -> None:  # ASSISTANT_AUTOSEND_v3
+    def _as_autosend_remember_turn(
+        self, thread_id, thread_type=None, source_message_id=""
+    ) -> None:  # ASSISTANT_AUTOSEND_v3
         """Bind this turn's outbound (file + text) to the thread that asked."""
         try:
             from .turn_wait import real_thread_id
@@ -6532,6 +6614,13 @@ class ZaloAdapter(BasePlatformAdapter):
             self._as_turns = turns
         turns[tid] = dest
         real = real_thread_id(tid)
+        source = str(
+            source_message_id
+            or self._as_active_turn_message_ids.get(str(real or tid))
+            or self._as_active_turn_message_ids.get(tid)
+            or self._as_source_message_id.get()
+            or ""
+        )
         if real and real not in turns:
             turns[real] = {"thread_id": real, "thread_type": tt}
         self._as_turn = dest
@@ -6542,8 +6631,13 @@ class ZaloAdapter(BasePlatformAdapter):
         except Exception:
             pass
         http = getattr(self, "_as_session_http", None)
+        payload = {
+            "thread_id": real or tid,
+            "thread_type": tt,
+            "source_message_id": source,
+        }
         if callable(http):
-            http("POST", "/v1/turn/dest", {"thread_id": real or tid, "thread_type": tt})
+            http("POST", "/v1/turn/dest", payload)
             return
         try:
             import json as _json
@@ -6552,7 +6646,7 @@ class ZaloAdapter(BasePlatformAdapter):
             base = (os.getenv("SESSION_URL") or "http://session:8107").rstrip("/")
             req = urllib.request.Request(
                 base + "/v1/turn/dest",
-                data=_json.dumps({"thread_id": real or tid, "thread_type": tt}).encode("utf-8"),
+                data=_json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
@@ -6845,19 +6939,25 @@ class ZaloAdapter(BasePlatformAdapter):
             except OSError:
                 dest = src
             if self._as_autosend_already_sent(dest):
-                logger.info("Zalo: autosend skip already-claimed %s", dest.name)
+                logger.debug("Zalo: autosend skip already-claimed %s", dest.name)
                 continue
             try:
                 dest_send = dest
                 try:
-                    from .autosend import existing_media_path
+                    from .autosend import claimed_composite_is_terminal, existing_media_path
                 except ImportError:
-                    from autosend import existing_media_path  # type: ignore
+                    from autosend import claimed_composite_is_terminal, existing_media_path  # type: ignore
                 resolved = existing_media_path(str(dest))
                 if resolved:
                     dest_send = Path(resolved)
                 if not self._as_autosend_file_claim(dest_send, tid):
-                    logger.info("Zalo: autosend skip already-claimed %s", dest_send.name)
+                    logger.debug("Zalo: autosend skip already-claimed %s", dest_send.name)
+                    if claimed_composite_is_terminal(str(dest_send)):
+                        logger.info(
+                            "Zalo: autosend final document already delivered; "
+                            "suppress older sidecar files for this turn"
+                        )
+                        break
                     continue
                 meta_send = {
                     **meta,
@@ -8081,14 +8181,22 @@ class ZaloAdapter(BasePlatformAdapter):
         _trim = getattr(self, "_as_knowledge_trim", None)
         if callable(_trim):
             content = _trim(content)  # ASSISTANT_KNOWLEDGE_CITE_v7
-        skip_noise = isinstance(metadata, dict) and (
-            metadata.get("zalo_admin_reply") or metadata.get("skip_outbound_filter")
+        meta = metadata if isinstance(metadata, dict) else {}
+        # Gateway approvals are control-plane prompts, not assistant process
+        # narration.  The approval waiter has already redacted the command and
+        # marks this exact send with structured metadata.  Filtering it here
+        # reports a false transport success and leaves the tool blocked until
+        # its approval timeout because the user never receives the prompt.
+        skip_noise = bool(
+            meta.get("zalo_admin_reply")
+            or meta.get("skip_outbound_filter")
+            or meta.get("is_approval_prompt")
         )
         if not skip_noise:
             notice = self._rewrite_gateway_user_notice(content)  # ASSISTANT_QUIET_SEND_v6
             if notice is not None:
                 if notice == "":
-                    logger.info("Zalo: drop approval/resume chatter")
+                    logger.info("Zalo: drop gateway process chatter")
                     return SendResult(success=True, message_id=None)
                 content = notice
         if self._as_is_media_ack_only(content):
@@ -8096,11 +8204,11 @@ class ZaloAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=None)
         # Same-turn mute after a media file was already delivered — never mute
         # schedule fire bodies, gate announces, or other skip_outbound_filter sends.
-        meta = metadata if isinstance(metadata, dict) else {}
         allow_after_media = bool(
             meta.get("schedule_fire")
             or meta.get("scheduleFire")
             or meta.get("skip_outbound_filter")
+            or meta.get("is_approval_prompt")
             or meta.get("as_skip_autosend")
         )
         if (
@@ -8425,6 +8533,7 @@ class ZaloAdapter(BasePlatformAdapter):
         source_message_id = str(
             self._as_active_turn_message_ids.get(str(dest_id))
             or self._as_active_turn_message_ids.get(str(chat_id))
+            or self._as_source_message_id.get()
             or ""
         )
         name = Path(str(file_path or "")).name

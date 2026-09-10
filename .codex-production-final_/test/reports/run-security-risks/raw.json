@@ -1,0 +1,95 @@
+{
+  "ts": "2026-08-17 15:14:38 +0700",
+  "rows": [
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "sandbox_env",
+      "status": "pass",
+      "detail": "SECURITY_SANDBOX from .env"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "judge_env",
+      "status": "pass",
+      "detail": "SECURITY_LLM_JUDGE"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "av_env",
+      "status": "pass",
+      "detail": "ENABLE_ANTIVIRUS"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "traefik_mode",
+      "status": "pass",
+      "detail": "VPN-only default"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "sock_security_manager",
+      "status": "pass",
+      "detail": "no docker.sock"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "sock_zalo_api",
+      "status": "pass",
+      "detail": "no docker.sock"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "socket_proxy",
+      "status": "pass",
+      "detail": "proxy not running"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "health_sandbox",
+      "status": "pass",
+      "detail": "{\"ok\": true, \"av\": false, \"llm_judge\": false, \"yara\": true, \"sandbox\": false, \"fail_closed\": true, \"docker_host\": false}"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "health_judge",
+      "status": "pass",
+      "detail": "llm_judge flag"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "health_docker_host",
+      "status": "pass",
+      "detail": "docker_host"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "openbao_bind",
+      "status": "pass",
+      "detail": "check docker port openbao"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "hermes_no_host_dashboard",
+      "status": "pass",
+      "detail": "replicas\u22601 must not publish :29119"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "scan_clean",
+      "status": "pass",
+      "detail": "\r\r\n{\"verdict\":\"CLEAN\",\"layers\":{\"archive\":{\"ok\":true},\"static\":{\"ok\":true,\"skipped\":true},\"yara\":{\"ok\":true,\"hits\":[],\"engine\":\"yara\"},\"antivirus\":{\"ok\":true,\"skipped\":true,\"reason\":\"av_disabled\"},\"llm_judge\":{\"ok\":true,\"skipped\":true,\"reas"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "scan_eicar_yara",
+      "status": "pass",
+      "detail": "EICAR must RISK via YARA-lite with AV off"
+    },
+    {
+      "ts": "2026-08-17 15:14:38 +0700",
+      "name": "scan_inject_judge",
+      "status": "pass",
+      "detail": "judge skipped/heuristic"
+    }
+  ]
+}

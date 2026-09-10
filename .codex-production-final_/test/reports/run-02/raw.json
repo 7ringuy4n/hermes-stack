@@ -1,0 +1,632 @@
+{
+  "rows": [
+    {
+      "ts": "2026-08-17 09:17:50 +0700",
+      "section": "lab",
+      "name": "start",
+      "status": "pass",
+      "detail": "run 02 connected"
+    },
+    {
+      "ts": "2026-08-17 09:17:54 +0700",
+      "section": "sync",
+      "name": "source",
+      "status": "pass",
+      "detail": "LF-safe source sync"
+    },
+    {
+      "ts": "2026-08-17 09:18:09 +0700",
+      "section": "lab",
+      "name": "destroy",
+      "status": "pass",
+      "detail": "DESTROY_OK"
+    },
+    {
+      "ts": "2026-08-17 09:20:28 +0700",
+      "section": "deploy/local/low",
+      "name": "compose_up",
+      "status": "pass",
+      "detail": "up completed"
+    },
+    {
+      "ts": "2026-08-17 09:20:34 +0700",
+      "section": "health/local/low",
+      "name": "model_router",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:20:34 +0700",
+      "section": "health/local/low",
+      "name": "gateway",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:20:34 +0700",
+      "section": "health/local/low",
+      "name": "dispatcher",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:20:34 +0700",
+      "section": "health/local/low",
+      "name": "memory",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:20:34 +0700",
+      "section": "health/local/low",
+      "name": "dispatcher_restart",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:20:34 +0700",
+      "section": "health/local/low",
+      "name": "log_errors_3m",
+      "status": "pass",
+      "detail": "count=0"
+    },
+    {
+      "ts": "2026-08-17 09:22:17 +0700",
+      "section": "deploy/local/medium",
+      "name": "compose_up",
+      "status": "pass",
+      "detail": "up completed"
+    },
+    {
+      "ts": "2026-08-17 09:22:24 +0700",
+      "section": "health/local/medium",
+      "name": "model_router",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:22:24 +0700",
+      "section": "health/local/medium",
+      "name": "gateway",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:22:24 +0700",
+      "section": "health/local/medium",
+      "name": "dispatcher",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:22:24 +0700",
+      "section": "health/local/medium",
+      "name": "memory",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:22:24 +0700",
+      "section": "health/local/medium",
+      "name": "dispatcher_restart",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:22:24 +0700",
+      "section": "health/local/medium",
+      "name": "image_disabled",
+      "status": "pass",
+      "detail": "503 expected"
+    },
+    {
+      "ts": "2026-08-17 09:22:24 +0700",
+      "section": "health/local/medium",
+      "name": "image_empty_prompt",
+      "status": "pass",
+      "detail": "400 expected"
+    },
+    {
+      "ts": "2026-08-17 09:22:24 +0700",
+      "section": "health/local/medium",
+      "name": "log_errors_3m",
+      "status": "pass",
+      "detail": "count=0"
+    },
+    {
+      "ts": "2026-08-17 09:24:57 +0700",
+      "section": "deploy/local/high",
+      "name": "compose_up",
+      "status": "pass",
+      "detail": "up completed"
+    },
+    {
+      "ts": "2026-08-17 09:25:04 +0700",
+      "section": "health/local/high",
+      "name": "model_router",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:25:04 +0700",
+      "section": "health/local/high",
+      "name": "gateway",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:25:04 +0700",
+      "section": "health/local/high",
+      "name": "dispatcher",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:25:04 +0700",
+      "section": "health/local/high",
+      "name": "memory",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:25:04 +0700",
+      "section": "health/local/high",
+      "name": "dispatcher_restart",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:25:04 +0700",
+      "section": "health/local/high",
+      "name": "image_disabled",
+      "status": "pass",
+      "detail": "503 expected"
+    },
+    {
+      "ts": "2026-08-17 09:25:04 +0700",
+      "section": "health/local/high",
+      "name": "image_empty_prompt",
+      "status": "pass",
+      "detail": "400 expected"
+    },
+    {
+      "ts": "2026-08-17 09:25:04 +0700",
+      "section": "health/local/high",
+      "name": "log_errors_3m",
+      "status": "pass",
+      "detail": "count=0"
+    },
+    {
+      "ts": "2026-08-17 09:27:12 +0700",
+      "section": "deploy/public/low",
+      "name": "traefik_failsoft",
+      "status": "pass",
+      "detail": "public without ACME fail-soft"
+    },
+    {
+      "ts": "2026-08-17 09:27:12 +0700",
+      "section": "deploy/public/low",
+      "name": "compose_up",
+      "status": "pass",
+      "detail": "up completed"
+    },
+    {
+      "ts": "2026-08-17 09:27:18 +0700",
+      "section": "health/public/low",
+      "name": "model_router",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:27:18 +0700",
+      "section": "health/public/low",
+      "name": "gateway",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:27:18 +0700",
+      "section": "health/public/low",
+      "name": "dispatcher",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:27:18 +0700",
+      "section": "health/public/low",
+      "name": "memory",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:27:18 +0700",
+      "section": "health/public/low",
+      "name": "dispatcher_restart",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:27:18 +0700",
+      "section": "health/public/low",
+      "name": "log_errors_3m",
+      "status": "pass",
+      "detail": "count=0"
+    },
+    {
+      "ts": "2026-08-17 09:29:22 +0700",
+      "section": "deploy/public/medium",
+      "name": "traefik_failsoft",
+      "status": "pass",
+      "detail": "public without ACME fail-soft"
+    },
+    {
+      "ts": "2026-08-17 09:29:22 +0700",
+      "section": "deploy/public/medium",
+      "name": "compose_up",
+      "status": "pass",
+      "detail": "up completed"
+    },
+    {
+      "ts": "2026-08-17 09:29:29 +0700",
+      "section": "health/public/medium",
+      "name": "model_router",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:29:29 +0700",
+      "section": "health/public/medium",
+      "name": "gateway",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:29:29 +0700",
+      "section": "health/public/medium",
+      "name": "dispatcher",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:29:29 +0700",
+      "section": "health/public/medium",
+      "name": "memory",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:29:29 +0700",
+      "section": "health/public/medium",
+      "name": "dispatcher_restart",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:29:29 +0700",
+      "section": "health/public/medium",
+      "name": "image_disabled",
+      "status": "pass",
+      "detail": "503 expected"
+    },
+    {
+      "ts": "2026-08-17 09:29:29 +0700",
+      "section": "health/public/medium",
+      "name": "image_empty_prompt",
+      "status": "pass",
+      "detail": "400 expected"
+    },
+    {
+      "ts": "2026-08-17 09:29:29 +0700",
+      "section": "health/public/medium",
+      "name": "log_errors_3m",
+      "status": "pass",
+      "detail": "count=0"
+    },
+    {
+      "ts": "2026-08-17 09:32:05 +0700",
+      "section": "deploy/public/high",
+      "name": "traefik_failsoft",
+      "status": "pass",
+      "detail": "public without ACME fail-soft"
+    },
+    {
+      "ts": "2026-08-17 09:32:05 +0700",
+      "section": "deploy/public/high",
+      "name": "compose_up",
+      "status": "pass",
+      "detail": "up completed"
+    },
+    {
+      "ts": "2026-08-17 09:32:12 +0700",
+      "section": "health/public/high",
+      "name": "model_router",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:32:12 +0700",
+      "section": "health/public/high",
+      "name": "gateway",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:32:12 +0700",
+      "section": "health/public/high",
+      "name": "dispatcher",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:32:12 +0700",
+      "section": "health/public/high",
+      "name": "memory",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:32:12 +0700",
+      "section": "health/public/high",
+      "name": "dispatcher_restart",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "ts": "2026-08-17 09:32:12 +0700",
+      "section": "health/public/high",
+      "name": "image_disabled",
+      "status": "pass",
+      "detail": "503 expected"
+    },
+    {
+      "ts": "2026-08-17 09:32:12 +0700",
+      "section": "health/public/high",
+      "name": "image_empty_prompt",
+      "status": "pass",
+      "detail": "400 expected"
+    },
+    {
+      "ts": "2026-08-17 09:32:12 +0700",
+      "section": "health/public/high",
+      "name": "log_errors_3m",
+      "status": "pass",
+      "detail": "count=0"
+    },
+    {
+      "ts": "2026-08-17 09:32:33 +0700",
+      "section": "zalo",
+      "name": "bridge",
+      "status": "pass",
+      "detail": "sseClients=1"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "burst10",
+      "status": "pass",
+      "detail": "10/10 wall_ms=4782"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "r2.pdf",
+      "status": "pass",
+      "detail": "{\"type\": \"r2.pdf\", \"status\": \"finished\", \"ms\": 1932, \"ok\": true, \"job_id\": \"104b3dce-3438-4199-94ea-6450dd9b8daf\"}"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "r2.md",
+      "status": "pass",
+      "detail": "{\"type\": \"r2.md\", \"status\": \"finished\", \"ms\": 2344, \"ok\": true, \"job_id\": \"7917ee01-2aa6-459e-91e4-d66540d567f7\"}"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "r2.docx",
+      "status": "pass",
+      "detail": "{\"type\": \"r2.docx\", \"status\": \"finished\", \"ms\": 2736, \"ok\": true, \"job_id\": \"2afedbd3-48a3-41ac-b8b4-469356e0a2fb\"}"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "r2.png",
+      "status": "pass",
+      "detail": "{\"type\": \"r2.png\", \"status\": \"finished\", \"ms\": 3126, \"ok\": true, \"job_id\": \"28ac8ba2-f596-49af-9efe-24ca31fffc5d\"}"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "r2.pptx",
+      "status": "pass",
+      "detail": "{\"type\": \"r2.pptx\", \"status\": \"finished\", \"ms\": 3554, \"ok\": true, \"job_id\": \"bbbd21cf-4cd7-45b3-88e5-baf0433498c8\"}"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "r2.txt",
+      "status": "pass",
+      "detail": "{\"type\": \"r2.txt\", \"status\": \"finished\", \"ms\": 3567, \"ok\": true, \"job_id\": \"6893078d-ed38-47fb-9d01-2319966aff1c\"}"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "text",
+      "status": "pass",
+      "detail": "{\"type\": \"text\", \"status\": 200, \"ms\": 3651, \"ok\": true}"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "r2.mp3",
+      "status": "pass",
+      "detail": "{\"type\": \"r2.mp3\", \"status\": \"finished\", \"ms\": 3951, \"ok\": true, \"job_id\": \"ba7334ba-b2e1-4d35-9561-9ba84e691841\"}"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "r2.xlsx",
+      "status": "pass",
+      "detail": "{\"type\": \"r2.xlsx\", \"status\": \"finished\", \"ms\": 4345, \"ok\": true, \"job_id\": \"6b6e9ccb-ebde-4fe7-8295-f32a924ac73e\"}"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/concurrency",
+      "name": "r2.mp4",
+      "status": "pass",
+      "detail": "{\"type\": \"r2.mp4\", \"status\": \"finished\", \"ms\": 4751, \"ok\": true, \"job_id\": \"93223a64-16f0-410b-91fd-93911b287b06\"}"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/web",
+      "name": "weather_hcmc",
+      "status": "pass",
+      "detail": "SearXNG run02 Vietnamese query"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/policy",
+      "name": "export_deny",
+      "status": "pass",
+      "detail": "evaluate export"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/antivirus",
+      "name": "disabled_alert",
+      "status": "pass",
+      "detail": "short alert path"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/openvpn",
+      "name": "disabled_alert",
+      "status": "pass",
+      "detail": "short alert path"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/ocr",
+      "name": "bounce",
+      "status": "pass",
+      "detail": "stop then start"
+    },
+    {
+      "ts": "2026-08-17 09:32:50 +0700",
+      "section": "high/session",
+      "name": "lock",
+      "status": "warn",
+      "detail": "valkey lock"
+    },
+    {
+      "ts": "2026-08-17 09:34:59 +0700",
+      "section": "dr",
+      "name": "backup",
+      "status": "pass",
+      "detail": "stamp=20260817_093248"
+    },
+    {
+      "ts": "2026-08-17 09:34:59 +0700",
+      "section": "dr",
+      "name": "restore_canary",
+      "status": "pass",
+      "detail": "stamp=20260817_093248"
+    },
+    {
+      "ts": "2026-08-17 09:34:59 +0700",
+      "section": "dr",
+      "name": "zalo_after_restore",
+      "status": "fail",
+      "detail": "sseClients=0"
+    },
+    {
+      "ts": "2026-08-17 09:34:59 +0700",
+      "section": "dr",
+      "name": "memory_after_restore",
+      "status": "pass",
+      "detail": "pg clients"
+    },
+    {
+      "ts": "2026-08-17 09:34:59 +0700",
+      "section": "dr",
+      "name": "authz_after_restore",
+      "status": "pass",
+      "detail": "pg clients"
+    }
+  ],
+  "burst": {
+    "wall_ms": 4782,
+    "rows": [
+      {
+        "type": "r2.pdf",
+        "status": "finished",
+        "ms": 1932,
+        "ok": true,
+        "job_id": "104b3dce-3438-4199-94ea-6450dd9b8daf"
+      },
+      {
+        "type": "r2.md",
+        "status": "finished",
+        "ms": 2344,
+        "ok": true,
+        "job_id": "7917ee01-2aa6-459e-91e4-d66540d567f7"
+      },
+      {
+        "type": "r2.docx",
+        "status": "finished",
+        "ms": 2736,
+        "ok": true,
+        "job_id": "2afedbd3-48a3-41ac-b8b4-469356e0a2fb"
+      },
+      {
+        "type": "r2.png",
+        "status": "finished",
+        "ms": 3126,
+        "ok": true,
+        "job_id": "28ac8ba2-f596-49af-9efe-24ca31fffc5d"
+      },
+      {
+        "type": "r2.pptx",
+        "status": "finished",
+        "ms": 3554,
+        "ok": true,
+        "job_id": "bbbd21cf-4cd7-45b3-88e5-baf0433498c8"
+      },
+      {
+        "type": "r2.txt",
+        "status": "finished",
+        "ms": 3567,
+        "ok": true,
+        "job_id": "6893078d-ed38-47fb-9d01-2319966aff1c"
+      },
+      {
+        "type": "text",
+        "status": 200,
+        "ms": 3651,
+        "ok": true
+      },
+      {
+        "type": "r2.mp3",
+        "status": "finished",
+        "ms": 3951,
+        "ok": true,
+        "job_id": "ba7334ba-b2e1-4d35-9561-9ba84e691841"
+      },
+      {
+        "type": "r2.xlsx",
+        "status": "finished",
+        "ms": 4345,
+        "ok": true,
+        "job_id": "6b6e9ccb-ebde-4fe7-8295-f32a924ac73e"
+      },
+      {
+        "type": "r2.mp4",
+        "status": "finished",
+        "ms": 4751,
+        "ok": true,
+        "job_id": "93223a64-16f0-410b-91fd-93911b287b06"
+      }
+    ]
+  },
+  "zalo": "ok"
+}

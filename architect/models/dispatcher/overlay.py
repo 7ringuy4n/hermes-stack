@@ -9,10 +9,11 @@ from PIL import Image, ImageDraw, ImageFont, ImageStat
 
 from fonts import pillow_font
 
-MAX_OVERLAY_LINES = 6
+MAX_OVERLAY_LINES = 8
 MAX_OVERLAY_PANELS = 6
 MIN_FONT = 13
 MAX_BOX_RATIO = 0.46
+MAX_BAND_WIDTH_RATIO = 0.72
 
 _PLACEMENTS = {
     "auto",
@@ -163,9 +164,9 @@ def _box_xy(
     placement: str, *, width: int, height: int, box_w: int, box_h: int, margin: int
 ) -> tuple[int, int]:
     if placement == "top-bar":
-        return 0, 0
+        return margin, margin
     if placement == "bottom-bar":
-        return 0, height - box_h
+        return margin, height - box_h - margin
     if placement == "left-column":
         return margin, max(margin, (height - box_h) // 2)
     if placement == "right-column":
@@ -277,7 +278,11 @@ def apply_overlay(
         max_box_w = region_w
         max_box_h = region_h
     else:
-        max_box_w = width if placement in {"top-bar", "bottom-bar"} else max(120, int(width * 0.46))
+        max_box_w = (
+            max(120, int(width * MAX_BAND_WIDTH_RATIO))
+            if placement in {"top-bar", "bottom-bar"}
+            else max(120, int(width * 0.46))
+        )
         max_box_h = int(height * (0.88 if placement in {"left-column", "right-column"} else MAX_BOX_RATIO))
     pad, box_w, box_h, rows = _layout_box(
         facts,
@@ -299,13 +304,9 @@ def apply_overlay(
             placement, width=width, height=height, box_w=box_w, box_h=box_h, margin=margin
         )
     else:
-        if placement in {"top-bar", "bottom-bar"}:
-            box_w = width
         x0, y0 = _box_xy(
             placement, width=width, height=height, box_w=box_w, box_h=box_h, margin=margin
         )
-    if placement in {"top-bar", "bottom-bar"} and not region:
-        box_w = width
     mean, _variance = _region_stats(image, (x0, y0, x0 + box_w, y0 + box_h))
     panel, text_color, accent_color = _colors(
         _choice(style.get("theme"), _THEMES, "auto"),

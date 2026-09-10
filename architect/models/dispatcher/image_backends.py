@@ -17,6 +17,8 @@ from typing import Any, Optional
 
 import httpx
 
+from env_flags import env_active
+
 def _env(*keys: str, default: str = "") -> str:
     for k in keys:
         v = os.environ.get(k)

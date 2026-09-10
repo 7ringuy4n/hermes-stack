@@ -1,0 +1,24 @@
+{
+  "schema": "assistant-learn-notify-v1",
+  "from_format": "{id}|{name}",
+  "pending": {
+    "title": "Knowledge — chờ duyệt",
+    "body": "id={id}\nfrom={from}\nname={name}\n{preview}\nDuyệt: !zalo learn approve {id}\nhoặc: !zalo learn approve {name}\ntất cả: !zalo learn approve *"
+  },
+  "approved": {
+    "title": "Knowledge — đã học",
+    "body": "{lines}"
+  },
+  "rejected": {
+    "title": "Knowledge — từ chối",
+    "body": "{lines}"
+  },
+  "deleted": {
+    "title": "Knowledge — đã xóa",
+    "body": "{lines}"
+  },
+  "scan": {
+    "title": "Knowledge — scan docs",
+    "body": "{lines}"
+  }
+}

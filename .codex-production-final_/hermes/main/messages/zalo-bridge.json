@@ -1,0 +1,19 @@
+{
+  "schema": "zalo-bridge-v1",
+  "invalid_param_errors": [
+    "tham số không hợp lệ",
+    "tham so khong hop le",
+    "invalid parameter",
+    "invalid param"
+  ],
+  "retryable_errors": [
+    "lỗi không xác định",
+    "loi khong xac dinh",
+    "unknown",
+    "too many",
+    "try again",
+    "timeout",
+    "econnreset",
+    "socket hang"
+  ]
+}

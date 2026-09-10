@@ -1,0 +1,217 @@
+"""Drop Hermes outbound that must not reach Zalo users.
+
+Layers (fail-closed for status frames):
+1. Empty → drop
+2. Deterministic Hermes *agent status frames* (progress / tool iteration / provider
+   failure envelopes) — protocol shapes the gateway emits, not user NLU
+3. Editable markers in ``messages/ux.json`` ``outbound_protocol_drop`` (legacy)
+4. LLM ``POST /v1/outbound`` for residual lines
+5. If LLM unavailable: drop status-like frames; otherwise send
+
+Do not grow large keyword lists for natural language. Prefer skills
+(``quiet-delivery``, ``zalo-channel``, ``media-out``) so Hermes does not emit
+process chatter. Code only strips what the agent still leaks.
+
+Schedule ``verbatim`` fires are user-dictated send-bodies. The adapter skips this
+filter for those sends (``skip_outbound_filter``). ``/v1/outbound`` is for
+Hermes-generated lines, not a payload the host already committed to deliver.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+_d = Path(__file__).resolve().parent
+_shared = Path(os.getenv("HERMES_SHARED_DATA") or "/opt/data") / "plugins" / "zalo"
+for _p in (_d, _shared):
+    _s = str(_p)
+    if _p.is_dir() and _s not in sys.path:
+        sys.path.insert(0, _s)
+
+from classify_client import classify_outbound
+
+_PROTOCOL_CACHE: list[str] | None = None
+PROTOCOL_DROP_DEFAULT = (
+    "Context compaction complete",
+    "Request payload too large (413)",
+    "Session auto-reset",
+    "compression attempt",
+    "vars() argument must have __dict__",
+)
+
+# Hermes agent status envelopes (deterministic gateway protocol shapes).
+_STATUS_STARTS = ("working",)
+_STATUS_MARKS = (
+    "iteration ",
+    "receiving stream",
+    "model provider failed",
+    "kept raw provider",
+    "check gateway logs",
+    "first-time tip",
+    "interrupting current task",
+    "/busy",
+    "raw provider details",
+    "check gateway logs for diagnostics",
+)
+_STATUS_LEAD = "⏳⚠⚠️❗⏱"
+
+
+def _ux_path() -> Path:
+    raw = (
+        os.getenv("ZALO_UX_PATH")
+        or os.getenv("ASSISTANT_UX_PATH")
+        or ""
+    ).strip()
+    if raw:
+        return Path(raw)
+    shared = Path(os.getenv("HERMES_SHARED_DATA") or "/opt/data") / "messages" / "ux.json"
+    local = _d.parents[1] / "messages" / "ux.json"
+    if shared.is_file():
+        return shared
+    return local
+
+
+def protocol_drop_markers() -> list[str]:
+    global _PROTOCOL_CACHE
+    if _PROTOCOL_CACHE is not None:
+        return _PROTOCOL_CACHE
+    markers: list[str] = []
+    try:
+        data = json.loads(_ux_path().read_text(encoding="utf-8"))
+        raw = data.get("outbound_protocol_drop") if isinstance(data, dict) else None
+        if isinstance(raw, list):
+            markers = [str(x).strip() for x in raw if str(x).strip()]
+    except (OSError, json.JSONDecodeError, TypeError):
+        markers = []
+    if not markers:
+        markers = list(PROTOCOL_DROP_DEFAULT)
+    _PROTOCOL_CACHE = markers
+    return markers
+
+
+def is_agent_status_frame(content: str) -> bool:
+    """True for Hermes progress / tool-iteration / provider-failure envelopes."""
+    t = (content or "").strip()
+    if not t:
+        return True
+    low = t.lower()
+    head = low.lstrip()
+    for start in _STATUS_STARTS:
+        if head.startswith(start):
+            return True
+    for mark in _STATUS_MARKS:
+        if mark in low:
+            return True
+    if t[0] in _STATUS_LEAD and len(t) < 400:
+        return True
+    return False
+
+
+def is_protocol_drop(content: str) -> bool:
+    """True when the line is a Hermes agent protocol status, not a user answer."""
+    t = (content or "").strip()
+    if not t:
+        return True
+    if is_agent_status_frame(t):
+        return True
+    for mark in protocol_drop_markers():
+        if mark and mark in t:
+            return True
+    return False
+
+
+def strip_cron_delivery(content: str) -> str:
+    """Keep only the cron/schedule body — drop Hermes wrapper header/footer.
+
+    Hermes ``cron/scheduler.py`` wraps deliveries as::
+
+        Cronjob Response: <task name>
+        (job_id: <id>)
+        -------------
+
+        <body>
+
+        To stop or manage this job, send me a new message (e.g. "stop reminder …").
+
+    Zalo users must see ``<body>`` only (case 15 / quiet-delivery).
+    """
+    raw = content or ""
+    t = raw.strip()
+    if not t:
+        return raw
+    if t.startswith("Cronjob Response:") or t.startswith("Cronjob Response："):
+        lines = t.splitlines()
+        i = 1
+        if i < len(lines) and "job_id" in lines[i].lower():
+            i += 1
+        while i < len(lines) and (
+            not lines[i].strip()
+            or set(lines[i].strip()) <= {"-", "—", "–", "="}
+        ):
+            i += 1
+        t = "\n".join(lines[i:]).strip()
+    foot_marks = (
+        "To stop or manage this job",
+        "to stop or manage this job",
+        "Để dừng hoặc quản lý job",
+        "de dung hoac quan ly job",
+    )
+    cut = -1
+    for mark in foot_marks:
+        pos = t.rfind(mark)
+        if pos >= 0 and (cut < 0 or pos < cut):
+            cut = pos
+    if cut >= 0:
+        t = t[:cut].rstrip()
+    keep: list[str] = []
+    for line in t.splitlines():
+        s = line.strip().lower().strip("()")
+        if s.startswith("job_id") and ":" in s:
+            continue
+        keep.append(line)
+    t = "\n".join(keep).strip()
+    while "\n\n\n" in t:
+        t = t.replace("\n\n\n", "\n\n")
+    return t if t else raw
+
+
+def filter_outbound(content: str) -> tuple[str, str]:
+    """Return (action, text). action is send|drop; text is the body to deliver on send."""
+    t = (content or "").strip()
+    if not t:
+        return "drop", ""
+    # Admin command help from zalo-api must never be LLM-filtered away.
+    if t.startswith("!zalo ") or "\n!zalo " in t:
+        return "send", t
+    if is_protocol_drop(t):
+        return "drop", ""
+    got = classify_outbound(t)
+    action_map = {"send": "send", "drop": "drop"}
+    action = action_map.get(str(got.get("action") or "send").strip().lower(), "send")
+    if got.get("ok") is False:
+        # Fail-open for user-facing replies when /v1/outbound is unavailable;
+        # still drop deterministic agent status frames.
+        if is_agent_status_frame(t):
+            return "drop", ""
+        return "send", t
+    if action == "drop":
+        return "drop", ""
+    cleaned = got.get("text")
+    if isinstance(cleaned, str) and cleaned.strip():
+        return "send", cleaned.strip()
+    return "send", t
+
+
+def drop_outbound(content: str) -> bool:
+    action, _text = filter_outbound(content)
+    return action == "drop"
+
+
+def is_busy_interrupt_notice(content: str) -> bool:
+    return drop_outbound(content)
+
+
+def is_process_narration(content: str) -> bool:
+    return drop_outbound(content)

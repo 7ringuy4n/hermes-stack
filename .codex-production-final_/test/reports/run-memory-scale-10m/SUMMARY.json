@@ -1,0 +1,52 @@
+{
+  "ts": "2026-09-08T09:13:50.495677+07:00",
+  "verdict": "PASS",
+  "payload": {
+    "ok": true,
+    "rows": 10000000,
+    "knowledge_ms": 0.629,
+    "old_session_ms": 0.306,
+    "checks": [
+      {
+        "name": "database_access",
+        "ok": true,
+        "detail": "postgres reachable"
+      },
+      {
+        "name": "corpus_rows",
+        "ok": true,
+        "detail": "10000000"
+      },
+      {
+        "name": "knowledge_accuracy",
+        "ok": true,
+        "detail": "824731|harborquartz knowledge anchor exact result"
+      },
+      {
+        "name": "knowledge_latency",
+        "ok": true,
+        "detail": "0.629 ms"
+      },
+      {
+        "name": "knowledge_index",
+        "ok": true,
+        "detail": "indexed plan"
+      },
+      {
+        "name": "old_session_accuracy",
+        "ok": true,
+        "detail": "1700003|oldsession task cobalt itinerary exact result"
+      },
+      {
+        "name": "old_session_latency",
+        "ok": true,
+        "detail": "0.306 ms"
+      },
+      {
+        "name": "old_session_index",
+        "ok": true,
+        "detail": "indexed plan"
+      }
+    ]
+  }
+}

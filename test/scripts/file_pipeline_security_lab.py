@@ -6,18 +6,15 @@ Reports: test/reports/run-file-pipeline-security/ (no host/account)
 """
 from __future__ import annotations
 
-import base64
 import io
 import json
 import os
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import paramiko
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from deploy_stack import LOCAL_MODE, connect, sudo_bash
 from sanitize import sanitize
 
 if hasattr(sys.stdout, "buffer"):
@@ -25,10 +22,8 @@ if hasattr(sys.stdout, "buffer"):
 
 HOST = os.environ.get("ASSISTANT_SSH_HOST", "")
 USER = os.environ.get("ASSISTANT_SSH_USER", "")
-PW = os.environ.get("ASSISTANT_SSH_PASSWORD", "")
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-file-pipeline-security"
-esc = PW.replace("'", "'\\''")
 ROWS: list[dict] = []
 
 EICAR = r"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
@@ -44,42 +39,8 @@ def note(name: str, status: str, detail: str = "") -> None:
     print(f"[{row['ts']}] {name} | {status} | {row['detail'][:240]}", flush=True)
 
 
-def connect():
-    c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    c.connect(HOST, username=USER, password=PW, timeout=45, allow_agent=False, look_for_keys=False)
-    return c
-
-
-def sudo_bash(c, script: str, timeout: int = 600) -> str:
-    b64 = base64.b64encode(script.encode("utf-8")).decode("ascii")
-    cmd = f"echo '{esc}' | sudo -S bash -lc \"echo {b64} | base64 -d | bash\""
-    _i, o, e = c.exec_command(cmd, timeout=timeout, get_pty=True)
-    chan = o.channel
-    buf: list[str] = []
-    while True:
-        while chan.recv_ready():
-            chunk = chan.recv(8192).decode("utf-8", "replace")
-            sys.stdout.write(chunk)
-            sys.stdout.flush()
-            buf.append(chunk)
-        while chan.recv_stderr_ready():
-            chunk = chan.recv_stderr(8192).decode("utf-8", "replace")
-            sys.stdout.write(chunk)
-            sys.stdout.flush()
-            buf.append(chunk)
-        if chan.exit_status_ready() and not chan.recv_ready() and not chan.recv_stderr_ready():
-            break
-        time.sleep(0.1)
-    code = chan.recv_exit_status()
-    text = sanitize("".join(buf))
-    if code != 0:
-        raise SystemExit(f"remote exit {code}: {text[-400:]}")
-    return text
-
-
 def main() -> int:
-    if not HOST or not USER or not PW:
+    if not LOCAL_MODE and (not HOST or not USER):
         print("SKIP: set ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD")
         return 0
 
@@ -136,7 +97,10 @@ else
   echo "VISION_ROUTE_HEALTH=down"
 fi
 '''
-    out = sudo_bash(c, script)
+    try:
+        out = sudo_bash(c, script)
+    finally:
+        c.close()
     fails = 0
     for line in out.splitlines():
         if not line.startswith("PROBE "):

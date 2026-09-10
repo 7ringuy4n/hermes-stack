@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Live Zalo lab: concurrent real quote replies in one DM and one group.
+
+The group is resolved by display name from durable channel state. Numeric
+identities are supplied at runtime and never written to the report.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from deploy_stack import connect, sudo_bash  # noqa: E402
+from sanitize import sanitize  # noqa: E402
+
+ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
+OUT = ROOT / "test" / "reports" / "run-zalo-dm-group-concurrency"
+USER_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
+GROUP_NAME = (os.environ.get("ZALO_TEST_GROUP_NAME") or "test").strip()
+
+
+def timestamp() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat()
+
+
+def main() -> int:
+    if not USER_ID or not GROUP_NAME:
+        print("ERROR: ZALO_TEST_USER_ID and ZALO_TEST_GROUP_NAME are required", file=sys.stderr)
+        return 2
+    OUT.mkdir(parents=True, exist_ok=True)
+    remote = rf'''
+set -euo pipefail
+cd /opt/assistant
+python3 - <<'PY'
+import concurrent.futures, json, pathlib, subprocess, time, urllib.parse, urllib.request
+
+uid={USER_ID!r}
+group_name={GROUP_NAME!r}.casefold()
+tag=str(int(time.time()))
+
+def post(path, payload):
+    req=urllib.request.Request(
+        "http://127.0.0.1:8787"+path,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={{"Content-Type":"application/json"}},
+        method="POST",
+    )
+    return json.loads(urllib.request.urlopen(req, timeout=25).read().decode() or "{{}}")
+
+def sent_id(result):
+    root=result.get("result") if isinstance(result,dict) else {{}}
+    root=root if isinstance(root,dict) else {{}}
+    message=root.get("message") if isinstance(root.get("message"),dict) else {{}}
+    return str(message.get("msgId") or root.get("msgId") or "")
+
+def parse_entries(path):
+    rows=[]
+    for raw in pathlib.Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        line=raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        ident, sep, name=line.partition("|")
+        rows.append((ident.strip(), name.strip() if sep else ""))
+    return rows
+
+groups=[row for row in parse_entries("/data/assistant/zalo_allowed_threads.txt") if row[1].casefold()==group_name]
+if len(groups)!=1:
+    raise SystemExit("FAIL_GROUP_RESOLUTION")
+gid=groups[0][0]
+
+health=json.loads(urllib.request.urlopen("http://127.0.0.1:8787/health",timeout=8).read().decode() or "{{}}")
+own=str(health.get("ownId") or "")
+if not health.get("loggedIn") or int(health.get("sseClients") or 0)!=1 or not own:
+    raise SystemExit("FAIL_BRIDGE_HEALTH")
+
+zalo_api=subprocess.check_output(
+    ["docker","ps","--filter","label=com.docker.compose.service=zalo-api","--format","{{{{.Names}}}}"],
+    text=True,
+).splitlines()[0]
+member_probe="""
+import json, os, urllib.request
+tid=os.environ["LAB_GROUP_ID"]
+token=os.environ.get("ZALO_API_TOKEN","")
+refresh=urllib.request.Request(
+    "http://127.0.0.1:8100/v1/zalo/threads/"+tid+"/members/refresh",
+    data=b"{{}}",
+    headers={{"Authorization":"Bearer "+token,"Content-Type":"application/json"}},
+    method="POST",
+)
+urllib.request.urlopen(refresh,timeout=15).read()
+req=urllib.request.Request(
+    "http://127.0.0.1:8100/v1/zalo/threads/"+tid+"/members",
+    headers={{"Authorization":"Bearer "+token}},
+)
+print(json.dumps(json.loads(urllib.request.urlopen(req,timeout=10).read()),ensure_ascii=False))
+"""
+member_raw=subprocess.check_output(
+    ["docker","exec","-e","LAB_GROUP_ID="+gid,zalo_api,"python3","-c",member_probe],
+    text=True,
+)
+members=json.loads(member_raw).get("members") or []
+member_ids={{str(row.get("zalo_user_id") or row.get("user_id") or row.get("id") or "") for row in members if isinstance(row,dict)}}
+if len(members)!=3 or uid not in member_ids:
+    raise SystemExit("FAIL_GROUP_MEMBERSHIP")
+
+dm_seed="DM quote target "+tag
+group_seed="Group quote target "+tag
+dm_quote_id=sent_id(post("/send",{{"threadId":uid,"threadType":"user","text":dm_seed}}))
+group_quote_id=sent_id(post("/send",{{"threadId":gid,"threadType":"group","text":group_seed}}))
+if not dm_quote_id or not group_quote_id:
+    raise SystemExit("FAIL_REAL_QUOTE_ID")
+
+dm_marker="The blue orchid is ready."
+group_marker="The amber lantern is ready."
+started=time.time()
+
+def delivery_evidence(thread_id, thread_type, source_message_id, marker, started_at):
+    probe="""
+import json, os, psycopg
+with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
+    row=conn.execute(
+        "SELECT count(*), COALESCE(bool_or(content LIKE %s), false) FROM zalo_message_history WHERE thread_id=%s AND thread_type=%s AND event='delivered' AND created_at >= to_timestamp(%s) AND meta->>'source_message_id'=%s",
+        ("%"+os.environ["LAB_MARKER"]+"%",os.environ["LAB_THREAD_ID"],os.environ["LAB_THREAD_TYPE"],int(os.environ["LAB_STARTED"]),os.environ["LAB_SOURCE_MESSAGE_ID"]),
+    ).fetchone()
+print(json.dumps({{"count":int(row[0] or 0),"content_exact":bool(row[1])}}))
+"""
+    value=subprocess.check_output(
+        ["docker","exec","-e","LAB_THREAD_ID="+thread_id,"-e","LAB_THREAD_TYPE="+thread_type,
+         "-e","LAB_SOURCE_MESSAGE_ID="+source_message_id,"-e","LAB_MARKER="+marker,
+         "-e","LAB_STARTED="+str(int(started_at)),zalo_api,"python3","-c",probe],
+        text=True,errors="replace",
+    ).strip()
+    return json.loads(value or "{{}}")
+
+def inject(thread_id, thread_type, message_id, marker, quote_id, seed):
+    quote={{"msgType":"webchat","msgId":quote_id,"cliMsgId":quote_id,"content":seed,"ownerId":own,"uidFrom":own}}
+    payload={{"type":"message","payload":{{
+        "threadId":thread_id,"threadType":thread_type,"senderId":uid,
+        "senderName":"test-user","messageId":message_id,
+        "text":"Reply with exactly this natural sentence: "+marker,"isSelf":False,
+        "quote":quote,"quoted":quote,"quotedOwnerId":own,
+    }}}}
+    return bool(post("/inject-event",payload).get("ok"))
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+    dm_source_id="dm-"+tag
+    group_source_id="group-"+tag
+    futures=[
+        pool.submit(inject,uid,"user",dm_source_id,dm_marker,dm_quote_id,dm_seed),
+        pool.submit(inject,gid,"group",group_source_id,group_marker,group_quote_id,group_seed),
+    ]
+    accepted=[future.result() for future in futures]
+if accepted != [True,True]:
+    raise SystemExit("FAIL_INJECT")
+
+deadline=time.time()+180
+dm_ok=group_ok=crossed=False
+dm_content_exact=group_content_exact=False
+while time.time()<deadline:
+    dm_evidence=delivery_evidence(uid,"user",dm_source_id,dm_marker,started)
+    group_evidence=delivery_evidence(gid,"group",group_source_id,group_marker,started)
+    dm_ok=dm_evidence.get("count")==1
+    group_ok=group_evidence.get("count")==1
+    dm_content_exact=bool(dm_evidence.get("content_exact"))
+    group_content_exact=bool(group_evidence.get("content_exact"))
+    crossed=(
+        delivery_evidence(gid,"group",dm_source_id,dm_marker,started).get("count",0)>0 or
+        delivery_evidence(uid,"user",group_source_id,group_marker,started).get("count",0)>0
+    )
+    if dm_ok and group_ok and dm_content_exact and group_content_exact:
+        break
+    time.sleep(3)
+
+elapsed=round(time.time()-started,2)
+if not dm_ok or not group_ok or not dm_content_exact or not group_content_exact or crossed:
+    print(json.dumps({{
+        "ok":False,"requests":2,"elapsed_s":elapsed,
+        "dm_delivered":dm_ok,"group_delivered":group_ok,
+        "dm_content_exact":dm_content_exact,"group_content_exact":group_content_exact,
+        "crossed":crossed,
+    }},separators=(",",":")))
+    raise SystemExit("FAIL_DELIVERY_ISOLATION")
+
+valkey=subprocess.check_output(
+    ["docker","ps","--filter","label=com.docker.compose.service=valkey","--format","{{{{.Names}}}}"],
+    text=True,
+).splitlines()[0]
+drain_deadline=time.time()+30
+active=[]
+while time.time()<drain_deadline:
+    active=subprocess.check_output(
+        ["docker","exec",valkey,"valkey-cli","--raw","SMEMBERS","assistant:gate:qactive"],
+        text=True,errors="replace",
+    ).splitlines()
+    if uid not in active and gid not in active:
+        break
+    time.sleep(1)
+if uid in active or gid in active:
+    raise SystemExit("FAIL_QUEUE_NOT_DRAINED")
+
+print(json.dumps({{
+    "ok":True,"requests":2,"elapsed_s":elapsed,"group_members":len(members),
+    "dm_quote":True,"group_quote":True,"crossed":False,"queue_empty":True,
+    "dm_content_exact":dm_content_exact,"group_content_exact":group_content_exact,
+}},separators=(",",":")))
+PY
+'''
+    client = connect()
+    try:
+        try:
+            raw = sanitize(sudo_bash(client, remote, timeout=300) or "")
+        except SystemExit as exc:
+            raw = sanitize(str(exc))
+    finally:
+        client.close()
+    line = next((row for row in reversed(raw.splitlines()) if row.startswith("{")), "")
+    try:
+        result = json.loads(line)
+    except json.JSONDecodeError:
+        result = {"ok": False, "error": "missing_result"}
+    report = {"timestamp": timestamp(), "result": result, "output": raw[-2000:]}
+    (OUT / "summary.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(result, indent=2), flush=True)
+    return 0 if result.get("ok") is True else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

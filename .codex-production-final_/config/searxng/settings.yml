@@ -1,0 +1,45 @@
+# SearXNG — Medium+ web search (mounted read-only into searxng container)
+# Omni UI Search provider (first-setup) plus the Router Worker adapter.
+# Hermes default path: router-worker → Omni combo web-search via POST /v1/search.
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "assistant-searxng"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+  formats:
+    - html
+    - json
+
+server:
+  # Override in production via env if needed; local-only bind in compose
+  secret_key: "assistant-searxng-change-me"
+  limiter: false
+  image_proxy: false
+  bind_address: "0.0.0.0"
+  base_url: "http://searxng:8080/"
+
+# Prefer engines that usually work from datacenter IPs (major web engines often CAPTCHA).
+engines:
+  - name: wikipedia
+    disabled: false
+  - name: wikidata
+    disabled: false
+  - name: wiktionary
+    disabled: false
+  - name: currency
+    disabled: false
+  - name: duckduckgo
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: startpage
+    disabled: false
+  - name: google
+    disabled: true
+  - name: google cse
+    disabled: true

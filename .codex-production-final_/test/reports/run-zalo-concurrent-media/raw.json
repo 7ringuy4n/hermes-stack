@@ -1,0 +1,105 @@
+{
+  "ts": "2026-08-17 15:15:02 +0700",
+  "bursts": [
+    {
+      "status": "DONE",
+      "n": 2,
+      "ok": 2,
+      "fail": 0,
+      "tag": "zalo-media-a",
+      "rows": [
+        {
+          "kind": "text",
+          "http": "200",
+          "latency_ms": 5399
+        },
+        {
+          "kind": "image",
+          "http": "200",
+          "latency_ms": 638
+        }
+      ],
+      "elapsed_s": 5.72,
+      "text_delay": {
+        "n": 1,
+        "p50_ms": 5399,
+        "p95_ms": 5399,
+        "max_ms": 5399,
+        "min_ms": 5399
+      },
+      "image_delay": {
+        "n": 1,
+        "p50_ms": 638,
+        "p95_ms": 638,
+        "max_ms": 638,
+        "min_ms": 638
+      }
+    },
+    {
+      "status": "DONE",
+      "n": 4,
+      "ok": 3,
+      "fail": 1,
+      "tag": "zalo-media-a",
+      "rows": [
+        {
+          "kind": "text",
+          "http": "200",
+          "latency_ms": 10582
+        },
+        {
+          "kind": "image",
+          "http": "200",
+          "latency_ms": 328
+        },
+        {
+          "kind": "text",
+          "http": "000000",
+          "latency_ms": 60015
+        },
+        {
+          "kind": "image",
+          "http": "200",
+          "latency_ms": 1399
+        }
+      ],
+      "elapsed_s": 60.28,
+      "text_delay": {
+        "n": 2,
+        "p50_ms": 10582,
+        "p95_ms": 60015,
+        "max_ms": 60015,
+        "min_ms": 10582
+      },
+      "image_delay": {
+        "n": 2,
+        "p50_ms": 328,
+        "p95_ms": 1399,
+        "max_ms": 1399,
+        "min_ms": 328
+      }
+    }
+  ],
+  "bridge_before": {
+    "ok": true,
+    "loggedIn": true,
+    "sessionDead": false,
+    "sessionDeadReason": null,
+    "ownId": "[redacted]",
+    "qr": null,
+    "sseClients": 1
+  },
+  "bridge_after": {
+    "ok": true,
+    "loggedIn": true,
+    "sessionDead": false,
+    "sessionDeadReason": null,
+    "ownId": "[redacted]",
+    "qr": null,
+    "sseClients": 1
+  },
+  "last_all_success_n": 2,
+  "first_fail_n": 4,
+  "fail_mode": "http_non_2xx_or_timeout",
+  "sse_ok": true
+}

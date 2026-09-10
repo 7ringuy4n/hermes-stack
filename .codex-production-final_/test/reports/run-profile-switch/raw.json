@@ -1,0 +1,86 @@
+[
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "dry_switch",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "fail_bogus_profile",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "fail_bogus_flag",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "archive_options",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "add_notify",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "remove_notify",
+    "status": "fail",
+    "detail": "missing marker"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "existing_zalo",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "downgrade_openbao_gone",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "downgrade_ocr",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "downgrade_zalo",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "upgrade_openbao",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "upgrade_authz",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "upgrade_security",
+    "status": "pass",
+    "detail": "ok"
+  },
+  {
+    "ts": "2026-08-17 15:02:20 +0700",
+    "name": "upgrade_hermes_x2",
+    "status": "pass",
+    "detail": "HERMES_N=2"
+  }
+]

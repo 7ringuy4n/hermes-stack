@@ -74,7 +74,10 @@ def main() -> int:
         "schema",
     ]
     assert len(env.get("priority_rules") or []) >= 5
-    assert any("one focused search task per subject" in rule for rule in env.get("priority_rules") or [])
+    assert any(
+        "one focused search instruction" in rule and "per domain" in rule
+        for rule in env.get("priority_rules") or []
+    )
     assert int(env.get("timeout_s") or 0) <= 60, env.get("timeout_s")
     assert int(env.get("retry") or 99) <= 1, env.get("retry")
     assert "{failure}" in str(env.get("repair_template") or "")

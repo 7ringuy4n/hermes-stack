@@ -56,8 +56,23 @@ def main() -> int:
     remote = r"""
 set -euo pipefail
 START_EPOCH=$(date +%s)
+export ROW_FILE="/tmp/assistant-media-refusal-${START_EPOCH}-$$.json"
+trap 'rm -f -- "$ROW_FILE"' EXIT
 python3 - <<'PY'
 import json, urllib.request, time
+deadline=time.time()+90
+while time.time()<deadline:
+    try:
+        health=json.loads(urllib.request.urlopen(
+            "http://127.0.0.1:8787/health", timeout=5
+        ).read().decode() or "{}")
+    except Exception:
+        health={}
+    if health.get("loggedIn") is True and int(health.get("sseClients") or 0)>=1:
+        break
+    time.sleep(2)
+else:
+    raise SystemExit("FAIL_BRIDGE_NOT_READY")
 payload = {{
     "type": "message",
     "threadId": {TN_ID!r},
@@ -95,7 +110,7 @@ for i in $(seq 1 {WAIT_S}); do
   fi
   ROW=$(docker exec postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc '"'"'select json_build_object('"'"'"'"'content'"'"'"'"',coalesce(content,'"'"'"'"''"'"'"'"'),'"'"'"'"'source'"'"'"'"',coalesce(meta->>'"'"'"'"'source_message_id'"'"'"'"','"'"'"'"''"'"'"'"'))::text from zalo_message_history where event='"'"'"'"'delivered'"'"'"'"' and meta->>'"'"'"'"'source_message_id'"'"'"'"'='"'"'"'"'{marker}'"'"'"'"' order by id desc limit 1'"'"'' 2>/dev/null || true)
   if [[ -n "$ROW" ]]; then
-    printf '%s' "$ROW" > /tmp/assistant-media-refusal-row.json
+    printf '%s' "$ROW" > "$ROW_FILE"
     DELIVERED=1
     break
   fi
@@ -112,7 +127,7 @@ if [[ "$DELIVERED" -ne 1 ]]; then
 fi
 python3 - <<'PY'
 import json, os, subprocess
-row=json.loads(open("/tmp/assistant-media-refusal-row.json",encoding="utf-8").read())
+row=json.loads(open(os.environ["ROW_FILE"],encoding="utf-8").read())
 content=str(row.get("content") or "").strip()
 if not content:
     raise SystemExit("VERDICT FAIL empty_delivered_response")

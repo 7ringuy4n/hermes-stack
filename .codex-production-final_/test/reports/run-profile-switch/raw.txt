@@ -1,0 +1,262 @@
+ha256:fa53462916df1b41de30fc72e153b264214df91c0c0da18f70afb8996a419971 done
+#33 exporting config sha256:64c46be76f9fb9447ad2e06e01ab8f2503b7fd347e96e302d2965fcb73ac238d done
+#33 exporting attestation manifest sha256:dbb6e3b23e3f2c631a45937a777fda2ff3d52069692acf6b4e6fa7b6a44addcd done
+#33 exporting manifest list sha256:df6b128b2904eb70fd0b8643cb0e74c166e88f74558a17ead53daba5c8ef90a2 done
+#33 naming to docker.io/library/assistant-authz:latest done
+#33 unpacking to docker.io/library/assistant-authz:latest
+#33 ...
+
+#29 [security-manager stage-1 5/7] RUN pip install --no-cache-dir -r requirements.txt
+#29 4.819 Successfully installed annotated-types-0.8.0 anyio-4.14.2 certifi-2026.7.22 click-8.4.2 fastapi-0.115.12 h11-0.16.0 httpcore-1.0.9 httptools-0.8.0 httpx-0.28.1 idna-3.18 pydantic-2.11.3 pydantic-core-2.33.1 python-dotenv-1.2.3 python-multipart-0.0.20 pyyaml-6.0.3 starlette-0.46.2 typing-extensions-4.16.0 typing-inspection-0.4.4 uvicorn-0.34.2 uvloop-0.22.1 watchfiles-1.2.0 websockets-17.0.1 yara-x-1.19.0
+#29 4.819 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#29 4.895 
+#29 4.895 [notice] A new release of pip is available: 25.0.1 -> 26.2.1
+#29 4.895 [notice] To update, run: pip install --upgrade pip
+#29 DONE 5.2s
+
+#34 [security-manager stage-1 6/7] COPY app.py .
+#34 DONE 0.0s
+
+#35 [security-manager stage-1 7/7] COPY rules ./rules
+#35 DONE 0.0s
+
+#33 [authz] exporting to image
+#33 unpacking to docker.io/library/assistant-authz:latest 0.7s done
+#33 DONE 3.2s
+
+#36 [authz] resolving provenance for metadata file
+#36 DONE 0.0s
+
+#37 [security-manager] exporting to image
+#37 exporting layers 2.8s done
+#37 exporting manifest sha256:cf7f6aa88f0b9f2f7fc31126e889ca449fb8226ace5141b537a7f45a36101d31 done
+#37 exporting config sha256:f7663b408f8379115343a8b9c0dd4ca81d6fb45a5045ba4e2bab9272b8b99605 done
+#37 exporting attestation manifest sha256:ad3ac1ca94ddd73a2ecff51135fe3bfe80b7bf83a658b00d095fabcd938471bd done
+#37 exporting manifest list sha256:c5bdac063abc8f4100f7d6d8ee53ad567ed9ab611feda450772ed59c9e98a583 done
+#37 naming to docker.io/library/assistant-security-manager:latest done
+#37 unpacking to docker.io/library/assistant-security-manager:latest
+#37 unpacking to docker.io/library/assistant-security-manager:latest 0.7s done
+#37 DONE 3.6s
+
+#38 [security-manager] resolving provenance for metadata file
+#38 DONE 0.0s
+ Image assistant-security-manager Built 
+ Image assistant-authz Built 
+ Image assistant-policy-center Built 
+ Image assistant-siem Built 
+ Container postgres Running 
+ Container jobs Running 
+ Container comfyui-cpu Running 
+ Container ingest Running 
+ Container redis Running 
+ Container model-router Running 
+ Container embedding Running 
+ Container session Running 
+ Container traefik Running 
+ Container dispatcher Running 
+ Container qdrant Running 
+ Container memory Running 
+ Container zalo-proxy Running 
+ Container jobs-worker Running 
+ Container zalo-api Running 
+ Container ocr Running 
+ Container api-gateway Running 
+ Container 9router Running 
+ Container assistant-hermes-1 Running 
+ Container searxng Running 
+ Container siem Creating 
+ Container openbao Creating 
+ Container policy-center Creating 
+ Container authz Creating 
+ Container security-manager Creating 
+ Container siem Created 
+ Container policy-center Created 
+ Container openbao Created 
+ Container authz Created 
+ Container assistant-hermes-2 Creating 
+ Container security-manager Created 
+ Container assistant-hermes-2 Created 
+ Container redis Waiting 
+ Container policy-center Starting 
+ Container security-manager Starting 
+ Container siem Starting 
+ Container postgres Waiting 
+ Container redis Waiting 
+ Container openbao Starting 
+ Container redis Waiting 
+ Container postgres Waiting 
+ Container siem Started 
+ Container security-manager Started 
+ Container policy-center Started 
+ Container openbao Started 
+ Container redis Healthy 
+ Container redis Healthy 
+ Container redis Waiting 
+ Container postgres Healthy 
+ Container redis Healthy 
+ Container postgres Healthy 
+ Container authz Starting 
+ Container authz Started 
+ Container assistant-hermes-2 Starting 
+ Container assistant-hermes-2 Started 
+ Container redis Waiting 
+ Container redis Healthy 
+ Container redis Healthy 
+==> install timers (profile=high, ENABLE_ZALO=1)
+[0;4mNEXT          [0m[0;4m [0m[0;4mLEFT[0m[0;4m [0m[0;4mLAST           [0m[0;4m [0m[0;4m      PASSED[0m[0;4m [0m[0;4mUNIT           [0m[0;4m [0m[0;4mACTIVATES      [0m
+Mon 2026-08-1…   4s Mon 2026-08-17… 1min 55s ago assistant-stac… assistant-stac…
+Mon 2026-08-1…  17s Mon 2026-08-17…      42s ago assistant-zalo… assistant-zalo…
+Tue 2026-08-1…  15h Mon 2026-08-17…       8h ago assistant-auto… assistant-auto…
+Tue 2026-08-1…  15h Mon 2026-08-17…       8h ago assistant-comp… assistant-comp…
+Tue 2026-08-1…  16h Mon 2026-08-17…       7h ago assistant-back… assistant-back…
+Tue 2026-08-1…  17h -                          - assistant-log-… assistant-log-…
+
+[0;1;39m6 timers listed.[0m
+Pass --all to see loaded but inactive timers, too.
+timers installed for profile=high
+==> first-setup-llm (9Router key + hermes combo)
+==> wait for 9router http://[redacted-addr]:20128
+==> login 9router
+==> GET /api/keys
+==> using key name='Default Key' prefix=sk-8709dfd58…
+==> wrote N9ROUTER_API_KEY to /opt/assistant/.env
+==> OpenCode Free models (7): ['oc/big-pickle', 'oc/deepseek-v4-flash-free', 'oc/hy3-free', 'oc/laguna-s-2.1-free', 'oc/mimo-v2.5-free', 'oc/nemotron-3-ultra-free', 'oc/nemotron-3.5-lightning-free']
+==> update combo hermes (40c27757-cb8b-4ccf-8d19-a576ec830d3c)
+==> combo strategy hermes.fallbackStrategy=round-robin (stickyLimit=1)
+==> hermes model=hermes provider=custom → 9router
+==> recreate embedding dispatcher hermes
+[33mWARN[0m[0000] The "CLOUDDRIVE_REMOTE" variable is not set. Defaulting to a blank string. 
+[33mWARN[0m[0000] The "CLOUDDRIVE_DOCS_PATH" variable is not set. Defaulting to a blank string. 
+[33mWARN[0m[0000] Found orphan containers (api-gateway, traefik) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up. 
+ Container redis Running 
+ Container qdrant Running 
+ Container authz Running 
+ Container comfyui-cpu Running 
+ Container memory Running 
+ Container postgres Running 
+ Container searxng Running 
+ Container 9router Running 
+ Container ocr Running 
+ Container jobs Running 
+ Container model-router Running 
+ Container embedding Recreate 
+ Container openbao Recreate 
+ Container dispatcher Recreate 
+ Container embedding Recreated 
+ Container dispatcher Recreated 
+ Container openbao Recreated 
+ Container assistant-hermes-1 Recreate 
+ Container assistant-hermes-2 Recreate 
+ Container assistant-hermes-2 Recreated 
+ Container assistant-hermes-1 Recreated 
+ Container redis Waiting 
+ Container dispatcher Starting 
+ Container embedding Starting 
+ Container postgres Waiting 
+ Container openbao Starting 
+ Container postgres Waiting 
+ Container redis Waiting 
+ Container embedding Started 
+ Container openbao Started 
+ Container dispatcher Started 
+ Container postgres Healthy 
+ Container redis Healthy 
+ Container redis Healthy 
+ Container postgres Healthy 
+ Container assistant-hermes-1 Starting 
+ Container assistant-hermes-1 Started 
+ Container assistant-hermes-2 Starting 
+ Container assistant-hermes-2 Started 
+==> 9router /v1/models ok (692): ['hermes', 'alicode-intl/qwen3.5-plus', 'alicode-intl/kimi-k2.5', 'alicode-intl/glm-5', 'alicode-intl/MiniMax-M2.5', 'alicode-intl/qwen3-coder-next', 'alicode-intl/qwen3-coder-plus', 'alicode-intl/glm-4.7', 'alicode/qwen3.5-plus', 'alicode/kimi-k2.5', 'alicode/glm-5', 'alicode/MiniMax-M2.5']
+    hermes default model id: hermes
+Traceback (most recent call last):
+  File "/opt/assistant/scripts/main/first-setup-9router-hermes.py", line 432, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/opt/assistant/scripts/main/first-setup-9router-hermes.py", line 424, in main
+    verify(key, model)
+  File "/opt/assistant/scripts/main/first-setup-9router-hermes.py", line 389, in verify
+    with urllib.request.urlopen(req, timeout=60) as resp:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 515, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 532, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 1373, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 1348, in do_open
+    r = h.getresponse()
+        ^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/client.py", line 1457, in getresponse
+    response.begin()
+  File "/usr/lib/python3.12/http/client.py", line 336, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/client.py", line 305, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+http.client.RemoteDisconnected: Remote end closed connection without response
+WARN: first-setup-llm failed — re-run: bash run.sh first-setup-llm
+OK: seeded 9 keys → secret/data/assistant/api-keys (ADMIN_API_TOKEN, GRAFANA_ADMIN_PASSWORD, HERMES_DASHBOARD_PASSWORD, HERMES_DASHBOARD_SECRET, MEMORY_DB_PASSWORD, N9ROUTER_API_KEY, N9ROUTER_INITIAL_PASSWORD, ZALO_API_TOKEN, ZALO_PLUGIN_TOKEN)
+OK: wrote /data/assistant/.env.openbao
+UI:  http://[redacted-addr]:8200  → Secrets → secret/ → assistant/api-keys
+     (token = OPENBAO_DEV_ROOT_TOKEN; -dev store is wiped on OpenBao restart — re-run: bash run.sh first-setup-openbao)
+==> post-ready learn (skills|docs)
+==> post-ready learn (skills|docs)
+skills found: 14 under /opt/assistant/hermes/main/skills
+OK  9router
+OK  hermes
+OK  ingest
+synced 30 doc file(s) → /data/assistant/docs
+OK: learn scan scanned=30 new=0 auto=True (Hermes skills already mounted)
+NEXT (manual, as deploy user — not root): bash scripts/main/setup-zalo.sh
+THEN: bash scripts/main/login-zalo.sh
+=== HIGH_PS ===
+9router
+api-gateway
+assistant-hermes-1
+assistant-hermes-2
+authz
+comfyui-cpu
+dispatcher
+embedding
+ingest
+jobs
+jobs-worker
+memory
+model-router
+ocr
+openbao
+policy-center
+postgres
+qdrant
+redis
+searxng
+security-manager
+session
+siem
+traefik
+zalo-api
+zalo-proxy
+OPENBAO_BACK
+AUTHZ_BACK
+SEC_BACK
+HERMES_N=2
+ASSISTANT_PROFILE=high
+ENABLE_ZALO=1
+ENABLE_NOTIFY=0
+ENABLE_ANTIVIRUS=0
+TRAEFIK_MODE=local
+SECURITY_SANDBOX=0
+SECURITY_LLM_JUDGE=0
+{"ok":true,"loggedIn":true,"sessionDead":false,"sessionDeadReason":null,"ownId":"[redacted]","qr":null,"sseClients":1}
+{"status":"ok","service":"api-gateway"}
+PROFILE_SWITCH_DONE

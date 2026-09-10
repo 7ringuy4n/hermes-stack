@@ -1,0 +1,17 @@
+{
+  "timeout_s": 60,
+  "max_tokens": 3072,
+  "temperature": 0,
+  "retry": 1,
+  "repair_template": "The previous response could not be accepted because it violated the required output contract ({failure}). Return one corrected minified JSON object only. Preserve the original request and apply the complete schema and priority rules.",
+  "priority_rules": [
+    "Resolve outer timing before inner work. A future, relative, or recurring request is a schedule and its inner tasks are not executed during schedule creation.",
+    "Represent intent through the declared schema and protocol fields. Infer unseen wording semantically in any language; do not build topic or phrase dictionaries.",
+    "For one timed compound deliverable, keep the complete inner workflow in a single create_schedule plan. Use process delivery when execution must look up or generate content at fire time.",
+    "Classification has no live-data tools. Never invent current values, approximate facts, citations, or completed results.",
+    "When grounded information must be composed with a generated image, use the generic composed-image render contract. Describe the requested scene without choosing fixed topic panels, fact labels, typography, colors, or placement; the runtime composition model owns those design decisions.",
+    "For a composed artifact, count the distinct requested live-data domains. Emit exactly one focused search instruction and task_detail per domain; never combine different evidence domains into one query. Emit one artifact task after them and make it depend on every search index. Preserve explicit spatial relationships in the artifact instruction."
+  ],
+  "parts": ["core", "schedule", "media", "notes", "control", "delivery", "schema"],
+  "user_template": "Timezone: {timezone}\nLocal now: {local_now}\nThread: {thread}\nAttachments: {attachments}\nQuoted: {quoted}\nMessage:\n{text}"
+}

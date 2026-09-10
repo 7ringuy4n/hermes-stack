@@ -10,6 +10,44 @@ History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
 
+## 2026-09-09 — scheduled composed-image execution
+
+See `history/2026-09-09/README.md` for the queue-enabled schedule-fire gap that
+discarded a valid persisted search→image graph, quoted an internal schedule id,
+and omitted task-local attachment correlation. The same correction adds
+same-language note UX, removes an unnecessary composed-plan environment knob,
+and makes the full scheduled-image fire a mandatory release case. The live
+DM/group concurrency gate also found that explicit quoted text was combined
+with an unrelated completed session; quote context now takes precedence.
+Follow-up gates preserved verbatim atomic prompts through the queue, repaired
+dispatcher attachment correlation and scheduled environment loading, and made
+shared bottom/left information regions independent of subject count. The same
+record documents the retired six-line payload cap and the live harness change
+from optional bridge echoes to durable acknowledged delivery evidence. A later
+visual review found that the renderer still forced a model-selected bottom band
+to full image width; bands are now content-sized and bounded so they preserve
+the unrequested side of the scene. The record also covers stale attachment
+recall in explicit replies, same-turn routed-search enforcement, and removal of
+test-created schedule leakage across live cases.
+The uninterrupted clean-deploy run then exposed a broader attachment-recall
+boundary: old extracts were appended to every later text-only request, causing
+new URL, archive, and DOCX turns to take unrelated long paths and block their
+conversation queue. Recall is now conservative and explicit; the archive and
+post-restart gates also wait for real terminal/bridge readiness evidence.
+The resumed 131-case release gate exposed a cross-process autosend gap:
+Dispatcher delivered the requested PDF and claimed it in the shared session,
+then the adapter skipped that claim and fell through to an older embedded hero
+image. A claimed rich document now terminates that turn's older-file scan, and
+the live oracle checks acknowledged source-correlated image delivery directly.
+The focused rerun then exposed a startup-order regression: Hermes' later
+image-level bundled-skill sync installed a generic PDF skill even after the
+entrypoint cleaned categorized clones, sending chat creation back to local
+FPDF scripts. Replica startup now retains the restrictive repository wrappers,
+suppresses the bundled Office skill names before that later sync, and deletes
+categorized clones. The PDF oracle also uses an exact positive token, always
+runs its durable delivery audit, rejects unsolicited current-only scope, and
+requires an 8/10 visual result without blocking layout defects.
+
 ## 2026-09-08 — multi-domain spatial composition
 
 See `history/2026-09-08/README.md` for the evidence-decomposition and flexible

@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-09-08T08:20:44.216880+07:00",
+  "result": {
+    "ok": true,
+    "promoted": true,
+    "delivered": true,
+    "pending": 0,
+    "inflight": 0,
+    "registered": false,
+    "replicas_restored": 2,
+    "sse_clients": 1,
+    "elapsed_s": 32.7
+  },
+  "output": "[sudo: authenticate] Password: \r\n{\"ok\":true,\"promoted\":true,\"delivered\":true,\"pending\":0,\"inflight\":0,\"registered\":false,\"replicas_restored\":2,\"sse_clients\":1,\"elapsed_s\":32.7}\r\r\n"
+}

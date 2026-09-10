@@ -1,0 +1,39 @@
+{
+  "schedule": {
+    "removed_one": {
+      "default": "vi",
+      "vi": "Đã xóa lịch: {label}",
+      "en": "Schedule removed: {label}"
+    },
+    "removed_many": {
+      "default": "vi",
+      "vi": "Đã xóa {count} lịch:\n{labels}",
+      "en": "Removed {count} schedules:\n{labels}"
+    },
+    "removed_more": {
+      "default": "vi",
+      "vi": "… và {rest} lịch khác.",
+      "en": "… and {rest} more."
+    },
+    "remove_none": {
+      "default": "vi",
+      "vi": "Không có lịch nào khớp để xóa.",
+      "en": "No matching schedule to remove."
+    },
+    "remove_group_empty": {
+      "default": "vi",
+      "vi": "Nhóm “{group}” chưa có lịch nào.",
+      "en": "Group “{group}” has no schedules."
+    },
+    "remove_group_unknown": {
+      "default": "vi",
+      "vi": "Chưa biết nhóm “{group}”. Dùng !zalo allow <Tên> trong nhóm đó, hoặc !zalo refresh.",
+      "en": "Unknown group “{group}”. Run !zalo allow <Name> inside that group, or !zalo refresh."
+    },
+    "remove_partial": {
+      "default": "vi",
+      "vi": "Bỏ qua: {errors}",
+      "en": "Skipped: {errors}"
+    }
+  }
+}

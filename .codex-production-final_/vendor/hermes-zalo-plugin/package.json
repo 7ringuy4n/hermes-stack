@@ -1,0 +1,60 @@
+{
+  "name": "hermes-zalo-plugin",
+  "version": "1.0.9",
+  "description": "Connect a personal Zalo account to the Hermes Agent gateway via zca-js (unofficial Zalo API). SSE inbound + REST outbound. Cross-platform (macOS, Linux, Windows).",
+  "type": "module",
+  "bin": {
+    "hermes-zalo-plugin": "bin/cli.mjs"
+  },
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "login": "node login.mjs",
+    "setup": "node install.mjs",
+    "uninstall": "node uninstall.mjs",
+    "postinstall": "node scripts/postinstall.mjs"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "hermes-plugin/",
+    "server.js",
+    "zaloClient.js",
+    "permissions.js",
+    "paths.js",
+    "login.mjs",
+    "install.mjs",
+    "uninstall.mjs",
+    "README.md",
+    "README.vi.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "zalo",
+    "hermes",
+    "hermes-agent",
+    "chatbot",
+    "zca-js",
+    "bridge",
+    "messaging",
+    "gateway"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cuongdev/hermes-zalo-plugin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cuongdev/hermes-zalo-plugin/issues"
+  },
+  "homepage": "https://github.com/cuongdev/hermes-zalo-plugin#readme",
+  "dependencies": {
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "zca-js": "file:../zca-js"
+  }
+}

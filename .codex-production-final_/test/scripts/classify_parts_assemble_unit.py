@@ -1,0 +1,289 @@
+# -*- coding: utf-8 -*-
+"""Classify skill parts assemble into one system prompt; tasks[] survives normalize."""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "architect" / "models" / "router-worker"))
+
+from classify import (  # noqa: E402
+    CLASSIFY_REASONING_EFFORT,
+    CFG_PATH,
+    assemble_classify_system,
+    normalize_plan,
+    plan_schema_ok,
+)
+
+
+def main() -> int:
+    skill = ROOT / "hermes" / "main" / "skills" / "classify"
+    env = json.loads((skill / "classify.json").read_text(encoding="utf-8"))
+    system = assemble_classify_system(skill, env)
+    baked_path = (
+        ROOT / "architect" / "models" / "router-worker" / "config" / "classify.json"
+    )
+    baked = json.loads(baked_path.read_text(encoding="utf-8"))
+    expected_bake = dict(env)
+    expected_bake["system"] = "\n\n".join(
+        (skill / "parts" / f"{name}.txt").read_text(encoding="utf-8").strip()
+        for name in env.get("parts") or []
+    )
+    assert baked == expected_bake, (
+        "router-worker classify bake is stale; run "
+        "scripts/main/sync_router_worker_skills.py"
+    )
+    assert system.startswith("HARD PRIORITY RULES"), system[:120]
+    assert "outer timing" in system
+    assert "RENDER: composed-image" in system
+    assert "Never invent current values" in system
+    assert "MULTI-REQUESTS" in system
+    assert "SCHEDULE POLICY" in system
+    assert "Never downgrade" in system
+    assert "FILE AND MEDIA POLICY" in system
+    assert "VIDEO OUTPUT AND EDITS" in system
+    assert "Styling inside a document is not a separate image deliverable" in system
+    assert "exactly one coherent file-processing instruction" in system
+    assert "dominant language of the current user message" in system
+    assert "preserve the user's requested subject and time scope" in system
+    assert "bilingual copy" in system
+    assert "self-review before delivery" in system
+    assert "A simple reminder" in system
+    assert "never retain the timing wrapper" in system
+    assert "one verified, timestamped source" in system
+    assert "no repeated standalone subject label" in system
+    assert "without applying an offset twice" in system
+    assert "are not in the future" in system
+    assert "primary measurement units fit the requested language/locale" in system
+    assert "large unused page area" in system
+    assert "use skill file-gen" in system
+    assert "Do not split retrieval and file creation" in system
+    assert "DELIVERY POLICY" in system
+    assert "OUTPUT SCHEMA" in system
+    assert "schedule_resolution" in system
+    assert "schedule_request_received_at" in system
+    assert env.get("parts") == [
+        "core",
+        "schedule",
+        "media",
+        "notes",
+        "control",
+        "delivery",
+        "schema",
+    ]
+    assert len(env.get("priority_rules") or []) >= 5
+    assert any("one focused search task per subject" in rule for rule in env.get("priority_rules") or [])
+    assert int(env.get("timeout_s") or 0) <= 60, env.get("timeout_s")
+    assert int(env.get("retry") or 99) <= 1, env.get("retry")
+    assert "{failure}" in str(env.get("repair_template") or "")
+    assert int(env.get("max_tokens") or 0) >= 3072, env.get("max_tokens")
+    assert CLASSIFY_REASONING_EFFORT == "low"
+    media = (skill / "parts" / "media.txt").read_text(encoding="utf-8")
+    assert "Never invent live values" in media
+    tmpl = str(env.get("user_template") or "")
+    assert "{local_now}" in tmpl, tmpl
+    assert str(CFG_PATH).replace("\\", "/").endswith("skills/classify/classify.json"), CFG_PATH
+    classify_source = (
+        ROOT / "architect" / "models" / "router-worker" / "classify.py"
+    ).read_text(encoding="utf-8")
+    assert 'system = "Return JSON with' not in classify_source
+    assert "llm_attempts = 1 +" in classify_source
+
+    from classify import _fill_user_template, _local_now_label  # noqa: E402
+
+    now = _local_now_label("Asia/Ho_Chi_Minh")
+    assert len(now) >= 10
+    filled = _fill_user_template(
+        tmpl,
+        timezone="Asia/Ho_Chi_Minh",
+        local_now=now,
+        text="vẽ hình",
+        thread="user",
+        attachments="none",
+        quoted="none",
+    )
+    assert f"Local now: {now}" in filled
+    assert "Timezone: Asia/Ho_Chi_Minh" in filled
+
+    multi = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill": "schedule",
+            "skill_action": "create",
+            "schedule_form": "once_at",
+            "instructions": ["chào lúc 06:00", "giá xăng lúc 12:00"],
+            "tasks": [
+                {
+                    "task_hint": "schedule",
+                    "task_type": "create_schedule",
+                    "schedule_form": "once_at",
+                    "instructions": ["chào"],
+                    "target_channel": "LC group",
+                },
+                {
+                    "task_hint": "schedule",
+                    "task_type": "create_schedule",
+                    "schedule_form": "once_after",
+                    "delay_seconds": 60,
+                    "instructions": ["giá xăng"],
+                },
+            ],
+            "process_original_message": False,
+        },
+        "lúc 06:00 chào và 1 phút nữa giá xăng",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_schema_ok(multi), multi
+    assert len(multi.get("tasks") or []) == 2, multi.get("tasks")
+    assert multi["tasks"][0].get("target_channel") == "LC group"
+    assert multi["tasks"][1].get("delay_seconds") == 60
+
+    triple = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "instructions": ["inner A"],
+            "tasks": [
+                {
+                    "task_hint": "schedule",
+                    "task_type": "create_schedule",
+                    "schedule_form": "once_after",
+                    "delay_seconds": 60,
+                    "instructions": ["không cần chit chat"],
+                    "schedule_delivery": "verbatim",
+                    "schedule_resolution": "clear",
+                    "confirmation_required": False,
+                },
+                {
+                    "task_hint": "schedule",
+                    "task_type": "create_schedule",
+                    "schedule_form": "once_after",
+                    "delay_seconds": 90,
+                    "instructions": ["muốn được phục vụ"],
+                    "schedule_delivery": "process",
+                    "schedule_resolution": "clear",
+                    "confirmation_required": False,
+                },
+                {
+                    "task_hint": "schedule",
+                    "task_type": "create_schedule",
+                    "schedule_form": "once_after",
+                    "delay_seconds": 120,
+                    "instructions": ["sẵn sàng phụ việc"],
+                    "schedule_delivery": "process",
+                    "schedule_resolution": "clear",
+                    "confirmation_required": False,
+                },
+            ],
+            "process_original_message": False,
+        },
+        "1 phút nữa A, 30s sau B, 30s sau C",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_schema_ok(triple), triple
+    assert len(triple.get("tasks") or []) == 3, triple.get("tasks")
+    assert [t.get("delay_seconds") for t in triple["tasks"]] == [60, 90, 120]
+
+    pause = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "pause_schedule",
+            "skill_action": "pause",
+            "schedule_selector": {
+                "id": "sch_invented",
+                "name": "weather",
+                "match": {"content_hint": "thời tiết", "time_hint": "06:00"},
+            },
+            "instructions": ["tạm dừng lịch thời tiết"],
+        },
+        "tạm dừng lịch thời tiết 06:00",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert plan_schema_ok(pause), pause
+    assert pause.get("task_type") == "pause_schedule"
+    assert pause.get("skill_action") == "pause"
+    assert (pause.get("schedule_selector") or {}).get("id") is None
+
+    transform = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "schedule_form": "once_after",
+            "delay_seconds": 30,
+            "schedule_delivery": "transform",
+            "instructions": ["dịch sang tiếng Anh: hello"],
+        },
+        "30s nữa dịch hello",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert transform.get("schedule_delivery") == "transform"
+
+    process = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "schedule_form": "once_after",
+            "delay_seconds": 300,
+            "schedule_delivery": "process",
+            "message": '[{"role":"system","content":"not a task payload"}]',
+            "instructions": [
+                "current conditions in Da Lat",
+                "RENDER: composed-image\nSCENE: evening city illustration with calm negative space",
+            ],
+            "task_details": [
+                {"task_type": "search", "depends_on": []},
+                {"task_type": "media_generation", "output_type": "image", "depends_on": [0]},
+            ],
+        },
+        "five minutes later create a current conditions picture",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert process.get("message") == "\n".join(process.get("instructions") or [])
+    assert plan_schema_ok(process), process
+
+    contradictory = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "schedule_form": "once_after",
+            "delay_seconds": 300,
+            "instructions": [
+                "retrieve current facts",
+                "RENDER: composed-image\nSCENE: neutral visual with negative space",
+            ],
+            "task_details": [
+                {"task_type": "chat", "depends_on": []},
+                {"task_type": "chat", "depends_on": []},
+            ],
+        },
+        "create a current-facts image later",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert not plan_schema_ok(contradictory), contradictory
+
+    unsure = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill_action": "create",
+            "uncertain": True,
+            "missing": ["time"],
+            "instructions": ["nhắc tôi"],
+        },
+        "nhắc tôi sau này",
+        "Asia/Ho_Chi_Minh",
+    )
+    assert unsure.get("uncertain") is True
+    assert "time" in (unsure.get("missing") or [])
+    assert plan_schema_ok(unsure)
+    print("OK classify parts assemble + tasks normalize")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

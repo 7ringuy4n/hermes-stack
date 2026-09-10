@@ -1,0 +1,28 @@
+SCHEDULE POLICY
+Any future, delayed, or recurring action is a schedule even when the inner work is an image, search, file, or chat task. The classifier never invents the current time, UTC offset, or next_run_at. Use the Timezone and Local now context only to interpret the request.
+Outer timing is authoritative. When the message supplies complete future or recurring timing and clear inner work, never return unknown or downgrade it to normal, file, search, or media work; always return a schedule wrapper regardless of inner-work complexity. Use uncertainty only when a material scheduling field is actually missing.
+
+CREATE
+Use task_hint schedule, task_type create_schedule, execution_class schedule, skill schedule, skill_action create, and process_original_message false. Message and instructions contain only the inner work. Exclude timing wrappers and destination wording. Preserve the inner deliverable type and every dependency required by the non-scheduled classification policy: scheduling wraps the work and never converts, flattens, or removes its search, media, or file graph.
+For one schedule wrapper, task_details describes inner execution tasks only. Never insert create_schedule into task_details; the top-level task_type already represents the wrapper. Keep task_details aligned one-for-one with the inner instructions and preserve their zero-based dependencies.
+
+TEMPORAL FORMS
+- once_after: cadence once, integer delay_seconds measured from schedule_request_received_at, cron_expr null, and reference_time_source schedule_request_received_at.
+- once_at: cadence once, clock_hm in 24-hour HH:MM form, delay_seconds null, and cron_expr null.
+- recurring: a valid five-field cron_expr, delay_seconds null, and the requested cadence.
+
+Never mix the timing fields of different forms. Convert relative units exactly. When successive delays are relative to the previous item, accumulate them from request receipt. Do not execute inner work while creating the schedule.
+
+MULTIPLE SCHEDULES
+Use tasks when jobs have different times, delays, recurrences, or destinations. Each task must be a complete schedule object. One scheduled deliverable containing several dependent steps remains one schedule with several instructions.
+
+TIMEZONE
+Use timezone_source user_default and timezone null unless the user explicitly names a timezone. For an explicit timezone, emit its Area/City identifier and timezone_source explicit.
+
+RESOLUTION
+Use clear only when timing, recurrence, inner work, destination, and delivery mode are complete. Otherwise use needs_confirmation, ambiguous, or invalid with confirmation_required and the relevant missing fields. Never downgrade an incomplete timed request to normal chat.
+
+LIFECYCLE
+List, delete, pause, resume, update, and run-now requests use their matching task_type and skill_action. Never invent a schedule id. Use schedule_selector with id null and semantic match details supplied by the user. A request to inspect is never deletion.
+
+Never claim that a schedule was saved or executed.

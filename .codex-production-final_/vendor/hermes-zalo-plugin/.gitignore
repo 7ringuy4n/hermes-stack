@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Local runtime data (credentials, QR, undo-cache, logs)
+data/
+.hermes-zalo/
+credentials.json
+*.log
+qr*.png
+zalo-qr.png
+
+# npm pack output
+*.tgz
+
+# Python bytecode (hermes-plugin/ adapter)
+__pycache__/
+*.pyc
+
+# Local tooling indexes
+.codegraph/
+.serena/
+
+# OS / editor cruft
+.DS_Store
+*.swp

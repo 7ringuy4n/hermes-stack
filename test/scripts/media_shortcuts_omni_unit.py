@@ -33,14 +33,11 @@ def test_image_gen_timeout_clamped() -> None:
         os.environ.pop("OMNI_IMAGE_GEN_TIMEOUT_S", None)
 
 
-def test_overlay_plan_budget_is_large_enough_for_multi_region_json() -> None:
-    os.environ.pop("OMNI_OVERLAY_PLAN_MAX_TOKENS", None)
-    assert mod._omni_overlay_plan_max_tokens() == 4096
-    os.environ["OMNI_OVERLAY_PLAN_MAX_TOKENS"] = "99999"
-    try:
-        assert mod._omni_overlay_plan_max_tokens() == 8192
-    finally:
-        os.environ.pop("OMNI_OVERLAY_PLAN_MAX_TOKENS", None)
+def test_overlay_plan_budget_is_a_fixed_protocol_bound() -> None:
+    assert mod._OVERLAY_PLAN_MAX_TOKENS == 4096
+    assert "OMNI_OVERLAY_PLAN_MAX_TOKENS" not in Path(mod.__file__).read_text(
+        encoding="utf-8"
+    )
 
 
 def test_overlay_synthesis_uses_full_multi_region_budget() -> None:
@@ -234,7 +231,7 @@ def test_image_request_can_wait_full_five_minute_budget() -> None:
 def main() -> None:
     test_image_gen_timeout_default()
     test_image_gen_timeout_clamped()
-    test_overlay_plan_budget_is_large_enough_for_multi_region_json()
+    test_overlay_plan_budget_is_a_fixed_protocol_bound()
     test_overlay_synthesis_uses_full_multi_region_budget()
     test_image_gen_size_default()
     test_image_gen_model_combo()

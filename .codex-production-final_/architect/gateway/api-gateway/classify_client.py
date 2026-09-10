@@ -1,0 +1,674 @@
+"""HTTP client for router-worker POST /v1/classify (classify skill prompt).
+
+Prompt SoT: hermes/main/skills/classify/classify.json. Gateway does not own the prompt.
+Keep schema enums in sync with router-worker classify.py.
+"""
+from __future__ import annotations
+
+import json
+import os
+import urllib.error
+import urllib.request
+from typing import Any, Callable
+
+Planner = Callable[..., dict[str, Any]]
+_planner: Planner | None = None
+
+TASK_HINTS = ("normal", "schedule", "coding", "tool", "search", "file", "knowledge", "unknown")
+CADENCES = ("once", "daily", "weekly", "monthly", "yearly")
+EXECUTION_CLASSES = ("interactive", "async", "schedule")
+TASK_TYPES = (
+    "chat",
+    "media_generation",
+    "file_processing",
+    "create_schedule",
+    "list_schedule",
+    "delete_schedule",
+    "pause_schedule",
+    "resume_schedule",
+    "update_schedule",
+    "run_schedule",
+    "knowledge",
+    "search",
+    "tool",
+    "coding",
+)
+RESPONSE_MODES = ("direct", "ack_then_deliver", "confirm")
+ATTACHMENT_TYPES = ("image", "file", "audio", "video")
+SKILLS = ("media_file", "web_search", "schedule", "security", "knowledge")
+HINT_SKILL = {
+    "search": ("web_search", "search"),
+    "schedule": ("schedule", "create"),
+    "file": ("media_file", "process_file"),
+    "knowledge": ("knowledge", "lookup"),
+}
+HINT_EXECUTION = {
+    "schedule": ("schedule", "create_schedule", "confirm"),
+    "file": ("async", "file_processing", "ack_then_deliver"),
+    "knowledge": ("interactive", "knowledge", "ack_then_deliver"),
+    "coding": ("interactive", "coding", "ack_then_deliver"),
+    "search": ("async", "search", "ack_then_deliver"),
+    "normal": ("interactive", "chat", "ack_then_deliver"),
+    "unknown": ("interactive", "chat", "ack_then_deliver"),
+    "tool": ("interactive", "tool", "ack_then_deliver"),
+}
+HINT_ALIASES = {"chat": "normal", "qna": "normal", "question": "normal", "general": "normal"}
+MAX_INSTRUCTIONS = 32
+CRON_CHARS = set("0123456789*,/-")
+DEFAULT_TIMEOUT_S = 70.0
+HTTP_ATTEMPTS = 1
+
+
+def sanitize_instructions(raw: Any, fallback: str) -> list[str]:
+    items: list[str] = []
+    if isinstance(raw, list):
+        for item in raw:
+            s = str(item).strip()
+            if s:
+                items.append(s)
+    if len(items) > 3 and len(set(items)) == 1:
+        items = [items[0]]
+    out: list[str] = []
+    seen: set[str] = set()
+    for s in items:
+        if s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+        if len(out) >= MAX_INSTRUCTIONS:
+            break
+    fb = (fallback or "").strip()
+    if not out and fb:
+        return [fb]
+    return out
+
+
+def set_planner(fn: Planner | None) -> None:
+    global _planner
+    _planner = fn
+
+
+def valid_cron(expr: str) -> str | None:
+    parts = (expr or "").strip().split()
+    if len(parts) != 5:
+        return None
+    for p in parts:
+        if not p or any(ch not in CRON_CHARS for ch in p):
+            return None
+    return " ".join(parts)
+
+
+def normalize_execution(
+    src: dict[str, Any], hint: str, *, wrapper: bool = True
+) -> tuple[str, str, str]:
+    raw_cls = str(src.get("execution_class") or "").strip().lower()
+    raw_type = str(src.get("task_type") or "").strip().lower()
+    raw_mode = str(src.get("response_mode") or "").strip().lower()
+    if raw_mode == "direct":
+        raw_mode = "ack_then_deliver"
+    d_cls, d_type, d_mode = HINT_EXECUTION.get(hint, ("interactive", "chat", "ack_then_deliver"))
+    if raw_type not in TASK_TYPES:
+        raw_type = d_type
+    if raw_cls not in EXECUTION_CLASSES:
+        raw_cls = d_cls
+        if hint == "tool" and raw_type == "media_generation":
+            raw_cls = "async"
+    if raw_mode not in RESPONSE_MODES:
+        raw_mode = d_mode
+        if raw_cls == "async":
+            raw_mode = "ack_then_deliver"
+        elif raw_cls == "schedule":
+            raw_mode = "confirm"
+    if wrapper and hint == "schedule":
+        action = str(src.get("skill_action") or "").strip().lower()
+        if raw_type == "delete_schedule" or action == "delete":
+            return "schedule", "delete_schedule", "confirm"
+        if raw_type == "list_schedule" or action in {"list", "inspect", "show", "status"}:
+            return "schedule", "list_schedule", "confirm"
+        if raw_type == "pause_schedule" or action == "pause":
+            return "schedule", "pause_schedule", "confirm"
+        if raw_type == "resume_schedule" or action == "resume":
+            return "schedule", "resume_schedule", "confirm"
+        if raw_type == "update_schedule" or action == "update":
+            return "schedule", "update_schedule", "confirm"
+        if raw_type == "run_schedule" or action in {"run_now", "run"}:
+            return "schedule", "run_schedule", "confirm"
+        return "schedule", "create_schedule", "confirm"
+    return raw_cls, raw_type, raw_mode
+
+
+def normalize_depends(raw: Any, index: int) -> list[int]:
+    nums: list[int] = []
+    if not isinstance(raw, list):
+        return []
+    for item in raw:
+        try:
+            nums.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    out: list[int] = []
+    for v in nums:
+        if 0 <= v < index and v not in out:
+            out.append(v)
+    return out
+
+
+def normalize_task_details(
+    src: dict[str, Any],
+    instructions: list[str],
+    hint: str,
+) -> list[dict[str, Any]]:
+    n = len(instructions)
+    raw = src.get("task_details")
+    rows: list[dict[str, Any]] = []
+    if isinstance(raw, list):
+        for item in raw:
+            rows.append(item if isinstance(item, dict) else {})
+    while len(rows) < n:
+        rows.append({})
+    rows = rows[:n]
+    details: list[dict[str, Any]] = []
+    for i, item in enumerate(rows):
+        if item:
+            body = item
+        elif hint == "schedule":
+            body = {"execution_class": "interactive", "task_type": "chat", "response_mode": "ack_then_deliver"}
+        else:
+            body = src
+        cls, typ, mode = normalize_execution(body, hint, wrapper=False)
+        out_type = str((item or {}).get("output_type") or (item or {}).get("file_format") or "").strip().lower()
+        if out_type in {"text", "txt."}:
+            out_type = "txt"
+        if out_type not in {"image", "pdf", "txt", "docx", "xlsx", "csv", "md"}:
+            out_type = ""
+        row_out = {
+            "execution_class": cls,
+            "task_type": typ,
+            "response_mode": mode,
+            "depends_on": normalize_depends(item.get("depends_on") if item else [], i),
+        }
+        if out_type:
+            row_out["output_type"] = out_type
+        details.append(row_out)
+    return details
+
+
+def normalize_attachment_types(raw: Any) -> list[str]:
+    out: list[str] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        val = str(item).strip().lower()
+        if val in ATTACHMENT_TYPES and val not in out:
+            out.append(val)
+    return out
+
+
+def normalize_skill(src: dict[str, Any], hint: str, task_type: str) -> tuple[str | None, str | None]:
+    skill = str(src.get("skill") or "").strip().lower() or None
+    action = str(src.get("skill_action") or "").strip().lower() or None
+    if skill not in SKILLS:
+        skill = None
+    inferred = HINT_SKILL.get(hint)
+    if hint == "tool" and task_type == "media_generation":
+        inferred = ("media_file", "generate_media")
+    elif hint == "tool" and task_type == "file_processing":
+        inferred = ("media_file", "process_file")
+    elif hint == "schedule" and task_type == "delete_schedule":
+        inferred = ("schedule", "delete")
+    elif hint == "schedule" and task_type == "list_schedule":
+        inferred = ("schedule", "list")
+    if skill is None and inferred:
+        skill, default_action = inferred
+        if not action:
+            action = default_action
+    if skill == "schedule" and task_type == "delete_schedule":
+        action = "delete"
+    if skill == "schedule" and task_type == "list_schedule":
+        action = "list"
+    if skill and not action:
+        action = (inferred or (None, "run"))[1] or "run"
+    return skill, action
+
+
+def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    rows = list(raw)
+    out: list[dict[str, Any]] = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        hint = str(item.get("task_hint") or "").strip().lower()
+        if hint not in TASK_HINTS:
+            continue
+        ttype = str(item.get("task_type") or "").strip().lower()
+        if ttype not in TASK_TYPES:
+            ttype = HINT_EXECUTION.get(hint, ("interactive", "chat", "ack_then_deliver"))[1]
+        row: dict[str, Any] = {"task_hint": hint, "task_type": ttype}
+        for key in (
+            "skill",
+            "skill_action",
+            "schedule_form",
+            "cadence",
+            "target_channel",
+            "schedule_delivery",
+            "output_type",
+        ):
+            val = item.get(key)
+            if val not in (None, ""):
+                row[key] = val
+        delay = _coerce_delay_seconds(item.get("delay_seconds"))
+        if delay is not None:
+            row["delay_seconds"] = delay
+        cron = valid_cron(str(item.get("cron_expr") or ""))
+        if cron:
+            row["cron_expr"] = cron
+        instr = sanitize_instructions(item.get("instructions"), "")
+        if instr:
+            row["instructions"] = instr
+        out.append(row)
+    return out
+
+
+def plan_compound_sequential(plan: dict[str, Any] | None) -> bool:
+    """True when classify split this bubble into multiple immediate parts (Zalo FIFO order)."""
+    src = plan if isinstance(plan, dict) else {}
+    if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    return len(parts) >= 2
+
+
+def plan_skips_media_shortcut(plan: dict[str, Any] | None) -> bool:
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return True
+    hint = str(src.get("task_hint") or "").strip().lower()
+    if hint == "schedule":
+        return True
+    action = str(src.get("skill_action") or "").strip().lower()
+    if action in {"deliver", "send", "send_message"}:
+        return True
+    if str(src.get("skill") or "").strip().lower() == "web_search":
+        return True
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    if len(parts) >= 2:
+        return True
+    types: set[str] = set()
+    if str(src.get("task_type") or "").strip().lower():
+        types.add(str(src.get("task_type") or "").strip().lower())
+    for detail in src.get("task_details") or []:
+        if not isinstance(detail, dict):
+            continue
+        if str(detail.get("task_type") or "").strip():
+            types.add(str(detail.get("task_type") or "").strip().lower())
+        if str(detail.get("skill") or "").strip().lower() == "web_search":
+            return True
+    if "media_generation" in types or "search" in types:
+        return True
+    return False
+
+
+def plan_allows_office_shortcut(plan: dict[str, Any] | None) -> bool:
+    src = plan if isinstance(plan, dict) else {}
+    if plan_skips_media_shortcut(src):
+        return False
+    if str(src.get("task_hint") or "").strip().lower() == "file":
+        return True
+    if str(src.get("task_type") or "").strip().lower() == "file_processing":
+        return True
+    return False
+
+
+def plan_is_immediate_deliver(plan: dict[str, Any] | None) -> bool:
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    if str(src.get("task_hint") or "").strip().lower() == "schedule":
+        return False
+    action = str(src.get("skill_action") or "").strip().lower()
+    return action in {"deliver", "send", "send_message"}
+
+
+def plan_is_async(plan: dict[str, Any] | None) -> bool:
+    src = plan if isinstance(plan, dict) else {}
+    if src.get("ok") is False:
+        return False
+    for detail in src.get("task_details") or []:
+        if not isinstance(detail, dict):
+            continue
+        if str(detail.get("execution_class") or "").strip().lower() == "async":
+            return True
+        if str(detail.get("response_mode") or "").strip().lower() == "ack_then_deliver":
+            return True
+        if str(detail.get("task_type") or "").strip().lower() in {"media_generation", "file_processing"}:
+            return True
+    if str(src.get("execution_class") or "").strip().lower() == "async":
+        return True
+    return str(src.get("response_mode") or "").strip().lower() == "ack_then_deliver"
+
+
+def failed_plan(timezone: str, error: str = "classify_unavailable") -> dict[str, Any]:
+    tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
+    return {
+        "ok": False,
+        "task_hint": "unknown",
+        "instructions": [],
+        "task_details": [],
+        "cadence": None,
+        "cron_expr": None,
+        "timezone": tz,
+        "error": error,
+        "execution_class": "interactive",
+        "task_type": "chat",
+        "response_mode": "confirm",
+        "process_original_message": False,
+        "message": "",
+        "attachments_required": False,
+        "attachment_types": [],
+        "skill": None,
+        "skill_action": None,
+        "tasks": [],
+        "target_channel": None,
+    }
+
+
+
+def _coerce_delay_seconds(raw):
+    if raw is None or raw == "":
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0 or n > 86400 * 30:
+        return None
+    return n
+
+
+def plan_schema_ok(plan: dict[str, Any]) -> bool:
+    if not isinstance(plan, dict) or plan.get("ok") is False:
+        return False
+    if str(plan.get("task_hint") or "") != "schedule":
+        return True
+    action = str(plan.get("skill_action") or "").strip().lower()
+    task_type = str(plan.get("task_type") or "").strip().lower()
+    if action == "delete" or task_type == "delete_schedule":
+        return True
+    if action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
+        return True
+    if action in {"pause", "resume", "update", "run_now", "run"} or task_type in {
+        "pause_schedule",
+        "resume_schedule",
+        "update_schedule",
+        "run_schedule",
+    }:
+        return True
+    if plan.get("uncertain") is True:
+        return True
+    resolution = str(plan.get("schedule_resolution") or "").strip().lower()
+    if resolution in {"needs_confirmation", "ambiguous", "invalid"}:
+        return True
+    if _coerce_delay_seconds(plan.get("delay_seconds")) is not None:
+        return True
+    form = str(plan.get("schedule_form") or "").strip().lower()
+    if form in {"once_after", "once_at"}:
+        return True
+    tasks = plan.get("tasks")
+    if isinstance(tasks, list):
+        for item in tasks:
+            if not isinstance(item, dict):
+                continue
+            if _coerce_delay_seconds(item.get("delay_seconds")) is not None:
+                return True
+            item_form = str(item.get("schedule_form") or "").strip().lower()
+            if item_form in {"once_after", "once_at"}:
+                return True
+            if item.get("cron_expr"):
+                return True
+    return bool(plan.get("cron_expr"))
+
+
+def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dict[str, Any]:
+    src = data if isinstance(data, dict) else {}
+    if src.get("ok") is False:
+        return failed_plan(timezone, str(src.get("error") or "classify_unavailable"))
+    hint = str(src.get("task_hint") or "").strip().lower()
+    if hint in {"secret", "blocked", "sensitive"}:
+        hint = "unknown"
+    hint = HINT_ALIASES.get(hint, hint)
+    if hint not in TASK_HINTS:
+        hint = "unknown"
+    fallback = (text or "").strip()
+    instructions = sanitize_instructions(src.get("instructions"), fallback)
+    cadence = str(src.get("cadence") or "").strip().lower()
+    if cadence not in CADENCES:
+        cadence = ""
+    delay = _coerce_delay_seconds(src.get("delay_seconds"))
+    schedule_form = str(src.get("schedule_form") or "").strip().lower()
+    if schedule_form not in {"once_at", "once_after", "recurring"}:
+        schedule_form = ""
+    if delay is not None:
+        schedule_form = "once_after"
+        cadence = "once"
+        cron = None
+    else:
+        llm_cron = valid_cron(str(src.get("cron_expr") or ""))
+        # One-shot cron is host storage after schedule_form; classifier cron is recurring only.
+        if schedule_form == "once_after":
+            cron = None
+        elif schedule_form == "once_at":
+            cadence = "once"
+            cron = None
+        elif schedule_form == "recurring" or cadence in {"daily", "weekly", "monthly", "yearly"}:
+            if not schedule_form:
+                schedule_form = "recurring"
+            cron = llm_cron
+        else:
+            cron = llm_cron
+            if schedule_form == "once_after":
+                cron = None
+    tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
+    exec_cls, task_type, response_mode = normalize_execution(src, hint)
+    skill, skill_action = normalize_skill(src, hint, task_type)
+    is_delete = hint == "schedule" and (
+        skill_action == "delete" or task_type == "delete_schedule"
+    )
+    is_list = hint == "schedule" and (
+        skill_action in {"list", "inspect", "show", "status"} or task_type == "list_schedule"
+    )
+    if is_delete:
+        task_type = "delete_schedule"
+        skill = "schedule"
+        skill_action = "delete"
+        cadence = None
+        cron = None
+        delay = None
+        schedule_form = ""
+        process_original = False
+    elif is_list:
+        task_type = "list_schedule"
+        skill = "schedule"
+        skill_action = "list"
+        cadence = None
+        cron = None
+        delay = None
+        schedule_form = ""
+        process_original = False
+    message = str(src.get("message") or "").strip()
+    if not message:
+        if len(instructions) == 1:
+            message = instructions[0]
+        elif instructions:
+            message = "\n".join(instructions)
+        else:
+            message = fallback
+    if is_delete or is_list:
+        process_original = False
+    else:
+        process_original = src.get("process_original_message")
+        if not isinstance(process_original, bool):
+            process_original = hint != "schedule"
+    attachments_required = src.get("attachments_required")
+    if not isinstance(attachments_required, bool):
+        attachments_required = False
+    delivery_raw = str(src.get("schedule_delivery") or "").strip().lower()
+    schedule_delivery = delivery_raw if delivery_raw in {"verbatim", "process"} else None
+    plan = {
+        "ok": True,
+        "task_hint": hint,
+        "instructions": instructions,
+        "task_details": normalize_task_details(src, instructions, hint),
+        "cadence": None if (is_delete or is_list) else (cadence if hint == "schedule" else None),
+        "cron_expr": None if (is_delete or is_list) else (cron if hint == "schedule" else None),
+        "delay_seconds": None if (is_delete or is_list) else (delay if hint == "schedule" else None),
+        "schedule_form": (
+            None
+            if (is_delete or is_list)
+            else ((schedule_form or None) if hint == "schedule" else None)
+        ),
+        "next_run_at": None,
+        "timezone": tz,
+        "execution_class": exec_cls,
+        "task_type": task_type,
+        "response_mode": response_mode,
+        "process_original_message": process_original,
+        "message": message,
+        "attachments_required": attachments_required,
+        "attachment_types": normalize_attachment_types(src.get("attachment_types")),
+        "skill": skill,
+        "skill_action": skill_action,
+        "tasks": normalize_tasks(src.get("tasks"), len(instructions)),
+        "target_channel": (
+            str(
+                src.get("target_channel")
+                or src.get("deliver_to")
+                or src.get("target_group")
+                or src.get("group_name")
+                or ""
+            ).strip()
+            or None
+        ),
+        "schedule_delivery": None if (is_delete or is_list) else schedule_delivery,
+        "output_type": str(src.get("output_type") or "").strip() or None,
+        "clock_hm": None if (is_delete or is_list) else (str(src.get("clock_hm") or "").strip() or None),
+        "poster_n": src.get("poster_n"),
+        "poster_phrase": (str(src.get("poster_phrase") or "").strip() or None),
+        "poster_bw": src.get("poster_bw") if isinstance(src.get("poster_bw"), bool) else None,
+        "uncertain": bool(src.get("uncertain") is True),
+        "missing": [
+            str(x).strip().lower()
+            for x in (src.get("missing") or [])
+            if str(x).strip().lower() in {"time", "destination", "output_type"}
+        ],
+    }
+    if not plan_schema_ok(plan):
+        return failed_plan(tz, "classify_invalid")
+    return plan
+
+
+def classify_text(
+    text: str,
+    *,
+    timezone: str = "Asia/Ho_Chi_Minh",
+    thread: str = "unknown",
+    attachments: str = "none",
+    quoted: str = "none",
+) -> dict[str, Any]:
+    tz = (timezone or "Asia/Ho_Chi_Minh").strip() or "Asia/Ho_Chi_Minh"
+    blob = (text or "").strip()
+    if _planner is not None:
+        try:
+            return normalize_plan(_planner(blob, timezone=tz), blob, tz)
+        except TypeError:
+            return normalize_plan(_planner(blob), blob, tz)
+    if not blob:
+        return normalize_plan({"task_hint": "unknown", "instructions": []}, "", tz)
+    base = (os.environ.get("ROUTER_WORKER_URL") or "http://router-worker:8096").rstrip("/")
+    payload = json.dumps(
+        {
+            "text": blob,
+            "timezone": tz,
+            "thread": thread or "unknown",
+            "attachments": attachments or "none",
+            "quoted": quoted or "none",
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    timeout = float(os.environ.get("ROUTER_WORKER_CLASSIFY_TIMEOUT_S") or DEFAULT_TIMEOUT_S)
+    last_error = "classify_unavailable"
+    for _attempt in range(HTTP_ATTEMPTS):
+        req = urllib.request.Request(
+            base + "/v1/classify",
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8") or "{}")
+            if isinstance(data, dict) and data.get("ok"):
+                plan = normalize_plan(data, blob, tz)
+                if plan_schema_ok(plan):
+                    return plan
+                last_error = "classify_invalid"
+                continue
+            if isinstance(data, dict) and data.get("ok") is False:
+                last_error = str(data.get("error") or "classify_unavailable")
+                continue
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+            last_error = "classify_http_error"
+            continue
+    return failed_plan(tz, last_error)
+
+
+OUTBOUND_ACTIONS = ("send", "drop")
+_outbound_planner: Planner | None = None
+
+
+def set_outbound_planner(fn: Planner | None) -> None:
+    global _outbound_planner
+    _outbound_planner = fn
+
+
+def normalize_outbound(data: dict[str, Any] | None) -> dict[str, Any]:
+    src = data if isinstance(data, dict) else {}
+    action = str(src.get("action") or "send").strip().lower()
+    if action not in OUTBOUND_ACTIONS:
+        action = "send"
+    if src.get("ok") is False:
+        return {
+            "ok": False,
+            "action": action,
+            "error": str(src.get("error") or "outbound_failed"),
+        }
+    return {"ok": True, "action": action}
+
+
+def classify_outbound(text: str) -> dict[str, Any]:
+    blob = (text or "").strip()
+    if not blob:
+        return {"ok": True, "action": "drop"}
+    if _outbound_planner is not None:
+        try:
+            return normalize_outbound(_outbound_planner(blob))
+        except TypeError:
+            return normalize_outbound(_outbound_planner(blob, timezone="Asia/Ho_Chi_Minh"))
+    base = (os.environ.get("ROUTER_WORKER_URL") or "http://router-worker:8096").rstrip("/")
+    payload = json.dumps({"text": blob}, ensure_ascii=False).encode("utf-8")
+    timeout = float(os.environ.get("ROUTER_WORKER_OUTBOUND_TIMEOUT_S") or 30.0)
+    try:
+        req = urllib.request.Request(
+            base + "/v1/outbound",
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8") or "{}")
+        if isinstance(data, dict):
+            return normalize_outbound(data)
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        pass
+    return {"ok": False, "action": "send", "error": "outbound_unavailable"}

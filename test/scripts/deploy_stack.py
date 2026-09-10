@@ -3,6 +3,8 @@
 
 Env: ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, ASSISTANT_SSH_PASSWORD
 Optional: ASSISTANT_REPO_ROOT
+Optional: ASSISTANT_VPS_LOCAL=1 to execute the privileged test body directly
+on the VPS without an SSH loopback or Paramiko dependency.
 Optional flags (0/1, default 0 unless noted): ENABLE_ZALO, ENABLE_ANTIVIRUS,
   SECURITY_SANDBOX, SECURITY_LLM_JUDGE, ENABLE_LLM_JUDGE,
   ENABLE_OMNIROUTER, ENABLE_GRAFANA, ENABLE_LOKI, ENABLE_PROMETHEUS, ENABLE_ALLOY.
@@ -18,19 +20,32 @@ import base64
 import io
 import os
 import re
+import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 from pathlib import Path
 
-import paramiko
+LOCAL_MODE = os.environ.get("ASSISTANT_VPS_LOCAL", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+if not LOCAL_MODE:
+    import paramiko
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sanitize import sanitize
 
-HOST = os.environ["ASSISTANT_SSH_HOST"]
-USER = os.environ["ASSISTANT_SSH_USER"]
-PW = os.environ["ASSISTANT_SSH_PASSWORD"]
+HOST = os.environ.get("ASSISTANT_SSH_HOST", "127.0.0.1" if LOCAL_MODE else "")
+USER = os.environ.get("ASSISTANT_SSH_USER", "local" if LOCAL_MODE else "")
+PW = os.environ.get("ASSISTANT_SSH_PASSWORD", "")
+if not LOCAL_MODE and not all((HOST, USER, PW)):
+    raise RuntimeError(
+        "ASSISTANT_SSH_HOST, ASSISTANT_SSH_USER, and ASSISTANT_SSH_PASSWORD are required"
+    )
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 REMOTE = "/opt/assistant"
 RESUME = os.environ.get("RESUME", "0").strip() in {"1", "true", "yes"}
@@ -81,7 +96,14 @@ def emit(s: str) -> None:
     sys.stdout.flush()
 
 
+class _LocalClient:
+    def close(self) -> None:
+        return None
+
+
 def connect():
+    if LOCAL_MODE:
+        return _LocalClient()
     c = paramiko.SSHClient()
     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     c.connect(HOST, username=USER, password=PW, timeout=45, allow_agent=False, look_for_keys=False)
@@ -90,6 +112,27 @@ def connect():
 
 def sudo_bash(c, script: str, timeout: int = 3600) -> str:
     script = str(script or "").replace("\r\n", "\n").replace("\r", "\n")
+    if LOCAL_MODE:
+        proc = subprocess.Popen(
+            ["sudo", "-n", "bash", "-lc", script],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        try:
+            output, _unused = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise SystemExit(f"local VPS command timed out after {timeout}s")
+        emit(output)
+        if proc.returncode != 0:
+            raise SystemExit(
+                f"local VPS exit {proc.returncode}: {sanitize(output)[-500:]}"
+            )
+        return output
     b64 = base64.b64encode(script.encode("utf-8")).decode("ascii")
     cmd = f"echo '{esc}' | sudo -S bash -lc \"echo {b64} | base64 -d | bash\""
     _i, o, e = c.exec_command(cmd, timeout=timeout, get_pty=True)
@@ -168,6 +211,27 @@ def pack_skills() -> bytes:
 
 
 def sftp_put(c, local_bytes: bytes, remote_path: str) -> None:
+    if LOCAL_MODE:
+        # Match SFTP's replace semantics when a prior sudo-backed lab left a
+        # root-owned fixture at the destination.  The staging file is owned by
+        # the current test user and os.replace only requires write access to
+        # the containing lab directory; opening the stale file for truncation
+        # would fail even when that directory is intentionally writable.
+        target = Path(remote_path)
+        fd, staged = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(local_bytes)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(staged, target)
+        except BaseException:
+            try:
+                os.unlink(staged)
+            except FileNotFoundError:
+                pass
+            raise
+        return
     sftp = c.open_sftp()
     with sftp.file(remote_path, "wb") as f:
         f.write(local_bytes)

@@ -1,0 +1,49 @@
+[sudo: authenticate] Password: 
+==> sync zalo plugins /opt/assistant/hermes/main/plugins/zalo → /data/assistant/plugins/zalo
+==> overlay zalo plugins into Hermes replica dirs
+==> restart Hermes replicas after plugin sync (2)
+OK: zalo plugins synced
+/dev/fd/63: line 2: syntax error: unexpected end of file from `{' command on line 1
+#10 [6/7] COPY messages ./messages
+#10 CACHED
+
+#11 [2/7] WORKDIR /app
+#11 CACHED
+
+#12 [7/7] COPY config ./config
+#12 CACHED
+
+#13 exporting to image
+#13 exporting layers done
+#13 exporting manifest sha256:ff19691a5e6804eb12067b1aabb5c8ad5fcbd79f4d2a28b842f162ea22a58dfa done
+#13 exporting config sha256:852ccb424593c87a8fb513308a092e7f8c40191f2e547fcc41fd9e7ee0afed7b done
+#13 exporting attestation manifest sha256:086a0e1799b10fa064a37b43b282094ffdef428c0e2f3e40cfacd13cd0d3a832
+#13 exporting attestation manifest sha256:086a0e1799b10fa064a37b43b282094ffdef428c0e2f3e40cfacd13cd0d3a832 0.0s done
+#13 exporting manifest list sha256:f92a45aa9fef5de44194bc2761139544b64e1980b9c2950a8092f5cff1d18a8f 0.0s done
+#13 naming to docker.io/library/assistant-router-worker:latest done
+#13 unpacking to docker.io/library/assistant-router-worker:latest 0.0s done
+#13 DONE 0.1s
+
+#14 resolving provenance for metadata file
+#14 DONE 0.0s
+==> scrub plaintext .env / .env.openbao exports
+OK: removed 1 plaintext export(s); scrubbed 0 key value(s) in /opt/assistant/.env
+  - /data/assistant/.env.openbao
+HAS_KEY False HAS_PW False
+LOGIN 0 {'err': 'HTTP Error 400: Bad Request'}
+RESILIENCE_maxWaitMs None
+RESILIENCE_OK False
+SMOKE_CLASSIFIER FAIL {'ok': False, 'soft': False, 'err': 'no_key'}
+SMOKE_GLM FAIL {'ok': False, 'soft': False, 'err': 'no_key'}
+SMOKE_HERMES FAIL {'ok': False, 'soft': False, 'err': 'no_key'}
+HAS_GATEWAY_APPROVAL True
+HAS_DOC_SIDECAR_GUARD True
+LIVE_LLM_VERDICT PASS
+FINAL classifier False
+FINAL opencode-go/glm-5.2-high False
+LIVE_LLM_VERDICT FAIL
+HERMES_UP True
+PLUGIN_SYNC_OK True
+--- logs ---
+2026-09-10 13:00:07,431 ERROR hermes_plugins.zalo_platform.adapter: Zalo: fenced stale outbound send after owner lease loss
+GATE_DONE
