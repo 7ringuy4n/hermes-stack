@@ -8181,14 +8181,22 @@ class ZaloAdapter(BasePlatformAdapter):
         _trim = getattr(self, "_as_knowledge_trim", None)
         if callable(_trim):
             content = _trim(content)  # ASSISTANT_KNOWLEDGE_CITE_v7
-        skip_noise = isinstance(metadata, dict) and (
-            metadata.get("zalo_admin_reply") or metadata.get("skip_outbound_filter")
+        meta = metadata if isinstance(metadata, dict) else {}
+        # Gateway approvals are control-plane prompts, not assistant process
+        # narration.  The approval waiter has already redacted the command and
+        # marks this exact send with structured metadata.  Filtering it here
+        # reports a false transport success and leaves the tool blocked until
+        # its approval timeout because the user never receives the prompt.
+        skip_noise = bool(
+            meta.get("zalo_admin_reply")
+            or meta.get("skip_outbound_filter")
+            or meta.get("is_approval_prompt")
         )
         if not skip_noise:
             notice = self._rewrite_gateway_user_notice(content)  # ASSISTANT_QUIET_SEND_v6
             if notice is not None:
                 if notice == "":
-                    logger.info("Zalo: drop approval/resume chatter")
+                    logger.info("Zalo: drop gateway process chatter")
                     return SendResult(success=True, message_id=None)
                 content = notice
         if self._as_is_media_ack_only(content):
@@ -8196,11 +8204,11 @@ class ZaloAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=None)
         # Same-turn mute after a media file was already delivered — never mute
         # schedule fire bodies, gate announces, or other skip_outbound_filter sends.
-        meta = metadata if isinstance(metadata, dict) else {}
         allow_after_media = bool(
             meta.get("schedule_fire")
             or meta.get("scheduleFire")
             or meta.get("skip_outbound_filter")
+            or meta.get("is_approval_prompt")
             or meta.get("as_skip_autosend")
         )
         if (

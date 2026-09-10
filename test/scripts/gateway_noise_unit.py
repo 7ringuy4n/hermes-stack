@@ -101,6 +101,24 @@ def main() -> int:
     else:
         print("FAIL empty line must drop")
         return 1
+    adapter_source = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(
+        encoding="utf-8"
+    )
+    send_body = adapter_source.split("async def send(", 1)[1]
+    send_body = send_body.split("async def send_typing", 1)[0]
+    approval_marker = 'meta.get("is_approval_prompt")'
+    if send_body.count(approval_marker) != 2:
+        print("FAIL approval metadata must bypass both process-noise and post-media filters")
+        return 1
+    if send_body.index(approval_marker) > send_body.index("self._rewrite_gateway_user_notice(content)"):
+        print("FAIL approval bypass must be decided before outbound narration classification")
+        return 1
+    if 'meta = metadata if isinstance(metadata, dict) else {}' not in send_body:
+        print("FAIL non-dict approval metadata boundary is missing")
+        return 1
+    if "drop approval/resume chatter" in send_body:
+        print("FAIL dropped-process log must not claim that approval prompts are dropped")
+        return 1
     print("PASS busy interrupt dropped; user results kept")
     return 0
 

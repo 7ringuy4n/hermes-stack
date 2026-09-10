@@ -36,6 +36,12 @@ Transport delivery evidence must be an acknowledgement-backed durable
 `delivered` event. A queued `assistant_turn`, generated file, log intention, or
 optional bridge self-message echo is not proof that Zalo accepted the result.
 
+Gateway approval prompts are control-plane messages. When a gateway marks a
+send with `is_approval_prompt`, the Zalo adapter must deliver it through the
+normal secret and egress guards while bypassing assistant process-narration and
+post-media muting. A filtered prompt reported as successfully delivered is a
+failure because it leaves the tool waiting for consent the user cannot provide.
+
 ## 3. Two-phase release gate
 
 ### Phase A — local/static
