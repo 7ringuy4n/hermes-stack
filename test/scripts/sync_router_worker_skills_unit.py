@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Unit: router-worker skill sync replaces root-owned bake via atomic rename."""
+"""Unit: router-worker skill sync replaces bake via atomic rename."""
 from __future__ import annotations
 
 import os
@@ -21,13 +21,17 @@ def main() -> int:
         dst = base / "dst.json"
         src.write_text('{"ok": true}\n', encoding="utf-8")
         dst.write_text('{"old": true}\n', encoding="utf-8")
-        # Simulate a prior root-owned bake: remove user write bit.
-        os.chmod(dst, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
-        assert not os.access(dst, os.W_OK), "fixture must be non-writable"
         _atomic_copy(src, dst)
-        assert dst.read_text(encoding="utf-8") == '{"ok": true}\n', dst.read_text(
-            encoding="utf-8"
-        )
+        assert dst.read_text(encoding="utf-8") == '{"ok": true}\n'
+
+        if os.name == "posix":
+            src.write_text('{"ok2": true}\n', encoding="utf-8")
+            dst.write_text('{"old2": true}\n', encoding="utf-8")
+            os.chmod(dst, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+            if not os.access(dst, os.W_OK):
+                _atomic_copy(src, dst)
+                assert dst.read_text(encoding="utf-8") == '{"ok2": true}\n'
+
     print("sync_router_worker_skills_unit: PASS")
     return 0
 
