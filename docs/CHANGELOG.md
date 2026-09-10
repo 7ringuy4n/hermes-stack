@@ -1,3 +1,10 @@
+## 2026-09-10 — host clock on live chat turns
+
+- Prepend authoritative host `Timezone` / `Local now` on Zalo Hermes
+  `MessageEvent` text (inbound, queue parts, compound parts, schedule fire).
+- Harden web-search / answering / SOUL so live answers never invent a wall
+  clock that conflicts with host Local now.
+
 ## 2026-09-09 — scheduled composed-image and same-language delivery
 
 - Execute persisted process-schedule plans before generic-agent fallback so a

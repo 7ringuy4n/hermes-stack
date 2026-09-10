@@ -1645,6 +1645,30 @@ class ZaloAdapter(BasePlatformAdapter):
         s = str(cur or "").strip()
         return s if s else default
 
+    def _as_host_timezone(self) -> str:
+        """Operator TZ for wall-clock labels (default Vietnam)."""
+        try:
+            from .host_clock import host_timezone
+        except ImportError:
+            from host_clock import host_timezone  # type: ignore
+        return host_timezone()
+
+    def _as_local_now_label(self) -> str:
+        """Authoritative host Local now — agents must not invent observation clocks."""
+        try:
+            from .host_clock import local_now_label
+        except ImportError:
+            from host_clock import local_now_label  # type: ignore
+        return local_now_label()
+
+    def _as_with_host_clock_context(self, text: str) -> str:
+        """Prepend host Timezone + Local now for Hermes turns (idempotent)."""
+        try:
+            from .host_clock import with_host_clock_context
+        except ImportError:
+            from host_clock import with_host_clock_context  # type: ignore
+        return with_host_clock_context(text)
+
     def _zalo_rate_check(self, sender_id, thread_id) -> tuple:
         """(over_limit, should_announce). Never sends. Fail-open = not over."""
         n, window = self._zalo_rate_limit_cfg()
@@ -3400,7 +3424,7 @@ class ZaloAdapter(BasePlatformAdapter):
             user_name=sender_name,
         )
         event = MessageEvent(
-            text=instruction,
+            text=self._as_with_host_clock_context(instruction),
             message_type=MessageType.TEXT,
             source=source,
             message_id=jid,
@@ -4473,7 +4497,7 @@ class ZaloAdapter(BasePlatformAdapter):
         mt_name = str(item.get("message_type") or "TEXT")
         mt = getattr(MessageType, mt_name, MessageType.TEXT)
         event = MessageEvent(
-            text=str(item.get("text") or ""),
+            text=self._as_with_host_clock_context(str(item.get("text") or "")),
             message_type=mt,
             source=source,
             message_id=str(item.get("message_id") or ""),
@@ -4772,7 +4796,9 @@ class ZaloAdapter(BasePlatformAdapter):
                 if idx > 0:
                     await self._as_compound_wait_part(tid)
                 part_event = MessageEvent(
-                    text=wrap_compound_part(idx + 1, len(parts), part),
+                    text=self._as_with_host_clock_context(
+                        wrap_compound_part(idx + 1, len(parts), part)
+                    ),
                     message_type=event.message_type,
                     source=event.source,
                     message_id=str(event.message_id or "") + f":part{idx + 1}",
@@ -6169,7 +6195,7 @@ class ZaloAdapter(BasePlatformAdapter):
             logger.debug("Zalo: session hydrate skipped: %s", type(e).__name__)
 
         event = MessageEvent(
-            text=text,
+            text=self._as_with_host_clock_context(text),
             message_type=message_type,
             source=source,
             message_id=str(m.get("messageId") or ""),
