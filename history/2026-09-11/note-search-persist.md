@@ -18,6 +18,8 @@
 3. Deferred pending was keyed by the bare Zalo thread id, while Hermes final
    `send()` often uses an isolated `{thread}::job::{job}` chat id — so the
    persist hook never saw the pending gather even after host logic existed.
+4. Lookup simplify left filler tokens (`tuyển dụng`) that never appear in
+   stored job lines, so ILIKE/`plainto_tsquery` returned empty despite rows.
 
 ## Fix
 

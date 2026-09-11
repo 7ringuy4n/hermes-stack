@@ -111,14 +111,21 @@ def execute_note_plan(
 
     candidates = _find_candidates(scope_id, selector)
     # Topic lookups often include filler ("hiển thị các tin … đã lưu"). Retry
-    # with a simplified query when the first pass is empty.
+    # with a simplified query, then with individual strong tokens.
     if action == "lookup" and not candidates:
         raw_q = str(selector.get("query") or "").strip()
         simple = simplify_note_query(raw_q)
-        if simple and simple != raw_q:
+        tried = {raw_q}
+        for attempt in [simple, *sorted((simple or "").split(), key=len, reverse=True)]:
+            token = " ".join(str(attempt or "").split())
+            if not token or token in tried or len(token) < 2:
+                continue
+            tried.add(token)
             retry = dict(selector)
-            retry["query"] = simple
+            retry["query"] = token
             candidates = _find_candidates(scope_id, retry)
+            if candidates:
+                break
     if action == "lookup":
         return {
             "success": True,

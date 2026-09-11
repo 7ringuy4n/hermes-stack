@@ -66,10 +66,9 @@ def main() -> int:
     assert notes[0]["note_date"]
 
     print("running test case 4/8")
-    assert "java" in simplify_note_query("hien thi cac tin tuyen dung java da luu").lower()
-    assert "tuyển" in simplify_note_query("hiển thị các tin tuyển dụng java đã lưu") or "java" in simplify_note_query(
-        "hiển thị các tin tuyển dụng java đã lưu"
-    ).lower()
+    simplified = simplify_note_query("hien thi cac tin tuyen dung java da luu")
+    assert simplified.lower() == "java", simplified
+    assert "java" in simplify_note_query("hiển thị các tin tuyển dụng java đã lưu").lower()
 
     print("running test case 5/8")
     calls: list[tuple[str, str, dict | None]] = []

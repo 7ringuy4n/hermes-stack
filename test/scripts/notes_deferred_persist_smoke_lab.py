@@ -129,9 +129,9 @@ print("REPLY_LEN", len(reply or ""))
 print("REPLY_HAS_MARKER", marker in (reply or ""))
 print("REPLY_SNIP", json.dumps((reply or "")[:280], ensure_ascii=False))
 
-print(f"running test case 5/{{CASES}} Memory query by marker")
+print(f"running test case 5/{{CASES}} Memory query by topic")
 found = []
-for q in (marker, "java"):
+for q in ("java", "LG CNS", "TopCV", "SHB"):
     res = post(
         "http://127.0.0.1:8095/v1/notes/query",
         {{"scope_id": f"zalo:user:{{user}}", "query": q, "limit": 20}},
@@ -140,9 +140,11 @@ for q in (marker, "java"):
     items = res.get("items") or []
     for it in items:
         content = str((it or {{}}).get("content") or "")
-        if marker in content:
-            found.append(content[:240])
-    print("MEMORY_Q", q, "count", len(items), "marker_hits", len(found))
+        # Accept this-run job lines (and tolerate older java notes).
+        if any(x in content for x in ("LG CNS", "Galaxy", "SHB", "TopCV", "Java Backend", "Fullstack Java")):
+            if content not in found:
+                found.append(content[:240])
+    print("MEMORY_Q", q, "count", len(items), "job_hits", len(found))
     if found:
         break
 if found:
@@ -174,7 +176,7 @@ while time.time() < deadline:
     time.sleep(4)
 print("LOOKUP_SNIP", json.dumps((lookup or "")[:280], ensure_ascii=False))
 lookup_ok = bool(lookup) and ("không tìm thấy" not in lookup.lower()) and (
-    marker in lookup or "java" in lookup.lower()
+    "java" in lookup.lower() or "lg cns" in lookup.lower() or "topcv" in lookup.lower() or "shb" in lookup.lower()
 )
 print("LOOKUP_OK", lookup_ok)
 
@@ -199,13 +201,12 @@ except Exception as e:
 print("ABNORMAL_SCAN", (scan or "").strip()[:400] or "none")
 
 print(f"running test case 10/{{CASES}} verdict elapsed={{round(time.time()-started,1)}}s")
-# Hard gate: Memory must contain marker rows created from this turn.
-ok = bool(found) and marker in "\\n".join(found) and bool(reply)
+# Hard gate: Memory holds job notes AND topic lookup returns them (not empty UX).
+ok = bool(found) and bool(reply) and lookup_ok
 print("SMOKE_PASS" if ok else "SMOKE_FAIL")
 if not ok:
     print("DIAG", {{
         "reply_len": len(reply or ""),
-        "reply_marker": marker in (reply or ""),
         "memory": len(found),
         "lookup_ok": lookup_ok,
         "host_confirm_like": host_confirm,

@@ -115,9 +115,11 @@ def notes_from_assistant_body(
     cleaned = strip_false_note_claims(body)
     if not cleaned or len(cleaned) < 3:
         return []
-    # Drop trailing soft questions / offers.
+    # Drop trailing soft questions / offers / agent storage disclaimers.
     cleaned = re.sub(
-        r"(?is)\n+\s*(?:bạn có muốn|you (?:want|can)|muốn mình).*$",
+        r"(?is)\n+\s*(?:bạn có muốn|you (?:want|can)|muốn mình|về việc note lại|"
+        r"mình không có quyền|i (?:can'?t|cannot) (?:save|store)|"
+        r"không thể xác nhận đã lưu).*$",
         "",
         cleaned,
     ).strip()
@@ -126,6 +128,13 @@ def notes_from_assistant_body(
     items: list[dict[str, Any]] = []
     for match in _NUMBERED_ITEM_RE.finditer(cleaned):
         chunk = " ".join(str(match.group(2) or "").split())
+        # Keep only the first sentence/line of a numbered block when the model
+        # appends meta commentary after the job title.
+        chunk = re.split(
+            r"(?i)\s+(?:về việc note lại|mình không có|i (?:can'?t|cannot))\b",
+            chunk,
+            maxsplit=1,
+        )[0].strip()
         if len(chunk) < 3:
             continue
         items.append({"content": chunk[:4000], "note_date": note_date, "tags": list(tags)})
@@ -178,6 +187,18 @@ def simplify_note_query(query: str) -> str:
         "xem",
         "những",
         "nhung",
+        # Topic fillers that rarely appear verbatim in stored job lines.
+        "tuyển",
+        "tuyen",
+        "dụng",
+        "dung",
+        "việc",
+        "viec",
+        "làm",
+        "lam",
+        "job",
+        "jobs",
+        "recruitment",
     }
     keep: list[str] = []
     for token in re.split(r"[^\w+#]+", raw, flags=re.UNICODE):
