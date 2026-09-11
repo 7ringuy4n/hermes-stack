@@ -2852,7 +2852,7 @@ class ZaloAdapter(BasePlatformAdapter):
             from .notes_persist import should_defer_note_persist
         except ImportError:
             from notes_persist import should_defer_note_persist  # type: ignore
-        if not schedule_fire and should_defer_note_persist(plan, current):
+        if should_defer_note_persist(plan, current):
             self._as_mark_pending_note_persist(
                 thread_id=str(thread_id),
                 thread_type=str(thread_type),
@@ -3568,6 +3568,13 @@ class ZaloAdapter(BasePlatformAdapter):
                 schedule_fire=schedule_fire,
             )
         parts = [str(x).strip() for x in (plan.get("instructions") or []) if str(x).strip()]
+        try:
+            from .notes_persist import keep_search_then_note_atomic
+        except ImportError:
+            from notes_persist import keep_search_then_note_atomic  # type: ignore
+        # Search-then-note: one Hermes gather, no workflow ack / second listing.
+        if keep_search_then_note_atomic(plan, current):
+            return False
         async_job = plan_is_async(plan) or (
             len(parts) >= 2
             and not plan_media_shortcut_gate(plan)

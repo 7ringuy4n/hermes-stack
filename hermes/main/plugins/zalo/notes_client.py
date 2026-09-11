@@ -96,7 +96,11 @@ def execute_note_plan(
                     "thread_type": thread_type,
                     "owner_id": sender_id,
                     "tags": list(item.get("tags") or []),
-                    "metadata": {"source": "zalo"},
+                    "metadata": (
+                        dict(item.get("metadata"))
+                        if isinstance(item.get("metadata"), dict)
+                        else {"source": "zalo"}
+                    ),
                 },
             )
             if not result.get("success"):

@@ -175,6 +175,12 @@ Every test-created schedule must include an opaque source marker and be deleted
 in a cleanup boundary on pass, failure, or timeout. A later live case must never
 observe a delayed fire left behind by an earlier harness.
 
+Schedule a near-future process whose fire text is an explicit search-then-note
+ask (for example find public Java backend jobs then note them). Require exactly
+one fire, one gather listing, one host note-save confirmation, Memory rows that
+retain source URLs, and no second workflow 「Đang xử lý」 listing for the same
+fire. Delete the schedule afterward.
+
 ### C8 — image edit, including Zalo reply quote
 
 Send an image, then reply-quote that message with a natural edit instruction.
@@ -233,6 +239,12 @@ scopes to remain isolated, exact-date lookup to use the indexed note date,
 topic lookup to return the correct stored content, duplicate create to dedupe,
 and update/delete to write an audit version. An ambiguous mutation must ask for
 selection and must not change data.
+
+Search-then-note (find live web facts, then note them) must stay one atomic
+turn: exactly one gather listing and one host save confirmation; zero workflow
+「Đang xử lý」 second listing for the same user message. Stored notes created
+from web gathers must retain citation URLs (`http`/`https`) for the sources
+used; bodies must not contain agent storage-disclaimer commentary.
 
 Verify short-term session history survives a Hermes replica replacement and
 that durable RAG recall remains grounded after compact/embedding reindex. Reset
