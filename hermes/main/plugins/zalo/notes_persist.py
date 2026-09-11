@@ -12,10 +12,12 @@ import re
 from datetime import date
 from typing import Any
 from zoneinfo import ZoneInfo
+from urllib.parse import urlparse
 
 _FALSE_SAVE_RE = re.compile(
     r"(?im)^.*(?:(?:đã|da)\s+lưu(?:\s+thành)?\s+ghi\s+chú|(?:đã|da)\s+luu(?:\s+thanh)?\s+ghi\s+chu|"
-    r"note\s+saved|(?:đã|da)\s+kiểm\s+tra\s+trước|(?:đã|da)\s+kiem\s+tra\s+truoc|"
+    r"(?:đã|da)\s+lưu\s+ghi\s+chú|note\s+saved|"
+    r"(?:đã|da)\s+kiểm\s+tra\s+trước|(?:đã|da)\s+kiem\s+tra\s+truoc|"
     r"mình không thể tự lưu note|không thể tự lưu note|"
     r"chưa xác nhận được việc note|chưa thể xác nhận đã lưu).*$"
 )
@@ -26,6 +28,15 @@ _NOTE_AFTER_SEARCH_RE = re.compile(
 )
 _NOTE_VERB_RE = re.compile(
     r"(?is)\b(?:note|ghi\s*chú|ghi\s*lại|lưu\s*lại|note\s*lại)\b"
+)
+_URL_RE = re.compile(r"https?://[^\s\]\)>\"]+", re.I)
+_DISCLAIMER_SPLIT_RE = re.compile(
+    r"(?i)\s+(?:về việc note lại|ve viec note lai|"
+    r"mình không (?:có|thể)|minh khong (?:co|the)|"
+    r"i (?:can'?t|cannot)|nếu bạn muốn|neu ban muon|"
+    r"tổng hợp chung|tong hop chung|"
+    r"nguồn các tin cụ thể|nguon cac tin cu the|"
+    r"anh/chị muốn|anh/chi muon|bạn muốn mình rà|ban muon minh ra)\b"
 )
 
 
@@ -64,7 +75,21 @@ def should_defer_note_persist(plan: dict[str, Any] | None, user_text: str) -> bo
         return True
     if hint == "search" and text_wants_search_then_note(user_text):
         return True
+    # Compound search+note: still defer even when task_hint is compound/process.
+    if text_wants_search_then_note(user_text) and hint in {
+        "compound",
+        "process",
+        "multi",
+        "workflow",
+        "",
+    }:
+        return True
     return False
+
+
+def keep_search_then_note_atomic(plan: dict[str, Any] | None, user_text: str) -> bool:
+    """Search-then-note must stay one gather+persist turn (no FIFO/workflow split)."""
+    return should_defer_note_persist(plan, user_text) or text_wants_search_then_note(user_text)
 
 
 def strip_false_note_claims(text: str) -> str:
@@ -101,10 +126,75 @@ def _tags_from_ask(user_ask: str) -> list[str]:
         ("facebook", "facebook"),
         ("itviec", "itviec"),
         ("topcv", "topcv"),
+        ("topdev", "topdev"),
     ):
         if token in low and tag not in tags:
             tags.append(tag)
     return tags[:12]
+
+
+def _normalize_url(url: str) -> str:
+    raw = str(url or "").strip().rstrip(".,;)]}>\"'")
+    return raw
+
+
+def _urls_in(text: str) -> list[str]:
+    seen: list[str] = []
+    for match in _URL_RE.finditer(str(text or "")):
+        url = _normalize_url(match.group(0))
+        if url and url not in seen:
+            seen.append(url)
+    return seen[:12]
+
+
+def _host_key(url: str) -> str:
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return ""
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _urls_for_chunk(chunk: str, global_urls: list[str]) -> list[str]:
+    """Prefer URLs inside the item; else match global source URLs by host/token."""
+    local = _urls_in(chunk)
+    if local:
+        return local
+    low = chunk.lower()
+    matched: list[str] = []
+    for url in global_urls:
+        host = _host_key(url)
+        token = host.split(".")[0] if host else ""
+        if token and len(token) >= 3 and token in low and url not in matched:
+            matched.append(url)
+    # If the item names a known board but no host match, keep board URLs briefly.
+    if not matched:
+        for url in global_urls:
+            host = _host_key(url)
+            if any(x in host for x in ("itviec", "topcv", "topdev", "facebook", "linkedin")):
+                # Only attach when the chunk mentions that board name.
+                board = next(
+                    (b for b in ("itviec", "topcv", "topdev", "facebook", "linkedin") if b in host),
+                    "",
+                )
+                if board and board in low and url not in matched:
+                    matched.append(url)
+    return matched[:3]
+
+
+def _with_citations(content: str, urls: list[str]) -> str:
+    body = " ".join(str(content or "").split()).strip()
+    if not body:
+        return ""
+    clean_urls = [u for u in urls if u and u not in body]
+    if not clean_urls:
+        # Still keep existing in-body URLs as the citation signal.
+        return body[:4000]
+    cite = " | ".join(clean_urls[:3])
+    merged = f"{body} Nguồn: {cite}"
+    return merged[:4000]
 
 
 def notes_from_assistant_body(
@@ -113,16 +203,23 @@ def notes_from_assistant_body(
     user_ask: str = "",
     timezone: str = "Asia/Ho_Chi_Minh",
 ) -> list[dict[str, Any]]:
-    """Split a gathered assistant answer into durable note payloads."""
+    """Split a gathered assistant answer into durable note payloads with citations."""
     cleaned = strip_false_note_claims(body)
     if not cleaned or len(cleaned) < 3:
         return []
+    global_urls = _urls_in(cleaned)
     # Drop trailing soft questions / offers / agent storage disclaimers.
     cleaned = re.sub(
         r"(?is)\n+\s*(?:bạn có muốn|you (?:want|can)|muốn mình|về việc note lại|"
         r"mình không (?:có quyền|thể)|i (?:can'?t|cannot) (?:save|store|note)|"
         r"không thể xác nhận đã lưu|chưa xác nhận được việc note|"
-        r"nếu bạn muốn mình lưu).*$",
+        r"nếu bạn muốn mình lưu|anh/chị muốn|bạn muốn mình rà).*$",
+        "",
+        cleaned,
+    ).strip()
+    # Drop summary blocks that are not numbered job items.
+    cleaned = re.sub(
+        r"(?is)\n+\s*(?:tổng hợp chung|nguồn các tin cụ thể).*$",
         "",
         cleaned,
     ).strip()
@@ -130,25 +227,40 @@ def notes_from_assistant_body(
     tags = _tags_from_ask(user_ask)
     items: list[dict[str, Any]] = []
     for match in _NUMBERED_ITEM_RE.finditer(cleaned):
-        chunk = " ".join(str(match.group(2) or "").split())
-        # Keep only the first sentence/line of a numbered block when the model
-        # appends meta commentary after the job title.
-        chunk = re.split(
-            r"(?i)\s+(?:về việc note lại|mình không (?:có|thể)|i (?:can'?t|cannot)|"
-            r"nếu bạn muốn)\b",
-            chunk,
-            maxsplit=1,
-        )[0].strip()
+        raw_chunk = str(match.group(2) or "")
+        chunk_urls = _urls_for_chunk(raw_chunk, global_urls)
+        chunk = " ".join(raw_chunk.split())
+        chunk = _DISCLAIMER_SPLIT_RE.split(chunk, maxsplit=1)[0].strip()
         if len(chunk) < 3:
             continue
-        items.append({"content": chunk[:4000], "note_date": note_date, "tags": list(tags)})
+        # Skip pure meta / non-job numbered leftovers.
+        low = chunk.lower()
+        if low.startswith(("tổng hợp", "nguồn", "lưu ý")):
+            continue
+        content = _with_citations(chunk, chunk_urls)
+        meta: dict[str, Any] = {"source": "zalo"}
+        if chunk_urls:
+            meta["citations"] = chunk_urls
+        items.append(
+            {
+                "content": content,
+                "note_date": note_date,
+                "tags": list(tags),
+                "metadata": meta,
+            }
+        )
     if items:
         return items[:20]
     # Single blob when the model did not number results.
     blob = " ".join(cleaned.split())
+    blob = _DISCLAIMER_SPLIT_RE.split(blob, maxsplit=1)[0].strip()
     if len(blob) < 3:
         return []
-    return [{"content": blob[:4000], "note_date": note_date, "tags": list(tags)}]
+    content = _with_citations(blob, global_urls)
+    meta = {"source": "zalo"}
+    if global_urls:
+        meta["citations"] = global_urls[:5]
+    return [{"content": content, "note_date": note_date, "tags": list(tags), "metadata": meta}]
 
 
 def simplify_note_query(query: str) -> str:
@@ -191,6 +303,12 @@ def simplify_note_query(query: str) -> str:
         "xem",
         "những",
         "nhung",
+        "hôm",
+        "hom",
+        "nay",
+        "bao",
+        "nhiều",
+        "nhieu",
         # Topic fillers that rarely appear verbatim in stored job lines.
         "tuyển",
         "tuyen",
