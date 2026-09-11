@@ -1,3 +1,8 @@
+## 2026-09-11 — scheduled search-then-note fire
+
+See `history/2026-09-11/schedule-search-note-silence.md`. Once-after
+search-then-note schedules ack, fire a single gather, and host-persist notes.
+
 ## 2026-09-11 — atomic search-then-note + note citations
 
 See `history/2026-09-11/note-atomic-cite.md`. Search-then-note no longer

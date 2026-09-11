@@ -2753,6 +2753,15 @@ class ZaloAdapter(BasePlatformAdapter):
                 quoted=str(quoted or "none"),
                 conversation_id=str(thread_id),
             )
+        # Schedule fires store task_hint=schedule. Coerce search-then-note into
+        # executable search work before defer/workflow routing so Hermes gathers
+        # and the host can persist notes.
+        if schedule_fire and isinstance(plan, dict):
+            try:
+                from .notes_persist import coerce_schedule_fire_plan_for_search_note
+            except ImportError:
+                from notes_persist import coerce_schedule_fire_plan_for_search_note  # type: ignore
+            plan = coerce_schedule_fire_plan_for_search_note(plan, current)
         # Quote-reply ordinal deletes ("xoá số 2" on a numbered schedule list)
         # must hit host delete even when the classifier misses schedule.
         try:
@@ -4431,7 +4440,29 @@ class ZaloAdapter(BasePlatformAdapter):
                     wait_for_terminal=True,
                 ):
                     return
-                await self._as_dispatch_event(event, text)
+                # Mirror queue-drain live-search contract for schedule fires that
+                # fall through to Hermes (search-then-note stays atomic, no workflow).
+                fire_text = str(text or "")
+                fire_plan = plan if isinstance(plan, dict) else None
+                try:
+                    from .classify_client import plan_should_apply_live_search_contract
+                    from .notes_persist import coerce_schedule_fire_plan_for_search_note
+                except ImportError:
+                    from classify_client import plan_should_apply_live_search_contract  # type: ignore
+                    from notes_persist import coerce_schedule_fire_plan_for_search_note  # type: ignore
+                if isinstance(fire_plan, dict):
+                    fire_plan = coerce_schedule_fire_plan_for_search_note(fire_plan, fire_text)
+                if plan_should_apply_live_search_contract(fire_plan, schedule_fire=True):
+                    fire_text = (
+                        f"{str(text or '').strip()}\n\n[Current lookup execution contract]\n"
+                        "Call the native web_search tool during this turn through its "
+                        "configured routing. Do not reuse prior search results. Do not "
+                        "substitute execute_code, terminal commands, or network libraries. "
+                        "Answer only from the current tool result."
+                    )
+                    if hasattr(event, "text"):
+                        event.text = self._as_with_host_clock_context(fire_text)
+                await self._as_dispatch_event(event, fire_text)
                 return
             if mid and hasattr(store, "queue_seen") and not store.queue_seen(mid):
                 logger.info("Zalo: skip duplicate queue id=%s", mid[:24])
