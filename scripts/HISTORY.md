@@ -1,3 +1,9 @@
+## 2026-09-11 — deferred search-then-note persist
+
+See `history/2026-09-11/note-search-persist.md`. Search-then-note gather now
+ends with host Memory POSTs and a real save confirmation; lookup retries with
+a simplified query so “tin tuyển dụng java đã lưu” can match stored rows.
+
 ## 2026-09-11 — schedule quote-delete + search-then-note
 
 See `history/2026-09-11/README.md`. Quote-reply ordinal schedule deletes now

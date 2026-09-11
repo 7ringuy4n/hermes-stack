@@ -1574,6 +1574,105 @@ class ZaloAdapter(BasePlatformAdapter):
         )
         return True
 
+    def _as_mark_pending_note_persist(
+        self,
+        *,
+        thread_id: str,
+        thread_type: str,
+        sender_id: str,
+        user_text: str,
+        timezone: str = "Asia/Ho_Chi_Minh",
+    ) -> None:
+        tid = str(thread_id or "").strip()
+        if not tid:
+            return
+        self._as_pending_note_persist = getattr(self, "_as_pending_note_persist", {}) or {}
+        self._as_pending_note_persist[tid] = {
+            "sender_id": str(sender_id or ""),
+            "thread_type": str(thread_type or "user"),
+            "user_text": str(user_text or ""),
+            "timezone": str(timezone or "Asia/Ho_Chi_Minh"),
+        }
+
+    def _as_clear_pending_note_persist(self, thread_id: str) -> None:
+        tid = str(thread_id or "").strip()
+        pending_map = getattr(self, "_as_pending_note_persist", None)
+        if tid and isinstance(pending_map, dict):
+            pending_map.pop(tid, None)
+
+    async def _as_persist_deferred_notes(
+        self,
+        chat_id: str,
+        content: str,
+        metadata: dict | None,
+    ) -> str:
+        """If this thread gathered for note-create, store the body and confirm."""
+        tid = str(chat_id or "").strip()
+        pending_map = getattr(self, "_as_pending_note_persist", None) or {}
+        pending = pending_map.pop(tid, None) if isinstance(pending_map, dict) else None
+        if not isinstance(pending, dict):
+            return content
+        meta = metadata if isinstance(metadata, dict) else {}
+        # Gate/admin lines are not gather payloads.
+        if meta.get("delivery_kind") == "gate" or meta.get("zalo_admin_reply"):
+            pending_map[tid] = pending
+            self._as_pending_note_persist = pending_map
+            return content
+        try:
+            from .notes_client import execute_note_plan_async
+            from .notes_persist import notes_from_assistant_body, strip_false_note_claims
+        except ImportError:
+            from notes_client import execute_note_plan_async  # type: ignore
+            from notes_persist import notes_from_assistant_body, strip_false_note_claims  # type: ignore
+        cleaned = strip_false_note_claims(content)
+        # Ignore short status / wait lines; keep the pending for the real gather.
+        low = cleaned.lower()
+        if (
+            len(cleaned) < 80
+            or "vui lòng chờ" in low
+            or "please wait" in low
+            or "đang trả lời" in low
+            or "dang tra loi" in low
+        ):
+            pending_map[tid] = pending
+            self._as_pending_note_persist = pending_map
+            return cleaned or content
+        notes = notes_from_assistant_body(
+            cleaned,
+            user_ask=str(pending.get("user_text") or ""),
+            timezone=str(pending.get("timezone") or "Asia/Ho_Chi_Minh"),
+        )
+        if not notes:
+            return cleaned or content
+        plan = {
+            "skill_action": "create",
+            "notes": notes,
+        }
+        result = await execute_note_plan_async(
+            plan,
+            thread_id=tid,
+            thread_type=str(pending.get("thread_type") or "user"),
+            sender_id=str(pending.get("sender_id") or ""),
+        )
+        if not result.get("success"):
+            logger.warning(
+                "[zalo] deferred note persist failed thread=%s error=%s",
+                tid,
+                result.get("error"),
+            )
+            return cleaned or content
+        count = int(result.get("count") or len(notes) or 1)
+        confirm = self._as_ux_line(
+            "ZALO_NOTES_SAVED_MSG",
+            ("notes", "saved"),
+            f"The note operation completed ({count} item(s)).",
+            user_text=str(pending.get("user_text") or cleaned),
+        )
+        body = cleaned.strip()
+        if body:
+            return f"{body.rstrip()}\n\n{confirm}"
+        return confirm
+
     async def _as_gate_announce(self, thread_id, thread_type, content: str) -> None:  # ASSISTANT_RATE_LIMIT_v4
         """Send a gate line only to this thread. Never quote. Never retarget via global dest."""
         tid = str(thread_id or "").strip()
@@ -2724,11 +2823,24 @@ class ZaloAdapter(BasePlatformAdapter):
                 plan.get("error"),
             )
             return False
+        try:
+            from .notes_persist import should_defer_note_persist
+        except ImportError:
+            from notes_persist import should_defer_note_persist  # type: ignore
+        if not schedule_fire and should_defer_note_persist(plan, current):
+            self._as_mark_pending_note_persist(
+                thread_id=str(thread_id),
+                thread_type=str(thread_type),
+                sender_id=str(sender_id),
+                user_text=current,
+                timezone=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
+            )
         # Remote-only media summaries are owned by the host refusal path.
         # Consume them before async-workflow routing so classifier variability
         # cannot hand an inaccessible URL to the generic agent and silently
         # drop its approval-like response.
         if plan_is_media_policy_refuse(plan) and not schedule_fire:
+            self._as_clear_pending_note_persist(str(thread_id))
             consumed = await self._as_run_host_media_shortcut(
                 user_text=current,
                 thread_id=str(thread_id),
@@ -2745,6 +2857,7 @@ class ZaloAdapter(BasePlatformAdapter):
             return True
         if plan_is_host_direct_reply(plan) and not schedule_fire:
             # Classify refuse (secret/env soft asks, etc.): never stage knowledge-learn.
+            self._as_clear_pending_note_persist(str(thread_id))
             mark = getattr(self, "_as_learn_skip_mark", None)
             if callable(mark):
                 mark(thread_id, sender_id)
@@ -2768,6 +2881,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 logger.warning("[zalo] host direct reply failed thread=%s", thread_id)
             return True
         if plan_is_cancel_task(plan) and not schedule_fire:
+            self._as_clear_pending_note_persist(str(thread_id))
             body = self._as_ux_line(
                 "ZALO_REQUEST_NOT_ACTIVE_MSG",
                 ("control", "not_active"),
@@ -2782,20 +2896,28 @@ class ZaloAdapter(BasePlatformAdapter):
         if plan_is_note(plan) and not schedule_fire:
             try:
                 from .notes_client import execute_note_plan_async
+                from .notes_persist import plan_is_empty_note_create
             except ImportError:
                 from notes_client import execute_note_plan_async  # type: ignore
+                from notes_persist import plan_is_empty_note_create  # type: ignore
             action = str(plan.get("skill_action") or "").strip().lower()
             notes = [item for item in (plan.get("notes") or []) if isinstance(item, dict)]
-            # Create with an empty notes[] means the body still needs live
-            # retrieval (search then note). Do not claim a note failure — let
-            # Hermes gather facts; the user can ask to note afterward, or a
-            # later compound part can persist.
-            if action == "create" and not notes:
+            # Empty create: gather via Hermes, then host persist on send().
+            if action == "create" and (not notes or plan_is_empty_note_create(plan)):
+                self._as_mark_pending_note_persist(
+                    thread_id=str(thread_id),
+                    thread_type=str(thread_type),
+                    sender_id=str(sender_id),
+                    user_text=current,
+                    timezone=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
+                )
                 logger.info(
-                    "[zalo] note create without notes[] — fall through for live gather thread=%s",
+                    "[zalo] note create without notes[] — defer persist after gather thread=%s",
                     thread_id,
                 )
                 return False
+            # Immediate note ops own the reply — do not treat them as gather bodies.
+            self._as_clear_pending_note_persist(str(thread_id))
             result = await execute_note_plan_async(
                 plan,
                 thread_id=str(thread_id),
@@ -2850,6 +2972,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 logger.warning("[zalo] notes reply failed thread=%s", thread_id)
             return True
         if plan_is_immediate_deliver(plan) and not schedule_fire:
+            self._as_clear_pending_note_persist(str(thread_id))
             try:
                 from .channels_client import apply_schedule_delivery_target
             except ImportError:
@@ -2920,6 +3043,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     pass
             return True
         if plan_is_knowledge(plan):
+            self._as_clear_pending_note_persist(str(thread_id))
             await self._as_knowledge_cite_reply(
                 {"text": text},
                 sender_id,
@@ -8394,6 +8518,15 @@ class ZaloAdapter(BasePlatformAdapter):
             if not low.startswith("hiện chưa tạo") and "couldn't create" not in low and "couldn’t create" not in low:
                 logger.info("Zalo: drop text after media result")
                 return SendResult(success=True, message_id=None)
+        if not (content or "").strip():
+            return SendResult(success=True, message_id=None)
+        # Deferred search-then-note: persist gather body before transport.
+        try:
+            content = await self._as_persist_deferred_notes(str(chat_id), content, meta)
+        except Exception as e:
+            logger.warning(
+                "[zalo] deferred note persist hook failed: %s", type(e).__name__
+            )
         if not (content or "").strip():
             return SendResult(success=True, message_id=None)
         # Persist turn to Valkey session SoT (not replica sessions.json).

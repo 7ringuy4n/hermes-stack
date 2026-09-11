@@ -104,7 +104,21 @@ def execute_note_plan(
             created.append(result.get("note") or {})
         return {"success": True, "action": action, "count": len(created), "items": created}
 
+    try:
+        from .notes_persist import simplify_note_query
+    except ImportError:
+        from notes_persist import simplify_note_query  # type: ignore
+
     candidates = _find_candidates(scope_id, selector)
+    # Topic lookups often include filler ("hiển thị các tin … đã lưu"). Retry
+    # with a simplified query when the first pass is empty.
+    if action == "lookup" and not candidates:
+        raw_q = str(selector.get("query") or "").strip()
+        simple = simplify_note_query(raw_q)
+        if simple and simple != raw_q:
+            retry = dict(selector)
+            retry["query"] = simple
+            candidates = _find_candidates(scope_id, retry)
     if action == "lookup":
         return {
             "success": True,
