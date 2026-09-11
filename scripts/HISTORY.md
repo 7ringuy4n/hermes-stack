@@ -1,3 +1,9 @@
+## 2026-09-11 — schedule quote-delete + search-then-note
+
+See `history/2026-09-11/README.md`. Quote-reply ordinal schedule deletes now
+resolve `list_index` and reply; empty note creates fall through for live
+search instead of announcing `notes.failed`.
+
 ## 2026-09-10 — router-worker skill sync ownership
 
 See `history/2026-09-10/README.md`. Operator update hit `PermissionError` on

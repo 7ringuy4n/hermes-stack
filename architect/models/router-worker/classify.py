@@ -613,6 +613,32 @@ def _task_has_schedule_timing(item: dict[str, Any]) -> bool:
     return bool(valid_cron(str(item.get("cron_expr") or "")))
 
 
+def _list_index_from_user_text(text: str) -> int | None:
+    """Parse a 1-based ordinal from delete/select prose (host-side, not LLM)."""
+    import re
+
+    blob = str(text or "").strip()
+    if not blob:
+        return None
+    patterns = (
+        r"(?is)(?:xóa|xoá|xoa|xo[áàảãạ]|delete|remove|rm)\b"
+        r"(?:[^0-9]{0,40}?)(?:số|so|thứ|thu|#|no\.?|number|item|lịch|lich|schedule)?"
+        r"(?:[^0-9]{0,12}?)(\d{1,3})\b",
+        r"(?is)\b(?:số|so|thứ|thu|#|item)\s*(\d{1,3})\b",
+    )
+    for pattern in patterns:
+        hit = re.search(pattern, blob)
+        if not hit:
+            continue
+        try:
+            n = int(hit.group(1))
+        except (TypeError, ValueError):
+            continue
+        if n >= 1:
+            return n
+    return None
+
+
 def _coerce_schedule_selector(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
@@ -620,13 +646,45 @@ def _coerce_schedule_selector(raw: Any) -> dict[str, Any] | None:
     match_raw = raw.get("match") if isinstance(raw.get("match"), dict) else {}
     content_hint = str(match_raw.get("content_hint") or "").strip() or None
     time_hint = str(match_raw.get("time_hint") or "").strip() or None
-    if not name and not content_hint and not time_hint:
+    list_index = None
+    raw_index = raw.get("list_index")
+    if raw_index is not None and str(raw_index).strip() != "":
+        try:
+            n = int(raw_index)
+        except (TypeError, ValueError):
+            n = 0
+        if n >= 1:
+            list_index = n
+    if not name and not content_hint and not time_hint and list_index is None:
         return None
-    return {
+    out: dict[str, Any] = {
         "id": None,
         "name": name,
         "match": {"content_hint": content_hint, "time_hint": time_hint},
     }
+    if list_index is not None:
+        out["list_index"] = list_index
+    return out
+
+
+def _enrich_delete_selector(
+    selector: dict[str, Any] | None,
+    text: str,
+) -> dict[str, Any] | None:
+    idx = _list_index_from_user_text(text)
+    if idx is None:
+        return selector
+    out = dict(selector) if isinstance(selector, dict) else {
+        "id": None,
+        "name": None,
+        "match": {"content_hint": None, "time_hint": None},
+    }
+    if out.get("list_index") is None:
+        out["list_index"] = idx
+    out["id"] = None
+    if not isinstance(out.get("match"), dict):
+        out["match"] = {"content_hint": None, "time_hint": None}
+    return out
 
 
 def _coerce_iso_date(raw: Any) -> str | None:
@@ -1121,7 +1179,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
     ):
         tz = llm_tz
     skip_timing = is_delete or is_list or (is_lifecycle and skill_action != "update")
-    return {
+    plan = {
         "ok": True,
         "task_hint": hint,
         "instructions": instructions,
@@ -1180,6 +1238,14 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             if str(x).strip().lower() in {"time", "destination", "output_type"}
         ],
     }
+    if is_delete:
+        plan["schedule_selector"] = _enrich_delete_selector(
+            plan.get("schedule_selector")
+            if isinstance(plan.get("schedule_selector"), dict)
+            else None,
+            fallback,
+        )
+    return plan
 
 
 async def classify_with_llm(

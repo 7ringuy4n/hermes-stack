@@ -2553,6 +2553,7 @@ class ZaloAdapter(BasePlatformAdapter):
         has_image_attachment: bool = False,
         media_urls: list | None = None,
         wait_for_terminal: bool = False,
+        quoted: str = "none",
     ) -> bool:
         try:
             from .workflow_client import (
@@ -2625,7 +2626,75 @@ class ZaloAdapter(BasePlatformAdapter):
                 text or current,
                 thread=("group" if str(thread_type or "").lower() == "group" else "dm"),
                 attachments=attach_hint,
+                quoted=str(quoted or "none"),
                 conversation_id=str(thread_id),
+            )
+        # Quote-reply ordinal deletes ("xoá số 2" on a numbered schedule list)
+        # must hit host delete even when the classifier misses schedule.
+        try:
+            from .schedule_client import (
+                list_index_from_user_text,
+                quoted_looks_like_schedule_list,
+                with_list_index_selector,
+            )
+        except ImportError:
+            from schedule_client import (  # type: ignore
+                list_index_from_user_text,
+                quoted_looks_like_schedule_list,
+                with_list_index_selector,
+            )
+        ordinal = list_index_from_user_text(current)
+        quote_blob = str(quoted or "")
+        if ordinal is not None and (
+            quoted_looks_like_schedule_list(quote_blob)
+            or "lịch" in current.lower()
+            or "lich" in current.lower()
+            or "schedule" in current.lower()
+            or quoted_looks_like_schedule_list(current)
+        ):
+            skill_now = str(plan.get("skill") or "").strip().lower()
+            action_now = str(plan.get("skill_action") or "").strip().lower()
+            type_now = str(plan.get("task_type") or "").strip().lower()
+            is_delete_now = skill_now == "schedule" and (
+                action_now == "delete" or type_now == "delete_schedule"
+            )
+            if not is_delete_now:
+                plan = dict(plan)
+                plan.update(
+                    {
+                        "ok": True,
+                        "task_hint": "schedule",
+                        "skill": "schedule",
+                        "skill_action": "delete",
+                        "task_type": "delete_schedule",
+                        "execution_class": "interactive",
+                        "response_mode": "confirm",
+                        "process_original_message": False,
+                        "cadence": None,
+                        "cron_expr": None,
+                        "delay_seconds": None,
+                        "schedule_form": None,
+                    }
+                )
+            plan["schedule_selector"] = with_list_index_selector(
+                plan.get("schedule_selector")
+                if isinstance(plan.get("schedule_selector"), dict)
+                else None,
+                current,
+            )
+        elif (
+            str(plan.get("skill") or "").strip().lower() == "schedule"
+            and (
+                str(plan.get("skill_action") or "").strip().lower() == "delete"
+                or str(plan.get("task_type") or "").strip().lower() == "delete_schedule"
+            )
+        ):
+            plan = dict(plan)
+            plan["schedule_selector"] = with_list_index_selector(
+                plan.get("schedule_selector")
+                if isinstance(plan.get("schedule_selector"), dict)
+                else None,
+                current,
             )
         if has_image_attachment and plan_is_image_analyze_chat(plan, has_image=True):
             plan = apply_image_analyze_plan_coercion(plan)
@@ -2715,13 +2784,24 @@ class ZaloAdapter(BasePlatformAdapter):
                 from .notes_client import execute_note_plan_async
             except ImportError:
                 from notes_client import execute_note_plan_async  # type: ignore
+            action = str(plan.get("skill_action") or "").strip().lower()
+            notes = [item for item in (plan.get("notes") or []) if isinstance(item, dict)]
+            # Create with an empty notes[] means the body still needs live
+            # retrieval (search then note). Do not claim a note failure — let
+            # Hermes gather facts; the user can ask to note afterward, or a
+            # later compound part can persist.
+            if action == "create" and not notes:
+                logger.info(
+                    "[zalo] note create without notes[] — fall through for live gather thread=%s",
+                    thread_id,
+                )
+                return False
             result = await execute_note_plan_async(
                 plan,
                 thread_id=str(thread_id),
                 thread_type=str(thread_type),
                 sender_id=str(sender_id),
             )
-            action = str(plan.get("skill_action") or "").strip().lower()
             if result.get("success") and action == "lookup":
                 body = str(result.get("text") or "").strip()
                 if not body:
@@ -2956,14 +3036,20 @@ class ZaloAdapter(BasePlatformAdapter):
             if skill_action == "delete" or task_type == "delete_schedule":
                 try:
                     from .schedule_client import (
+                        delete_schedule,
                         delete_schedules_for_thread,
+                        match_schedules_by_selector,
                         schedule_enabled,
+                        schedules_for_thread,
                     )
                     from .channels_client import extract_target_group_ref, resolve_channel
                 except ImportError:
                     from schedule_client import (  # type: ignore
+                        delete_schedule,
                         delete_schedules_for_thread,
+                        match_schedules_by_selector,
                         schedule_enabled,
+                        schedules_for_thread,
                     )
                     from channels_client import extract_target_group_ref, resolve_channel  # type: ignore
                 target_tid = thread_id
@@ -3001,7 +3087,59 @@ class ZaloAdapter(BasePlatformAdapter):
                     except Exception:
                         pass
                     return True
-                deleted = delete_schedules_for_thread(target_tid)
+                selector = (
+                    plan.get("schedule_selector")
+                    if isinstance(plan.get("schedule_selector"), dict)
+                    else {}
+                )
+                rows = schedules_for_thread(target_tid)
+                selective = bool(
+                    selector.get("list_index") is not None
+                    or str(selector.get("name") or "").strip()
+                    or (
+                        isinstance(selector.get("match"), dict)
+                        and (
+                            str(selector["match"].get("content_hint") or "").strip()
+                            or str(selector["match"].get("time_hint") or "").strip()
+                        )
+                    )
+                )
+                deleted: list[str] = []
+                if selective:
+                    hits = match_schedules_by_selector(rows, selector)
+                    if not hits:
+                        try:
+                            msg = self._as_ux_line(
+                                "ZALO_SCHEDULE_DELETED_MSG",
+                                ("schedule", "deleted"),
+                                "Không tìm thấy lịch khớp để xóa. Xem lại danh sách rồi nêu số thứ tự hoặc nội dung lịch.",
+                                user_text=text,
+                            )
+                            await self._as_gate_announce(thread_id, thread_type, msg)
+                        except Exception:
+                            pass
+                        return True
+                    if len(hits) > 1 and selector.get("list_index") is None:
+                        try:
+                            msg = self._as_ux_line(
+                                "ZALO_SCHEDULE_DELETED_MSG",
+                                ("schedule", "deleted"),
+                                "Có nhiều lịch khớp. Nêu số thứ tự trong danh sách hoặc nội dung/giờ cụ thể.",
+                                user_text=text,
+                            )
+                            await self._as_gate_announce(thread_id, thread_type, msg)
+                        except Exception:
+                            pass
+                        return True
+                    for row in hits:
+                        sid = str(row.get("id") or "").strip()
+                        if not sid:
+                            continue
+                        data = delete_schedule(sid)
+                        if data.get("ok") or data.get("deleted") == sid or not data:
+                            deleted.append(sid)
+                else:
+                    deleted = delete_schedules_for_thread(target_tid)
                 try:
                     if deleted:
                         where = f" nhóm {target_label}" if target_label else ""
@@ -4582,6 +4720,11 @@ class ZaloAdapter(BasePlatformAdapter):
                         return
                     bare_q = turn_user_text.strip()
                     queued_plan = item.get("plan") if isinstance(item.get("plan"), dict) else None
+                    quote_for_classify = "none"
+                    if isinstance(reply_quote, dict):
+                        snip = quoted_context_snip(reply_quote)
+                        if snip:
+                            quote_for_classify = snip[:2000]
                     if queued_plan is not None:
                         try:
                             from .classify_client import plan_should_apply_live_search_contract
@@ -4619,6 +4762,7 @@ class ZaloAdapter(BasePlatformAdapter):
                         has_image_attachment=has_image,
                         media_urls=list(event.media_urls or []),
                         wait_for_terminal=True,
+                        quoted=quote_for_classify,
                     ):
                         return
                     if has_image and list(event.media_urls or []):

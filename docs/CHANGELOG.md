@@ -1,3 +1,11 @@
+## 2026-09-11 — schedule quote-delete + search-then-note
+
+- Quote-reply ordinal deletes (`xoá số 2`) classify with quoted list context,
+  resolve `schedule_selector.list_index`, and announce selective delete.
+- Empty note `create` plans fall through for live search instead of
+  `notes.failed` before any content exists.
+- See `history/2026-09-11/README.md`.
+
 ## 2026-09-10 — router-worker skill sync ownership
 
 - Operator `bash run.sh update` failed with `PermissionError` on root-owned
