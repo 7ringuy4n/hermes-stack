@@ -5,7 +5,7 @@ execution_class: interactive|async|schedule
 task_type: chat|media_generation|file_processing|create_schedule|list_schedule|delete_schedule|pause_schedule|resume_schedule|update_schedule|run_schedule|knowledge|note|cancel_task|search|tool|coding
 response_mode: ack_then_deliver|confirm
 process_original_message: bool
-persist_gathered_notes: bool; true when the host must persist note rows from the live gather answer after this turn (search-then-note); otherwise false or omit
+persist_gathered_notes: bool; always emit true or false (never omit); true when the host must persist note rows from the live gather answer after this turn (search-then-note), otherwise false
 message: string; inner work only for create_schedule
 instructions: string array; one entry per distinct job
 attachments_required: bool

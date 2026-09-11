@@ -35,19 +35,26 @@ git reset --hard origin/{BRANCH}
 bash run.sh load-openbao-env
 python3 scripts/main/sync_router_worker_skills.py || true
 SYNC_ZALO_RESTART=0 bash scripts/main/sync-zalo-plugins.sh
+# classify.py is image-baked; rebuild so persist_gathered_notes normalize is live.
+if [[ -f docker/docker-compose.yml ]]; then
+  docker compose -f docker/docker-compose.yml build router-worker
+  docker compose -f docker/docker-compose.yml up -d --no-deps router-worker
+elif [[ -f docker-compose.yml ]]; then
+  docker compose build router-worker
+  docker compose up -d --no-deps router-worker
+else
+  bash run.sh sync-openbao-env || true
+fi
 python3 test/scripts/notes_specific_jobs_unit.py
 python3 test/scripts/notes_deferred_persist_unit.py
 python3 test/scripts/notes_atomic_cite_unit.py
 for id in $(docker ps --filter label=com.docker.compose.service=hermes --format '{{{{.ID}}}}'); do
   docker restart "$id" >/dev/null
 done
-for id in $(docker ps --filter label=com.docker.compose.service=router-worker --format '{{{{.ID}}}}'); do
-  docker restart "$id" >/dev/null
-done
-sleep 30
+sleep 35
 echo DEPLOY_OK $(git rev-parse --short HEAD)
 echo PROMPT_OK $(test -f hermes/main/skills/notes/prompts/search_then_note_listing.txt && echo yes || echo no)
-echo CLASSIFY_HAS_PERSIST $(grep -c persist_gathered_notes architect/models/router-worker/classify.py || true)
+echo CLASSIFY_HAS_PERSIST $(docker exec router-worker grep -c persist_gathered_notes /app/classify.py || true)
 """
             out = sudo_bash(c, deploy, timeout=900)
             if "notes_specific_jobs_unit: PASS" not in out:
