@@ -177,10 +177,13 @@ def notes_from_assistant_body(
     user_ask: str = "",
     timezone: str = "Asia/Ho_Chi_Minh",
     existing_contents: list[str] | None = None,
+    numbered_only: bool = False,
 ) -> list[dict[str, Any]]:
     """Split a gathered assistant answer into durable note payloads with citations.
 
     Structural only: numbered items + URL attachment. Content policy is skill-owned.
+    When numbered_only is true (search-then-note), skip whole-body blob fallback so
+    greetings or prose without a numbered list are not stored.
     """
     _ = existing_contents  # Dedup of “already noted” is skill-owned at list time.
     _ = user_ask
@@ -214,6 +217,8 @@ def notes_from_assistant_body(
         )
     if items:
         return items[:20]
+    if numbered_only:
+        return []
     blob = " ".join(cleaned.split()).strip()
     if len(blob) < 3:
         return []

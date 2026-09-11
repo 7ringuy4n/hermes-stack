@@ -8,8 +8,10 @@ them.
 
 ## Root cause
 
-Listing policy lived in `notes_persist.py` as regex/keyword NLU, which violates
-AGENT_RULES (LLM/skills understand; host validates and executes).
+Listing policy lived in host regex (forbidden). After moving to skills, VPS
+smoke still failed because router-worker `normalize_plan` dropped
+`persist_gathered_notes`, so deferred persist and the notes listing contract
+never armed. Historical aggregate rows also polluted the smoke query.
 
 ## Fix
 

@@ -1582,6 +1582,7 @@ class ZaloAdapter(BasePlatformAdapter):
         sender_id: str,
         user_text: str,
         timezone: str = "Asia/Ho_Chi_Minh",
+        numbered_only: bool = False,
     ) -> None:
         try:
             from .turn_wait import real_thread_id
@@ -1596,6 +1597,7 @@ class ZaloAdapter(BasePlatformAdapter):
             "thread_type": str(thread_type or "user"),
             "user_text": str(user_text or ""),
             "timezone": str(timezone or "Asia/Ho_Chi_Minh"),
+            "numbered_only": bool(numbered_only),
         }
 
     def _as_clear_pending_note_persist(self, thread_id: str) -> None:
@@ -1663,6 +1665,7 @@ class ZaloAdapter(BasePlatformAdapter):
             cleaned,
             user_ask=user_ask,
             timezone=str(pending.get("timezone") or "Asia/Ho_Chi_Minh"),
+            numbered_only=bool(pending.get("numbered_only")),
         )
         if not notes:
             return cleaned or content
@@ -2865,6 +2868,9 @@ class ZaloAdapter(BasePlatformAdapter):
                 sender_id=str(sender_id),
                 user_text=current,
                 timezone=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
+                numbered_only=bool(
+                    isinstance(plan, dict) and plan.get("persist_gathered_notes") is True
+                ),
             )
         # Remote-only media summaries are owned by the host refusal path.
         # Consume them before async-workflow routing so classifier variability
@@ -2941,6 +2947,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     sender_id=str(sender_id),
                     user_text=current,
                     timezone=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
+                    numbered_only=False,
                 )
                 logger.info(
                     "[zalo] note create without notes[] — defer persist after gather thread=%s",

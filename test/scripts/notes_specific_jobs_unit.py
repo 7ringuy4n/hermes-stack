@@ -49,12 +49,15 @@ def main() -> int:
 
     print("running test case 4/7")
     # Host persists numbered rows structurally; skill owns skipping aggregates.
+    # Search-then-note uses numbered_only so prose without a list is not stored.
     mixed = notes_from_assistant_body(
         "1. Fullstack Developer tại HCM (~41 tin)\n"
         "2. Fullstack Developer (Nexacro / Front End / Java) — Hitachi Digital Services\n"
-        "https://example.com/h\n"
+        "https://example.com/h\n",
+        numbered_only=True,
     )
     assert len(mixed) == 2
+    assert notes_from_assistant_body("Hello, I will search now.", numbered_only=True) == []
 
     print("running test case 5/7")
     contract = load_search_then_note_contract(
