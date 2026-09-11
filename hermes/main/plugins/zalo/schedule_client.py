@@ -3,11 +3,82 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from typing import Any, Optional
 
 DEFAULT_URL = "http://schedule-worker:8110"
+
+# Quote-reply deletes often name a 1-based list ordinal ("xoá số 2", "delete #3").
+_LIST_INDEX_RE = re.compile(
+    r"(?is)(?:xóa|xoá|xoa|xo[áàảãạ]|delete|remove|rm)\b"
+    r"(?:[^0-9]{0,40}?)(?:số|so|thứ|thu|#|no\.?|number|item|lịch|lich|schedule)?"
+    r"(?:[^0-9]{0,12}?)(\d{1,3})\b"
+)
+_LIST_INDEX_ALT_RE = re.compile(
+    r"(?is)\b(?:số|so|thứ|thu|#|item)\s*(\d{1,3})\b"
+)
+
+
+def list_index_from_user_text(text: str) -> int | None:
+    """Parse a 1-based schedule list ordinal from a delete/select line."""
+    blob = str(text or "").strip()
+    if not blob:
+        return None
+    for pattern in (_LIST_INDEX_RE, _LIST_INDEX_ALT_RE):
+        hit = pattern.search(blob)
+        if not hit:
+            continue
+        try:
+            n = int(hit.group(1))
+        except (TypeError, ValueError):
+            continue
+        if n >= 1:
+            return n
+    return None
+
+
+def quoted_looks_like_schedule_list(quoted: str) -> bool:
+    """True when quoted context looks like a numbered schedule listing."""
+    raw = str(quoted or "").strip()
+    if not raw or raw.lower() == "none":
+        return False
+    low = raw.lower()
+    if not re.search(r"(?m)^\s*\d+\.\s+\S+", raw):
+        return False
+    markers = (
+        "lịch",
+        "lich",
+        "schedule",
+        "nhóm đã đặt",
+        "chat này",
+        "cron",
+        "next_run",
+        "@",
+    )
+    return any(m in low for m in markers)
+
+
+def with_list_index_selector(
+    selector: dict[str, Any] | None,
+    text: str,
+) -> dict[str, Any] | None:
+    """Ensure schedule_selector carries list_index when the user named an ordinal."""
+    idx = list_index_from_user_text(text)
+    if idx is None:
+        return selector if isinstance(selector, dict) else None
+    out = dict(selector) if isinstance(selector, dict) else {
+        "id": None,
+        "name": None,
+        "match": {"content_hint": None, "time_hint": None},
+    }
+    if out.get("list_index") is None:
+        out["list_index"] = idx
+    out["id"] = None
+    if "match" not in out or not isinstance(out.get("match"), dict):
+        out["match"] = {"content_hint": None, "time_hint": None}
+    return out
 
 
 def cron_from_clock_hm(clock_hm: str) -> str:
@@ -340,6 +411,14 @@ def match_schedules_by_selector(
     """Match stored rows by classifier selector hints. Never trust an invented id."""
     items = [r for r in (rows or []) if isinstance(r, dict)]
     src = selector if isinstance(selector, dict) else {}
+    raw_index = src.get("list_index")
+    if raw_index is not None and str(raw_index).strip() != "":
+        try:
+            idx = int(raw_index)
+        except (TypeError, ValueError):
+            idx = 0
+        if idx >= 1:
+            return [items[idx - 1]] if idx <= len(items) else []
     name = " ".join(str(src.get("name") or "").strip().lower().split())
     match = src.get("match") if isinstance(src.get("match"), dict) else {}
     content = " ".join(str(match.get("content_hint") or "").strip().lower().split())
@@ -349,6 +428,7 @@ def match_schedules_by_selector(
     hits: list[dict[str, Any]] = []
     for row in items:
         origin = row.get("origin") if isinstance(row.get("origin"), dict) else {}
+        context = row.get("context") if isinstance(row.get("context"), dict) else {}
         blob = " ".join(
             [
                 str(row.get("name") or ""),
@@ -357,6 +437,7 @@ def match_schedules_by_selector(
                 str(row.get("cron_expr") or ""),
                 str(row.get("next_run_at") or ""),
                 str(origin.get("target_name") or ""),
+                str(context.get("original_request") or ""),
             ]
         ).lower()
         if name and name not in blob:
