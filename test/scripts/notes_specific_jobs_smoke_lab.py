@@ -28,7 +28,9 @@ set -euo pipefail
 cd /opt/assistant
 sudo chown -R tn:tn /opt/assistant /data/assistant 2>/dev/null || true
 git fetch origin {BRANCH} main develop
-git checkout -B {BRANCH} origin/{BRANCH}
+git reset --hard HEAD
+git clean -fd -- hermes architect test history docs || true
+git checkout -f -B {BRANCH} origin/{BRANCH}
 git reset --hard origin/{BRANCH}
 bash run.sh load-openbao-env
 python3 scripts/main/sync_router_worker_skills.py || true
