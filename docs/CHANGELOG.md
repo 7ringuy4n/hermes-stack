@@ -1,3 +1,9 @@
+## 2026-09-11 — specific job notes only
+
+- Search-then-note listing policy lives in notes/web-search skills and classify
+  `persist_gathered_notes`; host persist stays structural (no user-request NLU).
+- See `history/2026-09-11/note-specific-jobs.md`.
+
 ## 2026-09-11 — scheduled search-then-note fire
 
 - Schedule fires for search-then-note coerce to executable search, arm deferred

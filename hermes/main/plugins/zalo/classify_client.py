@@ -1658,6 +1658,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "task_type": task_type,
         "response_mode": response_mode,
         "process_original_message": process_original,
+        "persist_gathered_notes": src.get("persist_gathered_notes") is True,
         "message": message,
         "attachments_required": attachments_required,
         "attachment_types": normalize_attachment_types(src.get("attachment_types")),

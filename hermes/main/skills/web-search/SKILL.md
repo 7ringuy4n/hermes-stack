@@ -53,6 +53,7 @@ members and provider connections. Do **not** call Omni chat
 2. Return short facts in the user's language. Do not dump raw JSON.
 3. If search returns empty, say so briefly — do not invent sources.
 4. **Current time is host-owned.** When the turn includes `Timezone:` / `Local now:` (host clock), use that for any “as of / hiện tại / khoảng …” phrasing. Prefer an observation timestamp printed by the search source when it is clearly labeled; otherwise use Host Local now. Never invent a wall-clock time that conflicts with Local now. Do not apply a timezone offset twice.
+5. When the turn also asks to note findings (classify `persist_gathered_notes=true`, or the notes skill listing contract is present), follow `notes/prompts/search_then_note_listing.txt`: concrete Title (stack) — Employer rows with https URLs only; never aggregate count buckets; omit openings already listed under Prior notes; do not claim notes were saved.
 
 ## Don't
 

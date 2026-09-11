@@ -397,6 +397,9 @@ def plan_schema_failure(plan: dict[str, Any]) -> str:
     """Return a structural contract failure code, or an empty string."""
     if not isinstance(plan, dict) or plan.get("ok") is False:
         return "invalid_plan"
+    # Classifier must emit this bool explicitly (true or false). normalize_plan
+    # defaults omitted values to false, so validate the raw presence separately
+    # via plan_schema_failure_raw when available.
     instructions = [
         str(item or "") for item in (plan.get("instructions") or []) if str(item or "").strip()
     ]
@@ -1205,6 +1208,7 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
         "task_type": task_type,
         "response_mode": response_mode,
         "process_original_message": process_original,
+        "persist_gathered_notes": src.get("persist_gathered_notes") is True,
         "message": message,
         "attachments_required": attachments_required,
         "attachment_types": normalize_attachment_types(src.get("attachment_types")),
@@ -1392,6 +1396,16 @@ async def classify_with_llm(
                 last_err = "classify_llm_failed"
                 repair_content = content
                 repair_failure = "invalid_json"
+                continue
+            if "persist_gathered_notes" not in parsed:
+                last_err = "classify_invalid"
+                repair_content = content
+                repair_failure = "persist_gathered_notes_required"
+                print(
+                    f"[classify] invalid schema model={model_id} attempt={attempt + 1} "
+                    f"failure=persist_gathered_notes_required",
+                    flush=True,
+                )
                 continue
             plan = normalize_plan(parsed, blob, tz)
             schema_failure = plan_schema_failure(plan)

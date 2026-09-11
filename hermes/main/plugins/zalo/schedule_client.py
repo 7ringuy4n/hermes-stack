@@ -340,16 +340,8 @@ def fire_text_from_plan(plan: dict[str, Any] | None, original: str = "") -> str:
     exact = exact_schedule_body(original)
     if exact:
         return exact
-    # Host fallback: process search-then-note asks often keep the full bubble in
-    # instructions. Strip relative timing so the fire still has executable work.
-    try:
-        from .notes_persist import strip_schedule_timing_prefix, text_wants_search_then_note
-    except ImportError:
-        from notes_persist import strip_schedule_timing_prefix, text_wants_search_then_note  # type: ignore
-    if text_wants_search_then_note(orig):
-        stripped = strip_schedule_timing_prefix(orig)
-        if stripped:
-            return stripped
+    # Host fallback: classify should already put inner work in instructions.
+    # Do not NLU-parse the original user bubble for language-specific timing.
     return ""
 
 

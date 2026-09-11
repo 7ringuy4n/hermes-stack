@@ -26,10 +26,22 @@ other material the user explicitly asks to retain.
 - Do not write note content into repository files, `MEMORY.md`, prompts, or
   environment variables.
 
+## Search then note
+
+When the user asks to find live information and then note it:
+
+1. Classify/runtime use a single search gather with `persist_gathered_notes=true`.
+2. Follow `prompts/search_then_note_listing.txt` for the listing shape.
+3. List only concrete openings (`Title (stack) — Employer` + https URL).
+4. Never emit aggregate count buckets as noteable items.
+5. Prefer openings not already present in Prior notes when the host supplies them.
+6. Never claim storage succeeded; the host persists numbered items after gather.
+
 ## Classifier plan
 
 The classifier supplies `task_hint=note`, `task_type=note`, `skill=notes`, one
 of `skill_action=create|lookup|update|delete`, and structured `notes` or
-`note_selector` fields. The Zalo host validates and executes that plan against
-Memory service `/v1/notes*`; do not substitute terminal SQL or filesystem
-scratch notes.
+`note_selector` fields. For live gather-then-store, classify emits
+`task_hint=search` with `persist_gathered_notes=true`. The Zalo host validates
+and executes that plan against Memory service `/v1/notes*`; do not substitute
+terminal SQL or filesystem scratch notes.
