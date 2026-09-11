@@ -1,3 +1,8 @@
+## 2026-09-11 — atomic search-then-note + note citations
+
+See `history/2026-09-11/note-atomic-cite.md`. Search-then-note no longer
+FIFO/workflow-duplicates; stored web notes keep citation URLs.
+
 ## 2026-09-11 — deferred search-then-note persist
 
 See `history/2026-09-11/note-search-persist.md`. Search-then-note gather now
