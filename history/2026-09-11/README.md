@@ -16,6 +16,10 @@
 2. Host `plan_is_note` short-circuited `skill_action=create` with an empty
    `notes[]` into Memory Manager → `missing_notes` → failed UX, before any
    live search could gather content to note.
+3. `schedules_for_thread` called `list_schedules()` but that helper was missing
+   (dead code left after `upsert_schedule_from_row`'s return). Host delete then
+   raised `NameError` and produced no Zalo reply — the silent quote-delete
+   failure observed on VPS.
 
 ## Fix
 
@@ -23,6 +27,7 @@
 - Honor `schedule_selector.list_index` (1-based) in matching and host delete.
 - Host-parse ordinals (`xoá số 2`, …) into `list_index` during normalize and
   coerce quote-reply ordinal deletes onto the schedule delete path.
+- Restore missing `list_schedules()` so host list/delete no longer NameError.
 - Empty note create falls through to Hermes for live gather instead of
   announcing `notes.failed`.
 - Classify skill parts: schedule list_index + notes search-then-note guidance.

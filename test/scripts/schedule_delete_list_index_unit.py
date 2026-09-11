@@ -59,6 +59,30 @@ def main() -> int:
     hits = match_schedules_by_selector(rows, {"list_index": 2})
     assert [r["id"] for r in hits] == ["b"], hits
     assert match_schedules_by_selector(rows, {"list_index": 9}) == []
+    import schedule_client as sc
+
+    assert callable(getattr(sc, "list_schedules", None))
+    # list_schedules must exist for host delete/list; stub HTTP empty.
+    from unittest.mock import patch
+
+    with patch.object(sc, "_req", return_value={"schedules": rows}):
+        assert [r["id"] for r in sc.list_schedules()] == ["a", "b"]
+        assert [r["id"] for r in sc.schedules_for_thread("u1")] == []
+        with_origin = [
+            {
+                "id": "a",
+                "origin": {"thread_id": "u1", "user_id": "u1"},
+                "context": {},
+            },
+            {
+                "id": "b",
+                "origin": {"thread_id": "u1"},
+                "context": {},
+            },
+        ]
+        with patch.object(sc, "_req", return_value={"schedules": with_origin}):
+            assert [r["id"] for r in sc.schedules_for_thread("u1")] == ["a", "b"]
+
 
     print("running test case 4/6")
     sel = with_list_index_selector(None, xoa_so_2)

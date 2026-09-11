@@ -530,6 +530,10 @@ def upsert_schedule_from_row(
         next_run_at=next_run_at if next_run_at is not None else (str(row.get("next_run_at") or "") or None),
         enabled=bool(en),
     )
+
+
+def list_schedules() -> list[dict[str, Any]]:
+    """All rows from schedule-worker (soft-empty on transport failure)."""
     data = _req("GET", "/v1/schedules")
     rows = data.get("schedules") if isinstance(data, dict) else None
     return rows if isinstance(rows, list) else []
