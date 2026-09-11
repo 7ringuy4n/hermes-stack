@@ -1,5 +1,7 @@
 # 2026-09-11 — schedule quote-delete silent + search-then-note failed UX
 
+Also see `note-search-persist.md` (deferred host persist after gather).
+
 ## Symptom
 
 1. After `!zalo schedule list`, quote-reply `xoá số 2` / `xoá lịch thứ 2`

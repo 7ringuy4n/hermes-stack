@@ -11,7 +11,7 @@ from typing import Any
 
 
 def memory_url() -> str:
-    return (os.environ.get("MEMORY_URL") or "http://memory-manager:8100").rstrip("/")
+    return (os.environ.get("MEMORY_URL") or "http://memory:8095").rstrip("/")
 
 
 def note_scope(*, thread_id: str, thread_type: str, sender_id: str) -> str:
@@ -104,7 +104,28 @@ def execute_note_plan(
             created.append(result.get("note") or {})
         return {"success": True, "action": action, "count": len(created), "items": created}
 
+    try:
+        from .notes_persist import simplify_note_query
+    except ImportError:
+        from notes_persist import simplify_note_query  # type: ignore
+
     candidates = _find_candidates(scope_id, selector)
+    # Topic lookups often include filler ("hiển thị các tin … đã lưu"). Retry
+    # with a simplified query, then with individual strong tokens.
+    if action == "lookup" and not candidates:
+        raw_q = str(selector.get("query") or "").strip()
+        simple = simplify_note_query(raw_q)
+        tried = {raw_q}
+        for attempt in [simple, *sorted((simple or "").split(), key=len, reverse=True)]:
+            token = " ".join(str(attempt or "").split())
+            if not token or token in tried or len(token) < 2:
+                continue
+            tried.add(token)
+            retry = dict(selector)
+            retry["query"] = token
+            candidates = _find_candidates(scope_id, retry)
+            if candidates:
+                break
     if action == "lookup":
         return {
             "success": True,
