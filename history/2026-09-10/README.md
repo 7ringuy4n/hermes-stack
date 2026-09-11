@@ -36,5 +36,35 @@ and PDF asks could be mis-routed to composed-image.
 ## Verification
 
 - Unit PASS locally.
-- VPS: weather reply clock must match host Local now (±1–2 min); continue case
-  index from visual-weather PDF through memory-scale (former 111→132).
+- VPS focused retest (visual PDF, scheduled/flexible composed, YouTube refuse)
+  on candidate `6d3932b`: Fails: 0. Merged via PR #500/#501.
+
+---
+
+# 2026-09-10 — router-worker skill sync PermissionError on update
+
+## Symptom
+
+`bash run.sh update` on the operator account printed:
+
+`PermissionError: …/architect/models/router-worker/config/outbound.json`
+
+then `WARN: sync-router-worker-skills failed` (update otherwise continued).
+
+## Root cause
+
+`scripts/main/sync-router-worker-skills.sh` treated a writable destination
+**directory** as enough to `exec` the Python baker. Prior root/sudo syncs left
+`outbound.json` root-owned; `shutil.copyfile` opens the existing inode for write
+and fails. Classify already used atomic rename; outbound did not.
+
+## Fix
+
+- Python: `_atomic_copy` for `outbound.json` (temp + `Path.replace`).
+- Shell: fast-path only when each managed bake file is missing or writable;
+  otherwise keep the existing repair install path.
+
+## Verification
+
+- Unit: `test/scripts/sync_router_worker_skills_unit.py`.
+- Operator: `sudo chown` on the bake dir (one-time) or re-run sync after fix lands.

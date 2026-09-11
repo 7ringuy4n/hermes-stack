@@ -1,0 +1,20 @@
+[sudo: authenticate] Password: 
+OK: no obsolete env keys to remove
+OK: OpenBao bootstrap token uses protected external file
+INFO: GATEWAY_API_KEYS will be loaded from OpenBao for runtime use.
+OK: 9 keys → transient /data/assistant/.env.openbao; repository .env unchanged
+HAS_KEY True KEYLEN 35 HAS_PW True
+LOGIN 200
+RESILIENCE_maxWaitMs 86400000
+SMOKE classifier PASS {'ok': True, 'code': 200, 'drop15s': False, 'chars': 2, 'preview': 'OK'}
+SMOKE opencode-go/glm-5.2-high PASS {'ok': True, 'code': 200, 'drop15s': False, 'chars': 2, 'preview': 'OK'}
+SMOKE hermes PASS {'ok': True, 'code': 200, 'drop15s': False, 'chars': 2, 'preview': 'OK'}
+LIVE_LLM_VERDICT PASS
+TIP_MARKERS True True
+assistant-hermes-1 Up About a minute
+assistant-hermes-2 Up About a minute
+router-worker Up 4 hours
+assistant-dispatcher-1 Up 5 hours
+omni-router Up 22 hours (healthy)
+grep: Unmatched ( or \(
+DONE
