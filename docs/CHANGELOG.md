@@ -1,3 +1,10 @@
+## 2026-09-11 — scheduled search-then-note fire
+
+- Schedule fires for search-then-note coerce to executable search, arm deferred
+  note persist, apply the live-search contract, and recover `fire_text` when
+  classify echoed the full ask.
+- See `history/2026-09-11/schedule-search-note-silence.md`.
+
 ## 2026-09-11 — atomic search-then-note + note citations
 
 - Search-then-note stays one gather/persist turn (no FIFO/workflow double run).

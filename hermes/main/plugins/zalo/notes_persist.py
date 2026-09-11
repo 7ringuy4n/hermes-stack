@@ -75,12 +75,14 @@ def should_defer_note_persist(plan: dict[str, Any] | None, user_text: str) -> bo
         return True
     if hint == "search" and text_wants_search_then_note(user_text):
         return True
-    # Compound search+note: still defer even when task_hint is compound/process.
+    # Compound / scheduled process fires still need host persist after gather.
     if text_wants_search_then_note(user_text) and hint in {
         "compound",
         "process",
         "multi",
         "workflow",
+        "schedule",
+        "tool",
         "",
     }:
         return True
@@ -90,6 +92,54 @@ def should_defer_note_persist(plan: dict[str, Any] | None, user_text: str) -> bo
 def keep_search_then_note_atomic(plan: dict[str, Any] | None, user_text: str) -> bool:
     """Search-then-note must stay one gather+persist turn (no FIFO/workflow split)."""
     return should_defer_note_persist(plan, user_text) or text_wants_search_then_note(user_text)
+
+
+_TIMING_PREFIX_RE = re.compile(
+    r"(?is)^\s*(?:"
+    r"(?:\d+)\s*(?:phút|phut|minute|minutes|min|giây|giay|second|seconds|s|"
+    r"giờ|gio|hour|hours|h)\s*(?:nữa|nua|sau|later)?|"
+    r"(?:sau|in)\s+(?:\d+)\s*(?:phút|phut|minute|minutes|min|giây|giay|second|seconds|"
+    r"giờ|gio|hour|hours|h)|"
+    r"(?:ngày mai|ngay mai|tomorrow|tonight|tối nay|toi nay)"
+    r")\s*[,:]?\s*"
+)
+
+
+def strip_schedule_timing_prefix(text: str) -> str:
+    """Drop leading relative timing so schedule fire_text can hold inner work."""
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    stripped = _TIMING_PREFIX_RE.sub("", raw, count=1).strip()
+    return stripped if stripped and stripped != raw else ""
+
+
+def coerce_schedule_fire_plan_for_search_note(
+    plan: dict[str, Any] | None, user_text: str
+) -> dict[str, Any]:
+    """On schedule fire, turn a stored schedule wrapper into executable search work."""
+    src = dict(plan) if isinstance(plan, dict) else {}
+    if not text_wants_search_then_note(user_text):
+        return src
+    hint = str(src.get("task_hint") or "").strip().lower()
+    if hint not in {"schedule", "tool", ""}:
+        # Already executable, but still ensure search contract fields.
+        if hint in {"search", "web_search"} or keep_search_then_note_atomic(src, user_text):
+            src["process_original_message"] = True
+        return src
+    src["task_hint"] = "search"
+    src["task_type"] = "search"
+    src["skill"] = "web_search"
+    src["execution_class"] = "interactive"
+    src["response_mode"] = "final_only"
+    src["process_original_message"] = True
+    # Prefer fire/inner instructions; if empty, use timing-stripped ask.
+    parts = [str(x).strip() for x in (src.get("instructions") or []) if str(x).strip()]
+    if not parts:
+        inner = strip_schedule_timing_prefix(user_text) or str(user_text or "").strip()
+        if inner:
+            src["instructions"] = [inner]
+    return src
 
 
 def strip_false_note_claims(text: str) -> str:
