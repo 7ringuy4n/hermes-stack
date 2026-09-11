@@ -20,6 +20,8 @@
    (dead code left after `upsert_schedule_from_row`'s return). Host delete then
    raised `NameError` and produced no Zalo reply — the silent quote-delete
    failure observed on VPS.
+4. Queue path imported `quoted_context_snip` again inside `_run_turn`, which made
+   the name local and raised `UnboundLocalError` before host delete could run.
 
 ## Fix
 

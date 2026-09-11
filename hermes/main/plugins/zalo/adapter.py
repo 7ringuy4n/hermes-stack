@@ -4722,10 +4722,6 @@ class ZaloAdapter(BasePlatformAdapter):
                     queued_plan = item.get("plan") if isinstance(item.get("plan"), dict) else None
                     quote_for_classify = "none"
                     if isinstance(reply_quote, dict):
-                        try:
-                            from .attachment import quoted_context_snip
-                        except ImportError:
-                            from attachment import quoted_context_snip  # type: ignore
                         snip = quoted_context_snip(reply_quote)
                         if snip:
                             quote_for_classify = snip[:2000]
