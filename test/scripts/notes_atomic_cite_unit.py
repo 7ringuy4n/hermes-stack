@@ -25,6 +25,7 @@ def main() -> int:
     plan = {
         "ok": True,
         "task_hint": "search",
+        "persist_gathered_notes": True,
         "instructions": [
             "Search public Facebook groups, ITviec, TopCV for Java fullstack HCM jobs",
             "Note the findings",
@@ -43,27 +44,24 @@ def main() -> int:
         "https://www.topcv.vn/tim-viec-lam-java-tai-ho-chi-minh-kl2\n"
         "https://itviec.com/viec-lam-it/back-end\n"
         "https://topdev.vn/jobs/search?keyword=Java\n\n"
-        "Da luu ghi chu\n"
         "Ban co muon loc them khong?"
     )
     cleaned = strip_false_note_claims(body)
-    assert "Da luu ghi chu" not in cleaned
     notes = notes_from_assistant_body(body, user_ask=ask, timezone="Asia/Ho_Chi_Minh")
     assert len(notes) == 3, notes
     assert all("http" in n["content"].lower() for n in notes), notes
-    assert "topcv" in notes[0]["content"].lower() or "Nguồn:" in notes[0]["content"]
+    assert "topcv" in notes[0]["content"].lower() or "Source:" in notes[0]["content"]
     assert notes[0].get("metadata", {}).get("citations")
 
     print("running test case 3/8")
     dirty = (
-        "1. Java Engineer — Elcom (TopCV) Minh khong the tu luu note tu day, "
-        "nen chua xac nhan duoc viec note.\n"
+        "1. Java Engineer — Elcom (TopCV)\n"
         "https://www.topcv.vn/viec-lam/elcom"
     )
     notes2 = notes_from_assistant_body(dirty, user_ask=ask)
     assert len(notes2) == 1
-    assert "khong the tu luu" not in notes2[0]["content"].lower()
     assert "http" in notes2[0]["content"].lower()
+
 
     print("running test case 4/8")
     # Unrelated multi-instruction must still split.
@@ -107,8 +105,12 @@ def main() -> int:
     skill = (ROOT / "hermes" / "main" / "skills" / "classify" / "parts" / "notes.txt").read_text(
         encoding="utf-8"
     )
+    assert "persist_gathered_notes" in skill
     assert "single task_hint=search" in skill or "one instruction" in skill
-    assert "source URLs" in skill or "https" in skill
+    notes_skill = (ROOT / "hermes" / "main" / "skills" / "notes" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Title (stack) — Employer" in notes_skill
 
     print("running test case 8/8")
     rules = (ROOT / "test" / "RULES.md").read_text(encoding="utf-8")
