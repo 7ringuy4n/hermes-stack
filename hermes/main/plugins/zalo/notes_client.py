@@ -11,7 +11,7 @@ from typing import Any
 
 
 def memory_url() -> str:
-    return (os.environ.get("MEMORY_URL") or "http://memory-manager:8100").rstrip("/")
+    return (os.environ.get("MEMORY_URL") or "http://memory:8095").rstrip("/")
 
 
 def note_scope(*, thread_id: str, thread_type: str, sender_id: str) -> str:

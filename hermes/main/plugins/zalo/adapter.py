@@ -1583,7 +1583,11 @@ class ZaloAdapter(BasePlatformAdapter):
         user_text: str,
         timezone: str = "Asia/Ho_Chi_Minh",
     ) -> None:
-        tid = str(thread_id or "").strip()
+        try:
+            from .turn_wait import real_thread_id
+        except ImportError:
+            from turn_wait import real_thread_id  # type: ignore
+        tid = real_thread_id(str(thread_id or "").strip())
         if not tid:
             return
         self._as_pending_note_persist = getattr(self, "_as_pending_note_persist", {}) or {}
@@ -1595,10 +1599,18 @@ class ZaloAdapter(BasePlatformAdapter):
         }
 
     def _as_clear_pending_note_persist(self, thread_id: str) -> None:
-        tid = str(thread_id or "").strip()
+        try:
+            from .turn_wait import real_thread_id
+        except ImportError:
+            from turn_wait import real_thread_id  # type: ignore
+        tid = real_thread_id(str(thread_id or "").strip())
         pending_map = getattr(self, "_as_pending_note_persist", None)
         if tid and isinstance(pending_map, dict):
             pending_map.pop(tid, None)
+            # Drop any stale job-isolated keys for the same real thread.
+            for key in list(pending_map.keys()):
+                if real_thread_id(str(key)) == tid:
+                    pending_map.pop(key, None)
 
     async def _as_persist_deferred_notes(
         self,
@@ -1607,9 +1619,22 @@ class ZaloAdapter(BasePlatformAdapter):
         metadata: dict | None,
     ) -> str:
         """If this thread gathered for note-create, store the body and confirm."""
-        tid = str(chat_id or "").strip()
+        try:
+            from .turn_wait import real_thread_id
+        except ImportError:
+            from turn_wait import real_thread_id  # type: ignore
+        raw = str(chat_id or "").strip()
+        tid = real_thread_id(raw)
         pending_map = getattr(self, "_as_pending_note_persist", None) or {}
-        pending = pending_map.pop(tid, None) if isinstance(pending_map, dict) else None
+        pending = None
+        if isinstance(pending_map, dict) and tid:
+            pending = pending_map.pop(tid, None)
+            if pending is None and raw and raw != tid:
+                pending = pending_map.pop(raw, None)
+            # Sweep leftover job-isolated keys for this thread.
+            for key in list(pending_map.keys()):
+                if real_thread_id(str(key)) == tid:
+                    pending_map.pop(key, None)
         if not isinstance(pending, dict):
             return content
         meta = metadata if isinstance(metadata, dict) else {}
