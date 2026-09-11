@@ -15,7 +15,9 @@ from zoneinfo import ZoneInfo
 
 _FALSE_SAVE_RE = re.compile(
     r"(?im)^.*(?:(?:đã|da)\s+lưu(?:\s+thành)?\s+ghi\s+chú|(?:đã|da)\s+luu(?:\s+thanh)?\s+ghi\s+chu|"
-    r"note\s+saved|(?:đã|da)\s+kiểm\s+tra\s+trước|(?:đã|da)\s+kiem\s+tra\s+truoc).*$"
+    r"note\s+saved|(?:đã|da)\s+kiểm\s+tra\s+trước|(?:đã|da)\s+kiem\s+tra\s+truoc|"
+    r"mình không thể tự lưu note|không thể tự lưu note|"
+    r"chưa xác nhận được việc note|chưa thể xác nhận đã lưu).*$"
 )
 _NUMBERED_ITEM_RE = re.compile(r"(?m)^\s*(\d+)[\.\)\-]\s+(.+?)(?=^\s*\d+[\.\)\-]\s+|\Z)", re.S)
 _NOTE_AFTER_SEARCH_RE = re.compile(
@@ -118,8 +120,9 @@ def notes_from_assistant_body(
     # Drop trailing soft questions / offers / agent storage disclaimers.
     cleaned = re.sub(
         r"(?is)\n+\s*(?:bạn có muốn|you (?:want|can)|muốn mình|về việc note lại|"
-        r"mình không có quyền|i (?:can'?t|cannot) (?:save|store)|"
-        r"không thể xác nhận đã lưu).*$",
+        r"mình không (?:có quyền|thể)|i (?:can'?t|cannot) (?:save|store|note)|"
+        r"không thể xác nhận đã lưu|chưa xác nhận được việc note|"
+        r"nếu bạn muốn mình lưu).*$",
         "",
         cleaned,
     ).strip()
@@ -131,7 +134,8 @@ def notes_from_assistant_body(
         # Keep only the first sentence/line of a numbered block when the model
         # appends meta commentary after the job title.
         chunk = re.split(
-            r"(?i)\s+(?:về việc note lại|mình không có|i (?:can'?t|cannot))\b",
+            r"(?i)\s+(?:về việc note lại|mình không (?:có|thể)|i (?:can'?t|cannot)|"
+            r"nếu bạn muốn)\b",
             chunk,
             maxsplit=1,
         )[0].strip()
