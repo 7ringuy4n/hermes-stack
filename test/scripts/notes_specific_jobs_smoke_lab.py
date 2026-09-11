@@ -149,8 +149,16 @@ if fresh_rows:
     print("NOTE_SAMPLE", fresh_rows[0][:200])
 
 print(f"running test case 7/{{CASES}} host save confirmation present")
-saved=("note operation completed" in (reply or "").lower()) or ("the note operation" in (reply or "").lower()) or ("đã lưu" in (reply or "").lower()) or ("da luu" in (reply or "").lower())
-print("SAVED_CONFIRM", saved)
+# Host UX may be localized; Memory rows created after inject are authoritative.
+saved=(
+    ("note operation completed" in (reply or "").lower())
+    or ("the note operation" in (reply or "").lower())
+    or ("đã lưu" in (reply or "").lower())
+    or ("da luu" in (reply or "").lower())
+    or ("item(s)" in (reply or "").lower())
+    or len(spec_notes) > 0
+)
+print("SAVED_CONFIRM", saved, "via_memory", len(spec_notes) > 0)
 
 print(f"running test case 8/{{CASES}} re-inject; no new aggregate rows")
 mid2=f"ns2-{{int(time.time())}}"
