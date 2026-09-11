@@ -41,6 +41,10 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> d
 
 
 def _selector_payload(scope_id: str, selector: dict[str, Any]) -> dict[str, Any]:
+    try:
+        limit = int(selector.get("limit") or 20)
+    except (TypeError, ValueError):
+        limit = 20
     return {
         "scope_id": scope_id,
         "id": str(selector.get("id") or "").strip() or None,
@@ -48,7 +52,7 @@ def _selector_payload(scope_id: str, selector: dict[str, Any]) -> dict[str, Any]
         "date_from": selector.get("date_from"),
         "date_to": selector.get("date_to"),
         "tags": list(selector.get("tags") or []),
-        "limit": 20,
+        "limit": max(1, min(limit, 100)),
     }
 
 
@@ -56,6 +60,34 @@ def _find_candidates(scope_id: str, selector: dict[str, Any]) -> list[dict[str, 
     data = _request("POST", "/v1/notes/query", _selector_payload(scope_id, selector))
     items = data.get("items") if isinstance(data.get("items"), list) else []
     return [item for item in items if isinstance(item, dict)]
+
+
+def list_existing_note_contents(
+    *,
+    thread_id: str,
+    thread_type: str,
+    sender_id: str,
+    query: str = "",
+    tags: list[str] | None = None,
+    limit: int = 50,
+) -> list[str]:
+    """Return prior note bodies for soft dedupe before deferred create."""
+    scope_id = note_scope(thread_id=thread_id, thread_type=thread_type, sender_id=sender_id)
+    selector = {
+        "query": str(query or "").strip(),
+        "tags": list(tags or [])[:12],
+        "limit": max(1, min(int(limit or 50), 100)),
+    }
+    items = _find_candidates(scope_id, selector)
+    # Broad fallback: scope-wide recent notes when the topic query is empty/misses.
+    if not items and (selector["query"] or selector["tags"]):
+        items = _find_candidates(scope_id, {"query": "", "tags": [], "limit": selector["limit"]})
+    out: list[str] = []
+    for item in items:
+        content = str(item.get("content") or "").strip()
+        if content and content not in out:
+            out.append(content)
+    return out
 
 
 def _candidate_lines(items: list[dict[str, Any]]) -> str:

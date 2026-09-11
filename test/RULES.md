@@ -244,7 +244,11 @@ Search-then-note (find live web facts, then note them) must stay one atomic
 turn: exactly one gather listing and one host save confirmation; zero workflow
 「Đang xử lý」 second listing for the same user message. Stored notes created
 from web gathers must retain citation URLs (`http`/`https`) for the sources
-used; bodies must not contain agent storage-disclaimer commentary.
+used; bodies must not contain agent storage-disclaimer commentary. For
+recruitment gathers, the notes/web-search skills require concrete openings
+(`Title — Employer`), forbid aggregate count buckets, and omit openings already
+present when Prior notes are supplied; the host must not implement that policy
+via user-text regex.
 
 Verify short-term session history survives a Hermes replica replacement and
 that durable RAG recall remains grounded after compact/embedding reindex. Reset

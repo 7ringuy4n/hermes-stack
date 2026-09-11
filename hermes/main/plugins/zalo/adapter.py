@@ -1582,6 +1582,7 @@ class ZaloAdapter(BasePlatformAdapter):
         sender_id: str,
         user_text: str,
         timezone: str = "Asia/Ho_Chi_Minh",
+        numbered_only: bool = False,
     ) -> None:
         try:
             from .turn_wait import real_thread_id
@@ -1596,6 +1597,7 @@ class ZaloAdapter(BasePlatformAdapter):
             "thread_type": str(thread_type or "user"),
             "user_text": str(user_text or ""),
             "timezone": str(timezone or "Asia/Ho_Chi_Minh"),
+            "numbered_only": bool(numbered_only),
         }
 
     def _as_clear_pending_note_persist(self, thread_id: str) -> None:
@@ -1651,21 +1653,19 @@ class ZaloAdapter(BasePlatformAdapter):
             from notes_persist import notes_from_assistant_body, strip_false_note_claims  # type: ignore
         cleaned = strip_false_note_claims(content)
         # Ignore short status / wait lines; keep the pending for the real gather.
-        low = cleaned.lower()
-        if (
-            len(cleaned) < 80
-            or "vui lòng chờ" in low
-            or "please wait" in low
-            or "đang trả lời" in low
-            or "dang tra loi" in low
-        ):
+        # Gate on length only — language-specific wait phrases belong in skills/UX.
+        if len(cleaned) < 80:
             pending_map[tid] = pending
             self._as_pending_note_persist = pending_map
             return cleaned or content
+        user_ask = str(pending.get("user_text") or "")
+        thread_type = str(pending.get("thread_type") or "user")
+        sender_id = str(pending.get("sender_id") or "")
         notes = notes_from_assistant_body(
             cleaned,
-            user_ask=str(pending.get("user_text") or ""),
+            user_ask=user_ask,
             timezone=str(pending.get("timezone") or "Asia/Ho_Chi_Minh"),
+            numbered_only=bool(pending.get("numbered_only")),
         )
         if not notes:
             return cleaned or content
@@ -1676,8 +1676,8 @@ class ZaloAdapter(BasePlatformAdapter):
         result = await execute_note_plan_async(
             plan,
             thread_id=tid,
-            thread_type=str(pending.get("thread_type") or "user"),
-            sender_id=str(pending.get("sender_id") or ""),
+            thread_type=thread_type,
+            sender_id=sender_id,
         )
         if not result.get("success"):
             logger.warning(
@@ -1691,7 +1691,7 @@ class ZaloAdapter(BasePlatformAdapter):
             "ZALO_NOTES_SAVED_MSG",
             ("notes", "saved"),
             f"The note operation completed ({count} item(s)).",
-            user_text=str(pending.get("user_text") or cleaned),
+            user_text=user_ask or cleaned,
         )
         body = cleaned.strip()
         if body:
@@ -2868,6 +2868,9 @@ class ZaloAdapter(BasePlatformAdapter):
                 sender_id=str(sender_id),
                 user_text=current,
                 timezone=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
+                numbered_only=bool(
+                    isinstance(plan, dict) and plan.get("persist_gathered_notes") is True
+                ),
             )
         # Remote-only media summaries are owned by the host refusal path.
         # Consume them before async-workflow routing so classifier variability
@@ -2944,6 +2947,7 @@ class ZaloAdapter(BasePlatformAdapter):
                     sender_id=str(sender_id),
                     user_text=current,
                     timezone=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
+                    numbered_only=False,
                 )
                 logger.info(
                     "[zalo] note create without notes[] — defer persist after gather thread=%s",
@@ -4460,6 +4464,35 @@ class ZaloAdapter(BasePlatformAdapter):
                         "substitute execute_code, terminal commands, or network libraries. "
                         "Answer only from the current tool result."
                     )
+                    try:
+                        from .notes_client import list_existing_note_contents
+                        from .notes_persist import (
+                            load_search_then_note_contract,
+                            plan_wants_persist_gathered_notes,
+                        )
+                    except ImportError:
+                        from notes_client import list_existing_note_contents  # type: ignore
+                        from notes_persist import (  # type: ignore
+                            load_search_then_note_contract,
+                            plan_wants_persist_gathered_notes,
+                        )
+                    if plan_wants_persist_gathered_notes(fire_plan):
+                        prior: list[str] = []
+                        try:
+                            prior = await asyncio.to_thread(
+                                list_existing_note_contents,
+                                thread_id=str(thread_id or ""),
+                                thread_type=str(thread_type or "user"),
+                                sender_id=str(getattr(event, "sender_id", "") or ""),
+                                query="",
+                                limit=50,
+                            )
+                        except Exception:
+                            prior = []
+                        fire_text = (
+                            f"{str(text or '').strip()}\n\n"
+                            f"{load_search_then_note_contract(prior_notes=prior)}"
+                        )
                     if hasattr(event, "text"):
                         event.text = self._as_with_host_clock_context(fire_text)
                 await self._as_dispatch_event(event, fire_text)
@@ -4932,6 +4965,35 @@ class ZaloAdapter(BasePlatformAdapter):
                                 "substitute execute_code, terminal commands, or network libraries. "
                                 "Answer only from the current tool result."
                             )
+                            try:
+                                from .notes_client import list_existing_note_contents
+                                from .notes_persist import (
+                                    load_search_then_note_contract,
+                                    plan_wants_persist_gathered_notes,
+                                )
+                            except ImportError:
+                                from notes_client import list_existing_note_contents  # type: ignore
+                                from notes_persist import (  # type: ignore
+                                    load_search_then_note_contract,
+                                    plan_wants_persist_gathered_notes,
+                                )
+                            if plan_wants_persist_gathered_notes(queued_plan):
+                                prior: list[str] = []
+                                try:
+                                    prior = await asyncio.to_thread(
+                                        list_existing_note_contents,
+                                        thread_id=tid,
+                                        thread_type=thread_type,
+                                        sender_id=sender_id,
+                                        query="",
+                                        limit=50,
+                                    )
+                                except Exception:
+                                    prior = []
+                                event.text = (
+                                    f"{bare_q}\n\n"
+                                    f"{load_search_then_note_contract(prior_notes=prior)}"
+                                )
                     has_image = self._as_has_image_attachment(
                         list(event.media_urls or []),
                         media_types=list(event.media_types or []),
