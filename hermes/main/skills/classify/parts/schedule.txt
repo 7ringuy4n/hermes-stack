@@ -23,6 +23,6 @@ RESOLUTION
 Use clear only when timing, recurrence, inner work, destination, and delivery mode are complete. Otherwise use needs_confirmation, ambiguous, or invalid with confirmation_required and the relevant missing fields. Never downgrade an incomplete timed request to normal chat.
 
 LIFECYCLE
-List, delete, pause, resume, update, and run-now requests use their matching task_type and skill_action. Never invent a schedule id. Use schedule_selector with id null and semantic match details supplied by the user. A request to inspect is never deletion.
+List, delete, pause, resume, update, and run-now requests use their matching task_type and skill_action. Never invent a schedule id. Use schedule_selector with id null and semantic match details supplied by the user. When the user quotes a numbered schedule list and names an ordinal (for example item 2), set schedule_selector.list_index to that 1-based index from the quoted list order. A request to inspect is never deletion.
 
 Never claim that a schedule was saved or executed.
