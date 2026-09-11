@@ -1,3 +1,10 @@
+## 2026-09-11 — deferred search-then-note persist
+
+- After live gather for search-then-note / empty note create, the Zalo host
+  POSTs note rows to Memory and appends a real save confirmation (agent claims
+  of “Đã lưu…” are stripped). Lookup retries with a simplified query.
+- See `history/2026-09-11/note-search-persist.md`.
+
 ## 2026-09-11 — schedule quote-delete + search-then-note
 
 - Quote-reply ordinal deletes (`xoá số 2`) classify with quoted list context,
