@@ -28,6 +28,13 @@ def looks_like_schedule_job(text: str) -> bool:
 
 def parts_from_plan(raw: str, plan: Dict[str, Any]) -> List[str]:
     """Return independent user jobs without splitting one dependency graph."""
+    try:
+        from .notes_persist import keep_search_then_note_atomic
+    except ImportError:
+        from notes_persist import keep_search_then_note_atomic  # type: ignore
+    # Search-then-note must stay one gather + one host persist (no FIFO split).
+    if keep_search_then_note_atomic(plan if isinstance(plan, dict) else {}, raw):
+        return [raw]
     tasks = plan.get("tasks") or []
     if isinstance(tasks, list) and len(tasks) >= 2:
         out: List[str] = []

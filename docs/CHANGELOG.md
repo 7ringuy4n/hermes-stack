@@ -1,3 +1,10 @@
+## 2026-09-11 — atomic search-then-note + note citations
+
+- Search-then-note stays one gather/persist turn (no FIFO/workflow double run).
+- Host-stored web-gather notes retain source URLs; RULES C7/C10 cover
+  schedule-for-note and note CRUD.
+- See `history/2026-09-11/note-atomic-cite.md`.
+
 ## 2026-09-11 — deferred search-then-note persist
 
 - After live gather for search-then-note / empty note create, the Zalo host
