@@ -1,3 +1,10 @@
+## 2026-09-10 — router-worker skill sync ownership
+
+- Operator `bash run.sh update` failed with `PermissionError` on root-owned
+  `architect/models/router-worker/config/outbound.json` because the sync shell
+  fast-path only checked directory writability, then `shutil.copyfile` opened
+  the existing inode. Atomic rename + file-level repair checks fix the SoT path.
+
 ## 2026-09-10 — host clock on live chat turns
 
 - Prepend authoritative host `Timezone` / `Local now` on Hermes-facing Zalo
