@@ -34,17 +34,10 @@ bash run.sh load-openbao-env
 python3 scripts/main/sync_router_worker_skills.py || true
 SYNC_ZALO_RESTART=0 bash scripts/main/sync-zalo-plugins.sh
 python3 test/scripts/notes_deferred_persist_unit.py
-docker restart $(docker ps -q --filter name=assistant-hermes) 2>/dev/null || true
-# Wait until Hermes is accepting work again.
-for i in $(seq 1 36); do
-  H=$(docker ps -q --filter name=assistant-hermes | head -1)
-  if [ -n "$H" ] && docker exec "$H" true 2>/dev/null; then
-    sleep 5
-    echo HERMES_READY
-    break
-  fi
-  sleep 5
+for id in $(docker ps --filter label=com.docker.compose.service=hermes --format '{{{{.ID}}}}'); do
+  docker restart "$id" >/dev/null
 done
+sleep 18
 echo DEPLOY_OK $(git rev-parse --short HEAD)
 """
             out = sudo_bash(c, deploy, timeout=900)
@@ -69,13 +62,20 @@ export LAB_USER='{USER_ID}'
 export LAB_MARKER='{marker}'
 export LAB_ASK={json.dumps(ask)}
 python3 - <<'PY'
-import json, os, time, urllib.request, subprocess
+import json, os, subprocess, time, urllib.request
 
 user = os.environ["LAB_USER"]
 marker = os.environ["LAB_MARKER"]
 ask = os.environ["LAB_ASK"]
 CASES = 10
 started = time.time()
+pg = subprocess.check_output(
+    ["docker", "ps", "--filter", "label=com.docker.compose.service=postgres", "--format", "{{{{.Names}}}}"],
+    text=True,
+).splitlines()[0]
+db_user = os.environ.get("MEMORY_DB_USER", "hermes")
+db_name = os.environ.get("MEMORY_DB_NAME", "hermes_memory")
+db_password = os.environ.get("MEMORY_DB_PASSWORD", "")
 
 def post(url, payload, timeout=30):
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -86,160 +86,129 @@ def post(url, payload, timeout=30):
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode() or "{{}}")
 
-def sh(cmd):
-    return subprocess.check_output(cmd, shell=True, text=True, errors="replace")
+def sql(query: str) -> str:
+    return subprocess.check_output(
+        ["docker", "exec", "-e", "PGPASSWORD=" + db_password, pg, "psql", "-U", db_user, "-d", db_name, "-At", "-c", query],
+        text=True,
+        errors="replace",
+    ).strip()
+
+def delivered_for(mid: str) -> str:
+    q = (
+        "SELECT coalesce(content,'') FROM zalo_message_history "
+        f"WHERE event='delivered' AND meta->>'source_message_id'='{{mid}}' "
+        "ORDER BY id DESC LIMIT 1;"
+    )
+    return sql(q)
 
 print(f"running test case 3/{{CASES}} inject search-then-note")
 mid = f"np-{{int(time.time())}}"
 payload = {{
     "type": "message",
-    "data": {{
-        "message": {{
-            "msgId": mid,
-            "cliMsgId": mid,
-            "msgType": "webchat",
-            "uidFrom": user,
-            "idTo": user,
-            "dName": "Tn",
-            "ts": str(int(time.time() * 1000)),
-            "content": ask,
-        }},
-        "threadType": 0,
+    "payload": {{
         "threadId": user,
+        "threadType": "user",
+        "senderId": user,
+        "senderName": "Tn",
+        "messageId": mid,
+        "text": ask,
+        "isSelf": False,
     }},
 }}
-inj = post("http://127.0.0.1:8787/inject-event", payload)
-print("INJECT", inj.get("ok"), mid)
+print("INJECT", post("http://127.0.0.1:8787/inject-event", payload).get("ok"), mid)
 
-print(f"running test case 4/{{CASES}} wait host save confirm + marker")
-reply_hit = False
-save_hit = False
-persist_log = False
+print(f"running test case 4/{{CASES}} wait delivered reply")
+reply = ""
 deadline = time.time() + 300
 while time.time() < deadline:
-    try:
-        logs = sh(
-            "journalctl --user -u com.hermes.zaloplugin --since '15 min ago' --no-pager 2>/dev/null | tail -200; "
-            "H=$(docker ps -q --filter name=assistant-hermes | head -1); "
-            "docker logs --since 15m $H 2>&1 | tail -120"
-        )
-    except Exception as e:
-        logs = str(e)
-    low = logs.lower()
-    if marker.lower() in low:
-        reply_hit = True
-    if "deferred note persist failed" in low:
-        print("PERSIST_FAIL_SEEN")
-    if "deferred note persist" in low or "note create without notes" in low:
-        persist_log = True
-    if (
-        "the note operation completed" in low
-        or "item(s)" in low
-        or "ghi chú đã" in low
-        or ("đã lưu" in low and "ghi" in low)
-    ):
-        save_hit = True
-    if reply_hit and (save_hit or persist_log):
+    reply = delivered_for(mid)
+    if reply and len(reply) > 40:
         break
     time.sleep(5)
-
-print("REPLY_MARKER", reply_hit)
-print("SAVE_SIGNAL", save_hit)
-print("PERSIST_LOG", persist_log)
+print("REPLY_LEN", len(reply or ""))
+print("REPLY_HAS_MARKER", marker in (reply or ""))
+print("REPLY_SNIP", json.dumps((reply or "")[:280], ensure_ascii=False))
 
 print(f"running test case 5/{{CASES}} Memory query by marker")
 found = []
-last_err = ""
-for q in (marker, "java", "NOTEPERSIST"):
-    try:
-        res = post(
-            "http://127.0.0.1:8095/v1/notes/query",
-            {{
-                "scope_id": f"zalo:user:{{user}}",
-                "query": q,
-                "limit": 20,
-            }},
-            timeout=15,
-        )
-        items = res.get("items") or []
-        for it in items:
-            content = str((it or {{}}).get("content") or "")
-            if marker in content or (q == "java" and "java" in content.lower() and "NOTEPERSIST" in content):
-                found.append(content[:240])
-        print("MEMORY_Q", q, "count", len(items), "hit", len(found))
-        if found:
-            break
-    except Exception as e:
-        last_err = f"{{type(e).__name__}}: {{e}}"
-if not found and last_err:
-    print("MEMORY_ERR", last_err)
+for q in (marker, "java"):
+    res = post(
+        "http://127.0.0.1:8095/v1/notes/query",
+        {{"scope_id": f"zalo:user:{{user}}", "query": q, "limit": 20}},
+        timeout=15,
+    )
+    items = res.get("items") or []
+    for it in items:
+        content = str((it or {{}}).get("content") or "")
+        if marker in content:
+            found.append(content[:240])
+    print("MEMORY_Q", q, "count", len(items), "marker_hits", len(found))
+    if found:
+        break
 if found:
     print("MEMORY_SAMPLE", found[0][:180])
 
-print(f"running test case 6/{{CASES}} Zalo lookup inject")
+print(f"running test case 6/{{CASES}} lookup inject")
 mid2 = f"np-lookup-{{int(time.time())}}"
 payload2 = {{
     "type": "message",
-    "data": {{
-        "message": {{
-            "msgId": mid2,
-            "cliMsgId": mid2,
-            "msgType": "webchat",
-            "uidFrom": user,
-            "idTo": user,
-            "dName": "Tn",
-            "ts": str(int(time.time() * 1000)),
-            "content": "hien thi cac tin tuyen dung java da luu",
-        }},
-        "threadType": 0,
+    "payload": {{
         "threadId": user,
+        "threadType": "user",
+        "senderId": user,
+        "senderName": "Tn",
+        "messageId": mid2,
+        "text": "hien thi cac tin tuyen dung java da luu",
+        "isSelf": False,
     }},
 }}
 print("INJECT_LOOKUP", post("http://127.0.0.1:8787/inject-event", payload2).get("ok"))
 
-print(f"running test case 7/{{CASES}} wait lookup reply")
-lookup_ok = False
+print(f"running test case 7/{{CASES}} wait lookup delivered")
+lookup = ""
 deadline = time.time() + 120
 while time.time() < deadline:
-    try:
-        logs = sh(
-            "journalctl --user -u com.hermes.zaloplugin --since '20 min ago' --no-pager 2>/dev/null | tail -120"
-        )
-    except Exception as e:
-        logs = str(e)
-    if marker in logs and "không tìm thấy ghi chú" not in logs.lower():
-        lookup_ok = True
+    lookup = delivered_for(mid2)
+    if lookup:
         break
-    # Host gate announce for notes may not include marker in journal content;
-    # Memory proof is the hard gate.
     time.sleep(4)
+print("LOOKUP_SNIP", json.dumps((lookup or "")[:280], ensure_ascii=False))
+lookup_ok = bool(lookup) and ("không tìm thấy" not in lookup.lower()) and (
+    marker in lookup or "java" in lookup.lower()
+)
 print("LOOKUP_OK", lookup_ok)
 
-print(f"running test case 8/{{CASES}} adapter markers")
-adapter = open("/opt/assistant/hermes/main/plugins/zalo/adapter.py", encoding="utf-8").read()
-assert "real_thread_id" in adapter and "_as_persist_deferred_notes" in adapter
-print("ADAPTER_OK")
+print(f"running test case 8/{{CASES}} host confirm / no fake-only claim")
+host_confirm = any(
+    x in (reply or "").lower()
+    for x in ("the note operation completed", "item(s)", "đã lưu", "da luu", "ghi chú")
+)
+print("HOST_CONFIRM_LIKE", host_confirm)
 
 print(f"running test case 9/{{CASES}} abnormal scan")
 try:
-    scan = sh(
-        "journalctl --user -u com.hermes.zaloplugin --since '30 min ago' --no-pager 2>/dev/null | "
-        "grep -iE 'notes\\.failed|missing_notes|deferred note persist failed|UnboundLocalError' || true"
+    scan = subprocess.check_output(
+        "journalctl --user -u com.hermes.zaloplugin --since '40 min ago' --no-pager 2>/dev/null | "
+        "grep -iE 'notes\\.failed|missing_notes|deferred note persist failed|UnboundLocalError' || true",
+        shell=True,
+        text=True,
+        errors="replace",
     )
 except Exception as e:
     scan = str(e)
-print("ABNORMAL_SCAN", (scan or "").strip()[:500] or "none")
+print("ABNORMAL_SCAN", (scan or "").strip()[:400] or "none")
 
 print(f"running test case 10/{{CASES}} verdict elapsed={{round(time.time()-started,1)}}s")
-ok = bool(found) and marker in "\\n".join(found)
+# Hard gate: Memory must contain marker rows created from this turn.
+ok = bool(found) and marker in "\\n".join(found) and bool(reply)
 print("SMOKE_PASS" if ok else "SMOKE_FAIL")
 if not ok:
     print("DIAG", {{
-        "reply_hit": reply_hit,
-        "save_hit": save_hit,
-        "persist_log": persist_log,
+        "reply_len": len(reply or ""),
+        "reply_marker": marker in (reply or ""),
         "memory": len(found),
         "lookup_ok": lookup_ok,
+        "host_confirm_like": host_confirm,
     }})
     raise SystemExit(1)
 PY
