@@ -24,6 +24,10 @@ raw nested scanner dictionary.
   The dynamic plugin also needs a package-relative provider import.
 - Workflow submission unconditionally announced a localized started message,
   and Security Manager interpolated its internal `layers` object into alerts.
+- The concurrent DM/group burst delivered every answer but retained one queue
+  claim past the gate deadline. Session-idle detection used substring matching;
+  because a group session key ends with its sender id, that key was mistaken
+  for the same sender's DM destination and coupled otherwise isolated queues.
 
 ### Decisions and fixes
 
@@ -40,6 +44,9 @@ raw nested scanner dictionary.
 - Keep durable internal queue processing records, but remove the visible async
   workflow placeholder. Format critical alerts as filename, concise blocking
   reason, and quarantine outcome only.
+- Pass the typed destination into session-idle waits and match the exact DM
+  payload or group destination prefix. Never infer queue ownership from an id
+  occurring anywhere in another session key.
 
 ### Verification and prevention
 
@@ -48,6 +55,9 @@ raw nested scanner dictionary.
 - The provider unit now covers preserved/idempotent enabled-list mutation and
   requires the setup/update reload hook, preventing a discovered-but-skipped
   plugin from passing deployment tests again.
+- The turn-wait unit reproduces a group key ending in the concurrent DM user's
+  id and requires it not to hold the DM queue; delivery/timeout queue contracts
+  remain covered by their existing units.
 - The release gate retains concurrent DM/group attributed search and terminal
   source correlation; the flexible image gate now requires model-rendered
   full-bleed composition and rejects any legacy endpoint call.

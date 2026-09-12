@@ -3778,7 +3778,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 return
             await self.handle_message(event)
             idle = await self._as_wait_thread_idle(
-                iso, pulse=_pulse, arm_first=True
+                iso, thread_type=zalo_tt, pulse=_pulse, arm_first=True
             )
             await self._as_autosend_late_files(iso, zalo_tt)
             delivery_event = self._as_part_delivered.get(iso)
@@ -3862,6 +3862,7 @@ class ZaloAdapter(BasePlatformAdapter):
         self,
         thread_id: str,
         *,
+        thread_type: str = "",
         pulse=None,
         arm_first: bool = False,
     ) -> bool:
@@ -3873,6 +3874,7 @@ class ZaloAdapter(BasePlatformAdapter):
         return await wait_thread_idle(
             lambda: getattr(self, "_active_sessions", None),
             thread_id,
+            thread_type=thread_type,
             timeout_s=timeout,
             pulse=pulse,
             arm_first=arm_first,
@@ -5049,6 +5051,7 @@ class ZaloAdapter(BasePlatformAdapter):
 
                     idle = await self._as_wait_thread_idle(
                         tid,
+                        thread_type=thread_type,
                         pulse=_pulse,
                         arm_first=True,
                     )

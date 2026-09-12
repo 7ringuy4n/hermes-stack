@@ -9,6 +9,8 @@
   restoring attributed live search and page extraction.
 - Async workflows no longer send the visible “Đang xử lý…” placeholder, and
   security alerts summarize the blocking reason without raw scanner JSON.
+- Concurrent DM and group turns now use destination-aware exact session
+  matching, so a group sender id cannot falsely keep that user's DM queue busy.
 - See `history/2026-09-12/README.md`.
 
 ## 2026-09-12 — safe public-page extraction fallback

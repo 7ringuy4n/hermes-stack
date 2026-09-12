@@ -5,7 +5,8 @@ in one image-generation prompt; the legacy overlay endpoint is gone. Hermes
 registers and enables the Router Worker web provider, preserving existing
 plugin entries; setup/update reload running replicas after config sync.
 Workflows omit the processing placeholder, and security alerts no longer
-expose scanner dictionaries.
+expose scanner dictionaries. Queue idle waits match the typed Zalo destination
+instead of a raw substring, preventing cross-scope DM/group stalls.
 
 ## 2026-09-11 — scheduled search-then-note fire
 
