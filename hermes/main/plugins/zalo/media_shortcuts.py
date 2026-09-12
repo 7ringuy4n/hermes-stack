@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 log = logging.getLogger("hermes_plugins.zalo_platform.media_shortcuts")
 
-_OVERLAY_PAYLOAD_MAX_LINES = 8
+_COMPOSITION_MAX_LINES = 8
 
 _MEDIA_FAIL_LINE_VI = (
     "Hiện chưa tạo được file này. Bạn thử lại sau hoặc rút gọn yêu cầu giúp mình."
@@ -239,7 +239,7 @@ def _image_prompt_assets() -> dict[str, Any]:
     return {}
 
 
-def _safe_overlay_design(raw: Any) -> dict[str, Any]:
+def _safe_composition_design(raw: Any) -> dict[str, Any]:
     assets = _image_prompt_assets()
     defaults = assets.get("default_design")
     base = dict(defaults) if isinstance(defaults, dict) else {}
@@ -294,19 +294,19 @@ def _json_object(text: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _omni_overlay_plan_timeout_s() -> int:
+def _composition_plan_timeout_s() -> int:
     """Allow normal router queueing without an unbounded Zalo turn."""
-    raw = (os.getenv("OMNI_OVERLAY_PLAN_TIMEOUT_S") or "120").strip()
+    raw = (os.getenv("OMNI_COMPOSITION_PLAN_TIMEOUT_S") or "120").strip()
     try:
         return max(30, min(int(raw), 180))
     except ValueError:
         return 120
 
 
-_OVERLAY_PLAN_MAX_TOKENS = 4096
+_COMPOSITION_PLAN_MAX_TOKENS = 4096
 
 
-def _omni_overlay_plan_model() -> str:
+def _composition_plan_model() -> str:
     """Return the configured priority combo for short structured planning."""
     return (
         os.getenv("OMNIROUTER_CLASSIFY_COMBO")
@@ -326,7 +326,7 @@ def _omni_json_plan(system: str, user: str, *, max_tokens: int) -> dict[str, Any
     key = resolve_media_router_api_key()
     if not base or not key or not system or not user:
         return {}
-    model = _omni_overlay_plan_model()
+    model = _composition_plan_model()
     body = json.dumps(
         {
             "model": model,
@@ -352,7 +352,7 @@ def _omni_json_plan(system: str, user: str, *, max_tokens: int) -> dict[str, Any
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=_omni_overlay_plan_timeout_s()) as resp:
+        with urllib.request.urlopen(req, timeout=_composition_plan_timeout_s()) as resp:
             data = json.loads(resp.read().decode("utf-8") or "{}")
     except Exception as exc:  # noqa: BLE001
         log.warning("image structured planning failed: %s", type(exc).__name__)
@@ -404,7 +404,7 @@ def _validated_evidence_queries(parsed: Any) -> list[str]:
     return queries
 
 
-def _synthesize_overlay_plan(
+def _synthesize_composition_plan(
     search: Any,
     *,
     query: str = "",
@@ -428,7 +428,7 @@ def _synthesize_overlay_plan(
         # This is a protocol bound, not an operator tuning knob. The validator
         # below caps every collection and string, so one fixed budget covers the
         # largest accepted plan and keeps deployments configuration-free.
-        max_tokens=_OVERLAY_PLAN_MAX_TOKENS,
+        max_tokens=_COMPOSITION_PLAN_MAX_TOKENS,
     )
     facts: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -480,18 +480,18 @@ def _synthesize_overlay_plan(
         panels.append({
             "title": " ".join(str(raw_panel.get("title") or "").split())[:64],
             "facts": panel_facts,
-            "design": _safe_overlay_design(raw_panel.get("design")),
+            "design": _safe_composition_design(raw_panel.get("design")),
         })
         if len(panels) >= 6:
             break
     if not facts and not panels:
-        log.warning("overlay plan synthesize empty model=%r", _omni_overlay_plan_model())
+        log.warning("composition plan is empty model=%r", _composition_plan_model())
         return {}
     return {
         "title": title,
         "facts": facts,
         "panels": panels,
-        "design": _safe_overlay_design(parsed.get("design")),
+        "design": _safe_composition_design(parsed.get("design")),
         "include_timestamp": bool(parsed.get("include_timestamp", True)),
         "timestamp_label": " ".join(str(parsed.get("timestamp_label") or "").split())[:24],
         "background_scene": background_scene,
@@ -635,34 +635,7 @@ def scene_prompt_from_instruction(text: str) -> str:
     return ""
 
 
-def _overlay_payload(composition: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
-    """Convert a validated LLM composition into renderer data."""
-    assets = _image_prompt_assets()
-    title = " ".join(str(composition.get("title") or assets.get("fallback_title") or "").split())[:64]
-    lines = [title] if title else []
-    roles = ["title"] if title else []
-    for fact in composition.get("facts") or []:
-        if not isinstance(fact, dict):
-            continue
-        label = " ".join(str(fact.get("label") or "").split())[:40]
-        value = " ".join(str(fact.get("value") or "").split())[:72]
-        if not label or not value:
-            continue
-        lines.append(f"{label}: {value}")
-        roles.append(str(fact.get("emphasis") or "normal"))
-        if len(lines) >= _OVERLAY_PAYLOAD_MAX_LINES - 1:
-            break
-    if composition.get("include_timestamp", True):
-        timestamp = _overlay_timestamp_line(assets, label=composition.get("timestamp_label"))
-        if timestamp:
-            lines.append(timestamp)
-            roles.append("meta")
-    design = _safe_overlay_design(composition.get("design"))
-    design["line_roles"] = roles[:_OVERLAY_PAYLOAD_MAX_LINES]
-    return lines[:_OVERLAY_PAYLOAD_MAX_LINES], design
-
-
-def _overlay_timestamp_line(
+def _composition_timestamp(
     assets: dict[str, Any] | None = None, *, label: Any = ""
 ) -> str:
     source = assets if isinstance(assets, dict) else _image_prompt_assets()
@@ -677,70 +650,35 @@ def _overlay_timestamp_line(
     return f"{stamp}: {now}"
 
 
-def _overlay_panels_payload(composition: dict[str, Any]) -> list[dict[str, Any]]:
-    """Convert optional model-authored regions into validated renderer panels."""
-    payload: list[dict[str, Any]] = []
-    for panel in composition.get("panels") or []:
-        if not isinstance(panel, dict):
-            continue
-        lines, design = _overlay_payload({
-            "title": panel.get("title"),
-            "facts": panel.get("facts"),
-            "design": panel.get("design"),
-            "include_timestamp": False,
-        })
-        if lines:
-            payload.append({"overlay": lines, "overlay_design": design})
-    if payload and composition.get("include_timestamp", True):
-        timestamp = _overlay_timestamp_line(label=composition.get("timestamp_label"))
-        if timestamp and len(payload[-1]["overlay"]) < _OVERLAY_PAYLOAD_MAX_LINES:
-            payload[-1]["overlay"].append(timestamp)
-            payload[-1]["overlay_design"]["line_roles"].append("meta")
-    return payload[:6]
+def _composition_image_prompt(scene: str, composition: dict[str, Any]) -> str:
+    """Build one model-rendered image prompt from validated grounded content."""
+    assets = _image_prompt_assets()
+    template = str(assets.get("composition_render_template") or "").strip()
+    if not template:
+        log.error("composition render prompt asset missing")
+        return ""
+    spec = {
+        "title": composition.get("title") or "",
+        "facts": list(composition.get("facts") or [])[:_COMPOSITION_MAX_LINES],
+        "panels": list(composition.get("panels") or [])[:6],
+        "design": _safe_composition_design(composition.get("design")),
+    }
+    if composition.get("include_timestamp", True):
+        stamp = _composition_timestamp(assets, label=composition.get("timestamp_label"))
+        if stamp:
+            spec["timestamp"] = stamp
+    return template.replace("{scene}", " ".join((scene or "").split())[:1200]).replace(
+        "{composition}", json.dumps(spec, ensure_ascii=False, separators=(",", ":"))
+    )
 
 
-def _apply_composed_overlay(out: dict[str, Any], composition: dict[str, Any]) -> dict[str, Any]:
-    """Post-process an image using the model-authored, renderer-validated design."""
-    panels = _overlay_panels_payload(composition)
-    lines, design = _overlay_payload(composition)
-    if panels:
-        lines = []
-    if not lines and not panels:
-        return out
-    path = str(out.get("path") or out.get("file") or "")
-    name = Path(path).name if path else ""
-    if not name:
-        return out
-    try:
-        _post(
-            "/v1/overlay",
-            {
-                "filename": name,
-                "overlay": lines,
-                "overlay_corner": design.get("placement", "auto"),
-                "overlay_design": design,
-                "overlay_panels": panels or None,
-                "prompt": "",
-            },
-            timeout=45.0,
-        )
-        out["overlay"] = sum(len(panel.get("overlay") or []) for panel in panels) if panels else len(lines)
-    except Exception as e:  # noqa: BLE001
-        log.warning("live overlay failed: %s", type(e).__name__)
-    return out
-
-
-def _scene_visual_prompt(scene: str, *, composed: bool = False) -> str:
+def _scene_visual_prompt(scene: str) -> str:
     """Build a scene prompt entirely from classifier output and editable prompt assets."""
     assets = _image_prompt_assets()
     parts = [" ".join((scene or "").split())]
     suffix = str(assets.get("scene_suffix") or "").strip()
     if suffix:
         parts.append(suffix)
-    if composed:
-        composition_suffix = str(assets.get("composition_scene_suffix") or "").strip()
-        if composition_suffix:
-            parts.append(composition_suffix)
     return " ".join(part for part in parts if part).strip()
 
 
@@ -1319,7 +1257,7 @@ def run_search_then_composed_image(
     scene = scene_prompt_from_instruction(img_ins)
     if not scene:
         return shortcut_consumed()
-    composition = _synthesize_overlay_plan(
+    composition = _synthesize_composition_plan(
         search,
         query=user_ask,
         instruction=img_ins or user_ask,
@@ -1341,16 +1279,20 @@ def run_search_then_composed_image(
         )
         or "none",
     )
-    # Grounded composition owns both overlay design and the clean background
-    # brief.  Fall back to the classifier scene only for older model responses.
+    # Grounded composition owns both the exact visible copy and the full-scene
+    # design. Generate one coherent bitmap; do not resize or paint host panels.
     visual_scene = str(composition.get("background_scene") or "").strip() or scene
-    prompt = _scene_visual_prompt(visual_scene, composed=True)
+    prompt = _composition_image_prompt(visual_scene, composition)
+    if not prompt:
+        return shortcut_consumed()
     import uuid
 
     fname = f"composed-image-{str(thread_id)[-8:] or 'zalo'}-{uuid.uuid4().hex[:8]}.jpg"
     out = _omni_generate_still(prompt, filename=fname)
     if isinstance(out, dict) and out.get("ok"):
-        return _apply_composed_overlay(out, composition)
+        out["composition"] = "model-rendered"
+        log.info("composed image rendered mode=model full_bleed=true")
+        return out
     return shortcut_consumed()
 
 

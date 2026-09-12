@@ -1,5 +1,49 @@
 # 2026-09-12 — titled notes, silent research schedules, and visual PPTX
 
+## 20:20 — Gray image bands, unregistered web search, and noisy status output
+
+### Symptoms
+
+Generated information images contained large gray side or bottom bands and
+opaque cards that hid the scene. A concurrent current-weather gate delivered
+two plausible answers but only one attributed routed search. Async workflows
+sent a visible processing placeholder, while critical file alerts exposed a
+raw nested scanner dictionary.
+
+### Root causes
+
+- The image path generated a text-free background and then resized/painted it
+  through `dispatcher/overlay.py`; this deterministic canvas step could not
+  adapt to scene saliency or arbitrary user-requested placement.
+- The stack web plugin declared `router-worker` in `plugin.yaml` but its
+  `__init__.py` had no `register(ctx)` call, so Hermes rejected the configured
+  native provider and the model could answer without a fresh tool result.
+- Workflow submission unconditionally announced a localized started message,
+  and Security Manager interpolated its internal `layers` object into alerts.
+
+### Decisions and fixes
+
+- Keep evidence planning and copy validation, then send the complete scene,
+  exact grounded copy, grouping, and spatial constraints to `image-gen` in one
+  prompt. The model owns typography and composition. Remove `overlay.py`, the
+  dispatcher endpoint, related request fields, and renderer-specific tests.
+- Require a full-bleed result in the image prompt and live gate; forbid gray or
+  blank padding, split canvases, and large opaque panels that conceal the scene.
+- Register `RouterWorkerWebSearchProvider` and sync it with every replica.
+- Keep durable internal queue processing records, but remove the visible async
+  workflow placeholder. Format critical alerts as filename, concise blocking
+  reason, and quarantine outcome only.
+
+### Verification and prevention
+
+- Focused composition, skill, provider-registration, workflow, and security
+  units pass locally.
+- The release gate retains concurrent DM/group attributed search and terminal
+  source correlation; the flexible image gate now requires model-rendered
+  full-bleed composition and rejects any legacy endpoint call.
+- VPS deployment, focused live reruns, and the complete numbered gate remain
+  required before merge.
+
 ## 14:10 — Note titles, clean retrieval views, and explicit bulk mutation
 
 ### Symptom

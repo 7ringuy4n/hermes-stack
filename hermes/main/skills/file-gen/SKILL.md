@@ -114,18 +114,12 @@ padding, typography, and page size when content grows; never omit a region or
 allow two regions to cover one another.
 
 When the user explicitly wants information placed over an image inside the
-document, compose that image before embedding it. Create or resolve the base
-image, then call `POST http://dispatcher:8090/v1/overlay` once with
-`send_zalo=false` and `overlay_panels`. Each panel contains `overlay` and
-`overlay_design`. Use a named placement for a conventional region, or a
-validated normalized `region` object (`x`, `y`, `width`, `height`, each from
-zero to one) for a precise or unusual location. Up to six regions are
-supported. Use `placement=auto` for unspecified positions so the renderer
-distributes them. Embed only the returned composed image in the final file;
-do not separately send its base or intermediate image.
-
-Do not simulate an image overlay with risky HTML positioning. The dispatcher
-owns image composition; the document renderer owns normal-flow page layout.
+document, use **`image-gen`** to create one complete grounded, full-bleed image
+whose prompt contains the exact visible copy and spatial constraints. Let the
+image model balance typography and scene composition. Do not create a separate
+base plate, post-process it with Pillow, add gray padding, or use risky HTML
+positioning. Embed only the final generated image; the document renderer still
+owns normal-flow page layout.
 
 ## Optional embedded visual (pdf|pptx|docx|xlsx|md)
 

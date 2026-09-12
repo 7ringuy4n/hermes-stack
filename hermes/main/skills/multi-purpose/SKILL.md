@@ -11,7 +11,7 @@ When the user asks for a **structured multi-part visual** (infographic with seve
    - OmniRoute: `POST /v1/chat/completions` `model=hermes`
    - OmniRoute: same when enabled
 2. **Deliver** using stack tools — never invent matplotlib/HTML screenshots:
-   - Grounded information on a generated background → classifier `RENDER: composed-image`, Omni `image-gen`, then the model-authored `/v1/overlay` design
+   - Grounded information image → classifier `RENDER: composed-image`, grounded composition plan, then one complete Omni `image-gen` render
    - Pure visual with no information layer → Omni `/images/generations` model `image-gen`
    - PDF / office document → **`file-gen`**
 3. Fetch live facts once via search when needed, then one generation call.

@@ -1,3 +1,10 @@
+## 2026-09-12 — one-pass grounded images and registered native web
+
+See `history/2026-09-12/README.md`. Grounded image copy and layout now travel
+in one image-generation prompt; the legacy overlay endpoint is gone. Hermes
+registers the Router Worker web provider, workflows omit the processing
+placeholder, and security alerts no longer expose scanner dictionaries.
+
 ## 2026-09-11 — scheduled search-then-note fire
 
 See `history/2026-09-11/schedule-search-note-silence.md`. Once-after

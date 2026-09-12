@@ -33,14 +33,14 @@ def test_image_gen_timeout_clamped() -> None:
         os.environ.pop("OMNI_IMAGE_GEN_TIMEOUT_S", None)
 
 
-def test_overlay_plan_budget_is_a_fixed_protocol_bound() -> None:
-    assert mod._OVERLAY_PLAN_MAX_TOKENS == 4096
-    assert "OMNI_OVERLAY_PLAN_MAX_TOKENS" not in Path(mod.__file__).read_text(
+def test_composition_plan_budget_is_a_fixed_protocol_bound() -> None:
+    assert mod._COMPOSITION_PLAN_MAX_TOKENS == 4096
+    assert "OMNI_COMPOSITION_PLAN_MAX_TOKENS" not in Path(mod.__file__).read_text(
         encoding="utf-8"
     )
 
 
-def test_overlay_synthesis_uses_full_multi_region_budget() -> None:
+def test_composition_synthesis_uses_full_multi_region_budget() -> None:
     captured = {"max_tokens": 0}
     original = mod._omni_json_plan
 
@@ -56,7 +56,7 @@ def test_overlay_synthesis_uses_full_multi_region_budget() -> None:
 
     mod._omni_json_plan = fake_plan
     try:
-        result = mod._synthesize_overlay_plan(
+        result = mod._synthesize_composition_plan(
             {"answer": "Grounded value: One"},
             query="Create one composed image",
             instruction="RENDER: composed-image",
@@ -112,14 +112,22 @@ def test_media_out_candidates_shared_first() -> None:
         os.environ.pop("HERMES_SHARED_DATA", None)
 
 
-def test_composed_scene_visual_prompt_uses_external_policy() -> None:
-    prompt = mod._scene_visual_prompt(
-        "Editorial paper-cut skyline at evening", composed=True
+def test_composed_image_prompt_uses_external_policy() -> None:
+    prompt = mod._composition_image_prompt(
+        "Editorial paper-cut skyline at evening",
+        {
+            "title": "City",
+            "facts": [{"label": "Index", "value": "92", "emphasis": "primary"}],
+            "panels": [],
+            "design": {"placement": "bottom-left"},
+            "include_timestamp": False,
+        },
     )
     low = prompt.lower()
     assert "paper-cut" in low
-    assert "readable text" in low
-    assert "negative space" in low
+    assert "index" in low
+    assert "full-bleed" in low
+    assert "no gray or blank padding" in low
     assert "photorealistic" not in low
 
 
@@ -231,15 +239,15 @@ def test_image_request_can_wait_full_five_minute_budget() -> None:
 def main() -> None:
     test_image_gen_timeout_default()
     test_image_gen_timeout_clamped()
-    test_overlay_plan_budget_is_a_fixed_protocol_bound()
-    test_overlay_synthesis_uses_full_multi_region_budget()
+    test_composition_plan_budget_is_a_fixed_protocol_bound()
+    test_composition_synthesis_uses_full_multi_region_budget()
     test_image_gen_size_default()
     test_image_gen_model_combo()
     test_image_gen_model_uses_member_id_when_combo_is_member()
     test_image_quality_mins_hd()
     test_image_quality_mins_full_hd()
     test_media_out_candidates_shared_first()
-    test_composed_scene_visual_prompt_uses_external_policy()
+    test_composed_image_prompt_uses_external_policy()
     test_combo_failover_tries_combo_then_members()
     test_combo_member_models_parses_v1_combos()
     test_image_request_can_wait_full_five_minute_budget()
