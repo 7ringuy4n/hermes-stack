@@ -75,7 +75,16 @@ def main() -> int:
     configured = patcher._patch_web_routing("model:\n  default: hermes\n")
     assert "search_backend: router-worker" in configured
     assert "extract_backend: router-worker" in configured
+    assert "    - web/router_worker" in configured
     assert patcher._patch_web_routing(configured) == configured
+    preserved = patcher._patch_web_routing(
+        "plugins:\n  enabled:\n    - zalo-platform\nweb:\n  search_backend: old\n"
+    )
+    assert "    - zalo-platform" in preserved
+    assert preserved.count("    - web/router_worker") == 1
+    setup_source = (ROOT / "scripts/main/first-setup-omnirouter.py").read_text(encoding="utf-8")
+    assert "restart_hermes_replicas()" in setup_source
+    assert "assistant-hermes-" in setup_source
 
     common = types.ModuleType("plugins.web._common")
     common.BaseWebSearchProvider = object
@@ -94,7 +103,7 @@ def main() -> int:
     sys.modules["plugins.web.router_worker.provider"] = provider
     plugin = _load(
         ROOT / "hermes/main/plugins/web/router_worker/__init__.py",
-        "router_worker_web_plugin_unit",
+        "plugins.web.router_worker",
     )
 
     class _PluginContext:

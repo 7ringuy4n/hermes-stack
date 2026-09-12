@@ -18,6 +18,10 @@ raw nested scanner dictionary.
 - The stack web plugin declared `router-worker` in `plugin.yaml` but its
   `__init__.py` had no `register(ctx)` call, so Hermes rejected the configured
   native provider and the model could answer without a fresh tool result.
+- After registration was added, live deployment still skipped the provider:
+  Hermes user plugins are opt-in, the preserved enabled list contained only
+  the Zalo plugin, and the post-start config patch did not reload replicas.
+  The dynamic plugin also needs a package-relative provider import.
 - Workflow submission unconditionally announced a localized started message,
   and Security Manager interpolated its internal `layers` object into alerts.
 
@@ -29,7 +33,10 @@ raw nested scanner dictionary.
   dispatcher endpoint, related request fields, and renderer-specific tests.
 - Require a full-bleed result in the image prompt and live gate; forbid gray or
   blank padding, split canvases, and large opaque panels that conceal the scene.
-- Register `RouterWorkerWebSearchProvider` and sync it with every replica.
+- Register `RouterWorkerWebSearchProvider`, enable its path-derived
+  `web/router_worker` key without replacing operator entries, use a relative
+  package import, sync it with every replica, and reload running Hermes
+  containers after setup/update applies the shared config.
 - Keep durable internal queue processing records, but remove the visible async
   workflow placeholder. Format critical alerts as filename, concise blocking
   reason, and quarantine outcome only.
@@ -38,6 +45,9 @@ raw nested scanner dictionary.
 
 - Focused composition, skill, provider-registration, workflow, and security
   units pass locally.
+- The provider unit now covers preserved/idempotent enabled-list mutation and
+  requires the setup/update reload hook, preventing a discovered-but-skipped
+  plugin from passing deployment tests again.
 - The release gate retains concurrent DM/group attributed search and terminal
   source correlation; the flexible image gate now requires model-rendered
   full-bleed composition and rejects any legacy endpoint call.
