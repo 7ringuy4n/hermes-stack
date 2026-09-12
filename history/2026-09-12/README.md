@@ -28,6 +28,10 @@ raw nested scanner dictionary.
   claim past the gate deadline. Session-idle detection used substring matching;
   because a group session key ends with its sender id, that key was mistaken
   for the same sender's DM destination and coupled otherwise isolated queues.
+- After that isolation fix, the active-set count still remained one while raw
+  membership was an empty string. The durable store accepted an empty chat id
+  and its recovery listing filtered the value without removing it, leaving a
+  phantom active queue that no real destination could acknowledge.
 
 ### Decisions and fixes
 
@@ -47,6 +51,8 @@ raw nested scanner dictionary.
 - Pass the typed destination into session-idle waits and match the exact DM
   payload or group destination prefix. Never infer queue ownership from an id
   occurring anywhere in another session key.
+- Reject blank destination ids in every durable queue mutation and remove a
+  legacy blank member while enumerating or touching queue state.
 
 ### Verification and prevention
 
@@ -58,6 +64,8 @@ raw nested scanner dictionary.
 - The turn-wait unit reproduces a group key ending in the concurrent DM user's
   id and requires it not to hold the DM queue; delivery/timeout queue contracts
   remain covered by their existing units.
+- The existing inbound queue unit now also requires blank pushes to perform no
+  storage mutation and verifies active-set self-repair.
 - The release gate retains concurrent DM/group attributed search and terminal
   source correlation; the flexible image gate now requires model-rendered
   full-bleed composition and rejects any legacy endpoint call.

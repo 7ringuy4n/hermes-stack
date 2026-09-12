@@ -16,7 +16,8 @@ See `history/2026-09-12/README.md` for removal of the Pillow information-card
 renderer after it created gray canvas bands and obscured scene content. The same
 record covers native web-provider registration plus deployment activation and
 reload, exact DM/group session isolation, quiet async workflow delivery, and
-human-readable security alerts.
+empty active-queue repair, quiet async workflow delivery, and human-readable
+security alerts.
 
 ## 2026-09-09 — scheduled composed-image execution
 

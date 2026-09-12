@@ -21,6 +21,7 @@ from inbound_queue import (  # noqa: E402
     queue_max,
 )
 from multi_request import parts_from_plan, split_compound_requests  # noqa: E402
+from gate_valkey import GateStore  # noqa: E402
 from classify_fixtures import (  # noqa: E402
     FIXTURE_QUEUE_NOW as PLENTY_NOW,
     FIXTURE_QUEUE_SCHEDULE as PLENTY_SCHEDULE,
@@ -91,6 +92,33 @@ def main() -> int:
         print(f"FAIL FIFO order {popped!r}")
         return 1
     print("PASS FIFO 3 immediate parts + cap")
+
+    class _FakeResp:
+        def __init__(self) -> None:
+            self.calls: list[tuple[object, ...]] = []
+
+        def call(self, *parts: object) -> object:
+            self.calls.append(parts)
+            if parts[0] == "SMEMBERS":
+                return [b""]
+            return 1
+
+    durable = GateStore.__new__(GateStore)
+    durable.prefix = "assistant:gate"
+    durable._r = _FakeResp()
+    if durable.queue_push("  ", "payload", 3, 3600) != -1:
+        print("FAIL empty destination must be rejected")
+        return 1
+    durable.queue_push_front("", "payload", 3600)
+    if durable._r.calls:
+        print(f"FAIL empty destination touched Valkey {durable._r.calls!r}")
+        return 1
+    if durable.queue_active_ids() != [] or (
+        "SREM", "assistant:gate:qactive", ""
+    ) not in durable._r.calls:
+        print(f"FAIL empty active member was not self-healed {durable._r.calls!r}")
+        return 1
+    print("PASS empty durable destination rejection + active-set repair")
 
     # A claimed turn survives an owner crash and is restored ahead of later
     # work. Independent DM/group destinations remain separately discoverable.
