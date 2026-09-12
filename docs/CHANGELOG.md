@@ -4,7 +4,9 @@
   composition; the legacy Pillow panel renderer and `/v1/overlay` endpoint are
   removed so no host step can add gray side columns or bottom bands.
 - Hermes now registers its Router Worker native web provider instead of merely
-  declaring it, restoring attributed live search and page extraction.
+  declaring it. Deployment also preserves operator plugin entries while
+  enabling `web/router_worker` and reloads Hermes replicas after config sync,
+  restoring attributed live search and page extraction.
 - Async workflows no longer send the visible “Đang xử lý…” placeholder, and
   security alerts summarize the blocking reason without raw scanner JSON.
 - See `history/2026-09-12/README.md`.

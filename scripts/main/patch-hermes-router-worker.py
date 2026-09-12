@@ -99,23 +99,82 @@ def _patch_web_routing(text: str) -> str:
     """Route both native search and extraction through the stack-owned provider."""
     out = text
     if not re.search(r"(?m)^web:[ \t]*$", out):
-        return out.rstrip() + (
+        out = out.rstrip() + (
             "\nweb:\n"
             "  search_backend: router-worker\n"
             "  extract_backend: router-worker\n"
         )
-    for field in ("search_backend", "extract_backend"):
-        pattern = rf"(?m)^(  {field}:\s*).*$"
-        if re.search(pattern, out):
-            out = re.sub(pattern, rf"\1router-worker", out, count=1)
-        else:
-            out = re.sub(
-                r"(?m)^(web:[ \t]*)$",
-                rf"\1\n  {field}: router-worker",
-                out,
-                count=1,
-            )
-    return out
+    else:
+        for field in ("search_backend", "extract_backend"):
+            pattern = rf"(?m)^(  {field}:\s*).*$"
+            if re.search(pattern, out):
+                out = re.sub(pattern, rf"\1router-worker", out, count=1)
+            else:
+                out = re.sub(
+                    r"(?m)^(web:[ \t]*)$",
+                    rf"\1\n  {field}: router-worker",
+                    out,
+                    count=1,
+                )
+    return _patch_enabled_plugin(out, "web/router_worker")
+
+
+def _patch_enabled_plugin(text: str, plugin_key: str) -> str:
+    """Add one Hermes user plugin without replacing operator-managed entries."""
+    lines = text.splitlines()
+    if any(line.strip() == f"- {plugin_key}" for line in lines):
+        return text
+
+    plugins_idx = next(
+        (i for i, line in enumerate(lines) if line == "plugins:"),
+        None,
+    )
+    if plugins_idx is None:
+        lines.extend(["", "plugins:", "  enabled:", f"    - {plugin_key}"])
+        return "\n".join(lines).rstrip() + "\n"
+
+    section_end = next(
+        (
+            i
+            for i in range(plugins_idx + 1, len(lines))
+            if lines[i] and not lines[i].startswith((" ", "#"))
+        ),
+        len(lines),
+    )
+    enabled_idx = next(
+        (
+            i
+            for i in range(plugins_idx + 1, section_end)
+            if lines[i].startswith("  enabled:")
+        ),
+        None,
+    )
+    if enabled_idx is None:
+        lines[plugins_idx + 1:plugins_idx + 1] = [
+            "  enabled:",
+            f"    - {plugin_key}",
+        ]
+    elif lines[enabled_idx].strip() == "enabled: []":
+        lines[enabled_idx] = "  enabled:"
+        lines.insert(enabled_idx + 1, f"    - {plugin_key}")
+    elif "[" in lines[enabled_idx] and "]" in lines[enabled_idx]:
+        raw = lines[enabled_idx].split("[", 1)[1].rsplit("]", 1)[0]
+        existing = [item.strip().strip("'\"") for item in raw.split(",") if item.strip()]
+        lines[enabled_idx:enabled_idx + 1] = [
+            "  enabled:",
+            *(f"    - {item}" for item in existing),
+            f"    - {plugin_key}",
+        ]
+    else:
+        insert_at = enabled_idx + 1
+        while insert_at < section_end and (
+            not lines[insert_at].strip()
+            or lines[insert_at].startswith("    - ")
+            or lines[insert_at].lstrip().startswith("#")
+        ):
+            insert_at += 1
+        lines.insert(insert_at, f"    - {plugin_key}")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _patch_vision_routing(text: str, *, key: str, base_url: str) -> str:
