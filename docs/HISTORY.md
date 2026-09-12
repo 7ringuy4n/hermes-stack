@@ -10,6 +10,18 @@ History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
 
+## 2026-09-12 — one-pass grounded image composition
+
+See `history/2026-09-12/README.md` for removal of the Pillow information-card
+renderer after it created gray canvas bands and obscured scene content. The same
+record covers native web-provider registration plus deployment activation and
+reload, exact DM/group session isolation, quiet async workflow delivery, and
+empty active-queue repair, quiet async workflow delivery, and human-readable
+security alerts. It also records two release-gate findings: live file watching
+leaked private document-build sidecars, and dimension-only image acceptance
+delivered visibly defective compositions. Typed-output watcher deferral and
+vision-scored combo failover close those boundaries.
+
 ## 2026-09-09 — scheduled composed-image execution
 
 See `history/2026-09-09/README.md` for the queue-enabled schedule-fire gap that

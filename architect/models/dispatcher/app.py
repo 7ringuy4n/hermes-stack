@@ -186,10 +186,6 @@ class ImageReq(BaseModel):
     send_zalo: bool = False
     caption: str = ""
     refine: bool = True  # DeepSeek/LLM rewrite prompt before gen; wait for reply
-    overlay: Optional[list[str]] = None  # short fact lines already fetched by the agent
-    overlay_corner: Optional[str] = None
-    overlay_design: Optional[dict[str, Any]] = None
-    overlay_panels: Optional[list[dict[str, Any]]] = None
 
 
 @app.get("/health")
@@ -750,26 +746,6 @@ def _send_zalo_base64(thread_id: str, thread_type: str, dest: Path, caption: str
     return _send_zalo_attachment(thread_id, thread_type, dest, caption)
 
 
-def _apply_image_overlay(
-    dest: Path, lines, *, corner: str = "auto", design: dict[str, Any] | None = None
-) -> int:
-    """Pillow post-process for a validated, model-authored information layer."""
-    from overlay import apply_overlay, clean_overlay_lines
-
-    facts = clean_overlay_lines(lines)
-    if not facts or not dest.is_file():
-        return 0
-    apply_overlay(dest, facts, corner=corner or "auto", design=design)
-    return len(facts)
-
-
-def _apply_image_overlay_panels(dest: Path, panels: list[dict[str, Any]] | None) -> int:
-    """Render validated information regions without automatic overlap."""
-    from overlay import apply_overlay_panels
-
-    return apply_overlay_panels(dest, panels)
-
-
 def _chown_media(path: Path) -> None:
     try:
         uid = int(os.environ.get("HERMES_UID") or "1000")
@@ -879,43 +855,6 @@ def scenic_still(req: ImageReq) -> dict[str, Any]:
         "hermes_path": f"/opt/data/media/out/{dest.name}",
         "backend": backend,
     }
-
-
-@app.post("/v1/overlay")
-def image_overlay(req: ImageReq) -> dict[str, Any]:
-    """Apply Unicode-safe overlay onto an existing media/out file."""
-    name = (req.filename or "").strip()
-    if not name:
-        raise HTTPException(400, "filename required (media/out basename or absolute path)")
-    dest = Path(name)
-    if not dest.is_file():
-        dest = MEDIA_DIR / "out" / Path(name).name
-    if not dest.is_file():
-        raise HTTPException(404, f"image not found: {name}")
-    corner = (req.overlay_corner or "auto").strip() or "auto"
-    overlay_n = _apply_image_overlay_panels(dest, req.overlay_panels)
-    if overlay_n == 0:
-        overlay_n = _apply_image_overlay(
-            dest, req.overlay, corner=corner, design=req.overlay_design
-        )
-    result: dict[str, Any] = {
-        "ok": True,
-        "file": str(dest),
-        "hermes_path": f"/opt/data/media/out/{dest.name}",
-        "overlay": overlay_n,
-        "backend": "overlay",
-        "corner": corner,
-    }
-    if req.send_zalo:
-        if not req.thread_id:
-            raise HTTPException(400, "thread_id required when send_zalo=true")
-        if not _claim_generated_file(dest, req.thread_id):
-            result["zalo"] = {"ok": True, "skipped": True, "reason": "already_sent"}
-        else:
-            result["zalo"] = _send_zalo_attachment(
-                req.thread_id, req.thread_type, dest, req.caption or ""
-            )
-    return result
 
 
 class RemuxReq(BaseModel):

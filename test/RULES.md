@@ -141,6 +141,13 @@ search call in the same turn. Reusing a prior answer or substituting code,
 shell, or direct language HTTP calls fails the route even if the prose looks
 plausible.
 
+Also exercise a multi-source public-web gather across different site types.
+Require search first, page extraction when snippets are insufficient,
+source-correlated concrete records, cross-provider deduplication, honest
+handling of private/login-blocked pages, and no invented crawl results. Repeat
+the same gather through a scheduled background note flow to prove the runtime
+uses current search results rather than creation-time history.
+
 ### C5 — embedding API (`embedding`)
 
 Submit known related/unrelated strings through the live embedding path. Require
@@ -181,6 +188,13 @@ one fire, one gather listing, one host note-save confirmation, Memory rows that
 retain source URLs, and no second workflow 「Đang xử lý」 listing for the same
 fire. Delete the schedule afterward.
 
+Also cover a recurring background gather at several clocks (for example
+06:00, 12:00, and 18:00) with `notify_on_fire=false`. Require a concise stored
+schedule title, one fresh routed search per fire, durable titled notes with
+citations, and no chat delivery from the fire. Listing defaults to the ten
+newest schedules by time/title; inspecting one selected schedule returns its
+full fire content and lifecycle fields without internal context JSON.
+
 ### C8 — image edit, including Zalo reply quote
 
 Send an image, then reply-quote that message with a natural edit instruction.
@@ -216,6 +230,12 @@ older embedded image as another attachment. Filesystem sidecars are diagnostic;
 the release oracle fails on an acknowledgement-backed image delivery correlated
 to the document-only source request.
 
+For a requested three-slide PPTX, require exactly one PPTX delivery, exactly
+three rendered slides, at least one embedded scenic image, and model-authored
+slide structure/layout through file-gen directives. Reject PDF substitutions,
+separate intermediate-image delivery, repeated title-only slides, empty
+backgrounds, clipped text, or a fixed topic-specific template.
+
 Replica startup must retain the repository root `pdf`, `docx`, and `xlsx`
 wrapper directories and add the bundled names to `.curator_suppressed` before
 image-level skill sync. Their frontmatter names remain distinct and route chat
@@ -239,6 +259,15 @@ scopes to remain isolated, exact-date lookup to use the indexed note date,
 topic lookup to return the correct stored content, duplicate create to dedupe,
 and update/delete to write an audit version. An ambiguous mutation must ask for
 selection and must not change data.
+
+Every new note has a concise model-authored title, including content-only
+notes. A default/date/date-range/keyword list shows at most the ten newest
+matches as date + title without dumping bodies; a count request returns only a
+compact count; a selected detail returns title, full content, and citations.
+Explicit whole-scope delete must remove every scoped note, while date-range or
+keyword bulk update/delete requires classifier `bulk=true`; a non-bulk
+multi-match remains ambiguous. Verify audit versions and DM/group isolation for
+all mutations.
 
 Search-then-note (find live web facts, then note them) must stay one atomic
 turn: exactly one gather listing and one host save confirmation; zero workflow

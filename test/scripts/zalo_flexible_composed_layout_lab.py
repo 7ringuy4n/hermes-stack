@@ -128,25 +128,70 @@ paths=[pathlib.Path('/data/assistant/media/out')/name for name in (left_file,bot
 if any(not path.is_file() or path.stat().st_size<80000 for path in paths):
     raise SystemExit('FAIL_IMAGE_QUALITY_FLOOR')
 
-logs=[]
-local_start=datetime.fromtimestamp(started-5).strftime('%Y-%m-%d %H:%M:%S')
-for name in subprocess.check_output(['docker','ps','--format','{{{{.Names}}}}'],text=True).splitlines():
-    if not name.startswith('assistant-hermes-'):
-        continue
-    rid=subprocess.check_output(['docker','inspect','-f','{{{{.Config.Hostname}}}}',name],text=True).strip()
-    path=pathlib.Path('/data/assistant/replicas')/rid/'logs'/'agent.log'
-    if path.is_file():
-        logs.extend(line for line in path.read_text(encoding='utf-8',errors='replace').splitlines() if line[:19]>=local_start)
-layout='\n'.join(line for line in logs if 'composed image layout request=' in line)
-single_region=len(re.findall(r'panels=0',layout))>=2
-left_ok=bool(re.search(r'panels=0 facts=[1-6] placement=left-column',layout))
-bottom_ok=bool(re.search(r'panels=0 facts=[1-6] placement=bottom-bar',layout))
-if not single_region:
-    raise SystemExit('FAIL_REGION_GROUPING')
-if not left_ok:
-    raise SystemExit('FAIL_LEFT_PLACEMENT')
-if not bottom_ok:
-    raise SystemExit('FAIL_BOTTOM_PLACEMENT')
+dispatcher=next((name for name in subprocess.check_output(
+    ['docker','ps','--format','{{{{.Names}}}}'],text=True
+).splitlines() if name.startswith('assistant-dispatcher-')), '')
+if not dispatcher:
+    raise SystemExit('FAIL_NO_VISUAL_EVALUATOR')
+container_paths=','.join('/data/media/out/'+path.name for path in paths)
+evaluation_code="""
+import base64,io,json,os,urllib.request
+from pathlib import Path
+content=[{{"type":"text","text":(
+ "Evaluate two generated Vietnamese weather-and-fuel images in order. "
+ "Image 1 must use one full-bleed scene and one compact shared information region on the left. "
+ "Image 2 must use one full-bleed scene and one compact shared information region along the bottom. "
+ "Both must keep important scenery visible, contain legible Vietnamese text, and have no gray/blank canvas bands, "
+ "split-screen seams, clipped text, or oversized opaque blocks. Return JSON only with booleans "
+ "image1_left_single_region, image2_bottom_single_region, full_bleed_scenes, text_legible, no_gray_bands, no_clipping "
+ "and integer quality_score from 1 to 10."
+)}}]
+for raw in os.environ["EVAL_IMAGE_PATHS"].split(','):
+ p=Path(raw); blob=p.read_bytes(); mime='image/jpeg'
+ try:
+  from PIL import Image
+  image=Image.open(io.BytesIO(blob)).convert('RGB'); image.thumbnail((1280,1280))
+  buf=io.BytesIO(); image.save(buf,format='JPEG',quality=86); blob=buf.getvalue()
+ except Exception:
+  if p.suffix.lower()=='.png': mime='image/png'
+  elif p.suffix.lower()=='.webp': mime='image/webp'
+ content.append({{"type":"image_url","image_url":{{"url":"data:"+mime+";base64,"+base64.b64encode(blob).decode('ascii')}}}})
+body=json.dumps({{
+ "model":os.environ.get('OMNIROUTER_VISION_COMBO') or 'vision-ocr',
+ "stream":False,"max_tokens":300,
+ "messages":[{{"role":"user","content":content}}]
+}}).encode()
+base=(os.environ.get('OMNIROUTER_BASE_URL') or 'http://omni-router:20129/v1').rstrip('/')
+key=(os.environ.get('OMNIROUTER_API_KEY') or '').strip()
+req=urllib.request.Request(base+'/chat/completions',data=body,method='POST',headers={{'Authorization':'Bearer '+key,'Content-Type':'application/json'}})
+with urllib.request.urlopen(req,timeout=180) as response:
+ data=json.loads(response.read().decode() or '{{}}')
+message=((data.get('choices') or [{{}}])[0].get('message') or {{}})
+print((message.get('content') or message.get('reasoning_content') or '').strip())
+"""
+evaluated=subprocess.run(
+    ['docker','exec','-i','-e','EVAL_IMAGE_PATHS='+container_paths,dispatcher,'python3','-'],
+    input=evaluation_code,text=True,capture_output=True,timeout=240,
+)
+if evaluated.returncode!=0:
+    detail=((evaluated.stdout or '')+(evaluated.stderr or '')).casefold()
+    if any(token in detail for token in ('quota','rate limit','429','free model')):
+        raise SystemExit('SKIP_VISUAL_EVALUATOR_QUOTA')
+    raise SystemExit('FAIL_VISUAL_EVALUATOR')
+answer=(evaluated.stdout or '').strip()
+begin=answer.find('{{'); end=answer.rfind('}}')
+if begin<0 or end<begin:
+    raise SystemExit('FAIL_VISUAL_EVALUATOR_FORMAT')
+try:
+    visual=json.loads(answer[begin:end+1])
+except json.JSONDecodeError:
+    raise SystemExit('FAIL_VISUAL_EVALUATOR_FORMAT')
+required=(
+    'image1_left_single_region','image2_bottom_single_region','full_bleed_scenes',
+    'text_legible','no_gray_bands','no_clipping',
+)
+if not all(visual.get(key) is True for key in required) or int(visual.get('quality_score') or 0)<8:
+    raise SystemExit('FAIL_VISUAL_LAYOUT_QUALITY')
 
 valkey=subprocess.check_output([
     'docker','ps','--filter','label=com.docker.compose.service=valkey','--format','{{{{.Names}}}}'
@@ -158,7 +203,8 @@ if uid in active:
 print(json.dumps({{
     'ok':True,'requests':2,'immediate_image':True,'scheduled_image':True,
     'source_correlated':True,'single_region':True,'left_column':True,
-    'bottom_bar':True,'artifacts':2,'elapsed_s':round(time.time()-started,2),
+    'bottom_region':True,'visual_quality_score':int(visual.get('quality_score') or 0),
+    'artifacts':2,'elapsed_s':round(time.time()-started,2),
 }},separators=(',',':')))
 PY
 '''

@@ -12,8 +12,14 @@ from __future__ import annotations
 
 import json
 import os
+import asyncio
+import ipaddress
+import re
+import socket
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -30,7 +36,9 @@ MESSAGES_PATH = Path(
 SEARCH_RESULT_CAP = 10
 SNIPPET_CHARS = 500
 
-_EXTRACT_ADAPTERS = frozenset({"tavily", "firecrawl"})
+_EXTRACT_ADAPTERS = frozenset({"tavily", "firecrawl", "direct"})
+_DIRECT_EXTRACT_MAX_BYTES = 2 * 1024 * 1024
+_DIRECT_EXTRACT_MAX_CHARS = 80_000
 
 router = APIRouter()
 
@@ -64,7 +72,118 @@ def _provider_timeout_s() -> float:
 
 
 def _combo_extract() -> list[str]:
-    return ["tavily", "firecrawl"]
+    # Credentialed extractors retain priority; the bounded direct reader keeps
+    # public-page extraction available when those optional keys are absent.
+    return ["tavily", "firecrawl", "direct"]
+
+
+class _ReadableHTML(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.title_parts: list[str] = []
+        self._ignored = 0
+        self._in_title = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        name = tag.lower()
+        if name in {"script", "style", "noscript", "svg"}:
+            self._ignored += 1
+        elif name == "title":
+            self._in_title = True
+
+    def handle_endtag(self, tag: str) -> None:
+        name = tag.lower()
+        if name in {"script", "style", "noscript", "svg"} and self._ignored:
+            self._ignored -= 1
+        elif name == "title":
+            self._in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self._ignored:
+            return
+        value = data.strip()
+        if not value:
+            return
+        self.parts.append(value)
+        if self._in_title:
+            self.title_parts.append(value)
+
+
+def _html_text(body: str) -> tuple[str, str]:
+    parser = _ReadableHTML()
+    parser.feed(body)
+    text = re.sub(r"\s+", " ", " ".join(parser.parts)).strip()
+    title = re.sub(r"\s+", " ", " ".join(parser.title_parts)).strip()
+    return title[:500], text[:_DIRECT_EXTRACT_MAX_CHARS]
+
+
+async def _validate_public_url(raw_url: str) -> str:
+    parsed = urlparse((raw_url or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("only absolute HTTP(S) URLs are allowed")
+    if parsed.username or parsed.password:
+        raise ValueError("URL credentials are not allowed")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if port not in {80, 443}:
+        raise ValueError("only standard HTTP(S) ports are allowed")
+    infos = await asyncio.get_running_loop().getaddrinfo(
+        parsed.hostname, port, type=socket.SOCK_STREAM
+    )
+    addresses = {row[4][0] for row in infos if row and row[4]}
+    if not addresses:
+        raise ValueError("URL host did not resolve")
+    for address in addresses:
+        ip = ipaddress.ip_address(address)
+        if not ip.is_global:
+            raise ValueError("URL host resolves to a non-public address")
+    return parsed.geturl()
+
+
+async def _direct_extract(url: str) -> dict[str, Any]:
+    current = await _validate_public_url(url)
+    async with httpx.AsyncClient(
+        timeout=_provider_timeout_s(), follow_redirects=False, trust_env=False
+    ) as client:
+        for _ in range(4):
+            async with client.stream(
+                "GET",
+                current,
+                headers={"User-Agent": "HermesStack/1.0 public-page-extractor"},
+            ) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location") or ""
+                    if not location:
+                        raise RuntimeError("redirect response omitted Location")
+                    current = await _validate_public_url(urljoin(current, location))
+                    continue
+                response.raise_for_status()
+                content_type = (response.headers.get("content-type") or "").lower()
+                if not any(
+                    allowed in content_type
+                    for allowed in ("text/html", "text/plain", "application/xhtml+xml", "application/json")
+                ):
+                    raise RuntimeError("direct extractor only accepts textual content")
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > _DIRECT_EXTRACT_MAX_BYTES:
+                        raise RuntimeError("direct extractor response exceeds size limit")
+                    chunks.append(chunk)
+                encoding = response.encoding or "utf-8"
+                body = b"".join(chunks).decode(encoding, errors="replace")
+                if "html" in content_type:
+                    title, content = _html_text(body)
+                else:
+                    title, content = "", body[:_DIRECT_EXTRACT_MAX_CHARS]
+                if not content.strip():
+                    raise RuntimeError("direct extractor returned empty content")
+                return {
+                    "backend": "direct",
+                    "data": {"url": current, "title": title, "content": content},
+                }
+        raise RuntimeError("direct extractor exceeded redirect limit")
 
 
 def _combo_max_results() -> int:
@@ -407,7 +526,9 @@ async def extract(req: ExtractReq) -> dict[str, Any]:
         try:
             if backend == "tavily":
                 return await _tavily_extract(req.url)
-            return await _firecrawl_extract(req.url)
+            if backend == "firecrawl":
+                return await _firecrawl_extract(req.url)
+            return await _direct_extract(req.url)
         except Exception as e:  # noqa: BLE001
             errors.append(f"{backend}: {e}")
             continue

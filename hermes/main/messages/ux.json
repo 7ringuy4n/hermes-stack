@@ -53,6 +53,11 @@
       "en": "No matching saved notes were found.",
       "vi": "Không tìm thấy ghi chú phù hợp."
     },
+    "count": {
+      "default": "en",
+      "en": "{count} notes.",
+      "vi": "Bạn có {count} ghi chú."
+    },
     "ambiguous": {
       "default": "en",
       "en": "More than one note matches. Reply with the note id to choose one.",

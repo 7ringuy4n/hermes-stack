@@ -20,6 +20,7 @@ JSON body (deterministic fields from classifier JSON + **host-resolved** fire ti
 - `timezone` — IANA zone (default `Asia/Ho_Chi_Minh`)
 - `next_run_at` — RFC3339 UTC from **host/tool response only**. Classifier must leave this null. Do not compute now+offset in the model.
 - `fire_text` — inner work only (`message` / `instructions` joined). **Never** the “đặt lịch lúc HH:MM” / “N phút nữa gửi vào…” wrapper
+- `name` — concise model-authored schedule title describing the inner work
 - `text` — original inbound (audit only)
 - `origin` / `context` — thread routing so the worker can inject back into the conversation
 - `context.schedule_delivery` — `verbatim` (send body as-is) or `process` (Hermes runs skills)
@@ -30,6 +31,11 @@ JSON body (deterministic fields from classifier JSON + **host-resolved** fire ti
 |---|---|---|
 | **verbatim** | User asked to **send/post** a dictated body (`nhắn tôi` / `gửi` + `nội dung:`). Payload words are not skills. | Adapter sends `fire_text` **exactly** — no LLM paraphrase, no outbound noise filter |
 | **process** | User asked to **do work** at a time (`gửi vào [group] mô tả/describe…`, search/weather/image/OCR), even if wrapped in `nội dung:` | Inject with `scheduleFire`; Hermes runs **split** skills; never dump the schedule ask or task list as the chat text |
+
+When the user explicitly requests silent background work, persist
+`notify_on_fire=false`. The work still runs and durable outputs such as notes are
+stored, but the fire result is not sent into the conversation. Normal schedules
+default to `notify_on_fire=true`.
 
 ## Delete / cancel
 
@@ -46,6 +52,9 @@ When classify returns `task_type=list_schedule` / `skill_action=list`:
 - Resolve `target_channel` (if any) the same way as delete.
 - List schedule-worker rows for that thread (or current chat). Do **not** create or delete.
 - A quoted prior create body does not change list into delete — only an explicit cancel/remove ask does.
+- Default lists show the ten newest schedules with run time and title. A detail
+  request shows the selected schedule's title, full fire content, cadence, next
+  run, destination, and enabled state.
 
 Admin CLI (same host): `!zalo schedule remove group <tên nhóm>` / `!zalo schedule remove all <số>` also deletes Go worker rows (not only `cron/jobs.json`).
 `!zalo schedule list` / `list all` remains available for admins.

@@ -1,13 +1,16 @@
 [Search-then-note listing contract]
 Use native web_search for this turn. Answer only from the current tool result.
 List only concrete findings the host should persist as notes:
-- One numbered item per specific posting: Title (stack) — Employer
+- One numbered item per specific real-world finding, never one aggregate search-result bucket.
+- Start each numbered item with a short standalone title that identifies the finding.
+- Continue that same numbered item with useful details and an https source URL.
+- For job research, use Title (stack) — Employer and require one actual opening per item; never role + city + approximate count.
 - Example shape: Fullstack Developer (Nexacro / Front End / Java) — Hitachi Digital Services
 - Include an https source URL beside each item
-Never list aggregate count or location buckets (for example role + city + approximate count).
-Omit any opening already present under Prior notes below.
-If every current finding is already in Prior notes, say briefly that there are no new openings.
+Omit any finding already present under Prior notes below.
+If every current finding is already in Prior notes, say briefly that there are no new findings.
 Do not claim that notes were saved; the host persists after this turn.
+Do not include tool limitations, storage limitations, follow-up questions, marker strings, or commentary about whether the host can save notes.
 
 Prior notes:
 {{PRIOR_NOTES}}

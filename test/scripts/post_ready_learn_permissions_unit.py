@@ -41,7 +41,7 @@ def main() -> int:
         "router bake stages outside a non-writable checkout": all(
             marker in router_sync
             for marker in (
-                'if [[ -w "$DST_DIR" ]]; then',
+                'if [[ -w "$DST_DIR" && "$_need_file_repair" -eq 0 ]]; then',
                 'STAGE_DIR="$(mktemp -d)"',
                 'mktemp "${STAGE_DIR}/.${name}.XXXXXX"',
                 'python3 - "$ROOT" "$STAGE_DIR"',

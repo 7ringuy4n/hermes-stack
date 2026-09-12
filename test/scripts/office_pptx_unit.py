@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import sys
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DISP = ROOT / "architect" / "models" / "dispatcher"
 sys.path.insert(0, str(DISP))
 
+import office_file  # noqa: E402
 from office_file import parse_office, write_office, write_pdf  # noqa: E402
 
 OUT = ROOT / "scripts" / "temp" / "office_pptx_unit"
@@ -25,6 +27,28 @@ def main() -> int:
     dest = write_office(OUT / "vung-tau.pptx", ext, body)
     assert dest.suffix.lower() == ".pptx", dest
     assert dest.is_file() and dest.stat().st_size > 2000, dest.stat().st_size
+
+    from PIL import Image
+    from pptx import Presentation
+
+    scenic = OUT / "weather-scene.jpg"
+    Image.new("RGB", (1600, 900), (55, 110, 165)).save(scenic, quality=90)
+    office_file._MEDIA_ROOTS = (OUT,)
+    visual_body = f"""# Dự báo thời tiết Thành phố Hồ Chí Minh
+IMAGE: {scenic}
+LAYOUT: full-bleed
+## Tình hình hiện tại
+- Nhiệt độ: 29°C
+- Điều kiện: Nhiều mây
+## Diễn biến hôm nay
+- Buổi chiều: Có mưa rào
+- Buổi tối: Dịu hơn
+"""
+    visual = write_office(OUT / "weather-visual.pptx", ".pptx", visual_body)
+    deck = Presentation(str(visual))
+    assert len(deck.slides) == 3
+    with zipfile.ZipFile(visual) as archive:
+        assert any(name.startswith("ppt/media/") for name in archive.namelist())
 
     html = """<!DOCTYPE html>
 <html lang="vi"><head><meta charset="utf-8"/><title>t</title></head>
