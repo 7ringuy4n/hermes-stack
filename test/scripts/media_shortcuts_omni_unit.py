@@ -33,14 +33,14 @@ def test_image_gen_timeout_clamped() -> None:
         os.environ.pop("OMNI_IMAGE_GEN_TIMEOUT_S", None)
 
 
-def test_overlay_plan_budget_is_a_fixed_protocol_bound() -> None:
-    assert mod._OVERLAY_PLAN_MAX_TOKENS == 4096
-    assert "OMNI_OVERLAY_PLAN_MAX_TOKENS" not in Path(mod.__file__).read_text(
+def test_composition_plan_budget_is_a_fixed_protocol_bound() -> None:
+    assert mod._COMPOSITION_PLAN_MAX_TOKENS == 4096
+    assert "OMNI_COMPOSITION_PLAN_MAX_TOKENS" not in Path(mod.__file__).read_text(
         encoding="utf-8"
     )
 
 
-def test_overlay_synthesis_uses_full_multi_region_budget() -> None:
+def test_composition_synthesis_uses_full_multi_region_budget() -> None:
     captured = {"max_tokens": 0}
     original = mod._omni_json_plan
 
@@ -56,7 +56,7 @@ def test_overlay_synthesis_uses_full_multi_region_budget() -> None:
 
     mod._omni_json_plan = fake_plan
     try:
-        result = mod._synthesize_overlay_plan(
+        result = mod._synthesize_composition_plan(
             {"answer": "Grounded value: One"},
             query="Create one composed image",
             instruction="RENDER: composed-image",
@@ -112,14 +112,22 @@ def test_media_out_candidates_shared_first() -> None:
         os.environ.pop("HERMES_SHARED_DATA", None)
 
 
-def test_composed_scene_visual_prompt_uses_external_policy() -> None:
-    prompt = mod._scene_visual_prompt(
-        "Editorial paper-cut skyline at evening", composed=True
+def test_composed_image_prompt_uses_external_policy() -> None:
+    prompt = mod._composition_image_prompt(
+        "Editorial paper-cut skyline at evening",
+        {
+            "title": "City",
+            "facts": [{"label": "Index", "value": "92", "emphasis": "primary"}],
+            "panels": [],
+            "design": {"placement": "bottom-left"},
+            "include_timestamp": False,
+        },
     )
     low = prompt.lower()
     assert "paper-cut" in low
-    assert "readable text" in low
-    assert "negative space" in low
+    assert "index" in low
+    assert "full-bleed" in low
+    assert "no gray or blank padding" in low
     assert "photorealistic" not in low
 
 
@@ -150,6 +158,71 @@ def test_combo_failover_tries_combo_then_members() -> None:
 
     assert blob == b"\x89PNG-fake-blob"
     assert calls == ["pollinations/flux", "ai-box/wan2.7-image-pro"]
+
+
+def test_combo_failover_rejects_bad_visual_candidate() -> None:
+    calls: list[str] = []
+    original = mod._omni_request_image_blob_once
+
+    def fake_once(**kwargs):
+        candidate = kwargs.get("model", "")
+        calls.append(candidate)
+        return candidate.encode()
+
+    mod._omni_request_image_blob_once = fake_once
+    try:
+        blob = mod._omni_request_image_blob(
+            base="http://omni/v1",
+            key="k",
+            model="image-gen",
+            scene="hcm",
+            size="1280x720",
+            timeout=30,
+            combo_members=["provider/poor", "provider/good"],
+            accept_blob=lambda item: item == b"provider/good",
+        )
+    finally:
+        mod._omni_request_image_blob_once = original
+
+    assert blob == b"provider/good"
+    assert calls == ["provider/poor", "provider/good"]
+
+
+def test_composition_quality_rejects_duplicate_or_banded_render() -> None:
+    import vision_ocr
+
+    original_chat = vision_ocr._vision_chat
+    original_b64 = vision_ocr.vision_b64_from_bytes
+    vision_ocr.vision_b64_from_bytes = lambda _blob, _mime: ("encoded", "image/jpeg")
+    vision_ocr._vision_chat = lambda *_args, **_kwargs: (
+        200,
+        "{}",
+        json.dumps(
+            {
+                "title_unique": False,
+                "facts_readable": True,
+                "requested_placement": True,
+                "full_bleed_scene": False,
+                "no_canvas_bands": False,
+                "no_duplicate_copy": False,
+                "no_clipping": True,
+                "quality_score": 5,
+            }
+        ),
+    )
+    try:
+        accepted = mod._composition_image_quality_ok(
+            b"image",
+            {
+                "title": "Weather",
+                "facts": [{"label": "Temperature", "value": "30 C"}],
+                "design": {"placement": "left-column"},
+            },
+        )
+    finally:
+        vision_ocr._vision_chat = original_chat
+        vision_ocr.vision_b64_from_bytes = original_b64
+    assert accepted is False
 
 
 def test_combo_member_models_parses_v1_combos() -> None:
@@ -231,16 +304,18 @@ def test_image_request_can_wait_full_five_minute_budget() -> None:
 def main() -> None:
     test_image_gen_timeout_default()
     test_image_gen_timeout_clamped()
-    test_overlay_plan_budget_is_a_fixed_protocol_bound()
-    test_overlay_synthesis_uses_full_multi_region_budget()
+    test_composition_plan_budget_is_a_fixed_protocol_bound()
+    test_composition_synthesis_uses_full_multi_region_budget()
     test_image_gen_size_default()
     test_image_gen_model_combo()
     test_image_gen_model_uses_member_id_when_combo_is_member()
     test_image_quality_mins_hd()
     test_image_quality_mins_full_hd()
     test_media_out_candidates_shared_first()
-    test_composed_scene_visual_prompt_uses_external_policy()
+    test_composed_image_prompt_uses_external_policy()
     test_combo_failover_tries_combo_then_members()
+    test_combo_failover_rejects_bad_visual_candidate()
+    test_composition_quality_rejects_duplicate_or_banded_render()
     test_combo_member_models_parses_v1_combos()
     test_image_request_can_wait_full_five_minute_budget()
     print("OK media_shortcuts_omni_unit")

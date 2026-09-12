@@ -49,6 +49,7 @@ def main() -> int:
     cleaned = strip_false_note_claims(body)
     notes = notes_from_assistant_body(body, user_ask=ask, timezone="Asia/Ho_Chi_Minh")
     assert len(notes) == 3, notes
+    assert notes[0].get("title", "").startswith("Fullstack Developer"), notes[0]
     assert all("http" in n["content"].lower() for n in notes), notes
     assert "topcv" in notes[0]["content"].lower() or "Source:" in notes[0]["content"]
     assert notes[0].get("metadata", {}).get("citations")
@@ -90,6 +91,7 @@ def main() -> int:
         assert created["success"] and created["count"] == 3
         meta = calls[0][2].get("metadata") or {}
         assert meta.get("citations") or "http" in str(calls[0][2].get("content") or "")
+        assert calls[0][2].get("title")
 
     print("running test case 6/8")
     adapter = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(

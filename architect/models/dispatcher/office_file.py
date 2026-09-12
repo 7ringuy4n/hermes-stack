@@ -797,6 +797,8 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
     sections: list[tuple[str, list[str]]] = []
     cur_section = ""
     cur_bullets: list[str] = []
+    image_ref = ""
+    layout = "full-bleed"
 
     def flush_section() -> None:
         nonlocal cur_section, cur_bullets
@@ -811,6 +813,12 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
             continue
         low = line.lower()
         if low.startswith("image:"):
+            image_ref = line.split(":", 1)[1].strip()
+            continue
+        if low.startswith("layout:"):
+            requested = line.split(":", 1)[1].strip().lower()
+            if requested in {"full-bleed", "image-left", "image-right", "minimal"}:
+                layout = requested
             continue
         if line.startswith("#"):
             hashes = 0
@@ -855,13 +863,77 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
             run.font.color.rgb = RGBColor(*color)
             run.font.name = "Inter"
 
-    def _paint_bg(slide, rgb=(238, 243, 248)) -> None:
+    def _resolved_image() -> Path | None:
+        if not image_ref:
+            return None
+        candidate = Path(image_ref)
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError:
+            return None
+        for root in _MEDIA_ROOTS:
+            try:
+                resolved.relative_to(root.resolve())
+                return resolved
+            except (OSError, ValueError):
+                continue
+        return None
+
+    visual = _resolved_image()
+
+    def _add_cover(slide) -> bool:
+        if visual is None or not visual.is_file():
+            return False
+        try:
+            from PIL import Image
+
+            with Image.open(visual) as source:
+                iw, ih = source.size
+            slide_ar = float(prs.slide_width) / float(prs.slide_height)
+            image_ar = float(iw) / float(max(1, ih))
+            if image_ar >= slide_ar:
+                height = prs.slide_height
+                width = int(height * image_ar)
+                left = int((prs.slide_width - width) / 2)
+                top = 0
+            else:
+                width = prs.slide_width
+                height = int(width / image_ar)
+                left = 0
+                top = int((prs.slide_height - height) / 2)
+            slide.shapes.add_picture(str(visual), left, top, width=width, height=height)
+            return True
+        except Exception:
+            log.warning("pptx visual could not be embedded", exc_info=True)
+            return False
+
+    def _paint_bg(slide, rgb=(238, 243, 248), *, scenic: bool = False) -> bool:
+        has_visual = bool(scenic and layout == "full-bleed" and _add_cover(slide))
+        if has_visual:
+            shade = slide.shapes.add_shape(
+                MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, prs.slide_height
+            )
+            shade.fill.solid()
+            shade.fill.fore_color.rgb = RGBColor(8, 18, 32)
+            shade.fill.transparency = 38
+            shade.line.fill.background()
+            return True
         shape = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), prs.slide_width, prs.slide_height
         )
         shape.fill.solid()
         shape.fill.fore_color.rgb = RGBColor(*rgb)
         shape.line.fill.background()
+        return False
+
+    def _add_split_visual(slide) -> tuple[float, float]:
+        if visual is None or layout not in {"image-left", "image-right"}:
+            return 0.7, 12.0
+        pic_left = 0.0 if layout == "image-left" else 7.65
+        slide.shapes.add_picture(str(visual), Inches(pic_left), Inches(0), width=Inches(5.68), height=Inches(7.5))
+        if layout == "image-left":
+            return 6.05, 6.65
+        return 0.7, 6.55
 
     def _accent_bar(slide) -> None:
         bar = slide.shapes.add_shape(
@@ -872,35 +944,39 @@ def write_pptx_styled(dest: Path, body: str) -> Path:
         bar.line.fill.background()
 
     def _add_bullets(slide, heading: str, items: list[str]) -> None:
-        _paint_bg(slide)
+        scenic = _paint_bg(slide, scenic=True)
         _accent_bar(slide)
-        h = slide.shapes.add_textbox(Inches(0.7), Inches(0.4), Inches(12), Inches(0.7))
-        _fill_para(h.text_frame.paragraphs[0], heading[:60], size=26, bold=True, color=(26, 58, 102))
-        body_box = slide.shapes.add_textbox(Inches(0.7), Inches(1.3), Inches(12), Inches(5.5))
+        left, width = _add_split_visual(slide) if not scenic else (0.7, 12.0)
+        heading_color = (255, 255, 255) if scenic else (26, 58, 102)
+        body_color = (245, 248, 252) if scenic else (20, 40, 60)
+        h = slide.shapes.add_textbox(Inches(left), Inches(0.4), Inches(width), Inches(0.7))
+        _fill_para(h.text_frame.paragraphs[0], heading[:60], size=26, bold=True, color=heading_color)
+        body_box = slide.shapes.add_textbox(Inches(left), Inches(1.3), Inches(width), Inches(5.5))
         btf = body_box.text_frame
         btf.word_wrap = True
         first = True
         for item in items[:12]:
             para = btf.paragraphs[0] if first else btf.add_paragraph()
             first = False
-            _fill_para(para, f"• {item[:120]}", size=18, color=(20, 40, 60))
+            _fill_para(para, f"• {item[:120]}", size=18, color=body_color)
 
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _paint_bg(slide, (26, 58, 102))
-    box = slide.shapes.add_textbox(Inches(0.9), Inches(2.4), Inches(11.5), Inches(1.4))
+    scenic_title = _paint_bg(slide, (26, 58, 102), scenic=True)
+    title_left, title_width = _add_split_visual(slide) if not scenic_title else (0.9, 11.5)
+    box = slide.shapes.add_textbox(Inches(title_left), Inches(2.4), Inches(title_width), Inches(1.4))
     tf = box.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.LEFT
-    _fill_para(p, title, size=40, bold=True, color=(255, 255, 255))
+    _fill_para(p, title, size=40, bold=True, color=(255, 255, 255) if scenic_title or visual is None else (26, 58, 102))
     if subtitle:
-        sub = slide.shapes.add_textbox(Inches(0.9), Inches(4.0), Inches(11.5), Inches(0.8))
+        sub = slide.shapes.add_textbox(Inches(title_left), Inches(4.0), Inches(title_width), Inches(0.8))
         _fill_para(
             sub.text_frame.paragraphs[0],
             subtitle,
             size=18,
             bold=False,
-            color=(207, 224, 245),
+            color=(207, 224, 245) if scenic_title or visual is None else (55, 80, 110),
         )
 
     if facts:

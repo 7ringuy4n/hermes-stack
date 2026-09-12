@@ -1041,6 +1041,33 @@ def recreate_router_worker() -> None:
     print("WARN: could not restart router-worker by name — skip recreate")
 
 
+def restart_hermes_replicas() -> None:
+    """Reload user-plugin discovery after shared config/plugin changes."""
+    try:
+        raw = subprocess.check_output(
+            ["docker", "ps", "--format", "{{.Names}}"],
+            text=True,
+            errors="replace",
+            timeout=15,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"WARN: could not list Hermes replicas for plugin reload: {exc}")
+        return
+    names = [name for name in raw.splitlines() if name.startswith("assistant-hermes-")]
+    if not names:
+        print("NOTE: no running Hermes replicas; plugin config loads on next start")
+        return
+    print(f"==> restart Hermes replicas for plugin/config reload ({len(names)})")
+    for name in names:
+        rc = subprocess.call(
+            ["docker", "restart", name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if rc != 0:
+            print(f"WARN: failed to restart {name}")
+
+
 def enable_omni_memory(opener: urllib.request.OpenerDirector) -> None:
     """Best-effort: enable OmniRoute conversational memory when API supports it."""
     for path, payload in (
@@ -2366,6 +2393,7 @@ def setup_core() -> int:
         set_env_key_if_missing(env_path, key_name, val, env)
 
     patch_hermes_router_worker(key, combo)
+    restart_hermes_replicas()
     print(
         f"OK: first-setup omni-router core "
         f"(login + missing key/combos only; run update-omnirouter to repair/sync)"
@@ -2468,6 +2496,7 @@ def run_update() -> int:
     recreate_router_worker()
     time.sleep(3)
     patch_hermes_router_worker(key, combo)
+    restart_hermes_replicas()
     # Verify hermes combo via Omni /v1/chat/completions (OpenCode cloud members).
     verify(key, combo)
     print(

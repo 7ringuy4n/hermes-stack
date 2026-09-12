@@ -1,3 +1,15 @@
+## 2026-09-12 — one-pass grounded images and registered native web
+
+See `history/2026-09-12/README.md`. Grounded image copy and layout now travel
+in one image-generation prompt; the legacy overlay endpoint is gone. Hermes
+registers and enables the Router Worker web provider, preserving existing
+plugin entries; setup/update reload running replicas after config sync.
+Workflows omit the processing placeholder, and security alerts no longer
+expose scanner dictionaries. Queue idle waits match the typed Zalo destination
+instead of a raw substring, preventing cross-scope DM/group stalls.
+The durable queue boundary rejects blank destination ids and removes legacy
+blank active members during owner recovery.
+
 ## 2026-09-11 — scheduled search-then-note fire
 
 See `history/2026-09-11/schedule-search-note-silence.md`. Once-after
@@ -5760,3 +5772,15 @@ same compositor for copy over embedded images and keeps ordinary page regions
 in safe normal flow. Focused local gates, VPS image/PDF rendering, real-channel
 delivery, visual review, classifier contracts, and restart auditing passed.
 See `history/2026-09-08/README.md`.
+
+## 2026-09-12 — private document sidecars and visual combo failover
+
+The Zalo autosender now defers live file watching for typed composite document
+jobs, preventing intermediate hero images and previews from becoming separate
+deliveries. Grounded image requests also run an artifact-level vision check;
+explicit layout, readability, duplication, clipping, or canvas-band failures
+advance to the next configured image-combo member. The release lab evaluates
+the delivered images directly instead of relying on renderer log messages.
+The VPS health check also stopped masking failed probes and now tests the
+configured OmniRouter endpoint with Hermes' actual runtime credential.
+See `history/2026-09-12/README.md`.

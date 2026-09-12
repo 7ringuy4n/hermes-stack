@@ -50,6 +50,7 @@ def main() -> int:
         looks_invalid_param,
         prefer_remuxed_video,
         video_dedupe_stem,
+        workflow_job_defers_sidecars,
     )
 
     if file_ready_for_send(t0, t0 + 0.1, min_age_s=0.8):
@@ -82,6 +83,19 @@ def main() -> int:
         return 1
     if claimed_composite_is_terminal("/tmp/weather-hero.jpg"):
         print("FAIL image sidecar treated as final document")
+        return 1
+    if not workflow_job_defers_sidecars(
+        {"task_type": "file_processing", "output_type": "pdf"}
+    ):
+        print("FAIL PDF workflow did not defer sidecars")
+        return 1
+    if not workflow_job_defers_sidecars({"file_format": ".pptx"}):
+        print("FAIL PowerPoint workflow did not defer sidecars")
+        return 1
+    if workflow_job_defers_sidecars(
+        {"task_type": "media_generation", "output_type": "image"}
+    ):
+        print("FAIL image workflow deferred final media")
         return 1
     import tempfile
 

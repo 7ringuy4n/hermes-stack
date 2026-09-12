@@ -26,6 +26,12 @@ def test_session_match() -> None:
         raise SystemExit("FAIL match thread in session key")
     if session_active_for_thread(active, "other-thread"):
         raise SystemExit("FAIL other thread should be idle")
+    user_id = "dm-user-99"
+    collision = {f"agent:main:zalo:group:group-42:{user_id}": object()}
+    if session_active_for_thread(collision, user_id, "user"):
+        raise SystemExit("FAIL group sender suffix must not hold the matching DM queue")
+    if not session_active_for_thread(collision, "group-42", "group"):
+        raise SystemExit("FAIL group destination should match its own session")
     if session_active_for_thread({}, TID):
         raise SystemExit("FAIL empty map")
     if session_active_for_thread(None, TID):

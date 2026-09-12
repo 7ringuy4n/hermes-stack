@@ -55,17 +55,33 @@ def is_isolated_session(chat_id: str) -> bool:
 def session_active_for_thread(
     active: Optional[Mapping[Any, Any]],
     thread_id: str,
+    thread_type: str = "",
 ) -> bool:
     tid = str(thread_id or "").strip()
     if not tid or not isinstance(active, dict) or not active:
         return False
-    return any(tid in str(k) for k in active)
+    kind = str(thread_type or "").strip().lower()
+    kind = {"user": "dm", "private": "dm"}.get(kind, kind)
+    for key in active:
+        rendered = str(key)
+        if kind in {"", "dm"}:
+            marker = "zalo:dm:"
+            if marker in rendered and rendered.split(marker, 1)[1] == tid:
+                return True
+        if kind in {"", "group"}:
+            marker = "zalo:group:"
+            if marker in rendered:
+                destination = rendered.split(marker, 1)[1]
+                if destination == tid or destination.startswith(tid + ":"):
+                    return True
+    return False
 
 
 async def wait_thread_idle(
     active_get: ActiveGet,
     thread_id: str,
     *,
+    thread_type: str = "",
     timeout_s: float = DEFAULT_TIMEOUT_S,
     poll_s: float = POLL_S,
     pulse: Optional[PulseFn] = None,
@@ -91,7 +107,7 @@ async def wait_thread_idle(
 
     while True:
         now = loop.time()
-        active = session_active_for_thread(active_get(), thread_id)
+        active = session_active_for_thread(active_get(), thread_id, thread_type)
         if active:
             saw_active = True
         if arm_first and not saw_active:

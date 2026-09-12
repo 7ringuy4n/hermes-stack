@@ -1,3 +1,38 @@
+## 2026-09-12 — model-rendered grounded images and quieter delivery
+
+- Grounded information images are now generated as one full-bleed model-owned
+  composition; the legacy Pillow panel renderer and `/v1/overlay` endpoint are
+  removed so no host step can add gray side columns or bottom bands.
+- Hermes now registers its Router Worker native web provider instead of merely
+  declaring it. Deployment also preserves operator plugin entries while
+  enabling `web/router_worker` and reloads Hermes replicas after config sync,
+  restoring attributed live search and page extraction.
+- Async workflows no longer send the visible “Đang xử lý…” placeholder, and
+  security alerts summarize the blocking reason without raw scanner JSON.
+- Concurrent DM and group turns now use destination-aware exact session
+  matching, so a group sender id cannot falsely keep that user's DM queue busy.
+- The durable Zalo queue rejects empty destination ids and self-heals legacy
+  empty active-set members, preventing false non-empty queue health results.
+- Composite document workflows now keep intermediate images private and send
+  only the requested PDF, DOCX, PPTX, or spreadsheet artifact.
+- Grounded image generation now applies a model vision quality gate before
+  delivery and tries the next configured image-combo member when composition,
+  text, or requested placement is visibly defective.
+- The VPS health gate now uses the configured OmniRouter port and the Hermes
+  container's runtime credential, and fails closed when any required probe
+  fails instead of accepting a completion marker alone.
+- See `history/2026-09-12/README.md`.
+
+## 2026-09-12 — safe public-page extraction fallback
+
+- Router Worker now falls back to a bounded direct reader for public HTTP(S)
+  text pages when optional Tavily/Firecrawl extraction keys are absent.
+- Redirect targets are revalidated; credentials, non-standard ports, and
+  private/non-global destinations are rejected before fetch.
+- Empty legacy schedule rows now fall back to their id in compact lists instead
+  of raising while deriving a title.
+- See `history/2026-09-12/README.md`.
+
 ## 2026-09-11 — specific job notes only
 
 - Search-then-note listing policy lives in notes/web-search skills and classify
@@ -3150,3 +3185,20 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
   category prefixes so deterministic duplicate creation remains idempotent.
 - Component-scoped updates now preserve intentional Compose scale slots while
   still removing duplicate occupants and anonymous recreate debris.
+## 2026-09-12 — titled notes, silent research schedules, routed extraction, visual PPTX
+
+- Notes now persist model-authored titles, default to ten newest compact rows,
+  support count/detail views, and execute explicitly authorized keyword,
+  date-range, or whole-scope mutations without weakening ambiguity isolation.
+- Scheduled search-then-note work may run silently through
+  `notify_on_fire=false`; schedules persist model-authored titles and expose
+  compact list plus selected-detail views.
+- Hermes native web search and extraction now share a stack-owned Router Worker
+  provider, so SearXNG search selection cannot block Tavily/Firecrawl page
+  hydration and provider secrets remain centralized.
+- PPTX authoring honors model-selected `IMAGE:` and `LAYOUT:` directives with
+  validated media paths, embedded scenic backgrounds/splits, and exact
+  section-driven slide counts.
+- Existing note, schedule, web fallback, presentation, and flexible-layout
+  cases were expanded in place to avoid redundant overlay-only case growth.
+- See `history/2026-09-12/README.md`.

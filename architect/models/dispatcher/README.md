@@ -27,7 +27,6 @@ Media/File worker HTTP service: office-file creation, media download/convert hel
 | API | Function |
 |---|---|
 | `POST /v1/scenic-still` | Generate a still through the configured image combo |
-| `POST /v1/overlay` | Apply a validated adaptive information design to an existing image |
 | `POST /v1/text-poster` | Render exact requested glyphs deterministically |
 | `POST /v1/office-file` | Create txt/csv/md/xlsx/docx/**pdf**/pptx when `OFFICE_FILE_GEN=active`; structured styling preserves the requested format and visual QA follows generation |
 | `POST /v1/media` | Media download / convert helpers |

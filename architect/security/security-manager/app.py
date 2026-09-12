@@ -219,6 +219,42 @@ def _notify_risk(title: str, body: str) -> None:
         pass
 
 
+def _risk_notice(filename: str, layers: dict[str, Any]) -> str:
+    """Human-readable operator alert without raw scanner dictionaries."""
+    reasons: list[str] = []
+    labels = {
+        "archive": "unsafe archive structure",
+        "static": "unsafe executable code",
+        "yara": "a malware signature",
+        "antivirus": "an antivirus detection",
+        "llm_judge": "suspicious active content",
+        "sandbox": "unsafe runtime behavior",
+        "size": "the file exceeds the safe size limit",
+        "download": "the remote file could not be fetched safely",
+    }
+    for layer, result in (layers or {}).items():
+        if not isinstance(result, dict) or result.get("ok") is not False:
+            continue
+        label = labels.get(str(layer), "a security check")
+        hits = result.get("hits") if layer == "yara" else None
+        if isinstance(hits, list):
+            clean_hits = [
+                re.sub(r"[^A-Za-z0-9_.-]", "", str(hit))[:32].upper()
+                for hit in hits[:3]
+            ]
+            clean_hits = [hit for hit in clean_hits if hit]
+            if clean_hits:
+                label += f" ({', '.join(clean_hits)})"
+        reasons.append(label)
+    reason = ", ".join(reasons) if reasons else "a security check failed"
+    safe_name = os.path.basename(str(filename or "upload.bin"))[:120]
+    return (
+        f"File: {safe_name}\n"
+        f"Blocked: {reason}.\n"
+        "The file was quarantined and was not opened."
+    )
+
+
 def _static_python(data: bytes, filename: str) -> dict[str, Any]:
     if not filename.endswith(".py") and b"def " not in data[:2000]:
         return {"ok": True, "skipped": True}
@@ -481,7 +517,7 @@ async def scan(
     layers["sandbox"] = _sandbox_detonate(data, filename)
 
     if _any_block(layers):
-        _notify_risk("Security risk blocked", f"{filename}: {layers}")
+        _notify_risk("Security risk blocked", _risk_notice(filename, layers))
         av = layers.get("antivirus") or {}
         _flow(
             "security_scan",
@@ -545,7 +581,7 @@ def _scan_bytes(data: bytes, filename: str, session_id: str) -> ScanResult:
         "sandbox": _sandbox_detonate(data, filename),
     }
     if _any_block(layers):
-        _notify_risk("Security risk blocked", f"{filename}")
+        _notify_risk("Security risk blocked", _risk_notice(filename, layers))
         return ScanResult(
             verdict=Verdict.RISK,
             layers=layers,

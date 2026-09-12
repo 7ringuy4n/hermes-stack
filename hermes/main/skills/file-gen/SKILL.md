@@ -75,7 +75,24 @@ any risky positioning rule rather than hoping the renderer will clip it safely.
 
 ### PPTX / DOCX / XLSX / MD (presentation-ready)
 
-For pptx/docx/md: compose markdown the worker understands (`#` title, `##` subtitle, `- Label: value`, short prose). Decks and reports must look presentation-ready — title, metrics, sections — not a chat dump.
+For docx/md: compose structured markdown (`#` title, `##` sections,
+`- Label: value`, short prose). For PPTX, the model owns the story, slide count,
+section order, image choice, and layout. Use one `#` deck title and one `##`
+section per content slide; therefore a requested three-slide deck has the title
+slide plus exactly two `##` sections. Never substitute PDFs for a PPTX.
+
+For a visual PPTX, first create one scenic still, then include these structural
+directives in the PPTX body:
+
+```text
+IMAGE: /opt/data/media/out/<generated-image>
+LAYOUT: full-bleed
+```
+
+`LAYOUT` may be `full-bleed`, `image-left`, `image-right`, or `minimal`. Choose
+the layout that fits the actual content and requested visual hierarchy; do not
+copy a fixed topic layout. The worker validates paths and renders the selected
+composition. Repeat neither the image artifact nor the office artifact.
 For xlsx: labeled header row + metric rows with filled values only.
 
 Use the dominant language of the current user message for **every visible word**, including titles, headings, labels, conditions, notes, and captions, unless the user explicitly requests another language. Use measurement units customary for that language/locale as the primary display unless the user specifies units; convert sourced values accurately instead of exposing provider-default units. Do not add bilingual translations or duplicate unit systems merely for decoration.
@@ -97,22 +114,20 @@ padding, typography, and page size when content grows; never omit a region or
 allow two regions to cover one another.
 
 When the user explicitly wants information placed over an image inside the
-document, compose that image before embedding it. Create or resolve the base
-image, then call `POST http://dispatcher:8090/v1/overlay` once with
-`send_zalo=false` and `overlay_panels`. Each panel contains `overlay` and
-`overlay_design`. Use a named placement for a conventional region, or a
-validated normalized `region` object (`x`, `y`, `width`, `height`, each from
-zero to one) for a precise or unusual location. Up to six regions are
-supported. Use `placement=auto` for unspecified positions so the renderer
-distributes them. Embed only the returned composed image in the final file;
-do not separately send its base or intermediate image.
-
-Do not simulate an image overlay with risky HTML positioning. The dispatcher
-owns image composition; the document renderer owns normal-flow page layout.
+document, use **`image-gen`** to create one complete grounded, full-bleed image
+whose prompt contains the exact visible copy and spatial constraints. Let the
+image model balance typography and scene composition. Do not create a separate
+base plate, post-process it with Pillow, add gray padding, or use risky HTML
+positioning. Embed only the final generated image; the document renderer still
+owns normal-flow page layout.
 
 ## Optional embedded visual (pdf|pptx|docx|xlsx|md)
 
-Use a generated visual only when the user explicitly requests an image/photo inside the document. An attractive interface, polished layout, or a verb such as draw/render does not by itself request a separate image artifact.
+Use a generated visual when the user explicitly requests an image/photo inside
+the document, or when a presentation request clearly calls for a designed
+visual deck rather than plain text slides. The still remains an internal asset,
+not a second deliverable. An attractive layout alone does not create a separate
+image response.
 
 1. **`web_search`** for live facts (labeled metrics only).
 2. When explicitly requested, create one embeddable still via dispatcher (Omni keys on the worker — never built-in `image_generation`, never `execute_code`, never read `.env`):
