@@ -105,6 +105,50 @@ extraction, and replica config synchronization propagates the setting.
 both extraction-provider response shapes. C4 requires real multi-source page
 hydration and honest blocked-page handling.
 
+## 18:45 — Extraction still unavailable without optional provider keys
+
+### Symptom
+
+After the clean VPS deployment selected the correct Router Worker provider,
+`POST /v1/extract` still returned a controlled 502 whenever both optional
+Tavily and Firecrawl extraction keys were absent.
+
+### Root cause
+
+Router Worker had only credentialed extraction adapters. Its local SearXNG
+fallback intentionally supports search only, and there was no safe bounded
+reader for ordinary public result pages.
+
+### AI decision
+
+Keep credentialed extraction first for richer parsing, then use a narrow
+public-page reader as the final adapter. Validate every initial and redirect
+URL, reject URL credentials/non-standard ports/non-global addresses, disable
+environment proxies, accept only textual content, and enforce byte/character
+limits.
+
+### Fix (core)
+
+- Added the `direct` extraction adapter after Tavily and Firecrawl.
+- Added DNS/address and redirect validation plus a 2 MiB response bound.
+- Added conservative HTML text/title extraction and normalized its response in
+  the stack-owned Hermes provider.
+- Extended the existing Router Worker fallback unit with direct-response,
+  HTML-cleaning, and private-destination rejection cases.
+
+### Todo list
+
+- [x] Reproduce the keyless 502 on the deployed candidate.
+- [x] Add and unit-test the safe direct adapter.
+- [ ] Redeploy and prove extraction against a public page.
+- [ ] Run the full numbered and real-channel suites.
+
+### Prevent recurrence
+
+The Router Worker fallback test now requires credential-free direct extraction
+to remain last in the adapter order and verifies that non-public targets are
+blocked before any fetch.
+
 ## 15:00 — PPTX discarded model-selected visuals
 
 ### Symptom

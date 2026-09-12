@@ -19,6 +19,14 @@ def _base_url() -> str:
 
 def _extract_item(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    direct_content = str(data.get("content") or "")
+    if direct_content:
+        return {
+            "url": str(data.get("url") or url),
+            "title": str(data.get("title") or ""),
+            "content": direct_content,
+            "raw_content": direct_content,
+        }
     results = data.get("results") if isinstance(data.get("results"), list) else []
     first = results[0] if results and isinstance(results[0], dict) else {}
     if first:
