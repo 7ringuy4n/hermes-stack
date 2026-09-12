@@ -17,7 +17,10 @@ renderer after it created gray canvas bands and obscured scene content. The same
 record covers native web-provider registration plus deployment activation and
 reload, exact DM/group session isolation, quiet async workflow delivery, and
 empty active-queue repair, quiet async workflow delivery, and human-readable
-security alerts.
+security alerts. It also records two release-gate findings: live file watching
+leaked private document-build sidecars, and dimension-only image acceptance
+delivered visibly defective compositions. Typed-output watcher deferral and
+vision-scored combo failover close those boundaries.
 
 ## 2026-09-09 — scheduled composed-image execution
 

@@ -5772,3 +5772,15 @@ same compositor for copy over embedded images and keeps ordinary page regions
 in safe normal flow. Focused local gates, VPS image/PDF rendering, real-channel
 delivery, visual review, classifier contracts, and restart auditing passed.
 See `history/2026-09-08/README.md`.
+
+## 2026-09-12 — private document sidecars and visual combo failover
+
+The Zalo autosender now defers live file watching for typed composite document
+jobs, preventing intermediate hero images and previews from becoming separate
+deliveries. Grounded image requests also run an artifact-level vision check;
+explicit layout, readability, duplication, clipping, or canvas-band failures
+advance to the next configured image-combo member. The release lab evaluates
+the delivered images directly instead of relying on renderer log messages.
+The VPS health check also stopped masking failed probes and now tests the
+configured OmniRouter endpoint with Hermes' actual runtime credential.
+See `history/2026-09-12/README.md`.

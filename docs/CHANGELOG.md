@@ -13,6 +13,14 @@
   matching, so a group sender id cannot falsely keep that user's DM queue busy.
 - The durable Zalo queue rejects empty destination ids and self-heals legacy
   empty active-set members, preventing false non-empty queue health results.
+- Composite document workflows now keep intermediate images private and send
+  only the requested PDF, DOCX, PPTX, or spreadsheet artifact.
+- Grounded image generation now applies a model vision quality gate before
+  delivery and tries the next configured image-combo member when composition,
+  text, or requested placement is visibly defective.
+- The VPS health gate now uses the configured OmniRouter port and the Hermes
+  container's runtime credential, and fails closed when any required probe
+  fails instead of accepting a completion marker alone.
 - See `history/2026-09-12/README.md`.
 
 ## 2026-09-12 — safe public-page extraction fallback
