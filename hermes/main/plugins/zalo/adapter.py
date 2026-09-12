@@ -3759,7 +3759,23 @@ class ZaloAdapter(BasePlatformAdapter):
             from session_memory import load_messages  # type: ignore
         messages_before = load_messages(tid, zalo_tt)
         stop = asyncio.Event()
-        watch = asyncio.create_task(self._as_watch_job_files(iso, zalo_tt, stop))
+        try:
+            from .autosend import workflow_job_defers_sidecars
+        except ImportError:
+            from autosend import workflow_job_defers_sidecars  # type: ignore
+        task_contract = ctx.get("task") if isinstance(ctx.get("task"), dict) else {}
+        defer_sidecars = workflow_job_defers_sidecars(task_contract)
+        watch = (
+            None
+            if defer_sidecars
+            else asyncio.create_task(self._as_watch_job_files(iso, zalo_tt, stop))
+        )
+        if defer_sidecars:
+            logger.info(
+                "Zalo: workflow deferring intermediate files job=%s output=%s",
+                jid,
+                task_contract.get("output_type"),
+            )
         try:
             def _pulse() -> None:
                 heartbeat(jid, wid)
@@ -3850,11 +3866,12 @@ class ZaloAdapter(BasePlatformAdapter):
             self._as_set_file_ceiling(iso)
             self._as_cancel_late_autosend(iso)
             stop.set()
-            watch.cancel()
-            try:
-                await watch
-            except (asyncio.CancelledError, Exception):
-                pass
+            if watch is not None:
+                watch.cancel()
+                try:
+                    await watch
+                except (asyncio.CancelledError, Exception):
+                    pass
             self._as_compound_end(iso)
             self._as_compound_seq_done(iso)
 

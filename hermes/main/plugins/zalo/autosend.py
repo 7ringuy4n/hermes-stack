@@ -27,6 +27,24 @@ def claimed_composite_is_terminal(path: str) -> bool:
     return Path(str(path or "")).suffix.lower() in COMPOSITE_DOCUMENT_EXTS
 
 
+def workflow_job_defers_sidecars(task: dict | None) -> bool:
+    """Hold intermediate media until a composite document job has finished.
+
+    Rich PDF/Office generation commonly creates one or more images before the
+    requested document.  A live file watcher would expose those build assets
+    as separate Zalo attachments.  The job's typed output contract is the
+    reliable boundary: defer autosend until the final late-file scan, which
+    considers newest artifacts first and treats the composite as terminal.
+    """
+    src = task if isinstance(task, dict) else {}
+    output_type = (
+        str(src.get("output_type") or src.get("file_format") or "").strip().lower()
+    )
+    if output_type and not output_type.startswith("."):
+        output_type = f".{output_type}"
+    return output_type in COMPOSITE_DOCUMENT_EXTS
+
+
 def canonical_send_name(path: str) -> str:
     """Collapse bridge staging prefixes so one artifact has one claim key."""
     name = Path(str(path or "")).name.lower()
