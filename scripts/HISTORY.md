@@ -7,6 +7,8 @@ plugin entries; setup/update reload running replicas after config sync.
 Workflows omit the processing placeholder, and security alerts no longer
 expose scanner dictionaries. Queue idle waits match the typed Zalo destination
 instead of a raw substring, preventing cross-scope DM/group stalls.
+The durable queue boundary rejects blank destination ids and removes legacy
+blank active members during owner recovery.
 
 ## 2026-09-11 — scheduled search-then-note fire
 

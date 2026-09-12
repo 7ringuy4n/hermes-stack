@@ -217,50 +217,67 @@ class GateStore:
 
     def queue_push(self, chat_id: str, payload: str, max_n: int, ttl_s: int) -> int:
         """RPUSH FIFO. Returns new length, or -1 if at cap."""
-        key = self._k("q", chat_id)
+        tid = str(chat_id or "").strip()
+        if not tid:
+            return -1
+        key = self._k("q", tid)
         cap = max(0, int(max_n))
         ttl = max(60, int(ttl_s))
         got = self._r.call("EVAL", PUSH_LUA, 1, key, payload, str(cap), str(ttl))
         count = int(got if got is not None else -1)
         if count >= 0:
-            self._r.call("SADD", self._k("qactive"), str(chat_id))
+            self._r.call("SADD", self._k("qactive"), tid)
         return count
 
     def queue_push_front(self, chat_id: str, payload: str, ttl_s: int) -> None:
-        key = self._k("q", chat_id)
+        tid = str(chat_id or "").strip()
+        if not tid:
+            return
+        key = self._k("q", tid)
         ttl = max(60, int(ttl_s))
         self._r.call("LPUSH", key, payload)
         self._r.call("EXPIRE", key, str(ttl))
-        self._r.call("SADD", self._k("qactive"), str(chat_id))
+        self._r.call("SADD", self._k("qactive"), tid)
 
     def queue_pop(self, chat_id: str) -> Optional[str]:
-        key = self._k("q", chat_id)
+        tid = str(chat_id or "").strip()
+        if not tid:
+            self._r.call("SREM", self._k("qactive"), "")
+            return None
+        key = self._k("q", tid)
         raw = self._r.call("LPOP", key)
         if raw is None:
-            self._r.call("SREM", self._k("qactive"), str(chat_id))
+            self._r.call("SREM", self._k("qactive"), tid)
             return None
         if int(self._r.call("LLEN", key) or 0) == 0:
-            self._r.call("SREM", self._k("qactive"), str(chat_id))
+            self._r.call("SREM", self._k("qactive"), tid)
         if isinstance(raw, bytes):
             return raw.decode("utf-8", "replace")
         return str(raw)
 
     def queue_len(self, chat_id: str) -> int:
-        key = self._k("q", chat_id)
+        tid = str(chat_id or "").strip()
+        if not tid:
+            return 0
+        key = self._k("q", tid)
         return int(self._r.call("LLEN", key) or 0)
 
     def queue_claim(self, chat_id: str) -> Optional[str]:
         """Atomically move the FIFO head to a durable in-flight list."""
+        tid = str(chat_id or "").strip()
+        if not tid:
+            self._r.call("SREM", self._k("qactive"), "")
+            return None
         raw = self._r.call(
             "LMOVE",
-            self._k("q", chat_id),
-            self._k("qinflight", chat_id),
+            self._k("q", tid),
+            self._k("qinflight", tid),
             "LEFT",
             "RIGHT",
         )
         if raw is None:
-            if int(self._r.call("LLEN", self._k("qinflight", chat_id)) or 0) == 0:
-                self._r.call("SREM", self._k("qactive"), str(chat_id))
+            if int(self._r.call("LLEN", self._k("qinflight", tid)) or 0) == 0:
+                self._r.call("SREM", self._k("qactive"), tid)
             return None
         if isinstance(raw, bytes):
             return raw.decode("utf-8", "replace")
@@ -268,16 +285,24 @@ class GateStore:
 
     def queue_ack(self, chat_id: str, payload: str) -> None:
         """Acknowledge a claimed item after its turn reaches a terminal state."""
-        self._r.call("LREM", self._k("qinflight", chat_id), "1", payload)
-        if self.queue_len(chat_id) == 0 and int(
-            self._r.call("LLEN", self._k("qinflight", chat_id)) or 0
+        tid = str(chat_id or "").strip()
+        if not tid:
+            self._r.call("SREM", self._k("qactive"), "")
+            return
+        self._r.call("LREM", self._k("qinflight", tid), "1", payload)
+        if self.queue_len(tid) == 0 and int(
+            self._r.call("LLEN", self._k("qinflight", tid)) or 0
         ) == 0:
-            self._r.call("SREM", self._k("qactive"), str(chat_id))
+            self._r.call("SREM", self._k("qactive"), tid)
 
     def queue_recover(self, chat_id: str) -> int:
         """Return abandoned claimed items to the FIFO head after owner failover."""
-        source = self._k("qinflight", chat_id)
-        target = self._k("q", chat_id)
+        tid = str(chat_id or "").strip()
+        if not tid:
+            self._r.call("SREM", self._k("qactive"), "")
+            return 0
+        source = self._k("qinflight", tid)
+        target = self._k("q", tid)
         recovered = 0
         while True:
             raw = self._r.call("RPOPLPUSH", source, target)
@@ -285,7 +310,7 @@ class GateStore:
                 break
             recovered += 1
         if recovered:
-            self._r.call("SADD", self._k("qactive"), str(chat_id))
+            self._r.call("SADD", self._k("qactive"), tid)
         return recovered
 
     def queue_active_ids(self) -> list[str]:
@@ -298,6 +323,8 @@ class GateStore:
             value = str(item or "").strip()
             if value:
                 values.append(value)
+            else:
+                self._r.call("SREM", self._k("qactive"), item)
         return sorted(set(values))
 
     def queue_seen(self, message_id: str, ttl_s: int = 600) -> bool:
