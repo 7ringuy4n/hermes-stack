@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 _NUMBERED_ITEM_RE = re.compile(r"(?m)^\s*(\d+)[\.\)\-]\s+(.+?)(?=^\s*\d+[\.\)\-]\s+|\Z)", re.S)
 # Protocol URL tokens only.
 _URL_RE = re.compile(r"https?://[^\s\]\)>\"]+", re.I)
+_MARKDOWN_EDGE_RE = re.compile(r"^[\s*_`#>-]+|[\s*_`#>-]+$")
 
 
 def plan_is_empty_note_create(plan: dict[str, Any] | None) -> bool:
@@ -147,6 +148,18 @@ def _with_citations(content: str, urls: list[str]) -> str:
     return merged[:4000]
 
 
+def _title_from_chunk(chunk: str) -> str:
+    """Read the model-authored first line; this is formatting, not intent NLU."""
+    first = next((line.strip() for line in str(chunk or "").splitlines() if line.strip()), "")
+    first = _URL_RE.sub("", first).strip()
+    first = _MARKDOWN_EDGE_RE.sub("", first).strip()
+    for marker in ("Title:", "TITLE:"):
+        if first.startswith(marker):
+            first = first[len(marker) :].strip()
+            break
+    return " ".join(first.split())[:240]
+
+
 def _notes_skill_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "skills" / "notes"
 
@@ -204,11 +217,13 @@ def notes_from_assistant_body(
         if len(chunk) < 3:
             continue
         content = _with_citations(chunk, chunk_urls)
+        title = _title_from_chunk(raw_chunk)
         meta: dict[str, Any] = {"source": "zalo"}
         if chunk_urls:
             meta["citations"] = chunk_urls
         items.append(
             {
+                "title": title or None,
                 "content": content,
                 "note_date": note_date,
                 "tags": [],
@@ -226,7 +241,13 @@ def notes_from_assistant_body(
     meta = {"source": "zalo"}
     if global_urls:
         meta["citations"] = global_urls[:5]
-    return [{"content": content, "note_date": note_date, "tags": [], "metadata": meta}]
+    return [{
+        "title": _title_from_chunk(cleaned) or None,
+        "content": content,
+        "note_date": note_date,
+        "tags": [],
+        "metadata": meta,
+    }]
 
 
 def simplify_note_query(query: str) -> str:

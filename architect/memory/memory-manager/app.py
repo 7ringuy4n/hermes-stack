@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS notes (
   thread_id     TEXT,
   thread_type   TEXT,
   owner_id      TEXT,
+  title         TEXT,
   content       TEXT NOT NULL,
   note_date     DATE,
   tags          TEXT[] NOT NULL DEFAULT '{}',
@@ -137,12 +138,15 @@ CREATE TABLE IF NOT EXISTS notes (
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS title TEXT;
 CREATE INDEX IF NOT EXISTS notes_scope_date_idx
   ON notes (scope_id, note_date, updated_at DESC) WHERE active;
 CREATE INDEX IF NOT EXISTS notes_scope_updated_idx
   ON notes (scope_id, updated_at DESC) WHERE active;
 CREATE INDEX IF NOT EXISTS notes_fts_idx ON notes
   USING GIN (to_tsvector('simple', coalesce(content, ''))) WHERE active;
+CREATE INDEX IF NOT EXISTS notes_title_content_fts_idx ON notes
+  USING GIN (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content, ''))) WHERE active;
 CREATE UNIQUE INDEX IF NOT EXISTS notes_dedupe_idx ON notes
   (scope_id, note_hash, coalesce(note_date, DATE '0001-01-01')) WHERE active;
 
@@ -292,6 +296,7 @@ class ContextReq(BaseModel):
 
 class NoteCreateReq(BaseModel):
     scope_id: str = Field(min_length=3, max_length=256)
+    title: Optional[str] = Field(default=None, max_length=240)
     content: str = Field(min_length=3, max_length=8000)
     note_date: Optional[str] = None
     thread_id: Optional[str] = None
@@ -308,11 +313,12 @@ class NoteQueryReq(BaseModel):
     date_from: Optional[str] = None
     date_to: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
-    limit: int = Field(default=20, ge=1, le=100)
+    limit: int = Field(default=10, ge=1, le=1000)
 
 
 class NoteUpdateReq(BaseModel):
     scope_id: str = Field(min_length=3, max_length=256)
+    title: Optional[str] = Field(default=None, max_length=240)
     content: Optional[str] = Field(default=None, min_length=3, max_length=8000)
     note_date: Optional[str] = None
     clear_date: bool = False
@@ -343,6 +349,7 @@ def _note_hash(content: str) -> str:
 def _note_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": row["id"],
+        "title": row.get("title"),
         "content": row["content"],
         "note_date": row["note_date"].isoformat() if row.get("note_date") else None,
         "tags": list(row.get("tags") or []),
@@ -397,6 +404,7 @@ def health() -> dict[str, Any]:
 def create_note(req: NoteCreateReq) -> dict[str, Any]:
     """Persist one scoped, optionally dated note with an immutable audit row."""
     content = req.content.strip()
+    title = str(req.title or "").strip()[:240] or None
     note_date = _parse_note_date(req.note_date, "note_date")
     note_hash = _note_hash(content)
     note_id = f"note_{uuid.uuid4().hex[:12]}"
@@ -412,13 +420,31 @@ def create_note(req: NoteCreateReq) -> dict[str, Any]:
             (req.scope_id, note_hash, note_date),
         ).fetchone()
         if existing:
+            if title and not str(existing.get("title") or "").strip():
+                version = int(existing.get("version") or 1) + 1
+                existing = conn.execute(
+                    """
+                    UPDATE notes SET title=%s, version=%s, updated_at=NOW()
+                    WHERE id=%s AND scope_id=%s AND active
+                    RETURNING *
+                    """,
+                    (title, version, existing["id"], req.scope_id),
+                ).fetchone()
+                _note_audit(
+                    conn,
+                    "title_backfill",
+                    existing["id"],
+                    req.scope_id,
+                    version,
+                    {"source": "deduped_create"},
+                )
             return {"success": True, "deduped": True, "note": _note_row(existing)}
         row = conn.execute(
             """
             INSERT INTO notes (
-              id, scope_id, thread_id, thread_type, owner_id, content,
+              id, scope_id, thread_id, thread_type, owner_id, title, content,
               note_date, tags, metadata, note_hash
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
             RETURNING *
             """,
             (
@@ -427,6 +453,7 @@ def create_note(req: NoteCreateReq) -> dict[str, Any]:
                 req.thread_id,
                 req.thread_type,
                 req.owner_id,
+                title,
                 content,
                 note_date,
                 tags,
@@ -467,14 +494,14 @@ def query_notes(req: NoteQueryReq) -> dict[str, Any]:
     query = req.query.strip()
     if query:
         clauses.append(
-            "(to_tsvector('simple', coalesce(content, '')) @@ plainto_tsquery('simple', %s) OR content ILIKE %s)"
+            "(to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content, '')) @@ plainto_tsquery('simple', %s) OR title ILIKE %s OR content ILIKE %s)"
         )
-        params.extend([query, f"%{query}%"])
+        params.extend([query, f"%{query}%", f"%{query}%"])
     params.append(req.limit)
     sql = f"""
       SELECT * FROM notes
       WHERE {' AND '.join(clauses)}
-      ORDER BY note_date ASC NULLS LAST, updated_at DESC
+      ORDER BY updated_at DESC, note_date DESC NULLS LAST
       LIMIT %s
     """
     fallback_used = False
@@ -489,7 +516,7 @@ def query_notes(req: NoteQueryReq) -> dict[str, Any]:
             fallback_sql = f"""
               SELECT * FROM notes
               WHERE {' AND '.join(fallback_clauses)}
-              ORDER BY note_date ASC NULLS LAST, updated_at DESC
+              ORDER BY updated_at DESC, note_date DESC NULLS LAST
               LIMIT %s
             """
             rows = conn.execute(fallback_sql, fallback_params).fetchall()
@@ -513,6 +540,11 @@ def update_note(note_id: str, req: NoteUpdateReq) -> dict[str, Any]:
         if not current:
             raise HTTPException(404, "note not found")
         content = req.content.strip() if req.content is not None else current["content"]
+        title = (
+            str(req.title or "").strip()[:240] or None
+            if req.title is not None
+            else current.get("title")
+        )
         effective_date = (
             None
             if req.clear_date
@@ -527,12 +559,13 @@ def update_note(note_id: str, req: NoteUpdateReq) -> dict[str, Any]:
         version = int(current["version"] or 1) + 1
         row = conn.execute(
             """
-            UPDATE notes SET content=%s, note_date=%s, tags=%s, metadata=%s::jsonb,
+            UPDATE notes SET title=%s, content=%s, note_date=%s, tags=%s, metadata=%s::jsonb,
               note_hash=%s, version=%s, updated_at=NOW()
             WHERE id=%s AND scope_id=%s AND active
             RETURNING *
             """,
             (
+                title,
                 content,
                 effective_date,
                 tags,

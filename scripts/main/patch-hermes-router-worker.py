@@ -86,12 +86,36 @@ def patch_hermes_config(cfg: Path, key: str, model: str, base_url: str) -> bool:
             count=1,
         )
     text = _patch_vision_routing(text, key=key, base_url=base_url)
+    text = _patch_web_routing(text)
     if text != orig:
         cfg.write_text(text, encoding="utf-8")
         print(f"OK: patched {cfg} → {base_url} model={model}")
         return True
     print(f"OK: {cfg} already points at router-worker")
     return True
+
+
+def _patch_web_routing(text: str) -> str:
+    """Route both native search and extraction through the stack-owned provider."""
+    out = text
+    if not re.search(r"(?m)^web:[ \t]*$", out):
+        return out.rstrip() + (
+            "\nweb:\n"
+            "  search_backend: router-worker\n"
+            "  extract_backend: router-worker\n"
+        )
+    for field in ("search_backend", "extract_backend"):
+        pattern = rf"(?m)^(  {field}:\s*).*$"
+        if re.search(pattern, out):
+            out = re.sub(pattern, rf"\1router-worker", out, count=1)
+        else:
+            out = re.sub(
+                r"(?m)^(web:[ \t]*)$",
+                rf"\1\n  {field}: router-worker",
+                out,
+                count=1,
+            )
+    return out
 
 
 def _patch_vision_routing(text: str, *, key: str, base_url: str) -> str:

@@ -3150,3 +3150,20 @@ elease/v0.4.0 from main + current develop (compose under docker/, High DR + Zalo
   category prefixes so deterministic duplicate creation remains idempotent.
 - Component-scoped updates now preserve intentional Compose scale slots while
   still removing duplicate occupants and anonymous recreate debris.
+## 2026-09-12 — titled notes, silent research schedules, routed extraction, visual PPTX
+
+- Notes now persist model-authored titles, default to ten newest compact rows,
+  support count/detail views, and execute explicitly authorized keyword,
+  date-range, or whole-scope mutations without weakening ambiguity isolation.
+- Scheduled search-then-note work may run silently through
+  `notify_on_fire=false`; schedules persist model-authored titles and expose
+  compact list plus selected-detail views.
+- Hermes native web search and extraction now share a stack-owned Router Worker
+  provider, so SearXNG search selection cannot block Tavily/Firecrawl page
+  hydration and provider secrets remain centralized.
+- PPTX authoring honors model-selected `IMAGE:` and `LAYOUT:` directives with
+  validated media paths, embedded scenic backgrounds/splits, and exact
+  section-driven slide counts.
+- Existing note, schedule, web fallback, presentation, and flexible-layout
+  cases were expanded in place to avoid redundant overlay-only case growth.
+- See `history/2026-09-12/README.md`.

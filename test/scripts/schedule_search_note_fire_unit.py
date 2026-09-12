@@ -13,6 +13,7 @@ from notes_persist import (  # noqa: E402
     should_defer_note_persist,
 )
 from schedule_client import fire_text_from_plan  # noqa: E402
+from classify_client import normalize_plan  # noqa: E402
 
 
 INNER = (
@@ -22,7 +23,7 @@ INNER = (
 
 
 def main() -> int:
-    print("running test case 1/6")
+    print("running test case 1/8")
     sched_plan = {
         "ok": True,
         "task_hint": "schedule",
@@ -34,19 +35,19 @@ def main() -> int:
     }
     assert should_defer_note_persist(sched_plan)
 
-    print("running test case 2/6")
+    print("running test case 2/8")
     coerced = coerce_schedule_fire_plan_for_search_note(sched_plan)
     assert coerced["task_hint"] == "search"
     assert coerced.get("process_original_message") is True
     assert coerced.get("persist_gathered_notes") is True
     assert should_defer_note_persist(coerced)
 
-    print("running test case 3/6")
+    print("running test case 3/8")
     fire = fire_text_from_plan(sched_plan, "5 phút nữa " + INNER)
     assert fire, fire
     assert "Java" in fire or "ITviec" in fire
 
-    print("running test case 4/6")
+    print("running test case 4/8")
     # Without classify flag, schedule reminder must not coerce to search.
     reminder = {
         "ok": True,
@@ -57,13 +58,13 @@ def main() -> int:
     out = coerce_schedule_fire_plan_for_search_note(reminder, "5 phút nữa nhắc tôi uống nước")
     assert out.get("task_hint") == "schedule"
 
-    print("running test case 5/6")
+    print("running test case 5/8")
     assert not should_defer_note_persist(
         {"task_hint": "schedule", "instructions": [INNER]},
         INNER,
     )
 
-    print("running test case 6/6")
+    print("running test case 6/8")
     adapter = (ROOT / "hermes" / "main" / "plugins" / "zalo" / "adapter.py").read_text(
         encoding="utf-8"
     )
@@ -73,6 +74,31 @@ def main() -> int:
         encoding="utf-8"
     )
     assert "persist_gathered_notes true" in skill
+
+    print("running test case 7/8 silent background persist")
+    assert 'silent=bool(schedule_fire and plan.get("notify_on_fire") is False)' in adapter
+    assert 'return "" if pending.get("silent") is True' in adapter
+
+    print("running test case 8/8 schedule title and silence survive normalize")
+    normalized = normalize_plan(
+        {
+            "task_hint": "schedule",
+            "task_type": "create_schedule",
+            "skill": "schedule",
+            "skill_action": "create",
+            "schedule_form": "recurring",
+            "cadence": "daily",
+            "cron_expr": "0 6,12,18 * * *",
+            "instructions": [INNER],
+            "message": INNER,
+            "schedule_title": "Daily Java job search",
+            "notify_on_fire": False,
+        },
+        INNER,
+        "Asia/Ho_Chi_Minh",
+    )
+    assert normalized["schedule_title"] == "Daily Java job search"
+    assert normalized["notify_on_fire"] is False
 
     print("schedule_search_note_fire_unit: PASS")
     return 0

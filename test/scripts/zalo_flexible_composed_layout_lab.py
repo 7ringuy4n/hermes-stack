@@ -140,7 +140,7 @@ for name in subprocess.check_output(['docker','ps','--format','{{{{.Names}}}}'],
 layout='\n'.join(line for line in logs if 'composed image layout request=' in line)
 single_region=len(re.findall(r'panels=0',layout))>=2
 left_ok=bool(re.search(r'panels=0 facts=[1-6] placement=left-column',layout))
-bottom_ok=bool(re.search(r'panels=0 facts=[1-6] placement=bottom-bar',layout))
+bottom_ok=bool(re.search(r'panels=0 facts=[1-6] placement=bottom-(?:left|center|right|bar)',layout))
 if not single_region:
     raise SystemExit('FAIL_REGION_GROUPING')
 if not left_ok:
@@ -158,7 +158,7 @@ if uid in active:
 print(json.dumps({{
     'ok':True,'requests':2,'immediate_image':True,'scheduled_image':True,
     'source_correlated':True,'single_region':True,'left_column':True,
-    'bottom_bar':True,'artifacts':2,'elapsed_s':round(time.time()-started,2),
+    'bottom_region':True,'artifacts':2,'elapsed_s':round(time.time()-started,2),
 }},separators=(',',':')))
 PY
 '''

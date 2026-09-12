@@ -1,0 +1,7 @@
+name: web-router-worker
+version: 1.0.0
+description: "Stack-owned web search and extraction through Router Worker and OmniRoute."
+author: hermes-stack
+kind: backend
+provides_web_providers:
+  - router-worker
