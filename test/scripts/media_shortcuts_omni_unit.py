@@ -160,6 +160,71 @@ def test_combo_failover_tries_combo_then_members() -> None:
     assert calls == ["pollinations/flux", "ai-box/wan2.7-image-pro"]
 
 
+def test_combo_failover_rejects_bad_visual_candidate() -> None:
+    calls: list[str] = []
+    original = mod._omni_request_image_blob_once
+
+    def fake_once(**kwargs):
+        candidate = kwargs.get("model", "")
+        calls.append(candidate)
+        return candidate.encode()
+
+    mod._omni_request_image_blob_once = fake_once
+    try:
+        blob = mod._omni_request_image_blob(
+            base="http://omni/v1",
+            key="k",
+            model="image-gen",
+            scene="hcm",
+            size="1280x720",
+            timeout=30,
+            combo_members=["provider/poor", "provider/good"],
+            accept_blob=lambda item: item == b"provider/good",
+        )
+    finally:
+        mod._omni_request_image_blob_once = original
+
+    assert blob == b"provider/good"
+    assert calls == ["provider/poor", "provider/good"]
+
+
+def test_composition_quality_rejects_duplicate_or_banded_render() -> None:
+    import vision_ocr
+
+    original_chat = vision_ocr._vision_chat
+    original_b64 = vision_ocr.vision_b64_from_bytes
+    vision_ocr.vision_b64_from_bytes = lambda _blob, _mime: ("encoded", "image/jpeg")
+    vision_ocr._vision_chat = lambda *_args, **_kwargs: (
+        200,
+        "{}",
+        json.dumps(
+            {
+                "title_unique": False,
+                "facts_readable": True,
+                "requested_placement": True,
+                "full_bleed_scene": False,
+                "no_canvas_bands": False,
+                "no_duplicate_copy": False,
+                "no_clipping": True,
+                "quality_score": 5,
+            }
+        ),
+    )
+    try:
+        accepted = mod._composition_image_quality_ok(
+            b"image",
+            {
+                "title": "Weather",
+                "facts": [{"label": "Temperature", "value": "30 C"}],
+                "design": {"placement": "left-column"},
+            },
+        )
+    finally:
+        vision_ocr._vision_chat = original_chat
+        vision_ocr.vision_b64_from_bytes = original_b64
+    assert accepted is False
+
+
 def test_combo_member_models_parses_v1_combos() -> None:
     payload = {
         "data": [
@@ -249,6 +314,8 @@ def main() -> None:
     test_media_out_candidates_shared_first()
     test_composed_image_prompt_uses_external_policy()
     test_combo_failover_tries_combo_then_members()
+    test_combo_failover_rejects_bad_visual_candidate()
+    test_composition_quality_rejects_duplicate_or_banded_render()
     test_combo_member_models_parses_v1_combos()
     test_image_request_can_wait_full_five_minute_budget()
     print("OK media_shortcuts_omni_unit")
