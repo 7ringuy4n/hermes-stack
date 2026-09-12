@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import importlib.util
 import sys
 import types
@@ -98,6 +99,44 @@ def main() -> int:
     )
     assert tavily["content"] == "Body A" and tavily["title"] == "A"
     assert firecrawl["content"] == "Body B" and firecrawl["title"] == "B"
+    direct = provider._extract_item(
+        "https://example.test/c",
+        {"data": {"url": "https://example.test/c", "title": "C", "content": "Body C"}},
+    )
+    assert direct["content"] == "Body C" and direct["title"] == "C"
+
+    class _Router:
+        def get(self, *_args, **_kwargs):
+            return lambda fn: fn
+
+        def post(self, *_args, **_kwargs):
+            return lambda fn: fn
+
+    fastapi = types.ModuleType("fastapi")
+    fastapi.APIRouter = _Router
+    fastapi.HTTPException = type("HTTPException", (Exception,), {})
+    pydantic = types.ModuleType("pydantic")
+    pydantic.BaseModel = type("BaseModel", (), {})
+    sys.modules["fastapi"] = fastapi
+    sys.modules["pydantic"] = pydantic
+    websearch = _load(
+        ROOT / "architect/models/router-worker/websearch.py",
+        "router_worker_websearch_unit",
+    )
+    assert websearch._combo_extract() == ["tavily", "firecrawl", "direct"]
+    title, content = websearch._html_text(
+        "<html><head><title>Example</title><style>hidden</style></head>"
+        "<body><h1>Hello</h1><script>bad()</script><p>Public page</p></body></html>"
+    )
+    assert title == "Example"
+    assert "Hello Public page" in content and "hidden" not in content and "bad()" not in content
+    with patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("127.0.0.1", 80))]):
+        try:
+            asyncio.run(websearch._validate_public_url("http://internal.test"))
+        except ValueError as exc:
+            assert "non-public" in str(exc)
+        else:
+            raise AssertionError("private destination must be blocked")
     print("OK router-worker endpoint-aware fallbacks")
     return 0
 

@@ -1,3 +1,11 @@
+## 2026-09-12 — safe public-page extraction fallback
+
+- Router Worker now falls back to a bounded direct reader for public HTTP(S)
+  text pages when optional Tavily/Firecrawl extraction keys are absent.
+- Redirect targets are revalidated; credentials, non-standard ports, and
+  private/non-global destinations are rejected before fetch.
+- See `history/2026-09-12/README.md`.
+
 ## 2026-09-11 — specific job notes only
 
 - Search-then-note listing policy lives in notes/web-search skills and classify
