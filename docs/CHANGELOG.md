@@ -4,6 +4,8 @@
   text pages when optional Tavily/Firecrawl extraction keys are absent.
 - Redirect targets are revalidated; credentials, non-standard ports, and
   private/non-global destinations are rejected before fetch.
+- Empty legacy schedule rows now fall back to their id in compact lists instead
+  of raising while deriving a title.
 - See `history/2026-09-12/README.md`.
 
 ## 2026-09-11 — specific job notes only

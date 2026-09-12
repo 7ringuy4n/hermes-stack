@@ -149,6 +149,26 @@ The Router Worker fallback test now requires credential-free direct extraction
 to remain last in the adapter order and verifies that non-public targets are
 blocked before any fetch.
 
+## 19:05 — Empty legacy schedule title broke compact listing
+
+### Symptom and root cause
+
+The production-image matrix found that a legacy schedule row with no `name`,
+`fire_text`, or `text` raised `IndexError`: the compact formatter indexed the
+first line of an empty list while deriving a fallback title.
+
+### Fix
+
+Use the first body line only when it exists; otherwise retain the existing id
+fallback. The classifier-repair fixture now emits the required explicit
+`persist_gathered_notes: false`, and the permission fixture recognizes the
+newer per-file writability guard in addition to the directory guard.
+
+### Prevent recurrence
+
+`schedule_list_classify_unit.py` retains the empty-row case and must render the
+schedule id without raising.
+
 ## 15:00 — PPTX discarded model-selected visuals
 
 ### Symptom
