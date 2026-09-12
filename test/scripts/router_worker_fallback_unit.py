@@ -89,6 +89,23 @@ def main() -> int:
         ROOT / "hermes/main/plugins/web/router_worker/provider.py",
         "router_worker_web_provider_unit",
     )
+    router_package = types.ModuleType("plugins.web.router_worker")
+    sys.modules["plugins.web.router_worker"] = router_package
+    sys.modules["plugins.web.router_worker.provider"] = provider
+    plugin = _load(
+        ROOT / "hermes/main/plugins/web/router_worker/__init__.py",
+        "router_worker_web_plugin_unit",
+    )
+
+    class _PluginContext:
+        registered = None
+
+        def register_web_search_provider(self, value):
+            self.registered = value
+
+    plugin_context = _PluginContext()
+    plugin.register(plugin_context)
+    assert isinstance(plugin_context.registered, provider.RouterWorkerWebSearchProvider)
     tavily = provider._extract_item(
         "https://example.test/a",
         {"data": {"results": [{"url": "https://example.test/a", "title": "A", "raw_content": "Body A"}]}},

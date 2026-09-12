@@ -138,6 +138,7 @@ for name in subprocess.check_output(['docker','ps','--format','{{{{.Names}}}}'],
     if path.is_file():
         logs.extend(line for line in path.read_text(encoding='utf-8',errors='replace').splitlines() if line[:19]>=local_start)
 layout='\n'.join(line for line in logs if 'composed image layout request=' in line)
+model_rendered='\n'.join(line for line in logs if 'composed image rendered mode=model full_bleed=true' in line)
 single_region=len(re.findall(r'panels=0',layout))>=2
 left_ok=bool(re.search(r'panels=0 facts=[1-6] placement=left-column',layout))
 bottom_ok=bool(re.search(r'panels=0 facts=[1-6] placement=bottom-(?:left|center|right|bar)',layout))
@@ -147,6 +148,10 @@ if not left_ok:
     raise SystemExit('FAIL_LEFT_PLACEMENT')
 if not bottom_ok:
     raise SystemExit('FAIL_BOTTOM_PLACEMENT')
+if len(model_rendered.splitlines())<2:
+    raise SystemExit('FAIL_MODEL_RENDERED_COMPOSITION')
+if '/v1/overlay' in '\n'.join(logs):
+    raise SystemExit('FAIL_LEGACY_IMAGE_OVERLAY')
 
 valkey=subprocess.check_output([
     'docker','ps','--filter','label=com.docker.compose.service=valkey','--format','{{{{.Names}}}}'

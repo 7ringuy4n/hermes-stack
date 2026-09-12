@@ -1,4 +1,4 @@
-"""Shared Unicode font resolution for Dispatcher media (Pillow overlay / posters).
+"""Shared Unicode font resolution for Dispatcher text posters.
 
 Prefer bundled Noto Sans (Vietnamese-complete), then system fonts. Never use the
 PIL bitmap default when a TTF is available — that produces tofu for diacritics.

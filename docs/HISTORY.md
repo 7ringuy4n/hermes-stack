@@ -10,6 +10,13 @@ History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
 
+## 2026-09-12 — one-pass grounded image composition
+
+See `history/2026-09-12/README.md` for removal of the Pillow information-card
+renderer after it created gray canvas bands and obscured scene content. The same
+record covers the missing native web-provider registration, quiet async
+workflow delivery, and human-readable security alerts.
+
 ## 2026-09-09 — scheduled composed-image execution
 
 See `history/2026-09-09/README.md` for the queue-enabled schedule-fire gap that

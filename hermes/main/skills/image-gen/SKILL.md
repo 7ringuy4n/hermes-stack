@@ -30,7 +30,7 @@ Use **urllib**, **requests**, or a short checked-in helper script — not `curl 
 
 Omni may return a **top-level JSON array** of `{b64_json|url}` (not always `{"data":[...]}`). Always accept both shapes.
 
-**Visual prompts (any user language):** Prefer the classifier's English `SCENE:` line. Preserve the user's requested subject, medium, viewpoint, mood, composition, and constraints; do not replace them with a fixed photographic style or location template. For `RENDER: composed-image`, generate only the background and reserve readable negative space. The editable prompt policy in `skills/classify/parts/image-runtime.json` supplies generic generation and composition instructions; application code must not embed replacement prompt prose.
+**Visual prompts (any user language):** Prefer the classifier's English `SCENE:` line. Preserve the user's requested subject, medium, viewpoint, mood, composition, and constraints; do not replace them with a fixed photographic style or location template. For `RENDER: composed-image`, the host combines grounded facts and the model-authored design into one final image-generation prompt. Generate one complete full-bleed bitmap; never add gray padding, empty bands, or a separate post-processing canvas. The editable prompt policy in `skills/classify/parts/image-runtime.json` owns generation and composition prose.
 
 On complete provider failure: one **media-out** failure line only. When the ask was primarily a **PDF/office file**, finish via **`file-gen`**.
 
@@ -42,7 +42,7 @@ Exact text posters only (not scenic diffusion or labeled dashboards):
 |------|------|
 | Exact text poster | `POST http://dispatcher:8090/v1/text-poster` |
 
-Grounded information images use **Omni combo image-gen** (`model=image-gen`) for the background, then the host's generic composition model and dispatcher `POST /v1/overlay`. The model chooses the content hierarchy and visual treatment; the renderer validates and executes it.
+Grounded information images use **Omni combo image-gen** (`model=image-gen`) once for the complete image after the generic composition model chooses grounded copy, hierarchy, and visual treatment. There is no host-side panel renderer.
 
 Do **not** call deprecated `POST http://dispatcher:8090/v1/image` for scenic generation. Do **not** use the built-in `image_generation` tool and never tell the user that “credentials aren’t available” — keys live on Omni/dispatcher; on failure send only the media-out failure line.
 

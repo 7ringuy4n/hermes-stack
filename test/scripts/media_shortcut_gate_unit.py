@@ -283,6 +283,11 @@ def main() -> int:
     )
     workflow_create = adapter_source.index("data = create_workflow(", workflow_start)
     assert workflow_start < workflow_policy < workflow_create
+    workflow_body = adapter_source[workflow_start:adapter_source.index(
+        "def _as_workflow_parallel", workflow_start
+    )]
+    assert "ZALO_WORKFLOW_ACK_MSG" not in workflow_body
+    assert "Đang xử lý" not in workflow_body
     assert "host media policy did not consume classified request" in adapter_source
     assert '"plan": dict(plan) if isinstance(plan, dict) else None' in (
         ROOT / "hermes" / "main" / "plugins" / "zalo" / "inbound_queue.py"

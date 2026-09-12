@@ -3629,17 +3629,6 @@ class ZaloAdapter(BasePlatformAdapter):
         )
         if not data.get("ok"):
             return False
-        try:
-            if plan_is_async(plan) or len(parts) >= 2:
-                msg = self._as_ux_line(
-                    "ZALO_WORKFLOW_ACK_MSG",
-                    ("workflow", "started"),
-                    "Đang xử lý…",
-                    user_text=current,
-                )
-                await self._as_gate_announce(thread_id, thread_type, msg)
-        except Exception:
-            pass
         logger.info(f"[zalo] workflow created jobs={len(parts)} class={plan.get('execution_class')}")
         logger.info("Zalo: workflow %s jobs=%s", (data.get("workflow") or {}).get("id"), len(parts))
         if wait_for_terminal:

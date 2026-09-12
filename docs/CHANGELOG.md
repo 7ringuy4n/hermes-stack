@@ -1,3 +1,14 @@
+## 2026-09-12 — model-rendered grounded images and quieter delivery
+
+- Grounded information images are now generated as one full-bleed model-owned
+  composition; the legacy Pillow panel renderer and `/v1/overlay` endpoint are
+  removed so no host step can add gray side columns or bottom bands.
+- Hermes now registers its Router Worker native web provider instead of merely
+  declaring it, restoring attributed live search and page extraction.
+- Async workflows no longer send the visible “Đang xử lý…” placeholder, and
+  security alerts summarize the blocking reason without raw scanner JSON.
+- See `history/2026-09-12/README.md`.
+
 ## 2026-09-12 — safe public-page extraction fallback
 
 - Router Worker now falls back to a bounded direct reader for public HTTP(S)
