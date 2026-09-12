@@ -580,7 +580,8 @@ def format_schedule_list_lines(rows: list[dict[str, Any]] | None) -> str:
         sid = str(row.get("id") or "").strip() or "?"
         title = str(row.get("name") or "").strip()
         if not title:
-            title = str(row.get("fire_text") or row.get("text") or "").strip().splitlines()[0][:120]
+            body_lines = str(row.get("fire_text") or row.get("text") or "").strip().splitlines()
+            title = body_lines[0][:120] if body_lines else ""
         nxt = str(row.get("next_run_at") or "").strip()
         cron = str(row.get("cron_expr") or "").strip()
         cadence = str(row.get("cadence") or "").strip()

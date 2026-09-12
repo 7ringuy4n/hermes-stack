@@ -74,6 +74,7 @@ async def run() -> None:
             "response_mode": "ack_then_deliver",
             "process_original_message": True,
             "instructions": ["Answer the request."],
+            "persist_gathered_notes": False,
             "reasoning_effort": "low",
         }
     )
@@ -103,6 +104,7 @@ async def run() -> None:
             "response_mode": "confirm",
             "process_original_message": False,
             "instructions": ["Run later."],
+            "persist_gathered_notes": False,
             "skill": "schedule",
             "skill_action": "create",
             "schedule_resolution": "clear",
@@ -117,6 +119,7 @@ async def run() -> None:
             "response_mode": "confirm",
             "process_original_message": False,
             "instructions": ["Run later."],
+            "persist_gathered_notes": False,
             "skill": "schedule",
             "skill_action": "create",
             "schedule_form": "once_after",
