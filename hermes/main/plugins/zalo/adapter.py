@@ -1583,6 +1583,7 @@ class ZaloAdapter(BasePlatformAdapter):
         user_text: str,
         timezone: str = "Asia/Ho_Chi_Minh",
         numbered_only: bool = False,
+        silent: bool = False,
     ) -> None:
         try:
             from .turn_wait import real_thread_id
@@ -1598,6 +1599,7 @@ class ZaloAdapter(BasePlatformAdapter):
             "user_text": str(user_text or ""),
             "timezone": str(timezone or "Asia/Ho_Chi_Minh"),
             "numbered_only": bool(numbered_only),
+            "silent": bool(silent),
         }
 
     def _as_clear_pending_note_persist(self, thread_id: str) -> None:
@@ -1668,7 +1670,7 @@ class ZaloAdapter(BasePlatformAdapter):
             numbered_only=bool(pending.get("numbered_only")),
         )
         if not notes:
-            return cleaned or content
+            return "" if pending.get("silent") is True else (cleaned or content)
         plan = {
             "skill_action": "create",
             "notes": notes,
@@ -1685,7 +1687,10 @@ class ZaloAdapter(BasePlatformAdapter):
                 tid,
                 result.get("error"),
             )
-            return cleaned or content
+            return "" if pending.get("silent") is True else (cleaned or content)
+        if pending.get("silent") is True:
+            logger.info("[zalo] silent deferred notes persisted thread=%s count=%s", tid, len(notes))
+            return ""
         count = int(result.get("count") or len(notes) or 1)
         confirm = self._as_ux_line(
             "ZALO_NOTES_SAVED_MSG",
@@ -2871,6 +2876,7 @@ class ZaloAdapter(BasePlatformAdapter):
                 numbered_only=bool(
                     isinstance(plan, dict) and plan.get("persist_gathered_notes") is True
                 ),
+                silent=bool(schedule_fire and plan.get("notify_on_fire") is False),
             )
         # Remote-only media summaries are owned by the host refusal path.
         # Consume them before async-workflow routing so classifier variability
@@ -2964,6 +2970,14 @@ class ZaloAdapter(BasePlatformAdapter):
             )
             if result.get("success") and action == "lookup":
                 body = str(result.get("text") or "").strip()
+                selector = plan.get("note_selector") if isinstance(plan.get("note_selector"), dict) else {}
+                if selector.get("view") == "count":
+                    body = self._as_ux_line(
+                        "ZALO_NOTES_COUNT_MSG",
+                        ("notes", "count"),
+                        "{count} notes.",
+                        user_text=current,
+                    ).replace("{count}", str(int(result.get("count") or 0)))
                 if not body:
                     body = self._as_ux_line(
                         "ZALO_NOTES_EMPTY_MSG",
@@ -3133,14 +3147,18 @@ class ZaloAdapter(BasePlatformAdapter):
             if skill_action in {"list", "inspect", "show", "status"} or task_type == "list_schedule":
                 try:
                     from .schedule_client import (
+                        format_schedule_detail,
                         format_schedule_list_lines,
+                        match_schedules_by_selector,
                         schedule_enabled,
                         schedules_for_thread,
                     )
                     from .channels_client import extract_target_group_ref, resolve_channel
                 except ImportError:
                     from schedule_client import (  # type: ignore
+                        format_schedule_detail,
                         format_schedule_list_lines,
+                        match_schedules_by_selector,
                         schedule_enabled,
                         schedules_for_thread,
                     )
@@ -3181,7 +3199,12 @@ class ZaloAdapter(BasePlatformAdapter):
                         pass
                     return True
                 rows = schedules_for_thread(target_tid)
-                base = format_schedule_list_lines(rows)
+                selector = plan.get("schedule_selector") if isinstance(plan.get("schedule_selector"), dict) else {}
+                if selector.get("view") == "detail":
+                    matches = match_schedules_by_selector(rows, selector)
+                    base = format_schedule_detail(matches[0]) if len(matches) == 1 else format_schedule_list_lines(matches)
+                else:
+                    base = format_schedule_list_lines(rows)
                 if target_label and rows:
                     base = f"{base}\n(→ nhóm {target_label})"
                 try:
@@ -3481,11 +3504,13 @@ class ZaloAdapter(BasePlatformAdapter):
                     cadence=cadence,
                     timezone=str(plan.get("timezone") or "Asia/Ho_Chi_Minh"),
                     next_run_at=next_run_at or None,
+                    name=str(plan.get("schedule_title") or ""),
                 )
             else:
                 data = create_schedule(
                     cron_expr=cron_expr,
                     text=current,
+                    name=str(plan.get("schedule_title") or ""),
                     origin=origin,
                     context=context,
                     cadence=cadence,

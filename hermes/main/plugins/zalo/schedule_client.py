@@ -572,12 +572,15 @@ def schedules_for_thread(thread_id: str) -> list[dict[str, Any]]:
 
 def format_schedule_list_lines(rows: list[dict[str, Any]] | None) -> str:
     """Human list from schedule-worker rows (structured fields only)."""
-    items = [r for r in (rows or []) if isinstance(r, dict)]
+    items = [r for r in (rows or []) if isinstance(r, dict)][:10]
     if not items:
         return "Chưa có lịch nào."
     lines: list[str] = []
     for i, row in enumerate(items, start=1):
         sid = str(row.get("id") or "").strip() or "?"
+        title = str(row.get("name") or "").strip()
+        if not title:
+            title = str(row.get("fire_text") or row.get("text") or "").strip().splitlines()[0][:120]
         nxt = str(row.get("next_run_at") or "").strip()
         cron = str(row.get("cron_expr") or "").strip()
         cadence = str(row.get("cadence") or "").strip()
@@ -589,8 +592,28 @@ def format_schedule_list_lines(rows: list[dict[str, Any]] | None) -> str:
         ).strip()
         when = nxt or (f"cron {cron}" if cron else cadence or "—")
         tail = f" → nhóm {dest}" if dest else ""
-        lines.append(f"{i}. {sid} @ {when}{tail}")
+        lines.append(f"{i}. {when} — {title or sid}{tail} (id: {sid})")
     return "Lịch đang có ({n}):\n{body}".format(n=len(lines), body="\n".join(lines))
+
+
+def format_schedule_detail(row: dict[str, Any]) -> str:
+    """Render one selected schedule without exposing internal context payloads."""
+    title = str(row.get("name") or "").strip()
+    body = str(row.get("fire_text") or row.get("text") or "").strip()
+    if not title:
+        title = body.splitlines()[0][:120] if body else "Schedule"
+    origin = row.get("origin") if isinstance(row.get("origin"), dict) else {}
+    destination = str(origin.get("target_name") or origin.get("chat_name") or "").strip()
+    fields = [
+        title,
+        f"Next: {str(row.get('next_run_at') or '—')}",
+        f"Cadence: {str(row.get('cadence') or '—')}",
+        f"Enabled: {'yes' if row.get('enabled') is not False else 'no'}",
+    ]
+    if destination:
+        fields.append(f"Destination: {destination}")
+    fields.extend(["", body])
+    return "\n".join(fields).strip()
 
 
 def delete_schedules_for_thread(thread_id: str) -> list[str]:

@@ -54,6 +54,18 @@ members and provider connections. Do **not** call Omni chat
 3. If search returns empty, say so briefly — do not invent sources.
 4. **Current time is host-owned.** When the turn includes `Timezone:` / `Local now:` (host clock), use that for any “as of / hiện tại / khoảng …” phrasing. Prefer an observation timestamp printed by the search source when it is clearly labeled; otherwise use Host Local now. Never invent a wall-clock time that conflicts with Local now. Do not apply a timezone offset twice.
 5. When the turn also asks to note findings (classify `persist_gathered_notes=true`, or the notes skill listing contract is present), follow `notes/prompts/search_then_note_listing.txt`: concrete Title (stack) — Employer rows with https URLs only; never aggregate count buckets; omit openings already listed under Prior notes; do not claim notes were saved.
+6. For multi-source research, search first, then extract the most relevant
+   public result pages with `/v1/extract` when snippets do not contain enough
+   detail. Keep each claim tied to its source URL and deduplicate the same
+   underlying item across providers.
+7. Treat social networks, job boards, and search engines as sources, not fixed
+   intent categories. Use whatever public pages are reachable through the
+   configured combo; never claim access to private groups, authenticated feeds,
+   or blocked pages. Report only verified current records.
+8. A scheduled/background search uses this same live route at fire time. When
+   it also persists notes and `notify_on_fire=false`, produce the normal
+   structured gather result for host persistence; the host suppresses chat
+   delivery after the durable write succeeds.
 
 ## Don't
 
@@ -63,3 +75,6 @@ members and provider connections. Do **not** call Omni chat
    a substitute for native `web_search`. A current lookup needs a fresh native
    search call in that turn even when conversation history contains an older answer.
 4. Do not invent observation times (for example “khoảng 20:25”) when Local now shows a different clock.
+5. Do not scrape with `execute_code` or fabricate a crawl result when search or
+   extraction cannot access a page. Continue with other public sources and
+   state the evidence boundary concisely when it affects the answer.

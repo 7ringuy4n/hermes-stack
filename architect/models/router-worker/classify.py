@@ -358,6 +358,10 @@ def normalize_tasks(raw: Any, count: int) -> list[dict[str, Any]]:
             row["target_channel"] = channel
         if delivery:
             row["schedule_delivery"] = delivery
+        title = str(item.get("schedule_title") or "").strip()[:160]
+        if title:
+            row["schedule_title"] = title
+        row["notify_on_fire"] = item.get("notify_on_fire") is not False
         extra = _schedule_contract_fields(item, hint)
         for key, val in extra.items():
             if val not in (None, "", [], {}):
@@ -667,6 +671,8 @@ def _coerce_schedule_selector(raw: Any) -> dict[str, Any] | None:
     }
     if list_index is not None:
         out["list_index"] = list_index
+    view = str(raw.get("view") or "").strip().lower()
+    out["view"] = "detail" if view == "detail" else "list"
     return out
 
 
@@ -720,6 +726,7 @@ def _coerce_notes(raw: Any) -> list[dict[str, Any]]:
             continue
         notes.append(
             {
+                "title": str(item.get("title") or "").strip()[:240],
                 "content": content,
                 "note_date": _coerce_iso_date(item.get("note_date")),
                 "tags": _coerce_note_tags(item.get("tags")),
@@ -736,7 +743,12 @@ def _coerce_note_selector(raw: Any) -> dict[str, Any] | None:
     date_from = _coerce_iso_date(raw.get("date_from"))
     date_to = _coerce_iso_date(raw.get("date_to"))
     tags = _coerce_note_tags(raw.get("tags"))
-    if not note_id and not query and not date_from and not date_to and not tags:
+    match_all = raw.get("match_all") is True
+    bulk = raw.get("bulk") is True
+    view = str(raw.get("view") or "").strip().lower()
+    if view not in {"list", "detail", "count"}:
+        view = "list"
+    if not note_id and not query and not date_from and not date_to and not tags and not match_all:
         return None
     return {
         "id": note_id,
@@ -744,6 +756,9 @@ def _coerce_note_selector(raw: Any) -> dict[str, Any] | None:
         "date_from": date_from,
         "date_to": date_to,
         "tags": tags,
+        "match_all": match_all,
+        "bulk": bulk,
+        "view": view,
     }
 
 
@@ -1226,6 +1241,11 @@ def normalize_plan(data: dict[str, Any] | None, text: str, timezone: str) -> dic
             or None
         ),
         "schedule_delivery": None if skip_timing else schedule_delivery,
+        "schedule_title": (
+            str(src.get("schedule_title") or "").strip()[:160] or None
+            if hint == "schedule" else None
+        ),
+        "notify_on_fire": src.get("notify_on_fire") is not False,
         "output_type": _coerce_output_type(src.get("output_type")) or None,
         "clock_hm": None if skip_timing else _coerce_clock_hm(src.get("clock_hm")),
         "poster_n": _coerce_poster_n(src.get("poster_n")),

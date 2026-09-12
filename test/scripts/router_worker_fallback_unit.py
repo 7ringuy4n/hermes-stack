@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import importlib.util
 import sys
+import types
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +19,14 @@ from fallback_providers import (  # noqa: E402
     endpoint_failure_allows_fallback,
     replace_multipart_model,
 )
+
+
+def _load(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def main() -> int:
@@ -60,6 +70,34 @@ def main() -> int:
         400, b'No images-capable targets in combo "image-gen"', "image-gen"
     )
     assert not endpoint_failure_allows_fallback(400, b"invalid prompt", "image-gen")
+    patcher = _load(ROOT / "scripts/main/patch-hermes-router-worker.py", "patch_router_web_unit")
+    configured = patcher._patch_web_routing("model:\n  default: hermes\n")
+    assert "search_backend: router-worker" in configured
+    assert "extract_backend: router-worker" in configured
+    assert patcher._patch_web_routing(configured) == configured
+
+    common = types.ModuleType("plugins.web._common")
+    common.BaseWebSearchProvider = object
+    common.search_fail = lambda error: {"success": False, "error": error}
+    common.search_ok = lambda rows: {"success": True, "results": rows}
+    sys.modules.setdefault("httpx", types.ModuleType("httpx"))
+    sys.modules["plugins"] = types.ModuleType("plugins")
+    sys.modules["plugins.web"] = types.ModuleType("plugins.web")
+    sys.modules["plugins.web._common"] = common
+    provider = _load(
+        ROOT / "hermes/main/plugins/web/router_worker/provider.py",
+        "router_worker_web_provider_unit",
+    )
+    tavily = provider._extract_item(
+        "https://example.test/a",
+        {"data": {"results": [{"url": "https://example.test/a", "title": "A", "raw_content": "Body A"}]}},
+    )
+    firecrawl = provider._extract_item(
+        "https://example.test/b",
+        {"data": {"data": {"markdown": "Body B", "metadata": {"title": "B"}}}},
+    )
+    assert tavily["content"] == "Body A" and tavily["title"] == "A"
+    assert firecrawl["content"] == "Body B" and firecrawl["title"] == "B"
     print("OK router-worker endpoint-aware fallbacks")
     return 0
 

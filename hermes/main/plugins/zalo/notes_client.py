@@ -42,9 +42,9 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> d
 
 def _selector_payload(scope_id: str, selector: dict[str, Any]) -> dict[str, Any]:
     try:
-        limit = int(selector.get("limit") or 20)
+        limit = int(selector.get("limit") or 10)
     except (TypeError, ValueError):
-        limit = 20
+        limit = 10
     return {
         "scope_id": scope_id,
         "id": str(selector.get("id") or "").strip() or None,
@@ -52,7 +52,7 @@ def _selector_payload(scope_id: str, selector: dict[str, Any]) -> dict[str, Any]
         "date_from": selector.get("date_from"),
         "date_to": selector.get("date_to"),
         "tags": list(selector.get("tags") or []),
-        "limit": max(1, min(limit, 100)),
+        "limit": max(1, min(limit, 1000)),
     }
 
 
@@ -92,11 +92,25 @@ def list_existing_note_contents(
 
 def _candidate_lines(items: list[dict[str, Any]]) -> str:
     lines: list[str] = []
-    for item in items[:10]:
-        prefix = str(item.get("note_date") or "undated")
-        content = str(item.get("content") or "").strip().replace("\n", " ")
-        lines.append(f"- [{prefix}] {content[:400]} (id: {item.get('id')})")
+    for index, item in enumerate(items[:10], start=1):
+        prefix = str(item.get("note_date") or "—")
+        title = str(item.get("title") or "").strip()
+        if not title:
+            title = str(item.get("content") or "").strip().splitlines()[0][:120]
+        lines.append(f"{index}. [{prefix}] {title[:160]} (id: {item.get('id')})")
     return "\n".join(lines)
+
+
+def _detail_text(item: dict[str, Any]) -> str:
+    title = str(item.get("title") or "").strip()
+    content = str(item.get("content") or "").strip()
+    if not title:
+        title = content.splitlines()[0][:160] if content else "Note"
+    date_text = str(item.get("note_date") or "—")
+    meta = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    citations = [str(x).strip() for x in (meta.get("citations") or []) if str(x).strip()]
+    cite_line = "\n\nSources: " + " | ".join(citations[:5]) if citations else ""
+    return f"{title}\n[{date_text}]\n\n{content}{cite_line}".strip()
 
 
 def execute_note_plan(
@@ -122,6 +136,7 @@ def execute_note_plan(
                 "/v1/notes",
                 {
                     "scope_id": scope_id,
+                    "title": item.get("title"),
                     "content": item.get("content"),
                     "note_date": item.get("note_date"),
                     "thread_id": thread_id,
@@ -145,6 +160,10 @@ def execute_note_plan(
     except ImportError:
         from notes_persist import simplify_note_query  # type: ignore
 
+    mutation = action in {"update", "delete"}
+    if mutation:
+        selector = dict(selector)
+        selector["limit"] = 1000
     candidates = _find_candidates(scope_id, selector)
     # Topic lookups often include filler ("hiển thị các tin … đã lưu"). Retry
     # with a simplified query, then with individual strong tokens.
@@ -163,19 +182,27 @@ def execute_note_plan(
             if candidates:
                 break
     if action == "lookup":
+        view = str(selector.get("view") or "list").strip().lower()
+        if view == "count":
+            text = f"{len(candidates)} note(s)."
+        elif view == "detail" and len(candidates) == 1:
+            text = _detail_text(candidates[0])
+        else:
+            text = _candidate_lines(candidates)
         return {
             "success": True,
             "action": action,
             "count": len(candidates),
             "items": candidates,
-            "text": _candidate_lines(candidates),
+            "text": text,
         }
 
     if action not in {"update", "delete"}:
         return {"success": False, "error": "unsupported_action"}
     if not candidates:
         return {"success": False, "error": "not_found"}
-    if len(candidates) != 1 or plan.get("uncertain") is True:
+    bulk_authorized = selector.get("match_all") is True or selector.get("bulk") is True
+    if (len(candidates) != 1 and not bulk_authorized) or plan.get("uncertain") is True:
         return {
             "success": False,
             "error": "ambiguous",
@@ -183,24 +210,42 @@ def execute_note_plan(
             "text": _candidate_lines(candidates),
         }
 
-    note_id = str(candidates[0].get("id") or "")
     if action == "delete":
-        path = "/v1/notes/" + urllib.parse.quote(note_id, safe="")
-        path += "?scope_id=" + urllib.parse.quote(scope_id, safe="")
-        return _request("DELETE", path)
+        deleted: list[str] = []
+        for candidate in candidates:
+            note_id = str(candidate.get("id") or "")
+            if not note_id:
+                continue
+            path = "/v1/notes/" + urllib.parse.quote(note_id, safe="")
+            path += "?scope_id=" + urllib.parse.quote(scope_id, safe="")
+            result = _request("DELETE", path)
+            if not result.get("success"):
+                return {**result, "count": len(deleted)}
+            deleted.append(note_id)
+        return {"success": True, "action": action, "count": len(deleted), "ids": deleted}
     if len(notes) != 1:
         return {"success": False, "error": "missing_update"}
     replacement = notes[0]
-    return _request(
-        "PATCH",
-        "/v1/notes/" + urllib.parse.quote(note_id, safe=""),
-        {
-            "scope_id": scope_id,
-            "content": replacement.get("content"),
-            "note_date": replacement.get("note_date"),
-            "tags": list(replacement.get("tags") or []),
-        },
-    )
+    updated: list[dict[str, Any]] = []
+    for candidate in candidates:
+        note_id = str(candidate.get("id") or "")
+        if not note_id:
+            continue
+        result = _request(
+            "PATCH",
+            "/v1/notes/" + urllib.parse.quote(note_id, safe=""),
+            {
+                "scope_id": scope_id,
+                "title": replacement.get("title"),
+                "content": replacement.get("content"),
+                "note_date": replacement.get("note_date"),
+                "tags": list(replacement.get("tags") or []),
+            },
+        )
+        if not result.get("success"):
+            return {**result, "count": len(updated)}
+        updated.append(result.get("note") or {})
+    return {"success": True, "action": action, "count": len(updated), "items": updated}
 
 
 async def execute_note_plan_async(*args: Any, **kwargs: Any) -> dict[str, Any]:
