@@ -288,3 +288,91 @@ bottom region chosen by the model while retaining scene-visibility constraints.
 
 C9 now requires one three-slide PPTX, embedded scenic media, visual inspection,
 no PDF substitution, and no separately delivered intermediate image.
+
+## 23:15 — Document workflows exposed private build sidecars
+
+### Symptom
+
+A live DOCX/PDF workflow delivered its final requested document but could also
+send the scenic image used to build it. The extra image was an implementation
+artifact, not a user deliverable, and concurrent DM/group tests detected it as
+an incorrect file response.
+
+### Root cause
+
+The autosender's live file watcher treated every newly created file as a
+deliverable. That behavior is useful for open-ended agent work, but it violated
+the typed contract of a composite document workflow, where images and rendered
+previews are private inputs to one final artifact.
+
+### Fix and prevention
+
+Typed PDF, Word, presentation, and spreadsheet jobs now defer the live watcher
+and use the bounded final scan to deliver only the requested artifact family.
+`autosend_unit.py` covers both composite-output deferral and ordinary-workflow
+watching. Focused VPS PDF and concurrent DM/group gates confirmed one final
+document per request and zero separately delivered sidecar images.
+
+## 23:45 — Dimension-only image acceptance preserved bad layouts
+
+### Symptom
+
+The flexible composition gate received valid-size images that still contained
+duplicated or misspelled facts, an oversized opaque band, or text placed across
+important scene content. The first configured image model therefore made the
+whole combo appear successful despite a visibly poor result.
+
+### Root cause
+
+Image-combo failover stopped after decoding any blob with acceptable pixel
+dimensions. It had no semantic visual acceptance boundary for the grounded
+composition contract, so layout and text defects could not trigger the next
+configured member.
+
+### AI decision
+
+Keep model-owned composition and configured combo order. Evaluate the rendered
+artifact itself with the existing vision/OCR capability, using the typed layout
+contract rather than phrase-specific routing rules, and reject only explicit
+quality failures. If evaluation is unavailable, retain the prior fail-open
+availability behavior.
+
+### Fix and prevention
+
+- Composed images receive a bounded vision score for readable facts, requested
+  placement, full-bleed scene continuity, uniqueness, clipping, and canvas
+  bands before delivery.
+- An explicit score below 8/10 or a blocking defect advances to the next image
+  combo member without changing operator order or configuration.
+- The flexible-layout live test now judges delivered artifacts rather than
+  inferring layout quality from internal log wording.
+- Unit coverage rejects duplicate text/canvas bands and proves bad-candidate
+  failover. The VPS gate passed both immediate left-region and scheduled
+  bottom-region variants; independent visual review found no gray filler,
+  clipping, duplication, or hidden scene region.
+
+### Todo list
+
+- [x] Reproduce the visual defects on the real configured combo.
+- [x] Add artifact-based composition acceptance and combo failover.
+- [x] Replace the brittle log assertion with vision-based release evidence.
+- [x] Pass immediate and scheduled flexible-layout delivery on the VPS.
+- [x] Complete the final numbered regression matrix and bounded log audit.
+
+## 23:55 — Health gate masked an obsolete OmniRouter probe
+
+### Symptom and root cause
+
+The final health command printed failed OmniRouter checks but still exited zero
+because it treated `HEALTH_DONE` as success. The script also hard-coded retired
+host port 20128 and overwrote Hermes' working container credential with the
+potentially empty bootstrap value from the host environment.
+
+### Fix and prevention
+
+The health gate now resolves the validated configured host port (default
+20129), exercises `/v1/models` from Hermes with that container's own runtime
+credential, and lets any failed assertion terminate the strict shell. A static
+unit prevents the obsolete port, credential override, and fail-masking pattern
+from returning. The corrected VPS gate passed OmniRouter, Router Worker, Zalo,
+Dispatcher, Traefik, required files, and the Hermes network paths.
