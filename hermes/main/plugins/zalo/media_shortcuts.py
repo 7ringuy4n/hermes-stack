@@ -658,16 +658,46 @@ def _composition_image_prompt(scene: str, composition: dict[str, Any]) -> str:
     if not template:
         log.error("composition render prompt asset missing")
         return ""
-    spec = {
+    def copy_rows(rows: Any) -> list[dict[str, Any]]:
+        return [
+            {"label": row.get("label") or "", "value": row.get("value") or ""}
+            for row in list(rows or [])[:_COMPOSITION_MAX_LINES]
+            if isinstance(row, dict)
+        ]
+
+    def emphasis_rows(rows: Any) -> list[str]:
+        return [
+            str(row.get("emphasis") or "normal")
+            for row in list(rows or [])[:_COMPOSITION_MAX_LINES]
+            if isinstance(row, dict)
+        ]
+
+    panels = [
+        row for row in list(composition.get("panels") or [])[:6]
+        if isinstance(row, dict)
+    ]
+    visible_copy = {
         "title": composition.get("title") or "",
-        "facts": list(composition.get("facts") or [])[:_COMPOSITION_MAX_LINES],
-        "panels": list(composition.get("panels") or [])[:6],
+        "facts": copy_rows(composition.get("facts")),
+        "panels": [
+            {"title": row.get("title") or "", "facts": copy_rows(row.get("facts"))}
+            for row in panels
+        ],
+    }
+    render_only = {
         "design": _safe_composition_design(composition.get("design")),
+        "fact_emphasis": emphasis_rows(composition.get("facts")),
+        "panels": [
+            {"design": _safe_composition_design(row.get("design")),
+             "fact_emphasis": emphasis_rows(row.get("facts"))}
+            for row in panels
+        ],
     }
     if composition.get("include_timestamp", True):
         stamp = _composition_timestamp(assets, label=composition.get("timestamp_label"))
         if stamp:
-            spec["timestamp"] = stamp
+            visible_copy["timestamp"] = stamp
+    spec = {"visible_copy": visible_copy, "render_only": render_only}
     prompt = template.replace("{scene}", " ".join((scene or "").split())[:1200]).replace(
         "{composition}", json.dumps(spec, ensure_ascii=False, separators=(",", ":"))
     )

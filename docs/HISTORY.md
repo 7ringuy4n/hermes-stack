@@ -13,6 +13,8 @@ identities, or ticket-specific wording into documentation.
 ## 2026-09-13 — quiet background notes and typography candidate
 
 See [root-cause and pending live gates](../history/2026-09-13/README.md).
+The operator explicitly accepted a one-time merge-gate override for develop
+and main; failed live image quality evidence remains unchanged in that record.
 
 ## 2026-09-12 — one-pass grounded image composition
 

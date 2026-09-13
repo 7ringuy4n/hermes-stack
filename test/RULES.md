@@ -95,8 +95,10 @@ Send a natural-language still-image request through Zalo. Require:
   `image-gen`;
 - one viewable image is delivered to Zalo within the image operation deadline
   (maximum five minutes);
-- when text is requested, visible text follows the current message language,
-  contains no profanity, and is checked by OCR plus visual inspection;
+- when text is requested, generated-image informational copy defaults to English
+  even for a Vietnamese question; an explicit image-text language or exact quoted
+  copy overrides that default. Native document text and chat replies keep the
+  requested language. Require correct spelling and OCR plus visual inspection;
 - for a multi-subject request, every independently sourced subject is present
   exactly once and every explicit spatial relationship is preserved;
 - treat an explicitly requested shared region as one visual group even when it

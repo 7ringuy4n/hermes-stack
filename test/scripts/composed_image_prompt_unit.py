@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
 from pathlib import Path
@@ -58,6 +59,22 @@ def main() -> int:
     assert "Noto Sans" in prompt
     assert "bold key values" in prompt
     assert "unexplained slash pair" in prompt
+    begin = prompt.index('{"visible_copy":')
+    render_spec, _ = json.JSONDecoder().raw_decode(prompt[begin:])
+    assert render_spec["visible_copy"]["facts"] == [
+        {"label": "Nhiệt độ", "value": "30°C"},
+        {"label": "E5 RON 92", "value": "21.760 đ/lít"},
+    ]
+    assert render_spec["render_only"]["fact_emphasis"] == ["primary", "important"]
+    composition["panels"] = [{
+        "title": "Fuel", "facts": composition["facts"],
+        "design": {"placement": "bottom-right", "important_weight": "bold"},
+    }]
+    panel_prompt = mod._composition_image_prompt("Scene", composition)
+    panel_spec, _ = json.JSONDecoder().raw_decode(panel_prompt[panel_prompt.index('{"visible_copy":'):])
+    assert panel_spec["visible_copy"]["panels"][0]["facts"] == render_spec["visible_copy"]["facts"]
+    assert "design" not in panel_spec["visible_copy"]["panels"][0]
+    assert panel_spec["render_only"]["panels"][0]["design"]["placement"] == "bottom-right"
     assert "/v1/overlay" not in (ZALO / "media_shortcuts.py").read_text(encoding="utf-8")
     assert not (ROOT / "architect" / "models" / "dispatcher" / "overlay.py").exists()
 

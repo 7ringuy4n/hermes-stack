@@ -49,12 +49,18 @@ required invariants, and route requested attachment changes through image-edit.
 
 Default newly authored informational text inside generated bitmaps to concise
 English, even when the chat request is Vietnamese. This is a spelling-risk
-mitigation, not a guarantee. Preserve the requested location, sourced values,
+mitigation, not a guarantee. The language of the question alone does not request
+that language inside the image. Keep the final generator's visible copy in the
+language selected by the composition plan; never translate English labels back
+into Vietnamese simply because source material or the chat message is Vietnamese.
+Preserve the requested location, sourced values,
 local currency and units; English labels do not authorize substituting US data.
 An explicit image-text language or exact quoted copy overrides the default:
 preserve it and its diacritics rather than silently translating or stripping
 accents. Put literal visible strings in the composition specification, separate
 from scene instructions; do not ask the generator to invent factual copy.
+Keep literal strings in `visible_copy` and design/emphasis directives in
+`render_only`; styling words are never additional artwork text.
 
 This default does not apply to chat replies or native PDF/PPTX/DOCX text.
 Follow file-gen for those: use the user's requested language and Unicode fonts.
