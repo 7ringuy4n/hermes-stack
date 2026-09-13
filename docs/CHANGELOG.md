@@ -1,3 +1,38 @@
+## 2026-09-13 09:13 +07 — operator-authorized promotion with known image failures
+
+- The operator explicitly overrides the failed-image merge gate for promotion
+  into develop and main. This is a one-time acceptance of known failures, not
+  a passing test result or a change to the standard hardening rules.
+- Selected changes include quiet stored-note execution, one-pass image
+  generation, English-default bitmap copy, and literal-copy/art-direction
+  separation. Both focused live image cases still fail quality; latest visual
+  score is 4/10, with spelling, duplicate rows, and measurement/layout defects.
+- Unit regressions pass. VPS remains on its restored main baseline; this merge
+  authorization does not deploy code or change operator image combos.
+
+## 2026-09-13 — quiet note outcomes and one-pass typography (candidate)
+
+- Clarify English informational image copy through composition and final
+  rendering: question language alone does not change the chosen image text.
+  This follow-up remains unreleased pending live validation.
+- Separate literal image copy from non-visible styling metadata to prevent
+  emphasis and design fields becoming printed artwork. Added nested-panel
+  regression coverage; the live visual gate remains mandatory.
+
+- Generated-image informational copy now defaults to English while explicit
+  image-language requests remain honored; native document text retains the
+  requested language with Unicode fonts. Added adaptable multi-purpose brief
+  and reference-role guidance. Live visual gates remain pending.
+
+- Successful grounded image responses no longer trigger automatic runtime
+  visual inspection or aesthetic re-generation. Explicit release visual review
+  remains, and invalid transport/decode responses retain provider failover.
+- Image skills recommend Unicode Noto Sans or a user-specified font, concise
+  readable copy, correct diacritics, and highlighted key values.
+- New scheduled research-and-note requests default to quiet fire execution
+  unless the user explicitly requests result delivery. Creation acknowledgement,
+  ordinary reminders, and requested artifact delivery remain unchanged.
+
 ## 2026-09-12 — model-rendered grounded images and quieter delivery
 
 - Grounded information images are now generated as one full-bleed model-owned

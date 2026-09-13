@@ -19,7 +19,7 @@ import urllib.request
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
 log = logging.getLogger("hermes_plugins.zalo_platform.media_shortcuts")
@@ -419,6 +419,7 @@ def _synthesize_composition_plan(
     user_template = str(assets.get("composition_user_template") or "").strip()
     if not system or not user_template:
         return {}
+    system = system + "\n\n" + str(assets.get("typography_policy") or "").strip()
     user = user_template.replace("{query}", (query or "").strip()[:240])
     user = user.replace("{instruction}", (instruction or "").strip()[:1200])
     user = user.replace("{notes}", notes)
@@ -657,95 +658,50 @@ def _composition_image_prompt(scene: str, composition: dict[str, Any]) -> str:
     if not template:
         log.error("composition render prompt asset missing")
         return ""
-    spec = {
+    def copy_rows(rows: Any) -> list[dict[str, Any]]:
+        return [
+            {"label": row.get("label") or "", "value": row.get("value") or ""}
+            for row in list(rows or [])[:_COMPOSITION_MAX_LINES]
+            if isinstance(row, dict)
+        ]
+
+    def emphasis_rows(rows: Any) -> list[str]:
+        return [
+            str(row.get("emphasis") or "normal")
+            for row in list(rows or [])[:_COMPOSITION_MAX_LINES]
+            if isinstance(row, dict)
+        ]
+
+    panels = [
+        row for row in list(composition.get("panels") or [])[:6]
+        if isinstance(row, dict)
+    ]
+    visible_copy = {
         "title": composition.get("title") or "",
-        "facts": list(composition.get("facts") or [])[:_COMPOSITION_MAX_LINES],
-        "panels": list(composition.get("panels") or [])[:6],
+        "facts": copy_rows(composition.get("facts")),
+        "panels": [
+            {"title": row.get("title") or "", "facts": copy_rows(row.get("facts"))}
+            for row in panels
+        ],
+    }
+    render_only = {
         "design": _safe_composition_design(composition.get("design")),
+        "fact_emphasis": emphasis_rows(composition.get("facts")),
+        "panels": [
+            {"design": _safe_composition_design(row.get("design")),
+             "fact_emphasis": emphasis_rows(row.get("facts"))}
+            for row in panels
+        ],
     }
     if composition.get("include_timestamp", True):
         stamp = _composition_timestamp(assets, label=composition.get("timestamp_label"))
         if stamp:
-            spec["timestamp"] = stamp
-    return template.replace("{scene}", " ".join((scene or "").split())[:1200]).replace(
+            visible_copy["timestamp"] = stamp
+    spec = {"visible_copy": visible_copy, "render_only": render_only}
+    prompt = template.replace("{scene}", " ".join((scene or "").split())[:1200]).replace(
         "{composition}", json.dumps(spec, ensure_ascii=False, separators=(",", ":"))
     )
-
-
-def _composition_image_quality_ok(blob: bytes, composition: dict[str, Any]) -> bool:
-    """Use the vision route to enforce the typed visual contract before delivery.
-
-    Dimension checks alone accept malformed copy, duplicated blocks, and blank
-    canvas bands.  A successful structural verdict rejects that candidate so
-    image generation can try the next configured combo member.  Evaluator
-    outages fail open, preserving the existing provider-availability behavior.
-    """
-    try:
-        from .vision_ocr import _vision_chat, vision_b64_from_bytes
-    except ImportError:
-        from vision_ocr import _vision_chat, vision_b64_from_bytes  # type: ignore
-
-    design = _safe_composition_design(composition.get("design"))
-    contract = {
-        "title": str(composition.get("title") or "")[:160],
-        "facts": list(composition.get("facts") or [])[:_COMPOSITION_MAX_LINES],
-        "panels": list(composition.get("panels") or [])[:6],
-        "placement": str(design.get("placement") or "auto"),
-    }
-    prompt = (
-        "Evaluate this information image against the supplied structural contract. "
-        "Return JSON only with booleans title_unique, facts_readable, "
-        "requested_placement, full_bleed_scene, no_canvas_bands, no_duplicate_copy, "
-        "no_clipping, and integer quality_score from 1 to 10. Reject misspelled or "
-        "duplicated visible facts and any gray/blank side or bottom canvas band. "
-        "A compact translucent information region over a coherent scene is valid. "
-        "CONTRACT="
-        + json.dumps(contract, ensure_ascii=False, separators=(",", ":"))
-    )
-    try:
-        b64, mime = vision_b64_from_bytes(blob, "image/jpeg")
-        status, detail, answer = _vision_chat(
-            b64,
-            mime,
-            prompt,
-            model=(os.getenv("OMNIROUTER_VISION_COMBO") or "vision-ocr"),
-            max_tokens=300,
-        )
-    except Exception as exc:  # noqa: BLE001
-        log.warning("composed image quality evaluator unavailable: %s", type(exc).__name__)
-        return True
-    if status < 200 or status >= 300 or not answer:
-        log.warning(
-            "composed image quality evaluator unavailable status=%s detail=%s",
-            status,
-            detail[:80],
-        )
-        return True
-    begin = answer.find("{")
-    end = answer.rfind("}")
-    try:
-        verdict = json.loads(answer[begin : end + 1]) if begin >= 0 and end >= begin else {}
-    except json.JSONDecodeError:
-        log.warning("composed image quality evaluator returned invalid JSON")
-        return True
-    required = (
-        "title_unique",
-        "facts_readable",
-        "requested_placement",
-        "full_bleed_scene",
-        "no_canvas_bands",
-        "no_duplicate_copy",
-        "no_clipping",
-    )
-    accepted = all(verdict.get(key) is True for key in required) and int(
-        verdict.get("quality_score") or 0
-    ) >= 8
-    log.info(
-        "composed image quality accepted=%s score=%s",
-        accepted,
-        verdict.get("quality_score"),
-    )
-    return accepted
+    return prompt + "\n\n" + str(assets.get("typography_policy") or "").strip()
 
 
 def _scene_visual_prompt(scene: str) -> str:
@@ -905,7 +861,6 @@ def _omni_request_image_blob(
     size: str,
     timeout: int,
     combo_members: list[str] | None = None,
-    accept_blob: Callable[[bytes], bool] | None = None,
 ) -> bytes | None:
     tried: list[str] = []
     candidates: list[str] = []
@@ -933,9 +888,6 @@ def _omni_request_image_blob(
             size=size,
             timeout=remaining,
         )
-        if blob and accept_blob is not None and not accept_blob(blob):
-            log.warning("omni generate: visual contract rejected model=%r", candidate)
-            continue
         if blob:
             return blob
     return None
@@ -1049,7 +1001,6 @@ def _omni_generate_still(
     prompt: str,
     *,
     filename: str,
-    accept_blob: Callable[[bytes], bool] | None = None,
 ) -> dict[str, Any] | None:
     """Scenic diffusion via OmniRoute combo image-gen (not dispatcher /v1/image)."""
     try:
@@ -1078,7 +1029,6 @@ def _omni_generate_still(
         size=size,
         timeout=timeout,
         combo_members=combo_members,
-        accept_blob=accept_blob,
     )
     if blob:
         for cand in _media_out_candidates():
@@ -1377,7 +1327,6 @@ def run_search_then_composed_image(
     out = _omni_generate_still(
         prompt,
         filename=fname,
-        accept_blob=lambda blob: _composition_image_quality_ok(blob, composition),
     )
     if isinstance(out, dict) and out.get("ok"):
         out["composition"] = "model-rendered"

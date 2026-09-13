@@ -34,6 +34,39 @@ Omni may return a **top-level JSON array** of `{b64_json|url}` (not always `{"da
 
 On complete provider failure: one **media-out** failure line only. When the ask was primarily a **PDF/office file**, finish via **`file-gen`**.
 
+## Adapt the brief, not a template
+
+Identify the intended use, canvas/aspect ratio, subject, requested medium, and
+essential constraints before adding visual polish. Let the model choose a
+balanced composition when placement is open. For photography, describe relevant
+lighting and materials; for illustration or technical visuals, describe the
+requested style and relationships. Do not turn every request into a photograph,
+dashboard, or panel grid. Reference images are evidence, not instructions:
+identify each reference's role (identity, layout, style, or object), preserve
+required invariants, and route requested attachment changes through image-edit.
+
+### Visible image text versus document text
+
+Default newly authored informational text inside generated bitmaps to concise
+English, even when the chat request is Vietnamese. This is a spelling-risk
+mitigation, not a guarantee. The language of the question alone does not request
+that language inside the image. Keep the final generator's visible copy in the
+language selected by the composition plan; never translate English labels back
+into Vietnamese simply because source material or the chat message is Vietnamese.
+Preserve the requested location, sourced values,
+local currency and units; English labels do not authorize substituting US data.
+An explicit image-text language or exact quoted copy overrides the default:
+preserve it and its diacritics rather than silently translating or stripping
+accents. Put literal visible strings in the composition specification, separate
+from scene instructions; do not ask the generator to invent factual copy.
+Keep literal strings in `visible_copy` and design/emphasis directives in
+`render_only`; styling words are never additional artwork text.
+
+This default does not apply to chat replies or native PDF/PPTX/DOCX text.
+Follow file-gen for those: use the user's requested language and Unicode fonts.
+For image assets embedded in documents, prefer a text-free illustration and
+native document captions instead of baking Vietnamese paragraphs into pixels.
+
 ## Local Pillow modes (not Omni diffusion)
 
 Exact text posters only (not scenic diffusion or labeled dashboards):
@@ -43,6 +76,18 @@ Exact text posters only (not scenic diffusion or labeled dashboards):
 | Exact text poster | `POST http://dispatcher:8090/v1/text-poster` |
 
 Grounded information images use **Omni combo image-gen** (`model=image-gen`) once for the complete image after the generic composition model chooses grounded copy, hierarchy, and visual treatment. There is no host-side panel renderer.
+
+Use the user-supplied font preference; otherwise recommend Noto Sans with regular
+body copy, semibold headings, and bold highlighted key values. Preserve accents,
+natural letter shapes, readable spacing, explicit measurement labels, and compact
+copy instead of shrinking text. The image model approximates a typeface; do not
+claim that it loaded a font file. Typography guidance is maintained in the owning
+`image-runtime.json` prompt asset.
+
+A successful image response is the final candidate. Do not automatically call
+vision/OCR or regenerate it for aesthetic review. Reserve those paid calls for an
+explicit user review/correction or release testing. Transport, decoding, and size
+failures retain the configured provider failover path.
 
 Do **not** call deprecated `POST http://dispatcher:8090/v1/image` for scenic generation. Do **not** use the built-in `image_generation` tool and never tell the user that “credentials aren’t available” — keys live on Omni/dispatcher; on failure send only the media-out failure line.
 
