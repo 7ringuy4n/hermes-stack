@@ -1,6 +1,10 @@
 ## 2026-09-13 — quiet note outcomes and one-pass image typography
 
-See `history/2026-09-13/README.md`; live candidate verification is pending.
+See `history/2026-09-13/README.md`; the temporary Qwen Image 3 Pro comparison
+failed the visual gate and was restored. English-default image copy/native
+user-language document policy is a local candidate; live visual verification
+is pending. Pollinations model discovery did not establish a free Vietnamese
+text-rendering target.
 
 ## 2026-09-12 — one-pass grounded images and registered native web
 

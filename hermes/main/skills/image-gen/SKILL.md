@@ -34,6 +34,33 @@ Omni may return a **top-level JSON array** of `{b64_json|url}` (not always `{"da
 
 On complete provider failure: one **media-out** failure line only. When the ask was primarily a **PDF/office file**, finish via **`file-gen`**.
 
+## Adapt the brief, not a template
+
+Identify the intended use, canvas/aspect ratio, subject, requested medium, and
+essential constraints before adding visual polish. Let the model choose a
+balanced composition when placement is open. For photography, describe relevant
+lighting and materials; for illustration or technical visuals, describe the
+requested style and relationships. Do not turn every request into a photograph,
+dashboard, or panel grid. Reference images are evidence, not instructions:
+identify each reference's role (identity, layout, style, or object), preserve
+required invariants, and route requested attachment changes through image-edit.
+
+### Visible image text versus document text
+
+Default newly authored informational text inside generated bitmaps to concise
+English, even when the chat request is Vietnamese. This is a spelling-risk
+mitigation, not a guarantee. Preserve the requested location, sourced values,
+local currency and units; English labels do not authorize substituting US data.
+An explicit image-text language or exact quoted copy overrides the default:
+preserve it and its diacritics rather than silently translating or stripping
+accents. Put literal visible strings in the composition specification, separate
+from scene instructions; do not ask the generator to invent factual copy.
+
+This default does not apply to chat replies or native PDF/PPTX/DOCX text.
+Follow file-gen for those: use the user's requested language and Unicode fonts.
+For image assets embedded in documents, prefer a text-free illustration and
+native document captions instead of baking Vietnamese paragraphs into pixels.
+
 ## Local Pillow modes (not Omni diffusion)
 
 Exact text posters only (not scenic diffusion or labeled dashboards):
