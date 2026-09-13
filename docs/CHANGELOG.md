@@ -1,4 +1,23 @@
+## 2026-09-13 09:13 +07 — operator-authorized promotion with known image failures
+
+- The operator explicitly overrides the failed-image merge gate for promotion
+  into develop and main. This is a one-time acceptance of known failures, not
+  a passing test result or a change to the standard hardening rules.
+- Selected changes include quiet stored-note execution, one-pass image
+  generation, English-default bitmap copy, and literal-copy/art-direction
+  separation. Both focused live image cases still fail quality; latest visual
+  score is 4/10, with spelling, duplicate rows, and measurement/layout defects.
+- Unit regressions pass. VPS remains on its restored main baseline; this merge
+  authorization does not deploy code or change operator image combos.
+
 ## 2026-09-13 — quiet note outcomes and one-pass typography (candidate)
+
+- Clarify English informational image copy through composition and final
+  rendering: question language alone does not change the chosen image text.
+  This follow-up remains unreleased pending live validation.
+- Separate literal image copy from non-visible styling metadata to prevent
+  emphasis and design fields becoming printed artwork. Added nested-panel
+  regression coverage; the live visual gate remains mandatory.
 
 - Generated-image informational copy now defaults to English while explicit
   image-language requests remain honored; native document text retains the
