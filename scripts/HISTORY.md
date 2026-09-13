@@ -1,3 +1,7 @@
+## 2026-09-13 — quiet note outcomes and one-pass image typography
+
+See `history/2026-09-13/README.md`; live candidate verification is pending.
+
 ## 2026-09-12 — one-pass grounded images and registered native web
 
 See `history/2026-09-12/README.md`. Grounded image copy and layout now travel

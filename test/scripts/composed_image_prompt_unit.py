@@ -55,6 +55,9 @@ def main() -> int:
     assert "Thời tiết & Giá xăng Đà Nẵng" in prompt
     assert "21.760 đ/lít" in prompt
     assert '"placement":"left-column"' in prompt
+    assert "Noto Sans" in prompt
+    assert "bold key values" in prompt
+    assert "unexplained slash pair" in prompt
     assert "/v1/overlay" not in (ZALO / "media_shortcuts.py").read_text(encoding="utf-8")
     assert not (ROOT / "architect" / "models" / "dispatcher" / "overlay.py").exists()
 

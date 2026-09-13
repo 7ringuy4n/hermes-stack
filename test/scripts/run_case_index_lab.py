@@ -59,6 +59,7 @@ VPS: list[tuple[str, str]] = [
     ("zalo_queue_failover_lab.py", "queue-failover"),
     ("zalo_active_cancel_lab.py", "active-cancel"),
     ("zalo_note_locale_lab.py", "44-note-locale"),
+    ("zalo_silent_background_lab.py", "silent-background"),
     ("zalo_continuous_messages_lab.py", "continuous-messages"),
     ("memory_scale_10m_lab.py", "memory-scale-10m"),
 ]

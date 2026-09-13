@@ -115,6 +115,11 @@ Send a natural-language still-image request through Zalo. Require:
   requested scene content;
 - the scene, composition, typography, contrast, and requested facts are scored,
   not merely file existence.
+- Include the requested locale, a readable compact-font request, and highlighted
+  key values. Inspect diacritics, phone-size readability, meaningful measurement
+  labels, and scene clearance. A successful valid image must not invoke ordinary
+  runtime OCR/vision or aesthetic re-generation; release-test visual review is
+  explicit and separate. Provider failover remains for transport/decode failures.
 
 ### C2 — vision analysis (`vision-ocr`)
 
@@ -183,10 +188,11 @@ in a cleanup boundary on pass, failure, or timeout. A later live case must never
 observe a delayed fire left behind by an earlier harness.
 
 Schedule a near-future process whose fire text is an explicit search-then-note
-ask (for example find public Java backend jobs then note them). Require exactly
-one fire, one gather listing, one host note-save confirmation, Memory rows that
-retain source URLs, and no second workflow 「Đang xử lý」 listing for the same
-fire. Delete the schedule afterward.
+ask (for example find public Java backend jobs then note them). Without an
+explicit result-delivery request, require one fire, Memory rows retaining source
+URLs, and zero fire-time chat messages. With explicit result delivery, require
+one gather listing and one host note-save confirmation without duplicate work.
+Delete the schedule afterward.
 
 Also cover a recurring background gather at several clocks (for example
 06:00, 12:00, and 18:00) with `notify_on_fire=false`. Require a concise stored
