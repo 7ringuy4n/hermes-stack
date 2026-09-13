@@ -44,6 +44,18 @@ Exact text posters only (not scenic diffusion or labeled dashboards):
 
 Grounded information images use **Omni combo image-gen** (`model=image-gen`) once for the complete image after the generic composition model chooses grounded copy, hierarchy, and visual treatment. There is no host-side panel renderer.
 
+Use the user-supplied font preference; otherwise recommend Noto Sans with regular
+body copy, semibold headings, and bold highlighted key values. Preserve accents,
+natural letter shapes, readable spacing, explicit measurement labels, and compact
+copy instead of shrinking text. The image model approximates a typeface; do not
+claim that it loaded a font file. Typography guidance is maintained in the owning
+`image-runtime.json` prompt asset.
+
+A successful image response is the final candidate. Do not automatically call
+vision/OCR or regenerate it for aesthetic review. Reserve those paid calls for an
+explicit user review/correction or release testing. Transport, decoding, and size
+failures retain the configured provider failover path.
+
 Do **not** call deprecated `POST http://dispatcher:8090/v1/image` for scenic generation. Do **not** use the built-in `image_generation` tool and never tell the user that “credentials aren’t available” — keys live on Omni/dispatcher; on failure send only the media-out failure line.
 
 ## Output
