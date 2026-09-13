@@ -30,7 +30,7 @@ cancel_selector: optional object with message_id; use the quoted message id when
 target_channel: display-name string or null; null unless the user explicitly names a different destination; references to the current chat or direct message remain null
 schedule_delivery: verbatim|process|transform or null
 schedule_title: concise model-authored string or null
-notify_on_fire: bool; false only for explicitly silent background execution
+notify_on_fire: bool; false for stored-note background outcomes or explicit silence, true for explicit result delivery and ordinary reminders/artifacts
 output_type: image|video|pdf|txt|docx|xlsx|csv|md|pptx or null
 task_details: array of objects with task_type, output_type, and optional depends_on
 depends_on: zero-based integer array

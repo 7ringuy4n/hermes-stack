@@ -18,11 +18,11 @@ OUT = ROOT / "test" / "reports" / "run-zalo-flexible-composed-layout"
 USER_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
 SCHEDULE_REQUEST = (
     "2 phút nữa vẽ cho tôi hình thời tiết Đà Nẵng hiện tại có kèm thông tin "
-    "thời tiết và giá xăng ở bên dưới hình"
+    "thời tiết và giá xăng ở bên dưới hình bằng tiếng Việt, font chữ dễ đọc"
 )
 IMMEDIATE_REQUEST = (
     "vẽ cho tôi hình thời tiết Đà Nẵng hiện tại có kèm thông tin thời tiết và "
-    "giá xăng cùng chung 1 khung hình bên trái"
+    "giá xăng cùng chung 1 khung hình bên trái, font chữ dễ đọc và gọn"
 )
 
 
@@ -142,9 +142,10 @@ content=[{{"type":"text","text":(
  "Image 1 must use one full-bleed scene and one compact shared information region on the left. "
  "Image 2 must use one full-bleed scene and one compact shared information region along the bottom. "
  "Both must keep important scenery visible, contain legible Vietnamese text, and have no gray/blank canvas bands, "
- "split-screen seams, clipped text, or oversized opaque blocks. Return JSON only with booleans "
+ "split-screen seams, clipped text, or oversized opaque blocks. Reject misspelled accents, miniature or distorted fonts, "
+ "unexplained slash-paired measurements, and duplicated copy. Key values must have a readable visual hierarchy. Return JSON only with booleans "
  "image1_left_single_region, image2_bottom_single_region, full_bleed_scenes, text_legible, no_gray_bands, no_clipping "
- "and integer quality_score from 1 to 10."
+ "and booleans spelling_correct, measurement_labels_clear, readable_typography, and integer quality_score from 1 to 10."
 )}}]
 for raw in os.environ["EVAL_IMAGE_PATHS"].split(','):
  p=Path(raw); blob=p.read_bytes(); mime='image/jpeg'
@@ -189,6 +190,7 @@ except json.JSONDecodeError:
 required=(
     'image1_left_single_region','image2_bottom_single_region','full_bleed_scenes',
     'text_legible','no_gray_bands','no_clipping',
+    'spelling_correct','measurement_labels_clear','readable_typography',
 )
 if not all(visual.get(key) is True for key in required) or int(visual.get('quality_score') or 0)<8:
     raise SystemExit('FAIL_VISUAL_LAYOUT_QUALITY')

@@ -10,6 +10,10 @@ History entries must describe reusable symptoms, causes, decisions, fixes,
 verification, and prevention. Do not copy chat messages, credentials, host
 identities, or ticket-specific wording into documentation.
 
+## 2026-09-13 — quiet background notes and typography candidate
+
+See [root-cause and pending live gates](../history/2026-09-13/README.md).
+
 ## 2026-09-12 — one-pass grounded image composition
 
 See `history/2026-09-12/README.md` for removal of the Pillow information-card
