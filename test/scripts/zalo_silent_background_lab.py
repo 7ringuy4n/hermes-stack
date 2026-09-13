@@ -74,7 +74,10 @@ PY
 '''.replace("__UID__", json.dumps(uid))
     client = connect()
     try:
-        output = sanitize(sudo_bash(client, remote, timeout=660))
+        try:
+            output = sanitize(sudo_bash(client, remote, timeout=660))
+        except SystemExit as exc:
+            output = sanitize(str(exc))
     finally:
         client.close()
     out = ROOT / "test" / "reports" / "run-zalo-silent-background"
