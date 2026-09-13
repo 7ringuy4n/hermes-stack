@@ -1,5 +1,79 @@
 # Quiet stored-note schedules and one-pass image typography
 
+## 09:13 — explicit one-time merge-gate override
+
+- The operator explicitly authorizes overriding the known failed VPS image
+  gate and creating/merging MRs into develop and main. Preserve the failed
+  evidence below and disclose it in both MRs; do not claim production readiness.
+- Scope: the quiet-task/one-pass/language-policy candidate already integrated
+  in develop, plus the local literal-copy/art-direction correction and related
+  regression/history updates. Production promotion uses a release branch from
+  main with selected commits, not a direct develop-to-main merge.
+- Checklist: verify owner authentication; fetch/rebase; review exact tracked
+  changes; exclude reports and preserve user stashes; run affected local units;
+  create/merge develop MR; select candidate commits onto main-based release;
+  create/merge main MR; verify remote contents. No VPS access or deployment is
+  authorized by this override. No global hardening rule is edited.
+
+## Follow-up: English bitmap copy through final rendering
+
+- Live English-default smoke delivered both immediate and two-minute scheduled
+  images, but failed the visual gate (score 5/10): misspellings and ambiguous
+  measurements remain. Both resolved to wan2.7-image-pro through the preserved
+  operator combo. No runtime aesthetic retries occurred.
+- Independent artifact inspection found styling enum words printed as copy and
+  a solid bottom treatment covering scenery. `_composition_image_prompt` at
+  `hermes/main/plugins/zalo/media_shortcuts.py:L654` previously serialized fact
+  `emphasis` and `design` beside literal labels/values. The durable correction
+  separates `visible_copy` from `render_only`; the owning render asset forbids
+  printing non-visible metadata. Nested-panel regression coverage preserves
+  literal text and spatial directions separately. Retesting remains required.
+- Retest: two acknowledgement-backed, source-correlated deliveries again
+  resolved to wan2.7-image-pro. Styling metadata is no longer printed, but
+  independent inspection finds duplicate humidity/fuel rows, a corrupted place
+  name, confused measurements, and an opaque bottom strip. The unchanged
+  quality threshold rejects both-artifact review at 4/10
+  (`spelling_correct=false`, `measurement_labels_clear=false`,
+  `readable_typography=false`, `language_correct=true`). English mitigates
+  diacritic risk; it does not prove reliable literal-copy rendering.
+- Local and VPS composed-prompt and transport regressions pass. Syntax and
+  prompt JSON pass; skill frontmatter passes in the production dependency
+  image. The local complete skill validator remains unavailable without PyYAML.
+- No new MR or merge follows these failed gates. Stop further paid retries
+  without a materially justified renderer/model change; do not substitute a
+  legacy overlay or weaken the spelling, layout, or measurement checks.
+- The initial restart-adjacent attempt stored no schedule because the bridge
+  had zero SSE subscribers. `zalo_flexible_composed_layout_lab.py::main`,
+  readiness block at `:L85`, now requires `loggedIn=true` and `sseClients>0`
+  before injection. Original failure evidence is preserved, not relabeled PASS.
+
+- Symptom: a subsequent artifact still contains Vietnamese labels. The earlier
+  English-default candidate was integrated into develop, not released to main;
+  the screenshot alone does not establish which runtime source produced it.
+- Prompt ambiguity: `_composition_image_prompt`,
+  `hermes/main/plugins/zalo/media_shortcuts.py:L654`, loads
+  `composition_render_template` whose language clause still referred to the
+  requested language rather than the composition's already selected copy.
+- Correction: the owning image-runtime composition user and render templates
+  distinguish question language from an explicit image-text language request.
+  Preserve English planned strings through rendering without changing source
+  values, locality, currency, units, grouping, or position. Explicit image-text
+  language and exact-copy requests remain authoritative. Native document and
+  chat language policies are unchanged.
+- Checklist: inspect owning skill/asset; remove conflicting language direction;
+  run composed-prompt and transport regressions; retain live validation as a
+  release gate. The scoped candidate was tested on the authorized VPS and the
+  six touched runtime/test files restored from main afterward; no new merge
+  performed for this correction. Both experiment schedules were deleted and
+  the active queue was empty. Before/after router-combo checksums match.
+- Final restoration completed at 09:08 +07: backup-first Hermes update
+  succeeded, both replicas run, Zalo is logged in with one live SSE subscriber
+  and no dead session, and Router Worker/Zalo API health requests succeed.
+  Gateway logs show normal warm-up rather than crash-looping; the requested
+  user journal has no entries. Temporary transfer archives and newly generated
+  caches are removed; sanitized reports and four failed artifacts remain for
+  investigation. No open merge requests were found.
+
 ## Symptoms and cause
 
 Grounded images consumed a vision call after each successful generation and

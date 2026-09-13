@@ -16,6 +16,7 @@ from sanitize import sanitize  # noqa: E402
 ROOT = Path(os.environ.get("ASSISTANT_REPO_ROOT", Path(__file__).resolve().parents[2]))
 OUT = ROOT / "test" / "reports" / "run-zalo-flexible-composed-layout"
 USER_ID = (os.environ.get("ZALO_TEST_USER_ID") or "").strip()
+ENGLISH_GATE = os.environ.get("ZALO_LAYOUT_TEST_LANGUAGE") == "english"
 SCHEDULE_REQUEST = (
     "2 phút nữa vẽ cho tôi hình thời tiết Đà Nẵng hiện tại có kèm thông tin "
     "thời tiết và giá xăng ở bên dưới hình bằng tiếng Việt, font chữ dễ đọc"
@@ -24,6 +25,15 @@ IMMEDIATE_REQUEST = (
     "vẽ cho tôi hình thời tiết Đà Nẵng hiện tại có kèm thông tin thời tiết và "
     "giá xăng cùng chung 1 khung hình bên trái, font chữ dễ đọc và gọn"
 )
+if ENGLISH_GATE:
+    SCHEDULE_REQUEST = (
+        "2 phút nữa vẽ cho tôi hình thời tiết hồ chí minh hiện tại có kèm "
+        "thông tin thời tiết và giá xăng ở bên dưới hình, font chữ dễ đọc"
+    )
+    IMMEDIATE_REQUEST = (
+        "vẽ cho tôi hình thời tiết hồ chí minh hiện tại có kèm thông tin "
+        "thời tiết và giá xăng ở bên dưới bên trái hình"
+    )
 
 
 def main() -> int:
@@ -40,6 +50,7 @@ set -a; . ./.env; set +a
 export LAB_UID={USER_ID!r}
 export LAB_SCHEDULED_B64={scheduled_b64!r}
 export LAB_IMMEDIATE_B64={immediate_b64!r}
+export LAB_EXPECT_ENGLISH={str(ENGLISH_GATE)!r}
 python3 - <<'PY'
 import base64,json,os,pathlib,re,subprocess,time,urllib.request
 from datetime import datetime
@@ -61,6 +72,15 @@ def inject(text,message_id):
         'type':'message','threadId':uid,'threadType':'user','senderId':uid,
         'senderName':'test-user','text':text,'messageId':message_id,
     }},'POST').get('ok'))
+
+ready_deadline=time.time()+120
+while True:
+    health=request('http://127.0.0.1:8787/health')
+    if health.get('loggedIn') is True and int(health.get('sseClients') or 0)>0:
+        break
+    if time.time()>=ready_deadline:
+        raise SystemExit('FAIL_ZALO_EVENT_CONNECTION_NOT_READY')
+    time.sleep(2)
 
 if not inject(scheduled,'layout-schedule-'+tag):
     raise SystemExit('FAIL_SCHEDULE_ADMISSION')
@@ -125,6 +145,7 @@ if not bottom_file:
     raise SystemExit('FAIL_SCHEDULED_IMAGE')
 
 paths=[pathlib.Path('/data/assistant/media/out')/name for name in (left_file,bottom_file)]
+print('ARTIFACTS:'+','.join(path.name for path in paths),flush=True)
 if any(not path.is_file() or path.stat().st_size<80000 for path in paths):
     raise SystemExit('FAIL_IMAGE_QUALITY_FLOOR')
 
@@ -138,14 +159,14 @@ evaluation_code="""
 import base64,io,json,os,urllib.request
 from pathlib import Path
 content=[{{"type":"text","text":(
- "Evaluate two generated Vietnamese weather-and-fuel images in order. "
- "Image 1 must use one full-bleed scene and one compact shared information region on the left. "
+ ("Evaluate two weather-and-fuel images. All informational copy must be English. Image 1 must use one compact shared region in the bottom-left corner. " if os.environ.get("EVAL_EXPECT_ENGLISH")=="True" else "Evaluate two weather-and-fuel images. Image 1 defaults to English informational copy; image 2 explicitly requires Vietnamese. Image 1 must use one compact shared region on the left. ")
+ + "Image 1 must use one full-bleed scene. "
  "Image 2 must use one full-bleed scene and one compact shared information region along the bottom. "
- "Both must keep important scenery visible, contain legible Vietnamese text, and have no gray/blank canvas bands, "
+ "Both must keep important scenery visible, contain legible correctly spelled text in the required language, and have no gray/blank canvas bands, "
  "split-screen seams, clipped text, or oversized opaque blocks. Reject misspelled accents, miniature or distorted fonts, "
  "unexplained slash-paired measurements, and duplicated copy. Key values must have a readable visual hierarchy. Return JSON only with booleans "
  "image1_left_single_region, image2_bottom_single_region, full_bleed_scenes, text_legible, no_gray_bands, no_clipping "
- "and booleans spelling_correct, measurement_labels_clear, readable_typography, and integer quality_score from 1 to 10."
+ "and booleans spelling_correct, language_correct, measurement_labels_clear, readable_typography, and integer quality_score from 1 to 10."
 )}}]
 for raw in os.environ["EVAL_IMAGE_PATHS"].split(','):
  p=Path(raw); blob=p.read_bytes(); mime='image/jpeg'
@@ -171,7 +192,7 @@ message=((data.get('choices') or [{{}}])[0].get('message') or {{}})
 print((message.get('content') or message.get('reasoning_content') or '').strip())
 """
 evaluated=subprocess.run(
-    ['docker','exec','-i','-e','EVAL_IMAGE_PATHS='+container_paths,dispatcher,'python3','-'],
+    ['docker','exec','-i','-e','EVAL_IMAGE_PATHS='+container_paths,'-e','EVAL_EXPECT_ENGLISH='+os.environ['LAB_EXPECT_ENGLISH'],dispatcher,'python3','-'],
     input=evaluation_code,text=True,capture_output=True,timeout=240,
 )
 if evaluated.returncode!=0:
@@ -190,8 +211,9 @@ except json.JSONDecodeError:
 required=(
     'image1_left_single_region','image2_bottom_single_region','full_bleed_scenes',
     'text_legible','no_gray_bands','no_clipping',
-    'spelling_correct','measurement_labels_clear','readable_typography',
+    'spelling_correct','language_correct','measurement_labels_clear','readable_typography',
 )
+print('VISUAL_EVIDENCE:'+json.dumps(visual,separators=(',',':')),flush=True)
 if not all(visual.get(key) is True for key in required) or int(visual.get('quality_score') or 0)<8:
     raise SystemExit('FAIL_VISUAL_LAYOUT_QUALITY')
 
@@ -224,6 +246,7 @@ PY
         finally:
             client.close()
     line = next((row for row in reversed(raw.splitlines()) if row.startswith("{")), "")
+    (OUT / "evidence.log").write_text(raw + "\n", encoding="utf-8")
     try:
         result = json.loads(line)
     except json.JSONDecodeError:
