@@ -1659,7 +1659,7 @@ class ZaloAdapter(BasePlatformAdapter):
         if len(cleaned) < 80:
             pending_map[tid] = pending
             self._as_pending_note_persist = pending_map
-            return cleaned or content
+            return "" if pending.get("silent") is True else (cleaned or content)
         user_ask = str(pending.get("user_text") or "")
         thread_type = str(pending.get("thread_type") or "user")
         sender_id = str(pending.get("sender_id") or "")
@@ -8623,7 +8623,17 @@ class ZaloAdapter(BasePlatformAdapter):
         if getattr(self, "_as_autosend_wrong_thread", lambda *_: False)(chat_id, metadata):
             logger.info("Zalo: drop send to %s (not the requesting thread)", chat_id)
             return SendResult(success=True)  # ASSISTANT_AUTOSEND_v3
-        if not (isinstance(metadata, dict) and metadata.get("as_skip_autosend")):
+        try:
+            from .turn_wait import real_thread_id
+        except ImportError:
+            from turn_wait import real_thread_id  # type: ignore
+        pending_notes = getattr(self, "_as_pending_note_persist", None) or {}
+        pending_note = (
+            pending_notes.get(real_thread_id(str(chat_id))) or pending_notes.get(str(chat_id))
+        ) if isinstance(pending_notes, dict) else None
+        note_response = isinstance(pending_note, dict)
+        silent_note_response = bool(note_response and pending_note.get("silent") is True)
+        if not (isinstance(metadata, dict) and metadata.get("as_skip_autosend")) and not silent_note_response:
             content = await self._as_autosend_turn_files(chat_id, content, metadata)  # ASSISTANT_AUTOSEND_v5
             self._as_kick_late_autosend(chat_id, metadata)
         _red = getattr(self, "_as_redact_internal", None)
@@ -8659,10 +8669,20 @@ class ZaloAdapter(BasePlatformAdapter):
         if self._as_is_media_ack_only(content):
             logger.info("Zalo: drop media ack line")
             return SendResult(success=True, message_id=None)
+        # Durable note side effects must precede transport-only media muting.
+        # A prior image in the same destination cannot discard a due gather.
+        if (content or "").strip():
+            try:
+                content = await self._as_persist_deferred_notes(str(chat_id), content, meta)
+            except Exception as e:
+                logger.warning("[zalo] deferred note persist hook failed: %s", type(e).__name__)
+        if not (content or "").strip():
+            return SendResult(success=True, message_id=None)
         # Same-turn mute after a media file was already delivered — never mute
         # schedule fire bodies, gate announces, or other skip_outbound_filter sends.
         allow_after_media = bool(
-            meta.get("schedule_fire")
+            note_response
+            or meta.get("schedule_fire")
             or meta.get("scheduleFire")
             or meta.get("skip_outbound_filter")
             or meta.get("is_approval_prompt")
@@ -8677,15 +8697,6 @@ class ZaloAdapter(BasePlatformAdapter):
             if not low.startswith("hiện chưa tạo") and "couldn't create" not in low and "couldn’t create" not in low:
                 logger.info("Zalo: drop text after media result")
                 return SendResult(success=True, message_id=None)
-        if not (content or "").strip():
-            return SendResult(success=True, message_id=None)
-        # Deferred search-then-note: persist gather body before transport.
-        try:
-            content = await self._as_persist_deferred_notes(str(chat_id), content, meta)
-        except Exception as e:
-            logger.warning(
-                "[zalo] deferred note persist hook failed: %s", type(e).__name__
-            )
         if not (content or "").strip():
             return SendResult(success=True, message_id=None)
         # Persist turn to Valkey session SoT (not replica sessions.json).

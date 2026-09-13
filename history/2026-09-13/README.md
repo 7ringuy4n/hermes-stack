@@ -35,8 +35,11 @@ Scheduled research saved notes but announced results unless silence was explicit
 
 - PASS: media transport/unit regressions and composed prompt regressions locally.
 - PASS: changed Python scripts compile.
-- Skill validator not yet runnable locally because that runtime lacks PyYAML;
-  validate in the production dependency environment before claiming completion.
+- PASS: both updated skills validated with `quick_validate.py` in the production
+  Dispatcher dependency environment (local bundled Python lacks PyYAML).
+- PASS: 116/116 production-image unit matrix on source overlay `909a895`.
+  The runner's base checkout SHA remains main; this record identifies the actual
+  overlaid candidate rather than attributing changed source to that main commit.
 - VPS backup completed before candidate testing. Live typography artifact review,
   one-pass generation evidence, silent note persistence, explicit-delivery
   compatibility, and monitored service health remain pending.
@@ -45,5 +48,16 @@ Scheduled research saved notes but announced results unless silence was explicit
   lab retains explicit release-test vision review including spelling and
   phone-readable typography. `test/RULES.md` now distinguishes quiet stored
   outcomes from explicit delivery and runtime OCR from release evaluation.
+- FAIL: independent immediate-image review found visibly garbled Vietnamese
+  labels despite full-bleed scene and requested left placement. Live Router
+  Worker logs show two valid image generation calls for two requests, without
+  automatic runtime vision or image retries. Prompt guidance alone has not yet
+  met the typography gate with the unchanged operator image combo.
+- Concurrent scheduled-note test exposed `ZaloAdapter.send`: transport media
+  muting ran before `_as_persist_deferred_notes`, losing gathered notes after a
+  prior image. Source correction moves note persistence before media muting,
+  skips autosend for typed pending silent notes, and suppresses short silent
+  status responses while keeping pending state. Three executed send-order
+  regression scenarios pass locally; corrected live rerun remains pending.
 - No merge gate passed yet. Do not merge or declare production ready from unit
   checks alone. Operator router combos and existing user reports are preserved.
