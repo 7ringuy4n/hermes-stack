@@ -97,6 +97,16 @@ For xlsx: labeled header row + metric rows with filled values only.
 
 Use the dominant language of the current user message for **every visible word**, including titles, headings, labels, conditions, notes, and captions, unless the user explicitly requests another language. Use measurement units customary for that language/locale as the primary display unless the user specifies units; convert sourced values accurately instead of exposing provider-default units. Do not add bilingual translations or duplicate unit systems merely for decoration.
 
+Keep Vietnamese prose as native Unicode document text, not image-generated
+glyphs. PDF HTML uses UTF-8 and an available Vietnamese-capable font such as
+Noto Sans; office text remains editable with a Unicode-capable font. Proofread
+the authored copy and inspect the rendered output for missing glyphs or spelling
+errors. A font supports diacritics but cannot correct misspelled source text.
+The image-gen English-copy default does not change the document's language.
+Prefer text-free generated illustrations with native captions. If the user
+explicitly requests text baked into an embedded image, apply image-gen's image
+language policy to that asset only; do not translate the surrounding document.
+
 Fetch live facts with `web_search` when needed. Resolve ambiguous place names against the requested city/region/country before authoring: verify that locality labels and any displayed coordinates/timezone refer to the intended place, retry with a more specific query when they do not, and omit unverified location metadata. For a current snapshot, take measurements from one clearly timestamped current-conditions source; do not merge conflicting values from different providers or timestamps as one observation. Preserve the source timestamp's declared timezone semantics: never label a local timestamp as UTC, never apply a timezone offset twice, and reject or re-query any supposedly current observation that is in the future or is not recent enough for the request.
 
 The requested time and subject scope is a hard boundary. If the user requests only a current snapshot, the artifact MUST contain only current observations: forecast tables, future-day sections, history, unrelated indices, and every recommendation or practical-advice sentence/card/strip are prohibited. A suggested action (for example, telling the reader to bring, wear, avoid, or do something) is a recommendation even when it is based on a current condition rather than a forecast. Include forecasts, history, recommendations, or expanded analysis only when the user asks for them. Never paste search-page chrome into the body. Do not invent causal explanations, event durations, forecasts, or other derived claims; even plausible domain knowledge is excluded unless the user requested analysis and the retrieved evidence directly supports it.

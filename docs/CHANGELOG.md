@@ -1,5 +1,10 @@
 ## 2026-09-13 — quiet note outcomes and one-pass typography (candidate)
 
+- Generated-image informational copy now defaults to English while explicit
+  image-language requests remain honored; native document text retains the
+  requested language with Unicode fonts. Added adaptable multi-purpose brief
+  and reference-role guidance. Live visual gates remain pending.
+
 - Successful grounded image responses no longer trigger automatic runtime
   visual inspection or aesthetic re-generation. Explicit release visual review
   remains, and invalid transport/decode responses retain provider failover.
